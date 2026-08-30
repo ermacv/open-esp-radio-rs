@@ -18,17 +18,16 @@ use open_esp_radio_ieee80211::vif::StaApRxRoute;
 
 use super::{Esp32s31RoutedRxDisposition, Esp32s31StaApRxConsumer, Esp32s31StaApRxTurn};
 use crate::{
-    datapath::rx::dma::Esp32s31StagedRxEpoch,
     datapath::rx::hardware::RxDmaObservationDelay,
     datapath::rx::staging::Esp32s31StagedRxFrame,
+    datapath::rx::{dma::Esp32s31StagedRxEpoch, turn::FusedRxTurn},
     datapath::{
-        DatapathRxProgress, DatapathRxServiceContext,
+        DatapathRxProgress, DatapathRxServiceContext, DatapathRxWorkCounters,
         network::DatapathNetworkRx,
         paired::{DatapathPairRole, DatapathPairedRxProgress, DatapathPairedRxService},
     },
 };
 
-const SATURATED_DMA_REFILL_QUANTUM_FRAMES: usize = 4;
 /// Protocol leases consumed between physical-TX completion checks.
 const ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES: usize = 4;
 
@@ -376,43 +375,57 @@ where
         context: DatapathRxServiceContext,
     ) -> impl Future<Output = Result<DatapathPairedRxProgress, Self::Error>> + 'a {
         async move {
-            let dma_progress = self
-                .dma
-                .service(hardware)
-                .await
-                .map_err(Esp32s31StaApRxServiceError::Dma)?;
+            let mut fused = FusedRxTurn::from_context(context, STAGE_SLOTS);
+            loop {
+                let network_backpressured = station.has_pending_rx()
+                    && station
+                        .publish_pending_rx(station_network)
+                        .map_err(Esp32s31StaApRxServiceError::Station)?
+                        == DatapathRxProgress::NetworkBackpressured
+                    || access_point.has_pending_rx()
+                        && access_point
+                            .publish_pending_rx(physical_tx, access_point_network)
+                            .map_err(Esp32s31StaApRxServiceError::AccessPoint)?
+                            == DatapathRxProgress::NetworkBackpressured;
+                if network_backpressured {
+                    if fused.dma_service_required() {
+                        let progress = self
+                            .dma
+                            .service(hardware)
+                            .await
+                            .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                        fused.observe_dma(progress);
+                    }
+                    return Ok(DatapathRxProgress::NetworkBackpressured.into());
+                }
 
-            if station
-                .publish_pending_rx(station_network)
-                .map_err(Esp32s31StaApRxServiceError::Station)?
-                == DatapathRxProgress::NetworkBackpressured
-            {
-                return Ok(DatapathRxProgress::NetworkBackpressured.into());
-            }
-            if access_point
-                .publish_pending_rx(physical_tx, access_point_network)
-                .map_err(Esp32s31StaApRxServiceError::AccessPoint)?
-                == DatapathRxProgress::NetworkBackpressured
-            {
-                return Ok(DatapathRxProgress::NetworkBackpressured.into());
-            }
+                if !fused.has_protocol_budget() {
+                    if fused.dma_service_required() {
+                        let progress = self
+                            .dma
+                            .service(hardware)
+                            .await
+                            .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                        fused.observe_dma(progress);
+                    }
+                    return Ok(fused.finish(self.protocol.queued_frames() != 0).into());
+                }
 
-            let limit = context
-                .maximum_protocol_frames
-                .unwrap_or(STAGE_SLOTS)
-                .max(1);
-            // If the first producer pass filled the complete staging owner,
-            // do not wait until the whole protocol batch and its cooperative
-            // yield have finished before returning another descriptor to
-            // hardware. A small frame quantum amortizes the cursor/reload
-            // transaction without letting a complete negotiated 16-MPDU BA
-            // window pass between refill opportunities. This preserves a
-            // single DMA owner while closing the producer/consumer latency
-            // gap that otherwise leaves the hardware ring as the only
-            // remaining ingress reserve.
-            let mut refill_saturated_dma = self.protocol.queued_frames() >= STAGE_SLOTS;
-            let mut consumed_since_dma_refill = 0_usize;
-            for _ in 0..limit {
+                if self.protocol.queued_frames() == 0 {
+                    if fused.dma_service_required() {
+                        let progress = self
+                            .dma
+                            .service(hardware)
+                            .await
+                            .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                        fused.observe_dma(progress);
+                        if self.protocol.queued_frames() != 0 {
+                            continue;
+                        }
+                    }
+                    return Ok(fused.finish(false).into());
+                }
+
                 let turn = self
                     .protocol
                     .service_next(
@@ -422,62 +435,54 @@ where
                     .await
                     .map_err(Esp32s31StaApRxServiceError::AccessPoint)?;
                 match turn {
-                    Esp32s31StaApRxTurn::Idle => return Ok(dma_progress.into()),
+                    Esp32s31StaApRxTurn::Idle => continue,
                     Esp32s31StaApRxTurn::Station(dispatch) => {
                         dispatch.map_err(Esp32s31StaApRxServiceError::Station)?;
                         self.routes.station = self.routes.station.saturating_add(1);
                         self.serviced_frames = self.serviced_frames.saturating_add(1);
+                        fused.observe_protocol(1, false);
                     }
                     Esp32s31StaApRxTurn::AccessPoint => {
                         self.routes.access_point = self.routes.access_point.saturating_add(1);
                         self.serviced_frames = self.serviced_frames.saturating_add(1);
+                        fused.observe_protocol(1, false);
                     }
                     Esp32s31StaApRxTurn::DeferredAccessPoint => {
+                        if fused.dma_service_required() {
+                            let progress = self
+                                .dma
+                                .service(hardware)
+                                .await
+                                .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                            fused.observe_dma(progress);
+                        }
                         return Ok(if access_point.tx_pending() {
                             DatapathPairedRxProgress::TxPending(DatapathPairRole::Second)
                         } else {
-                            DatapathRxProgress::ProbePending.into()
+                            fused.finish(true).into()
                         });
                     }
                     Esp32s31StaApRxTurn::Rejected(classification) => {
                         self.routes.record_rejected(classification);
                         self.serviced_frames = self.serviced_frames.saturating_add(1);
+                        fused.observe_protocol(1, false);
                     }
                 }
 
-                if station
-                    .publish_pending_rx(station_network)
-                    .map_err(Esp32s31StaApRxServiceError::Station)?
-                    == DatapathRxProgress::NetworkBackpressured
-                {
-                    return Ok(DatapathRxProgress::NetworkBackpressured.into());
-                }
-                if access_point
-                    .publish_pending_rx(physical_tx, access_point_network)
-                    .map_err(Esp32s31StaApRxServiceError::AccessPoint)?
-                    == DatapathRxProgress::NetworkBackpressured
-                {
-                    return Ok(DatapathRxProgress::NetworkBackpressured.into());
-                }
-                consumed_since_dma_refill = consumed_since_dma_refill.saturating_add(1);
-                if refill_saturated_dma
-                    && consumed_since_dma_refill >= SATURATED_DMA_REFILL_QUANTUM_FRAMES
-                {
-                    refill_saturated_dma = self
-                        .dma
-                        .service(hardware)
-                        .await
-                        .map_err(Esp32s31StaApRxServiceError::Dma)?
-                        != DatapathRxProgress::Drained;
-                    consumed_since_dma_refill = 0;
-                }
                 if access_point.tx_pending() {
+                    if fused.dma_service_required() {
+                        let progress = self
+                            .dma
+                            .service(hardware)
+                            .await
+                            .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                        fused.observe_dma(progress);
+                    }
                     return Ok(DatapathPairedRxProgress::TxPending(
                         DatapathPairRole::Second,
                     ));
                 }
             }
-            Ok(DatapathRxProgress::ProbePending.into())
         }
     }
 
@@ -491,27 +496,57 @@ where
         access_point_network: &'a mut dyn DatapathNetworkRx,
     ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
         async move {
-            // First release the complete hardware frontier. Upper protocol
-            // work below owns only staging leases and value-only mailboxes.
-            let dma_progress = self
-                .dma
-                .service(hardware)
-                .await
-                .map_err(Esp32s31StaApRxServiceError::Dma)?;
+            let mut fused = FusedRxTurn::new(ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES);
+            loop {
+                let network_backpressured = station.has_pending_rx()
+                    && station
+                        .publish_pending_rx(station_network)
+                        .map_err(Esp32s31StaApRxServiceError::Station)?
+                        == DatapathRxProgress::NetworkBackpressured
+                    || access_point.has_pending_rx()
+                        && access_point
+                            .publish_pending_rx(physical_tx, access_point_network)
+                            .map_err(Esp32s31StaApRxServiceError::AccessPoint)?
+                            == DatapathRxProgress::NetworkBackpressured;
+                if network_backpressured {
+                    if fused.dma_service_required() {
+                        let progress = self
+                            .dma
+                            .service(hardware)
+                            .await
+                            .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                        fused.observe_dma(progress);
+                    }
+                    return Ok(DatapathRxProgress::NetworkBackpressured);
+                }
 
-            if station
-                .publish_pending_rx(station_network)
-                .map_err(Esp32s31StaApRxServiceError::Station)?
-                == DatapathRxProgress::NetworkBackpressured
-                || access_point
-                    .publish_pending_rx(physical_tx, access_point_network)
-                    .map_err(Esp32s31StaApRxServiceError::AccessPoint)?
-                    == DatapathRxProgress::NetworkBackpressured
-            {
-                return Ok(DatapathRxProgress::NetworkBackpressured);
-            }
+                if !fused.has_protocol_budget() {
+                    if fused.dma_service_required() {
+                        let progress = self
+                            .dma
+                            .service(hardware)
+                            .await
+                            .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                        fused.observe_dma(progress);
+                    }
+                    return Ok(fused.finish(self.protocol.queued_frames() != 0));
+                }
 
-            for _ in 0..ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES {
+                if self.protocol.queued_frames() == 0 {
+                    if fused.dma_service_required() {
+                        let progress = self
+                            .dma
+                            .service(hardware)
+                            .await
+                            .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                        fused.observe_dma(progress);
+                        if self.protocol.queued_frames() != 0 {
+                            continue;
+                        }
+                    }
+                    return Ok(fused.finish(false));
+                }
+
                 let turn = self
                     .protocol
                     .service_next(
@@ -521,7 +556,7 @@ where
                     .await
                     .map_err(Esp32s31StaApRxServiceError::AccessPoint)?;
                 match turn {
-                    Esp32s31StaApRxTurn::Idle => return Ok(dma_progress),
+                    Esp32s31StaApRxTurn::Idle => continue,
                     Esp32s31StaApRxTurn::Station(dispatch) => {
                         dispatch.map_err(Esp32s31StaApRxServiceError::Station)?;
                         self.routes.station = self.routes.station.saturating_add(1);
@@ -529,19 +564,26 @@ where
                     Esp32s31StaApRxTurn::AccessPoint => {
                         self.routes.access_point = self.routes.access_point.saturating_add(1);
                     }
-                    Esp32s31StaApRxTurn::DeferredAccessPoint => return Ok(dma_progress),
+                    Esp32s31StaApRxTurn::DeferredAccessPoint => {
+                        if fused.dma_service_required() {
+                            let progress = self
+                                .dma
+                                .service(hardware)
+                                .await
+                                .map_err(Esp32s31StaApRxServiceError::Dma)?;
+                            fused.observe_dma(progress);
+                        }
+                        return Ok(fused
+                            .dma_progress()
+                            .expect("paired active-TX turn services one DMA frontier"));
+                    }
                     Esp32s31StaApRxTurn::Rejected(classification) => {
                         self.routes.record_rejected(classification);
                     }
                 }
                 self.serviced_frames = self.serviced_frames.saturating_add(1);
+                fused.observe_protocol(1, false);
             }
-
-            Ok(if self.protocol.queued_frames() == 0 {
-                dma_progress
-            } else {
-                DatapathRxProgress::ProbePending
-            })
         }
     }
 
@@ -553,5 +595,9 @@ where
 
     fn serviced_frames(&self) -> u64 {
         self.serviced_frames
+    }
+
+    fn work_counters(&self) -> DatapathRxWorkCounters {
+        self.dma.work_counters()
     }
 }

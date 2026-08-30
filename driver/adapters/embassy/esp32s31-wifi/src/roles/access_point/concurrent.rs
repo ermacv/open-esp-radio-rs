@@ -1206,7 +1206,7 @@ where
 
     fn publish_pending_rx(
         &mut self,
-        _physical_tx: &mut DatapathPairedPhysicalTx<
+        physical_tx: &mut DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
             crate::datapath::tx::resources::AggregateTxResources<
                 'ampdu,
@@ -1233,6 +1233,53 @@ where
                 )
             })?;
             let Some(record) = record else {
+                let now_micros = Instant::now().as_micros();
+                let reorder_work_due = self.protocol.active().map_or_else(
+                    || {
+                        self.protocol
+                            .parked_state()
+                            .expect("paired AP role is active or parked")
+                            .processor
+                            .rx_reorder_work_due(now_micros)
+                    },
+                    |active| active.processor.rx_reorder_work_due(now_micros),
+                );
+                if !reorder_work_due {
+                    break;
+                }
+
+                // A retained release or an expired gap has no new MAC IRQ
+                // edge. Reacquire the AP protocol owner only at an available
+                // physical boundary, service one ordered release, then return
+                // the ordinary-TX resources before publishing its network
+                // batch. If station TX currently owns the hardware, the exact
+                // software work remains pending for its terminal edge.
+                if physical_tx.lent_to().is_some() {
+                    return Ok(DatapathRxProgress::ProtocolBlockedByTx);
+                }
+                let activated_for_reorder = self.protocol.is_parked();
+                if activated_for_reorder {
+                    self.activate_tx(physical_tx)
+                        .map_err(Esp32s31StaApAccessPointPairedRxError::Ownership)?;
+                }
+                let serviced = self
+                    .protocol
+                    .active_mut()
+                    .expect("AP reorder maintenance owns the physical TX boundary")
+                    .processor
+                    .service_rx_reorder_expiry(now_micros)
+                    .map_err(|error| {
+                        Esp32s31StaApAccessPointPairedRxError::Role(
+                            Esp32s31StaApAccessPointRxError::Control(error),
+                        )
+                    })?;
+                if activated_for_reorder {
+                    self.park_tx(physical_tx)
+                        .map_err(Esp32s31StaApAccessPointPairedRxError::Ownership)?;
+                }
+                if serviced {
+                    continue;
+                }
                 break;
             };
             let frame = record.frame;
@@ -1353,6 +1400,33 @@ where
         >,
         Self::Error,
     > {
+        let frame = if self.protocol.is_parked() {
+            let parked = self
+                .protocol
+                .parked_state_mut()
+                .expect("parked AP RX retains its role-local protocol owner");
+            match parked
+                .processor
+                .service_routed_rx_while_parked(
+                    frame,
+                    Instant::now().as_micros(),
+                    &mut self.publish_shared_rx,
+                    #[cfg(feature = "diagnostics")]
+                    self.delivery_observer,
+                )
+                .map_err(|error| {
+                    Esp32s31StaApAccessPointPairedRxError::Role(
+                        Esp32s31StaApAccessPointRxError::Control(error),
+                    )
+                })? {
+                crate::roles::concurrent::Esp32s31RoutedRxDisposition::Processed => {
+                    return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Processed);
+                }
+                crate::roles::concurrent::Esp32s31RoutedRxDisposition::Deferred(frame) => frame,
+            }
+        } else {
+            frame
+        };
         if self.protocol.is_parked() {
             self.activate_tx(physical_tx)
                 .map_err(Esp32s31StaApAccessPointPairedRxError::Ownership)?;
@@ -1434,15 +1508,20 @@ where
     }
 
     fn has_pending_rx(&self) -> bool {
+        let now_micros = Instant::now().as_micros();
         self.protocol.active().map_or_else(
             || {
-                self.protocol
+                let processor = &self
+                    .protocol
                     .parked_state()
                     .expect("paired AP role is active or parked")
-                    .processor
-                    .rx_batch_pending()
+                    .processor;
+                processor.rx_batch_pending() || processor.rx_reorder_work_due(now_micros)
             },
-            |active| active.processor.rx_batch_pending(),
+            |active| {
+                active.processor.rx_batch_pending()
+                    || active.processor.rx_reorder_work_due(now_micros)
+            },
         )
     }
 

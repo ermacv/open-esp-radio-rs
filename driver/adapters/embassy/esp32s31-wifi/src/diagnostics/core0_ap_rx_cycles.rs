@@ -20,6 +20,20 @@ pub struct Core0ApRxCycleSnapshot {
     pub publication: u32,
     pub activity_tail: u32,
     pub telemetry: u32,
+    pub in_place_eligible: u32,
+    pub in_place_published: u32,
+    pub deferred_published: u32,
+    pub reorder_buffered: u32,
+    pub turn_calls: u32,
+    pub turn_frames: u32,
+    pub turn_initial_batch: u32,
+    pub turn_initial_reorder: u32,
+    pub turn_mailbox_blocked: u32,
+    pub turn_tx_blocked: u32,
+    pub turn_batch_pending: u32,
+    pub turn_reorder_pending: u32,
+    pub turn_drained: u32,
+    pub turn_budget_exhausted: u32,
 }
 
 impl Core0ApRxCycleSnapshot {
@@ -41,8 +55,52 @@ impl Core0ApRxCycleSnapshot {
             publication: self.publication.wrapping_sub(earlier.publication),
             activity_tail: self.activity_tail.wrapping_sub(earlier.activity_tail),
             telemetry: self.telemetry.wrapping_sub(earlier.telemetry),
+            in_place_eligible: self
+                .in_place_eligible
+                .wrapping_sub(earlier.in_place_eligible),
+            in_place_published: self
+                .in_place_published
+                .wrapping_sub(earlier.in_place_published),
+            deferred_published: self
+                .deferred_published
+                .wrapping_sub(earlier.deferred_published),
+            reorder_buffered: self.reorder_buffered.wrapping_sub(earlier.reorder_buffered),
+            turn_calls: self.turn_calls.wrapping_sub(earlier.turn_calls),
+            turn_frames: self.turn_frames.wrapping_sub(earlier.turn_frames),
+            turn_initial_batch: self
+                .turn_initial_batch
+                .wrapping_sub(earlier.turn_initial_batch),
+            turn_initial_reorder: self
+                .turn_initial_reorder
+                .wrapping_sub(earlier.turn_initial_reorder),
+            turn_mailbox_blocked: self
+                .turn_mailbox_blocked
+                .wrapping_sub(earlier.turn_mailbox_blocked),
+            turn_tx_blocked: self.turn_tx_blocked.wrapping_sub(earlier.turn_tx_blocked),
+            turn_batch_pending: self
+                .turn_batch_pending
+                .wrapping_sub(earlier.turn_batch_pending),
+            turn_reorder_pending: self
+                .turn_reorder_pending
+                .wrapping_sub(earlier.turn_reorder_pending),
+            turn_drained: self.turn_drained.wrapping_sub(earlier.turn_drained),
+            turn_budget_exhausted: self
+                .turn_budget_exhausted
+                .wrapping_sub(earlier.turn_budget_exhausted),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Core0ApRxTurnExit {
+    InitialBatch,
+    InitialReorder,
+    MailboxBlocked,
+    TxBlocked,
+    BatchPending,
+    ReorderPending,
+    Drained,
+    BudgetExhausted,
 }
 
 pub struct Core0ApRxCycleCounters {
@@ -60,6 +118,20 @@ pub struct Core0ApRxCycleCounters {
     publication: AtomicU32,
     activity_tail: AtomicU32,
     telemetry: AtomicU32,
+    in_place_eligible: AtomicU32,
+    in_place_published: AtomicU32,
+    deferred_published: AtomicU32,
+    reorder_buffered: AtomicU32,
+    turn_calls: AtomicU32,
+    turn_frames: AtomicU32,
+    turn_initial_batch: AtomicU32,
+    turn_initial_reorder: AtomicU32,
+    turn_mailbox_blocked: AtomicU32,
+    turn_tx_blocked: AtomicU32,
+    turn_batch_pending: AtomicU32,
+    turn_reorder_pending: AtomicU32,
+    turn_drained: AtomicU32,
+    turn_budget_exhausted: AtomicU32,
 }
 
 impl Core0ApRxCycleCounters {
@@ -79,7 +151,55 @@ impl Core0ApRxCycleCounters {
             publication: AtomicU32::new(0),
             activity_tail: AtomicU32::new(0),
             telemetry: AtomicU32::new(0),
+            in_place_eligible: AtomicU32::new(0),
+            in_place_published: AtomicU32::new(0),
+            deferred_published: AtomicU32::new(0),
+            reorder_buffered: AtomicU32::new(0),
+            turn_calls: AtomicU32::new(0),
+            turn_frames: AtomicU32::new(0),
+            turn_initial_batch: AtomicU32::new(0),
+            turn_initial_reorder: AtomicU32::new(0),
+            turn_mailbox_blocked: AtomicU32::new(0),
+            turn_tx_blocked: AtomicU32::new(0),
+            turn_batch_pending: AtomicU32::new(0),
+            turn_reorder_pending: AtomicU32::new(0),
+            turn_drained: AtomicU32::new(0),
+            turn_budget_exhausted: AtomicU32::new(0),
         }
+    }
+
+    pub(crate) fn record_ingress_path(
+        &self,
+        in_place_eligible: bool,
+        in_place_published: bool,
+        deferred_published: bool,
+        reorder_buffered: bool,
+    ) {
+        self.in_place_eligible
+            .fetch_add(u32::from(in_place_eligible), Ordering::Relaxed);
+        self.in_place_published
+            .fetch_add(u32::from(in_place_published), Ordering::Relaxed);
+        self.deferred_published
+            .fetch_add(u32::from(deferred_published), Ordering::Relaxed);
+        self.reorder_buffered
+            .fetch_add(u32::from(reorder_buffered), Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_turn(&self, frames: usize, exit: Core0ApRxTurnExit) {
+        self.turn_calls.fetch_add(1, Ordering::Relaxed);
+        self.turn_frames
+            .fetch_add(u32::try_from(frames).unwrap_or(u32::MAX), Ordering::Relaxed);
+        let counter = match exit {
+            Core0ApRxTurnExit::InitialBatch => &self.turn_initial_batch,
+            Core0ApRxTurnExit::InitialReorder => &self.turn_initial_reorder,
+            Core0ApRxTurnExit::MailboxBlocked => &self.turn_mailbox_blocked,
+            Core0ApRxTurnExit::TxBlocked => &self.turn_tx_blocked,
+            Core0ApRxTurnExit::BatchPending => &self.turn_batch_pending,
+            Core0ApRxTurnExit::ReorderPending => &self.turn_reorder_pending,
+            Core0ApRxTurnExit::Drained => &self.turn_drained,
+            Core0ApRxTurnExit::BudgetExhausted => &self.turn_budget_exhausted,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
     }
 
     fn record(&self, profile: Core0ApRxCycleProfile, ended: u32) {
@@ -129,6 +249,20 @@ impl Core0ApRxCycleCounters {
             publication: self.publication.load(Ordering::Relaxed),
             activity_tail: self.activity_tail.load(Ordering::Relaxed),
             telemetry: self.telemetry.load(Ordering::Relaxed),
+            in_place_eligible: self.in_place_eligible.load(Ordering::Relaxed),
+            in_place_published: self.in_place_published.load(Ordering::Relaxed),
+            deferred_published: self.deferred_published.load(Ordering::Relaxed),
+            reorder_buffered: self.reorder_buffered.load(Ordering::Relaxed),
+            turn_calls: self.turn_calls.load(Ordering::Relaxed),
+            turn_frames: self.turn_frames.load(Ordering::Relaxed),
+            turn_initial_batch: self.turn_initial_batch.load(Ordering::Relaxed),
+            turn_initial_reorder: self.turn_initial_reorder.load(Ordering::Relaxed),
+            turn_mailbox_blocked: self.turn_mailbox_blocked.load(Ordering::Relaxed),
+            turn_tx_blocked: self.turn_tx_blocked.load(Ordering::Relaxed),
+            turn_batch_pending: self.turn_batch_pending.load(Ordering::Relaxed),
+            turn_reorder_pending: self.turn_reorder_pending.load(Ordering::Relaxed),
+            turn_drained: self.turn_drained.load(Ordering::Relaxed),
+            turn_budget_exhausted: self.turn_budget_exhausted.load(Ordering::Relaxed),
         }
     }
 }

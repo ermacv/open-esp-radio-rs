@@ -293,6 +293,50 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         Ok(progress)
     }
 
+    /// Consume only the common in-order current-buffer transition.
+    ///
+    /// `Ok(None)` is strictly non-mutating and leaves the caller's staged
+    /// owner available to the complete reorder path. A newly activated AP BA
+    /// bank also falls back until the first physical A-MPDU has performed its
+    /// vendor-equivalent hardware/software frontier synchronization.
+    pub(super) fn try_ingest_immediate(
+        &mut self,
+        key: RxBlockAckMpduKey,
+        now_micros: u64,
+    ) -> Result<Option<Esp32s31AccessPointRxReorderProgress>, Esp32s31AccessPointRxReorderError>
+    {
+        let Some(bank) = self
+            .banks
+            .find(MacInterface::AccessPoint, key.peer, key.tid)
+        else {
+            return Ok(Some(Esp32s31AccessPointRxReorderProgress {
+                dispatched: 1,
+                ..Default::default()
+            }));
+        };
+        if self.pending_hardware_window_reset[bank] {
+            return Ok(None);
+        }
+        let immediate = RxAmpduMpdu {
+            sequence: key.sequence,
+            slot: RX_REORDER_CURRENT_SLOT as u8,
+        };
+        let admitted = self
+            .banks
+            .state_mut(bank)
+            .expect("one bank identity owns one reorder state")
+            .try_ingest_immediate(immediate)?;
+        let Some(_) = admitted else {
+            return Ok(None);
+        };
+        self.update_deadline(bank, now_micros);
+        Ok(Some(Esp32s31AccessPointRxReorderProgress {
+            active: true,
+            dispatched: 1,
+            ..Default::default()
+        }))
+    }
+
     /// Release at most one due gap per finite DATAPATH turn.
     pub(super) fn expire_due(
         &mut self,
@@ -335,6 +379,16 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
 
     pub(super) const fn has_pending_release(&self) -> bool {
         self.pending_released_count != 0
+    }
+
+    /// Ordered software work visible to the outer RX scheduler without a new
+    /// hardware completion. A released frame is ready immediately; a retained
+    /// gap becomes ready at its absolute age deadline.
+    pub(super) fn work_due(&self, now_micros: u64) -> bool {
+        self.has_pending_release()
+            || self
+                .next_deadline()
+                .is_some_and(|deadline| deadline <= now_micros)
     }
 
     pub(super) fn next_deadline(&self) -> Option<u64> {
@@ -587,6 +641,10 @@ mod tests {
         assert_eq!(released, [10]);
         assert!(reorder.has_pending_release());
         assert!(
+            reorder.work_due(1_001),
+            "an older released owner must be scheduler-visible before a newer MPDU"
+        );
+        assert!(
             reorder.retained.iter().all(Option::is_none),
             "the pending queue must own the released backing, not a slot alias"
         );
@@ -594,6 +652,7 @@ mod tests {
         assert!(reorder.dispatch_pending(|segment| released.push(segment.descriptor_address)));
         assert_eq!(released, [10, 11]);
         assert!(!reorder.has_pending_release());
+        assert!(!reorder.work_due(1_001));
         assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
         assert_eq!(reorder.next_deadline(), None);
     }
@@ -629,6 +688,36 @@ mod tests {
         assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
         assert!(!reorder.has_pending_release());
         assert_eq!(reorder.next_deadline(), None);
+    }
+
+    #[test]
+    fn direct_ingest_is_non_mutating_until_initial_resync_and_on_a_gap() {
+        let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();
+        reorder.start(agreement(0, PEER_A, 10), |_| {}).unwrap();
+        let key = |sequence| RxBlockAckMpduKey {
+            peer: PEER_A,
+            tid: 6,
+            sequence,
+            retry: false,
+        };
+
+        assert_eq!(reorder.try_ingest_immediate(key(10), 1_000), Ok(None));
+        assert_eq!(reorder.banks.state(0).unwrap().next_sequence(), 10);
+
+        // The complete ingress path owns the one-time baseband resync. Once
+        // that edge is complete, direct ingress may advance only an exact
+        // in-order frontier.
+        reorder.pending_hardware_window_reset[0] = false;
+        let progress = reorder
+            .try_ingest_immediate(key(10), 1_001)
+            .unwrap()
+            .expect("the exact frontier is admitted");
+        assert!(progress.active);
+        assert_eq!(progress.dispatched, 1);
+        assert_eq!(reorder.banks.state(0).unwrap().next_sequence(), 11);
+
+        assert_eq!(reorder.try_ingest_immediate(key(12), 1_002), Ok(None));
+        assert_eq!(reorder.banks.state(0).unwrap().next_sequence(), 11);
     }
 
     #[test]

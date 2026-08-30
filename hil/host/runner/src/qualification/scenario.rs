@@ -317,11 +317,12 @@ pub enum Workload {
         security: WifiAccessPointSecurity,
         traffic: AccessPointTraffic,
     },
-    /// One equal-offer UDP bidirectional session on each endpoint of a live
-    /// same-channel STA+AP epoch.
+    /// One equal-offer UDP session in the selected direction on each endpoint
+    /// of a live same-channel STA+AP epoch.
     StationAccessPoint {
         timeout_seconds: u16,
         duration_seconds: u16,
+        direction: Direction,
         rate_bps_per_flow: u64,
         minimum_bps_per_flow: u64,
         maximum_fairness_skew_percent: u8,
@@ -332,6 +333,25 @@ pub enum Workload {
     StationAccessPointReconnect {
         timeout_seconds: u16,
     },
+}
+
+fn is_rx_only_udp_workload(workload: &Workload) -> bool {
+    matches!(
+        workload,
+        Workload::Udp {
+            direction: Direction::Rx,
+            ..
+        } | Workload::AccessPoint {
+            traffic: AccessPointTraffic::Udp {
+                direction: Direction::Rx,
+                ..
+            },
+            ..
+        } | Workload::StationAccessPoint {
+            direction: Direction::Rx,
+            ..
+        }
+    )
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -520,13 +540,7 @@ impl Scenario {
             && (!matches!(
                 self.image,
                 ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
-            ) || !matches!(
-                self.workload,
-                Workload::Udp {
-                    direction: Direction::Rx,
-                    ..
-                }
-            ))
+            ) || !is_rx_only_udp_workload(&self.workload))
         {
             return Err(format!(
                 "{}: direct-immediate-diagnostic RX dispatch is restricted to a Core0 UDP RX diagnostic",
@@ -538,13 +552,7 @@ impl Scenario {
             && (!matches!(
                 self.image,
                 ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
-            ) || !matches!(
-                self.workload,
-                Workload::Udp {
-                    direction: Direction::Rx,
-                    ..
-                }
-            ))
+            ) || !is_rx_only_udp_workload(&self.workload))
         {
             return Err(format!(
                 "{}: selectable RX continuation is restricted to a Core0 UDP RX diagnostic",
@@ -622,6 +630,9 @@ impl Scenario {
                     direction: Direction::Rx | Direction::Bidirectional,
                     ..
                 },
+                ..
+            } | Workload::StationAccessPoint {
+                direction: Direction::Rx | Direction::Bidirectional,
                 ..
             }
         );
@@ -991,6 +1002,7 @@ impl Scenario {
             Workload::StationAccessPoint {
                 timeout_seconds,
                 duration_seconds,
+                direction: _,
                 rate_bps_per_flow,
                 minimum_bps_per_flow,
                 maximum_fairness_skew_percent,
@@ -998,6 +1010,19 @@ impl Scenario {
             } => {
                 bounded(*timeout_seconds, 30, 180, self, "timeout_seconds")?;
                 bounded(*duration_seconds, 5, 120, self, "duration_seconds")?;
+                if matches!(
+                    self.image,
+                    ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
+                ) && *duration_seconds > CORE0_RX_CYCLE_MAX_DURATION_SECONDS
+                {
+                    return Err(format!(
+                        "{}: Core0 cycle diagnostic duration {} exceeds the u32-safe {} second interval",
+                        self.source.display(),
+                        duration_seconds,
+                        CORE0_RX_CYCLE_MAX_DURATION_SECONDS,
+                    )
+                    .into());
+                }
                 bounded(*payload_bytes, 64, 1472, self, "payload_bytes")?;
                 bounded(
                     *maximum_fairness_skew_percent,
@@ -1021,15 +1046,14 @@ impl Scenario {
                 bounded(*timeout_seconds, 30, 180, self, "timeout_seconds")?;
             }
         }
+        if !self.image.requires_driver_observation() && self.criteria.require_no_beacon_loss {
+            return self
+                .criteria_error("this image cannot use the driver-observed beacon-loss verdict");
+        }
         if self.image == ImageClass::Performance {
             if self.criteria.exact_delivery {
                 return self.criteria_error(
                     "performance images cannot claim exact delivery without driver observation",
-                );
-            }
-            if self.criteria.require_no_beacon_loss {
-                return self.criteria_error(
-                    "performance images cannot use the driver-observed beacon-loss verdict",
                 );
             }
             if !matches!(
@@ -1867,6 +1891,45 @@ mod tests {
         ));
         assert_eq!(icmp.criteria.maximum_lost, Some(0));
         assert_eq!(icmp.criteria.maximum_p95_ms, Some(20));
+    }
+
+    #[test]
+    fn ap_rx_core0_control_uses_the_production_dispatch_and_continuation_policy() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog
+            .get("access-point-single-client-ceiling-rx-core0-coarse")
+            .unwrap();
+
+        assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
+        assert_eq!(
+            scenario.rx_dispatch,
+            WifiRxDispatchPolicy::DirectImmediateDiagnostic
+        );
+        assert_eq!(
+            scenario.rx_continuation,
+            WifiRxContinuationPolicy::AdaptiveProbeDiagnostic
+        );
+        assert!(is_rx_only_udp_workload(&scenario.workload));
+
+        let mut bidirectional = scenario.clone();
+        let Workload::AccessPoint {
+            traffic: AccessPointTraffic::Udp { direction, .. },
+            ..
+        } = &mut bidirectional.workload
+        else {
+            panic!("AP Core0 control must remain a UDP workload")
+        };
+        *direction = Direction::Bidirectional;
+        assert!(bidirectional.validate().is_err());
+
+        let cycles = catalog
+            .get("access-point-single-client-ceiling-rx-core0-cycles")
+            .unwrap();
+        assert_eq!(cycles.image, ImageClass::DiagnosticCore0RxCycles);
+        assert_eq!(cycles.rx_dispatch, scenario.rx_dispatch);
+        assert_eq!(cycles.rx_continuation, scenario.rx_continuation);
+        assert_eq!(cycles.workload, scenario.workload);
     }
 
     #[test]

@@ -19,7 +19,7 @@ use open_esp_radio_embassy_net::{
 
 use super::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
-    DatapathServices, DatapathStopProgress, WifiTxProgress, WifiTxWake,
+    DatapathRxWorkCounters, DatapathServices, DatapathStopProgress, WifiTxProgress, WifiTxWake,
     network::{DatapathNetworkRx, DatapathNetworkRxSet},
 };
 
@@ -459,6 +459,13 @@ pub trait DatapathPairedRxService<H, PhysicalTx, FirstRole, SecondRole> {
     fn serviced_frames(&self) -> u64 {
         0
     }
+
+    /// Monotonic physical units and bytes completed by the shared RX DMA
+    /// producer.
+    ///
+    /// This has no default deliberately: a paired physical RX owner must not
+    /// silently disable the role-neutral adaptive continuation policy.
+    fn work_counters(&self) -> DatapathRxWorkCounters;
 }
 
 /// Control/lifecycle arbiter for two roles sharing one hardware transaction.
@@ -838,6 +845,10 @@ where
 
     fn serviced_rx_frames(&self) -> u64 {
         self.rx.serviced_frames()
+    }
+
+    fn rx_work_counters(&self) -> DatapathRxWorkCounters {
+        self.rx.work_counters()
     }
 
     fn service_control<'a>(

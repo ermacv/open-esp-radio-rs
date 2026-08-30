@@ -14,6 +14,7 @@ minimum_mcs = 7
 kind = "station-access-point"
 timeout_seconds = 30
 duration_seconds = 15
+direction = "bidirectional"
 rate_bps_per_flow = 10000000
 minimum_bps_per_flow = 5000000
 maximum_fairness_skew_percent = 50

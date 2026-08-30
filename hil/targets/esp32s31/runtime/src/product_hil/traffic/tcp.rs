@@ -90,11 +90,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
 
     loop {
         let session = sessions.receive().await;
-        wait_session_link_requirements(
-            session.config.link_requirements,
-            config.network_interface,
-        )
-        .await;
+        wait_session_link_requirements(session.config.link_requirements, config.network_interface)
+            .await;
         publish_event_reliably(
             session.session_id,
             0,

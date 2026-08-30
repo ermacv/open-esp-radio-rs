@@ -3,9 +3,9 @@
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_embassy_net::TX_PERFORMANCE;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
@@ -18,9 +18,8 @@ use crate::{
     product_hil::traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         OpenRadioBidirectionalResult, aggregate_tx_evidence,
-        complete_open_radio_bidirectional_direction,
-        log_open_radio_ampdu_interval, log_open_radio_task_poll_interval,
-        wait_session_link_requirements,
+        complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
+        log_open_radio_task_poll_interval, wait_session_link_requirements,
     },
     product_hil::{
         OPEN_RADIO_TASK_POLL_TELEMETRY, QualificationRequester, TASK_POLLS, qualification_sample,
@@ -124,11 +123,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             Some(session) => session,
             None => config.session_source.sessions.receive().await,
         };
-        wait_session_link_requirements(
-            session.config.link_requirements,
-            config.network_interface,
-        )
-        .await;
+        wait_session_link_requirements(session.config.link_requirements, config.network_interface)
+            .await;
         publish_event_reliably(
             session.session_id,
             0,

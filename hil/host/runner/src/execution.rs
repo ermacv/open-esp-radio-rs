@@ -431,6 +431,7 @@ fn execute_workload_inner(
         Workload::StationAccessPoint {
             timeout_seconds,
             duration_seconds,
+            direction,
             rate_bps_per_flow,
             minimum_bps_per_flow,
             maximum_fairness_skew_percent,
@@ -439,10 +440,15 @@ fn execute_workload_inner(
             qualification::station_access_point::Config {
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 duration: std::time::Duration::from_secs(u64::from(*duration_seconds)),
+                direction: *direction,
                 rate_bps_per_flow: *rate_bps_per_flow,
                 minimum_bps_per_flow: *minimum_bps_per_flow,
                 maximum_fairness_skew_percent: *maximum_fairness_skew_percent,
                 payload_bytes: usize::from(*payload_bytes),
+                require_driver_observation: selected.image.requires_driver_observation(),
+                capture_independent_laptop_monitor_rx: selected
+                    .evidence
+                    .independent_laptop_monitor_rx,
             },
             output,
             lab,

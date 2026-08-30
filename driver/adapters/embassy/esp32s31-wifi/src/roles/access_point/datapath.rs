@@ -6,6 +6,7 @@
 //! Embassy DATAPATH binding for one active AP role.
 
 use super::*;
+use crate::datapath::rx::turn::FusedRxTurn;
 
 // Match the stable standalone-STA and same-channel paired-owner bound. An
 // active aggregate must expose its TX completion after a small protocol turn,
@@ -13,55 +14,11 @@ use super::*;
 // the staged queue remains non-empty.
 const AP_ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES: usize = 4;
 
-const fn ap_rx_protocol_turn_limit(
-    context: DatapathRxServiceContext,
-    receive_block_ack_window: usize,
-) -> usize {
-    // Bound the oldest descriptor-backed lease to half of one legal peer BA
-    // burst before revisiting DMA. A complete BA window is still available to
-    // hardware while this protocol half-turn runs. DATAPATH fairness may
-    // shorten it further when TX is waiting.
-    let half_window = receive_block_ack_window.div_ceil(2);
-    let role_limit = if half_window == 0 { 1 } else { half_window };
-    match context.maximum_protocol_frames {
-        Some(0) => 1,
-        Some(limit) if limit < role_limit => limit,
-        _ => role_limit,
-    }
-}
-
 #[derive(Clone, Copy)]
 #[cfg(feature = "diagnostics")]
 pub(super) struct NetworkTxPending {
     started_micros: u64,
     attempts_before: u32,
-}
-
-struct BoundedRxTurn {
-    limit: usize,
-    observation_passes: usize,
-    serviced_staged_frames: usize,
-}
-
-impl BoundedRxTurn {
-    const fn new(limit: usize) -> Self {
-        Self {
-            limit,
-            observation_passes: 0,
-            serviced_staged_frames: 0,
-        }
-    }
-
-    fn observe(&mut self, serviced_staged_frames: usize) {
-        self.observation_passes = self.observation_passes.saturating_add(1);
-        self.serviced_staged_frames = self
-            .serviced_staged_frames
-            .saturating_add(serviced_staged_frames);
-    }
-
-    fn has_budget(&self) -> bool {
-        self.observation_passes < self.limit && self.serviced_staged_frames < self.limit
-    }
 }
 
 #[derive(Default)]
@@ -454,42 +411,60 @@ where
     ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
         async move {
             let network_rx = network_rx.primary_mut();
-            let mut turn = BoundedRxTurn::new(AP_ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES);
-            let mut dma_progress = None;
+            let mut turn = FusedRxTurn::new(AP_ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES);
             loop {
-                if self.publish_pending_rx_batch(network_rx)?
-                    == DatapathRxProgress::NetworkBackpressured
+                if self.control.rx_batch_pending()
+                    && self.publish_pending_rx_batch(network_rx)?
+                        == DatapathRxProgress::NetworkBackpressured
                 {
-                    if dma_progress.is_none() {
-                        let _ = self
+                    if turn.dma_service_required() {
+                        let progress = self
                             .control
                             .service_rx_dma(self.hardware)
                             .await
                             .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(progress);
                     }
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
-                if !turn.has_budget() {
-                    let refill = match dma_progress {
-                        Some(progress) => progress,
-                        None => self
+                if !turn.has_protocol_budget() {
+                    if turn.dma_service_required() {
+                        let progress = self
                             .control
                             .service_rx_dma(self.hardware)
                             .await
-                            .map_err(Esp32s31AccessPointDatapathError::Control)?,
-                    };
-                    return Ok(ap_active_rx_turn_completion(
-                        refill,
-                        self.control.queued_rx_frames(),
-                    ));
+                            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(progress);
+                    }
+                    return Ok(turn.finish(self.control.queued_rx_frames() != 0));
+                }
+
+                // Match the station fused turn: do not enter the AP protocol
+                // owner merely to prove that its queues are empty. AP has
+                // additional action/reorder readiness, so use the complete
+                // role predicate rather than inspecting only the staged SPSC.
+                if !self.control.rx_work_due(Instant::now().as_micros()) {
+                    if turn.dma_service_required() {
+                        let progress = self
+                            .control
+                            .service_rx_dma(self.hardware)
+                            .await
+                            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(progress);
+                        if self.control.rx_work_due(Instant::now().as_micros()) {
+                            continue;
+                        }
+                    }
+                    return Ok(turn.finish(false));
                 }
 
                 let serviced_before = self.control.serviced_rx_frames();
                 let progress = self
                     .control
-                    .service_rx_protocol(
+                    .service_rx_protocol_bounded(
                         self.hardware,
                         AccessPointRxTxDomain::ActiveTransaction,
+                        turn.remaining_protocol_frames(),
                         &mut self.security_material,
                         Instant::now().as_micros(),
                         &mut self.publish_shared_rx,
@@ -503,28 +478,30 @@ where
                         .saturating_sub(serviced_before),
                 )
                 .unwrap_or(usize::MAX);
-                turn.observe(serviced);
+                turn.observe_protocol(serviced, false);
 
-                if self.publish_pending_rx_batch(network_rx)?
-                    == DatapathRxProgress::NetworkBackpressured
+                if self.control.rx_batch_pending()
+                    && self.publish_pending_rx_batch(network_rx)?
+                        == DatapathRxProgress::NetworkBackpressured
                 {
-                    if dma_progress.is_none() {
-                        let _ = self
+                    if turn.dma_service_required() {
+                        let dma_progress = self
                             .control
                             .service_rx_dma(self.hardware)
                             .await
                             .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(dma_progress);
                     }
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
                 if serviced == 0 {
-                    if dma_progress.is_none() {
-                        dma_progress = Some(
-                            self.control
-                                .service_rx_dma(self.hardware)
-                                .await
-                                .map_err(Esp32s31AccessPointDatapathError::Control)?,
-                        );
+                    if turn.dma_service_required() {
+                        let dma_progress = self
+                            .control
+                            .service_rx_dma(self.hardware)
+                            .await
+                            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(dma_progress);
                         if progress == DatapathRxProgress::Drained {
                             // The pre-DMA protocol queue was empty. Consume
                             // the newly staged protected data with the
@@ -532,11 +509,13 @@ where
                             continue;
                         }
                     }
-                    let refill = dma_progress.expect("active AP RX refilled exactly once");
+                    let refill = turn
+                        .dma_progress()
+                        .expect("active AP RX refilled exactly once");
                     return Ok(if progress == DatapathRxProgress::ProtocolBlockedByTx {
                         ap_rx_progress_while_protocol_tx_blocked(refill)
                     } else {
-                        ap_active_rx_turn_completion(refill, self.control.queued_rx_frames())
+                        turn.finish(self.control.queued_rx_frames() != 0)
                     });
                 }
             }
@@ -550,26 +529,28 @@ where
     ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
         async move {
             let network_rx = network_rx.primary_mut();
-            let protocol_frames =
-                ap_rx_protocol_turn_limit(context, self.control.rx_block_ack_maximum_window());
-            let mut turn = BoundedRxTurn::new(protocol_frames);
-            let mut dma_progress = None;
+            // The idle protocol owner can consume the complete bounded
+            // retained-frame domain before yielding. BA width constrains the
+            // peer reorder window, not this software ownership capacity.
+            // DATAPATH still shortens the turn when network TX is waiting.
+            let mut turn = FusedRxTurn::from_context(context, C::MAXIMUM_RETAINED_FRAMES);
             loop {
-                let network_backpressured = self.publish_pending_rx_batch(network_rx)?
-                    == DatapathRxProgress::NetworkBackpressured;
-                if !turn.has_budget() {
-                    let refill = match dma_progress {
-                        Some(progress) => progress,
-                        None => self
+                let network_backpressured = self.control.rx_batch_pending()
+                    && self.publish_pending_rx_batch(network_rx)?
+                        == DatapathRxProgress::NetworkBackpressured;
+                if !turn.has_protocol_budget() {
+                    if turn.dma_service_required() {
+                        let dma_progress = self
                             .control
                             .service_rx_dma(self.hardware)
                             .await
-                            .map_err(Esp32s31AccessPointDatapathError::Control)?,
-                    };
+                            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(dma_progress);
+                    }
                     return Ok(if network_backpressured {
                         DatapathRxProgress::NetworkBackpressured
                     } else {
-                        ap_active_rx_turn_completion(refill, self.control.queued_rx_frames())
+                        turn.finish(self.control.queued_rx_frames() != 0)
                     });
                 }
                 if self
@@ -582,14 +563,39 @@ where
                         DatapathRxProgress::ProbePending
                     });
                 }
+
+                // `service_rx_protocol_bounded` owns AP-specific management,
+                // action, reorder and staged-frame state. Its readiness
+                // predicate covers all of those domains, allowing the common
+                // station-style fused turn to skip empty protocol entries
+                // without weakening AP correctness.
+                if !self.control.rx_work_due(Instant::now().as_micros()) {
+                    if turn.dma_service_required() {
+                        let dma_progress = self
+                            .control
+                            .service_rx_dma(self.hardware)
+                            .await
+                            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(dma_progress);
+                        if self.control.rx_work_due(Instant::now().as_micros()) {
+                            continue;
+                        }
+                    }
+                    return Ok(if network_backpressured {
+                        DatapathRxProgress::NetworkBackpressured
+                    } else {
+                        turn.finish(false)
+                    });
+                }
                 let serviced_before = self.control.serviced_rx_frames();
                 #[cfg(feature = "diagnostics")]
                 let service_started = Instant::now().as_micros();
                 let rx_progress = self
                     .control
-                    .service_rx_protocol(
+                    .service_rx_protocol_bounded(
                         self.hardware,
                         AccessPointRxTxDomain::IdleBoundary,
+                        turn.remaining_protocol_frames(),
                         &mut self.security_material,
                         Instant::now().as_micros(),
                         &mut self.publish_shared_rx,
@@ -603,7 +609,7 @@ where
                         .saturating_sub(serviced_before),
                 )
                 .unwrap_or(usize::MAX);
-                turn.observe(serviced);
+                turn.observe_protocol(serviced, false);
                 #[cfg(feature = "diagnostics")]
                 {
                     let service_elapsed =
@@ -622,24 +628,27 @@ where
                 }
 
                 if network_backpressured {
-                    if dma_progress.is_none() {
-                        let _ = self
+                    if turn.dma_service_required() {
+                        let dma_progress = self
                             .control
                             .service_rx_dma(self.hardware)
                             .await
                             .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(dma_progress);
                     }
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
-                if self.publish_pending_rx_batch(network_rx)?
-                    == DatapathRxProgress::NetworkBackpressured
+                if self.control.rx_batch_pending()
+                    && self.publish_pending_rx_batch(network_rx)?
+                        == DatapathRxProgress::NetworkBackpressured
                 {
-                    if dma_progress.is_none() {
-                        let _ = self
+                    if turn.dma_service_required() {
+                        let dma_progress = self
                             .control
                             .service_rx_dma(self.hardware)
                             .await
                             .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(dma_progress);
                     }
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
@@ -651,13 +660,13 @@ where
                     return Ok(rx_progress);
                 }
                 if serviced == 0 {
-                    if dma_progress.is_none() {
-                        dma_progress = Some(
-                            self.control
-                                .service_rx_dma(self.hardware)
-                                .await
-                                .map_err(Esp32s31AccessPointDatapathError::Control)?,
-                        );
+                    if turn.dma_service_required() {
+                        let dma_progress = self
+                            .control
+                            .service_rx_dma(self.hardware)
+                            .await
+                            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                        turn.observe_dma(dma_progress);
                         if rx_progress == DatapathRxProgress::Drained {
                             // Exactly the STA fused order: the old protocol
                             // queue was empty, DMA was serviced once, and the
@@ -666,11 +675,7 @@ where
                             continue;
                         }
                     }
-                    let refill = dma_progress.expect("idle AP RX refilled exactly once");
-                    return Ok(ap_active_rx_turn_completion(
-                        refill,
-                        self.control.queued_rx_frames(),
-                    ));
+                    return Ok(turn.finish(self.control.queued_rx_frames() != 0));
                 }
             }
         }
@@ -682,6 +687,10 @@ where
 
     fn serviced_rx_frames(&self) -> u64 {
         self.control.serviced_rx_frames()
+    }
+
+    fn rx_work_counters(&self) -> crate::datapath::DatapathRxWorkCounters {
+        self.control.rx_work_counters()
     }
 
     fn service_control<'a>(
@@ -961,14 +970,14 @@ mod tests {
     #[test]
     fn active_rx_quantum_keeps_a_staged_backlog_runnable_after_dma_refill() {
         assert_eq!(AP_ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES, 4);
-        assert_eq!(
-            ap_active_rx_turn_completion(DatapathRxProgress::StageCapacityBlocked, 1),
-            DatapathRxProgress::BudgetExhausted
-        );
-        assert_eq!(
-            ap_active_rx_turn_completion(DatapathRxProgress::StageCapacityBlocked, 0),
-            DatapathRxProgress::StageCapacityBlocked
-        );
+
+        let mut queued = FusedRxTurn::new(AP_ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES);
+        queued.observe_dma(DatapathRxProgress::StageCapacityBlocked);
+        assert_eq!(queued.finish(true), DatapathRxProgress::BudgetExhausted);
+
+        let mut idle = FusedRxTurn::new(AP_ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES);
+        idle.observe_dma(DatapathRxProgress::StageCapacityBlocked);
+        assert_eq!(idle.finish(false), DatapathRxProgress::StageCapacityBlocked);
     }
 
     #[derive(Default)]
@@ -986,51 +995,45 @@ mod tests {
 
     #[test]
     fn staged_dma_burst_does_not_spend_unprocessed_protocol_budget() {
-        let mut turn = BoundedRxTurn::new(32);
+        let mut turn = FusedRxTurn::new(32);
 
         // The producer may have staged all 32 DMA descriptors, but this turn
         // accounts only the one staged owner actually consumed by AP RX.
-        turn.observe(1);
+        turn.observe_protocol(1, false);
 
-        assert!(turn.has_budget());
+        assert!(turn.has_protocol_budget());
     }
 
     #[test]
     fn queued_tx_caps_ap_protocol_turn_at_datapath_frame_credit() {
         assert_eq!(
-            ap_rx_protocol_turn_limit(
+            FusedRxTurn::from_context(
                 DatapathRxServiceContext {
                     maximum_protocol_frames: None,
                 },
-                16,
-            ),
-            8
+                32,
+            )
+            .remaining_protocol_frames(),
+            32
         );
         assert_eq!(
-            ap_rx_protocol_turn_limit(
+            FusedRxTurn::from_context(
                 DatapathRxServiceContext {
-                    maximum_protocol_frames: Some(8),
+                    maximum_protocol_frames: Some(4),
                 },
-                16,
-            ),
-            8
+                32,
+            )
+            .remaining_protocol_frames(),
+            4
         );
         assert_eq!(
-            ap_rx_protocol_turn_limit(
+            FusedRxTurn::from_context(
                 DatapathRxServiceContext {
                     maximum_protocol_frames: Some(0),
                 },
-                16,
-            ),
-            1
-        );
-        assert_eq!(
-            ap_rx_protocol_turn_limit(
-                DatapathRxServiceContext {
-                    maximum_protocol_frames: None,
-                },
-                1,
-            ),
+                32,
+            )
+            .remaining_protocol_frames(),
             1
         );
     }
@@ -1062,24 +1065,24 @@ mod tests {
 
     #[test]
     fn bounded_rx_turn_yields_at_or_beyond_its_staged_frame_quota() {
-        let mut exact = BoundedRxTurn::new(4);
-        exact.observe(4);
-        assert!(!exact.has_budget());
+        let mut exact = FusedRxTurn::new(4);
+        exact.observe_protocol(4, false);
+        assert!(!exact.has_protocol_budget());
 
-        let mut overshoot = BoundedRxTurn::new(4);
-        overshoot.observe(5);
-        assert!(!overshoot.has_budget());
+        let mut overshoot = FusedRxTurn::new(4);
+        overshoot.observe_protocol(5, false);
+        assert!(!overshoot.has_protocol_budget());
     }
 
     #[test]
-    fn bounded_rx_turn_yields_after_probes_without_staged_frame_progress() {
-        let mut turn = BoundedRxTurn::new(2);
+    fn bounded_rx_turn_does_not_charge_empty_protocol_probes_as_frames() {
+        let mut turn = FusedRxTurn::new(2);
 
-        turn.observe(0);
-        assert!(turn.has_budget());
-        turn.observe(0);
+        turn.observe_protocol(0, false);
+        turn.observe_protocol(0, false);
 
-        assert!(!turn.has_budget());
+        assert!(turn.has_protocol_budget());
+        assert_eq!(turn.remaining_protocol_frames(), 2);
     }
 
     struct NetworkRx {

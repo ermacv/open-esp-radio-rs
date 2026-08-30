@@ -4,11 +4,7 @@
 //! image intentionally does not link that protocol, but it must not keep using
 //! the ROM printf backend after ESP-HAL has initialized the USB peripheral.
 
-use esp_hal::{
-    Blocking,
-    peripherals::USB_DEVICE,
-    usb::usb_serial_jtag::UsbSerialJtag,
-};
+use esp_hal::{Blocking, peripherals::USB_DEVICE, usb::usb_serial_jtag::UsbSerialJtag};
 
 pub(crate) struct BootSmokeConsole {
     usb: UsbSerialJtag<'static, Blocking>,

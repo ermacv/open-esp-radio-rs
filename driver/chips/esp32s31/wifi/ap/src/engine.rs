@@ -3,9 +3,9 @@
 use crate::{
     beacon::Esp32s31ApBeacon,
     rx::{
-        Esp32s31ApRxAdmission, Esp32s31ApRxAdmissionOperation, Esp32s31ApRxAdmissionRequest,
-        Esp32s31ApRxDuplicateOwner, Esp32s31ApRxError, Esp32s31ApRxPreparedCandidate,
-        Esp32s31ApRxPreparedReplay,
+        Esp32s31ApOrdinaryPairwiseRxRequest, Esp32s31ApRxAdmission, Esp32s31ApRxAdmissionOperation,
+        Esp32s31ApRxAdmissionRequest, Esp32s31ApRxDuplicateOwner, Esp32s31ApRxError,
+        Esp32s31ApRxPreparedCandidate, Esp32s31ApRxPreparedReplay,
     },
     security::{
         Esp32s31ApPairwiseBinding, Esp32s31ApPairwiseKeyStorage, Esp32s31ApSecurity,
@@ -39,8 +39,8 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_wifi_ap::{
     AccessPointService, ApAssociationCapabilities, ApBufferedGroupRelease,
     ApBufferedUnicastRelease, ApDownlinkDisposition, ApMlmeAction, ApPeerBinding, ApPeerClose,
-    ApPeerCloseKind, ApPeerPhase, ApPeerStatus, ApPowerSaveAction, ApServiceError, ApWpa2Error,
-    ApWpa2Progress, ApWpa2RetryProgress,
+    ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction,
+    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
@@ -199,6 +199,21 @@ impl Esp32s31ApAggregateBinding {
     pub const fn peer(self) -> [u8; 6] {
         self.peer.address()
     }
+}
+
+/// Generation-bound AP RX context cached across one transmitter burst.
+///
+/// The portable peer binding validates slot generation and address in O(1),
+/// while the pairwise binding independently validates the installed PTK
+/// generation. The public status revision invalidates authorization/QoS
+/// snapshots without putting a peer-table scan back on every data MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Esp32s31ApRxPeerBinding {
+    peer: ApPeerBinding,
+    pairwise: Option<Esp32s31ApPairwiseBinding>,
+    duplicate_owner: Esp32s31ApRxDuplicateOwner,
+    qos_supported: bool,
+    status_revision: u32,
 }
 
 pub struct Esp32s31ApEngineStop<'storage> {
@@ -366,6 +381,7 @@ pub struct Esp32s31ApEngine<'storage> {
     service: AccessPointService<'storage>,
     beacon: Esp32s31ApBeacon<'storage>,
     security: Esp32s31ApSecurity<'storage>,
+    rx_peer: Option<Esp32s31ApRxPeerBinding>,
     channel: WifiChannel,
     #[cfg(any(feature = "diagnostics", test))]
     observer: Esp32s31ApEngineObserver,
@@ -440,6 +456,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             service,
             beacon,
             security,
+            rx_peer: None,
             channel,
             #[cfg(any(feature = "diagnostics", test))]
             observer: Esp32s31ApEngineObserver::default(),
@@ -1299,24 +1316,17 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         request: Esp32s31ApRxAdmissionRequest,
     ) -> Esp32s31ApRxAdmission {
         let peer = request.peer();
-        let Some(status) = self
-            .service
-            .peer_status(peer)
-            .filter(|status| status.phase == ApPeerPhase::Authorized)
-        else {
-            return Esp32s31ApRxAdmission::unauthorized();
+        let rx_peer = match self.resolve_rx_peer(peer) {
+            Ok(bound) => bound,
+            Err(admission) => return admission,
         };
-        if matches!(request.lane(), CcmpReplayLane::Tid(_)) && !status.qos_supported {
+        if matches!(request.lane(), CcmpReplayLane::Tid(_)) && !rx_peer.qos_supported {
             return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::PeerQosMismatch);
         }
-        // Resolve the infallible fixed duplicate slot before WPA2 replay can
-        // commit its PN. A validated owner always has space; AID reuse changes
-        // the epoch and atomically replaces stale duplicate history.
-        let Some(mut duplicate_owner) =
-            Esp32s31ApRxDuplicateOwner::new(status.association_id, status.association_epoch)
-        else {
-            return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::KeyGenerationMismatch);
-        };
+        // The exact duplicate slot and association/key generations were
+        // captured with this control-plane revision. AID reuse invalidates the
+        // RX binding before another frame can inherit the old history.
+        let duplicate_owner = rx_peer.duplicate_owner;
         match request.operation() {
             Esp32s31ApRxAdmissionOperation::Ordinary => {
                 match (self.service.security_mode(), request.ccmp_header()) {
@@ -1329,21 +1339,16 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                                 Esp32s31ApRxError::PairwiseKeyId(header.key_id().value()),
                             );
                         }
-                        let binding = match self.security.bind_pairwise(peer, status.association_id)
-                        {
-                            Ok(binding) => binding,
-                            Err(error) => return rejected_rx_security(error),
+                        let Some(binding) = rx_peer.pairwise else {
+                            return Esp32s31ApRxAdmission::rejected(
+                                Esp32s31ApRxError::KeyGenerationMismatch,
+                            );
                         };
-                        duplicate_owner = duplicate_owner.with_key_generation(binding.generation());
-                        let candidate = match self.security.prepare_bound_pairwise_rx(
+                        match self.security.commit_bound_pairwise_rx_immediate(
                             binding,
                             request.lane(),
                             header.packet_number(),
                         ) {
-                            Ok(candidate) => candidate,
-                            Err(error) => return rejected_rx_security(error),
-                        };
-                        match self.security.commit_bound_pairwise_rx(candidate) {
                             Ok(()) => Esp32s31ApRxAdmission::authorized(duplicate_owner),
                             Err(error) => rejected_rx_security(error),
                         }
@@ -1368,11 +1373,11 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                         header.key_id().value(),
                     ));
                 }
-                let binding = match self.security.bind_pairwise(peer, status.association_id) {
-                    Ok(binding) => binding,
-                    Err(error) => return rejected_rx_security(error),
+                let Some(binding) = rx_peer.pairwise else {
+                    return Esp32s31ApRxAdmission::rejected(
+                        Esp32s31ApRxError::KeyGenerationMismatch,
+                    );
                 };
-                duplicate_owner = duplicate_owner.with_key_generation(binding.generation());
                 if matches!(
                     request.operation(),
                     Esp32s31ApRxAdmissionOperation::AuthorizeFragment
@@ -1405,11 +1410,11 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                         Esp32s31ApRxError::SecurityModeMismatch,
                     );
                 }
-                let binding = match self.security.bind_pairwise(peer, status.association_id) {
-                    Ok(binding) => binding,
-                    Err(error) => return rejected_rx_security(error),
+                let Some(_binding) = rx_peer.pairwise else {
+                    return Esp32s31ApRxAdmission::rejected(
+                        Esp32s31ApRxError::KeyGenerationMismatch,
+                    );
                 };
-                duplicate_owner = duplicate_owner.with_key_generation(binding.generation());
                 if duplicate_owner != prepared.owner {
                     return Esp32s31ApRxAdmission::rejected(
                         Esp32s31ApRxError::KeyGenerationMismatch,
@@ -1432,6 +1437,120 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 }
             }
         }
+    }
+
+    /// Admit the compact complete WPA2 pairwise request used by the saturated
+    /// AP ordinary-data leaf.
+    pub fn admit_ordinary_pairwise_rx(
+        &mut self,
+        request: Esp32s31ApOrdinaryPairwiseRxRequest,
+    ) -> Esp32s31ApRxAdmission {
+        let rx_peer = match self.resolve_rx_peer(request.peer()) {
+            Ok(bound) => bound,
+            Err(admission) => return admission,
+        };
+        if matches!(request.lane(), CcmpReplayLane::Tid(_)) && !rx_peer.qos_supported {
+            return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::PeerQosMismatch);
+        }
+        let Some(binding) = rx_peer.pairwise else {
+            return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::KeyGenerationMismatch);
+        };
+        match self.security.commit_bound_pairwise_rx_immediate(
+            binding,
+            request.lane(),
+            request.ccmp_header().packet_number(),
+        ) {
+            Ok(()) => Esp32s31ApRxAdmission::authorized(rx_peer.duplicate_owner),
+            Err(error) => rejected_rx_security(error),
+        }
+    }
+
+    /// Admit one complete ordinary data MPDU and apply its peer activity
+    /// through the exact binding resolved by the same transaction.
+    ///
+    /// The result keeps protocol admission independent from portable service
+    /// errors: a caller may finish the already-committed replay/publication
+    /// transaction and then surface the activity error at its role boundary.
+    pub fn admit_ordinary_pairwise_rx_with_activity(
+        &mut self,
+        request: Esp32s31ApOrdinaryPairwiseRxRequest,
+        state: ApPeerPowerState,
+        now_micros: u64,
+    ) -> (
+        Esp32s31ApRxAdmission,
+        Result<Option<ApPowerSaveAction>, Esp32s31ApEngineError>,
+    ) {
+        let admission = self.admit_ordinary_pairwise_rx(request);
+        if admission.authorized_owner().is_none() {
+            return (admission, Ok(None));
+        }
+        let Some(binding) = self.rx_peer else {
+            return (admission, Err(ApServiceError::UnknownPeer.into()));
+        };
+        let activity = self
+            .service
+            .observe_bound_data_power_state(binding.peer, state, now_micros)
+            .map(Some)
+            .map_err(Esp32s31ApEngineError::from);
+        (admission, activity)
+    }
+
+    /// Resolve one AP-specific peer/security context around the role-neutral
+    /// data dispatcher. The common burst revalidates two affine bindings in
+    /// O(1); only a peer switch or control-plane revision scans the bounded
+    /// portable table.
+    fn resolve_rx_peer(
+        &mut self,
+        peer: [u8; 6],
+    ) -> Result<Esp32s31ApRxPeerBinding, Esp32s31ApRxAdmission> {
+        let status_revision = self.service.status_revision();
+        if let Some(binding) = self.rx_peer
+            && binding.peer.address() == peer
+            && binding.status_revision == status_revision
+        {
+            return Ok(binding);
+        }
+
+        let Some(service_binding) = self.service.bind_peer(peer) else {
+            self.rx_peer = None;
+            return Err(Esp32s31ApRxAdmission::unauthorized());
+        };
+        let Some(status) = self
+            .service
+            .bound_peer_status(service_binding)
+            .filter(|status| status.phase == ApPeerPhase::Authorized)
+        else {
+            self.rx_peer = None;
+            return Err(Esp32s31ApRxAdmission::unauthorized());
+        };
+        let pairwise = match self.service.security_mode() {
+            WifiSecurityMode::Open => None,
+            WifiSecurityMode::Wpa2Personal => Some(
+                self.security
+                    .bind_pairwise(peer, status.association_id)
+                    .map_err(rejected_rx_security)?,
+            ),
+        };
+        let Some(mut duplicate_owner) =
+            Esp32s31ApRxDuplicateOwner::new(status.association_id, status.association_epoch)
+        else {
+            self.rx_peer = None;
+            return Err(Esp32s31ApRxAdmission::rejected(
+                Esp32s31ApRxError::KeyGenerationMismatch,
+            ));
+        };
+        if let Some(pairwise) = pairwise {
+            duplicate_owner = duplicate_owner.with_key_generation(pairwise.generation());
+        }
+        let binding = Esp32s31ApRxPeerBinding {
+            peer: service_binding,
+            pairwise,
+            duplicate_owner,
+            qos_supported: status.qos_supported,
+            status_revision,
+        };
+        self.rx_peer = Some(binding);
+        Ok(binding)
     }
 
     pub fn downlink_disposition(
@@ -1472,6 +1591,32 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         now_micros: u64,
     ) -> Result<ApPowerSaveAction, Esp32s31ApEngineError> {
         Ok(self.service.observe_power_save(observation, now_micros)?)
+    }
+
+    /// Refresh the PM state of the peer admitted by the current RX binding.
+    /// A control-plane revision or a different transmitter falls back to the
+    /// general address-resolving path.
+    pub fn observe_rx_peer_power_state(
+        &mut self,
+        peer: [u8; 6],
+        state: ApPeerPowerState,
+        now_micros: u64,
+    ) -> Result<ApPowerSaveAction, Esp32s31ApEngineError> {
+        if let Some(binding) = self.rx_peer
+            && binding.peer.address() == peer
+            && binding.status_revision == self.service.status_revision()
+        {
+            return Ok(self.service.observe_bound_data_power_state(
+                binding.peer,
+                state,
+                now_micros,
+            )?);
+        }
+        let observation = match state {
+            ApPeerPowerState::Active => ApPowerSaveObservation::Active { peer },
+            ApPeerPowerState::Sleeping => ApPowerSaveObservation::Sleeping { peer },
+        };
+        self.observe_power_save(observation, now_micros)
     }
 
     /// Parse and apply an AP power-save edge from one complete 802.11 MPDU.
@@ -1590,6 +1735,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         peer: [u8; 6],
         now_micros: u64,
     ) -> Result<(), Esp32s31ApEngineError> {
+        if let Some(binding) = self.rx_peer
+            && binding.peer.address() == peer
+            && binding.status_revision == self.service.status_revision()
+        {
+            self.service
+                .observe_bound_data_activity(binding.peer, now_micros)?;
+            return Ok(());
+        }
         self.service.observe_activity(peer, now_micros)?;
         Ok(())
     }
@@ -2112,6 +2265,28 @@ mod tests {
                 packet_number: rx_pn3,
                 highest: rx_pn3,
             })),
+        );
+        let rx_pn4 = CcmpPacketNumber::new(4).unwrap();
+        let ordinary_rx_request = Esp32s31ApOrdinaryPairwiseRxRequest::new(
+            peer,
+            CcmpReplayLane::NonQos,
+            CcmpHeader::new(rx_pn4, CcmpKeyId::PAIRWISE),
+        );
+        let deadline = engine.service.peer_status(peer).unwrap().deadline_micros;
+        let (admission, activity) = engine.admit_ordinary_pairwise_rx_with_activity(
+            ordinary_rx_request,
+            ApPeerPowerState::Active,
+            5,
+        );
+        assert_eq!(
+            admission,
+            Esp32s31ApRxAdmission::authorized(duplicate_owner)
+        );
+        assert_eq!(activity.unwrap(), Some(ApPowerSaveAction::None));
+        assert_eq!(
+            engine.service.peer_status(peer).unwrap().deadline_micros,
+            deadline,
+            "ordinary admission and coalesced activity share one peer binding"
         );
 
         let repeated_message4 = Wpa2TxFrame::<512>::message4(ap, 10)

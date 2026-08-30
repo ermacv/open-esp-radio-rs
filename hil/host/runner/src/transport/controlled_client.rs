@@ -53,11 +53,44 @@ impl ControlledClient {
         Ok(Self { restored: false })
     }
 
+    /// Return the BSSID owned by the AP under test without changing the
+    /// controlled client's managed-mode lifetime.
+    pub(crate) fn bssid(&self) -> Result<String> {
+        let output = Command::new("iw").args(["dev", "wlan0", "link"]).output()?;
+        if !output.status.success() {
+            return Err(format!(
+                "cannot query controlled-client BSSID: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )
+            .into());
+        }
+        parse_bssid(&String::from_utf8(output.stdout)?)
+    }
+
     pub(crate) fn restore(mut self) -> Result<()> {
         restore_managed()?;
         self.restored = true;
         Ok(())
     }
+}
+
+fn parse_bssid(link: &str) -> Result<String> {
+    let Some(bssid) = link.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("Connected to ")?
+            .split_whitespace()
+            .next()
+    }) else {
+        return Err("controlled client is not associated with an AP".into());
+    };
+    let valid = bssid.len() == 17
+        && bssid.bytes().enumerate().all(|(index, byte)| {
+            index % 3 == 2 && byte == b':' || index % 3 != 2 && byte.is_ascii_hexdigit()
+        });
+    if !valid {
+        return Err(format!("controlled client reported invalid BSSID `{bssid}`").into());
+    }
+    Ok(bssid.to_ascii_lowercase())
 }
 
 impl Drop for ControlledClient {
@@ -76,4 +109,19 @@ fn restore_managed() -> Result<()> {
         return Err(format!("controlled-client restore failed with {status}").into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_only_an_associated_mac_identity() {
+        assert_eq!(
+            parse_bssid("Connected to 30:ed:a0:f3:f6:d1 (on wlan0)\n").unwrap(),
+            "30:ed:a0:f3:f6:d1"
+        );
+        assert!(parse_bssid("Not connected.\n").is_err());
+        assert!(parse_bssid("Connected to not-a-mac (on wlan0)\n").is_err());
+    }
 }

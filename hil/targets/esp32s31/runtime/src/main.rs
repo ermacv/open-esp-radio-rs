@@ -37,9 +37,9 @@ use embassy_executor::SendSpawner;
 #[cfg(feature = "boot-smoke")]
 use embassy_time::{Duration, Timer};
 #[cfg(feature = "open-radio-hil")]
-use esp_hal::system::{CpuControl, Stack};
-#[cfg(feature = "open-radio-hil")]
 use esp_hal::interrupt::software::SoftwareInterrupt;
+#[cfg(feature = "open-radio-hil")]
+use esp_hal::system::{CpuControl, Stack};
 use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     timer::{OneShotTimer, timg::TimerGroup},

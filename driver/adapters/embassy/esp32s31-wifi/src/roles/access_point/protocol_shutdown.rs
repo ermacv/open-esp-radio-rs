@@ -95,10 +95,9 @@ where
             .handle_eapol(hardware, plan.source, frame, now_micros)?
         {
             Esp32s31ApWpa2Outcome::Transmit(frame) => {
-                let processor = &mut *self;
-                processor
-                    .mac
-                    .publish_eapol(hardware, plan.source, &frame, processor.tx_frame)?;
+                let mac = &mut self.mac;
+                let tx_frame = &mut *self.state.tx_frame;
+                mac.publish_eapol(hardware, plan.source, &frame, tx_frame)?;
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
                         observation.control_frames_staged.saturating_add(1);
@@ -113,13 +112,9 @@ where
                 self.publish_peer_close(hardware, close)?;
             }
             Esp32s31ApWpa2Outcome::PeerAuthorized { peer } => {
-                let processor = &mut *self;
-                if processor.mac.publish_tx_block_ack_request(
-                    hardware,
-                    peer,
-                    now_micros,
-                    processor.tx_frame,
-                )? {
+                let mac = &mut self.mac;
+                let tx_frame = &mut *self.state.tx_frame;
+                if mac.publish_tx_block_ack_request(hardware, peer, now_micros, tx_frame)? {
                     observe_access_point!(self, observation, {
                         observation.control_frames_staged =
                             observation.control_frames_staged.saturating_add(1);
@@ -173,10 +168,9 @@ where
                 #[cfg(feature = "diagnostics")]
                 log::info!("open-radio: AP association TX complete; publish WPA2 M1 peer={peer:02x?}");
                 let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
-                let processor = &mut *self;
-                processor
-                    .mac
-                    .publish_eapol(hardware, peer, &message1, processor.tx_frame)?;
+                let mac = &mut self.mac;
+                let tx_frame = &mut *self.state.tx_frame;
+                mac.publish_eapol(hardware, peer, &message1, tx_frame)?;
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
                         observation.control_frames_staged.saturating_add(1);
@@ -188,12 +182,13 @@ where
                 stage: Esp32s31ApPeerDisconnectStage::Disassociation,
                 ..
             } => {
-                let processor = &mut *self;
-                processor.mac.publish_peer_disconnect(
+                let mac = &mut self.mac;
+                let tx_frame = &mut *self.state.tx_frame;
+                mac.publish_peer_disconnect(
                     hardware,
                     close,
                     Esp32s31ApPeerDisconnectStage::Deauthentication,
-                    processor.tx_frame,
+                    tx_frame,
                 )?;
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
@@ -225,10 +220,9 @@ where
         } else {
             Esp32s31ApPeerDisconnectStage::Deauthentication
         };
-        let processor = &mut *self;
-        processor
-            .mac
-            .publish_peer_disconnect(hardware, close, stage, processor.tx_frame)?;
+        let mac = &mut self.mac;
+        let tx_frame = &mut *self.state.tx_frame;
+        mac.publish_peer_disconnect(hardware, close, stage, tx_frame)?;
         observe_access_point!(self, observation, {
             observation.control_frames_staged = observation.control_frames_staged.saturating_add(1);
         });
@@ -241,11 +235,11 @@ where
     }
 
     pub const fn serviced_rx_frames(&self) -> u64 {
-        self.serviced_rx_frames
+        self.state.serviced_rx_frames
     }
 
     pub const fn serviced_rx_descriptors(&self) -> u64 {
-        self.serviced_rx_descriptors
+        self.state.serviced_rx_descriptors
     }
 
     #[cfg(any(feature = "diagnostics", test))]
@@ -311,10 +305,9 @@ where
         peer: [u8; 6],
         ethernet: &[u8],
     ) -> Result<(), Esp32s31AccessPointControlError> {
-        let processor = &mut *self;
-        processor
-            .mac
-            .publish_ethernet(hardware, peer, ethernet, processor.tx_frame)?;
+        let mac = &mut self.mac;
+        let tx_frame = &mut *self.state.tx_frame;
+        mac.publish_ethernet(hardware, peer, ethernet, tx_frame)?;
         Ok(())
     }
 
@@ -325,14 +318,9 @@ where
         ethernet: &[u8],
         more_data: bool,
     ) -> Result<(), Esp32s31AccessPointControlError> {
-        let processor = &mut *self;
-        processor.mac.publish_ethernet_with_more_data(
-            hardware,
-            peer,
-            ethernet,
-            processor.tx_frame,
-            more_data,
-        )?;
+        let mac = &mut self.mac;
+        let tx_frame = &mut *self.state.tx_frame;
+        mac.publish_ethernet_with_more_data(hardware, peer, ethernet, tx_frame, more_data)?;
         Ok(())
     }
 
@@ -355,13 +343,9 @@ where
         first: &[u8],
         second: &[u8],
     ) -> Result<Option<WifiTxProgress>, Esp32s31AccessPointControlError> {
-        let processor = &mut *self;
-        if !processor.mac.publish_amsdu_pair(
-            hardware,
-            first,
-            second,
-            processor.tx_frame,
-        )? {
+        let mac = &mut self.mac;
+        let tx_frame = &mut *self.state.tx_frame;
+        if !mac.publish_amsdu_pair(hardware, first, second, tx_frame)? {
             return Ok(None);
         }
         observe_access_point!(self, observation, {
@@ -475,10 +459,9 @@ where
             .take_due_wpa2_retry::<EAPOL_CAPACITY>(now_micros)?
         {
             ApWpa2RetryProgress::Transmit { peer, frame } => {
-                let processor = &mut *self;
-                processor
-                    .mac
-                    .publish_eapol(hardware, peer, &frame, processor.tx_frame)?;
+                let mac = &mut self.mac;
+                let tx_frame = &mut *self.state.tx_frame;
+                mac.publish_eapol(hardware, peer, &frame, tx_frame)?;
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
                         observation.control_frames_staged.saturating_add(1);
@@ -579,8 +562,8 @@ where
         {
             return Err(self);
         }
-        let Self {
-            mac,
+        let Self { mac, state } = self;
+        let Esp32s31AccessPointProtocolState {
             rx_frame,
             tx_frame,
             data_rx,
@@ -600,7 +583,7 @@ where
             observer,
             #[cfg(any(feature = "diagnostics", test))]
             terminal_observer,
-        } = self;
+        } = state;
         #[cfg(any(feature = "diagnostics", test))]
         let mac_observation = mac.observation();
         #[cfg(any(feature = "diagnostics", test))]
@@ -612,25 +595,27 @@ where
             Err(mac) => {
                 return Err(Self {
                     mac,
-                    rx_frame,
-                    tx_frame,
-                    data_rx,
-                    rx_block_ack,
-                    rx_reorder,
-                    rx_reorder_storage,
-                    rx_addba_in_flight: None,
-                    protocol_actions,
-                    pending_buffered_releases,
-                    pending_dtim_group_frames,
-                    rx_batch_used: 0,
-                    rx_batch_offset: 0,
-                    serviced_rx_frames,
-                    serviced_rx_descriptors,
-                    last_terminal_tx_succeeded,
-                    #[cfg(any(feature = "diagnostics", test))]
-                    observer,
-                    #[cfg(any(feature = "diagnostics", test))]
-                    terminal_observer,
+                    state: Esp32s31AccessPointProtocolState {
+                        rx_frame,
+                        tx_frame,
+                        data_rx,
+                        rx_block_ack,
+                        rx_reorder,
+                        rx_reorder_storage,
+                        rx_addba_in_flight: None,
+                        protocol_actions,
+                        pending_buffered_releases,
+                        pending_dtim_group_frames,
+                        rx_batch_used: 0,
+                        rx_batch_offset: 0,
+                        serviced_rx_frames,
+                        serviced_rx_descriptors,
+                        last_terminal_tx_succeeded,
+                        #[cfg(any(feature = "diagnostics", test))]
+                        observer,
+                        #[cfg(any(feature = "diagnostics", test))]
+                        terminal_observer,
+                    },
                 });
             }
         };

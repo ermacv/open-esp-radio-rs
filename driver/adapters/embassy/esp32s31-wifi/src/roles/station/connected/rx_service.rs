@@ -13,7 +13,7 @@ use open_esp_radio_embassy_net::RawMutex;
 use crate::{
     datapath::{
         DatapathRxProgress, DatapathRxServiceContext, DatapathRxWorkCounters,
-        network::DatapathNetworkRxSet, services::DatapathRxService,
+        network::DatapathNetworkRxSet, rx::turn::FusedRxTurn, services::DatapathRxService,
     },
     roles::station::{
         rx_protocol::{
@@ -195,7 +195,7 @@ where
         _network_rx: &'a mut dyn DatapathNetworkRxSet,
         context: DatapathRxServiceContext,
     ) -> Result<DatapathRxProgress, Self::Error> {
-        let limit = context.maximum_protocol_frames.unwrap_or(SLOTS).max(1);
+        let mut fused_turn = FusedRxTurn::from_context(context, SLOTS);
         let before_dma = if self.protocol.has_ready_work() {
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             let protocol_started =
@@ -206,7 +206,10 @@ where
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
-            let turn = self.protocol.service_bounded(limit).await;
+            let turn = self
+                .protocol
+                .service_bounded(fused_turn.remaining_protocol_frames())
+                .await;
             #[cfg(feature = "core0-rx-coarse-telemetry")]
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .record_protocol_paths(turn.direct_frames, turn.asynchronous_frames);
@@ -227,14 +230,16 @@ where
         self.serviced_frames = self
             .serviced_frames
             .saturating_add(before_dma.consumed_frames as u64);
+        fused_turn.observe_protocol(before_dma.consumed_frames, before_dma.work_remaining);
 
         // Refill once even when the protocol budget was consumed by an
         // existing backlog. The leases just released above are the exact
         // credits needed to keep the hardware ring from becoming the only
         // remaining ingress reserve.
         let dma_progress = self.dma.service(hardware).await?;
+        fused_turn.observe_dma(dma_progress);
 
-        let remaining = limit.saturating_sub(before_dma.consumed_frames);
+        let remaining = fused_turn.remaining_protocol_frames();
         let after_dma = if remaining == 0 || !self.protocol.has_ready_work() {
             Default::default()
         } else {
@@ -266,26 +271,9 @@ where
         self.serviced_frames = self
             .serviced_frames
             .saturating_add(after_dma.consumed_frames as u64);
+        fused_turn.observe_protocol(after_dma.consumed_frames, after_dma.work_remaining);
 
-        // `StageCapacityBlocked` describes the capacity observed inside the
-        // DMA phase, not necessarily the state at this fused turn boundary.
-        // A successful after-DMA protocol pass returns at least one staging
-        // credit synchronously. Preserve the known completed DMA frontier as
-        // runnable work instead of sleeping for a capacity edge which already
-        // happened inside this owner.
-        let stage_capacity_released = dma_progress == DatapathRxProgress::StageCapacityBlocked
-            && after_dma.consumed_frames != 0;
-        Ok(
-            if before_dma.work_remaining
-                || after_dma.work_remaining
-                || self.protocol.has_ready_work()
-                || stage_capacity_released
-            {
-                DatapathRxProgress::BudgetExhausted
-            } else {
-                dma_progress
-            },
-        )
+        Ok(fused_turn.finish(self.protocol.has_ready_work()))
     }
 
     fn service_turn_during_tx<'a>(

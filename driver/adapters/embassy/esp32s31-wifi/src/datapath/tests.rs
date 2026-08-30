@@ -622,6 +622,10 @@ impl<H>
             }
         }
     }
+
+    fn work_counters(&self) -> crate::datapath::DatapathRxWorkCounters {
+        crate::datapath::DatapathRxWorkCounters::default()
+    }
 }
 
 struct PairedRoleTx {
@@ -2165,7 +2169,7 @@ fn adaptive_rx_continuation_distinguishes_byte_rate_from_packet_rate() {
             },
             0,
         ),
-        (Duration::from_micros(128), 1)
+        (Duration::from_micros(1_024), 4)
     );
     assert_eq!(
         adaptive_recycled_rx_probe_delay(
@@ -2185,7 +2189,7 @@ fn adaptive_rx_continuation_distinguishes_byte_rate_from_packet_rate() {
             },
             2,
         ),
-        (Duration::from_micros(512), 3)
+        (Duration::from_micros(1_024), 4)
     );
 }
 

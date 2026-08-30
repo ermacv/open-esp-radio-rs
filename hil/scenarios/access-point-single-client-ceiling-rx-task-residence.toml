@@ -1,11 +1,11 @@
 schema = 3
-id = "access-point-single-client-ceiling-bidirectional-task-poll"
-description = "Split-core AP HT40 saturated bidirectional UDP executor-residence diagnostic"
+id = "access-point-single-client-ceiling-rx-task-residence"
+description = "Production-like single-client AP HT40 UDP receive ceiling and Core0 residence diagnostic"
 repetitions = 1
 image = "diagnostic-task-residence"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "bidirectional", "task-poll", "split-core"]
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "rx", "task-poll"]
 
 [link]
 phy = "ht40"
@@ -19,12 +19,12 @@ client = "open-wrt"
 
 [workload.traffic]
 kind = "udp"
-direction = "bidirectional"
+direction = "rx"
 duration_seconds = 16
-rx_rate_bps = 65000000
-tx_rate_bps = 65000000
+rx_rate_bps = 130000000
 payload_bytes = 1472
 
 [criteria]
 exact_delivery = false
+minimum_rx_bps = 95000000
 minimum_concurrent_ap_clients = 1

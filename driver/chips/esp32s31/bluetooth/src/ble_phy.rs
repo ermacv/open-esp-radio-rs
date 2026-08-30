@@ -66,9 +66,11 @@ pub struct BluetoothBlePhyInitializationReport {
 /// Powered Controller after the complete BLE PHY register transaction.
 ///
 /// The address-bound environment and resolving-list storage remain nested for
-/// the full hardware epoch. This state does not claim that an interrupt route,
-/// packet engine, Link Layer role, advertising set, scanner, connection, or
-/// HCI dataplane is operational.
+/// the full hardware epoch together with the private affine standalone
+/// always-awake profile selection. That selection performs no RF MMIO and is
+/// not an RF-ready or completed-time proof. This state does not claim that an
+/// interrupt route, packet engine, Link Layer role, advertising set, scanner,
+/// connection, or HCI dataplane is operational.
 #[must_use = "initialized BLE PHY retains every hardware and storage owner"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerBlePhyEngineInitialized<

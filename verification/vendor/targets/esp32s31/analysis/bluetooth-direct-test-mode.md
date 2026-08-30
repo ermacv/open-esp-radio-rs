@@ -781,7 +781,10 @@ The remaining work should proceed in narrow, testable increments:
 
 1. **Compose live ordered timing ownership.** First and recurring preparation
    no longer accept caller-built windows, and their active owners retain the
-   immutable command identity and committed phase. Connect the typed current,
+   immutable command identity and committed phase. The private affine
+   standalone always-awake marker is now retained from Controller-HAL profile
+   selection through the pre-route BLE-PHY owner, but performs no RF MMIO and
+   supplies no RF-ready or time-pending authority. Connect the typed current,
    RF-ready and scheduler-margin facts to live single-owner producers while
    preserving initial TX/RX and recurring RX acquisition order. A caller-
    supplied instant is not proof of that live order.

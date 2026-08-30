@@ -874,6 +874,7 @@ pub struct BluetoothSchedulerInitialized<
     _interrupts: Option<BluetoothInterruptBankOwner>,
     _platform: BluetoothTeardownPendingPlatform<P>,
     time_scale: BluetoothControllerTimeScale,
+    _standalone_always_awake: crate::controller_hal::BluetoothStandaloneAlwaysAwake,
     config: BluetoothSchedulerSoftwareConfig,
     _scheduler_list: BluetoothSchedulerExclusiveListEpoch,
     runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
@@ -1921,6 +1922,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
             interrupts,
             platform,
             time_scale,
+            standalone_always_awake,
         } = self;
         let hardware_lists_cleared = initialize_hardware(&mut task);
         BluetoothSchedulerInitialized {
@@ -1928,6 +1930,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
             _interrupts: Some(interrupts),
             _platform: platform,
             time_scale,
+            _standalone_always_awake: standalone_always_awake,
             config: BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             _scheduler_list: BluetoothSchedulerExclusiveListEpoch::new(hardware_lists_cleared),
             runtime,

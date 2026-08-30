@@ -71,7 +71,7 @@ gaps = [
 [[capabilities]]
 id = "controller-initialization"
 title = "Complete LE Controller initialization"
-scope = "Powered controller initialization through BLE PHY controller-output preparation and runtime-timer start"
+scope = "Powered controller initialization through BLE PHY controller-output preparation and runtime-timer start while retaining a private affine standalone always-awake policy selection that performs no RF MMIO and grants no RF-ready or time-pending authority"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"

@@ -441,7 +441,10 @@ where
 /// Powered Controller after atomic stable publication of both ISR owners.
 ///
 /// The platform lease retains stable placement, but no CPU route is active and
-/// no hard-handler entry is possible from this state.
+/// no hard-handler entry is possible from this state. The nested Controller
+/// also retains the affine standalone always-awake profile selection; that
+/// marker performs no RF MMIO and supplies neither RF-ready nor time-pending
+/// authority.
 #[must_use = "published Bluetooth interrupt owners must remain retained through route setup"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnersPublished<

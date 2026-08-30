@@ -9,9 +9,9 @@
 //! rollback image into a hardware-owned graph. An affine fenced finished-list
 //! observation can then drive one volatile semantic item-status read without
 //! granting CPU ownership. Matching empty-head and post-unlink removal proofs
-//! authorize the reviewed cleanup and return TX or RX-non-success graphs to
-//! CPU ownership. RX-success header/swap ownership and recurring re-arm remain
-//! deliberately outside this lower memory boundary.
+//! authorize the reviewed cleanup. RX-success additionally validates the
+//! exact two-header private chain and performs its bounded volatile swap/re-arm
+//! rotation before CPU ownership returns.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -56,15 +56,17 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
     BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
     BluetoothDtmMemoryGraphRecycleFailure, BluetoothDtmMemoryGraphRecyclePrepared,
-    BluetoothDtmMemoryGraphRecycled, BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
-    BluetoothDtmMemoryGraphStorage, BluetoothDtmMemoryGraphTxPacketPrepared,
-    BluetoothDtmPositionalEventSeed, BluetoothDtmPreparedTxPacketStorage,
-    BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress,
-    BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
-    BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
-    BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
-    BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
-    BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
+    BluetoothDtmMemoryGraphRecycled, BluetoothDtmMemoryGraphRxSuccessRecycleCleaned,
+    BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmMemoryGraphRxSuccessRecycleFailure,
+    BluetoothDtmMemoryGraphRxSuccessRecyclePrepared,
+    BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
+    BluetoothDtmMemoryGraphTxPacketPrepared, BluetoothDtmPositionalEventSeed,
+    BluetoothDtmPreparedTxPacketStorage, BluetoothDtmRxBufferHeaderImage,
+    BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage,
+    BluetoothDtmRxReturnedPacketObservation, BluetoothDtmSchedulerAllocationConfig,
+    BluetoothDtmSchedulerContextStorage, BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
+    BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use sram_link::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};

@@ -51,16 +51,6 @@ impl BluetoothDtmBoundSramLinkAddress {
     pub const fn controller_address(self) -> BluetoothControllerSramAddress {
         self.0
     }
-
-    pub(crate) const fn from_nonzero_compressed_image(image: u32) -> Option<Self> {
-        if image == 0 || image > 0x000f_ffff {
-            return None;
-        }
-        match BluetoothControllerSramAddress::new(0x2f00_0000 | (image << 2)) {
-            Ok(address) => Some(Self(address)),
-            Err(_) => None,
-        }
-    }
 }
 
 #[cfg(test)]

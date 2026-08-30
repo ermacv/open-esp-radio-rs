@@ -38,6 +38,10 @@ pub enum PreparedTxSchedulerPhase {
     StopPollCompleted,
     /// Stale TX wakes were drained and O(1) control readiness was sampled.
     ControlReadinessChecked { ready: bool },
+    /// Prepared ownership and competing RX readiness were sampled.
+    PreparedReadinessChecked,
+    /// The retained frame count and negotiated batch target were sampled.
+    PreparedBatchChecked,
     /// The scheduler committed to the already-prepared publication path.
     PreparedEntry,
 }

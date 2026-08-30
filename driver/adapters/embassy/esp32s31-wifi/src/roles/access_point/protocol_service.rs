@@ -295,10 +295,10 @@ where
     #[cfg(feature = "task-poll-telemetry")]
     core0_ap_rx.publication_complete();
 
-    if let Some(activity) = admitted_activity {
-        if let Some(action) = activity? {
-            retain_ap_power_save_action(engine, pending_buffered_releases, action)?;
-        }
+    if let Some(activity) = admitted_activity
+        && let Some(action) = activity?
+    {
+        retain_ap_power_save_action(engine, pending_buffered_releases, action)?;
     }
     #[cfg(feature = "task-poll-telemetry")]
     core0_ap_rx.finish();

@@ -1787,6 +1787,21 @@ impl<
             self.physical.wait_publication().await;
         }
     }
+
+    /// Wait until this interface has published a complete queue prefix.
+    ///
+    /// This does not claim a lease. Aggregate owners use it to defer their
+    /// expensive encode pass until the missing part of a negotiated batch is
+    /// visible, while a concurrent TX completion may still consume a shorter
+    /// prefix through the ordinary terminal path.
+    pub async fn wait_queue_len_at_least(&self, minimum: usize) {
+        loop {
+            if self.queue_len() >= minimum {
+                return;
+            }
+            self.physical.wait_publication().await;
+        }
+    }
 }
 
 /// Explicit single-endpoint radio composition.

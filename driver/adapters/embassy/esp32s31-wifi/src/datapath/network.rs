@@ -267,6 +267,11 @@ pub trait DatapathNetwork<
         interface: NetworkInterfaceId,
     ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
     fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_;
+    fn wait_tx_queue_len_at_least(
+        &self,
+        interface: NetworkInterfaceId,
+        minimum: usize,
+    ) -> impl Future<Output = ()> + '_;
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_;
 
     /// Number of leases in the one physical tagged TX frontier.
@@ -367,6 +372,16 @@ impl<
         PinnedNetworkRunner::wait_tx_ready(self)
     }
 
+    fn wait_tx_queue_len_at_least(
+        &self,
+        interface: NetworkInterfaceId,
+        minimum: usize,
+    ) -> impl Future<Output = ()> + '_ {
+        assert_eq!(interface, self.interface());
+        let tx = PinnedNetworkRunner::tx_consumer(self);
+        async move { tx.wait_queue_len_at_least(minimum).await }
+    }
+
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
         PinnedNetworkRunner::wait_tx_publication(self)
     }
@@ -460,6 +475,15 @@ impl<
         async move { tx.wait_ready_for(interface).await }
     }
 
+    fn wait_tx_queue_len_at_least(
+        &self,
+        interface: NetworkInterfaceId,
+        minimum: usize,
+    ) -> impl Future<Output = ()> + '_ {
+        let tx = DualPinnedNetworkRunner::tx_consumer(self).for_interface(interface);
+        async move { tx.wait_queue_len_at_least(minimum).await }
+    }
+
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
         DualPinnedNetworkRunner::wait_tx_publication(self)
     }
@@ -549,6 +573,14 @@ where
 
     fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
         N::wait_tx_ready(*self, interface)
+    }
+
+    fn wait_tx_queue_len_at_least(
+        &self,
+        interface: NetworkInterfaceId,
+        minimum: usize,
+    ) -> impl Future<Output = ()> + '_ {
+        N::wait_tx_queue_len_at_least(*self, interface, minimum)
     }
 
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {

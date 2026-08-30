@@ -1,0 +1,24 @@
+schema = 3
+id = "diagnostic-station-ceiling-rx65-tx65-performance"
+description = "Observer-free station HT40 65/65 Mbit/s ceiling control for AP comparison"
+repetitions = 1
+image = "performance"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "station", "ht40", "bidirectional", "ceiling", "observer-free"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 65000000
+tx_rate_bps = 65000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 100000
+minimum_tx_bps = 100000

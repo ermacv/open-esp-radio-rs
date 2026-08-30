@@ -222,6 +222,39 @@ where
             .is_some_and(|deadline| now >= deadline)
     }
 
+    /// Return a complete software-owned successor only after every higher
+    /// priority RX edge has been excluded at this transaction boundary.
+    ///
+    /// Both the ordinary outer loop and the saturated single-owner chain use
+    /// this exact admission check. Keeping it here prevents the fast chain
+    /// from bypassing a due recycle-only continuation merely because no fresh
+    /// MAC IRQ was posted for it.
+    pub(super) fn prepared_network_tx_candidate(&mut self) -> Option<(NetworkInterfaceId, usize)> {
+        let prepared = self.services.has_prepared_tx();
+        let rx_blocked = prepared
+            && (self.services.has_rx_work()
+                || self.irq.rx_signaled()
+                || self.recycled_rx_probe_due(Instant::now()));
+        #[cfg(any(feature = "diagnostics", test))]
+        self.services.mark_prepared_tx_scheduler_phase(
+            PreparedTxSchedulerPhase::PreparedReadinessChecked,
+            Instant::now().as_micros(),
+        );
+        if !prepared || rx_blocked {
+            return None;
+        }
+
+        let interface = self.retained_prepared_tx_interface();
+        let admitted = self.services.prepared_tx_frame_count().max(1);
+        let preferred = self.services.preferred_tx_batch_size_for(interface).max(1);
+        #[cfg(any(feature = "diagnostics", test))]
+        self.services.mark_prepared_tx_scheduler_phase(
+            PreparedTxSchedulerPhase::PreparedBatchChecked,
+            Instant::now().as_micros(),
+        );
+        (admitted >= preferred).then_some((interface, admitted))
+    }
+
     pub(super) const fn network_turn_owed(&self) -> bool {
         self.rx_frame_deficit >= RX_TX_FAIRNESS_QUANTUM_FRAMES as i64
     }
@@ -421,11 +454,21 @@ where
             };
             let can_prepare =
                 allow_standby && self.services.can_prepare_tx() && !competing_tx_pending;
+            let preparation_threshold = can_prepare.then(|| {
+                let interface = active_tx_interface
+                    .expect("active TX network preparation requires one VIF owner");
+                self.services
+                    .preferred_tx_batch_size_for(interface)
+                    .max(1)
+                    .saturating_sub(self.services.prepared_tx_frame_count())
+                    .max(1)
+            });
+            let network = &self.network;
             let wait_network = async {
-                if can_prepare {
+                if let Some(minimum) = preparation_threshold {
                     let interface = active_tx_interface
                         .expect("active TX network preparation requires one VIF owner");
-                    self.network.receive_tx(interface).await
+                    network.wait_tx_queue_len_at_least(interface, minimum).await;
                 } else {
                     pending().await
                 }
@@ -454,7 +497,13 @@ where
                     progress = self.service_active_tx(WifiTxWake::Deadline).await?;
                     rx_producer_serviced = false;
                 }
-                Either4::Fourth(frame) => {
+                Either4::Fourth(()) => {
+                    let interface =
+                        active_tx_interface.expect("active TX preparation requires one VIF owner");
+                    let frame = self
+                        .network
+                        .try_receive_tx(interface)
+                        .expect("threshold-ready TX queue retains its sole consumer");
                     let interface = self.tx_interface_for(&frame);
                     let active = self
                         .active_tx_interface

@@ -181,6 +181,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let aggregate_start = if crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION
             && session.config.direction != HilDirection::Rx
         {
+            aggregate_counters.begin_interval();
             Some(aggregate_counters.snapshot())
         } else {
             None

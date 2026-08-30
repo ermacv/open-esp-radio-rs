@@ -1360,11 +1360,11 @@ fn adaptive_batching_sends_isolated_frames_and_collects_proven_bursts() {
 }
 
 #[test]
-fn every_tx_completion_reaches_an_idle_scheduler_boundary() {
+fn only_single_interface_network_tx_may_prepare_a_standby() {
     let first = NetworkInterfaceId::new(0);
     let second = NetworkInterfaceId::new(1);
 
-    assert!(!tx_lookahead_allowed(
+    assert!(tx_lookahead_allowed(
         true,
         DatapathInterfaceScope::Single(first),
         DatapathTxOrigin::Network,
@@ -1443,6 +1443,30 @@ fn control_boundary_precedes_prepared_network_publication() {
         Err(TestError::Finished)
     );
     assert_eq!(runner.services().order, [1, 2]);
+}
+
+#[test]
+fn due_recycled_rx_probe_blocks_the_saturated_prepared_tx_chain() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = split_network!(resources, pool);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = PreparedBackend {
+        order: [0; 2],
+        count: 0,
+        control_pending: false,
+        prepared: true,
+        cancelled: false,
+    };
+    let interface = NetworkInterfaceId::new(0);
+    let mut runner = DatapathRunner::new(irq, network, interface, services);
+
+    runner.recycled_rx_probe_deadline = Some(Instant::now());
+    assert_eq!(runner.prepared_network_tx_candidate(), None);
+    runner.clear_recycled_rx_probe_deadline();
+    assert_eq!(runner.prepared_network_tx_candidate(), Some((interface, 1)));
 }
 
 #[test]
@@ -1764,7 +1788,7 @@ fn network_backpressure_still_services_a_new_dma_frontier() {
 }
 
 #[test]
-fn ready_network_frame_waits_for_the_active_tx_idle_boundary() {
+fn ready_single_interface_prefix_is_prepared_before_terminal_service() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
     let (mut device, network) = split_network!(resources, pool);
@@ -1781,8 +1805,10 @@ fn ready_network_frame_waits_for_the_active_tx_idle_boundary() {
     let mut context = Context::from_waker(core::task::Waker::noop());
 
     // Start the first hardware transaction, then make another frame and its
-    // completion interrupt ready in the same scheduler epoch. The completion
-    // must reach an idle scheduler boundary before the next frame is prepared.
+    // completion interrupt ready in the same scheduler epoch. The ordered TX
+    // branch may synchronously transfer that ready single-interface prefix to
+    // standby before terminal service; it must not defer it to a later outer
+    // scheduler turn.
     assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
     enqueue_frame(&mut device);
     irq.publish(EVENT_TX_COMPLETE);
@@ -1791,7 +1817,7 @@ fn ready_network_frame_waits_for_the_active_tx_idle_boundary() {
         Err(TestError::Finished)
     );
     drop(run);
-    assert_eq!(runner.services().order, [2, 0]);
+    assert_eq!(runner.services().order, [1, 2]);
 }
 
 #[test]

@@ -122,8 +122,9 @@ const fn tx_lookahead_allowed(
     interfaces: DatapathInterfaceScope,
     origin: DatapathTxOrigin,
 ) -> bool {
-    let _ = (requested, interfaces, origin);
-    false
+    requested
+        && matches!(interfaces, DatapathInterfaceScope::Single(_))
+        && matches!(origin, DatapathTxOrigin::Network)
 }
 
 #[derive(Clone, Copy, Debug)]

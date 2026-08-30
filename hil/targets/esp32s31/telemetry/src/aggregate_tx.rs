@@ -54,6 +54,8 @@ struct PreparedTxSchedulerTrace {
     scheduler_loop_resumed_micros: u64,
     stop_poll_completed_micros: u64,
     control_readiness_checked_micros: u64,
+    prepared_readiness_checked_micros: u64,
+    prepared_batch_checked_micros: u64,
     prepared_entry_micros: u64,
     scheduler_passes: u8,
     control_ready_passes: u8,
@@ -69,6 +71,8 @@ struct PreparedTxSchedulerTraceRecorder {
     scheduler_loop_resumed_micros: AtomicU32,
     stop_poll_completed_micros: AtomicU32,
     control_readiness_checked_micros: AtomicU32,
+    prepared_readiness_checked_micros: AtomicU32,
+    prepared_batch_checked_micros: AtomicU32,
     prepared_entry_micros: AtomicU32,
     scheduler_passes: AtomicU32,
     control_ready_passes: AtomicU32,
@@ -84,24 +88,37 @@ impl PreparedTxSchedulerTraceRecorder {
             scheduler_loop_resumed_micros: AtomicU32::new(0),
             stop_poll_completed_micros: AtomicU32::new(0),
             control_readiness_checked_micros: AtomicU32::new(0),
+            prepared_readiness_checked_micros: AtomicU32::new(0),
+            prepared_batch_checked_micros: AtomicU32::new(0),
             prepared_entry_micros: AtomicU32::new(0),
             scheduler_passes: AtomicU32::new(0),
             control_ready_passes: AtomicU32::new(0),
         }
     }
 
+    fn reset(&self) {
+        self.active_service_returned_micros
+            .store(0, Ordering::Relaxed);
+        self.scheduler_loop_resumed_micros
+            .store(0, Ordering::Relaxed);
+        self.stop_poll_completed_micros
+            .store(0, Ordering::Relaxed);
+        self.control_readiness_checked_micros
+            .store(0, Ordering::Relaxed);
+        self.prepared_readiness_checked_micros
+            .store(0, Ordering::Relaxed);
+        self.prepared_batch_checked_micros
+            .store(0, Ordering::Relaxed);
+        self.prepared_entry_micros.store(0, Ordering::Relaxed);
+        self.scheduler_passes.store(0, Ordering::Relaxed);
+        self.control_ready_passes.store(0, Ordering::Relaxed);
+    }
+
     fn record(&self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
         let timestamp = Self::VALID | at_micros as u32 & Self::TIME_MASK;
         match phase {
             PreparedTxSchedulerPhase::ActiveServiceReturned => {
-                self.scheduler_loop_resumed_micros
-                    .store(0, Ordering::Relaxed);
-                self.stop_poll_completed_micros.store(0, Ordering::Relaxed);
-                self.control_readiness_checked_micros
-                    .store(0, Ordering::Relaxed);
-                self.prepared_entry_micros.store(0, Ordering::Relaxed);
-                self.scheduler_passes.store(0, Ordering::Relaxed);
-                self.control_ready_passes.store(0, Ordering::Relaxed);
+                self.reset();
                 self.active_service_returned_micros
                     .store(timestamp, Ordering::Relaxed);
             }
@@ -120,6 +137,14 @@ impl PreparedTxSchedulerTraceRecorder {
                 self.control_ready_passes
                     .fetch_add(u32::from(ready), Ordering::Relaxed);
             }
+            PreparedTxSchedulerPhase::PreparedReadinessChecked => {
+                self.prepared_readiness_checked_micros
+                    .store(timestamp, Ordering::Relaxed);
+            }
+            PreparedTxSchedulerPhase::PreparedBatchChecked => {
+                self.prepared_batch_checked_micros
+                    .store(timestamp, Ordering::Relaxed);
+            }
             PreparedTxSchedulerPhase::PreparedEntry => {
                 self.prepared_entry_micros
                     .store(timestamp, Ordering::Relaxed);
@@ -136,6 +161,9 @@ impl PreparedTxSchedulerTraceRecorder {
         let scheduler_loop_resumed_micros = take_time(&self.scheduler_loop_resumed_micros);
         let stop_poll_completed_micros = take_time(&self.stop_poll_completed_micros);
         let control_readiness_checked_micros = take_time(&self.control_readiness_checked_micros);
+        let prepared_readiness_checked_micros =
+            take_time(&self.prepared_readiness_checked_micros);
+        let prepared_batch_checked_micros = take_time(&self.prepared_batch_checked_micros);
         let prepared_entry_micros = take_time(&self.prepared_entry_micros);
         let scheduler_passes = self.scheduler_passes.swap(0, Ordering::Relaxed);
         let control_ready_passes = self.control_ready_passes.swap(0, Ordering::Relaxed);
@@ -144,6 +172,8 @@ impl PreparedTxSchedulerTraceRecorder {
             scheduler_loop_resumed_micros: scheduler_loop_resumed_micros?,
             stop_poll_completed_micros: stop_poll_completed_micros?,
             control_readiness_checked_micros: control_readiness_checked_micros?,
+            prepared_readiness_checked_micros: prepared_readiness_checked_micros?,
+            prepared_batch_checked_micros: prepared_batch_checked_micros?,
             prepared_entry_micros: prepared_entry_micros?,
             scheduler_passes: u8::try_from(scheduler_passes).unwrap_or(u8::MAX),
             control_ready_passes: u8::try_from(control_ready_passes).unwrap_or(u8::MAX),
@@ -160,6 +190,9 @@ struct PreparedTxSchedulerTimingCounters {
     active_service_return_to_scheduler_loop: PhaseTimingCounters,
     stop_poll: PhaseTimingCounters,
     control_readiness: PhaseTimingCounters,
+    control_check_to_prepared_readiness: PhaseTimingCounters,
+    prepared_readiness_to_batch: PhaseTimingCounters,
+    prepared_batch_to_entry: PhaseTimingCounters,
     control_check_to_prepared_entry: PhaseTimingCounters,
 }
 
@@ -174,6 +207,9 @@ impl PreparedTxSchedulerTimingCounters {
             active_service_return_to_scheduler_loop: PhaseTimingCounters::new(),
             stop_poll: PhaseTimingCounters::new(),
             control_readiness: PhaseTimingCounters::new(),
+            control_check_to_prepared_readiness: PhaseTimingCounters::new(),
+            prepared_readiness_to_batch: PhaseTimingCounters::new(),
+            prepared_batch_to_entry: PhaseTimingCounters::new(),
             control_check_to_prepared_entry: PhaseTimingCounters::new(),
         }
     }
@@ -192,6 +228,10 @@ impl PreparedTxSchedulerTimingCounters {
         let stop_poll = trace.stop_poll_completed_micros as u32
             & AggregateTxCounters::IRQ_TIME_MASK;
         let control_check = trace.control_readiness_checked_micros as u32
+            & AggregateTxCounters::IRQ_TIME_MASK;
+        let prepared_readiness = trace.prepared_readiness_checked_micros as u32
+            & AggregateTxCounters::IRQ_TIME_MASK;
+        let prepared_batch = trace.prepared_batch_checked_micros as u32
             & AggregateTxCounters::IRQ_TIME_MASK;
 
         let Some(completion_to_active_return) =
@@ -213,6 +253,21 @@ impl PreparedTxSchedulerTimingCounters {
         else {
             return;
         };
+        let Some(control_to_prepared_readiness) =
+            Self::elapsed(control_check, trace.prepared_readiness_checked_micros)
+        else {
+            return;
+        };
+        let Some(prepared_readiness_to_batch) =
+            Self::elapsed(prepared_readiness, trace.prepared_batch_checked_micros)
+        else {
+            return;
+        };
+        let Some(prepared_batch_to_entry) =
+            Self::elapsed(prepared_batch, trace.prepared_entry_micros)
+        else {
+            return;
+        };
         let Some(control_to_entry) = Self::elapsed(control_check, trace.prepared_entry_micros) else {
             return;
         };
@@ -230,6 +285,12 @@ impl PreparedTxSchedulerTimingCounters {
             .record(active_return_to_scheduler_loop);
         self.stop_poll.record(stop_poll_micros);
         self.control_readiness.record(control_readiness_micros);
+        self.control_check_to_prepared_readiness
+            .record(control_to_prepared_readiness);
+        self.prepared_readiness_to_batch
+            .record(prepared_readiness_to_batch);
+        self.prepared_batch_to_entry
+            .record(prepared_batch_to_entry);
         self.control_check_to_prepared_entry
             .record(control_to_entry);
     }
@@ -250,6 +311,11 @@ impl PreparedTxSchedulerTimingCounters {
                 .snapshot(),
             stop_poll: self.stop_poll.snapshot(),
             control_readiness: self.control_readiness.snapshot(),
+            control_check_to_prepared_readiness: self
+                .control_check_to_prepared_readiness
+                .snapshot(),
+            prepared_readiness_to_batch: self.prepared_readiness_to_batch.snapshot(),
+            prepared_batch_to_entry: self.prepared_batch_to_entry.snapshot(),
             control_check_to_prepared_entry: self.control_check_to_prepared_entry.snapshot(),
         }
     }
@@ -444,6 +510,30 @@ impl AggregateTxCounters {
             stopped_on_empty_queue: AtomicU32::new(0),
             prepared_subframes: [const { AtomicU32::new(0) }; AGGREGATE_TX_HISTOGRAM_BUCKETS],
         }
+    }
+
+    /// Start one HIL measurement interval at a quiescent workload boundary.
+    ///
+    /// Cumulative counters survive between sessions so snapshots can form
+    /// deltas. Correlation endpoints and AP payload sequence state must not:
+    /// carrying either across a role restart would manufacture one very long
+    /// completion gap and classify the restarted sequence zero as backward.
+    /// The HIL runtime calls this after the preceding workload has drained and
+    /// before taking the next interval's first snapshot.
+    pub fn begin_interval(&self) {
+        self.last_publication_micros.store(0, Ordering::Relaxed);
+        self.last_completion_micros.store(0, Ordering::Relaxed);
+        self.pending_tx_irq_micros.store(0, Ordering::Relaxed);
+        self.prepared_scheduler_trace.reset();
+        self.ap_udp_claim_highest
+            .store(u32::MAX, Ordering::Relaxed);
+        self.ap_udp_claim_backward.store(0, Ordering::Relaxed);
+        self.ap_udp_claim_first_previous
+            .store(u32::MAX, Ordering::Relaxed);
+        self.ap_udp_claim_first_sequence
+            .store(u32::MAX, Ordering::Relaxed);
+        self.ap_udp_claim_maximum_distance
+            .store(0, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> AggregateTxCounterSnapshot {
@@ -1052,6 +1142,9 @@ pub struct PreparedTxSchedulerTimingSnapshot {
     pub active_service_return_to_scheduler_loop: PhaseTimingSnapshot,
     pub stop_poll: PhaseTimingSnapshot,
     pub control_readiness: PhaseTimingSnapshot,
+    pub control_check_to_prepared_readiness: PhaseTimingSnapshot,
+    pub prepared_readiness_to_batch: PhaseTimingSnapshot,
+    pub prepared_batch_to_entry: PhaseTimingSnapshot,
     pub control_check_to_prepared_entry: PhaseTimingSnapshot,
 }
 
@@ -1076,6 +1169,15 @@ impl PreparedTxSchedulerTimingSnapshot {
             control_readiness: self
                 .control_readiness
                 .wrapping_delta_since(earlier.control_readiness),
+            control_check_to_prepared_readiness: self
+                .control_check_to_prepared_readiness
+                .wrapping_delta_since(earlier.control_check_to_prepared_readiness),
+            prepared_readiness_to_batch: self
+                .prepared_readiness_to_batch
+                .wrapping_delta_since(earlier.prepared_readiness_to_batch),
+            prepared_batch_to_entry: self
+                .prepared_batch_to_entry
+                .wrapping_delta_since(earlier.prepared_batch_to_entry),
             control_check_to_prepared_entry: self
                 .control_check_to_prepared_entry
                 .wrapping_delta_since(earlier.control_check_to_prepared_entry),
@@ -1617,6 +1719,14 @@ mod tests {
             at_micros: 145,
         });
         counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+            phase: PreparedTxSchedulerPhase::PreparedReadinessChecked,
+            at_micros: 150,
+        });
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+            phase: PreparedTxSchedulerPhase::PreparedBatchChecked,
+            at_micros: 155,
+        });
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
             phase: PreparedTxSchedulerPhase::PreparedEntry,
             at_micros: 160,
         });
@@ -1662,6 +1772,64 @@ mod tests {
                 .micros,
             15
         );
+        assert_eq!(
+            delta
+                .prepared_scheduler_timing
+                .control_check_to_prepared_readiness
+                .micros,
+            5
+        );
+        assert_eq!(
+            delta
+                .prepared_scheduler_timing
+                .prepared_readiness_to_batch
+                .micros,
+            5
+        );
+        assert_eq!(
+            delta
+                .prepared_scheduler_timing
+                .prepared_batch_to_entry
+                .micros,
+            5
+        );
+    }
+
+    #[test]
+    fn interval_boundary_drops_stale_timing_and_ap_sequence_correlations() {
+        fn ap_udp_frame(sequence: u32) -> [u8; 46] {
+            let mut ethernet = [0_u8; 46];
+            ethernet[14] = 0x45;
+            ethernet[23] = 17;
+            ethernet[34..36].copy_from_slice(&4_324_u16.to_be_bytes());
+            ethernet[42..46].copy_from_slice(&sequence.to_be_bytes());
+            ethernet
+        }
+
+        let counters = AggregateTxCounters::with_clock(|| 100);
+        counters.observe(AggregateTxObservation::Completed {
+            acknowledged: 32,
+            individual_retry: false,
+        });
+        counters.observe_access_point_network_claim(&ap_udp_frame(7));
+
+        counters.begin_interval();
+        let before = counters.snapshot();
+        counters.observe(AggregateTxObservation::Published {
+            at_micros: 1_000_000,
+            program_micros: 4,
+        });
+        counters.observe_access_point_network_claim(&ap_udp_frame(0));
+        counters.observe_access_point_network_claim(&ap_udp_frame(1));
+
+        let delta = counters.snapshot().wrapping_delta_since(before);
+        assert_eq!(delta.completion_to_publication_samples, 0);
+        assert_eq!(delta.completion_to_publication_micros, 0);
+        assert_eq!(delta.ap_udp_claimed, 2);
+        assert_eq!(delta.ap_udp_claim_backward, 0);
+        assert_eq!(delta.ap_udp_claim_first_previous, u32::MAX);
+        assert_eq!(delta.ap_udp_claim_first_sequence, u32::MAX);
+        assert_eq!(delta.ap_udp_claim_maximum_distance, 0);
     }
 
     #[test]
@@ -1680,6 +1848,8 @@ mod tests {
             PreparedTxSchedulerPhase::ControlReadinessChecked { ready: false },
             50,
         );
+        trace.record(PreparedTxSchedulerPhase::PreparedReadinessChecked, 51);
+        trace.record(PreparedTxSchedulerPhase::PreparedBatchChecked, 53);
         trace.record(PreparedTxSchedulerPhase::PreparedEntry, 55);
 
         assert_eq!(
@@ -1689,6 +1859,8 @@ mod tests {
                 scheduler_loop_resumed_micros: 40,
                 stop_poll_completed_micros: 45,
                 control_readiness_checked_micros: 50,
+                prepared_readiness_checked_micros: 51,
+                prepared_batch_checked_micros: 53,
                 prepared_entry_micros: 55,
                 scheduler_passes: 1,
                 control_ready_passes: 0,

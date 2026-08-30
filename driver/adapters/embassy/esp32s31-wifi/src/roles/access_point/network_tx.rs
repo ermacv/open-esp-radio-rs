@@ -1224,6 +1224,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             control.observe_ht_aggregate(policy.rate());
             self.last_started_frames = admitted;
+            self.prepare_ready_standby(aggregate, control, network)?;
             return Ok(WifiTxProgress::Pending);
         }
 
@@ -1260,7 +1261,7 @@ where
             TX_BUFFER_SIZE,
         >,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        _network: &PinnedTxInterfaceConsumer<
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1278,6 +1279,100 @@ where
             (self.aggregate_pending() || self.has_prepared()) && aggregate.has_standby(),
             "DATAPATH must check AP standby ownership before claiming another ordered lease"
         );
+        self.prepare_one(aggregate, control, frame)?;
+
+        // The AP-specific peer, power-save and key checks remain per frame,
+        // but crossing the generic DATAPATH scheduler for every immediately
+        // available lease is not an ownership boundary. Drain only the
+        // current FIFO-ready prefix, exactly as the station aggregate owner
+        // does. A peer/TID boundary is retained in `prepared_first`, while an
+        // empty producer queue returns control to the executor.
+        self.prepare_ready_standby(aggregate, control, network)?;
+        Ok(())
+    }
+
+    fn prepare_ready_standby<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        while self.can_prepare(aggregate) {
+            let Some(frame) = network.try_receive() else {
+                break;
+            };
+            self.prepare_one(aggregate, control, frame)?;
+        }
+        Ok(())
+    }
+
+    fn prepare_one<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    ) -> Result<(), Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
         #[cfg(any(feature = "diagnostics", test))]
         let started = self.observer.map(AggregateTxObserver::now_micros);
         #[cfg(any(feature = "diagnostics", test))]
@@ -1546,6 +1641,7 @@ where
             observer.observe(AggregateTxObservation::StandbyPublished);
             control.observe_ht_aggregate(_batch.policy.rate());
         }
+        self.prepare_ready_standby(aggregate, control, network)?;
         Ok(WifiTxProgress::Pending)
     }
 

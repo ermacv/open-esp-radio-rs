@@ -385,6 +385,43 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
 }
 
 #[test]
+fn pinned_tx_batch_wait_does_not_claim_a_partial_prefix() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 3>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = split_pinned!(
+        resources,
+        pool,
+        NetworkInterfaceId::new(0),
+        [2, 0, 0, 0, 0, 1]
+    );
+    let tx = radio.tx_consumer();
+    let mut batch = pin!(tx.wait_queue_len_at_least(3));
+
+    assert!(batch.as_mut().poll(&mut context()).is_pending());
+    for marker in 1..=2_u8 {
+        device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+        assert!(batch.as_mut().poll(&mut context()).is_pending());
+        assert_eq!(tx.queue_len(), usize::from(marker));
+    }
+    device
+        .transmit(&mut context())
+        .unwrap()
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(3));
+    assert!(batch.as_mut().poll(&mut context()).is_ready());
+    assert_eq!(tx.queue_len(), 3);
+
+    for marker in 1..=3_u8 {
+        let frame = tx.try_receive().unwrap();
+        assert_eq!(frame.ethernet()[0], marker);
+    }
+}
+
+#[test]
 fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;

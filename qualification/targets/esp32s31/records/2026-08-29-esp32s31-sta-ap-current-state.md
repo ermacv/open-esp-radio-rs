@@ -1,6 +1,7 @@
 # ESP32-S31 STA, AP and STA+AP datapath state
 
-Date: 2026-08-29; updated 2026-08-30 after standalone-AP RX parity.
+Date: 2026-08-29; updated 2026-08-30 after standalone-AP RX parity and the AP
+TX aggregate-owner cutover.
 
 This record captures the source and HIL state after the split-radio/network
 cutover and the first standalone-AP RX-service correction. Its purpose is to
@@ -257,6 +258,76 @@ Consequently, the current evidence establishes:
 It is not established that the remaining gap is caused by RF conditions,
 cache layout, checksum, BA width or an irreducible AP protocol cost.
 
+### AP TX aggregate-owner cutover, 2026-08-30
+
+The next AP-only delta was in TX ownership rather than PHY or memory
+placement. The station aggregate owner filled the inactive A-MPDU arena from
+the currently ready network FIFO prefix while the active PPDU was on air. The
+AP owner originally crossed the generic DATAPATH scheduler once per Ethernet
+frame. Enabling that common lookahead directly restored approximately 123
+Mbit/s, but raised Core0 residence to approximately 58%; it repeated scheduler
+and AP owner transitions for every MPDU.
+
+The production cutover keeps AP peer, key, power-save and TID policy inside the
+AP role while making the ready-prefix operation batch-owned:
+
+1. the common scheduler waits until the exact missing prefix for the preferred
+   negotiated batch is published;
+2. it transfers one lease to the AP owner;
+3. the AP owner synchronously drains only the currently ready, compatible FIFO
+   prefix into standby;
+4. after terminal completion, a bounded saturated chain may start the complete
+   prepared successor without reconstructing the outer future;
+5. stop, due control, fresh RX and due recycle-only RX continuation all retain
+   priority at every physical transaction boundary.
+
+Lookahead remains limited to a single-interface network-owned TX. Paired
+STA+AP and control-owned TX do not use it, so a physical interface arbitration
+decision cannot be hidden inside one role's batch drain.
+
+Task-residence run `1788079938522-00265c73` used image CRC `e5d0a804` and
+measured:
+
+| Cycle | AP TX | Core0 radio residence | OpenWrt link |
+| --- | ---: | ---: | --- |
+| 1 | 122.087 Mbit/s | 5.585007 / 16 s = 34.91% | MCS7/HT40/SGI, 0 retry / 0 failed |
+| 2 | 122.124 Mbit/s | 5.610024 / 16 s = 35.06% | MCS7/HT40/SGI, 0 retry / 0 failed |
+
+The final observer-free production image CRC `25d215e5` then passed all six
+qualification windows in run `1788082145529-0026f86c`. Delivered throughput
+was 120.619, 121.103, 120.869, 120.999, 120.861 and 120.905 Mbit/s. OpenWrt
+reported MCS7/HT40/SGI for AP-to-client traffic in every window, with zero TX
+retries, zero failed transmissions and zero TID0 AQM drops. This is the final
+source-set throughput confirmation; the separate task-residence image above
+provides the low-overhead Core0 bound.
+
+The same source also passed the observer-free AP bidirectional gate in run
+`1788080132783-00266195`. Six 65/65-Mbit/s offer cycles delivered
+106.225--109.429 Mbit/s combined. The matched observer-free station control
+`1788081108430-00267310` delivered 104.353 Mbit/s combined at the same offer
+and payload size. Therefore the current approximately 108-Mbit/s AP duplex
+ceiling is not evidence that AP has a slower common datapath than STA.
+
+The duplex directions remain asymmetric. With the OpenWrt AP client in its
+automatic guard-interval mode, AP received 55--57 Mbit/s and transmitted
+50--53 Mbit/s. Driver-observation run `1788080456808-00266610` proved that the
+incoming data was MCS7/HT40/LGI, that the independent monitor and AP agreed on
+the unique BlockAck'ed MPDU count, and that the AP path had no software drop,
+DMA `BUFFER_FULL`, FIFO overflow, MIC failure, duplicate or reorder gap. The
+OpenWrt sender simultaneously reported 2.35k--2.49k AQM drops. Missing UDP
+sequences in that run were therefore absent before AP delivery, not lost in
+the AP DMA/reorder/network path.
+
+Forcing the OpenWrt client to SGI moved this diagnostic configuration across a
+capacity boundary. The per-phase image reported 19/65 overload discards and
+one `BUFFER_FULL=29` cycle; the lighter correctness image reported
+`BUFFER_FULL=48`. Those results prove that the diagnostic path cannot sustain
+the faster incoming burst indefinitely. They do not establish a production
+buffer failure because both images compile driver observation into the
+per-frame hot path and the fail-closed HIL catalog intentionally forbids a
+fixed-MCS/GI claim from an observer-free image. No ring-size, SRAM-placement,
+copy or replacement-buffer change is justified by this evidence alone.
+
 ## Concurrent STA+AP path
 
 The paired owner in
@@ -305,9 +376,9 @@ The next sequence is:
 3. Re-measure before further optimizing `admit_rx_data`, peer accounting or security
    parsing. Optimize only components which remain expensive in normalized
    cycles per serviced MPDU.
-4. Characterize AP TX separately. Historical AP TX is about 113 Mbit/s versus
-   STA near 120 Mbit/s; measure terminal completion to next aggregate
-   publication rather than inferring a blocker from throughput alone.
+4. Keep AP TX as an independent gate: observer-free throughput must remain at
+   least 120 Mbit/s and low-overhead Core0 task residence below 40%. Do not
+   infer duplex headroom from this one-direction result.
 5. Validate monitor and scanner work accounting at their finite service
    boundaries; they need the same truthful physical counters but not the
    saturated network protocol leaf.
@@ -326,6 +397,7 @@ For standalone AP RX parity, require all of the following in matched HIL:
   bottleneck cannot masquerade as a target optimization.
 
 The correct current statement is: standalone AP RX has reached the requested
-STA performance class in the measured HT40 ceiling workload, and concurrent
-STA+AP RX is below 40% Core0 at the measured 65-Mbit/s aggregate offer. AP TX
-and duplex retain independent performance budgets.
+STA performance class in the measured HT40 ceiling workload; standalone AP TX
+has independently demonstrated 120+ Mbit/s at less than 40% Core0; and
+concurrent STA+AP RX is below 40% Core0 at the measured 65-Mbit/s aggregate
+offer. Duplex retains its own performance and residence budget.

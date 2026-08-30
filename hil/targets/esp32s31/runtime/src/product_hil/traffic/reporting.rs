@@ -215,8 +215,7 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         "OAMPSP samples={} passes={} passes_max={} control_ready_passes={} \
          completion_to_return_us={} completion_to_return_max_us={} \
          return_to_loop_us={} return_to_loop_max_us={} \
-         stop_poll_us={} stop_poll_max_us={} readiness_us={} readiness_max_us={} \
-         readiness_to_entry_us={} readiness_to_entry_max_us={}",
+         stop_poll_us={} stop_poll_max_us={} readiness_us={} readiness_max_us={}",
         scheduler.samples,
         scheduler.scheduler_passes,
         scheduler.scheduler_passes_lifetime_max,
@@ -233,6 +232,23 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         scheduler.stop_poll.lifetime_max_micros,
         scheduler.control_readiness.micros,
         scheduler.control_readiness.lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "OAMPSR prepared_readiness_us={} prepared_readiness_max_us={} \
+         batch_policy_us={} batch_policy_max_us={} batch_to_entry_us={} batch_to_entry_max_us={} \
+         readiness_to_entry_us={} readiness_to_entry_max_us={}",
+        scheduler.control_check_to_prepared_readiness.micros,
+        scheduler
+            .control_check_to_prepared_readiness
+            .lifetime_max_micros,
+        scheduler.prepared_readiness_to_batch.micros,
+        scheduler
+            .prepared_readiness_to_batch
+            .lifetime_max_micros,
+        scheduler.prepared_batch_to_entry.micros,
+        scheduler.prepared_batch_to_entry.lifetime_max_micros,
         scheduler.control_check_to_prepared_entry.micros,
         scheduler
             .control_check_to_prepared_entry

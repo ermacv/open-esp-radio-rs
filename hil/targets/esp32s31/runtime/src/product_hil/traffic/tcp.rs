@@ -119,8 +119,10 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             .rx_primary;
         let task_poll_start = TASK_POLLS.snapshot();
         let pipeline_start = pipeline_counters.snapshot();
-        let aggregate_start = crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION
-            .then(|| aggregate_counters.snapshot());
+        let aggregate_start = crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION.then(|| {
+            aggregate_counters.begin_interval();
+            aggregate_counters.snapshot()
+        });
         let connection_timeout = duration + Duration::from_secs(5);
         let connected =
             match with_timeout(connection_timeout, socket.accept(config.local_port)).await {

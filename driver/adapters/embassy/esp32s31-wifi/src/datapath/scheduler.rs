@@ -172,7 +172,8 @@ where
             self.discard_stale_tx_wakes();
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.discard_wakes_completed();
-            let network_tx_pending = self.network_tx_queue_len() != 0;
+            let network_tx_pending =
+                self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.first_network_queue_completed();
             let control_ready = self.control_ready_latched
@@ -234,18 +235,10 @@ where
             // Re-running physical queue discovery, burst classification and
             // collection-deadline calculation here creates an avoidable air
             // gap on every saturated BA transaction.
-            if self.services.has_prepared_tx()
-                && !self.services.has_rx_work()
-                && !self.irq.rx_signaled()
-            {
-                let interface = self.retained_prepared_tx_interface();
-                let admitted = self.services.prepared_tx_frame_count().max(1);
-                let preferred = self.services.preferred_tx_batch_size_for(interface).max(1);
-                if admitted >= preferred {
-                    self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
-                        .await?;
-                    continue;
-                }
+            if let Some((interface, admitted)) = self.prepared_network_tx_candidate() {
+                self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
+                    .await?;
+                continue;
             }
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.prepared_completed();
@@ -387,6 +380,66 @@ where
                     if progress == WifiTxProgress::Pending {
                         self.begin_active_tx(interface, DatapathTxOrigin::Network);
                         self.drive_active_tx(true).await?;
+                        // Keep a saturated single-owner chain inside one
+                        // bounded scheduler turn. Every completed hardware
+                        // transaction still crosses the same ordered stop,
+                        // control and RX priority checks; only the redundant
+                        // outer future re-entry is removed. The prepared role
+                        // owner has already bounded the successor at its
+                        // negotiated BlockAck window.
+                        loop {
+                            #[cfg(any(feature = "diagnostics", test))]
+                            self.services.mark_prepared_tx_scheduler_phase(
+                                PreparedTxSchedulerPhase::SchedulerLoopResumed,
+                                Instant::now().as_micros(),
+                            );
+                            if !stopping
+                                && matches!(
+                                    select(stop.as_mut(), ready(())).await,
+                                    Either::First(())
+                                )
+                            {
+                                stopping = true;
+                            }
+                            #[cfg(any(feature = "diagnostics", test))]
+                            self.services.mark_prepared_tx_scheduler_phase(
+                                PreparedTxSchedulerPhase::StopPollCompleted,
+                                Instant::now().as_micros(),
+                            );
+                            if stopping {
+                                break;
+                            }
+                            self.discard_stale_tx_wakes();
+                            let network_tx_pending =
+                                self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
+                            let control_ready = self.control_ready_latched
+                                || self.services.control_ready(Instant::now().as_micros())
+                                || (network_tx_pending
+                                    && self.services.control_required_before_network_tx());
+                            #[cfg(any(feature = "diagnostics", test))]
+                            self.services.mark_prepared_tx_scheduler_phase(
+                                PreparedTxSchedulerPhase::ControlReadinessChecked {
+                                    ready: control_ready,
+                                },
+                                Instant::now().as_micros(),
+                            );
+                            if control_ready {
+                                self.control_ready_latched = true;
+                                break;
+                            }
+
+                            let Some((prepared_interface, prepared_frames)) =
+                                self.prepared_network_tx_candidate()
+                            else {
+                                break;
+                            };
+                            self.start_prepared_network_tx(
+                                prepared_interface,
+                                prepared_frames,
+                                &mut tx_batch_states,
+                            )
+                            .await?;
+                        }
                     }
                     continue;
                 }

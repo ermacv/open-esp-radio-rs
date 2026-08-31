@@ -1098,7 +1098,11 @@ fn stage_revision(stage: &str) -> Result<u32> {
     }
     match stage {
         "symbol-inventory" => Ok(2),
-        "mmio-discovery" => Ok(6),
+        // v7 follows the indexed-register-before-RAM classification cut. MMIO
+        // discovery consumes the shared structural memory classifier directly,
+        // so retaining a v6 result can hide newly recovered indexed MMIO even
+        // when linked IR has already moved to its matching semantic domain.
+        "mmio-discovery" => Ok(7),
         "interface-discovery" => Ok(7),
         "interface-capability-context" => Ok(1),
         "linked-ir" => Ok(57),
@@ -1806,6 +1810,7 @@ mod tests {
             assert!(stage_revision(stage).unwrap() > 0);
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
+        assert_eq!(stage_revision("mmio-discovery").unwrap(), 7);
         assert_eq!(stage_revision("linked-ir").unwrap(), 57);
         assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 57);
     }

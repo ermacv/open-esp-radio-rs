@@ -16,10 +16,10 @@ use open_esp_radio_bluetooth_hci::{
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint;
+use open_esp_radio_bluetooth_hci::{InProcessHciControllerEndpoint, LeControllerCommandEndpoint};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothDtmActiveControllerCommandRoute, BluetoothDtmActiveDeferredBootstrap,
+    BluetoothDtmActiveControllerCommandRoute, BluetoothDtmActiveResetBarrier,
     BluetoothDtmActiveSessionFault, BluetoothDtmActiveSessionRadioStep,
     BluetoothDtmCommandReadySession, BluetoothDtmResponsePending,
     BluetoothDtmResponsePendingSession, BluetoothDtmResponsePublication,
@@ -169,7 +169,7 @@ enum DtmSessionStimulus {
     RetainedEndpointMismatch,
     RetainedFault,
     RetainedExternalFrame,
-    DeferredBootstrap,
+    ResetBarrier,
     TransferredControllerEndpointMismatch,
     TerminalFault,
 }
@@ -202,7 +202,7 @@ const fn reduce_dtm_session_transition(
 ) -> DtmSessionAction {
     use DtmSessionAction::{Advance, RetainBoundary, TerminalBoundary, TransferBoundary};
     use DtmSessionStimulus::{
-        Completed, Continue, ControllerResponsePending, DeferredBootstrap, RestoreRequired,
+        Completed, Continue, ControllerResponsePending, ResetBarrier, RestoreRequired,
         RetainedEndpointMismatch, RetainedExternalFrame, RetainedFault, Retry,
         StoppingResponseReady, TerminalFault, TestEnd, TransferredControllerEndpointMismatch,
         Unrelated,
@@ -226,9 +226,7 @@ const fn reduce_dtm_session_transition(
         }
         (PendingResponse | CommandReady | TestEndResponse, RetainedFault) => RetainBoundary,
         (CommandReady, RetainedExternalFrame) => RetainBoundary,
-        (CommandReady, DeferredBootstrap | TransferredControllerEndpointMismatch) => {
-            TransferBoundary
-        }
+        (CommandReady, ResetBarrier | TransferredControllerEndpointMismatch) => TransferBoundary,
         (PendingResponse | CommandReady | Stopping, TerminalFault) => TerminalBoundary,
         _ => panic!("invalid DTM task transition"),
     }
@@ -247,8 +245,8 @@ where
 {
     /// One unrelated scheduler list remains owned by the outer dispatcher.
     UnrelatedList(BluetoothSchedulerFinishedHardwareListObserved),
-    /// An undispatched bootstrap command paired with its command-ready session.
-    DeferredBootstrap(BluetoothDtmActiveDeferredBootstrap<'runtime, S, CAPACITY>),
+    /// An accepted Reset remains paired opaquely with its active radio/order owner.
+    ResetBarrier(BluetoothDtmActiveResetBarrier<'runtime, S, CAPACITY>),
     /// A non-command Host frame remains bound to its source HCI epoch and buffer.
     NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
     /// A foreign Controller classification and unchanged active session transferred together.
@@ -570,7 +568,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &mut self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &mut LeControllerCommandEndpoint<
             'epoch,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -594,11 +592,11 @@ where
                 DtmSessionStimulus::TestEnd,
                 EmbassyBluetoothDtmSessionState::Stopping(runner),
             ),
-            BluetoothDtmActiveControllerCommandRoute::DeferredBootstrap(deferred) => {
+            BluetoothDtmActiveControllerCommandRoute::ResetBarrier(barrier) => {
                 return Some(Self::transfer_transition(
                     EmbassyBluetoothDtmSessionPhase::CommandReady,
-                    DtmSessionStimulus::DeferredBootstrap,
-                    EmbassyBluetoothDtmSessionBoundary::DeferredBootstrap(deferred),
+                    DtmSessionStimulus::ResetBarrier,
+                    EmbassyBluetoothDtmSessionBoundary::ResetBarrier(barrier),
                 ));
             }
             BluetoothDtmActiveControllerCommandRoute::EndpointMismatch { session, command } => {
@@ -722,7 +720,7 @@ where
     >(
         &mut self,
         wakers: &EmbassyBluetoothRuntimeWakers<WakeMutex>,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &mut LeControllerCommandEndpoint<
             'epoch,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -744,7 +742,10 @@ where
                 continue;
             };
             match wait
-                .wait_next(controller, recheck.wait_until_absolute_recheck())
+                .wait_next(
+                    controller.transport(),
+                    recheck.wait_until_absolute_recheck(),
+                )
                 .await
             {
                 Ok(EmbassyBluetoothDtmActiveCommandSignal::Radio(_)) => {
@@ -757,7 +758,9 @@ where
                         .take()
                         .expect("the active task retains its sole HCI receive buffer");
                     match classify_controller_host_intake(
-                        controller.try_receive_classified_command_with_buffer(buffer),
+                        controller
+                            .transport()
+                            .try_receive_classified_command_with_buffer(buffer),
                     ) {
                         ClassifiedControllerHostIntake::Command { command, buffer } => {
                             packet.replace(CommandPacketBuffer(buffer));
@@ -940,7 +943,7 @@ where
     >(
         &mut self,
         wakers: &EmbassyBluetoothRuntimeWakers<WakeMutex>,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &mut LeControllerCommandEndpoint<
             'epoch,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -954,7 +957,7 @@ where
         loop {
             let boundary = match self.phase() {
                 EmbassyBluetoothDtmSessionPhase::PendingResponse => {
-                    self.drive_pending_response(wakers, controller, recheck)
+                    self.drive_pending_response(wakers, controller.transport(), recheck)
                         .await
                 }
                 EmbassyBluetoothDtmSessionPhase::CommandReady => {
@@ -965,7 +968,7 @@ where
                     self.drive_stopping(wakers, recheck).await
                 }
                 EmbassyBluetoothDtmSessionPhase::TestEndResponse => {
-                    self.drive_test_end_response(controller).await
+                    self.drive_test_end_response(controller.transport()).await
                 }
                 EmbassyBluetoothDtmSessionPhase::Restore => return self.retry_restore(),
             };
@@ -1181,7 +1184,7 @@ mod tests {
     fn production_reducer_covers_each_task_phase_and_action() {
         use DtmSessionAction::{Advance, RetainBoundary, TerminalBoundary, TransferBoundary};
         use DtmSessionStimulus::{
-            Completed, Continue, ControllerResponsePending, DeferredBootstrap, ResponsePublished,
+            Completed, Continue, ControllerResponsePending, ResetBarrier, ResponsePublished,
             RestoreRequired, RetainedEndpointMismatch, RetainedExternalFrame, RetainedFault, Retry,
             StoppingResponseReady, TerminalFault, TestEnd, TransferredControllerEndpointMismatch,
             Unrelated,
@@ -1209,7 +1212,7 @@ mod tests {
             (PendingResponse, RetainedEndpointMismatch, RetainBoundary),
             (CommandReady, RetainedFault, RetainBoundary),
             (PendingResponse, TerminalFault, TerminalBoundary),
-            (CommandReady, DeferredBootstrap, TransferBoundary),
+            (CommandReady, ResetBarrier, TransferBoundary),
             (
                 CommandReady,
                 TransferredControllerEndpointMismatch,

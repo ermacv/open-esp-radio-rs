@@ -25,12 +25,13 @@
 //! receive scratch storage, and keeps Reset plus other bootstrap commands
 //! available to session-aware policy before explicit dispatch.
 //! [`LeControllerHciResources`] binds transport storage and bootstrap state to
-//! one affine Controller epoch. Its sole split exposes disjoint Host, raw
-//! Controller and bootstrap endpoints so a hardware session runner can retain
-//! an accepted command across asynchronous radio transitions and output
-//! backpressure without a synchronous-dispatch compatibility layer. Resource
-//! construction rejects profiles whose advertised ACL capacity exceeds that
-//! storage. This crate
+//! one affine Controller epoch. Its sole split exposes a Host transport and one
+//! combined Controller command endpoint: the raw Controller transport and
+//! mutable bootstrap state cannot be separated or mutated through public
+//! accessors. A hardware session runner can retain an accepted command across
+//! asynchronous radio transitions and output backpressure without a
+//! synchronous-dispatch compatibility layer. Resource construction rejects
+//! profiles whose advertised ACL capacity exceeds that storage. This crate
 //! contains no Link Layer, radio, MMIO, interrupt, executor, allocator, or
 //! readiness substitute.
 
@@ -65,12 +66,13 @@ pub use dtm::{
     LeTransmitterTestV1Command,
 };
 pub use dtm_order::{
-    LeControllerClassifiedCommandRoute, LeControllerResponsePending,
+    LeControllerClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResponsePending,
     LeControllerResponsePublication, LeControllerResponsePublished, LeDtmIdleCommandRoute,
     route_idle_dtm_command,
 };
 pub use resources::{
-    LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,
+    LeControllerCommandEndpoint, LeControllerHciEndpoints, LeControllerHciResources,
+    LeControllerHciResourcesError,
 };
 pub use response::{
     HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,

@@ -11,10 +11,11 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
     HciChannelError, HciEpochBound, InProcessHciControllerEndpoint,
     LeControllerClassifiedCommandRoute as HciClassifiedCommandRoute,
-    LeControllerCommandClassification, LeControllerResponsePending as HciResponsePending,
+    LeControllerCommandClassification, LeControllerCommandEndpoint,
+    LeControllerResetBarrier as HciResetBarrier, LeControllerResponsePending as HciResponsePending,
     LeControllerResponsePublication as HciResponsePublication,
     LeControllerResponsePublished as HciResponsePublished, LeDtmActiveSessionDisposition,
-    LeDtmCommandCompleteEvent, OwnedBootstrapCommand,
+    LeDtmCommandCompleteEvent,
 };
 
 use crate::{
@@ -108,50 +109,21 @@ where
     },
 }
 
-/// One undispatched bootstrap command paired with the exact active DTM session.
+/// One accepted Reset paired opaquely with the exact active DTM radio/order owner.
 ///
-/// In particular, Reset remains a semantic command here. This layer never
-/// mutates bootstrap state or claims that active radio work has quiesced.
-#[must_use = "apply session-aware bootstrap policy without separating its active owner"]
-pub struct BluetoothDtmActiveDeferredBootstrap<'runtime, S, const CAPACITY: usize>
+/// Construction does not mutate bootstrap state or claim that active radio
+/// work has quiesced. Neither the radio owner nor its published-order proof can
+/// be separated from the Reset token through this API.
+#[must_use = "retain the Reset barrier until active radio work has quiesced"]
+pub struct BluetoothDtmActiveResetBarrier<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
-    command: OwnedBootstrapCommand,
-}
-
-impl<'runtime, S, const CAPACITY: usize> BluetoothDtmActiveDeferredBootstrap<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    /// Inspect the command without dispatching bootstrap state.
-    pub const fn command(&self) -> &OwnedBootstrapCommand {
-        &self.command
-    }
-
-    /// Whether the deferred session belongs to the supplied HCI endpoint.
-    pub fn accepts_hci_endpoint<
-        M: RawMutex,
-        const HOST_TO_CONTROLLER_DEPTH: usize,
-        const CONTROLLER_TO_HOST_DEPTH: usize,
-        const PACKET_CAPACITY: usize,
-    >(
-        &self,
-        controller: &InProcessHciControllerEndpoint<
-            '_,
-            M,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ) -> bool {
-        self.session.accepts_hci_endpoint(controller)
-    }
+    _barrier: HciResetBarrier<'runtime, BluetoothDtmActiveRadio<'runtime, S, CAPACITY>>,
 }
 
 /// Typed result of routing one complete Controller classification while DTM is active.
-#[must_use = "publish the response, run Test End, defer bootstrap policy, or retain a mismatch"]
+#[must_use = "publish the response, run Test End, retain Reset, or retain a mismatch"]
 pub enum BluetoothDtmActiveControllerCommandRoute<'runtime, 'command, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
@@ -160,8 +132,8 @@ where
     ResponsePending(BluetoothDtmResponsePendingSession<'runtime, S, CAPACITY>),
     /// Test End consumed the command and entered hardware quiescence.
     TestEnd(crate::BluetoothDtmStoppingRunner<'runtime, S, CAPACITY>),
-    /// Bootstrap policy must run outside the active-radio router.
-    DeferredBootstrap(BluetoothDtmActiveDeferredBootstrap<'runtime, S, CAPACITY>),
+    /// Reset must wait behind lifecycle quiescence without exposing either axis.
+    ResetBarrier(BluetoothDtmActiveResetBarrier<'runtime, S, CAPACITY>),
     /// Either the session or complete classification belongs to another HCI epoch.
     EndpointMismatch {
         /// Unchanged command-ready active session.
@@ -353,9 +325,9 @@ where
     /// Both the published response marker and the command must match the
     /// supplied endpoint. Terminal classifications and a second start enter the
     /// same generic response axis; Test End enters the existing stopping runner.
-    /// Bootstrap commands, including Reset, remain undispatched beside the exact
-    /// command-ready session. Until a pending response publishes, no value
-    /// carrying command-ready authority exists.
+    /// Non-Reset bootstrap commands dispatch immediately into the same response
+    /// axis. Reset instead remains an opaque lifecycle barrier. Until a pending
+    /// response publishes, no value carrying command-ready authority exists.
     pub fn route_active_controller_command<
         'command,
         M: RawMutex,
@@ -364,7 +336,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &mut LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -374,7 +346,7 @@ where
         command: HciEpochBound<'command, LeControllerCommandClassification>,
     ) -> BluetoothDtmActiveControllerCommandRoute<'runtime, 'command, S, CAPACITY> {
         let transaction = self.order.transaction.map_owner(|()| self.radio);
-        match transaction.route_classified_command(controller, command) {
+        match controller.route_classified_command(transaction, command) {
             HciClassifiedCommandRoute::ResponsePending(pending) => {
                 let (radio, transaction) = pending.into_parts();
                 BluetoothDtmActiveControllerCommandRoute::ResponsePending(
@@ -408,16 +380,9 @@ where
                     }
                 }
             }
-            HciClassifiedCommandRoute::Bootstrap { published, command } => {
-                let (radio, transaction) = published.into_parts();
-                BluetoothDtmActiveControllerCommandRoute::DeferredBootstrap(
-                    BluetoothDtmActiveDeferredBootstrap {
-                        session: BluetoothDtmActiveSession {
-                            radio,
-                            order: BluetoothDtmResponsePublished { transaction },
-                        },
-                        command,
-                    },
+            HciClassifiedCommandRoute::ResetBarrier(barrier) => {
+                BluetoothDtmActiveControllerCommandRoute::ResetBarrier(
+                    BluetoothDtmActiveResetBarrier { _barrier: barrier },
                 )
             }
             HciClassifiedCommandRoute::EndpointMismatch { published, command } => {

@@ -228,7 +228,7 @@ impl BootstrapCommand {
 /// Classification constructs this value without observing or changing a
 /// bootstrap epoch. A session owner may therefore retain a Reset until active
 /// radio work is quiescent, or apply another session-aware policy, before
-/// consuming it through [`LeControllerBootstrap::dispatch_owned`].
+/// handing it to the bootstrap state owner.
 #[derive(Debug, Eq, PartialEq)]
 pub enum OwnedBootstrapCommand {
     /// HCI Reset.
@@ -496,7 +496,7 @@ impl LeControllerBootstrap {
     /// Classification is deliberately separate and immutable. A session owner
     /// decides when this method may run, in particular whether Reset must wait
     /// for active radio work to quiesce.
-    pub fn dispatch_owned(
+    pub(crate) fn dispatch_owned(
         &mut self,
         command: OwnedBootstrapCommand,
     ) -> BootstrapCommandCompleteEvent {

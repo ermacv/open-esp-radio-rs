@@ -238,8 +238,8 @@ where
 
 /// All borrowed runtime endpoints from one powered Controller epoch.
 ///
-/// Named fields keep interrupt, task and HCI roles explicit. The mutable task,
-/// raw Controller and bootstrap borrows prevent a second split while this
+/// Named fields keep interrupt, task and HCI roles explicit. The mutable task
+/// and combined Controller command endpoint prevent a second split while this
 /// value is alive.
 #[must_use = "all runtime endpoints belong to one powered Controller epoch"]
 pub struct BluetoothControllerRuntimeEndpoints<
@@ -256,7 +256,7 @@ pub struct BluetoothControllerRuntimeEndpoints<
     pub interrupt: BluetoothControllerInterruptRuntime<'runtime>,
     /// Task-side scheduler workers.
     pub task: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
-    /// Disjoint Host, raw Controller and bootstrap endpoints.
+    /// Disjoint Host transport and combined Controller command endpoint.
     pub hci: LeControllerHciEndpoints<
         'runtime,
         M,
@@ -603,7 +603,7 @@ mod tests {
     use open_esp_radio_bluetooth_hci::{
         BluetoothPublicDeviceAddress, HostToControllerFrame, LeControllerBootstrapConfig,
         LeControllerCommandClassification, LeControllerHciEndpoints, LeControllerHciResources,
-        bt_hci::{PacketKind, cmd::controller_baseband::Reset, transport::Transport},
+        bt_hci::{cmd::controller_baseband::Reset, transport::Transport},
         classify_le_controller_command,
     };
     use open_esp_radio_esp32s31_pac::RadioHardware;
@@ -640,12 +640,18 @@ mod tests {
     fn opaque_hci_epoch_accepts_only_its_origin_endpoint() {
         let mut matching_resources = hci();
         let matching = matching_resources.split();
-        let epoch = matching.controller.epoch_identity();
-        assert!(hci_epoch_accepts_endpoint(epoch, &matching.controller));
+        let epoch = matching.controller.transport().epoch_identity();
+        assert!(hci_epoch_accepts_endpoint(
+            epoch,
+            matching.controller.transport()
+        ));
 
         let mut foreign_resources = hci();
         let foreign = foreign_resources.split();
-        assert!(!hci_epoch_accepts_endpoint(epoch, &foreign.controller));
+        assert!(!hci_epoch_accepts_endpoint(
+            epoch,
+            foreign.controller.transport()
+        ));
     }
 
     #[test]
@@ -666,20 +672,17 @@ mod tests {
             interrupt.scheduler_wake(),
             task.scheduler_wake()
         ));
-        let LeControllerHciEndpoints {
-            host,
-            controller,
-            bootstrap,
-        } = hci;
+        let LeControllerHciEndpoints { host, controller } = hci;
         block_on(async {
             host.write(&Reset::new())
                 .await
                 .expect("Reset enters the matching Host queue");
             let mut command_buffer = [0; 31];
             let HostToControllerFrame::Command(command) = controller
+                .transport()
                 .receive(&mut command_buffer)
                 .await
-                .expect("raw Controller receives the matching Reset")
+                .expect("Controller transport receives the matching Reset")
             else {
                 panic!("Reset changed HCI packet class");
             };
@@ -688,11 +691,7 @@ mod tests {
             else {
                 panic!("Reset did not decode as a bootstrap command");
             };
-            let response = bootstrap.dispatch_owned(command);
-            controller
-                .publish(PacketKind::Event, response.as_bytes())
-                .await
-                .expect("raw Controller publishes the bootstrap response");
+            assert!(command.is_reset());
         });
     }
 
@@ -700,20 +699,17 @@ mod tests {
     fn used_hci_epoch_is_rejected_without_losing_either_owner() {
         let mut used_hci = hci();
         {
-            let LeControllerHciEndpoints {
-                host,
-                controller,
-                bootstrap,
-            } = used_hci.split();
+            let LeControllerHciEndpoints { host, controller } = used_hci.split();
             block_on(async {
                 host.write(&Reset::new())
                     .await
                     .expect("Reset enters the test queue");
                 let mut command_buffer = [0; 31];
                 let HostToControllerFrame::Command(command) = controller
+                    .transport()
                     .receive(&mut command_buffer)
                     .await
-                    .expect("raw Controller receives Reset")
+                    .expect("Controller transport receives Reset")
                 else {
                     panic!("Reset changed HCI packet class");
                 };
@@ -722,11 +718,7 @@ mod tests {
                 else {
                     panic!("Reset did not decode as a bootstrap command");
                 };
-                let response = bootstrap.dispatch_owned(command);
-                controller
-                    .publish(PacketKind::Event, response.as_bytes())
-                    .await
-                    .expect("raw Controller publishes Reset completion");
+                assert!(command.is_reset());
             });
         }
 

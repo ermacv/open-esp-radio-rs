@@ -480,8 +480,9 @@ pub struct BluetoothControllerInterruptOwnersPublished<
 ///
 /// The task endpoint owns all mutable scheduler workers, the interrupt service
 /// owns only stable platform dispatch plus shared publication cells, and HCI
-/// exposes raw Controller/bootstrap endpoints. Keeping the backing final owner
-/// in caller-owned stable storage prevents a self-referential runtime object.
+/// exposes the Host transport and combined Controller command endpoint. Keeping
+/// the backing final owner in caller-owned stable storage prevents a
+/// self-referential runtime object.
 #[must_use = "the final Controller endpoints must remain in one live runtime epoch"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerPublishedRuntimeEndpoints<
@@ -499,7 +500,7 @@ pub struct BluetoothControllerPublishedRuntimeEndpoints<
     pub interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
     /// Sole powered scheduler and DTM task service.
     pub task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    /// Disjoint Host transport, raw Controller endpoint and bootstrap state.
+    /// Disjoint Host transport and combined Controller command endpoint.
     pub hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<
         'runtime,
         M,
@@ -2189,7 +2190,7 @@ where
             },
             rf_ready,
         ) = initialized.split_runtime();
-        let hci_epoch = hci.controller.epoch_identity();
+        let hci_epoch = hci.controller.transport().epoch_identity();
         BluetoothControllerPublishedRuntimeEndpoints {
             interrupt: BluetoothControllerPublishedInterruptService {
                 storage: _storage,

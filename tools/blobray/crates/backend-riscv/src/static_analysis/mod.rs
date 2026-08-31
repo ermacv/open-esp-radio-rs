@@ -30,8 +30,8 @@ mod state;
 use alu::apply_alu_instruction;
 use calls::{StructuralCallControl, apply_call_instruction, apply_relocated_call};
 pub use context::{
-    StructuralCallSite, StructuralPointerContext, StructuralProjectedRelocation,
-    StructuralRelocatedCallView, StructuralRelocatedCalls,
+    ReviewedCompressedPointerEncoding, StructuralCallSite, StructuralPointerContext,
+    StructuralProjectedRelocation, StructuralRelocatedCallView, StructuralRelocatedCalls,
 };
 use memory::*;
 use memory_access::{apply_floating_memory_instruction, apply_memory_instruction};
@@ -178,6 +178,9 @@ pub struct RiscvHarnessSpec {
     pub semantic_cache_domain: &'static str,
     pub contracts: &'static crate::KnowledgeContractSpec,
     pub summaries: &'static RiscvSummaryHooks,
+    /// Reviewed compressed-pointer encodings accepted by structural memory
+    /// analysis. Generic and unconfigured harnesses must leave this empty.
+    pub compressed_pointer_encodings: &'static [ReviewedCompressedPointerEncoding],
 }
 
 pub fn is_reference_only_blocker(blocker: &str) -> bool {

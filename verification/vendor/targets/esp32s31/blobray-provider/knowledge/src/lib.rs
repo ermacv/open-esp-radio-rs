@@ -44,9 +44,11 @@ const RISCV_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
 };
 
 pub static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
-    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-chip/v1+radio-investigation-overlay/v5",
+    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-chip/v2+radio-investigation-overlay/v5",
     contracts: &CONTRACTS,
     summaries: &RISCV_SUMMARIES,
+    compressed_pointer_encodings: open_radio_vendor_chip_knowledge_esp32s31_rev0::RISCV_HARNESS
+        .compressed_pointer_encodings,
 };
 
 pub const REVIEWED_SUMMARY_EVIDENCE_SOURCE: EvidenceSource = EvidenceSource {

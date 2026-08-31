@@ -376,7 +376,7 @@ fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
         })
         .collect::<BTreeSet<_>>();
     let mut hash = Sha256::new();
-    hash.update(b"blobray/resolver-semantic-layout/v2\0");
+    hash.update(b"blobray/resolver-semantic-layout/v3\0");
     hash.update((symbols.len() as u64).to_le_bytes());
     for (member, name, address) in symbols {
         hash_optional_str(&mut hash, member);
@@ -429,6 +429,11 @@ fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
         &mut hash,
         "projected-relocations",
         &context.projected_relocations,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "reviewed-compressed-pointer-encodings",
+        &context.reviewed_compressed_pointer_encodings,
     );
     hash_debug_projection(
         &mut hash,

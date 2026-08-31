@@ -8,7 +8,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::BluetoothDtmBoundSramLinkAddress;
+use crate::BluetoothControllerSramLinkAddress;
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 const LINK_STATE_POWER_MASK: u32 = 0x0f80_0000;
@@ -28,7 +28,7 @@ const RECURRING_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x0000_0001;
 pub struct BluetoothDtmTxHeaderHeadProjection(u32);
 
 impl BluetoothDtmTxHeaderHeadProjection {
-    pub(super) const fn from_bound(address: BluetoothDtmBoundSramLinkAddress) -> Self {
+    pub(super) const fn from_bound(address: BluetoothControllerSramLinkAddress) -> Self {
         Self(address.compressed_image())
     }
 
@@ -50,7 +50,7 @@ impl BluetoothDtmTxHeaderHeadProjection {
 pub struct BluetoothDtmRxHeaderTailProjection(u32);
 
 impl BluetoothDtmRxHeaderTailProjection {
-    pub(super) const fn from_bound(address: BluetoothDtmBoundSramLinkAddress) -> Self {
+    pub(super) const fn from_bound(address: BluetoothControllerSramLinkAddress) -> Self {
         Self(address.compressed_image())
     }
 
@@ -512,7 +512,7 @@ impl BluetoothDtmPositionalEventWords {
 
     pub(super) const fn scheduler_item_retains_link_state(
         self,
-        link_state: BluetoothDtmBoundSramLinkAddress,
+        link_state: BluetoothControllerSramLinkAddress,
     ) -> bool {
         self.scheduler_item.word_08 & LOW_TWENTY_MASK == link_state.compressed_image()
     }

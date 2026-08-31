@@ -36,7 +36,7 @@ use crate::{
         BluetoothLeTxBufferHeaderStorage, BluetoothLeTxPacketAddress,
         BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
     },
-    sram_link::BluetoothDtmBoundSramLinkAddress,
+    sram_link::BluetoothControllerSramLinkAddress,
 };
 
 /// Bytes allocated for one DTM link-state object.
@@ -455,7 +455,7 @@ impl BluetoothDtmRxHeaderSuccessorLink {
         (image != 0).then_some(Self(image))
     }
 
-    const fn from_bound(address: BluetoothDtmBoundSramLinkAddress) -> Self {
+    const fn from_bound(address: BluetoothControllerSramLinkAddress) -> Self {
         Self(address.compressed_image())
     }
 
@@ -824,12 +824,12 @@ pub struct BluetoothDtmMemoryGraphBinding {
     base: BluetoothControllerSramAddress,
     end_exclusive: u32,
     allocation_config: BluetoothDtmSchedulerAllocationConfig,
-    link_state: BluetoothDtmBoundSramLinkAddress,
+    link_state: BluetoothControllerSramLinkAddress,
     scheduler_context: BluetoothControllerSramAddress,
-    scheduler_item: BluetoothDtmBoundSramLinkAddress,
-    rx_header: BluetoothDtmBoundSramLinkAddress,
-    rx_swap_reserve: BluetoothDtmBoundSramLinkAddress,
-    tx_header: BluetoothDtmBoundSramLinkAddress,
+    scheduler_item: BluetoothControllerSramLinkAddress,
+    rx_header: BluetoothControllerSramLinkAddress,
+    rx_swap_reserve: BluetoothControllerSramLinkAddress,
+    tx_header: BluetoothControllerSramLinkAddress,
     tx_packet: BluetoothDtmTxPacketAddress,
     rx_packet: BluetoothDtmRxPacketAddress,
 }
@@ -856,7 +856,7 @@ impl BluetoothDtmMemoryGraphBinding {
                 .ok_or(BluetoothDtmMemoryGraphBindError::ExtentOutsidePhysicalSram)
         };
         let bound_link = |offset: u32| {
-            BluetoothDtmBoundSramLinkAddress::new(address(offset)?)
+            BluetoothControllerSramLinkAddress::new(address(offset)?)
                 .map_err(|_| BluetoothDtmMemoryGraphBindError::ZeroCompressedLink)
         };
 
@@ -917,7 +917,7 @@ impl BluetoothDtmMemoryGraphBinding {
     }
 
     /// Return the address of the private DTM link-state allocation.
-    pub const fn link_state_address(&self) -> BluetoothDtmBoundSramLinkAddress {
+    pub const fn link_state_address(&self) -> BluetoothControllerSramLinkAddress {
         self.link_state
     }
 
@@ -927,7 +927,7 @@ impl BluetoothDtmMemoryGraphBinding {
     }
 
     /// Return the address of the private DTM scheduler item.
-    pub const fn scheduler_item_address(&self) -> BluetoothDtmBoundSramLinkAddress {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramLinkAddress {
         self.scheduler_item
     }
 }
@@ -2321,7 +2321,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
                 storage.link_state.read_word(LINK_STATE_RX_TAIL_OFFSET),
             )
         };
-        let tx_head = match BluetoothDtmBoundSramLinkAddress::new(tx_head_address) {
+        let tx_head = match BluetoothControllerSramLinkAddress::new(tx_head_address) {
             Ok(tx_head) => tx_head,
             Err(_) => {
                 return Err(BluetoothDtmMemoryGraphPrepareFailure {
@@ -2358,7 +2358,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
                 error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderAllocationExtentMismatch,
             });
         }
-        let rx_tail = match BluetoothDtmBoundSramLinkAddress::new(rx_tail_address) {
+        let rx_tail = match BluetoothControllerSramLinkAddress::new(rx_tail_address) {
             Ok(rx_tail) => rx_tail,
             Err(_) => {
                 return Err(BluetoothDtmMemoryGraphPrepareFailure {

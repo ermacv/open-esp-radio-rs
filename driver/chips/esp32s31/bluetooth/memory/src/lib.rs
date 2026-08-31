@@ -77,4 +77,4 @@ pub use le_tx_packet::{
     BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
-pub use sram_link::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};
+pub use sram_link::{BluetoothControllerSramLinkAddress, BluetoothControllerSramLinkAddressError};

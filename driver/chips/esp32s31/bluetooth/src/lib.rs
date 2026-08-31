@@ -332,12 +332,12 @@ pub use nrt_interrupt::{BluetoothNrtDefaultInterruptEpoch, step_nrt_default_inte
 pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure,
-    BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage, BluetoothDtmBoundSramLinkAddress,
-    BluetoothDtmBoundSramLinkAddressError, BluetoothDtmMemoryGraphCpuOwned,
-    BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
-    BluetoothDtmMemoryGraphReclaimed, BluetoothDtmPositionalEventWords,
-    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi,
-    BluetoothRxMemoryListClass,
+    BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
+    BluetoothControllerSramLinkAddress, BluetoothControllerSramLinkAddressError,
+    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
+    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmMemoryGraphReclaimed,
+    BluetoothDtmPositionalEventWords, BluetoothDtmRxResultProjection,
+    BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi, BluetoothRxMemoryListClass,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{

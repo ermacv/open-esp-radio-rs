@@ -1029,8 +1029,8 @@ impl BluetoothDtmMemoryGraphPositionalEventPrepared {
     /// This consumes the event-word owner, clears the reviewed control byte
     /// and software completed-item link, and installs the in-flight status
     /// sentinel. The returned graph remains CPU-owned: the complete
-    /// hardware-consumed descriptor, release fence, private packet-engine
-    /// latch and scheduler-head publication are still separate prerequisites.
+    /// hardware-consumed descriptor, release fence and scheduler-head
+    /// publication are still separate prerequisites.
     pub fn prepare_scheduler_bookkeeping(
         mut self,
     ) -> BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {

@@ -266,6 +266,16 @@ impl RegisteredPhyState {
         &self.state
     }
 
+    /// Project periodic-tracking policy from the one registered PHY epoch.
+    ///
+    /// Keeping this method on the registration proof prevents callers from
+    /// selecting cold-image predicates independently of the state they govern.
+    pub(crate) const fn tracking_policy(
+        &self,
+    ) -> crate::phy_param_tracking::PhyParamTrackingPolicy {
+        crate::phy_param_tracking::PhyParamTrackingPolicy::for_registered_state(&self.state)
+    }
+
     /// Borrow the live semantic state only inside a target operation which
     /// already retains the matching registered-radio epoch.
     #[cfg(target_arch = "riscv32")]

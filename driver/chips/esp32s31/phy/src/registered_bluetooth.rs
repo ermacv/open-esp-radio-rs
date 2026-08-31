@@ -20,9 +20,7 @@ use crate::{
         PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackPoisoned,
     },
-    phy_param_tracking::{
-        PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingParameters,
-    },
+    phy_param_tracking::{PhyParamTrackRequest, PhyParamTrackingAction},
 };
 
 /// Target-registered common PHY before the Bluetooth client is acquired.
@@ -193,14 +191,12 @@ impl RegisteredBluetoothPhyPendingTrack {
         self.pending.request()
     }
 
-    /// Bind caller-reviewed tracking parameters to the pending request.
-    pub fn begin_tracking(
-        self,
-        parameters: PhyParamTrackingParameters,
-    ) -> RegisteredBluetoothPhyPendingTracking {
+    /// Begin tracking with policy projected from this registered PHY epoch.
+    pub fn begin_tracking(self) -> RegisteredBluetoothPhyPendingTracking {
+        let policy = self.registered.tracking_policy();
         RegisteredBluetoothPhyPendingTracking {
             registered: self.registered,
-            pending: self.pending.begin_tracking(parameters),
+            pending: self.pending.begin_tracking(policy),
         }
     }
 
@@ -353,6 +349,36 @@ mod tests {
             poisoned
                 .client_snapshot()
                 .contains(PhyModemClient::Bluetooth)
+        );
+    }
+
+    #[test]
+    fn due_initial_tracking_uses_registered_epoch_policy() {
+        let acquisition = registered_phy()
+            .acquire_phy_client(&mut FixedClock(
+                DEFAULT_PLL_TRACK_PERIOD_MICROS.saturating_add(1),
+            ))
+            .unwrap_or_else(|_| panic!("Bluetooth client acquisition must succeed"));
+        let pending = match acquisition.into_owner() {
+            Ok(_) => panic!("due tracking must retain the registered epoch"),
+            Err(pending) => pending,
+        };
+        let mut tracking = pending.begin_tracking();
+
+        assert_eq!(
+            tracking.action(),
+            crate::phy_param_tracking::PhyParamTrackingAction::EnterCritical
+        );
+        tracking
+            .pending
+            .advance(crate::phy_param_tracking::PhyParamTrackingCompletion::EnteredCritical)
+            .unwrap();
+        assert_eq!(
+            tracking.action(),
+            crate::phy_param_tracking::PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
+                enabled: true,
+                diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Disabled,
+            }
         );
     }
 }

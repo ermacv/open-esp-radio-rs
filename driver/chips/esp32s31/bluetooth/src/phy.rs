@@ -16,7 +16,7 @@ use open_esp_radio_esp32s31_phy::{
 };
 use open_esp_radio_esp32s31_phy::{
     phy_client::{PhyClientAcquireError, PhyClientAcquireOrdering, PhyPllTrackClock},
-    phy_param_tracking::{PhyParamTrackRequest, PhyParamTrackingParameters},
+    phy_param_tracking::PhyParamTrackRequest,
 };
 
 use crate::{
@@ -245,14 +245,13 @@ where
         self.pending.request()
     }
 
-    /// Bind reviewed tracking parameters and enter the in-flight owner state.
+    /// Enter tracking with policy owned by the registered common-PHY epoch.
     pub fn begin_tracking(
         self,
-        parameters: PhyParamTrackingParameters,
     ) -> BluetoothControllerPhyPendingTracking<P, M, MT, SC, H2C, C2H, PC> {
         BluetoothControllerPhyPendingTracking {
             controller: self.controller,
-            tracking: self.pending.begin_tracking(parameters),
+            tracking: self.pending.begin_tracking(),
             calibration_cache: self.calibration_cache,
             report: self.report,
         }

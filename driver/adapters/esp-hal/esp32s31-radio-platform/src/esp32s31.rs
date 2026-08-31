@@ -12,6 +12,7 @@ use esp_hal::{
     },
 };
 use open_esp_radio_bluetooth_hci::BluetoothPublicDeviceAddress;
+use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version};
 
 use crate::{
     bluetooth_address::bluetooth_public_address_from_base,
@@ -87,6 +88,22 @@ pub struct EspHalBluetoothPlatform<'a> {
 }
 
 impl EspHalBluetoothPlatform<'_> {
+    /// Derive the common-PHY calibration identity from the retained chip.
+    ///
+    /// The radio-calibration version is source-owned, while both identity
+    /// fields come from ESP-HAL's safe eFuse accessors. Applications therefore
+    /// do not copy hardware identity into an otherwise generic cold-start
+    /// configuration.
+    pub fn phy_calibration_identity(&self) -> PhyCalibrationIdentity {
+        let base = efuse::base_mac_address();
+        let bytes = base.as_bytes();
+        PhyCalibrationIdentity {
+            rf_cal_version: phy_get_rf_cal_version(),
+            base_mac_address: [bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]],
+            mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
+        }
+    }
+
     /// Read the factory base identity through ESP-HAL's safe eFuse accessor,
     /// apply the ESP32-S31 second-universal-address policy and retain the
     /// result in canonical EUI-48 order.

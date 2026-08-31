@@ -18,6 +18,7 @@ esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070
 open-esp-radio-bluetooth-hci = { path = "../../../bluetooth/hci" }
 open-esp-radio-esp32s31-bluetooth = { path = "../../../chips/esp32s31/bluetooth" }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
+open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

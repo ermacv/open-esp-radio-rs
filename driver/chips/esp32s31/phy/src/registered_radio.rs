@@ -15,9 +15,7 @@ use crate::{
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
         PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
     },
-    phy_param_tracking::{
-        PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingParameters,
-    },
+    phy_param_tracking::{PhyParamTrackRequest, PhyParamTrackingAction},
 };
 
 #[path = "registered_ieee802154.rs"]
@@ -453,14 +451,12 @@ impl<P> RegisteredPhyPendingTrack<P> {
         self.radio.peripheral()
     }
 
-    pub fn begin_tracking(
-        self,
-        parameters: PhyParamTrackingParameters,
-    ) -> RegisteredPhyPendingTracking<P> {
+    pub fn begin_tracking(self) -> RegisteredPhyPendingTracking<P> {
+        let policy = self.phy.tracking_policy();
         RegisteredPhyPendingTracking {
             radio: self.radio,
             phy: self.phy,
-            pending: self.pending.begin_tracking(parameters),
+            pending: self.pending.begin_tracking(policy),
         }
     }
 
@@ -665,16 +661,7 @@ mod tests {
                 .contains(PhyModemClient::Ieee802154)
         );
 
-        let tracking = pending.begin_tracking(PhyParamTrackingParameters {
-            tracking_inhibited: true,
-            rfpll_cap_tracking_enabled: false,
-            rfpll_cap_tracking_threshold: None,
-            calibration_tracking_threshold: None,
-            shared_tracking_control: 0,
-            bluetooth_ieee802154_power_control: 0,
-            calibration_tracking_enabled: false,
-            relaxed_power_tracking_threshold: false,
-        });
+        let tracking = pending.begin_tracking();
         assert_eq!(tracking.action(), PhyParamTrackingAction::EnterCritical);
         let poisoned = tracking.fail();
         assert!(poisoned.request().bluetooth_ieee802154());

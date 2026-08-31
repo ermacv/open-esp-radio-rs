@@ -46,22 +46,62 @@ impl PhyParamTrackRequest {
     }
 }
 
-/// Rust-owned projections consumed by the outer tracking function.
+/// Diagnostic-print policy forwarded to the recovered vendor children.
+///
+/// Diagnostics do not identify or acknowledge hardware work. They remain on
+/// the action so a target observer can reproduce the source-visible policy,
+/// but are deliberately absent from completion identities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyTrackingDiagnostics {
+    Disabled,
+    Enabled,
+}
+
+impl PhyTrackingDiagnostics {
+    pub const fn enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
+/// Driver-owned projections consumed by the outer tracking function.
 ///
 /// `tracking_inhibited` is the OR of the two vendor guard bytes. Collapsing
 /// them is exact because the body never distinguishes which guard stopped the
-/// operation. The remaining fields preserve the arguments and predicates of
-/// the child calls without importing the vendor parameter-image layout.
+/// operation. Production code can obtain this policy only from a registered
+/// PHY epoch; the type is crate-private so integration cannot manufacture a
+/// second parameter-image model.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PhyParamTrackingParameters {
-    pub tracking_inhibited: bool,
-    pub rfpll_cap_tracking_enabled: bool,
-    pub rfpll_cap_tracking_threshold: Option<u8>,
-    pub calibration_tracking_threshold: Option<u8>,
-    pub shared_tracking_control: u8,
-    pub bluetooth_ieee802154_power_control: u8,
-    pub calibration_tracking_enabled: bool,
-    pub relaxed_power_tracking_threshold: bool,
+pub(crate) struct PhyParamTrackingPolicy {
+    pub(crate) tracking_inhibited: bool,
+    pub(crate) rfpll_cap_tracking_enabled: bool,
+    pub(crate) rfpll_cap_tracking_threshold: Option<u8>,
+    pub(crate) calibration_tracking_threshold: Option<u8>,
+    pub(crate) diagnostics: PhyTrackingDiagnostics,
+    pub(crate) bluetooth_ieee802154_power_tracking_enabled: bool,
+    pub(crate) calibration_tracking_enabled: bool,
+    pub(crate) relaxed_power_tracking_threshold: bool,
+}
+
+impl PhyParamTrackingPolicy {
+    /// Project the pinned ESP32-S31 policy for one active registered epoch.
+    ///
+    /// The immutable choices are cold-image facts: both lifecycle guards are
+    /// clear, the optional RFPLL-cap child is disabled, diagnostic printing is
+    /// disabled, and calibration tracking is enabled. Runtime setters already
+    /// publish the remaining choices into `PhyState`.
+    pub(crate) const fn for_registered_state(state: &crate::phy_state::PhyState) -> Self {
+        let debug = state.temperature_tracking_debug();
+        Self {
+            tracking_inhibited: false,
+            rfpll_cap_tracking_enabled: false,
+            rfpll_cap_tracking_threshold: debug.rfpll_threshold_override(),
+            calibration_tracking_threshold: debug.calibration_threshold_override(),
+            diagnostics: PhyTrackingDiagnostics::Disabled,
+            bluetooth_ieee802154_power_tracking_enabled: state.bt_power_tracking() != 0,
+            calibration_tracking_enabled: true,
+            relaxed_power_tracking_threshold: state.tx_power_tracking_slow() != 0,
+        }
+    }
 }
 
 /// Calibration class passed as the second `phy_cal_param_track` argument.
@@ -108,20 +148,20 @@ pub const fn temperature_to_tracking_power(
 pub enum PhyParamTrackingAction {
     EnterCritical,
     RfpllCapTrack {
-        shared_tracking_control: u8,
+        diagnostics: PhyTrackingDiagnostics,
     },
     BluetoothIeee802154TxPowerTrack {
-        power_control: u8,
-        shared_tracking_control: u8,
+        enabled: bool,
+        diagnostics: PhyTrackingDiagnostics,
     },
     CalibrationTrack {
-        shared_tracking_control: u8,
+        diagnostics: PhyTrackingDiagnostics,
         class: PhyCalibrationTrackClass,
     },
     WifiI2cTrack,
     WifiTxPowerTrack {
         enabled: bool,
-        shared_tracking_control: u8,
+        diagnostics: PhyTrackingDiagnostics,
     },
     TemperatureRead,
     ExitCritical,
@@ -133,16 +173,10 @@ pub enum PhyParamTrackingAction {
 pub enum PhyParamTrackingCompletion {
     EnteredCritical,
     RfpllCapTracked(PhyParamTrackingRfpllCompletion),
-    BluetoothIeee802154TxPowerTracked {
-        power_control: u8,
-        shared_tracking_control: u8,
-    },
+    BluetoothIeee802154TxPowerTracked { enabled: bool },
     CalibrationTracked(PhyParamTrackingCalibrationCompletion),
     WifiI2cTracked,
-    WifiTxPowerTracked {
-        enabled: bool,
-        shared_tracking_control: u8,
-    },
+    WifiTxPowerTracked { enabled: bool },
     TemperatureRead,
     ExitedCritical,
 }
@@ -157,13 +191,13 @@ pub enum PhyParamTrackingCompletion {
 ///
 /// let forged = PhyParamTrackingCompletion::RfpllCapTracked(
 ///     PhyParamTrackingRfpllCompletion {
-///         shared_tracking_control: 0,
+///         committed: (),
 ///     },
 /// );
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyParamTrackingRfpllCompletion {
-    shared_tracking_control: u8,
+    committed: (),
 }
 
 /// Opaque proof that the selected calibration-tracking child reached its
@@ -177,14 +211,12 @@ pub struct PhyParamTrackingRfpllCompletion {
 ///
 /// let forged = PhyParamTrackingCompletion::CalibrationTracked(
 ///     PhyParamTrackingCalibrationCompletion {
-///         shared_tracking_control: 0,
 ///         class: PhyCalibrationTrackClass::BluetoothIeee802154,
 ///     },
 /// );
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyParamTrackingCalibrationCompletion {
-    shared_tracking_control: u8,
     class: PhyCalibrationTrackClass,
 }
 
@@ -220,18 +252,15 @@ enum PhyParamTrackingStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyParamTrackingTransition {
     request: PhyParamTrackRequest,
-    parameters: PhyParamTrackingParameters,
+    policy: PhyParamTrackingPolicy,
     step: PhyParamTrackingStep,
 }
 
 impl PhyParamTrackingTransition {
-    pub const fn new(
-        request: PhyParamTrackRequest,
-        parameters: PhyParamTrackingParameters,
-    ) -> Self {
+    pub(crate) const fn new(request: PhyParamTrackRequest, policy: PhyParamTrackingPolicy) -> Self {
         Self {
             request,
-            parameters,
+            policy,
             step: PhyParamTrackingStep::EnterCritical,
         }
     }
@@ -240,28 +269,28 @@ impl PhyParamTrackingTransition {
         match self.step {
             PhyParamTrackingStep::EnterCritical => PhyParamTrackingAction::EnterCritical,
             PhyParamTrackingStep::RfpllCapTrack => PhyParamTrackingAction::RfpllCapTrack {
-                shared_tracking_control: self.parameters.shared_tracking_control,
+                diagnostics: self.policy.diagnostics,
             },
             PhyParamTrackingStep::BluetoothIeee802154TxPowerTrack => {
                 PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
-                    power_control: self.parameters.bluetooth_ieee802154_power_control,
-                    shared_tracking_control: self.parameters.shared_tracking_control,
+                    enabled: self.policy.bluetooth_ieee802154_power_tracking_enabled,
+                    diagnostics: self.policy.diagnostics,
                 }
             }
             PhyParamTrackingStep::BluetoothIeee802154CalibrationTrack => {
                 PhyParamTrackingAction::CalibrationTrack {
-                    shared_tracking_control: self.parameters.shared_tracking_control,
+                    diagnostics: self.policy.diagnostics,
                     class: PhyCalibrationTrackClass::BluetoothIeee802154,
                 }
             }
             PhyParamTrackingStep::WifiI2cTrack => PhyParamTrackingAction::WifiI2cTrack,
             PhyParamTrackingStep::WifiTxPowerTrack => PhyParamTrackingAction::WifiTxPowerTrack {
                 enabled: true,
-                shared_tracking_control: self.parameters.shared_tracking_control,
+                diagnostics: self.policy.diagnostics,
             },
             PhyParamTrackingStep::WifiCalibrationTrack => {
                 PhyParamTrackingAction::CalibrationTrack {
-                    shared_tracking_control: self.parameters.shared_tracking_control,
+                    diagnostics: self.policy.diagnostics,
                     class: PhyCalibrationTrackClass::Wifi,
                 }
             }
@@ -270,7 +299,7 @@ impl PhyParamTrackingTransition {
             PhyParamTrackingStep::Complete => {
                 PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                     clients: self.request,
-                    tracking_inhibited: self.parameters.tracking_inhibited,
+                    tracking_inhibited: self.policy.tracking_inhibited,
                 })
             }
         }
@@ -282,9 +311,9 @@ impl PhyParamTrackingTransition {
     ) -> Result<(), PhyParamTrackingTransitionError> {
         let next = match (self.step, completion) {
             (PhyParamTrackingStep::EnterCritical, PhyParamTrackingCompletion::EnteredCritical) => {
-                if self.parameters.tracking_inhibited {
+                if self.policy.tracking_inhibited {
                     PhyParamTrackingStep::ExitCritical
-                } else if self.parameters.rfpll_cap_tracking_enabled {
+                } else if self.policy.rfpll_cap_tracking_enabled {
                     PhyParamTrackingStep::RfpllCapTrack
                 } else {
                     self.first_client_step()
@@ -292,20 +321,13 @@ impl PhyParamTrackingTransition {
             }
             (
                 PhyParamTrackingStep::RfpllCapTrack,
-                PhyParamTrackingCompletion::RfpllCapTracked(completion),
-            ) if completion.shared_tracking_control == self.parameters.shared_tracking_control => {
-                self.first_client_step()
-            }
+                PhyParamTrackingCompletion::RfpllCapTracked(_),
+            ) => self.first_client_step(),
             (
                 PhyParamTrackingStep::BluetoothIeee802154TxPowerTrack,
-                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
-                    power_control,
-                    shared_tracking_control,
-                },
-            ) if power_control == self.parameters.bluetooth_ieee802154_power_control
-                && shared_tracking_control == self.parameters.shared_tracking_control =>
-            {
-                if self.parameters.calibration_tracking_enabled {
+                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled },
+            ) if enabled == self.policy.bluetooth_ieee802154_power_tracking_enabled => {
+                if self.policy.calibration_tracking_enabled {
                     PhyParamTrackingStep::BluetoothIeee802154CalibrationTrack
                 } else {
                     self.first_wifi_step()
@@ -314,9 +336,7 @@ impl PhyParamTrackingTransition {
             (
                 PhyParamTrackingStep::BluetoothIeee802154CalibrationTrack,
                 PhyParamTrackingCompletion::CalibrationTracked(completion),
-            ) if completion.shared_tracking_control == self.parameters.shared_tracking_control
-                && completion.class == PhyCalibrationTrackClass::BluetoothIeee802154 =>
-            {
+            ) if completion.class == PhyCalibrationTrackClass::BluetoothIeee802154 => {
                 self.first_wifi_step()
             }
             (PhyParamTrackingStep::WifiI2cTrack, PhyParamTrackingCompletion::WifiI2cTracked) => {
@@ -324,12 +344,9 @@ impl PhyParamTrackingTransition {
             }
             (
                 PhyParamTrackingStep::WifiTxPowerTrack,
-                PhyParamTrackingCompletion::WifiTxPowerTracked {
-                    enabled: true,
-                    shared_tracking_control,
-                },
-            ) if shared_tracking_control == self.parameters.shared_tracking_control => {
-                if self.parameters.calibration_tracking_enabled {
+                PhyParamTrackingCompletion::WifiTxPowerTracked { enabled: true },
+            ) => {
+                if self.policy.calibration_tracking_enabled {
                     PhyParamTrackingStep::WifiCalibrationTrack
                 } else {
                     PhyParamTrackingStep::TemperatureRead
@@ -338,9 +355,7 @@ impl PhyParamTrackingTransition {
             (
                 PhyParamTrackingStep::WifiCalibrationTrack,
                 PhyParamTrackingCompletion::CalibrationTracked(completion),
-            ) if completion.shared_tracking_control == self.parameters.shared_tracking_control
-                && completion.class == PhyCalibrationTrackClass::Wifi =>
-            {
+            ) if completion.class == PhyCalibrationTrackClass::Wifi => {
                 PhyParamTrackingStep::TemperatureRead
             }
             (
@@ -365,7 +380,7 @@ impl PhyParamTrackingTransition {
         &self,
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<PhyParamTrackingRfpllTransition<'state>, PhyParamTrackingChildError> {
-        PhyParamTrackingRfpllTransition::lower(self.action(), self.parameters, state)
+        PhyParamTrackingRfpllTransition::lower(self.action(), self.policy, state)
     }
 
     /// Lower only the selected calibration action and retain its three live
@@ -374,7 +389,7 @@ impl PhyParamTrackingTransition {
         &self,
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<PhyParamTrackingCalibrationTransition<'state>, PhyParamTrackingChildError> {
-        PhyParamTrackingCalibrationTransition::lower(self.action(), self.parameters, state)
+        PhyParamTrackingCalibrationTransition::lower(self.action(), self.policy, state)
     }
 
     /// Lower only the currently selected TX-power child, using the immutable
@@ -383,7 +398,7 @@ impl PhyParamTrackingTransition {
         &self,
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<PhyParamTrackingTxPowerTransition<'state>, PhyParamTrackingChildError> {
-        PhyParamTrackingTxPowerTransition::lower(self.action(), self.parameters, state)
+        PhyParamTrackingTxPowerTransition::lower(self.action(), self.policy, state)
     }
 
     /// Lower only the Wi-Fi PHY-I2C child while retaining exclusive access to
@@ -450,7 +465,7 @@ impl fmt::Debug for PhyParamTrackingRfpllTransition<'_> {
 impl<'state> PhyParamTrackingRfpllTransition<'state> {
     fn lower(
         parent_action: PhyParamTrackingAction,
-        parameters: PhyParamTrackingParameters,
+        policy: PhyParamTrackingPolicy,
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<Self, PhyParamTrackingChildError> {
         if !matches!(parent_action, PhyParamTrackingAction::RfpllCapTrack { .. }) {
@@ -459,7 +474,7 @@ impl<'state> PhyParamTrackingRfpllTransition<'state> {
         Ok(Self {
             parent_action,
             child: crate::phy_rfpll::RfpllCapTrackingTransition::new(
-                state.rfpll_cap_tracking_parameters(parameters.rfpll_cap_tracking_threshold),
+                state.rfpll_cap_tracking_parameters(policy.rfpll_cap_tracking_threshold),
             ),
             state,
         })
@@ -498,17 +513,12 @@ impl<'state> PhyParamTrackingRfpllTransition<'state> {
         else {
             return Err(self);
         };
-        let PhyParamTrackingAction::RfpllCapTrack {
-            shared_tracking_control,
-        } = self.parent_action
-        else {
+        let PhyParamTrackingAction::RfpllCapTrack { .. } = self.parent_action else {
             unreachable!()
         };
         self.state.apply_rfpll_cap_tracking_outcome(outcome);
         Ok(PhyParamTrackingCompletion::RfpllCapTracked(
-            PhyParamTrackingRfpllCompletion {
-                shared_tracking_control,
-            },
+            PhyParamTrackingRfpllCompletion { committed: () },
         ))
     }
 }
@@ -537,7 +547,7 @@ impl fmt::Debug for PhyParamTrackingCalibrationTransition<'_> {
 impl<'state> PhyParamTrackingCalibrationTransition<'state> {
     fn lower(
         parent_action: PhyParamTrackingAction,
-        parameters: PhyParamTrackingParameters,
+        policy: PhyParamTrackingPolicy,
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<Self, PhyParamTrackingChildError> {
         let PhyParamTrackingAction::CalibrationTrack { class, .. } = parent_action else {
@@ -547,7 +557,7 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
             parent_action,
             child: crate::phy_cal_tracking::PhyCalibrationTrackingTransition::new(
                 crate::phy_cal_tracking::PhyCalibrationTrackingRequest { class },
-                state.calibration_tracking_parameters(parameters.calibration_tracking_threshold),
+                state.calibration_tracking_parameters(policy.calibration_tracking_threshold),
             ),
             state,
         })
@@ -659,19 +669,12 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         else {
             return Err(self);
         };
-        let PhyParamTrackingAction::CalibrationTrack {
-            shared_tracking_control,
-            class,
-        } = self.parent_action
-        else {
+        let PhyParamTrackingAction::CalibrationTrack { class, .. } = self.parent_action else {
             unreachable!()
         };
         self.state.apply_calibration_tracking_outcome(outcome);
         Ok(PhyParamTrackingCompletion::CalibrationTracked(
-            PhyParamTrackingCalibrationCompletion {
-                shared_tracking_control,
-                class,
-            },
+            PhyParamTrackingCalibrationCompletion { class },
         ))
     }
 }
@@ -700,14 +703,14 @@ impl fmt::Debug for PhyParamTrackingTxPowerTransition<'_> {
 impl<'state> PhyParamTrackingTxPowerTransition<'state> {
     fn lower(
         parent_action: PhyParamTrackingAction,
-        parameters: PhyParamTrackingParameters,
+        policy: PhyParamTrackingPolicy,
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<Self, PhyParamTrackingChildError> {
         let request = match parent_action {
-            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { power_control, .. } => {
+            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { enabled, .. } => {
                 crate::phy_power_tracking::PhyTxPowerTrackingRequest {
                     class: PhyCalibrationTrackClass::BluetoothIeee802154,
-                    enabled: power_control != 0,
+                    enabled,
                     wifi_channel: state.current_wifi_channel(),
                 }
             }
@@ -724,7 +727,7 @@ impl<'state> PhyParamTrackingTxPowerTransition<'state> {
             parent_action,
             child: crate::phy_power_tracking::PhyTxPowerTrackingTransition::new(
                 request,
-                state.tx_power_tracking_parameters(parameters.relaxed_power_tracking_threshold),
+                state.tx_power_tracking_parameters(policy.relaxed_power_tracking_threshold),
             ),
             state,
         })
@@ -773,20 +776,12 @@ impl<'state> PhyParamTrackingTxPowerTransition<'state> {
         };
         self.state.apply_tx_power_tracking_outcome(outcome);
         Ok(match self.parent_action {
-            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
-                power_control,
-                shared_tracking_control,
-            } => PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
-                power_control,
-                shared_tracking_control,
-            },
-            PhyParamTrackingAction::WifiTxPowerTrack {
-                enabled,
-                shared_tracking_control,
-            } => PhyParamTrackingCompletion::WifiTxPowerTracked {
-                enabled,
-                shared_tracking_control,
-            },
+            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { enabled, .. } => {
+                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled }
+            }
+            PhyParamTrackingAction::WifiTxPowerTrack { enabled, .. } => {
+                PhyParamTrackingCompletion::WifiTxPowerTracked { enabled }
+            }
             _ => unreachable!(),
         })
     }
@@ -933,13 +928,13 @@ mod tests {
     use super::*;
     use std::vec::Vec;
 
-    const PARAMETERS: PhyParamTrackingParameters = PhyParamTrackingParameters {
+    const POLICY: PhyParamTrackingPolicy = PhyParamTrackingPolicy {
         tracking_inhibited: false,
         rfpll_cap_tracking_enabled: true,
         rfpll_cap_tracking_threshold: None,
         calibration_tracking_threshold: None,
-        shared_tracking_control: 0x29,
-        bluetooth_ieee802154_power_control: 0x51,
+        diagnostics: PhyTrackingDiagnostics::Enabled,
+        bluetooth_ieee802154_power_tracking_enabled: true,
         calibration_tracking_enabled: true,
         relaxed_power_tracking_threshold: false,
     };
@@ -947,35 +942,23 @@ mod tests {
     fn completion(action: PhyParamTrackingAction) -> PhyParamTrackingCompletion {
         match action {
             PhyParamTrackingAction::EnterCritical => PhyParamTrackingCompletion::EnteredCritical,
-            PhyParamTrackingAction::RfpllCapTrack {
-                shared_tracking_control,
-            } => PhyParamTrackingCompletion::RfpllCapTracked(PhyParamTrackingRfpllCompletion {
-                shared_tracking_control,
-            }),
-            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
-                power_control,
-                shared_tracking_control,
-            } => PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
-                power_control,
-                shared_tracking_control,
-            },
-            PhyParamTrackingAction::CalibrationTrack {
-                shared_tracking_control,
-                class,
-            } => PhyParamTrackingCompletion::CalibrationTracked(
-                PhyParamTrackingCalibrationCompletion {
-                    shared_tracking_control,
-                    class,
-                },
-            ),
+            PhyParamTrackingAction::RfpllCapTrack { .. } => {
+                PhyParamTrackingCompletion::RfpllCapTracked(PhyParamTrackingRfpllCompletion {
+                    committed: (),
+                })
+            }
+            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { enabled, .. } => {
+                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled }
+            }
+            PhyParamTrackingAction::CalibrationTrack { class, .. } => {
+                PhyParamTrackingCompletion::CalibrationTracked(
+                    PhyParamTrackingCalibrationCompletion { class },
+                )
+            }
             PhyParamTrackingAction::WifiI2cTrack => PhyParamTrackingCompletion::WifiI2cTracked,
-            PhyParamTrackingAction::WifiTxPowerTrack {
-                enabled,
-                shared_tracking_control,
-            } => PhyParamTrackingCompletion::WifiTxPowerTracked {
-                enabled,
-                shared_tracking_control,
-            },
+            PhyParamTrackingAction::WifiTxPowerTrack { enabled, .. } => {
+                PhyParamTrackingCompletion::WifiTxPowerTracked { enabled }
+            }
             PhyParamTrackingAction::TemperatureRead => PhyParamTrackingCompletion::TemperatureRead,
             PhyParamTrackingAction::ExitCritical => PhyParamTrackingCompletion::ExitedCritical,
             PhyParamTrackingAction::Complete(_) => panic!("terminal action has no completion"),
@@ -984,9 +967,9 @@ mod tests {
 
     fn run(
         request: PhyParamTrackRequest,
-        parameters: PhyParamTrackingParameters,
+        policy: PhyParamTrackingPolicy,
     ) -> Vec<PhyParamTrackingAction> {
-        let mut transition = PhyParamTrackingTransition::new(request, parameters);
+        let mut transition = PhyParamTrackingTransition::new(request, policy);
         let mut actions = Vec::new();
         for _ in 0..10 {
             let action = transition.action();
@@ -1002,18 +985,18 @@ mod tests {
     #[test]
     fn ieee802154_only_preserves_exact_child_order() {
         assert_eq!(
-            run(PhyParamTrackRequest::new(false, true), PARAMETERS),
+            run(PhyParamTrackRequest::new(false, true), POLICY),
             [
                 PhyParamTrackingAction::EnterCritical,
                 PhyParamTrackingAction::RfpllCapTrack {
-                    shared_tracking_control: 0x29,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                 },
                 PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
-                    power_control: 0x51,
-                    shared_tracking_control: 0x29,
+                    enabled: true,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                 },
                 PhyParamTrackingAction::CalibrationTrack {
-                    shared_tracking_control: 0x29,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                     class: PhyCalibrationTrackClass::BluetoothIeee802154,
                 },
                 PhyParamTrackingAction::TemperatureRead,
@@ -1029,27 +1012,27 @@ mod tests {
     #[test]
     fn both_classes_run_bluetooth_before_wifi_and_temperature_last() {
         assert_eq!(
-            run(PhyParamTrackRequest::new(true, true), PARAMETERS),
+            run(PhyParamTrackRequest::new(true, true), POLICY),
             [
                 PhyParamTrackingAction::EnterCritical,
                 PhyParamTrackingAction::RfpllCapTrack {
-                    shared_tracking_control: 0x29,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                 },
                 PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
-                    power_control: 0x51,
-                    shared_tracking_control: 0x29,
+                    enabled: true,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                 },
                 PhyParamTrackingAction::CalibrationTrack {
-                    shared_tracking_control: 0x29,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                     class: PhyCalibrationTrackClass::BluetoothIeee802154,
                 },
                 PhyParamTrackingAction::WifiI2cTrack,
                 PhyParamTrackingAction::WifiTxPowerTrack {
                     enabled: true,
-                    shared_tracking_control: 0x29,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                 },
                 PhyParamTrackingAction::CalibrationTrack {
-                    shared_tracking_control: 0x29,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                     class: PhyCalibrationTrackClass::Wifi,
                 },
                 PhyParamTrackingAction::TemperatureRead,
@@ -1064,10 +1047,10 @@ mod tests {
 
     #[test]
     fn guard_exits_critical_section_without_running_children() {
-        let mut parameters = PARAMETERS;
-        parameters.tracking_inhibited = true;
+        let mut policy = POLICY;
+        policy.tracking_inhibited = true;
         assert_eq!(
-            run(PhyParamTrackRequest::new(true, true), parameters),
+            run(PhyParamTrackRequest::new(true, true), policy),
             [
                 PhyParamTrackingAction::EnterCritical,
                 PhyParamTrackingAction::ExitCritical,
@@ -1081,18 +1064,18 @@ mod tests {
 
     #[test]
     fn disabled_optional_branches_are_absent() {
-        let parameters = PhyParamTrackingParameters {
+        let policy = PhyParamTrackingPolicy {
             rfpll_cap_tracking_enabled: false,
             calibration_tracking_enabled: false,
-            ..PARAMETERS
+            ..POLICY
         };
         assert_eq!(
-            run(PhyParamTrackRequest::new(false, true), parameters),
+            run(PhyParamTrackRequest::new(false, true), policy),
             [
                 PhyParamTrackingAction::EnterCritical,
                 PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
-                    power_control: 0x51,
-                    shared_tracking_control: 0x29,
+                    enabled: true,
+                    diagnostics: PhyTrackingDiagnostics::Enabled,
                 },
                 PhyParamTrackingAction::TemperatureRead,
                 PhyParamTrackingAction::ExitCritical,
@@ -1107,7 +1090,7 @@ mod tests {
     #[test]
     fn wrong_completion_does_not_advance_and_terminal_rejects_more_work() {
         let mut transition =
-            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), PARAMETERS);
+            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), POLICY);
         assert_eq!(
             transition.advance(PhyParamTrackingCompletion::TemperatureRead),
             Err(PhyParamTrackingTransitionError::WrongCompletion)
@@ -1125,13 +1108,13 @@ mod tests {
 
     #[test]
     fn rfpll_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
-        let parameters = PhyParamTrackingParameters {
+        let policy = PhyParamTrackingPolicy {
             rfpll_cap_tracking_threshold: Some(6),
             calibration_tracking_enabled: false,
-            ..PARAMETERS
+            ..POLICY
         };
         let mut transition =
-            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), parameters);
+            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), policy);
         transition
             .advance(PhyParamTrackingCompletion::EnteredCritical)
             .unwrap();
@@ -1172,9 +1155,9 @@ mod tests {
 
         let mut incomplete = PhyParamTrackingTransition::new(
             PhyParamTrackRequest::new(false, false),
-            PhyParamTrackingParameters {
+            PhyParamTrackingPolicy {
                 rfpll_cap_tracking_threshold: None,
-                ..parameters
+                ..policy
             },
         );
         incomplete
@@ -1196,21 +1179,20 @@ mod tests {
 
     #[test]
     fn calibration_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
-        let parameters = PhyParamTrackingParameters {
+        let policy = PhyParamTrackingPolicy {
             rfpll_cap_tracking_enabled: false,
             calibration_tracking_threshold: Some(31),
-            ..PARAMETERS
+            ..POLICY
         };
         let mut transition =
-            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), parameters);
+            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), policy);
         transition
             .advance(PhyParamTrackingCompletion::EnteredCritical)
             .unwrap();
         transition
             .advance(
                 PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
-                    power_control: parameters.bluetooth_ieee802154_power_control,
-                    shared_tracking_control: parameters.shared_tracking_control,
+                    enabled: policy.bluetooth_ieee802154_power_tracking_enabled,
                 },
             )
             .unwrap();
@@ -1265,10 +1247,10 @@ mod tests {
 
     #[test]
     fn failed_temperature_child_cannot_complete_parent_or_mutate_state() {
-        let mut parameters = PARAMETERS;
-        parameters.rfpll_cap_tracking_enabled = false;
+        let mut policy = POLICY;
+        policy.rfpll_cap_tracking_enabled = false;
         let mut transition =
-            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, false), parameters);
+            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, false), policy);
         transition
             .advance(PhyParamTrackingCompletion::EnteredCritical)
             .unwrap();
@@ -1300,6 +1282,30 @@ mod tests {
                 .current_temperature,
             0
         );
+    }
+
+    #[test]
+    fn registered_policy_projects_cold_facts_and_live_tracking_state() {
+        let mut state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
+
+        let cold = PhyParamTrackingPolicy::for_registered_state(&state);
+        assert!(!cold.tracking_inhibited);
+        assert!(!cold.rfpll_cap_tracking_enabled);
+        assert_eq!(cold.rfpll_cap_tracking_threshold, None);
+        assert_eq!(cold.calibration_tracking_threshold, None);
+        assert_eq!(cold.diagnostics, PhyTrackingDiagnostics::Disabled);
+        assert!(cold.bluetooth_ieee802154_power_tracking_enabled);
+        assert!(cold.calibration_tracking_enabled);
+        assert!(cold.relaxed_power_tracking_threshold);
+
+        state.set_bt_power_tracking(0);
+        state.set_tx_power_tracking_slow(0);
+        state.set_temperature_tracking_debug(3, 17);
+        let configured = PhyParamTrackingPolicy::for_registered_state(&state);
+        assert_eq!(configured.rfpll_cap_tracking_threshold, Some(17));
+        assert_eq!(configured.calibration_tracking_threshold, Some(17));
+        assert!(!configured.bluetooth_ieee802154_power_tracking_enabled);
+        assert!(!configured.relaxed_power_tracking_threshold);
     }
 
     #[test]

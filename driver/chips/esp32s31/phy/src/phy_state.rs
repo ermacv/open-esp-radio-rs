@@ -341,6 +341,27 @@ pub struct PhyTemperatureTrackingDebug {
     pub second: u8,
 }
 
+impl PhyTemperatureTrackingDebug {
+    /// Optional RFPLL-cap threshold selected by the debug policy's first flag.
+    pub const fn rfpll_threshold_override(self) -> Option<u8> {
+        if self.first & 1 != 0 {
+            Some(self.second)
+        } else {
+            None
+        }
+    }
+
+    /// Optional calibration threshold selected independently by the second
+    /// debug-policy flag. Both children intentionally share the same value.
+    pub const fn calibration_threshold_override(self) -> Option<u8> {
+        if self.first & 2 != 0 {
+            Some(self.second)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRegisterTemperatureControl {
     update_registration_reference: bool,

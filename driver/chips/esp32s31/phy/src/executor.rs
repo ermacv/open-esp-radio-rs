@@ -302,19 +302,19 @@ mod tests {
 
     #[test]
     fn calibration_executor_retains_live_state_until_terminal_child_commit() {
-        let parameters = crate::phy_param_tracking::PhyParamTrackingParameters {
+        let policy = crate::phy_param_tracking::PhyParamTrackingPolicy {
             tracking_inhibited: false,
             rfpll_cap_tracking_enabled: false,
             rfpll_cap_tracking_threshold: None,
             calibration_tracking_threshold: None,
-            shared_tracking_control: 7,
-            bluetooth_ieee802154_power_control: 3,
+            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
+            bluetooth_ieee802154_power_tracking_enabled: true,
             calibration_tracking_enabled: true,
             relaxed_power_tracking_threshold: false,
         };
         let mut outer = crate::phy_param_tracking::PhyParamTrackingTransition::new(
             crate::phy_param_tracking::PhyParamTrackRequest::new(false, true),
-            parameters,
+            policy,
         );
         outer
             .advance(crate::phy_param_tracking::PhyParamTrackingCompletion::EnteredCritical)
@@ -322,8 +322,7 @@ mod tests {
         outer
             .advance(
                 crate::phy_param_tracking::PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
-                    power_control: 3,
-                    shared_tracking_control: 7,
+                    enabled: true,
                 },
             )
             .unwrap();
@@ -378,17 +377,17 @@ mod tests {
     #[test]
     fn outer_executor_holds_affine_client_owner_across_software_critical_section() {
         let request = crate::phy_param_tracking::PhyParamTrackRequest::new(true, false);
-        let parameters = crate::phy_param_tracking::PhyParamTrackingParameters {
+        let policy = crate::phy_param_tracking::PhyParamTrackingPolicy {
             tracking_inhibited: true,
             rfpll_cap_tracking_enabled: true,
             rfpll_cap_tracking_threshold: None,
             calibration_tracking_threshold: None,
-            shared_tracking_control: 7,
-            bluetooth_ieee802154_power_control: 3,
+            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
+            bluetooth_ieee802154_power_tracking_enabled: true,
             calibration_tracking_enabled: true,
             relaxed_power_tracking_threshold: false,
         };
-        let mut pending = crate::phy_client::PhyPendingTracking::for_test(request, parameters);
+        let mut pending = crate::phy_client::PhyPendingTracking::for_test(request, policy);
         let mut state = crate::PhyState::new(crate::PhyConfig::production());
         let mut port = CriticalOnlyTrackingPort { calls: 0 };
         let outcome =
@@ -418,17 +417,17 @@ mod tests {
     #[test]
     fn outer_executor_error_preserves_pending_owner_for_explicit_poisoning() {
         let request = crate::phy_param_tracking::PhyParamTrackRequest::new(false, true);
-        let parameters = crate::phy_param_tracking::PhyParamTrackingParameters {
+        let policy = crate::phy_param_tracking::PhyParamTrackingPolicy {
             tracking_inhibited: false,
             rfpll_cap_tracking_enabled: false,
             rfpll_cap_tracking_threshold: None,
             calibration_tracking_threshold: None,
-            shared_tracking_control: 7,
-            bluetooth_ieee802154_power_control: 3,
+            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
+            bluetooth_ieee802154_power_tracking_enabled: true,
             calibration_tracking_enabled: true,
             relaxed_power_tracking_threshold: false,
         };
-        let mut pending = crate::phy_client::PhyPendingTracking::for_test(request, parameters);
+        let mut pending = crate::phy_client::PhyPendingTracking::for_test(request, policy);
         let mut state = crate::PhyState::new(crate::PhyConfig::production());
         assert_eq!(
             run_ready(run_phy_param_tracking(

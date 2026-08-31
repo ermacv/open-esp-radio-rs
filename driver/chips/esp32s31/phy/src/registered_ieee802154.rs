@@ -102,9 +102,7 @@ use crate::{
         PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackPoisoned,
     },
-    phy_param_tracking::{
-        PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingParameters,
-    },
+    phy_param_tracking::{PhyParamTrackRequest, PhyParamTrackingAction},
 };
 
 /// Registered whole-radio owner after IEEE 802.15.4 clock readback.
@@ -295,14 +293,12 @@ impl<P> RegisteredIeee802154PendingTrack<P> {
         self.pending.request()
     }
 
-    pub fn begin_tracking(
-        self,
-        parameters: PhyParamTrackingParameters,
-    ) -> RegisteredIeee802154PendingTracking<P> {
+    pub fn begin_tracking(self) -> RegisteredIeee802154PendingTracking<P> {
+        let policy = self.registered.tracking_policy();
         RegisteredIeee802154PendingTracking {
             role: self.role,
             registered: self.registered,
-            pending: self.pending.begin_tracking(parameters),
+            pending: self.pending.begin_tracking(policy),
         }
     }
 

@@ -27,7 +27,7 @@ use core::fmt;
 
 use crate::phy_param_tracking::{
     PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingCalibrationTransition,
-    PhyParamTrackingChildError, PhyParamTrackingCompletion, PhyParamTrackingParameters,
+    PhyParamTrackingChildError, PhyParamTrackingCompletion, PhyParamTrackingPolicy,
     PhyParamTrackingRfpllTransition, PhyParamTrackingTemperatureTransition,
     PhyParamTrackingTransition, PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
     PhyParamTrackingWifiI2cTransition,
@@ -502,12 +502,12 @@ impl PhyPendingTrack {
         self.owner.snapshot()
     }
 
-    /// Bind the scheduler request to the exact outer tracking transition.
-    pub fn begin_tracking(self, parameters: PhyParamTrackingParameters) -> PhyPendingTracking {
+    /// Bind a registered-epoch policy to the exact outer tracking transition.
+    pub(crate) fn begin_tracking(self, policy: PhyParamTrackingPolicy) -> PhyPendingTracking {
         PhyPendingTracking {
             owner: self.owner,
             request: self.request,
-            transition: PhyParamTrackingTransition::new(self.request, parameters),
+            transition: PhyParamTrackingTransition::new(self.request, policy),
         }
     }
 
@@ -548,14 +548,11 @@ impl fmt::Debug for PhyPendingTracking {
 
 impl PhyPendingTracking {
     #[cfg(test)]
-    pub(crate) fn for_test(
-        request: PhyParamTrackRequest,
-        parameters: PhyParamTrackingParameters,
-    ) -> Self {
+    pub(crate) fn for_test(request: PhyParamTrackRequest, policy: PhyParamTrackingPolicy) -> Self {
         Self {
             owner: PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS),
             request,
-            transition: PhyParamTrackingTransition::new(request, parameters),
+            transition: PhyParamTrackingTransition::new(request, policy),
         }
     }
 
@@ -1287,13 +1284,13 @@ mod tests {
             Ok(_) => panic!("periodic IEEE tracking must retain the owner"),
             Err(pending) => pending,
         };
-        let mut tracking = pending.begin_tracking(PhyParamTrackingParameters {
+        let mut tracking = pending.begin_tracking(PhyParamTrackingPolicy {
             tracking_inhibited: true,
             rfpll_cap_tracking_enabled: true,
             rfpll_cap_tracking_threshold: None,
             calibration_tracking_threshold: None,
-            shared_tracking_control: 0x29,
-            bluetooth_ieee802154_power_control: 0x51,
+            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
+            bluetooth_ieee802154_power_tracking_enabled: true,
             calibration_tracking_enabled: true,
             relaxed_power_tracking_threshold: false,
         });
@@ -1329,17 +1326,17 @@ mod tests {
             Ok(_) => panic!("periodic shared tracking must retain the owner"),
             Err(pending) => pending,
         };
-        let parameters = PhyParamTrackingParameters {
+        let policy = PhyParamTrackingPolicy {
             tracking_inhibited: false,
             rfpll_cap_tracking_enabled: false,
             rfpll_cap_tracking_threshold: None,
             calibration_tracking_threshold: None,
-            shared_tracking_control: 0x29,
-            bluetooth_ieee802154_power_control: 0x51,
+            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
+            bluetooth_ieee802154_power_tracking_enabled: true,
             calibration_tracking_enabled: false,
             relaxed_power_tracking_threshold: false,
         };
-        let mut tracking = pending.begin_tracking(parameters);
+        let mut tracking = pending.begin_tracking(policy);
         let mut state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
         state.apply_temperature_outcome(crate::phy_temperature::PhyTemperatureOutcome {
             temperature: 95,

@@ -15,8 +15,8 @@ esp_bootloader_esp_idf::esp_app_desc!(
 
 use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
 
-use open_esp_radio_hil_esp32s31_board as board;
 use open_esp_radio_esp32s31_platform_pac::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
+use open_esp_radio_hil_esp32s31_board as board;
 use static_cell::ConstStaticCell;
 
 const RUNTIME_MAGIC: u32 = 0x3247_5453;
@@ -108,9 +108,7 @@ fn main() -> ! {
     let source_end = source_address
         .checked_add(RUNTIME_PAYLOAD.len())
         .unwrap_or_else(|| fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=source-overflow\r\n"));
-    if !(FLASH_XIP_START..FLASH_XIP_END).contains(&source_address)
-        || source_end > FLASH_XIP_END
-    {
+    if !(FLASH_XIP_START..FLASH_XIP_END).contains(&source_address) || source_end > FLASH_XIP_END {
         fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=source-not-xip\r\n");
     }
 

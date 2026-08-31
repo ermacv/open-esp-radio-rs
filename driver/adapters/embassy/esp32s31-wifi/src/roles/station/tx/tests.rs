@@ -354,10 +354,9 @@ fn make_network() -> (
     let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
     let (provider, consumer) = tx_resources.split(pool);
     let (device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
-    (
-        device,
-        PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer),
-    )
+    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    (device, network)
 }
 
 #[test]
@@ -624,6 +623,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     let (provider, consumer) = tx_resources.split(pool);
     let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     for marker in 1..=2 {
         device
             .transmit(&mut context())
@@ -1006,6 +1006,7 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     let (provider, consumer) = tx_resources.split(pool);
     let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     for marker in 1..=4 {
         device
             .transmit(&mut context())
@@ -1137,6 +1138,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     let (provider, consumer) = tx_resources.split(pool);
     let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     for marker in 1..=3 {
         device
             .transmit(&mut context())
@@ -1376,6 +1378,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
     let (provider, consumer) = tx_resources.split(pool);
     let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     send_frame(&mut device, 1);
 
     let mut hardware = Hardware::default();
@@ -1427,6 +1430,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
     let (provider, consumer) = tx_resources.split(pool);
     let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     send_frame(&mut device, 1);
     send_frame(&mut device, 2);
 

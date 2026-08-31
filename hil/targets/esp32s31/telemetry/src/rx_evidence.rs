@@ -78,9 +78,7 @@ impl RxPhyCounters {
             ht40_short_gi_mcs: core::array::from_fn(|index| {
                 self.ht40_short_gi_mcs[index].load(Ordering::Relaxed)
             }),
-            ht20_mcs: core::array::from_fn(|index| {
-                self.ht20_mcs[index].load(Ordering::Relaxed)
-            }),
+            ht20_mcs: core::array::from_fn(|index| self.ht20_mcs[index].load(Ordering::Relaxed)),
             ht_other: self.ht_other.load(Ordering::Relaxed),
             other: self.other.load(Ordering::Relaxed),
         }
@@ -217,12 +215,8 @@ impl RxAmpduCounters {
 
     pub fn observe_hardware(&self, value: bool) {
         let (total, provenance) = match value {
-            true => {
-                (&self.ampdu_frames, &self.hardware_ampdu_frames)
-            }
-            false => {
-                (&self.not_ampdu_frames, &self.hardware_not_ampdu_frames)
-            }
+            true => (&self.ampdu_frames, &self.hardware_ampdu_frames),
+            false => (&self.not_ampdu_frames, &self.hardware_not_ampdu_frames),
         };
         total.fetch_add(1, Ordering::Relaxed);
         provenance.fetch_add(1, Ordering::Relaxed);
@@ -230,12 +224,8 @@ impl RxAmpduCounters {
 
     pub fn observe_protocol(&self, value: bool) {
         let (total, provenance) = match value {
-            true => {
-                (&self.ampdu_frames, &self.protocol_ampdu_frames)
-            }
-            false => {
-                (&self.not_ampdu_frames, &self.protocol_not_ampdu_frames)
-            }
+            true => (&self.ampdu_frames, &self.protocol_ampdu_frames),
+            false => (&self.not_ampdu_frames, &self.protocol_not_ampdu_frames),
         };
         total.fetch_add(1, Ordering::Relaxed);
         provenance.fetch_add(1, Ordering::Relaxed);

@@ -12,7 +12,7 @@ embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 # Keep this composition independently buildable. xarxa requires one socket
 # backend whenever its socket set is enabled; applications may add UDP/TCP.
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "51c3eb0b7e64921246007af1357f3d9f44bfe466", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "4442d7d8deaab072e39415f3662e571a1e65af7b", default-features = false, features = ["iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "raw", "tx-egress-metadata"] }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "rt", "unstable"] }
@@ -27,7 +27,7 @@ open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap" }
 open-esp-radio-esp32s31-wifi-dma = { path = "../../../chips/esp32s31/wifi/dma" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../chips/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-sta = { path = "../../../chips/esp32s31/wifi/sta" }
-open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net" }
+open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net", features = ["tx-egress-scheduling"] }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi" }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
 open-esp-radio-wifi-embassy = { path = "../../../adapters/embassy/wifi" }
@@ -56,9 +56,15 @@ core0-rx-coarse-telemetry = [
     "open-esp-radio-esp32s31-wifi-embassy/core0-rx-coarse-telemetry",
     "open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry",
 ]
+network-scheduler-telemetry = ["embassy-net/cooperative-scheduler-telemetry"]
 tx-staging-copy-probe = [
     "open-esp-radio-embassy-net/tx-staging-copy-probe",
     "open-esp-radio-esp32s31-wifi-embassy/tx-staging-copy-probe",
+]
+tx-core1-materializer-probe = [
+    "tx-staging-copy-probe",
+    "open-esp-radio-embassy-net/tx-core1-materializer-probe",
+    "open-esp-radio-esp32s31-wifi-embassy/tx-core1-materializer-probe",
 ]
 tx-psram-dma-probe = [
     "dep:open-esp-radio-esp32s31-platform-pac",

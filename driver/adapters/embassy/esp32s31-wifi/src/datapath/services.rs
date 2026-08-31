@@ -202,6 +202,25 @@ pub trait DatapathNetworkTxService<
         0
     }
 
+    fn prepared_start_ready(&self) -> bool {
+        self.has_prepared()
+    }
+
+    fn advance_prepared(
+        &mut self,
+        _hardware: &mut H,
+        _network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     #[cfg(any(feature = "diagnostics", test))]
     fn mark_prepared_scheduler_phase(&mut self, _phase: PreparedTxSchedulerPhase, _at_micros: u64) {
     }
@@ -222,7 +241,19 @@ pub trait DatapathNetworkTxService<
     }
 
     /// Release a software-owned standby batch at stop/disconnect.
-    fn cancel_prepared(&mut self) -> Result<(), Self::Error> {
+    fn cancel_prepared(
+        &mut self,
+        _network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -536,6 +567,27 @@ where
         self.role.tx.prepared_frame_count()
     }
 
+    fn prepared_tx_start_ready(&self) -> bool {
+        self.role.tx.prepared_start_ready()
+    }
+
+    fn advance_prepared_tx(
+        &mut self,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Self::Error> {
+        self.role
+            .tx
+            .advance_prepared(&mut self.hardware, network)
+            .map_err(DatapathServiceError::Tx)
+    }
+
     #[cfg(any(feature = "diagnostics", test))]
     fn mark_prepared_tx_scheduler_phase(
         &mut self,
@@ -562,10 +614,22 @@ where
             .map_err(DatapathServiceError::Tx)
     }
 
-    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx(
+        &mut self,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         self.role
             .tx
-            .cancel_prepared()
+            .cancel_prepared(network)
             .map_err(DatapathServiceError::Tx)
     }
 

@@ -54,6 +54,8 @@ mod console;
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
 #[cfg(feature = "open-radio-hil")]
+mod in_place_array;
+#[cfg(feature = "open-radio-hil")]
 mod phy_calibration_artifact;
 #[cfg(feature = "open-radio-hil")]
 mod product_hil;

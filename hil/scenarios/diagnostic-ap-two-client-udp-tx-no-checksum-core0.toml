@@ -1,0 +1,33 @@
+schema = 3
+id = "diagnostic-ap-two-client-udp-tx-no-checksum-core0"
+description = "Two-client AP UDP TX software checksum-cost coarse diagnostic"
+repetitions = 1
+image = "diagnostic-core0-rx-coarse"
+isolation = "reset"
+data_plane = "split-radio-network"
+tx_udp_checksum = "omit-ipv4-diagnostic"
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "checksum", "core0", "coarse"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 150
+client = "laptop"
+
+[workload.traffic]
+kind = "udp-multi-client"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps_per_flow = 65000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_tx_bps = 1
+minimum_bps_per_flow = 1
+maximum_flow_skew_percent = 100
+minimum_concurrent_ap_clients = 2

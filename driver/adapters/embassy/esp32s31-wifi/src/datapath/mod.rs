@@ -30,6 +30,7 @@ pub mod irq;
 pub mod network;
 pub mod rx;
 pub mod services;
+pub(crate) mod software_tx_queue;
 pub mod tx;
 
 /// Maximum latency added while collecting one already-detected network burst.
@@ -528,6 +529,28 @@ pub trait DatapathServices<
         0
     }
 
+    /// A retained software batch may still be waiting for an asynchronous
+    /// materializer. It remains owned/prepared but cannot yet enter hardware.
+    fn prepared_tx_start_ready(&self) -> bool {
+        self.has_prepared_tx()
+    }
+
+    /// Advance a retained software-only preparation edge without claiming a
+    /// new network frame. Ordinary synchronous roles need no such edge.
+    fn advance_prepared_tx(
+        &mut self,
+        _network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     /// Retain one diagnostic phase boundary for a later typed publication
     /// observation. This method and all its call sites are absent from an
     /// ordinary build.
@@ -553,7 +576,19 @@ pub trait DatapathServices<
         Ok(WifiTxProgress::Complete)
     }
 
-    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx(
+        &mut self,
+        _network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                TX_QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -607,6 +642,9 @@ pub struct DatapathRunner<
     active_tx_interface: Option<NetworkInterfaceId>,
     active_tx_origin: Option<DatapathTxOrigin>,
     prepared_tx_interface: Option<NetworkInterfaceId>,
+    #[cfg(feature = "tx-phase-telemetry")]
+    prepared_tx_completion:
+        Option<crate::diagnostics::core0_rx_performance::Core0PerformanceSample>,
     control_ready_latched: bool,
     rx_progress: DatapathRxProgress,
     recycled_rx_probe_deadline: Option<Instant>,

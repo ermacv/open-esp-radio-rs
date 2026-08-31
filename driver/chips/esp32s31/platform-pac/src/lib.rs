@@ -19,7 +19,9 @@ mod flash_mmu;
 #[cfg(feature = "axi-gdma-mem2mem")]
 pub use axi_gdma_mem2mem::{
     AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemError, AxiGdmaMem2MemPrepared,
-    AxiGdmaMem2MemReport, AxiGdmaMem2MemTransfer, AxiGdmaMem2MemTransferError, BurstSize,
+    AxiGdmaMem2MemPreparedOwner, AxiGdmaMem2MemReport, AxiGdmaMem2MemSegment,
+    AxiGdmaMem2MemSegmentsPrepared, AxiGdmaMem2MemSegmentsTransfer, AxiGdmaMem2MemTransfer,
+    AxiGdmaMem2MemTransferError, AxiGdmaMem2MemTransferOwner, BurstSize,
 };
 #[cfg(feature = "axi-gdma-mem2mem")]
 pub use cache_maintenance::{PsramCacheWritebackError, writeback_psram_for_dma_read};

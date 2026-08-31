@@ -565,6 +565,26 @@ pub trait DatapathPairedNetworkTxService<
         0
     }
 
+    fn prepared_start_ready(&self) -> bool {
+        self.has_prepared()
+    }
+
+    fn advance_prepared(
+        &mut self,
+        _hardware: &mut H,
+        _physical_tx: &mut PhysicalTx,
+        _network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     #[cfg(any(feature = "diagnostics", test))]
     fn mark_prepared_scheduler_phase(&mut self, _phase: PreparedTxSchedulerPhase, _at_micros: u64) {
     }
@@ -585,7 +605,20 @@ pub trait DatapathPairedNetworkTxService<
         Ok(WifiTxProgress::Complete)
     }
 
-    fn cancel_prepared(&mut self, _physical_tx: &mut PhysicalTx) -> Result<(), Self::Error> {
+    fn cancel_prepared(
+        &mut self,
+        _physical_tx: &mut PhysicalTx,
+        _network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -1053,6 +1086,46 @@ where
         }
     }
 
+    fn prepared_tx_start_ready(&self) -> bool {
+        match self.prepared.or_else(|| {
+            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+        }) {
+            Some(DatapathPairRole::First) => self.first_tx.prepared_start_ready(),
+            Some(DatapathPairRole::Second) => self.second_tx.prepared_start_ready(),
+            None => false,
+        }
+    }
+
+    fn advance_prepared_tx(
+        &mut self,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Self::Error> {
+        let role = self
+            .prepared
+            .or_else(|| {
+                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+            })
+            .expect("prepared TX advancement requires one retained role");
+        assert_eq!(self.interface_for(role), network.interface());
+        match role {
+            DatapathPairRole::First => self
+                .first_tx
+                .advance_prepared(&mut self.hardware, &mut self.physical_tx, network)
+                .map_err(DatapathPairedServiceError::FirstTx),
+            DatapathPairRole::Second => self
+                .second_tx
+                .advance_prepared(&mut self.hardware, &mut self.physical_tx, network)
+                .map_err(DatapathPairedServiceError::SecondTx),
+        }
+    }
+
     #[cfg(any(feature = "diagnostics", test))]
     fn mark_prepared_tx_scheduler_phase(
         &mut self,
@@ -1109,18 +1182,30 @@ where
         Ok(progress)
     }
 
-    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx(
+        &mut self,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         let prepared = self.prepared.take().or_else(|| {
             unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
         });
         match prepared {
             Some(DatapathPairRole::First) => self
                 .first_tx
-                .cancel_prepared(&mut self.physical_tx)
+                .cancel_prepared(&mut self.physical_tx, network)
                 .map_err(DatapathPairedServiceError::FirstTx),
             Some(DatapathPairRole::Second) => self
                 .second_tx
-                .cancel_prepared(&mut self.physical_tx)
+                .cancel_prepared(&mut self.physical_tx, network)
                 .map_err(DatapathPairedServiceError::SecondTx),
             None => Ok(()),
         }

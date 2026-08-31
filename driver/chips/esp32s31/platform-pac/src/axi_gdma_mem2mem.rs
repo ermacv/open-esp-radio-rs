@@ -80,7 +80,6 @@ mod hardware {
     const INTERNAL_SRAM_END: usize = 0x2f08_0000;
     const PSRAM_START: usize = 0x5000_0000;
     const PSRAM_END: usize = 0x5400_0000;
-    const CACHE_LINE_BYTES: usize = 64;
     const CHANNEL: usize = 0;
     const M2M_TRIGGER_ID: u8 = 6;
 
@@ -189,32 +188,104 @@ mod hardware {
         pub tx_raw: u32,
     }
 
+    /// One discontiguous source/destination pair retained by an M2M transfer.
+    ///
+    /// The mutable borrows are the ownership proof: neither allocation can be
+    /// observed, recycled or mutated until the prepared/active transfer is
+    /// dropped. A PSRAM source must own every cache line touched by its range,
+    /// because preparation writes those complete lines back for the DMA
+    /// reader.
+    pub struct AxiGdmaMem2MemSegment<'buffer> {
+        destination: &'buffer mut [u8],
+        source: &'buffer mut [u8],
+    }
+
+    impl<'buffer> AxiGdmaMem2MemSegment<'buffer> {
+        pub fn new(destination: &'buffer mut [u8], source: &'buffer mut [u8]) -> Self {
+            Self {
+                destination,
+                source,
+            }
+        }
+
+        pub fn destination(&self) -> &[u8] {
+            self.destination
+        }
+
+        pub fn source(&self) -> &[u8] {
+            self.source
+        }
+
+        pub fn len(&self) -> usize {
+            self.source.len()
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.source.is_empty()
+        }
+    }
+
     /// Exclusive owner of ESP32-S31 AXI-GDMA channel zero in M2M mode.
     pub struct AxiGdmaMem2Mem<'d> {
         _channel: DMA_AXI_CH0<'d>,
         _not_send: PhantomData<*mut ()>,
     }
 
-    /// A configured transfer that has not yet been published to hardware.
-    pub struct AxiGdmaMem2MemPrepared<'a, 'd> {
-        driver: &'a mut AxiGdmaMem2Mem<'d>,
-        destination: &'a mut [u8],
-        source: &'a mut [u8],
-        rx_descriptors: &'a mut [AxiGdmaDescriptor],
-        tx_descriptors: &'a mut [AxiGdmaDescriptor],
-        descriptor_count: usize,
+    enum PayloadOwner<'transfer, 'buffer> {
+        Contiguous {
+            destination: &'transfer mut [u8],
+            source: &'transfer mut [u8],
+        },
+        Segments(&'transfer mut [AxiGdmaMem2MemSegment<'buffer>]),
     }
 
-    /// An active transfer retaining exclusive ownership of all DMA memory.
-    pub struct AxiGdmaMem2MemTransfer<'a, 'd> {
-        driver: &'a mut AxiGdmaMem2Mem<'d>,
-        destination: &'a mut [u8],
-        source: &'a mut [u8],
-        rx_descriptors: &'a mut [AxiGdmaDescriptor],
-        tx_descriptors: &'a mut [AxiGdmaDescriptor],
+    impl PayloadOwner<'_, '_> {
+        fn retain(&mut self) {
+            match self {
+                Self::Contiguous {
+                    destination,
+                    source,
+                } => {
+                    core::hint::black_box(destination);
+                    core::hint::black_box(source);
+                }
+                Self::Segments(segments) => {
+                    core::hint::black_box(segments);
+                }
+            }
+        }
+    }
+
+    /// A configured transfer that has not yet been published to hardware.
+    pub struct AxiGdmaMem2MemPreparedOwner<'transfer, 'buffer, 'd> {
+        driver: &'transfer mut AxiGdmaMem2Mem<'d>,
+        payload: PayloadOwner<'transfer, 'buffer>,
+        rx_descriptors: &'transfer mut [AxiGdmaDescriptor],
+        tx_descriptors: &'transfer mut [AxiGdmaDescriptor],
         descriptor_count: usize,
+        expected_bytes: usize,
+    }
+
+    pub type AxiGdmaMem2MemPrepared<'a, 'd> = AxiGdmaMem2MemPreparedOwner<'a, 'a, 'd>;
+
+    pub type AxiGdmaMem2MemSegmentsPrepared<'transfer, 'buffer, 'd> =
+        AxiGdmaMem2MemPreparedOwner<'transfer, 'buffer, 'd>;
+
+    /// An active transfer retaining exclusive ownership of all DMA memory.
+    pub struct AxiGdmaMem2MemTransferOwner<'transfer, 'buffer, 'd> {
+        driver: &'transfer mut AxiGdmaMem2Mem<'d>,
+        payload: PayloadOwner<'transfer, 'buffer>,
+        rx_descriptors: &'transfer mut [AxiGdmaDescriptor],
+        tx_descriptors: &'transfer mut [AxiGdmaDescriptor],
+        descriptor_count: usize,
+        expected_bytes: usize,
         active: bool,
     }
+
+    pub type AxiGdmaMem2MemTransfer<'a, 'd> = AxiGdmaMem2MemTransferOwner<'a, 'a, 'd>;
+
+    pub type AxiGdmaMem2MemSegmentsTransfer<'transfer, 'buffer, 'd> =
+        AxiGdmaMem2MemTransferOwner<'transfer, 'buffer, 'd>;
 
     impl<'d> AxiGdmaMem2Mem<'d> {
         pub fn new(channel: DMA_AXI_CH0<'d>) -> Self {
@@ -241,6 +312,7 @@ mod hardware {
             burst: BurstSize,
         ) -> Result<AxiGdmaMem2MemPrepared<'a, 'd>, AxiGdmaMem2MemError> {
             let source_is_psram = validate_payloads(destination, source, burst)?;
+            let expected_bytes = source.len();
             let descriptor_count = required_descriptors(source.len(), burst);
             validate_descriptors(rx_descriptors, descriptor_count)?;
             validate_descriptors(tx_descriptors, descriptor_count)?;
@@ -273,11 +345,74 @@ mod hardware {
 
             Ok(AxiGdmaMem2MemPrepared {
                 driver: self,
-                destination,
-                source,
+                payload: PayloadOwner::Contiguous {
+                    destination,
+                    source,
+                },
                 rx_descriptors,
                 tx_descriptors,
                 descriptor_count,
+                expected_bytes,
+            })
+        }
+
+        /// Prepare one hardware transaction over discontiguous packet pairs.
+        ///
+        /// The descriptor chains preserve segment boundaries, but publish one
+        /// terminal EOF for the whole batch. This is the primitive needed by
+        /// the Wi-Fi TXQ materializer: every packet remains a separate typed
+        /// allocation while AXI-GDMA receives one kick.
+        pub fn prepare_segments<'transfer, 'buffer>(
+            &'transfer mut self,
+            segments: &'transfer mut [AxiGdmaMem2MemSegment<'buffer>],
+            rx_descriptors: &'transfer mut [AxiGdmaDescriptor],
+            tx_descriptors: &'transfer mut [AxiGdmaDescriptor],
+            burst: BurstSize,
+        ) -> Result<AxiGdmaMem2MemSegmentsPrepared<'transfer, 'buffer, 'd>, AxiGdmaMem2MemError>
+        {
+            if segments.is_empty() {
+                return Err(AxiGdmaMem2MemError::Empty);
+            }
+
+            let mut descriptor_count = 0usize;
+            let mut expected_bytes = 0usize;
+            for segment in segments.iter_mut() {
+                let source_is_psram =
+                    validate_payloads(&*segment.destination, &*segment.source, burst)?;
+                descriptor_count = descriptor_count
+                    .checked_add(required_descriptors(segment.len(), burst))
+                    .ok_or(AxiGdmaMem2MemError::AddressOverflow)?;
+                expected_bytes = expected_bytes
+                    .checked_add(segment.len())
+                    .ok_or(AxiGdmaMem2MemError::AddressOverflow)?;
+                if source_is_psram {
+                    writeback_psram_for_dma_read(&mut *segment.source)
+                        .map_err(AxiGdmaMem2MemError::CacheWriteback)?;
+                }
+            }
+            validate_descriptors(rx_descriptors, descriptor_count)?;
+            validate_descriptors(tx_descriptors, descriptor_count)?;
+
+            build_segment_chains(
+                tx_descriptors,
+                rx_descriptors,
+                segments,
+                descriptor_count,
+                burst,
+            );
+            self.configure_channel(
+                rx_descriptors.as_mut_ptr() as u32,
+                tx_descriptors.as_mut_ptr() as u32,
+                burst,
+            );
+
+            Ok(AxiGdmaMem2MemPreparedOwner {
+                driver: self,
+                payload: PayloadOwner::Segments(segments),
+                rx_descriptors,
+                tx_descriptors,
+                descriptor_count,
+                expected_bytes,
             })
         }
 
@@ -375,26 +510,26 @@ mod hardware {
         }
     }
 
-    impl<'a, 'd> AxiGdmaMem2MemPrepared<'a, 'd> {
+    impl<'transfer, 'buffer, 'd> AxiGdmaMem2MemPreparedOwner<'transfer, 'buffer, 'd> {
         /// Publish both descriptor chains and start the RX side before TX.
         ///
         /// The returned owner can remain alive while the CPU prepares work
         /// that does not alias either payload or either descriptor list.
-        pub fn start(self) -> AxiGdmaMem2MemTransfer<'a, 'd> {
+        pub fn start(self) -> AxiGdmaMem2MemTransferOwner<'transfer, 'buffer, 'd> {
             self.driver.start();
-            AxiGdmaMem2MemTransfer {
+            AxiGdmaMem2MemTransferOwner {
                 driver: self.driver,
-                destination: self.destination,
-                source: self.source,
+                payload: self.payload,
                 rx_descriptors: self.rx_descriptors,
                 tx_descriptors: self.tx_descriptors,
                 descriptor_count: self.descriptor_count,
+                expected_bytes: self.expected_bytes,
                 active: true,
             }
         }
     }
 
-    impl AxiGdmaMem2MemTransfer<'_, '_> {
+    impl AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
         /// Diagnostic baseline that deliberately burns the caller's budget.
         ///
         /// Product code must await the transfer's [`Future`] implementation.
@@ -451,17 +586,16 @@ mod hardware {
                     return Err(AxiGdmaMem2MemTransferError::DescriptorWriteback);
                 }
             }
-            if received != self.destination.len() {
+            if received != self.expected_bytes {
                 return Err(AxiGdmaMem2MemTransferError::ReceivedLength {
-                    expected: self.destination.len(),
+                    expected: self.expected_bytes,
                     actual: received,
                 });
             }
 
-            // Keep both payload borrows live until all hardware and descriptor
+            // Keep every payload borrow live until all hardware and descriptor
             // observations have completed.
-            core::hint::black_box(&mut self.source);
-            core::hint::black_box(&mut self.destination);
+            self.payload.retain();
             Ok(AxiGdmaMem2MemReport {
                 bytes: received,
                 descriptors: self.descriptor_count,
@@ -471,7 +605,7 @@ mod hardware {
         }
     }
 
-    impl Future for AxiGdmaMem2MemTransfer<'_, '_> {
+    impl Future for AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
         type Output = Result<AxiGdmaMem2MemReport, AxiGdmaMem2MemTransferError>;
 
         fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
@@ -497,7 +631,7 @@ mod hardware {
         }
     }
 
-    impl Drop for AxiGdmaMem2MemTransfer<'_, '_> {
+    impl Drop for AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
         fn drop(&mut self) {
             if self.active {
                 disable_channel_interrupts();
@@ -545,19 +679,17 @@ mod hardware {
             _ => AxiGdmaMem2MemError::DestinationOutsideInternalSram,
         })?;
 
-        let alignment = if source_is_psram {
-            burst.bytes().max(CACHE_LINE_BYTES)
-        } else {
-            burst.bytes()
-        };
-        if !(source.as_ptr() as usize).is_multiple_of(alignment)
-            || !source.len().is_multiple_of(alignment)
-        {
+        // AXI-GDMA accepts arbitrary terminal lengths and word-aligned payload
+        // addresses even with descriptor/data bursting enabled. Requiring a
+        // complete burst here would reject normal Ethernet lengths, while a
+        // cache-line requirement belongs to the owning PSRAM allocation, not
+        // to the initialized packet prefix passed to this driver.
+        let _ = burst;
+        const PAYLOAD_ALIGNMENT: usize = core::mem::align_of::<u32>();
+        if !(source.as_ptr() as usize).is_multiple_of(PAYLOAD_ALIGNMENT) {
             return Err(AxiGdmaMem2MemError::SourceAlignment);
         }
-        if !(destination.as_ptr() as usize).is_multiple_of(burst.bytes())
-            || !destination.len().is_multiple_of(burst.bytes())
-        {
+        if !(destination.as_ptr() as usize).is_multiple_of(PAYLOAD_ALIGNMENT) {
             return Err(AxiGdmaMem2MemError::DestinationAlignment);
         }
         Ok(source_is_psram)
@@ -620,13 +752,65 @@ mod hardware {
         burst: BurstSize,
         transmit: bool,
     ) {
+        build_chain_range(descriptors, 0, buffer, bytes, count, count, burst, transmit);
+    }
+
+    fn build_segment_chains(
+        tx_descriptors: &mut [AxiGdmaDescriptor],
+        rx_descriptors: &mut [AxiGdmaDescriptor],
+        segments: &mut [AxiGdmaMem2MemSegment<'_>],
+        descriptor_count: usize,
+        burst: BurstSize,
+    ) {
+        let mut cursor = 0usize;
+        for segment in segments {
+            let count = required_descriptors(segment.len(), burst);
+            build_chain_range(
+                tx_descriptors,
+                cursor,
+                segment.source.as_mut_ptr(),
+                segment.len(),
+                count,
+                descriptor_count,
+                burst,
+                true,
+            );
+            build_chain_range(
+                rx_descriptors,
+                cursor,
+                segment.destination.as_mut_ptr(),
+                segment.len(),
+                count,
+                descriptor_count,
+                burst,
+                false,
+            );
+            cursor += count;
+        }
+        debug_assert_eq!(cursor, descriptor_count);
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "descriptor chain construction keeps all hardware dimensions explicit"
+    )]
+    fn build_chain_range(
+        descriptors: &mut [AxiGdmaDescriptor],
+        start: usize,
+        buffer: *mut u8,
+        bytes: usize,
+        count: usize,
+        total_count: usize,
+        burst: BurstSize,
+        transmit: bool,
+    ) {
         let chunk_capacity = descriptor_payload_bytes(burst);
         let mut remaining = bytes;
         let mut offset = 0usize;
-        for index in 0..count {
+        for index in start..start + count {
             let chunk = remaining.min(chunk_capacity);
-            let last = index + 1 == count;
-            let next = if last {
+            let terminal = index + 1 == total_count;
+            let next = if terminal {
                 0
             } else {
                 ptr::addr_of_mut!(descriptors[index + 1]) as u32
@@ -636,7 +820,7 @@ mod hardware {
                 // length as well as the buffer capacity on both sides. This
                 // differs from the conventional peripheral-RX descriptor
                 // convention where software initially leaves length at zero.
-                flags: descriptor_flags(chunk, transmit && last),
+                flags: descriptor_flags(chunk, transmit && terminal),
                 buffer: buffer.wrapping_add(offset) as u32,
                 next,
                 reserved: 0,

@@ -50,10 +50,9 @@ macro_rules! split_network {
         let (provider, consumer) = tx_resources.split($pool);
         let (device, rx) =
             $resources.split(provider, NetworkInterfaceId::new(0), [2, 3, 4, 5, 6, 7]);
-        (
-            device,
-            PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer),
-        )
+        let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+        network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+        (device, network)
     }};
 }
 
@@ -197,6 +196,14 @@ fn concurrent_owner_graph_contract_has_one_physical_tx_owner_and_two_vifs() {
         crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
         access_point_rx,
         consumer,
+    );
+    network.set_link_state(
+        crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+        open_esp_radio_embassy_net::LinkState::Up,
+    );
+    network.set_link_state(
+        crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+        open_esp_radio_embassy_net::LinkState::Up,
     );
     let mut context = Context::from_waker(core::task::Waker::noop());
     access_point_device
@@ -1313,7 +1320,19 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
         Err(TestError::Finished)
     }
 
-    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx(
+        &mut self,
+        _network: Option<
+            &PinnedTxInterfaceConsumer<
+                'static,
+                NoopRawMutex,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         self.prepared = false;
         self.cancelled = true;
         Ok(())
@@ -1464,9 +1483,12 @@ fn due_recycled_rx_probe_blocks_the_saturated_prepared_tx_chain() {
     let mut runner = DatapathRunner::new(irq, network, interface, services);
 
     runner.recycled_rx_probe_deadline = Some(Instant::now());
-    assert_eq!(runner.prepared_network_tx_candidate(), None);
+    assert_eq!(runner.prepared_network_tx_candidate(), Ok(None));
     runner.clear_recycled_rx_probe_deadline();
-    assert_eq!(runner.prepared_network_tx_candidate(), Some((interface, 1)));
+    assert_eq!(
+        runner.prepared_network_tx_candidate(),
+        Ok(Some((interface, 1)))
+    );
 }
 
 #[test]
@@ -2075,8 +2097,8 @@ fn caller_stop_waits_for_active_tx_to_release_hardware() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
     let (mut device, network) = split_network!(resources, pool);
-    enqueue_frame(&mut device);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    enqueue_frame(&mut device);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));

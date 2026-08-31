@@ -929,10 +929,12 @@ mod tests {
                         target_rx: Some(FlowConfig {
                             payload_bytes: 1_200,
                             offered_rate_bps: Some(10_000_000),
+                            pacing_group_datagrams: None,
                         }),
                         target_tx: Some(FlowConfig {
                             payload_bytes: 1_472,
                             offered_rate_bps: None,
+                            pacing_group_datagrams: None,
                         }),
                     }),
                     None,
@@ -960,10 +962,12 @@ mod tests {
                 target_rx: Some(FlowConfig {
                     payload_bytes: 1_472,
                     offered_rate_bps: Some(60_000_000),
+                    pacing_group_datagrams: None,
                 }),
                 target_tx: Some(FlowConfig {
                     payload_bytes: 1_472,
                     offered_rate_bps: Some(60_000_000),
+                    pacing_group_datagrams: None,
                 }),
             })
         };

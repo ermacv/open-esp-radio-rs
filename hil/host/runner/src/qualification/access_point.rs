@@ -106,6 +106,12 @@ impl ConnectedClients {
             .map(ControlledOpenWrtClient::begin_link_observation)
             .transpose()
     }
+
+    fn begin_secondary_link_observation(&self) -> Result<Option<OpenWrtClientLinkObservation>> {
+        self.secondary()
+            .map(ControlledOpenWrtClient::begin_link_observation)
+            .transpose()
+    }
 }
 
 #[derive(Serialize)]
@@ -126,6 +132,7 @@ struct CycleReport {
     traffic: TrafficReport,
     secondary_client: Option<SecondaryClientProbeEvidence>,
     primary_client_link: Option<OpenWrtClientLinkEvidence>,
+    secondary_client_link: Option<OpenWrtClientLinkEvidence>,
     independent_air_rx: Option<LocalAirMonitorEvidence>,
     /// Intrusive driver-internal evidence is absent from observer-free
     /// performance images. An omitted field is deliberately different from a
@@ -183,6 +190,8 @@ struct MultiClientFlowReport {
     host_tx_missing: Option<u64>,
     host_tx_reordered: Option<u64>,
     host_tx_duplicates: Option<u64>,
+    host_tx_maximum_interarrival_us: Option<u64>,
+    host_tx_sequence_after_maximum_interarrival: Option<u32>,
 }
 
 struct MultiClientHostFlow {
@@ -198,6 +207,9 @@ struct UdpWorkload {
     duration: Duration,
     rx_rate_bps: Option<u64>,
     tx_rate_bps: Option<u64>,
+    secondary_rx_rate_bps: Option<u64>,
+    secondary_tx_rate_bps: Option<u64>,
+    secondary_tx_pacing_group_datagrams: Option<u8>,
     payload_bytes: usize,
 }
 
@@ -360,6 +372,7 @@ fn qualify(
                     )
                 });
         let primary_link_observation = clients.begin_primary_link_observation();
+        let secondary_link_observation = clients.begin_secondary_link_observation();
         let air_output = output.join(format!("cycle-{cycle:02}"));
         let independent_air_capture = if config.capture_independent_laptop_monitor_rx {
             fs::create_dir_all(&air_output)?;
@@ -383,6 +396,11 @@ fn qualify(
         let independent_air_result = independent_air_capture
             .and_then(|capture| capture.map(LocalAirMonitorCapture::finish).transpose());
         let primary_link_result = primary_link_observation.and_then(|observation| {
+            observation
+                .map(OpenWrtClientLinkObservation::finish)
+                .transpose()
+        });
+        let secondary_link_result = secondary_link_observation.and_then(|observation| {
             observation
                 .map(OpenWrtClientLinkObservation::finish)
                 .transpose()
@@ -503,6 +521,26 @@ fn qualify(
                 )),
                 Ok(None) => {}
             }
+            match &secondary_link_result {
+                Ok(Some(evidence)) => data_error.push_str(&format!(
+                    "; secondary OpenWrt AP-client link: rx_packets={} rx_bytes={} rx_duration_us={:?} rx_bitrate={:?} tx_packets={} tx_bytes={} tx_bitrate={:?} retries={} failed={} tx_duration_us={} tid0_aqm_drops={}",
+                    evidence.rx_packets,
+                    evidence.rx_bytes,
+                    evidence.rx_duration_micros,
+                    evidence.rx_bitrate,
+                    evidence.tx_packets,
+                    evidence.tx_bytes,
+                    evidence.tx_bitrate,
+                    evidence.tx_retries,
+                    evidence.tx_failed,
+                    evidence.tx_duration_micros,
+                    evidence.tid0_aqm_drops,
+                )),
+                Err(observation_error) => data_error.push_str(&format!(
+                    "; secondary OpenWrt AP-client link observation failed: {observation_error}"
+                )),
+                Ok(None) => {}
+            }
             if let Err(observation_error) = &independent_air_result {
                 data_error.push_str(&format!(
                     "; independent AP air observation failed: {observation_error}"
@@ -528,6 +566,7 @@ fn qualify(
         let traffic = data_result?;
         let secondary_client = secondary_probe_result.transpose()?;
         let primary_client_link = primary_link_result?;
+        let secondary_client_link = secondary_link_result?;
         let independent_air_rx = independent_air_result?;
         client_restore?;
         let stopped = stop_result?;
@@ -543,6 +582,7 @@ fn qualify(
             traffic,
             secondary_client,
             primary_client_link,
+            secondary_client_link,
             independent_air_rx,
             access_point,
         });
@@ -839,6 +879,9 @@ fn qualify_data_plane(
                 duration: Duration::from_secs(u64::from(*duration_seconds)),
                 rx_rate_bps: *rx_rate_bps,
                 tx_rate_bps: *tx_rate_bps,
+                secondary_rx_rate_bps: None,
+                secondary_tx_rate_bps: None,
+                secondary_tx_pacing_group_datagrams: None,
                 payload_bytes: usize::from(*payload_bytes),
             },
         ),
@@ -847,6 +890,9 @@ fn qualify_data_plane(
             duration_seconds,
             rx_rate_bps_per_flow,
             tx_rate_bps_per_flow,
+            secondary_rx_rate_bps,
+            secondary_tx_rate_bps,
+            secondary_tx_pacing_group_datagrams,
             payload_bytes,
         } => qualify_multi_client_udp(
             capture,
@@ -858,6 +904,9 @@ fn qualify_data_plane(
                 duration: Duration::from_secs(u64::from(*duration_seconds)),
                 rx_rate_bps: *rx_rate_bps_per_flow,
                 tx_rate_bps: *tx_rate_bps_per_flow,
+                secondary_rx_rate_bps: *secondary_rx_rate_bps,
+                secondary_tx_rate_bps: *secondary_tx_rate_bps,
+                secondary_tx_pacing_group_datagrams: *secondary_tx_pacing_group_datagrams,
                 payload_bytes: usize::from(*payload_bytes),
             },
         ),
@@ -963,6 +1012,9 @@ fn qualify_multi_client_udp(
         duration,
         rx_rate_bps,
         tx_rate_bps,
+        secondary_rx_rate_bps,
+        secondary_tx_rate_bps,
+        secondary_tx_pacing_group_datagrams,
         payload_bytes,
     } = workload;
     let flows = multi_client_host_flows(lab, clients, direction)?;
@@ -987,17 +1039,32 @@ fn qualify_multi_client_udp(
         transport: Transport::Udp,
         direction: protocol_direction(direction),
         completion: Completion::DurationMillis(u32::try_from(duration.as_millis())?),
-        flows: flows.each_ref().map(|flow| {
+        flows: std::array::from_fn(|index| {
+            let flow = &flows[index];
+            let flow_rx_rate = if index == 0 {
+                rx_rate_bps
+            } else {
+                secondary_rx_rate_bps.or(rx_rate_bps)
+            };
+            let flow_tx_rate = if index == 0 {
+                tx_rate_bps
+            } else {
+                secondary_tx_rate_bps.or(tx_rate_bps)
+            };
             Some(SessionFlowConfig {
                 flow_id: flow.flow_id,
                 peer: Some(flow.peer),
-                target_rx: rx_rate_bps.map(|rate| FlowConfig {
+                target_rx: flow_rx_rate.map(|rate| FlowConfig {
                     payload_bytes: payload_bytes_u16,
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: None,
                 }),
-                target_tx: tx_rate_bps.map(|rate| FlowConfig {
+                target_tx: flow_tx_rate.map(|rate| FlowConfig {
                     payload_bytes: payload_bytes_u16,
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: (index == 1)
+                        .then_some(secondary_tx_pacing_group_datagrams)
+                        .flatten(),
                 }),
             })
         }),
@@ -1022,13 +1089,19 @@ fn qualify_multi_client_udp(
     }
     let mut sender_threads = Vec::with_capacity(SESSION_FLOW_CAPACITY);
     if target_receives(direction) {
-        for flow in &flows {
+        for (index, flow) in flows.iter().enumerate() {
             let socket = flow.socket.try_clone()?;
             let flow_id = flow.flow_id;
+            let rate_bps = if index == 0 {
+                rx_rate_bps
+            } else {
+                secondary_rx_rate_bps.or(rx_rate_bps)
+            }
+            .expect("validated multi-client RX offer");
             let send_config = UdpConfig {
                 address: flow.traffic_target,
                 port: UDP_RX_PORT,
-                rate_bps: rx_rate_bps.expect("validated multi-client RX offer"),
+                rate_bps,
                 duration,
                 payload: payload_bytes,
             };
@@ -1084,6 +1157,8 @@ fn qualify_multi_client_udp(
         host_tx_missing: None,
         host_tx_reordered: None,
         host_tx_duplicates: None,
+        host_tx_maximum_interarrival_us: None,
+        host_tx_sequence_after_maximum_interarrival: None,
     }; SESSION_FLOW_CAPACITY];
     for index in 0..SESSION_FLOW_CAPACITY {
         let flow_evidence = structured.flow_transport[index]
@@ -1223,6 +1298,9 @@ fn validate_multi_client_udp_flow(
         host_tx_missing: host_tx.map(|host| host.missing),
         host_tx_reordered: host_tx.map(|host| host.reordered),
         host_tx_duplicates: host_tx.map(|host| host.duplicates),
+        host_tx_maximum_interarrival_us: host_tx.map(|host| host.maximum_interarrival_us),
+        host_tx_sequence_after_maximum_interarrival: host_tx
+            .and_then(|host| host.sequence_after_maximum_interarrival),
     })
 }
 
@@ -1261,6 +1339,28 @@ fn validate_multi_client_fairness(
     }
     if target_transmits(direction) {
         validate("TX", flows.each_ref().map(|flow| flow.tx_bps))?;
+        if let Some(minimum) = criteria.minimum_secondary_tx_datagrams
+            && flows[1].tx_units < u64::from(minimum)
+        {
+            return Err(format!(
+                "AP secondary TX delivered {} datagrams; required {minimum}",
+                flows[1].tx_units,
+            )
+            .into());
+        }
+        if let Some(maximum_ms) = criteria.maximum_secondary_tx_interarrival_ms {
+            let secondary = flows[1];
+            let maximum_us = secondary
+                .host_tx_maximum_interarrival_us
+                .ok_or("AP sparse secondary TX flow omitted host inter-arrival evidence")?;
+            if maximum_us > u64::from(maximum_ms).saturating_mul(1_000) {
+                return Err(format!(
+                    "AP secondary TX inter-arrival {maximum_us} us exceeds {maximum_ms} ms after sequence {:?}",
+                    secondary.host_tx_sequence_after_maximum_interarrival,
+                )
+                .into());
+            }
+        }
     }
     Ok(())
 }
@@ -1278,6 +1378,7 @@ fn qualify_udp(
         rx_rate_bps,
         tx_rate_bps,
         payload_bytes,
+        ..
     } = workload;
     let protocol_direction = protocol_direction(direction);
     let target = lab.access_point.target_address();
@@ -1324,10 +1425,12 @@ fn qualify_udp(
                 target_rx: rx_rate_bps.map(|rate| FlowConfig {
                     payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: None,
                 }),
                 target_tx: tx_rate_bps.map(|rate| FlowConfig {
                     payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: None,
                 }),
             }),
             None,
@@ -1572,10 +1675,12 @@ fn qualify_tcp(
                 target_rx: rx_rate_bps.map(|rate| FlowConfig {
                     payload_bytes: u16::try_from(chunk_bytes).expect("validated TCP chunk"),
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: None,
                 }),
                 target_tx: tx_rate_bps.map(|rate| FlowConfig {
                     payload_bytes: u16::try_from(chunk_bytes).expect("validated TCP chunk"),
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: None,
                 }),
             }),
             None,
@@ -2237,6 +2342,64 @@ mod tests {
     }
 
     #[test]
+    fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
+        let flow = |flow_id, tx_units, maximum_interarrival_us| MultiClientFlowReport {
+            flow_id,
+            peer: Ipv4Endpoint {
+                address: [10, 43, 0, flow_id.saturating_add(2)],
+                port: 9_002 + u16::from(flow_id),
+            },
+            rx_bytes: 0,
+            tx_bytes: tx_units * 1_472,
+            rx_units: 0,
+            tx_units,
+            elapsed_micros: 22_000_000,
+            rx_bps: 0,
+            tx_bps: tx_units * 1_472 * 8_000_000 / 22_000_000,
+            host_tx_started_at_zero: Some(true),
+            host_tx_missing: Some(0),
+            host_tx_reordered: Some(0),
+            host_tx_duplicates: Some(0),
+            host_tx_maximum_interarrival_us: Some(maximum_interarrival_us),
+            host_tx_sequence_after_maximum_interarrival: Some(2),
+        };
+        let criteria = Criteria {
+            minimum_secondary_tx_datagrams: Some(8),
+            maximum_secondary_tx_interarrival_ms: Some(5_500),
+            ..Criteria::default()
+        };
+
+        assert!(
+            validate_multi_client_fairness(
+                &[flow(0, 100, 100), flow(1, 10, 5_003_241)],
+                Direction::Tx,
+                &criteria,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_multi_client_fairness(
+                &[flow(0, 100, 100), flow(1, 7, 5_003_241)],
+                Direction::Tx,
+                &criteria,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("delivered 7 datagrams")
+        );
+        assert!(
+            validate_multi_client_fairness(
+                &[flow(0, 100, 100), flow(1, 10, 5_500_001)],
+                Direction::Tx,
+                &criteria,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("inter-arrival")
+        );
+    }
+
+    #[test]
     fn ap_ht40_mcs7_gate_is_directional_and_fails_closed() {
         let link = Some(LinkExpectation {
             phy: PhyExpectation::Ht40,
@@ -2364,6 +2527,7 @@ mod tests {
                     traffic: TrafficReport::None,
                     secondary_client: None,
                     primary_client_link: None,
+                    secondary_client_link: None,
                     independent_air_rx: None,
                     access_point: None,
                 }],

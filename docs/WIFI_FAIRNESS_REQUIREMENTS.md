@@ -2,7 +2,7 @@
 
 Status: working requirements and measured architecture baseline
 Initial revision: 2026-08-30
-Current revision: 2026-08-30, direct-PSRAM Wi-Fi DMA proof and candidate-A rejection
+Current revision: 2026-08-31, resolved-link pre-DMA production selector
 
 This document is the starting contract for Wi-Fi fairness work. It is
 intentionally evolvable: measurements and hardware limits may change the
@@ -26,12 +26,20 @@ independent offered-rate deadline per flow and selects ready flows in bounded
 round-robin order. Single-flow ceiling sessions retain their dedicated path
 without per-packet peer lookup.
 
-The AP production path now classifies already-published network leases into
-bounded intrusive per-peer/TID queues, selects those queues round-robin and
-owns QoS sequence state per peer. This removed the original immutable-VIF-FIFO
-ordering defect, but classification still happens after a frame has consumed
-a physical DMA-visible SRAM credit. The distinction is central to the next
-architecture: logical queueing has been separated, physical backing has not.
+The AP radio path classifies published SRAM owners into bounded intrusive
+per-peer/TID queues, selects those queues round-robin and owns QoS sequence
+state per peer. The production stack now also performs the decisive earlier
+step: one UDP socket keeps a 128-packet PSRAM arena indexed by 16 IP
+destinations, resolves candidates to a generic link destination, selects a
+32-packet resolved-link burst, and only then asks for one of the fixed 67
+DMA-visible SRAM credits. Distinct IP destinations resolving to the same link
+peer share one burst. Final Ethernet/IP/UDP construction remains direct in
+SRAM; there is no complete-frame promotion copy.
+
+This is a measured production cutover, not yet the final fairness scheduler.
+Selection is local to one UDP socket, unresolved/current peer generation is
+not owned by the generic stack, TCP and multiple sockets are not coordinated,
+and equal packet bursts do not imply equal airtime.
 
 ## Scope
 
@@ -51,21 +59,42 @@ The implementation and HIL must cover:
 ### Access point
 
 The AP protocol owns up to 15 independent peer records, including security,
-rate, power-save, per-peer QoS sequence and BlockAck state. Core0 now regroups
-the one AP-VIF FIFO into per-peer/TID intrusive queues without copying payload
-bytes. Each queued owner nevertheless remains one of the finite physical TX
-DMA slots.
+rate, power-save, per-peer QoS sequence and BlockAck state. Core0 validates
+published frames against that state and regroups the short hardware frontier
+into per-peer/TID intrusive queues without copying payload bytes. The measured
+UDP production path now selects a resolved-link burst above final SRAM
+admission, so a long software backlog no longer consumes the 67 physical TX
+credits merely to discover its peer.
 
 Consequences:
 
-- peer association, protocol state and logical active queues are independent;
-- all logical queues still compete for one DMA-backed producer pool;
-- finding 32 frames for one selected peer may retain interleaved frames for
-  every other peer and exhaust the credits needed to finish the aggregate;
-- the required look-ahead is approximately `BA * (active_peers - 1)` for a
-  deliberately alternating producer, so increasing the physical pool fixes a
-  chosen peer count rather than the architecture;
-- round-robin frames are not yet airtime fairness.
+- packet backlog in PSRAM and the shared 67-credit DMA working set are now
+  separate resources for the measured UDP socket;
+- resolved-link selection occurs before final SRAM ownership, so separate IP
+  queues behind one next hop do not fragment its radio quantum;
+- Core0 remains authoritative for peer generation, association, BA, key and
+  rate state; the generic link key is not sufficient to authorize stale work;
+- multiple sockets/protocols can still make independent admission decisions
+  because there is no interface-wide grant boundary yet;
+- round-robin equal packet bursts are not airtime fairness;
+- 15-peer memory scaling is structurally possible, but has not been proven by
+  physical HIL saturation or queue-residence evidence.
+
+The production neighbor cache is now explicitly 16 entries rather than
+Xarxa's default eight. A host integration test learns and retains 15 unicast
+SoftAP clients and subsequently transmits UDP to every one without ARP
+fallback. A separate resolved-selector model emits 15 full BA32 bursts from a
+480-packet interleaved PSRAM arena. Its 128-packet control can prefill only
+nine packets for the first of 15 peers, so the present HIL arena is a valid
+two-client baseline, not proof of 15 simultaneously saturated clients.
+
+The configuration change retains six-cycle two-client throughput at
+119.03--120.34 Mbit/s and six-cycle single-client throughput at
+120.70--121.61 Mbit/s. Matching coarse evidence measures Core0 at
+38.10--38.42% cycles/wall and Core1 network plus UDP-TX task residence at
+81.68--82.31%. The next fairness mechanism must reduce or preserve Core1 work;
+it may not trade the fixed-SRAM solution for another per-frame copy or a
+per-packet scan of all peers.
 
 The new two-flow workload measures two simultaneously saturated peers and
 proves exact per-flow host accounting. It is an architecture diagnostic, not
@@ -341,14 +370,21 @@ the upper layer.
 | DMA-to-PSRAM overflow spill | rejected as normal path | classification occurs too late and spilled frames pay two extra payload copies |
 | direct PSRAM Wi-Fi DMA | rejected by hardware A/B | 62,464 prepared PSRAM-backed publications delivered no UDP data while the identical SRAM workload passed |
 | shared PSRAM backlog, always copied | rejected as production path | restores 120--121 Mbit/s with 67 DMA slots, but measured Core0 radio residence is 60.9% |
-| transferable software packet ownership with late DMA admission | next candidate | must retain the proven peer-homogeneous queue geometry without a Core0 payload copy |
-| direct uncontended path plus transferable contended backlog | conditional target | preserves the proven single-entity path; acceptance depends on candidate-B resource and CPU evidence |
+| Core1 materialization of transferable PSRAM owners | rejected by same-ELF A/B | preserves full BA32 bursts and lowers Core0 to 32.66%, but lowers throughput to 90.62 Mbit/s and raises Core1 network+UDP residence to 72.18% |
+| pre-DMA destination selection plus direct construction | accepted causal prototype | hardened indexed direct-67 run `1788141775143-0035f865` reaches 117.95--119.50 Mbit/s at 37.31--37.34% Core0; same-CRC unordered control varies from 88.66 to 119.58 Mbit/s |
+| resolved-link selected direct construction | production two-client baseline | fixed-67 observer-free runs `1788159136670-0039994b` and `1788159543971-0039a175` pass 12/12 cycles at 119.85--120.64 Mbit/s; matching coarse run is 38.94--39.10% Core0, but selection is still per UDP socket and packet-based |
+| direct uncontended path plus bounded contended spill | conditional target | preserves the proven single-entity path; acceptance depends on direct-hit rate and both-core evidence |
 
-Candidate A has completed the same-image copy-cost gate and failed the Core0
-budget. Candidate B must now separate packet construction/ownership from DMA
-admission without depending on direct PSRAM DMA. Its A/B must account for
-SRAM, PSRAM, Core0, Core1, throughput and queue residence; moving the same copy
-to an unmeasured boundary is not an architectural win.
+Candidate A completed the same-image copy-cost gate and failed the Core0
+budget. The first Candidate-B materializer then proved that moving the same
+copy to Core1 is also not an architectural win. Production now separates UDP
+packet selection from DMA admission early enough to construct the selected
+resolved-link burst directly in SRAM. HIL proves that this boundary meets both
+the throughput and Core0 gates with the fixed 67-slot pool. The next candidate
+must preserve that result while moving from per-socket equal-packet selection
+to interface-wide bounded hierarchical airtime scheduling. Its A/B must
+account for SRAM, PSRAM, both cores, throughput, per-peer service and queue
+residence.
 
 ### Candidate-B API audit and ownership contract
 
@@ -376,12 +412,10 @@ packet representation:
    scheduler grant for the matching VIF/peer-generation/TID permits the token
    to emit directly into a granted SRAM owner. That completed owner follows the
    existing zero-copy Core1-to-Core0 path.
-2. A token without a matching grant emits into the shared PSRAM software pool.
-   Core0 queues only its small packet identifier and classification. After the
-   airtime scheduler selects it and assigns a DMA credit, a Core1
-   materialization worker performs the unavoidable single copy into that
-   exact SRAM owner and returns a prepared owner to Core0. Core0 must not touch
-   the payload during this path.
+2. A token without a matching grant may emit into the shared PSRAM software
+   pool as a bounded spill/fairness fallback. This path is not the steady-state
+   performance solution: the measured Core1 materializer cannot sustain the
+   target, and moving the copy back to Core0 violates its residence gate.
 
 The grant is a consumable credit, not a racy `current_peer` hint. It is keyed by
 interface, peer identity/generation and TID/AC, and it is bounded by aggregate,
@@ -411,7 +445,10 @@ prepared DMA owner or preserves both original owners. The subsequent same-ELF
 HIL comparison must report direct/staged frame counts and copied bytes in
 addition to both-core residence and memory footprint. Candidate B is accepted
 only if two-peer throughput remains at least 120 Mbit/s and Core0 returns below
-40 percent without moving an unbounded bottleneck to Core1.
+40 percent without moving an unbounded bottleneck to Core1. The first
+implementation failed this gate at 90.62 Mbit/s despite 29.83 frames per
+completed materialization batch; the queue geometry worked, but Core1 became
+the compute ceiling.
 
 ### Hierarchical TX scheduling
 
@@ -502,6 +539,31 @@ Client identities and start order are swapped between repetitions. Host/model
 tests cover all 15 logical peer slots even while the physical lab supports only
 two simultaneous clients.
 
+The first saturated-plus-sparse TX cell is implemented and provides a bounded
+service check rather than an airtime-fairness verdict. Run
+`1788172342431-003c5c6b` offered 130 Mbit/s to the saturated client and two
+1,472-byte datagrams about every five seconds to the sparse client. Both
+22-second cycles delivered all ten sparse datagrams with no missing, reordered
+or duplicate sequence numbers and maximum host-observed inter-arrival of
+5.002681/5.003241 seconds. The radio produced 6,915/6,921 full BA32 aggregates
+and only 11/6 partial aggregates, so sparse service does not wait for a full
+BA32 and does not fragment the saturated path materially.
+
+This cell does not yet measure enqueue-to-air queue residence or the maximum
+driver scheduler service gap, and only the sparse client's link has an
+independent external PHY/retry report. It therefore proves absence of observed
+starvation for this workload, not the final fairness policy. Those internal
+timestamps and simultaneous two-link evidence remain required before an
+airtime-fairness claim.
+
+Observer-free run `1788174309479-003cb51a` subsequently passed all six
+reset-isolated cycles. The saturated flow delivered 117.862--119.448 Mbit/s;
+the sparse flow delivered ten datagrams in every cycle with maximum
+host-observed inter-arrival between 5.002518 and 5.004932 seconds. The host
+sequence report observed no missing, reordered or duplicate datagrams. The
+performance image intentionally treats this as a throughput/service gate, not
+an exact-delivery verdict, because driver observation is absent by design.
+
 ### Same-channel STA+AP
 
 The four independent flows are:
@@ -586,21 +648,45 @@ drops are bounded, classified and compatible with the fairness policy.
 1. Preserve the completed 98-slot and 67-slot same-ELF direct/one-copy HIL
    records and the direct-PSRAM negative proof as causal evidence; do not
    optimize candidate A or direct PSRAM into production.
-2. Prototype transferable network packet ownership and compare its SRAM,
-   PSRAM, Core0, Core1 and throughput costs against both recorded candidates.
-3. Keep the physical DMA pool at the smallest geometry that sustains the two
-   active/standby BA windows plus endpoint/pipeline reserves; prove that owner
-   transfer retains the peer-count-independent late-admission behavior.
-4. Remove the losing ownership implementation and its runtime discriminator.
-5. Add airtime accounting in temporary shadow mode and validate the estimator.
-6. Cut over to hierarchical VIF -> peer -> TID scheduling and add AQL-like
+2. Preserve the negative Core1-materializer A/B: transferable ownership alone
+   does not remove copy cost and cannot satisfy the performance gate.
+3. Completed: scheduler-selected direct construction. The stack selects a
+   packet for a resolved egress key before asking the driver for its final
+   backing; a metadata callback after FIFO selection was insufficient. The
+   first IP-destination/single-ring A/B validated this ordering at
+   119.45--119.54 Mbit/s with fixed 67-slot SRAM. The compact intrusive-index
+   follow-up `1788141182663-0035deb0` delivered 118.79--119.49 Mbit/s at
+   37.85--37.88% Core0. After overflow/policy hardening,
+   `1788141775143-0035f865` delivered 117.95--119.50 Mbit/s at
+   37.31--37.34%; its same-CRC unordered control varied from 88.66 to
+   119.58 Mbit/s. The production follow-up replaces the diagnostic IP burst
+   policy with resolved-link-key admission and removes ordered payload-reclaim
+   coupling. Observer-free runs `1788159136670-0039994b` and
+   `1788159543971-0039a175` pass 12 of 12 cycles at 119.85--120.64 Mbit/s with
+   exact two-flow delivery; the matching coarse image is below 40% Core0.
+   Do not rotate a destination merely because the global device returned no TX
+   token: rejected run `0d2eae6c` reduced both cycles to 90.12--92.30 Mbit/s
+   because ordinary SRAM-credit exhaustion repeatedly split the selected
+   burst. The future contract must distinguish global exhaustion from a
+   peer-specific defer. Aggregate evidence from
+   `1788143111421-00365b1a` acknowledged every submitted MPDU, reported zero
+   hardware timeout/collision/ordinary retry, and built 9,179 full BA32
+   aggregates out of 11,585 across three cycles.
+4. Keep the physical DMA pool at the proven 67-credit geometry and add an
+   interface-wide candidate/grant boundary across UDP sockets, TCP and control
+   traffic. The generic stack may resolve a link address, but the driver must
+   validate current VIF, peer generation and TID/AC before admission.
+5. Remove the losing ownership implementation and its runtime discriminator.
+6. Add airtime accounting in temporary shadow mode and validate the estimator
+   against actual PHY, BA and retry completion without changing decisions.
+7. Cut over to hierarchical VIF -> peer -> TID scheduling and add AQL-like
    outstanding-airtime and buffer bounds.
-7. Sweep two through fifteen modeled peers and every physically available HIL
+8. Sweep two through fifteen modeled peers and every physically available HIL
    peer count; tune the shared software-pool capacity from queue residence and
    aggregate-population evidence rather than `N * BA` allocation.
-8. Introduce the explicit shared RX BA-bank policy.
-9. Add post-DMA RX peer scheduling only if measurements prove it necessary.
-10. Seal qualification runs and remove the DMA look-ahead workaround and all
+9. Introduce the explicit shared RX BA-bank policy.
+10. Add post-DMA RX peer scheduling only if measurements prove it necessary.
+11. Seal qualification runs and remove the DMA look-ahead workaround and all
    temporary probes.
 
 ## External design references

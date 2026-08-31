@@ -23,13 +23,13 @@
 
 use core::{future::Future, marker::PhantomData, pin::Pin};
 
-use embassy_executor::Spawner;
 use crate::composition::start::{Esp32s31RadioStartConfig, start_esp32s31_radio};
 use crate::composition::supervisor::{
     Esp32s31RadioSupervisorTask, Esp32s31StationSupervisorEpoch, Esp32s31StationSupervisorHooks,
     Esp32s31WifiSupervisorStopped, drive_esp32s31_monitor_role, prepare_esp32s31_radio_supervisor,
     run_esp32s31_station_supervisor_epoch,
 };
+use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::{
@@ -155,10 +155,9 @@ use crate::supervisor::station::{
     ConnectedStationRunExit, ControlResources, InitialConnectedStaticResources, MacInterruptEpoch,
     ProductionAccessPointRxConsumer, ProductionAccessPointRxProducer, access_point_rx_pipeline,
     connected_config, initialize_connected_datapath_mailbox,
-    initialize_connected_rx_protocol_runtime,
-    initialize_connected_static_resources, initialize_ethernet_frame,
-    initialize_sta_ap_station_rx_batch, initialize_station_network, mac_interrupt_epoch,
-    publish_access_point_shared_network_rx, run_connected,
+    initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
+    initialize_ethernet_frame, initialize_sta_ap_station_rx_batch, initialize_station_network,
+    mac_interrupt_epoch, publish_access_point_shared_network_rx, run_connected,
 };
 use crate::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization, Esp32s31Wifi,

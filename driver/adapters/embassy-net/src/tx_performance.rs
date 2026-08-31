@@ -44,6 +44,18 @@ pub struct TxPerformanceSnapshot {
     pub consume_instructions: u32,
     pub emit_cycles: u32,
     pub emit_instructions: u32,
+    pub egress_runs: u32,
+    pub egress_run_31: u32,
+    pub egress_run_32: u32,
+    pub egress_run_other: u32,
+    pub radio_returns: u32,
+    pub radio_return_wakes: u32,
+    pub publication_free_zero: u32,
+    pub publication_free_one: u32,
+    pub publication_free_two_plus: u32,
+    pub publication_ready_le31: u32,
+    pub publication_ready_32: u32,
+    pub publication_ready_ge33: u32,
     pub promotion_attempts: u32,
     pub promotion_successes: u32,
     pub promotion_no_credit: u32,
@@ -87,6 +99,32 @@ impl TxPerformanceSnapshot {
             emit_instructions: self
                 .emit_instructions
                 .wrapping_sub(earlier.emit_instructions),
+            egress_runs: self.egress_runs.wrapping_sub(earlier.egress_runs),
+            egress_run_31: self.egress_run_31.wrapping_sub(earlier.egress_run_31),
+            egress_run_32: self.egress_run_32.wrapping_sub(earlier.egress_run_32),
+            egress_run_other: self.egress_run_other.wrapping_sub(earlier.egress_run_other),
+            radio_returns: self.radio_returns.wrapping_sub(earlier.radio_returns),
+            radio_return_wakes: self
+                .radio_return_wakes
+                .wrapping_sub(earlier.radio_return_wakes),
+            publication_free_zero: self
+                .publication_free_zero
+                .wrapping_sub(earlier.publication_free_zero),
+            publication_free_one: self
+                .publication_free_one
+                .wrapping_sub(earlier.publication_free_one),
+            publication_free_two_plus: self
+                .publication_free_two_plus
+                .wrapping_sub(earlier.publication_free_two_plus),
+            publication_ready_le31: self
+                .publication_ready_le31
+                .wrapping_sub(earlier.publication_ready_le31),
+            publication_ready_32: self
+                .publication_ready_32
+                .wrapping_sub(earlier.publication_ready_32),
+            publication_ready_ge33: self
+                .publication_ready_ge33
+                .wrapping_sub(earlier.publication_ready_ge33),
             promotion_attempts: self
                 .promotion_attempts
                 .wrapping_sub(earlier.promotion_attempts),
@@ -185,6 +223,18 @@ pub struct TxPerformanceCounters {
     consume_instructions: AtomicU32,
     emit_cycles: AtomicU32,
     emit_instructions: AtomicU32,
+    egress_runs: AtomicU32,
+    egress_run_31: AtomicU32,
+    egress_run_32: AtomicU32,
+    egress_run_other: AtomicU32,
+    radio_returns: AtomicU32,
+    radio_return_wakes: AtomicU32,
+    publication_free_zero: AtomicU32,
+    publication_free_one: AtomicU32,
+    publication_free_two_plus: AtomicU32,
+    publication_ready_le31: AtomicU32,
+    publication_ready_32: AtomicU32,
+    publication_ready_ge33: AtomicU32,
     promotion_attempts: AtomicU32,
     promotion_successes: AtomicU32,
     promotion_no_credit: AtomicU32,
@@ -218,6 +268,18 @@ impl TxPerformanceCounters {
             consume_instructions: AtomicU32::new(0),
             emit_cycles: AtomicU32::new(0),
             emit_instructions: AtomicU32::new(0),
+            egress_runs: AtomicU32::new(0),
+            egress_run_31: AtomicU32::new(0),
+            egress_run_32: AtomicU32::new(0),
+            egress_run_other: AtomicU32::new(0),
+            radio_returns: AtomicU32::new(0),
+            radio_return_wakes: AtomicU32::new(0),
+            publication_free_zero: AtomicU32::new(0),
+            publication_free_one: AtomicU32::new(0),
+            publication_free_two_plus: AtomicU32::new(0),
+            publication_ready_le31: AtomicU32::new(0),
+            publication_ready_32: AtomicU32::new(0),
+            publication_ready_ge33: AtomicU32::new(0),
             promotion_attempts: AtomicU32::new(0),
             promotion_successes: AtomicU32::new(0),
             promotion_no_credit: AtomicU32::new(0),
@@ -276,6 +338,42 @@ impl TxPerformanceCounters {
             .fetch_add(emitted.cycles, Ordering::Relaxed);
         self.emit_instructions
             .fetch_add(emitted.instructions, Ordering::Relaxed);
+    }
+
+    #[inline(always)]
+    pub(crate) fn record_egress_run(&self, length: u8) {
+        if length == 0 {
+            return;
+        }
+        self.egress_runs.fetch_add(1, Ordering::Relaxed);
+        match length {
+            31 => self.egress_run_31.fetch_add(1, Ordering::Relaxed),
+            32 => self.egress_run_32.fetch_add(1, Ordering::Relaxed),
+            _ => self.egress_run_other.fetch_add(1, Ordering::Relaxed),
+        };
+    }
+
+    #[inline(always)]
+    pub(crate) fn record_publication_geometry(&self, free: usize, ready: usize) {
+        match free {
+            0 => &self.publication_free_zero,
+            1 => &self.publication_free_one,
+            _ => &self.publication_free_two_plus,
+        }
+        .fetch_add(1, Ordering::Relaxed);
+        match ready {
+            0..=31 => &self.publication_ready_le31,
+            32 => &self.publication_ready_32,
+            _ => &self.publication_ready_ge33,
+        }
+        .fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline(always)]
+    pub(crate) fn record_radio_return(&self, woke_network: bool) {
+        self.radio_returns.fetch_add(1, Ordering::Relaxed);
+        self.radio_return_wakes
+            .fetch_add(u32::from(woke_network), Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -378,6 +476,18 @@ impl TxPerformanceCounters {
             consume_instructions: self.consume_instructions.load(Ordering::Relaxed),
             emit_cycles: self.emit_cycles.load(Ordering::Relaxed),
             emit_instructions: self.emit_instructions.load(Ordering::Relaxed),
+            egress_runs: self.egress_runs.load(Ordering::Relaxed),
+            egress_run_31: self.egress_run_31.load(Ordering::Relaxed),
+            egress_run_32: self.egress_run_32.load(Ordering::Relaxed),
+            egress_run_other: self.egress_run_other.load(Ordering::Relaxed),
+            radio_returns: self.radio_returns.load(Ordering::Relaxed),
+            radio_return_wakes: self.radio_return_wakes.load(Ordering::Relaxed),
+            publication_free_zero: self.publication_free_zero.load(Ordering::Relaxed),
+            publication_free_one: self.publication_free_one.load(Ordering::Relaxed),
+            publication_free_two_plus: self.publication_free_two_plus.load(Ordering::Relaxed),
+            publication_ready_le31: self.publication_ready_le31.load(Ordering::Relaxed),
+            publication_ready_32: self.publication_ready_32.load(Ordering::Relaxed),
+            publication_ready_ge33: self.publication_ready_ge33.load(Ordering::Relaxed),
             promotion_attempts: self.promotion_attempts.load(Ordering::Relaxed),
             promotion_successes: self.promotion_successes.load(Ordering::Relaxed),
             promotion_no_credit: self.promotion_no_credit.load(Ordering::Relaxed),
@@ -533,5 +643,32 @@ mod tests {
         assert_eq!(snapshot.promotion_radio_claim_instructions, 5);
         assert_eq!(snapshot.promotion_unattributed_cycles(), 3);
         assert_eq!(snapshot.promotion_unattributed_instructions(), 1);
+    }
+
+    #[test]
+    fn queue_geometry_counts_runs_returns_and_publication_buckets() {
+        let counters = TxPerformanceCounters::new();
+        counters.record_egress_run(0);
+        counters.record_egress_run(31);
+        counters.record_egress_run(32);
+        counters.record_egress_run(7);
+        counters.record_radio_return(true);
+        counters.record_publication_geometry(0, 31);
+        counters.record_publication_geometry(1, 32);
+        counters.record_publication_geometry(2, 33);
+
+        let snapshot = counters.snapshot();
+        assert_eq!(snapshot.egress_runs, 3);
+        assert_eq!(snapshot.egress_run_31, 1);
+        assert_eq!(snapshot.egress_run_32, 1);
+        assert_eq!(snapshot.egress_run_other, 1);
+        assert_eq!(snapshot.radio_returns, 1);
+        assert_eq!(snapshot.radio_return_wakes, 1);
+        assert_eq!(snapshot.publication_free_zero, 1);
+        assert_eq!(snapshot.publication_free_one, 1);
+        assert_eq!(snapshot.publication_free_two_plus, 1);
+        assert_eq!(snapshot.publication_ready_le31, 1);
+        assert_eq!(snapshot.publication_ready_32, 1);
+        assert_eq!(snapshot.publication_ready_ge33, 1);
     }
 }

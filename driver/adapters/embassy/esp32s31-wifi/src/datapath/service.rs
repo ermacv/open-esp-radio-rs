@@ -229,7 +229,9 @@ where
     /// this exact admission check. Keeping it here prevents the fast chain
     /// from bypassing a due recycle-only continuation merely because no fresh
     /// MAC IRQ was posted for it.
-    pub(super) fn prepared_network_tx_candidate(&mut self) -> Option<(NetworkInterfaceId, usize)> {
+    pub(super) fn prepared_network_tx_candidate(
+        &mut self,
+    ) -> Result<Option<(NetworkInterfaceId, usize)>, B::Error> {
         let prepared = self.services.has_prepared_tx();
         let rx_blocked = prepared
             && (self.services.has_rx_work()
@@ -241,10 +243,23 @@ where
             Instant::now().as_micros(),
         );
         if !prepared || rx_blocked {
-            return None;
+            return Ok(None);
         }
 
         let interface = self.retained_prepared_tx_interface();
+        let network = self.tx_consumer_for(interface);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let tx_phase_started = Core0PerformanceSample::read();
+        self.services.advance_prepared_tx(&network)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Prepare,
+            tx_phase_started,
+            Core0PerformanceSample::read(),
+        );
+        if !self.services.prepared_tx_start_ready() {
+            return Ok(None);
+        }
         let admitted = self.services.prepared_tx_frame_count().max(1);
         let preferred = self.services.preferred_tx_batch_size_for(interface).max(1);
         #[cfg(any(feature = "diagnostics", test))]
@@ -252,7 +267,7 @@ where
             PreparedTxSchedulerPhase::PreparedBatchChecked,
             Instant::now().as_micros(),
         );
-        (admitted >= preferred).then_some((interface, admitted))
+        Ok((admitted >= preferred).then_some((interface, admitted)))
     }
 
     pub(super) const fn network_turn_owed(&self) -> bool {
@@ -277,6 +292,10 @@ where
         admitted: usize,
         tx_batch_states: &mut [TxBatchState; 2],
     ) -> Result<(), B::Error> {
+        #[cfg(feature = "tx-phase-telemetry")]
+        if let Some(completed) = self.prepared_tx_completion.take() {
+            CORE0_PERFORMANCE.record_tx_prepared_gap(completed, Core0PerformanceSample::read());
+        }
         #[cfg(any(feature = "diagnostics", test))]
         self.services.mark_prepared_tx_scheduler_phase(
             PreparedTxSchedulerPhase::PreparedEntry,
@@ -331,10 +350,15 @@ where
         if self.competing_tx_pending(interface) {
             return Ok(());
         }
+        let network = self.tx_consumer_for(interface);
+        self.services.advance_prepared_tx(&network)?;
+        if self.services.prepared_tx_start_ready() {
+            self.prepared_tx_interface = Some(interface);
+            return Ok(());
+        }
         let Some(frame) = self.network.try_receive_tx(interface) else {
             return Ok(());
         };
-        let network = self.tx_consumer_for(interface);
         #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         self.services.prepare_tx(frame, &network).await?;
@@ -360,10 +384,30 @@ where
             tx_phase_started,
             Core0PerformanceSample::read(),
         );
-        if progress == WifiTxProgress::Complete
-            && self.finish_active_tx() == DatapathTxOrigin::Control
-        {
-            self.control_ready_latched = true;
+        if progress == WifiTxProgress::Complete {
+            let origin = self.finish_active_tx();
+            #[cfg(feature = "tx-phase-telemetry")]
+            {
+                if origin == DatapathTxOrigin::Network {
+                    let prepared = self.services.has_prepared_tx();
+                    let prepared_frames = self.services.prepared_tx_frame_count();
+                    let preferred_frames = self
+                        .prepared_tx_interface
+                        .map(|interface| self.services.preferred_tx_batch_size_for(interface))
+                        .unwrap_or(1);
+                    CORE0_PERFORMANCE.record_tx_network_completion(
+                        prepared_frames,
+                        preferred_frames,
+                        self.network_tx_queue_len() != 0,
+                    );
+                    self.prepared_tx_completion = prepared.then(Core0PerformanceSample::read);
+                } else {
+                    self.prepared_tx_completion = None;
+                }
+            }
+            if origin == DatapathTxOrigin::Control {
+                self.control_ready_latched = true;
+            }
         }
         Ok(progress)
     }
@@ -500,16 +544,25 @@ where
                 Either4::Fourth(()) => {
                     let interface =
                         active_tx_interface.expect("active TX preparation requires one VIF owner");
-                    let frame = self
-                        .network
-                        .try_receive_tx(interface)
-                        .expect("threshold-ready TX queue retains its sole consumer");
+                    let network = self.tx_consumer_for(interface);
+                    self.services.advance_prepared_tx(&network)?;
+                    if self.services.prepared_tx_start_ready() {
+                        self.prepared_tx_interface = Some(interface);
+                        continue;
+                    }
+                    let Some(frame) = self.network.try_receive_tx(interface) else {
+                        // `advance_prepared_tx` may consume the readiness edge
+                        // itself: an out-of-core completion can be encoded and
+                        // immediately replaced by the next affine batch. The
+                        // old synchronous queue path could not do that, so its
+                        // `expect` encoded an invariant which no longer holds.
+                        continue;
+                    };
                     let interface = self.tx_interface_for(&frame);
                     let active = self
                         .active_tx_interface
                         .expect("active TX preparation requires one VIF owner");
                     assert_eq!(interface, active, "prepared TX cannot cross VIFs");
-                    let network = self.tx_consumer_for(interface);
                     #[cfg(feature = "tx-phase-telemetry")]
                     let tx_phase_started = Core0PerformanceSample::read();
                     self.services.prepare_tx(frame, &network).await?;

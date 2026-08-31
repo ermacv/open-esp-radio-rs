@@ -22,8 +22,10 @@
 //! slot, so an IEEE 802.11 encoder can replace the prefix without copying
 //! payload.
 
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+use core::sync::atomic::AtomicBool;
 use core::{
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
     task::{Context, Poll},
 };
 
@@ -41,6 +43,8 @@ mod pinned;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
+#[cfg(feature = "tx-phase-telemetry")]
+pub use pinned::PinnedTxOwnershipSnapshot;
 #[cfg(feature = "tx-staging-copy-probe")]
 pub use pinned::configure_tx_staging_copy_probe;
 pub use pinned::{
@@ -51,6 +55,12 @@ pub use pinned::{
     SharedPinnedRxQueue, SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice,
     SplitPinnedRxRunner,
 };
+#[cfg(feature = "tx-core1-materializer-probe")]
+pub use pinned::{
+    PINNED_TX_MATERIALIZATION_BATCH_CAPACITY, PinnedTxCore1MaterializationPoll,
+    TX_CORE1_MATERIALIZER_COUNTERS, TxCore1MaterializerCounters, TxCore1MaterializerSnapshot,
+    configure_tx_core1_materializer_probe,
+};
 #[cfg(feature = "tx-phase-telemetry")]
 pub use tx_performance::{
     TX_PERFORMANCE, TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot,
@@ -58,6 +68,55 @@ pub use tx_performance::{
 
 /// Ethernet header length, excluding an FCS.
 pub const ETHERNET_HEADER_LEN: usize = 14;
+
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+static RESOLVED_EGRESS_BURST_ENABLED: AtomicBool = AtomicBool::new(true);
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+static RESOLVED_EGRESS_MULTI_DISPATCH_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Select ordinary FIFO egress only for a same-image TX scheduler diagnostic.
+///
+/// Production builds do not expose this switch and always use resolved-egress
+/// bursts while the link is up.
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+pub fn configure_resolved_egress_burst_for_diagnostics(enabled: bool) {
+    RESOLVED_EGRESS_BURST_ENABLED.store(enabled, Ordering::Release);
+}
+
+/// Select one-packet socket dispatch only for a same-image Xarxa batching
+/// control. Production emits a bounded four-packet quantum per socket pass.
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+pub fn configure_resolved_egress_multi_dispatch_for_diagnostics(enabled: bool) {
+    RESOLVED_EGRESS_MULTI_DISPATCH_ENABLED.store(enabled, Ordering::Release);
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+pub(crate) fn resolved_egress_burst_enabled() -> bool {
+    #[cfg(feature = "tx-phase-telemetry")]
+    {
+        RESOLVED_EGRESS_BURST_ENABLED.load(Ordering::Acquire)
+    }
+    #[cfg(not(feature = "tx-phase-telemetry"))]
+    {
+        true
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+pub(crate) fn resolved_egress_dispatch_quantum() -> u8 {
+    #[cfg(feature = "tx-phase-telemetry")]
+    {
+        if RESOLVED_EGRESS_MULTI_DISPATCH_ENABLED.load(Ordering::Acquire) {
+            4
+        } else {
+            1
+        }
+    }
+    #[cfg(not(feature = "tx-phase-telemetry"))]
+    {
+        4
+    }
+}
 
 /// Breaks an unbounded network-stack ingress drain at the
 /// adapter's physical queue boundary.
@@ -191,22 +250,46 @@ pub enum RxEnqueueError {
 }
 
 pub(crate) struct SharedLinkState<M: RawMutex> {
-    up: AtomicBool,
+    // Bit zero is the link state. The upper 31 bits are a wrapping egress
+    // lifecycle epoch incremented on every Down -> Up transition. Publishing
+    // both in one atomic word prevents the stack from observing a new link
+    // with the previous scheduling epoch.
+    state: AtomicU32,
     waker: GenericAtomicWaker<M>,
 }
 
 impl<M: RawMutex> SharedLinkState<M> {
     pub(crate) const fn new() -> Self {
         Self {
-            up: AtomicBool::new(false),
+            state: AtomicU32::new(0),
             waker: GenericAtomicWaker::new(M::INIT),
         }
     }
 
     pub(crate) fn set(&self, state: LinkState) {
         let up = state == LinkState::Up;
-        if self.up.swap(up, Ordering::AcqRel) != up {
-            self.waker.wake();
+        let mut current = self.state.load(Ordering::Acquire);
+        loop {
+            if (current & 1 != 0) == up {
+                return;
+            }
+            let next = if up {
+                current.wrapping_add(2) | 1
+            } else {
+                current & !1
+            };
+            match self.state.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    self.waker.wake();
+                    return;
+                }
+                Err(observed) => current = observed,
+            }
         }
     }
 
@@ -214,11 +297,21 @@ impl<M: RawMutex> SharedLinkState<M> {
         // Register first, then load: a concurrent change either wakes this
         // waker or is observed by the following acquire load.
         self.waker.register(cx.waker());
-        if self.up.load(Ordering::Acquire) {
+        if self.state.load(Ordering::Acquire) & 1 != 0 {
             LinkState::Up
         } else {
             LinkState::Down
         }
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    pub(crate) fn is_up(&self) -> bool {
+        self.state.load(Ordering::Acquire) & 1 != 0
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    pub(crate) fn egress_epoch(&self) -> u32 {
+        self.state.load(Ordering::Acquire) >> 1
     }
 }
 

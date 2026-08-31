@@ -136,10 +136,12 @@ fn run(
                 target_rx: options.rx_rate_bps.map(|rate| FlowConfig {
                     payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: None,
                 }),
                 target_tx: options.tx_rate_bps.map(|rate| FlowConfig {
                     payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
                     offered_rate_bps: Some(rate),
+                    pacing_group_datagrams: None,
                 }),
             }),
             None,

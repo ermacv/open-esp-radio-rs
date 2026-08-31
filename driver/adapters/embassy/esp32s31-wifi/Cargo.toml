@@ -63,6 +63,10 @@ tx-phase-telemetry = [
     "open-esp-radio-embassy-net/tx-phase-telemetry",
 ]
 tx-staging-copy-probe = ["open-esp-radio-embassy-net/tx-staging-copy-probe"]
+tx-core1-materializer-probe = [
+    "tx-staging-copy-probe",
+    "open-esp-radio-embassy-net/tx-core1-materializer-probe",
+]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }

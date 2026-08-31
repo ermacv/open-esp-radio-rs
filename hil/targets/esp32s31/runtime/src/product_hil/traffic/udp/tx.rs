@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use core::sync::atomic::{AtomicU8, Ordering};
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -31,6 +32,18 @@ use crate::{
 use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
 
 const MAX_PACING_CATCH_UP_GROUPS: u32 = 4;
+const DEFAULT_MULTI_FLOW_BURST_DATAGRAMS: u8 = 1;
+static MULTI_FLOW_BURST_DATAGRAMS: AtomicU8 =
+    AtomicU8::new(DEFAULT_MULTI_FLOW_BURST_DATAGRAMS);
+
+pub(in crate::product_hil) fn configure_multi_flow_burst_datagrams(datagrams: u8) {
+    assert!(datagrams != 0, "multi-flow burst cannot be empty");
+    MULTI_FLOW_BURST_DATAGRAMS.store(datagrams, Ordering::Release);
+}
+
+pub(in crate::product_hil) fn multi_flow_burst_datagrams() -> u8 {
+    MULTI_FLOW_BURST_DATAGRAMS.load(Ordering::Acquire)
+}
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpTxSessionSource {
@@ -49,6 +62,11 @@ pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
     /// the active plus prepared-ahead A-MPDU arenas, not an arbitrary poll
     /// batch.
     pub pacing_group_datagrams: u8,
+    /// Number of consecutive successful publications offered to one flow
+    /// before rotating to the next ready flow. One preserves the ordinary
+    /// datagram round-robin producer; BA-sized values isolate pre-DMA queue
+    /// selection without changing driver or radio backing.
+    pub multi_flow_burst_datagrams: u8,
     pub drain: Duration,
     pub code_address: usize,
     pub session_source: UdpTxSessionSource,
@@ -61,6 +79,7 @@ struct MultiTxFlowState {
     server_port: u16,
     payload_bytes: usize,
     offered_rate_bps: Option<u64>,
+    pacing_group_datagrams: u8,
     next_send: Instant,
     bytes: u64,
     datagrams: u64,
@@ -70,6 +89,7 @@ struct MultiTxFlowState {
 fn multi_tx_flow_states(
     session_config: SessionConfig,
     started: Instant,
+    default_pacing_group_datagrams: u8,
 ) -> [Option<MultiTxFlowState>; SESSION_FLOW_CAPACITY] {
     session_config.flows.map(|flow| {
         flow.map(|flow| {
@@ -85,6 +105,9 @@ fn multi_tx_flow_states(
                 server_port: peer.port,
                 payload_bytes: usize::from(target_tx.payload_bytes),
                 offered_rate_bps: target_tx.offered_rate_bps,
+                pacing_group_datagrams: target_tx
+                    .pacing_group_datagrams
+                    .unwrap_or(default_pacing_group_datagrams),
                 next_send: started,
                 bytes: 0,
                 datagrams: 0,
@@ -126,18 +149,31 @@ async fn transmit_multi_flow(
     started: Instant,
     duration: Duration,
     pacing_group_datagrams: u8,
+    multi_flow_burst_datagrams: u8,
 ) -> [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY] {
-    let mut states = multi_tx_flow_states(session_config, started);
+    assert!(multi_flow_burst_datagrams != 0, "multi-flow burst cannot be empty");
+    let mut states = multi_tx_flow_states(session_config, started, pacing_group_datagrams);
     let mut cursor = 0_usize;
+    let mut burst_flow: Option<usize> = None;
+    let mut burst_remaining = 0_u8;
     let _session_elapsed = with_timeout(duration, async {
         loop {
             let now = Instant::now();
-            let Some(index) = ready_multi_tx_flow(&states, cursor, now) else {
+            let continuing = burst_flow.filter(|index| {
+                burst_remaining != 0
+                    && states[*index]
+                        .is_some_and(|state| state.offered_rate_bps.is_none() || state.next_send <= now)
+            });
+            let Some(index) = continuing.or_else(|| ready_multi_tx_flow(&states, cursor, now)) else {
                 if let Some(deadline) = earliest_multi_tx_deadline(&states) {
                     Timer::at(deadline).await;
                 }
                 continue;
             };
+            if continuing.is_none() {
+                burst_flow = Some(index);
+                burst_remaining = multi_flow_burst_datagrams;
+            }
             let state = states[index].expect("selected multi-flow TX state remains active");
             let sequence = (state.datagrams as u32).to_be_bytes();
             let publication = if socket_payload_bytes.is_multiple_of(state.payload_bytes) {
@@ -171,9 +207,9 @@ async fn transmit_multi_flow(
                     if let Some(rate_bps) = state.offered_rate_bps
                         && state
                             .datagrams
-                            .is_multiple_of(u64::from(pacing_group_datagrams))
+                            .is_multiple_of(u64::from(state.pacing_group_datagrams))
                     {
-                        let group_nanos = u64::from(pacing_group_datagrams)
+                        let group_nanos = u64::from(state.pacing_group_datagrams)
                             .saturating_mul(u64::try_from(state.payload_bytes).unwrap_or(u64::MAX))
                             .saturating_mul(8_000_000_000)
                             .saturating_add(rate_bps - 1)
@@ -187,10 +223,17 @@ async fn transmit_multi_flow(
                             state.next_send = now;
                         }
                     }
+                    burst_remaining = burst_remaining.saturating_sub(1);
                 }
-                Err(_) => state.errors = state.errors.saturating_add(1),
+                Err(_) => {
+                    state.errors = state.errors.saturating_add(1);
+                    burst_remaining = 0;
+                }
             }
-            cursor = (index + 1) % SESSION_FLOW_CAPACITY;
+            if burst_remaining == 0 {
+                burst_flow = None;
+                cursor = (index + 1) % SESSION_FLOW_CAPACITY;
+            }
         }
     })
     .await;
@@ -318,7 +361,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // actually used BlockAck/A-MPDU. Waiting after every datagram makes
         // the Embassy timer itself the throughput ceiling at high offered
         // rates.
-        let pacing_group_datagrams = config.pacing_group_datagrams;
+        let pacing_group_datagrams = flow
+            .pacing_group_datagrams
+            .unwrap_or(config.pacing_group_datagrams);
         runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-session-start \
              session={} target={server}:{server_port} payload={payload_bytes} \
@@ -329,9 +374,15 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let started = Instant::now();
         let task_poll_start = TASK_POLLS.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
+        let network_scheduler_start =
+            crate::product_hil::traffic::network_scheduler::snapshot();
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
         let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         let core1_tx_performance_start = TX_PERFORMANCE.snapshot();
+        #[cfg(feature = "tx-architecture-probes")]
+        let tx_core1_materializer_start =
+            open_esp_radio_embassy_net::TX_CORE1_MATERIALIZER_COUNTERS.snapshot();
         // TX owns A-MPDU evidence because its post-measurement drain proves
         // that the last publication reached a terminal BlockAck outcome.
         // The RX sibling can finish on the host terminal datagram while a
@@ -442,6 +493,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                     started,
                     duration,
                     pacing_group_datagrams,
+                    config.multi_flow_burst_datagrams,
                 )
                 .await;
                 let aggregate = TransportEvidence::from_flows(flows);
@@ -475,6 +527,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let tx_vector = qualification_sample(QualificationRequester::UdpTx)
             .await
             .tx_vector;
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        let network_scheduler =
+            crate::product_hil::traffic::network_scheduler::interval_since(
+                network_scheduler_start,
+            );
         // This live link vector belongs to the associated-STA datapath. AP
         // rate/A-MPDU evidence is owned by its terminal role report instead.
         // A station session that explicitly required BlockAck must never
@@ -506,10 +563,36 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         )
         .await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
+        {
+            runtime_log(format_args!(
+                "ONSCHED polls={} ingress_calls={} ingress_packets={} egress_passes={} \
+                 egress_tokens={} blocked={} ingress_budget={} egress_budget={} \
+                 start_ingress={} start_egress={} exit_drained={} exit_work={} exit_credit={}",
+                network_scheduler.polls,
+                network_scheduler.ingress_calls,
+                network_scheduler.ingress_packets,
+                network_scheduler.egress_passes,
+                network_scheduler.egress_tx_tokens,
+                network_scheduler.egress_blocked,
+                network_scheduler.ingress_budget_exhausted,
+                network_scheduler.egress_budget_exhausted,
+                network_scheduler.started_with_ingress,
+                network_scheduler.started_with_egress,
+                network_scheduler.exit_drained,
+                network_scheduler.exit_work_budget,
+                network_scheduler.exit_egress_credit,
+            ));
+        }
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         crate::product_hil::traffic::log_open_radio_core1_tx_phases(core1_tx_performance_start)
             .await;
+        #[cfg(feature = "tx-architecture-probes")]
+        crate::product_hil::traffic::reporting::log_open_radio_tx_core1_materializer(
+            tx_core1_materializer_start,
+        )
+        .await;
         let aggregate_evidence = aggregate
             .filter(|aggregate| aggregate.rate_selections != 0)
             .map(aggregate_tx_evidence);

@@ -2255,6 +2255,7 @@ mod tests {
                     driver_observation_evidence: true,
                     rx_delivery_evidence: true,
                     task_poll_evidence: false,
+                    tx_architecture_probe: false,
                     core0_rx_cycle_evidence: false,
                     mac_irq_evidence: false,
                     psram_task_stack: false,

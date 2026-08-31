@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 72;
+pub const PROTOCOL_VERSION: u16 = 76;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -97,6 +97,12 @@ pub struct Ipv4Endpoint {
 pub struct FlowConfig {
     pub payload_bytes: u16,
     pub offered_rate_bps: Option<u64>,
+    /// Number of datagrams admitted at one offered-rate deadline.
+    ///
+    /// `None` selects the target's bounded throughput-oriented default. A
+    /// small explicit value lets fairness HIL describe sparse packet bursts
+    /// without turning a low average bitrate into one queue-sized burst.
+    pub pacing_group_datagrams: Option<u8>,
 }
 
 /// One independently identifiable flow inside a network-interface session.
@@ -191,7 +197,10 @@ impl SessionConfig {
                 && flow.payload_bytes <= maximum_payload_bytes
                 && flow
                     .offered_rate_bps
-                    .is_none_or(|rate| (100_000..=1_000_000_000).contains(&rate))
+                    .is_none_or(|rate| (1_000..=1_000_000_000).contains(&rate))
+                && flow
+                    .pacing_group_datagrams
+                    .is_none_or(|datagrams| datagrams != 0 && flow.offered_rate_bps.is_some())
         };
         let identities_valid = self
             .flows
@@ -212,6 +221,13 @@ impl SessionConfig {
                                 .all(|earlier| earlier != peer)
                     })
             });
+        let pacing_valid = self.flows.iter().flatten().all(|flow| {
+            flow.target_rx
+                .is_none_or(|rx| rx.pacing_group_datagrams.is_none())
+                && flow.target_tx.is_none_or(|tx| {
+                    tx.pacing_group_datagrams.is_none() || self.transport == Transport::Udp
+                })
+        });
         let peers_valid = match (self.transport, self.direction) {
             (Transport::Tcp, _) => {
                 flow_count == 1 && self.flows.iter().flatten().all(|flow| flow.peer.is_none())
@@ -255,6 +271,7 @@ impl SessionConfig {
         };
 
         identities_valid
+            && pacing_valid
             && peers_valid
             && direction_valid
             && link_requirements_valid
@@ -313,6 +330,11 @@ pub struct FeatureCapabilities {
     /// This image instruments bounded Embassy task poll residence. Ordinary
     /// qualification images deliberately omit this timing perturbation.
     pub task_poll_evidence: bool,
+    /// This image also links invasive alternative TX backing and
+    /// materialization implementations for same-ELF A/B experiments. Such an
+    /// image is not a production residence budget even when the runtime
+    /// selects direct SRAM.
+    pub tx_architecture_probe: bool,
     /// This image additionally instruments the intrusive Core0 RX phase and
     /// service histograms. It is separate from ordinary task-poll residence.
     pub core0_rx_cycle_evidence: bool,
@@ -935,9 +957,28 @@ pub enum WifiTxBufferPolicy {
     /// Let the network stack format directly into the final DMA-visible slot.
     #[default]
     DirectDma,
+    /// Same direct-DMA owner path, but expose ordinary FIFO egress to Xarxa.
+    /// This is a same-ELF control for the resolved-egress scheduler; it is not
+    /// a supported production policy.
+    DirectDmaFifoDiagnostic,
+    /// Keep resolved-egress selection but retain socket-originated network
+    /// wakes while the cooperative runner is already waiting for a physical
+    /// TX credit. This is a same-image control for wake suppression only.
+    DirectDmaWakeStormControlDiagnostic,
+    /// Keep resolved-egress selection and wake suppression, but return from
+    /// Xarxa after every one packet. This is a same-image control for bounded
+    /// multi-packet socket dispatch.
+    DirectDmaSingleDispatchControlDiagnostic,
+    /// Keep direct DMA backing, but have the HIL producer publish one bounded
+    /// destination-homogeneous burst at a time. This isolates packet-selection
+    /// order from physical SRAM capacity without changing the radio datapath.
+    DirectDmaEgressBurstDiagnostic,
     /// Format in ordinary task memory, then copy once into the final DMA slot.
     /// This measures materialization cost but does not yet add software queues.
     PsramStagingCopyDiagnostic,
+    /// Keep driver-side peer/TID scheduling, but execute the selected
+    /// PSRAM-to-SRAM batch materialization in the network-core driver poll.
+    Core1MaterializationDiagnostic,
     /// Keep Wi-Fi descriptors in internal SRAM but publish PSRAM packet-buffer
     /// addresses after an explicit cache writeback. Hardware support is not
     /// assumed; this value exists only for the bounded DMA-address HIL.
@@ -2221,6 +2262,7 @@ mod tests {
         let traffic = FlowConfig {
             payload_bytes: 1_472,
             offered_rate_bps: Some(60_000_000),
+            pacing_group_datagrams: None,
         };
         SessionFlowConfig {
             flow_id,
@@ -2249,6 +2291,44 @@ mod tests {
         let session = two_flow_session();
         assert!(!session.structurally_valid(1_472, false));
         assert!(session.structurally_valid(1_472, true));
+    }
+
+    #[test]
+    fn per_flow_pacing_is_nonzero_and_owned_only_by_udp_target_tx() {
+        let mut session = two_flow_session();
+        session.flows[1]
+            .as_mut()
+            .unwrap()
+            .target_tx
+            .as_mut()
+            .unwrap()
+            .pacing_group_datagrams = Some(2);
+        assert!(session.structurally_valid(1_472, true));
+
+        session.flows[1]
+            .as_mut()
+            .unwrap()
+            .target_tx
+            .as_mut()
+            .unwrap()
+            .pacing_group_datagrams = Some(0);
+        assert!(!session.structurally_valid(1_472, true));
+
+        session.flows[1]
+            .as_mut()
+            .unwrap()
+            .target_tx
+            .as_mut()
+            .unwrap()
+            .pacing_group_datagrams = None;
+        session.flows[1]
+            .as_mut()
+            .unwrap()
+            .target_rx
+            .as_mut()
+            .unwrap()
+            .pacing_group_datagrams = Some(2);
+        assert!(!session.structurally_valid(1_472, true));
     }
 
     #[test]

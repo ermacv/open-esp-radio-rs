@@ -118,6 +118,7 @@ pub(crate) fn run(
                     target_rx: Some(FlowConfig {
                         payload_bytes: u16::try_from(options.payload)?,
                         offered_rate_bps: Some(options.rate_bps),
+                        pacing_group_datagrams: None,
                     }),
                     target_tx: None,
                 }),
@@ -206,6 +207,7 @@ pub(crate) fn run(
                 target_rx: Some(FlowConfig {
                     payload_bytes: u16::try_from(options.payload)?,
                     offered_rate_bps: Some(options.rate_bps),
+                    pacing_group_datagrams: None,
                 }),
                 target_tx: None,
             }),

@@ -3024,12 +3024,13 @@ mod tests {
         // fifteen WPA2 state machines remain in caller-owned static storage.
         assert!(core::mem::size_of::<AccessPointService<'_>>() <= 256);
         // Fifteen independently negotiated TX BlockAck sessions and the
-        // per-peer HMAC-SHA1-128 Association-security commitments and exact
-        // non-reusable RX association epochs remain explicit. The epoch tips
-        // the aligned host `ApPeer` layout by eight bytes per peer, but avoids
-        // duplicate history crossing AID reuse without any dynamic table.
+        // per-peer HMAC-SHA1-128 Association-security commitments, exact
+        // non-reusable RX association epochs, and eight independent QoS
+        // sequence spaces remain explicit. The 16-byte sequence array is
+        // required per receiver: sharing it across clients creates artificial
+        // BlockAck holes. The bounded table still uses no dynamic allocation.
         assert!(
-            core::mem::size_of::<AccessPointPeerStorage>() <= 4_688,
+            core::mem::size_of::<AccessPointPeerStorage>() <= 4_928,
             "peer storage size {}",
             core::mem::size_of::<AccessPointPeerStorage>()
         );

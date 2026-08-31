@@ -91,6 +91,37 @@ pub struct Core0PerformanceSnapshot {
     pub tx_commit_calls: u32,
     pub tx_commit_cycles: u32,
     pub tx_commit_instructions: u32,
+    pub tx_prepared_gap_samples: u32,
+    pub tx_prepared_gap_cycles: u32,
+    pub tx_prepared_gap_instructions: u32,
+    pub tx_prepared_gap_le_64us: u32,
+    pub tx_prepared_gap_le_256us: u32,
+    pub tx_prepared_gap_le_512us: u32,
+    pub tx_prepared_gap_le_1024us: u32,
+    pub tx_prepared_gap_gt_1024us: u32,
+    pub tx_network_completions: u32,
+    pub tx_completion_prepared: u32,
+    pub tx_completion_prepared_full: u32,
+    pub tx_completion_prepared_partial: u32,
+    pub tx_completion_prepared_frames: u32,
+    pub tx_completion_queued: u32,
+    pub tx_completion_empty: u32,
+    pub tx_initial_network_frames: u32,
+    pub tx_ap_partial_frontiers: u32,
+    pub tx_ap_partial_matching_retained: u32,
+    pub tx_ap_partial_other_retained: u32,
+    pub tx_ap_partial_network_ready: u32,
+    pub tx_ap_partial_mismatch_claims: u32,
+    pub tx_ap_partial_publications: u32,
+    pub tx_ap_publication_admitted: u32,
+    pub tx_ap_publication_pool_free: u32,
+    pub tx_ap_publication_ready_same: u32,
+    pub tx_ap_publication_ready_other: u32,
+    pub tx_ap_publication_ingress_reserved: u32,
+    pub tx_ap_publication_application_reserved: u32,
+    pub tx_ap_publication_tokens_in_flight: u32,
+    pub tx_ap_publication_radio_owned: u32,
+    pub tx_ap_publication_unattributed_radio_owned: u32,
     pub rx_progress_drained: u32,
     pub rx_progress_probe_pending: u32,
     pub rx_progress_protocol_tx_blocked: u32,
@@ -224,6 +255,99 @@ impl Core0PerformanceSnapshot {
             tx_commit_instructions: self
                 .tx_commit_instructions
                 .wrapping_sub(earlier.tx_commit_instructions),
+            tx_prepared_gap_samples: self
+                .tx_prepared_gap_samples
+                .wrapping_sub(earlier.tx_prepared_gap_samples),
+            tx_prepared_gap_cycles: self
+                .tx_prepared_gap_cycles
+                .wrapping_sub(earlier.tx_prepared_gap_cycles),
+            tx_prepared_gap_instructions: self
+                .tx_prepared_gap_instructions
+                .wrapping_sub(earlier.tx_prepared_gap_instructions),
+            tx_prepared_gap_le_64us: self
+                .tx_prepared_gap_le_64us
+                .wrapping_sub(earlier.tx_prepared_gap_le_64us),
+            tx_prepared_gap_le_256us: self
+                .tx_prepared_gap_le_256us
+                .wrapping_sub(earlier.tx_prepared_gap_le_256us),
+            tx_prepared_gap_le_512us: self
+                .tx_prepared_gap_le_512us
+                .wrapping_sub(earlier.tx_prepared_gap_le_512us),
+            tx_prepared_gap_le_1024us: self
+                .tx_prepared_gap_le_1024us
+                .wrapping_sub(earlier.tx_prepared_gap_le_1024us),
+            tx_prepared_gap_gt_1024us: self
+                .tx_prepared_gap_gt_1024us
+                .wrapping_sub(earlier.tx_prepared_gap_gt_1024us),
+            tx_network_completions: self
+                .tx_network_completions
+                .wrapping_sub(earlier.tx_network_completions),
+            tx_completion_prepared: self
+                .tx_completion_prepared
+                .wrapping_sub(earlier.tx_completion_prepared),
+            tx_completion_prepared_full: self
+                .tx_completion_prepared_full
+                .wrapping_sub(earlier.tx_completion_prepared_full),
+            tx_completion_prepared_partial: self
+                .tx_completion_prepared_partial
+                .wrapping_sub(earlier.tx_completion_prepared_partial),
+            tx_completion_prepared_frames: self
+                .tx_completion_prepared_frames
+                .wrapping_sub(earlier.tx_completion_prepared_frames),
+            tx_completion_queued: self
+                .tx_completion_queued
+                .wrapping_sub(earlier.tx_completion_queued),
+            tx_completion_empty: self
+                .tx_completion_empty
+                .wrapping_sub(earlier.tx_completion_empty),
+            tx_initial_network_frames: self
+                .tx_initial_network_frames
+                .wrapping_sub(earlier.tx_initial_network_frames),
+            tx_ap_partial_frontiers: self
+                .tx_ap_partial_frontiers
+                .wrapping_sub(earlier.tx_ap_partial_frontiers),
+            tx_ap_partial_matching_retained: self
+                .tx_ap_partial_matching_retained
+                .wrapping_sub(earlier.tx_ap_partial_matching_retained),
+            tx_ap_partial_other_retained: self
+                .tx_ap_partial_other_retained
+                .wrapping_sub(earlier.tx_ap_partial_other_retained),
+            tx_ap_partial_network_ready: self
+                .tx_ap_partial_network_ready
+                .wrapping_sub(earlier.tx_ap_partial_network_ready),
+            tx_ap_partial_mismatch_claims: self
+                .tx_ap_partial_mismatch_claims
+                .wrapping_sub(earlier.tx_ap_partial_mismatch_claims),
+            tx_ap_partial_publications: self
+                .tx_ap_partial_publications
+                .wrapping_sub(earlier.tx_ap_partial_publications),
+            tx_ap_publication_admitted: self
+                .tx_ap_publication_admitted
+                .wrapping_sub(earlier.tx_ap_publication_admitted),
+            tx_ap_publication_pool_free: self
+                .tx_ap_publication_pool_free
+                .wrapping_sub(earlier.tx_ap_publication_pool_free),
+            tx_ap_publication_ready_same: self
+                .tx_ap_publication_ready_same
+                .wrapping_sub(earlier.tx_ap_publication_ready_same),
+            tx_ap_publication_ready_other: self
+                .tx_ap_publication_ready_other
+                .wrapping_sub(earlier.tx_ap_publication_ready_other),
+            tx_ap_publication_ingress_reserved: self
+                .tx_ap_publication_ingress_reserved
+                .wrapping_sub(earlier.tx_ap_publication_ingress_reserved),
+            tx_ap_publication_application_reserved: self
+                .tx_ap_publication_application_reserved
+                .wrapping_sub(earlier.tx_ap_publication_application_reserved),
+            tx_ap_publication_tokens_in_flight: self
+                .tx_ap_publication_tokens_in_flight
+                .wrapping_sub(earlier.tx_ap_publication_tokens_in_flight),
+            tx_ap_publication_radio_owned: self
+                .tx_ap_publication_radio_owned
+                .wrapping_sub(earlier.tx_ap_publication_radio_owned),
+            tx_ap_publication_unattributed_radio_owned: self
+                .tx_ap_publication_unattributed_radio_owned
+                .wrapping_sub(earlier.tx_ap_publication_unattributed_radio_owned),
             rx_progress_drained: self
                 .rx_progress_drained
                 .wrapping_sub(earlier.rx_progress_drained),
@@ -371,6 +495,37 @@ pub struct Core0PerformanceCounters {
     tx_commit_calls: AtomicU32,
     tx_commit_cycles: AtomicU32,
     tx_commit_instructions: AtomicU32,
+    tx_prepared_gap_samples: AtomicU32,
+    tx_prepared_gap_cycles: AtomicU32,
+    tx_prepared_gap_instructions: AtomicU32,
+    tx_prepared_gap_le_64us: AtomicU32,
+    tx_prepared_gap_le_256us: AtomicU32,
+    tx_prepared_gap_le_512us: AtomicU32,
+    tx_prepared_gap_le_1024us: AtomicU32,
+    tx_prepared_gap_gt_1024us: AtomicU32,
+    tx_network_completions: AtomicU32,
+    tx_completion_prepared: AtomicU32,
+    tx_completion_prepared_full: AtomicU32,
+    tx_completion_prepared_partial: AtomicU32,
+    tx_completion_prepared_frames: AtomicU32,
+    tx_completion_queued: AtomicU32,
+    tx_completion_empty: AtomicU32,
+    tx_initial_network_frames: AtomicU32,
+    tx_ap_partial_frontiers: AtomicU32,
+    tx_ap_partial_matching_retained: AtomicU32,
+    tx_ap_partial_other_retained: AtomicU32,
+    tx_ap_partial_network_ready: AtomicU32,
+    tx_ap_partial_mismatch_claims: AtomicU32,
+    tx_ap_partial_publications: AtomicU32,
+    tx_ap_publication_admitted: AtomicU32,
+    tx_ap_publication_pool_free: AtomicU32,
+    tx_ap_publication_ready_same: AtomicU32,
+    tx_ap_publication_ready_other: AtomicU32,
+    tx_ap_publication_ingress_reserved: AtomicU32,
+    tx_ap_publication_application_reserved: AtomicU32,
+    tx_ap_publication_tokens_in_flight: AtomicU32,
+    tx_ap_publication_radio_owned: AtomicU32,
+    tx_ap_publication_unattributed_radio_owned: AtomicU32,
     active_radio_cycles: AtomicU32,
     active_radio_instructions: AtomicU32,
     active_radio_saw_runner: AtomicU32,
@@ -465,6 +620,37 @@ impl Core0PerformanceCounters {
             tx_commit_calls: AtomicU32::new(0),
             tx_commit_cycles: AtomicU32::new(0),
             tx_commit_instructions: AtomicU32::new(0),
+            tx_prepared_gap_samples: AtomicU32::new(0),
+            tx_prepared_gap_cycles: AtomicU32::new(0),
+            tx_prepared_gap_instructions: AtomicU32::new(0),
+            tx_prepared_gap_le_64us: AtomicU32::new(0),
+            tx_prepared_gap_le_256us: AtomicU32::new(0),
+            tx_prepared_gap_le_512us: AtomicU32::new(0),
+            tx_prepared_gap_le_1024us: AtomicU32::new(0),
+            tx_prepared_gap_gt_1024us: AtomicU32::new(0),
+            tx_network_completions: AtomicU32::new(0),
+            tx_completion_prepared: AtomicU32::new(0),
+            tx_completion_prepared_full: AtomicU32::new(0),
+            tx_completion_prepared_partial: AtomicU32::new(0),
+            tx_completion_prepared_frames: AtomicU32::new(0),
+            tx_completion_queued: AtomicU32::new(0),
+            tx_completion_empty: AtomicU32::new(0),
+            tx_initial_network_frames: AtomicU32::new(0),
+            tx_ap_partial_frontiers: AtomicU32::new(0),
+            tx_ap_partial_matching_retained: AtomicU32::new(0),
+            tx_ap_partial_other_retained: AtomicU32::new(0),
+            tx_ap_partial_network_ready: AtomicU32::new(0),
+            tx_ap_partial_mismatch_claims: AtomicU32::new(0),
+            tx_ap_partial_publications: AtomicU32::new(0),
+            tx_ap_publication_admitted: AtomicU32::new(0),
+            tx_ap_publication_pool_free: AtomicU32::new(0),
+            tx_ap_publication_ready_same: AtomicU32::new(0),
+            tx_ap_publication_ready_other: AtomicU32::new(0),
+            tx_ap_publication_ingress_reserved: AtomicU32::new(0),
+            tx_ap_publication_application_reserved: AtomicU32::new(0),
+            tx_ap_publication_tokens_in_flight: AtomicU32::new(0),
+            tx_ap_publication_radio_owned: AtomicU32::new(0),
+            tx_ap_publication_unattributed_radio_owned: AtomicU32::new(0),
             active_radio_cycles: AtomicU32::new(0),
             active_radio_instructions: AtomicU32::new(0),
             active_radio_saw_runner: AtomicU32::new(0),
@@ -820,6 +1006,151 @@ impl Core0PerformanceCounters {
         instructions.fetch_add(delta.instructions, Ordering::Relaxed);
     }
 
+    /// Record only a saturated, already-prepared successor edge.
+    ///
+    /// The caller captures `completed` only when a standby network aggregate
+    /// already exists. This deliberately excludes the terminal completion of
+    /// a workload, so time between HIL sessions cannot contaminate the air-gap
+    /// measurement.
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_tx_prepared_gap(
+        &self,
+        completed: Core0PerformanceSample,
+        next_publication_entry: Core0PerformanceSample,
+    ) {
+        let delta = next_publication_entry.wrapping_delta_since(completed);
+        self.tx_prepared_gap_samples.fetch_add(1, Ordering::Relaxed);
+        self.tx_prepared_gap_cycles
+            .fetch_add(delta.cycles, Ordering::Relaxed);
+        self.tx_prepared_gap_instructions
+            .fetch_add(delta.instructions, Ordering::Relaxed);
+        let bucket = match delta.cycles {
+            0..=20_480 => &self.tx_prepared_gap_le_64us,
+            20_481..=81_920 => &self.tx_prepared_gap_le_256us,
+            81_921..=163_840 => &self.tx_prepared_gap_le_512us,
+            163_841..=327_680 => &self.tx_prepared_gap_le_1024us,
+            _ => &self.tx_prepared_gap_gt_1024us,
+        };
+        bucket.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Classify whether Core0 already has the next network transaction when
+    /// the current one completes. The three outcome counters are mutually
+    /// exclusive and therefore sum to `tx_network_completions`.
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_tx_network_completion(
+        &self,
+        prepared_frames: usize,
+        preferred_frames: usize,
+        queued: bool,
+    ) {
+        self.tx_network_completions.fetch_add(1, Ordering::Relaxed);
+        let prepared = prepared_frames != 0;
+        let outcome = if prepared {
+            self.tx_completion_prepared_frames.fetch_add(
+                u32::try_from(prepared_frames).unwrap_or(u32::MAX),
+                Ordering::Relaxed,
+            );
+            if prepared_frames >= preferred_frames.max(1) {
+                self.tx_completion_prepared_full
+                    .fetch_add(1, Ordering::Relaxed);
+            } else {
+                self.tx_completion_prepared_partial
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            &self.tx_completion_prepared
+        } else if queued {
+            &self.tx_completion_queued
+        } else {
+            &self.tx_completion_empty
+        };
+        outcome.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Retain the size of the first network transaction which establishes a
+    /// new scheduler burst. A fresh role epoch can otherwise enter a stable
+    /// phase offset without leaving any evidence in successor-only counters.
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_tx_initial_network_frames(&self, frames: usize) {
+        self.tx_initial_network_frames
+            .fetch_add(u32::try_from(frames).unwrap_or(u32::MAX), Ordering::Relaxed);
+    }
+
+    /// Describe only an AP standby which is still below its negotiated frame
+    /// limit after the role has drained every immediately visible matching
+    /// lease. These counters diagnose queue geometry; they never participate
+    /// in admission or wake decisions.
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_ap_partial_frontier(
+        &self,
+        matching_retained: usize,
+        other_retained: usize,
+        network_ready: usize,
+        mismatch_claims: usize,
+    ) {
+        self.tx_ap_partial_frontiers.fetch_add(1, Ordering::Relaxed);
+        self.tx_ap_partial_matching_retained.fetch_add(
+            u32::try_from(matching_retained).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+        self.tx_ap_partial_other_retained.fetch_add(
+            u32::try_from(other_retained).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+        self.tx_ap_partial_network_ready.fetch_add(
+            u32::try_from(network_ready).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+        self.tx_ap_partial_mismatch_claims.fetch_add(
+            u32::try_from(mismatch_claims).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Record the complete pool geometry whenever AP observes a partial
+    /// standby after draining every immediately visible matching frame.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_ap_partial_publication(
+        &self,
+        admitted: usize,
+        pool_free: usize,
+        ready_same: usize,
+        ready_other: usize,
+        ingress_reserved: usize,
+        application_reserved: usize,
+        tokens_in_flight: usize,
+        radio_owned: usize,
+        unattributed_radio_owned: usize,
+    ) {
+        self.tx_ap_partial_publications
+            .fetch_add(1, Ordering::Relaxed);
+        for (counter, value) in [
+            (&self.tx_ap_publication_admitted, admitted),
+            (&self.tx_ap_publication_pool_free, pool_free),
+            (&self.tx_ap_publication_ready_same, ready_same),
+            (&self.tx_ap_publication_ready_other, ready_other),
+            (&self.tx_ap_publication_ingress_reserved, ingress_reserved),
+            (
+                &self.tx_ap_publication_application_reserved,
+                application_reserved,
+            ),
+            (&self.tx_ap_publication_tokens_in_flight, tokens_in_flight),
+            (&self.tx_ap_publication_radio_owned, radio_owned),
+            (
+                &self.tx_ap_publication_unattributed_radio_owned,
+                unattributed_radio_owned,
+            ),
+        ] {
+            counter.fetch_add(u32::try_from(value).unwrap_or(u32::MAX), Ordering::Relaxed);
+        }
+    }
+
     pub fn snapshot(&self) -> Core0PerformanceSnapshot {
         Core0PerformanceSnapshot {
             rx_interrupt_posts: self.rx_interrupt_posts.load(Ordering::Relaxed),
@@ -872,6 +1203,57 @@ impl Core0PerformanceCounters {
             tx_commit_calls: self.tx_commit_calls.load(Ordering::Relaxed),
             tx_commit_cycles: self.tx_commit_cycles.load(Ordering::Relaxed),
             tx_commit_instructions: self.tx_commit_instructions.load(Ordering::Relaxed),
+            tx_prepared_gap_samples: self.tx_prepared_gap_samples.load(Ordering::Relaxed),
+            tx_prepared_gap_cycles: self.tx_prepared_gap_cycles.load(Ordering::Relaxed),
+            tx_prepared_gap_instructions: self.tx_prepared_gap_instructions.load(Ordering::Relaxed),
+            tx_prepared_gap_le_64us: self.tx_prepared_gap_le_64us.load(Ordering::Relaxed),
+            tx_prepared_gap_le_256us: self.tx_prepared_gap_le_256us.load(Ordering::Relaxed),
+            tx_prepared_gap_le_512us: self.tx_prepared_gap_le_512us.load(Ordering::Relaxed),
+            tx_prepared_gap_le_1024us: self.tx_prepared_gap_le_1024us.load(Ordering::Relaxed),
+            tx_prepared_gap_gt_1024us: self.tx_prepared_gap_gt_1024us.load(Ordering::Relaxed),
+            tx_network_completions: self.tx_network_completions.load(Ordering::Relaxed),
+            tx_completion_prepared: self.tx_completion_prepared.load(Ordering::Relaxed),
+            tx_completion_prepared_full: self.tx_completion_prepared_full.load(Ordering::Relaxed),
+            tx_completion_prepared_partial: self
+                .tx_completion_prepared_partial
+                .load(Ordering::Relaxed),
+            tx_completion_prepared_frames: self
+                .tx_completion_prepared_frames
+                .load(Ordering::Relaxed),
+            tx_completion_queued: self.tx_completion_queued.load(Ordering::Relaxed),
+            tx_completion_empty: self.tx_completion_empty.load(Ordering::Relaxed),
+            tx_initial_network_frames: self.tx_initial_network_frames.load(Ordering::Relaxed),
+            tx_ap_partial_frontiers: self.tx_ap_partial_frontiers.load(Ordering::Relaxed),
+            tx_ap_partial_matching_retained: self
+                .tx_ap_partial_matching_retained
+                .load(Ordering::Relaxed),
+            tx_ap_partial_other_retained: self.tx_ap_partial_other_retained.load(Ordering::Relaxed),
+            tx_ap_partial_network_ready: self.tx_ap_partial_network_ready.load(Ordering::Relaxed),
+            tx_ap_partial_mismatch_claims: self
+                .tx_ap_partial_mismatch_claims
+                .load(Ordering::Relaxed),
+            tx_ap_partial_publications: self.tx_ap_partial_publications.load(Ordering::Relaxed),
+            tx_ap_publication_admitted: self.tx_ap_publication_admitted.load(Ordering::Relaxed),
+            tx_ap_publication_pool_free: self.tx_ap_publication_pool_free.load(Ordering::Relaxed),
+            tx_ap_publication_ready_same: self.tx_ap_publication_ready_same.load(Ordering::Relaxed),
+            tx_ap_publication_ready_other: self
+                .tx_ap_publication_ready_other
+                .load(Ordering::Relaxed),
+            tx_ap_publication_ingress_reserved: self
+                .tx_ap_publication_ingress_reserved
+                .load(Ordering::Relaxed),
+            tx_ap_publication_application_reserved: self
+                .tx_ap_publication_application_reserved
+                .load(Ordering::Relaxed),
+            tx_ap_publication_tokens_in_flight: self
+                .tx_ap_publication_tokens_in_flight
+                .load(Ordering::Relaxed),
+            tx_ap_publication_radio_owned: self
+                .tx_ap_publication_radio_owned
+                .load(Ordering::Relaxed),
+            tx_ap_publication_unattributed_radio_owned: self
+                .tx_ap_publication_unattributed_radio_owned
+                .load(Ordering::Relaxed),
             rx_progress_drained: self.rx_progress_drained.load(Ordering::Relaxed),
             rx_progress_probe_pending: self.rx_progress_probe_pending.load(Ordering::Relaxed),
             rx_progress_protocol_tx_blocked: self

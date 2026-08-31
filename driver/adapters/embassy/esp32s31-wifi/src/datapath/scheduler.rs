@@ -126,7 +126,7 @@ where
                     self.drive_active_tx_for_stop().await?;
                     continue;
                 }
-                self.services.cancel_prepared_tx()?;
+                self.cancel_prepared_network_tx()?;
                 self.prepared_tx_interface = None;
                 if self.services.control_required_before_stop() {
                     match self
@@ -221,7 +221,7 @@ where
                         continue;
                     }
                     DatapathControlProgress::Exit(exit) => {
-                        self.services.cancel_prepared_tx()?;
+                        self.cancel_prepared_network_tx()?;
                         self.prepared_tx_interface = None;
                         self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
                         return Ok(DatapathRunnerExit::Role(exit));
@@ -235,7 +235,7 @@ where
             // Re-running physical queue discovery, burst classification and
             // collection-deadline calculation here creates an avoidable air
             // gap on every saturated BA transaction.
-            if let Some((interface, admitted)) = self.prepared_network_tx_candidate() {
+            if let Some((interface, admitted)) = self.prepared_network_tx_candidate()? {
                 self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
                     .await?;
                 continue;
@@ -337,11 +337,13 @@ where
                     // target.
                     if self.services.has_prepared_tx() {
                         let interface = self.retained_prepared_tx_interface();
+                        let network_tx = self.tx_consumer_for(interface);
+                        self.services.advance_prepared_tx(&network_tx)?;
                         if self.services.can_prepare_tx()
+                            && self.services.prepared_tx_start_ready()
                             && let Some(frame) = self.network.try_receive_tx(interface)
                         {
                             assert_eq!(self.tx_interface_for(&frame), interface);
-                            let network_tx = self.tx_consumer_for(interface);
                             #[cfg(feature = "tx-phase-telemetry")]
                             let tx_phase_started = Core0PerformanceSample::read();
                             self.services.prepare_tx(frame, &network_tx).await?;
@@ -352,10 +354,16 @@ where
                                 Core0PerformanceSample::read(),
                             );
                         }
-                        let admitted = self.services.prepared_tx_frame_count().max(1);
-                        self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
+                        if self.services.prepared_tx_start_ready() {
+                            let admitted = self.services.prepared_tx_frame_count().max(1);
+                            self.start_prepared_network_tx(
+                                interface,
+                                admitted,
+                                &mut tx_batch_states,
+                            )
                             .await?;
-                        continue;
+                            continue;
+                        }
                     }
 
                     let Some(frame) = self.try_receive_network_tx() else {
@@ -373,6 +381,8 @@ where
                         Core0PerformanceSample::read(),
                     );
                     let admitted = self.services.last_started_tx_frame_count().max(1);
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    CORE0_PERFORMANCE.record_tx_initial_network_frames(admitted);
                     self.account_tx_frames(admitted);
                     self.account_pair_tx_frames(interface, admitted);
                     let slot = self.tx_batch_state_slot(interface);
@@ -429,7 +439,7 @@ where
                             }
 
                             let Some((prepared_interface, prepared_frames)) =
-                                self.prepared_network_tx_candidate()
+                                self.prepared_network_tx_candidate()?
                             else {
                                 break;
                             };

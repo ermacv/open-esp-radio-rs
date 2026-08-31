@@ -4,6 +4,8 @@ mod bidirectional;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 mod cache_performance;
 mod evidence;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub(in crate::product_hil) mod network_scheduler;
 mod reporting;
 mod runtime;
 mod tcp;
@@ -91,6 +93,6 @@ pub(in crate::product_hil) use runtime::{start_connected_traffic, start_traffic_
 pub(super) use tcp::{TcpBenchmarkConfig, run_open_radio_tcp_benchmark};
 pub(super) use udp::{
     UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpSocketBuffers,
-    UdpTxBenchmarkConfig, UdpTxSessionSource, run_open_radio_udp_rx_benchmark,
-    run_open_radio_udp_tx_benchmark,
+    UdpTxBenchmarkConfig, UdpTxSessionSource, configure_multi_flow_burst_datagrams,
+    multi_flow_burst_datagrams, run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark,
 };

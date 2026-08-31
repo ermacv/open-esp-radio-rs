@@ -14,6 +14,17 @@ impl Esp32s31WifiNetworkRunner<'_> {
         // cannot starve UDP/TCP consumers in one unbounded poll.
         self.inner.run_work_conserving().await
     }
+
+    /// Run the production scheduler while reporting one aggregate record per
+    /// bounded stack poll. The observer is diagnostic-only; it cannot alter
+    /// the scheduler decision or packet ownership.
+    #[cfg(feature = "network-scheduler-telemetry")]
+    pub async fn run_observed(
+        mut self,
+        observer: fn(embassy_net::CooperativePollReport),
+    ) -> ! {
+        self.inner.run_work_conserving_observed(observer).await
+    }
 }
 
 impl<'resources> Esp32s31WifiNetworkRunner<'resources> {

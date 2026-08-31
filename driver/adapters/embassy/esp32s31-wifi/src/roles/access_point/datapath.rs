@@ -819,6 +819,25 @@ where
         self.network_tx.prepared_frame_count()
     }
 
+    fn prepared_tx_start_ready(&self) -> bool {
+        self.network_tx.prepared_start_ready()
+    }
+
+    fn advance_prepared_tx(
+        &mut self,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Self::Error> {
+        self.network_tx
+            .advance_prepared(self.aggregate, self.control, network)
+    }
+
     #[cfg(any(feature = "diagnostics", test))]
     fn mark_prepared_tx_scheduler_phase(
         &mut self,
@@ -887,9 +906,21 @@ where
         Ok(progress)
     }
 
-    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx(
+        &mut self,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                TX_QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         self.network_tx
-            .cancel_prepared(self.aggregate, self.control)
+            .cancel_prepared(self.aggregate, self.control, network)
     }
 
     fn service_tx<'a>(

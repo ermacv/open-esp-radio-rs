@@ -410,9 +410,7 @@ impl RxPipelineCounters {
             network_ready_wait_lifetime_max_micros: self
                 .network_ready_wait_lifetime_max_micros
                 .load(Ordering::Relaxed),
-            protocol_frame_transactions: self
-                .protocol_frame_transactions
-                .load(Ordering::Relaxed),
+            protocol_frame_transactions: self.protocol_frame_transactions.load(Ordering::Relaxed),
             protocol_frame_micros: self.protocol_frame_micros.load(Ordering::Relaxed),
             protocol_frame_lifetime_max_micros: self
                 .protocol_frame_lifetime_max_micros

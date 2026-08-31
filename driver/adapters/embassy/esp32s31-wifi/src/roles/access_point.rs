@@ -96,6 +96,8 @@ use crate::diagnostics::access_point::{
 use crate::diagnostics::aggregate_tx::{
     AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, PreparedTxSchedulerPhase,
 };
+#[cfg(feature = "tx-phase-telemetry")]
+use crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE;
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::network::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 use crate::{

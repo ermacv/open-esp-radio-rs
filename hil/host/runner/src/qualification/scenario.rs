@@ -27,6 +27,7 @@ pub enum ImageClass {
     Correctness,
     DiagnosticMacIrq,
     DiagnosticTaskResidence,
+    DiagnosticTxArchitecture,
     DiagnosticTaskPoll,
     DiagnosticCore0RxCoarse,
     DiagnosticCore0RxCycles,
@@ -36,12 +37,13 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
         Self::DiagnosticMacIrq,
         Self::DiagnosticTaskResidence,
+        Self::DiagnosticTxArchitecture,
         Self::DiagnosticTaskPoll,
         Self::DiagnosticCore0RxCoarse,
         Self::DiagnosticCore0RxCycles,
@@ -57,6 +59,7 @@ impl ImageClass {
             Self::Correctness => "correctness",
             Self::DiagnosticMacIrq => "diagnostic-mac-irq",
             Self::DiagnosticTaskResidence => "diagnostic-task-residence",
+            Self::DiagnosticTxArchitecture => "diagnostic-tx-architecture",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
             Self::DiagnosticCore0RxCoarse => "diagnostic-core0-rx-coarse",
             Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
@@ -78,6 +81,9 @@ impl ImageClass {
             }
             Self::DiagnosticTaskResidence => {
                 "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
+            }
+            Self::DiagnosticTxArchitecture => {
+                "open-radio-hil,psram-task-stack,tx-architecture-probes,code-psram,profile-psram-data"
             }
             Self::DiagnosticTaskPoll => {
                 "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
@@ -107,6 +113,7 @@ impl ImageClass {
             | Self::Correctness
             | Self::DiagnosticMacIrq
             | Self::DiagnosticTaskResidence
+            | Self::DiagnosticTxArchitecture
             | Self::DiagnosticTaskPoll
             | Self::DiagnosticCore0RxCoarse
             | Self::DiagnosticCore0RxCycles
@@ -131,6 +138,7 @@ impl ImageClass {
             Self::BootSmoke
                 | Self::Performance
                 | Self::DiagnosticTaskResidence
+                | Self::DiagnosticTxArchitecture
                 | Self::DiagnosticCore0RxCoarse
         )
     }
@@ -196,6 +204,13 @@ pub enum AccessPointTraffic {
         duration_seconds: u16,
         rx_rate_bps_per_flow: Option<u64>,
         tx_rate_bps_per_flow: Option<u64>,
+        /// Optional offer for the second physical client. Absence keeps the
+        /// ordinary equal-offer fairness workload.
+        secondary_rx_rate_bps: Option<u64>,
+        secondary_tx_rate_bps: Option<u64>,
+        /// Optional second-client target-TX pacing group. This describes a
+        /// sparse burst independently of its average offered rate.
+        secondary_tx_pacing_group_datagrams: Option<u8>,
         payload_bytes: u16,
     },
     Tcp {
@@ -373,6 +388,11 @@ pub struct Criteria {
     pub minimum_combined_bps: Option<u64>,
     pub minimum_bps_per_flow: Option<u64>,
     pub maximum_flow_skew_percent: Option<u8>,
+    /// Host-observed upper bound between consecutive datagrams of the second
+    /// AP TX flow. Used by sparse-peer service tests, not as an air-latency
+    /// estimate.
+    pub maximum_secondary_tx_interarrival_ms: Option<u16>,
+    pub minimum_secondary_tx_datagrams: Option<u16>,
     /// Maximum pre-workload channel utilization reported by hostapd, in the
     /// native 0..=255 BSS-load scale. This is deliberately a ceiling-scenario
     /// criterion rather than an inferred throughput failure.
@@ -532,6 +552,12 @@ impl Scenario {
                 Workload::Udp {
                     direction: Direction::Tx,
                     ..
+                } | Workload::AccessPoint {
+                    traffic: AccessPointTraffic::UdpMultiClient {
+                        direction: Direction::Tx,
+                        ..
+                    },
+                    ..
                 }
             ))
         {
@@ -543,11 +569,19 @@ impl Scenario {
         }
         if matches!(
             self.tx_buffer,
-            WifiTxBufferPolicy::PsramStagingCopyDiagnostic
+            WifiTxBufferPolicy::DirectDmaFifoDiagnostic
+                | WifiTxBufferPolicy::DirectDmaWakeStormControlDiagnostic
+                | WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
+                | WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
+                | WifiTxBufferPolicy::PsramStagingCopyDiagnostic
+                | WifiTxBufferPolicy::Core1MaterializationDiagnostic
                 | WifiTxBufferPolicy::PsramDirectDmaDiagnostic
         ) && (!matches!(
             self.image,
-            ImageClass::DiagnosticTaskResidence | ImageClass::DiagnosticCore0RxCoarse
+            ImageClass::DiagnosticTaskResidence
+                | ImageClass::DiagnosticTxArchitecture
+                | ImageClass::DiagnosticTaskPoll
+                | ImageClass::DiagnosticCore0RxCoarse
         ) || !matches!(
             self.workload,
             Workload::AccessPoint {
@@ -1179,10 +1213,12 @@ impl Scenario {
                     direction,
                     rx_rate_bps_per_flow,
                     tx_rate_bps_per_flow,
+                    secondary_rx_rate_bps,
+                    secondary_tx_rate_bps,
                     ..
                 } => (
-                    rx_rate_bps_per_flow.and_then(|rate| rate.checked_mul(2)),
-                    tx_rate_bps_per_flow.and_then(|rate| rate.checked_mul(2)),
+                    summed_two_flow_offer(*rx_rate_bps_per_flow, *secondary_rx_rate_bps),
+                    summed_two_flow_offer(*tx_rate_bps_per_flow, *secondary_tx_rate_bps),
                     true,
                     *direction == Direction::Bidirectional,
                     false,
@@ -1259,29 +1295,36 @@ impl Scenario {
                         AccessPointTraffic::UdpMultiClient {
                             direction: Direction::Rx,
                             rx_rate_bps_per_flow: Some(rate),
+                            secondary_rx_rate_bps,
                             ..
                         },
                     ..
-                } => *rate,
+                } => secondary_rx_rate_bps.unwrap_or(*rate).min(*rate),
                 Workload::AccessPoint {
                     traffic:
                         AccessPointTraffic::UdpMultiClient {
                             direction: Direction::Tx,
                             tx_rate_bps_per_flow: Some(rate),
+                            secondary_tx_rate_bps,
                             ..
                         },
                     ..
-                } => *rate,
+                } => secondary_tx_rate_bps.unwrap_or(*rate).min(*rate),
                 Workload::AccessPoint {
                     traffic:
                         AccessPointTraffic::UdpMultiClient {
                             direction: Direction::Bidirectional,
                             rx_rate_bps_per_flow: Some(rx),
                             tx_rate_bps_per_flow: Some(tx),
+                            secondary_rx_rate_bps,
+                            secondary_tx_rate_bps,
                             ..
                         },
                     ..
-                } => (*rx).min(*tx),
+                } => (*rx)
+                    .min(secondary_rx_rate_bps.unwrap_or(*rx))
+                    .min(*tx)
+                    .min(secondary_tx_rate_bps.unwrap_or(*tx)),
                 _ => unreachable!("validated multi-client UDP direction has an offer"),
             };
             if floor == 0 || floor > per_flow_offer {
@@ -1298,6 +1341,67 @@ impl Scenario {
             }
             if !(1..=100).contains(&maximum) {
                 return self.criteria_error("maximum_flow_skew_percent must be within 1..=100");
+            }
+            if matches!(
+                &self.workload,
+                Workload::AccessPoint {
+                    traffic: AccessPointTraffic::UdpMultiClient {
+                        rx_rate_bps_per_flow,
+                        tx_rate_bps_per_flow,
+                        secondary_rx_rate_bps,
+                        secondary_tx_rate_bps,
+                        ..
+                    },
+                    ..
+                } if secondary_rx_rate_bps.is_some_and(|rate| Some(rate) != *rx_rate_bps_per_flow)
+                    || secondary_tx_rate_bps.is_some_and(|rate| Some(rate) != *tx_rate_bps_per_flow)
+            ) {
+                return self.criteria_error(
+                    "maximum_flow_skew_percent is invalid for unequal offered rates",
+                );
+            }
+        }
+        if let Some(maximum) = self.criteria.maximum_secondary_tx_interarrival_ms {
+            if maximum == 0 {
+                return self.criteria_error("maximum_secondary_tx_interarrival_ms must be nonzero");
+            }
+            if !matches!(
+                &self.workload,
+                Workload::AccessPoint {
+                    traffic: AccessPointTraffic::UdpMultiClient {
+                        direction: Direction::Tx | Direction::Bidirectional,
+                        secondary_tx_rate_bps: Some(_),
+                        secondary_tx_pacing_group_datagrams: Some(_),
+                        ..
+                    },
+                    ..
+                }
+            ) {
+                return self.criteria_error(
+                    "maximum_secondary_tx_interarrival_ms requires an explicitly paced secondary AP TX flow",
+                );
+            }
+        }
+        if let Some(minimum) = self.criteria.minimum_secondary_tx_datagrams {
+            if minimum < 2 {
+                return self.criteria_error(
+                    "minimum_secondary_tx_datagrams must cover at least one inter-arrival",
+                );
+            }
+            if !matches!(
+                &self.workload,
+                Workload::AccessPoint {
+                    traffic: AccessPointTraffic::UdpMultiClient {
+                        direction: Direction::Tx | Direction::Bidirectional,
+                        secondary_tx_rate_bps: Some(_),
+                        ..
+                    },
+                    ..
+                }
+            ) {
+                return self.criteria_error(
+                    "minimum_secondary_tx_datagrams requires an explicit secondary AP TX flow",
+                );
             }
         }
         if let Some(maximum) = self.criteria.maximum_idle_channel_utilization_255 {
@@ -1388,6 +1492,9 @@ fn validate_access_point_traffic(traffic: &AccessPointTraffic, scenario: &Scenar
             duration_seconds,
             rx_rate_bps_per_flow,
             tx_rate_bps_per_flow,
+            secondary_rx_rate_bps,
+            secondary_tx_rate_bps,
+            secondary_tx_pacing_group_datagrams,
             payload_bytes,
         } => {
             bounded(
@@ -1403,7 +1510,39 @@ fn validate_access_point_traffic(traffic: &AccessPointTraffic, scenario: &Scenar
                 *rx_rate_bps_per_flow,
                 *tx_rate_bps_per_flow,
                 scenario,
-            )
+            )?;
+            let secondary_direction_valid = match direction {
+                Direction::Rx => secondary_tx_rate_bps.is_none(),
+                Direction::Tx => secondary_rx_rate_bps.is_none(),
+                Direction::Bidirectional => true,
+            };
+            if !secondary_direction_valid {
+                return scenario.criteria_error(
+                    "secondary offered rates do not match the multi-client direction",
+                );
+            }
+            for (field, rate) in [
+                ("traffic.secondary_rx_rate_bps", *secondary_rx_rate_bps),
+                ("traffic.secondary_tx_rate_bps", *secondary_tx_rate_bps),
+            ] {
+                if let Some(rate) = rate {
+                    bounded(rate, 1_000, 1_000_000_000, scenario, field)?;
+                }
+            }
+            if let Some(group) = secondary_tx_pacing_group_datagrams {
+                bounded(
+                    *group,
+                    1,
+                    64,
+                    scenario,
+                    "traffic.secondary_tx_pacing_group_datagrams",
+                )?;
+                if tx_rate_bps_per_flow.is_none() {
+                    return scenario
+                        .criteria_error("secondary TX pacing requires a target-TX data plane");
+                }
+            }
+            Ok(())
         }
         AccessPointTraffic::Tcp {
             direction,
@@ -1459,6 +1598,10 @@ fn validate_direction_rates(
         .into());
     }
     Ok(())
+}
+
+fn summed_two_flow_offer(primary: Option<u64>, secondary: Option<u64>) -> Option<u64> {
+    primary.and_then(|primary| primary.checked_add(secondary.unwrap_or(primary)))
 }
 
 #[derive(Debug)]
@@ -2114,6 +2257,111 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn ap_egress_burst_probe_keeps_direct_dma_in_the_task_residence_image() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog
+            .get("diagnostic-ap-two-client-udp-tx-egress-burst")
+            .unwrap();
+
+        assert_eq!(scenario.image, ImageClass::DiagnosticTaskResidence);
+        assert_eq!(
+            scenario.tx_buffer,
+            WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
+        );
+        assert!(matches!(
+            scenario.workload,
+            Workload::AccessPoint {
+                traffic: AccessPointTraffic::UdpMultiClient {
+                    direction: Direction::Tx,
+                    ..
+                },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn ap_two_client_checksum_probe_is_a_coarse_tx_only_diagnostic() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog
+            .get("diagnostic-ap-two-client-udp-tx-no-checksum-core0")
+            .unwrap();
+
+        assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
+        assert_eq!(
+            scenario.tx_udp_checksum,
+            WifiTxUdpChecksumPolicy::OmitIpv4Diagnostic
+        );
+        assert!(matches!(
+            scenario.workload,
+            Workload::AccessPoint {
+                traffic: AccessPointTraffic::UdpMultiClient {
+                    direction: Direction::Tx,
+                    ..
+                },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn ap_sparse_peer_probe_keeps_two_packet_pacing_and_cpu_observation() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog
+            .get("diagnostic-ap-saturated-plus-sparse-tx-core0")
+            .unwrap();
+
+        assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
+        assert_eq!(
+            scenario.data_plane,
+            WifiDataPlanePlacement::SplitRadioNetwork
+        );
+        assert_eq!(scenario.criteria.minimum_secondary_tx_datagrams, Some(8));
+        assert_eq!(
+            scenario.criteria.maximum_secondary_tx_interarrival_ms,
+            Some(5_500)
+        );
+        assert!(matches!(
+            scenario.workload,
+            Workload::AccessPoint {
+                traffic: AccessPointTraffic::UdpMultiClient {
+                    direction: Direction::Tx,
+                    tx_rate_bps_per_flow: Some(130_000_000),
+                    secondary_tx_rate_bps: Some(4_710),
+                    secondary_tx_pacing_group_datagrams: Some(2),
+                    ..
+                },
+                ..
+            }
+        ));
+
+        let residence = catalog
+            .get("diagnostic-ap-saturated-plus-sparse-tx-task-residence")
+            .unwrap();
+        assert_eq!(residence.image, ImageClass::DiagnosticTaskResidence);
+        assert_eq!(residence.workload, scenario.workload);
+        assert_eq!(residence.criteria, scenario.criteria);
+
+        let performance = catalog
+            .get("access-point-saturated-plus-sparse-tx")
+            .unwrap();
+        assert_eq!(performance.image, ImageClass::Performance);
+        assert_eq!(performance.workload, scenario.workload);
+        assert!(!performance.criteria.exact_delivery);
+        assert_eq!(performance.criteria.minimum_tx_bps, Some(105_000_000));
+        assert_eq!(performance.criteria.minimum_bps_per_flow, Some(1));
+        assert_eq!(performance.criteria.minimum_secondary_tx_datagrams, Some(8));
+        assert_eq!(
+            performance.criteria.maximum_secondary_tx_interarrival_ms,
+            Some(5_500)
+        );
+        assert_eq!(performance.repetitions, 3);
     }
 
     #[test]

@@ -976,6 +976,49 @@ where
         self.network_tx.prepared_frame_count()
     }
 
+    fn prepared_start_ready(&self) -> bool {
+        self.network_tx.prepared_start_ready()
+    }
+
+    fn advance_prepared(
+        &mut self,
+        _hardware: &mut H,
+        _physical: &mut DatapathPairedPhysicalTx<
+            WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
+            crate::datapath::tx::resources::AggregateTxResources<
+                'ampdu,
+                Esp32s31StaApNetworkTxBacking<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+                AMPDU_SLOTS,
+                AMPDU_BUFFER_SIZE,
+            >,
+        >,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Self::Error> {
+        let active =
+            self.protocol
+                .active_mut()
+                .ok_or(Esp32s31StaApAccessPointTxError::Ownership(
+                    Esp32s31StaApAccessPointTxOwnershipError::AlreadyParked,
+                ))?;
+        self.network_tx
+            .advance_prepared(&mut active.aggregate, &mut active.processor, network)
+            .map_err(Esp32s31StaApAccessPointTxError::Operation)
+    }
+
     #[cfg(any(feature = "diagnostics", test))]
     fn mark_prepared_scheduler_phase(&mut self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
         self.network_tx
@@ -1050,6 +1093,16 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
     ) -> Result<(), Self::Error> {
         let active =
             self.protocol
@@ -1058,7 +1111,7 @@ where
                     Esp32s31StaApAccessPointTxOwnershipError::AlreadyParked,
                 ))?;
         self.network_tx
-            .cancel_prepared(&mut active.aggregate, &mut active.processor)
+            .cancel_prepared(&mut active.aggregate, &mut active.processor, network)
             .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
         self.park_tx(physical)
             .map_err(Esp32s31StaApAccessPointTxError::Ownership)

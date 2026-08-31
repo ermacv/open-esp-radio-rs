@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+use core::mem::MaybeUninit;
+
 use embassy_executor::Spawner;
 use embassy_net::{Stack, udp::PacketMetadata};
 use embassy_sync::channel::Channel;
@@ -10,7 +12,8 @@ use static_cell::{ConstStaticCell, StaticCell};
 use super::{
     BidirectionalResultChannel, BidirectionalSessionChannel, SessionChannel, TcpBenchmarkConfig,
     UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpSocketBuffers,
-    UdpTxBenchmarkConfig, UdpTxSessionSource, observe_open_radio_task_polls,
+    UdpTxBenchmarkConfig, UdpTxSessionSource, multi_flow_burst_datagrams,
+    observe_open_radio_task_polls,
     run_open_radio_bidirectional_session_coordinator, run_open_radio_tcp_benchmark,
     run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark, run_session_dispatcher,
 };
@@ -22,9 +25,9 @@ const UDP_RX_QUEUE_DEPTH: usize = 64;
 // Feed the complete active + standby 32-frame A-MPDU pipeline. A sixteen
 // packet socket queue made the HIL producer, rather than the negotiated radio
 // window, the TX ceiling and fragmented full-duplex aggregate preparation.
-// This CPU-only socket storage is placed by the PSRAM-data qualification
-// profile; DMA descriptors and hardware-visible frame backing stay in SRAM.
-const UDP_TX_QUEUE_DEPTH: usize = 64;
+// This CPU-owned PSRAM backlog feeds two complete aggregate horizons without
+// changing the fixed DMA-visible SRAM working set.
+const UDP_TX_QUEUE_DEPTH: usize = 128;
 const UDP_AUXILIARY_QUEUE_DEPTH: usize = 1;
 const TCP_RX_BUFFER_CAPACITY: usize = 262_144;
 // This is larger than the link BDP for a separate reason: TCP must be able to
@@ -41,7 +44,8 @@ struct ConnectedTrafficResources {
     udp_sink_tx_buffer: ConstStaticCell<[u8; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]>,
     udp_source_rx_metadata: StaticCell<[PacketMetadata; UDP_AUXILIARY_QUEUE_DEPTH]>,
     udp_source_rx_buffer: ConstStaticCell<[u8; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]>,
-    udp_source_tx_metadata: StaticCell<[PacketMetadata; UDP_TX_QUEUE_DEPTH]>,
+    udp_source_tx_metadata:
+        ConstStaticCell<[MaybeUninit<PacketMetadata>; UDP_TX_QUEUE_DEPTH]>,
     udp_source_tx_buffer: ConstStaticCell<[u8; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]>,
     udp_source_packet: ConstStaticCell<[u8; UDP_PAYLOAD_CAPACITY]>,
     tcp_rx_buffer: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
@@ -68,7 +72,9 @@ impl ConnectedTrafficResources {
             udp_source_rx_buffer: ConstStaticCell::new(
                 [0; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
             ),
-            udp_source_tx_metadata: StaticCell::new(),
+            udp_source_tx_metadata: ConstStaticCell::new(
+                [const { MaybeUninit::uninit() }; UDP_TX_QUEUE_DEPTH],
+            ),
             udp_source_tx_buffer: ConstStaticCell::new(
                 [0; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
             ),
@@ -183,31 +189,17 @@ async fn udp_rx_task(
     large_assignments,
     reason = "the bounded UDP TX owner future is constructed in its final PSRAM-backed Embassy task arena"
 )]
-async fn udp_tx_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
+async fn udp_tx_task(
+    stack: Stack<'static>,
+    network_interface: WifiNetworkInterface,
+    buffers: UdpSocketBuffers<'static>,
+    packet: &'static mut [u8],
+) {
     let resources = resources(network_interface);
-    let rx_metadata = resources
-        .udp_source_rx_metadata
-        .init_with(|| [PacketMetadata::EMPTY; UDP_AUXILIARY_QUEUE_DEPTH]);
-    let tx_metadata = resources
-        .udp_source_tx_metadata
-        .init_with(|| [PacketMetadata::EMPTY; UDP_TX_QUEUE_DEPTH]);
-    let tx_buffer = resources.udp_source_tx_buffer.take();
-    let packet = resources.udp_source_packet.take();
-    // The TX benchmark payload is a fixed 0x5a pattern apart from its leading
-    // sequence. Paint every reusable PSRAM socket slot once before readiness;
-    // the measured hot path then writes only the four-byte sequence, without
-    // retaining the 94-KiB pattern in the flash image.
-    tx_buffer.fill(0x5a);
-    packet.fill(0x5a);
     observe_open_radio_task_polls(
         run_open_radio_udp_tx_benchmark(
             stack,
-            UdpSocketBuffers::new(
-                rx_metadata,
-                resources.udp_source_rx_buffer.take(),
-                tx_metadata,
-                tx_buffer,
-            ),
+            buffers,
             packet,
             UdpTxBenchmarkConfig {
                 network_interface,
@@ -224,6 +216,7 @@ async fn udp_tx_task(stack: Stack<'static>, network_interface: WifiNetworkInterf
                 // TXOP byte/duration ceiling; this value only prevents the load
                 // generator from manufacturing a 31+1 burst boundary.
                 pacing_group_datagrams: UDP_TX_QUEUE_DEPTH as u8,
+                multi_flow_burst_datagrams: multi_flow_burst_datagrams(),
                 drain: Duration::from_millis(250),
                 code_address: runtime_code_marker as *const () as usize,
                 session_source: UdpTxSessionSource {
@@ -237,6 +230,38 @@ async fn udp_tx_task(stack: Stack<'static>, network_interface: WifiNetworkInterf
         OPEN_RADIO_TASK_POLL_TELEMETRY,
     )
     .await;
+}
+
+/// Acquire and initialize the large TX metadata arena before constructing the
+/// async task. The task future then owns only slice references; increasing a
+/// PSRAM software backlog cannot silently consume the fixed Core1 stack.
+#[inline(never)]
+fn take_udp_tx_buffers(
+    network_interface: WifiNetworkInterface,
+) -> (UdpSocketBuffers<'static>, &'static mut [u8]) {
+    let resources = resources(network_interface);
+    let rx_metadata = resources
+        .udp_source_rx_metadata
+        .init_with(|| [PacketMetadata::EMPTY; UDP_AUXILIARY_QUEUE_DEPTH]);
+    let tx_metadata = crate::in_place_array::fill(
+        resources.udp_source_tx_metadata.take(),
+        PacketMetadata::EMPTY,
+    );
+    let tx_buffer = resources.udp_source_tx_buffer.take();
+    let packet = resources.udp_source_packet.take();
+    // The benchmark payload is a fixed 0x5a pattern apart from its leading
+    // sequence. Paint reusable PSRAM storage once outside the measured task.
+    tx_buffer.fill(0x5a);
+    packet.fill(0x5a);
+    (
+        UdpSocketBuffers::new(
+            rx_metadata,
+            resources.udp_source_rx_buffer.take(),
+            tx_metadata,
+            tx_buffer,
+        ),
+        packet,
+    )
 }
 
 #[embassy_executor::task(pool_size = 2)]
@@ -287,6 +312,7 @@ pub(in crate::product_hil) fn start_connected_traffic(
     network_interface: WifiNetworkInterface,
     l1_cache: &'static L1CachePerformanceCounters,
 ) {
+    let (udp_tx_buffers, udp_tx_packet) = take_udp_tx_buffers(network_interface);
     spawner.spawn(
         udp_session_coordinator_task(network_interface)
             .expect("UDP coordinator task pool must fit both roles"),
@@ -296,7 +322,8 @@ pub(in crate::product_hil) fn start_connected_traffic(
             .expect("UDP RX task pool must fit both roles"),
     );
     spawner.spawn(
-        udp_tx_task(stack, network_interface).expect("UDP TX task pool must fit both roles"),
+        udp_tx_task(stack, network_interface, udp_tx_buffers, udp_tx_packet)
+            .expect("UDP TX task pool must fit both roles"),
     );
     spawner.spawn(tcp_task(stack, network_interface).expect("TCP task pool must fit both roles"));
 }

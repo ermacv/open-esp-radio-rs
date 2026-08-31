@@ -442,7 +442,19 @@ where
         self.start_prepared_network(hardware, network)
     }
 
-    fn cancel_prepared(&mut self) -> Result<(), Self::Error> {
+    fn cancel_prepared(
+        &mut self,
+        _network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
         self.cancel_prepared_network()
     }
 

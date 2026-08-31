@@ -4,6 +4,8 @@ use core::future::Future;
 
 use embassy_futures::yield_now;
 use embassy_time::Instant;
+#[cfg(feature = "tx-architecture-probes")]
+use open_esp_radio_embassy_net::{TX_CORE1_MATERIALIZER_COUNTERS, TxCore1MaterializerSnapshot};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_embassy_net::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
@@ -930,6 +932,52 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "ORC0TXG samples={} cycles={} instret={} le64={} le256={} le512={} le1024={} gt1024={} completions={} prepared={} full={} partial={} frames={} queued={} empty={}",
+        performance.tx_prepared_gap_samples,
+        performance.tx_prepared_gap_cycles,
+        performance.tx_prepared_gap_instructions,
+        performance.tx_prepared_gap_le_64us,
+        performance.tx_prepared_gap_le_256us,
+        performance.tx_prepared_gap_le_512us,
+        performance.tx_prepared_gap_le_1024us,
+        performance.tx_prepared_gap_gt_1024us,
+        performance.tx_network_completions,
+        performance.tx_completion_prepared,
+        performance.tx_completion_prepared_full,
+        performance.tx_completion_prepared_partial,
+        performance.tx_completion_prepared_frames,
+        performance.tx_completion_queued,
+        performance.tx_completion_empty,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0TXF initial_frames={} partial_samples={} matching_retained={} other_retained={} network_ready={} mismatch_claims={}",
+        performance.tx_initial_network_frames,
+        performance.tx_ap_partial_frontiers,
+        performance.tx_ap_partial_matching_retained,
+        performance.tx_ap_partial_other_retained,
+        performance.tx_ap_partial_network_ready,
+        performance.tx_ap_partial_mismatch_claims,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0TXO ownership_samples={} admitted={} pool_free={} ready_same={} ready_other={} ingress_reserved={} application_reserved={} tokens_in_flight={} radio_owned={} unattributed_radio_owned={}",
+        performance.tx_ap_partial_publications,
+        performance.tx_ap_publication_admitted,
+        performance.tx_ap_publication_pool_free,
+        performance.tx_ap_publication_ready_same,
+        performance.tx_ap_publication_ready_other,
+        performance.tx_ap_publication_ingress_reserved,
+        performance.tx_ap_publication_application_reserved,
+        performance.tx_ap_publication_tokens_in_flight,
+        performance.tx_ap_publication_radio_owned,
+        performance.tx_ap_publication_unattributed_radio_owned,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "ORC0P drained={} probe={} protocol_tx_blocked={} recycled_append={} budget={} stage_blocked={} network_blocked={} droppable={}",
         performance.rx_progress_drained,
         performance.rx_progress_probe_pending,
@@ -992,6 +1040,27 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPe
     ))
     .await;
     yield_now().await;
+    let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
+    runtime_log_reliably(format_args!(
+        "ONTXQ runs={} run31={} run32={} other={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",
+        performance.egress_runs,
+        performance.egress_run_31,
+        performance.egress_run_32,
+        performance.egress_run_other,
+        performance.radio_returns,
+        performance.radio_return_wakes,
+        performance.publication_free_zero,
+        performance.publication_free_one,
+        performance.publication_free_two_plus,
+        performance.publication_ready_le31,
+        performance.publication_ready_32,
+        performance.publication_ready_ge33,
+        ba_peers,
+        ba_min,
+        ba_max,
+    ))
+    .await;
+    yield_now().await;
     runtime_log_reliably(format_args!(
         "ONTXP attempts={} successes={} no_credit={} bytes={} total_cycles={} total_instret={} credit_cycles={} credit_instret={} destination_claim_cycles={} destination_claim_instret={} copy_cycles={} copy_instret={}",
         performance.promotion_attempts,
@@ -1019,6 +1088,26 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPe
         performance.promotion_radio_claim_instructions,
         performance.promotion_unattributed_cycles(),
         performance.promotion_unattributed_instructions(),
+    ))
+    .await;
+    yield_now().await;
+}
+
+/// Emit ownership counts for the selected-batch Core1 materializer.
+#[cfg(feature = "tx-architecture-probes")]
+pub(in crate::product_hil) async fn log_open_radio_tx_core1_materializer(
+    earlier: TxCore1MaterializerSnapshot,
+) {
+    let materializer = TX_CORE1_MATERIALIZER_COUNTERS
+        .snapshot()
+        .wrapping_delta_since(earlier);
+    runtime_log_reliably(format_args!(
+        "ONTXM submitted={} completed={} frames={} no_credit={} cancelled={}",
+        materializer.submitted_batches,
+        materializer.completed_batches,
+        materializer.materialized_frames,
+        materializer.no_credit,
+        materializer.cancelled_batches,
     ))
     .await;
     yield_now().await;

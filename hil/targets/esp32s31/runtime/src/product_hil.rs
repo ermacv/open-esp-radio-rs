@@ -38,16 +38,16 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, Esp32s31RadioConfig, Esp32s31RadioParts,
     Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, Esp32s31StationLinkState,
     Esp32s31StationStatus, Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiNetworkRunner,
-    Esp32s31WifiParts,
-};
-#[cfg(feature = "task-residence-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{
-    Esp32s31ConnectedDatapathPollBatch, Esp32s31ConnectedDatapathPollObserver,
+    Esp32s31WifiParts, Esp32s31AccessPointStatus,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31AccessPointObservation, Esp32s31DiagnosticObservers, Esp32s31DiagnosticSnapshot,
     Esp32s31StationAttemptObservation,
+};
+#[cfg(feature = "connected-datapath-poll-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::{
+    Esp32s31ConnectedDatapathPollBatch, Esp32s31ConnectedDatapathPollObserver,
 };
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
@@ -154,12 +154,16 @@ mod traffic;
     feature = "core0-rx-coarse-telemetry"
 ))]
 use traffic::observe_open_radio_core0_task_polls;
-use traffic::{observe_open_radio_task_polls, start_connected_traffic, start_traffic_dispatcher};
+use traffic::{
+    configure_multi_flow_burst_datagrams, observe_open_radio_task_polls,
+    start_connected_traffic, start_traffic_dispatcher,
+};
 
 const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
-pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-residence-telemetry");
+pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
+    cfg!(feature = "connected-datapath-poll-telemetry");
 pub(crate) const OPEN_RADIO_MAC_IRQ_TELEMETRY: bool = cfg!(feature = "mac-irq-telemetry");
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_DRIVER_OBSERVATION: bool = cfg!(feature = "driver-observation");
@@ -455,6 +459,9 @@ static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
 > = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
 static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> = Channel::new();
 static STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_OPERATIONAL_PEERS: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_SMALLEST_WINDOW: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_LARGEST_WINDOW: AtomicU32 = AtomicU32::new(0);
 static L1_CACHE_COUNTERS_ENABLED: AtomicBool = AtomicBool::new(false);
 static AP_CHANNEL: AtomicU32 = AtomicU32::new(0);
 static AP_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
@@ -1020,7 +1027,7 @@ pub(crate) static MAC_IRQ: MacIrqClassificationCounters = MacIrqClassificationCo
 #[unsafe(link_section = ".critical.data.open_radio_task_poll_telemetry")]
 pub(crate) static TASK_POLLS: TaskPollSet = TaskPollSet::new();
 
-#[cfg(feature = "task-residence-telemetry")]
+#[cfg(feature = "connected-datapath-poll-telemetry")]
 fn record_connected_datapath_poll_batch(batch: Esp32s31ConnectedDatapathPollBatch) {
     open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollCounters::record_batch(
         TASK_POLLS.radio(),
@@ -1280,6 +1287,7 @@ pub const fn hil_capabilities() -> Capabilities {
             driver_observation_evidence: OPEN_RADIO_DRIVER_OBSERVATION,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
+            tx_architecture_probe: cfg!(feature = "tx-architecture-probes"),
             core0_rx_cycle_evidence: cfg!(any(
                 feature = "core0-rx-cycle-telemetry",
                 feature = "core0-rx-coarse-telemetry"
@@ -1366,6 +1374,9 @@ pub(in crate::product_hil) async fn qualification_sample(
 
 #[embassy_executor::task(pool_size = 2)]
 async fn network_runner_task(runner: Esp32s31WifiNetworkRunner<'static>) {
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    let network = runner.run_observed(traffic::network_scheduler::observe);
+    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
     let network = runner.run();
     observe_open_radio_task_polls(
         network,
@@ -1562,6 +1573,41 @@ async fn station_lifecycle_task(mut status: Esp32s31StationStatus) {
             }
         }
     }
+}
+
+#[embassy_executor::task]
+async fn access_point_status_task(mut status: Esp32s31AccessPointStatus) {
+    loop {
+        let snapshot = status.changed().await;
+        let mut peers = 0_u32;
+        let mut smallest = u32::MAX;
+        let mut largest = 0_u32;
+        for agreement in snapshot
+            .peers
+            .iter()
+            .flatten()
+            .filter_map(|peer| peer.tx_block_ack)
+        {
+            let window = u32::from(agreement.window);
+            peers = peers.saturating_add(1);
+            smallest = smallest.min(window);
+            largest = largest.max(window);
+        }
+        AP_TX_BLOCK_ACK_OPERATIONAL_PEERS.store(peers, Ordering::Release);
+        AP_TX_BLOCK_ACK_SMALLEST_WINDOW.store(
+            if peers == 0 { 0 } else { smallest },
+            Ordering::Release,
+        );
+        AP_TX_BLOCK_ACK_LARGEST_WINDOW.store(largest, Ordering::Release);
+    }
+}
+
+pub(crate) fn access_point_tx_block_ack_geometry() -> (u32, u32, u32) {
+    (
+        AP_TX_BLOCK_ACK_OPERATIONAL_PEERS.load(Ordering::Acquire),
+        AP_TX_BLOCK_ACK_SMALLEST_WINDOW.load(Ordering::Acquire),
+        AP_TX_BLOCK_ACK_LARGEST_WINDOW.load(Ordering::Acquire),
+    )
 }
 
 fn station_status_edge(state: Esp32s31StationLinkState) -> Option<StationLinkEdge> {
@@ -2368,10 +2414,41 @@ pub async fn run(
         phy_calibration_artifact,
     } = startup;
     L1_CACHE_COUNTERS_ENABLED.store(l1_cache_counters, Ordering::Relaxed);
-    #[cfg(feature = "task-residence-telemetry")]
+    configure_multi_flow_burst_datagrams(if matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
+    ) {
+        32
+    } else {
+        1
+    });
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_embassy_net::configure_resolved_egress_burst_for_diagnostics(!matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaFifoDiagnostic
+    ));
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_embassy_net::configure_resolved_egress_multi_dispatch_for_diagnostics(
+        !matches!(
+            tx_buffer,
+            open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
+        ),
+    );
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    embassy_net::configure_blocked_egress_socket_wake_suppression(!matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaWakeStormControlDiagnostic
+    ));
+    #[cfg(feature = "tx-architecture-probes")]
     open_esp_radio_embassy_net::configure_tx_staging_copy_probe(matches!(
         tx_buffer,
         open_esp_radio_hil_protocol::WifiTxBufferPolicy::PsramStagingCopyDiagnostic
+            | open_esp_radio_hil_protocol::WifiTxBufferPolicy::Core1MaterializationDiagnostic
+    ));
+    #[cfg(feature = "tx-architecture-probes")]
+    open_esp_radio_embassy_net::configure_tx_core1_materializer_probe(matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::Core1MaterializationDiagnostic
     ));
     #[cfg(feature = "tx-psram-dma-probe")]
     open_esp_radio_esp32s31_embassy_wifi::configure_direct_psram_tx_dma_probe(matches!(
@@ -2439,7 +2516,7 @@ pub async fn run(
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     )
     .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
-    #[cfg(feature = "task-residence-telemetry")]
+    #[cfg(feature = "connected-datapath-poll-telemetry")]
     let config = config.with_connected_datapath_poll_observer(
         Esp32s31ConnectedDatapathPollObserver::new(320, record_connected_datapath_poll_batch),
     );
@@ -2526,11 +2603,10 @@ pub async fn run(
     // The runner is an idle supervisor until a role command arrives. Spawn it
     // before the asynchronous artifact publication so its large unique owner
     // graph is moved into the task arena instead of retained in this future.
-    spawner
-        .spawn(
-            radio_runner_task(spawner, runner)
-                .expect("production radio runner task must allocate once"),
-        );
+    spawner.spawn(
+        radio_runner_task(spawner, runner)
+            .expect("production radio runner task must allocate once"),
+    );
     if let Some(cache) = initialization.calibration_cache {
         let disposition = match initialization.start.wifi.registration.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
@@ -2555,12 +2631,16 @@ pub async fn run(
         access_point_device,
         monitor_frames,
         station_status,
-        access_point_status: _,
+        access_point_status,
         #[cfg(feature = "driver-observation")]
         diagnostics,
     } = wifi.into_parts();
     spawner.spawn(
         station_lifecycle_task(station_status).expect("station lifecycle task must allocate once"),
+    );
+    spawner.spawn(
+        access_point_status_task(access_point_status)
+            .expect("access-point status task must allocate once"),
     );
     #[cfg(feature = "driver-observation")]
     spawner.spawn(

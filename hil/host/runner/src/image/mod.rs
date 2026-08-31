@@ -15,6 +15,7 @@ const RUNTIME_HEADER_BYTES: usize = 44;
 struct ImageCapabilitySignature {
     driver_observation: bool,
     task_poll: bool,
+    tx_architecture_probe: bool,
     core0_rx_cycles: bool,
     rx_delivery: bool,
     mac_irq: bool,
@@ -29,6 +30,7 @@ pub(crate) fn classify_flashed_capabilities(
     classify_image_signature(ImageCapabilitySignature {
         driver_observation: features.driver_observation_evidence,
         task_poll: features.task_poll_evidence,
+        tx_architecture_probe: features.tx_architecture_probe,
         core0_rx_cycles: features.core0_rx_cycle_evidence,
         rx_delivery: features.rx_delivery_evidence,
         mac_irq: features.mac_irq_evidence,
@@ -43,10 +45,26 @@ fn classify_image_signature(
 ) -> Option<qualification::scenario::ImageClass> {
     use qualification::scenario::ImageClass;
 
+    if signature.tx_architecture_probe {
+        let expected = ImageCapabilitySignature {
+            driver_observation: false,
+            task_poll: true,
+            tx_architecture_probe: true,
+            core0_rx_cycles: false,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            ieee802154_ed_event: false,
+            psram_task_stack: true,
+        };
+        return (signature == expected).then_some(ImageClass::DiagnosticTxArchitecture);
+    }
+
     match signature {
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: false,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
@@ -57,6 +75,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: false,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
@@ -67,6 +86,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: false,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: true,
@@ -77,6 +97,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: true,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
@@ -87,6 +108,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: true,
+            tx_architecture_probe: false,
             core0_rx_cycles: true,
             rx_delivery: false,
             mac_irq: false,
@@ -97,6 +119,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: true,
+            tx_architecture_probe: false,
             core0_rx_cycles: true,
             rx_delivery: false,
             mac_irq: false,
@@ -107,6 +130,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: true,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
@@ -117,6 +141,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: false,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: true,
             mac_irq: false,
@@ -127,6 +152,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: false,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
@@ -137,6 +163,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: false,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
@@ -843,6 +870,7 @@ mod tests {
         ImageCapabilitySignature {
             driver_observation,
             task_poll,
+            tx_architecture_probe: false,
             core0_rx_cycles: false,
             rx_delivery,
             mac_irq,
@@ -871,7 +899,7 @@ mod tests {
 
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 11);
+        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 12);
         assert!(
             qualification::scenario::ImageClass::ALL
                 .into_iter()
@@ -896,6 +924,10 @@ mod tests {
         assert_eq!(
             qualification::scenario::ImageClass::DiagnosticTaskResidence.runtime_features(),
             "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
+        );
+        assert_eq!(
+            qualification::scenario::ImageClass::DiagnosticTxArchitecture.runtime_features(),
+            "open-radio-hil,psram-task-stack,tx-architecture-probes,code-psram,profile-psram-data"
         );
         assert_eq!(
             qualification::scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
@@ -963,6 +995,12 @@ mod tests {
         ] {
             assert_eq!(classify_image_signature(signals), Some(expected));
         }
+        let mut tx_architecture = image_signature(false, true, false, false, false, false);
+        tx_architecture.tx_architecture_probe = true;
+        assert_eq!(
+            classify_image_signature(tx_architecture),
+            Some(ImageClass::DiagnosticTxArchitecture),
+        );
         let mut core0_rx_cycles = image_signature(true, true, false, false, false, false);
         core0_rx_cycles.core0_rx_cycles = true;
         assert_eq!(

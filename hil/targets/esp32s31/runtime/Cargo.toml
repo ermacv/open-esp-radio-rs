@@ -32,6 +32,8 @@ open-radio-hil = [
     "dep:open-esp-radio-wifi-embassy",
     "dep:postcard",
     "dep:serde",
+    "embassy-net/tx-egress-metadata",
+    "open-esp-radio-embassy-net/tx-egress-scheduling",
 ]
 driver-observation = [
     "open-esp-radio-esp32s31-embassy-wifi/diagnostics",
@@ -42,12 +44,24 @@ mac-irq-telemetry = [
     "driver-observation",
     "open-esp-radio-esp32s31-embassy-wifi/mac-irq-diagnostics",
 ]
-# Minimal diagnostic overlay for measuring continuous Embassy Future::poll
-# residence. It intentionally does not enable driver observation or any
-# per-phase cycle accounting: the point of this image is to bound production
-# executor occupancy with only the poll timer and counter overhead remaining.
-task-residence-telemetry = [
+# Common low-overhead observer used by both residence and task-poll images.
+# Keep it independent from the TX architecture probes: task-poll scenarios do
+# not select those probes and must not pay for their DMA-visible owners.
+connected-datapath-poll-telemetry = [
     "open-esp-radio-esp32s31-embassy-wifi/connected-datapath-cycle-telemetry",
+]
+# Minimal diagnostic overlay for measuring continuous Embassy Future::poll
+# residence. Keep the rejected/experimental TX backing implementations out of
+# this image: their compile-time branches and DMA-visible owners measurably
+# change the linked hot-path layout even when runtime-disabled.
+task-residence-telemetry = ["connected-datapath-poll-telemetry"]
+# Same-image home for invasive TX backing/materialization A/B probes. It
+# retains residence timing, but must never be used as the production CPU
+# budget because the alternative implementations are part of this ELF.
+tx-architecture-probes = [
+    "task-residence-telemetry",
+    "open-esp-radio-esp32s31-embassy-wifi/tx-core1-materializer-probe",
+    "open-esp-radio-embassy-net/tx-core1-materializer-probe",
     "open-esp-radio-esp32s31-embassy-wifi/tx-staging-copy-probe",
     "open-esp-radio-embassy-net/tx-staging-copy-probe",
     "tx-psram-dma-probe",
@@ -63,7 +77,7 @@ gdma-mem2mem-probe = ["open-esp-radio-esp32s31-platform-pac/psram-dma-diagnostic
 # existing RX/TX/AP diagnostic scenarios, but Core0 per-phase accounting is
 # deliberately separate below.
 task-poll-telemetry = [
-    "task-residence-telemetry",
+    "connected-datapath-poll-telemetry",
     "driver-observation",
 ]
 # Intrusive Core0 RX phase accounting. This retains the same top-level task
@@ -76,8 +90,9 @@ core0-rx-cycle-telemetry = [
 # Production-like Core0 accounting: no driver observers and no per-frame
 # instrumentation, only radio/runner/DMA/protocol batch samples.
 core0-rx-coarse-telemetry = [
-    "task-residence-telemetry",
+    "connected-datapath-poll-telemetry",
     "open-esp-radio-esp32s31-embassy-wifi/core0-rx-coarse-telemetry",
+    "open-esp-radio-esp32s31-embassy-wifi/network-scheduler-telemetry",
 ]
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.

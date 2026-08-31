@@ -30,8 +30,8 @@ use open_esp_radio_hil_protocol::Ieee802154EdEventProbeRequest;
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_hil_protocol::Ieee802154EventStatusProbeRequest;
 use open_esp_radio_hil_protocol::{
-    Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    Finished, FlowTransportEvidence, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials,
+    Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, FailureCode, Finished,
+    FlowTransportEvidence, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials,
     NetworkIpv4Configuration, PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
     SESSION_FLOW_CAPACITY, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
     StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,

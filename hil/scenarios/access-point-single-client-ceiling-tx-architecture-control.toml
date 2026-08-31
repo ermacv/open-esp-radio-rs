@@ -1,0 +1,30 @@
+schema = 3
+id = "access-point-single-client-ceiling-tx-architecture-control"
+description = "Direct-SRAM same-image control for invasive single-client TX architecture probes"
+repetitions = 1
+image = "diagnostic-tx-architecture"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "single-client", "ht40", "split-core", "tx", "architecture", "control"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+client = "open-wrt"
+
+[workload.traffic]
+kind = "udp"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps = 130000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_tx_bps = 1
+minimum_concurrent_ap_clients = 1

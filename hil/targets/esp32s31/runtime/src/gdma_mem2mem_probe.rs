@@ -7,22 +7,39 @@
 
 use core::{
     arch::asm,
+    future::{Future, poll_fn},
+    pin::Pin,
     ptr,
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use esp_hal::peripherals::DMA_AXI_CH0;
-use open_esp_radio_esp32s31_platform_pac::{AxiGdmaDescriptor, AxiGdmaMem2Mem, BurstSize};
+use open_esp_radio_esp32s31_platform_pac::{
+    AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemSegment, BurstSize,
+};
 
 const FRAME_SIZE: usize = 1536;
 const FRAMES_PER_BATCH: usize = 32;
 const BATCH_SIZE: usize = FRAME_SIZE * FRAMES_PER_BATCH;
+// Each source begins on an isolated cache-line boundary. The full 1,514-byte
+// Ethernet geometry is proved separately below; the 32-way SG case retains a
+// guard inside this existing 48-KiB benchmark allocation so the diagnostic
+// does not consume more production SRAM.
+const SG_FRAME_STRIDE: usize = FRAME_SIZE;
+const SG_STORAGE_SIZE: usize = BATCH_SIZE;
+const SG_DESTINATION_OFFSET: usize = 36;
+// 4 and the production offset 36 have the same residue for every supported
+// burst size. Using 4 keeps a full 1,514-byte frame inside each existing
+// 1,536-byte benchmark slot without allocating another SRAM arena.
+const SG_BENCHMARK_DESTINATION_OFFSET: usize = 4;
+const SG_BENCHMARK_FRAME_SIZE: usize = 1514;
+const SG_BENCHMARK_BYTES: usize = SG_BENCHMARK_FRAME_SIZE * FRAMES_PER_BATCH;
 const ITERATIONS: usize = 64;
 const CACHE_LINE: usize = 64;
-const DESCRIPTOR_COUNT: usize = 16;
+const DESCRIPTOR_COUNT: usize = FRAMES_PER_BATCH;
 
 #[repr(C, align(64))]
-struct Batch([u8; BATCH_SIZE]);
+struct Batch([u8; SG_STORAGE_SIZE]);
 
 #[repr(C, align(64))]
 struct DescriptorBatch([AxiGdmaDescriptor; DESCRIPTOR_COUNT]);
@@ -31,13 +48,13 @@ struct DescriptorBatch([AxiGdmaDescriptor; DESCRIPTOR_COUNT]);
 struct CacheLine([u8; CACHE_LINE]);
 
 #[unsafe(link_section = ".psram.bss.gdma_mem2mem_probe.source")]
-static mut SOURCE: Batch = Batch([0; BATCH_SIZE]);
+static mut SOURCE: Batch = Batch([0; SG_STORAGE_SIZE]);
 
 #[unsafe(link_section = ".psram.bss.gdma_mem2mem_probe.next")]
-static mut NEXT_SOURCE: Batch = Batch([0; BATCH_SIZE]);
+static mut NEXT_SOURCE: Batch = Batch([0; SG_STORAGE_SIZE]);
 
 #[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.destination")]
-static mut DESTINATION: Batch = Batch([0; BATCH_SIZE]);
+static mut DESTINATION: Batch = Batch([0; SG_STORAGE_SIZE]);
 
 #[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.sram_source")]
 static mut SRAM_SOURCE: CacheLine = CacheLine([0; CACHE_LINE]);
@@ -67,16 +84,18 @@ pub static OPEN_RADIO_GDMA_PROBE_DETAIL: AtomicU32 = AtomicU32::new(0);
 
 // Total cycles/instructions for 64 iterations of, respectively: CPU copy,
 // blocking GDMA, CPU copy + next-batch preparation, serial GDMA + preparation,
-// overlapped GDMA + preparation, and interrupt-driven GDMA.
+// overlapped GDMA + preparation, interrupt-driven GDMA, realistic 32-frame
+// scatter copy, realistic 32-frame interrupt-driven scatter GDMA wall time,
+// and the exact task-active subset of that asynchronous transfer.
 #[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.cycles")]
 #[unsafe(no_mangle)]
 #[used]
-pub static OPEN_RADIO_GDMA_PROBE_CYCLES: [AtomicU32; 6] = [const { AtomicU32::new(0) }; 6];
+pub static OPEN_RADIO_GDMA_PROBE_CYCLES: [AtomicU32; 9] = [const { AtomicU32::new(0) }; 9];
 
 #[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.instructions")]
 #[unsafe(no_mangle)]
 #[used]
-pub static OPEN_RADIO_GDMA_PROBE_INSTRUCTIONS: [AtomicU32; 6] = [const { AtomicU32::new(0) }; 6];
+pub static OPEN_RADIO_GDMA_PROBE_INSTRUCTIONS: [AtomicU32; 9] = [const { AtomicU32::new(0) }; 9];
 
 fn mark(status: u32, detail: u32) {
     OPEN_RADIO_GDMA_PROBE_DETAIL.store(detail, Ordering::Relaxed);
@@ -139,7 +158,185 @@ fn first_mismatch(left: &[u8], right: &[u8]) -> Option<(usize, u8, u8)> {
         .find_map(|(index, (&left, &right))| (left != right).then_some((index, left, right)))
 }
 
+const fn sg_frame_length(index: usize) -> usize {
+    match index % 8 {
+        0 => 64,
+        1 => 73,
+        2 => 511,
+        3 => 1020,
+        4 => 1492,
+        5 => 1500,
+        6 => 257,
+        _ => 1400,
+    }
+}
+
+const fn sg_batch_bytes() -> usize {
+    let mut frame = 0;
+    let mut bytes = 0;
+    while frame < FRAMES_PER_BATCH {
+        bytes += sg_frame_length(frame);
+        frame += 1;
+    }
+    bytes
+}
+
+const SG_BATCH_BYTES: usize = sg_batch_bytes();
+
+fn prepare_sg_storage(source: &mut [u8], destination: &mut [u8], salt: u8) {
+    destination.fill(0xa5);
+    for frame in 0..FRAMES_PER_BATCH {
+        let start = frame * SG_FRAME_STRIDE;
+        let length = sg_frame_length(frame);
+        fill_pattern(
+            &mut source[start..start + length],
+            salt.wrapping_add(frame as u8),
+        );
+        source[start + length..start + SG_FRAME_STRIDE].fill(0x3c);
+    }
+}
+
+fn prepare_sg_benchmark_storage(source: &mut [u8], destination: &mut [u8], salt: u8) {
+    destination.fill(0xa5);
+    for frame in 0..FRAMES_PER_BATCH {
+        let start = frame * SG_FRAME_STRIDE;
+        fill_pattern(
+            &mut source[start..start + SG_BENCHMARK_FRAME_SIZE],
+            salt.wrapping_add(frame as u8),
+        );
+        source[start + SG_BENCHMARK_FRAME_SIZE..start + SG_FRAME_STRIDE].fill(0x3c);
+    }
+}
+
+#[inline(never)]
+fn copy_sg_benchmark_frames(source: &[u8], destination: &mut [u8]) {
+    for frame in 0..FRAMES_PER_BATCH {
+        let start = frame * SG_FRAME_STRIDE;
+        destination[start + SG_BENCHMARK_DESTINATION_OFFSET
+            ..start + SG_BENCHMARK_DESTINATION_OFFSET + SG_BENCHMARK_FRAME_SIZE]
+            .copy_from_slice(&source[start..start + SG_BENCHMARK_FRAME_SIZE]);
+    }
+}
+
+fn sg_segments<'a>(
+    source: &'a mut [u8; SG_STORAGE_SIZE],
+    destination: &'a mut [u8; SG_STORAGE_SIZE],
+) -> [AxiGdmaMem2MemSegment<'a>; FRAMES_PER_BATCH] {
+    let source_frames: &mut [[u8; SG_FRAME_STRIDE]; FRAMES_PER_BATCH] = source
+        .as_mut_slice()
+        .as_chunks_mut::<SG_FRAME_STRIDE>()
+        .0
+        .try_into()
+        .unwrap();
+    let destination_frames: &mut [[u8; SG_FRAME_STRIDE]; FRAMES_PER_BATCH] = destination
+        .as_mut_slice()
+        .as_chunks_mut::<SG_FRAME_STRIDE>()
+        .0
+        .try_into()
+        .unwrap();
+    let mut source_frames = source_frames.each_mut().map(Some);
+    let mut destination_frames = destination_frames.each_mut().map(Some);
+    core::array::from_fn(|index| {
+        let length = sg_frame_length(index);
+        let source = source_frames[index]
+            .take()
+            .expect("one unique source frame per SG segment");
+        let destination = destination_frames[index]
+            .take()
+            .expect("one unique destination frame per SG segment");
+        AxiGdmaMem2MemSegment::new(
+            &mut destination[SG_DESTINATION_OFFSET..SG_DESTINATION_OFFSET + length],
+            &mut source[..length],
+        )
+    })
+}
+
+fn sg_benchmark_segments<'a>(
+    source: &'a mut [u8; SG_STORAGE_SIZE],
+    destination: &'a mut [u8; SG_STORAGE_SIZE],
+) -> [AxiGdmaMem2MemSegment<'a>; FRAMES_PER_BATCH] {
+    let source_frames: &mut [[u8; SG_FRAME_STRIDE]; FRAMES_PER_BATCH] = source
+        .as_mut_slice()
+        .as_chunks_mut::<SG_FRAME_STRIDE>()
+        .0
+        .try_into()
+        .unwrap();
+    let destination_frames: &mut [[u8; SG_FRAME_STRIDE]; FRAMES_PER_BATCH] = destination
+        .as_mut_slice()
+        .as_chunks_mut::<SG_FRAME_STRIDE>()
+        .0
+        .try_into()
+        .unwrap();
+    let mut source_frames = source_frames.each_mut().map(Some);
+    let mut destination_frames = destination_frames.each_mut().map(Some);
+    core::array::from_fn(|index| {
+        let source = source_frames[index]
+            .take()
+            .expect("one unique source frame per SG benchmark segment");
+        let destination = destination_frames[index]
+            .take()
+            .expect("one unique destination frame per SG benchmark segment");
+        AxiGdmaMem2MemSegment::new(
+            &mut destination[SG_BENCHMARK_DESTINATION_OFFSET
+                ..SG_BENCHMARK_DESTINATION_OFFSET + SG_BENCHMARK_FRAME_SIZE],
+            &mut source[..SG_BENCHMARK_FRAME_SIZE],
+        )
+    })
+}
+
+fn verify_sg_segments(
+    segments: &[AxiGdmaMem2MemSegment<'_>],
+    active: usize,
+) -> Result<(), (usize, usize, u8, u8)> {
+    for (frame, segment) in segments.iter().take(active).enumerate() {
+        if let Some((offset, actual, expected)) =
+            first_mismatch(segment.destination(), segment.source())
+        {
+            return Err((frame, offset, actual, expected));
+        }
+    }
+    Ok(())
+}
+
+fn verify_sg_guards(destination: &[u8], active: usize) -> Result<(), (usize, usize, u8)> {
+    for frame in 0..active {
+        let frame_start = frame * SG_FRAME_STRIDE;
+        let length = sg_frame_length(frame);
+        let prefix = &destination[frame_start..frame_start + SG_DESTINATION_OFFSET];
+        if let Some((offset, &actual)) = prefix.iter().enumerate().find(|(_, byte)| **byte != 0xa5)
+        {
+            return Err((frame, offset, actual));
+        }
+        let payload_end = frame_start + SG_DESTINATION_OFFSET + length;
+        let frame_end = frame_start + SG_FRAME_STRIDE;
+        if let Some((offset, &actual)) = destination[payload_end..frame_end]
+            .iter()
+            .enumerate()
+            .find(|(_, byte)| **byte != 0xa5)
+        {
+            return Err((frame, SG_DESTINATION_OFFSET + length + offset, actual));
+        }
+    }
+    Ok(())
+}
+
 fn report(slot: usize, label: &str, elapsed_cycles: u32, retired_instructions: u32) {
+    report_bytes(
+        slot,
+        label,
+        elapsed_cycles,
+        retired_instructions,
+        BATCH_SIZE,
+    );
+}
+
+fn report_bytes(
+    slot: usize,
+    label: &str,
+    elapsed_cycles: u32,
+    retired_instructions: u32,
+    bytes_per_batch: usize,
+) {
     OPEN_RADIO_GDMA_PROBE_CYCLES[slot].store(elapsed_cycles, Ordering::Release);
     OPEN_RADIO_GDMA_PROBE_INSTRUCTIONS[slot].store(retired_instructions, Ordering::Release);
     log::info!(
@@ -149,7 +346,7 @@ fn report(slot: usize, label: &str, elapsed_cycles: u32, retired_instructions: u
         retired_instructions,
         elapsed_cycles / ITERATIONS as u32,
         elapsed_cycles / (ITERATIONS * FRAMES_PER_BATCH) as u32,
-        BATCH_SIZE * ITERATIONS,
+        bytes_per_batch * ITERATIONS,
     );
 }
 
@@ -176,9 +373,9 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_cycles = cycles();
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
-        dirty_batch(&mut source.0, iteration as u8);
-        destination.0.copy_from_slice(&source.0);
-        core::hint::black_box(&destination.0[..]);
+        dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
+        destination.0[..BATCH_SIZE].copy_from_slice(&source.0[..BATCH_SIZE]);
+        core::hint::black_box(&destination.0[..BATCH_SIZE]);
     }
     report(
         0,
@@ -304,13 +501,350 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
         );
     }
 
+    const ETHERNET_FRAME_SIZE: usize = 1514;
+    const ETHERNET_GUARD_END: usize = 1600;
+    fill_pattern(&mut source.0[..ETHERNET_FRAME_SIZE], 0x6d);
+    fill_volatile(&mut destination.0[..ETHERNET_GUARD_END], 0xa5);
+    mark(0x0380, ETHERNET_FRAME_SIZE as u32);
+    let transfer = match gdma.prepare(
+        &mut destination.0[SG_DESTINATION_OFFSET..SG_DESTINATION_OFFSET + ETHERNET_FRAME_SIZE],
+        &mut source.0[..ETHERNET_FRAME_SIZE],
+        &mut rx_descriptors.0,
+        &mut tx_descriptors.0,
+        BurstSize::Bytes32,
+    ) {
+        Ok(transfer) => transfer,
+        Err(error) => {
+            mark(0xe380, ETHERNET_FRAME_SIZE as u32);
+            log::error!(
+                "OPEN_RADIO_HIL gdma_mem2mem ethernet_geometry=FAIL stage=prepare error={:?}",
+                error,
+            );
+            return;
+        }
+    };
+    let ethernet_report = match transfer.start().wait_blocking(100_000_000) {
+        Ok(report) => report,
+        Err(error) => {
+            mark(0xe381, ETHERNET_FRAME_SIZE as u32);
+            log::error!(
+                "OPEN_RADIO_HIL gdma_mem2mem ethernet_geometry=FAIL stage=wait error={:?}",
+                error,
+            );
+            return;
+        }
+    };
+    if let Some((offset, actual, expected)) = first_mismatch(
+        &destination.0[SG_DESTINATION_OFFSET..SG_DESTINATION_OFFSET + ETHERNET_FRAME_SIZE],
+        &source.0[..ETHERNET_FRAME_SIZE],
+    ) {
+        let detail =
+            ((offset as u32 & 0xffff) << 16) | (u32::from(actual) << 8) | u32::from(expected);
+        mark(0xe382, detail);
+        log::error!(
+            "OPEN_RADIO_HIL gdma_mem2mem ethernet_geometry=FAIL stage=compare offset={} actual={} expected={}",
+            offset,
+            actual,
+            expected,
+        );
+        return;
+    }
+    if destination.0[..SG_DESTINATION_OFFSET]
+        .iter()
+        .chain(
+            destination.0[SG_DESTINATION_OFFSET + ETHERNET_FRAME_SIZE..ETHERNET_GUARD_END].iter(),
+        )
+        .any(|byte| *byte != 0xa5)
+    {
+        mark(0xe383, ETHERNET_FRAME_SIZE as u32);
+        log::error!("OPEN_RADIO_HIL gdma_mem2mem ethernet_geometry=FAIL stage=guard");
+        return;
+    }
+    log::info!(
+        "OPEN_RADIO_HIL gdma_mem2mem ethernet_geometry=PASS offset={} bytes={} descriptors={} rx_raw={:08x} tx_raw={:08x}",
+        SG_DESTINATION_OFFSET,
+        ethernet_report.bytes,
+        ethernet_report.descriptors,
+        ethernet_report.rx_raw,
+        ethernet_report.tx_raw,
+    );
+
+    // Prove the actual Wi-Fi promotion geometry rather than extrapolating
+    // from one contiguous benchmark allocation. Sources occupy independent
+    // cache-line-isolated PSRAM slots; destinations use the production
+    // 36-byte Ethernet offset in independent internal-SRAM slots. Mixed frame
+    // lengths deliberately include non-burst-aligned values.
+    for (case, active) in [1usize, 2].into_iter().enumerate() {
+        prepare_sg_storage(&mut source.0, &mut destination.0, 0x80 + case as u8);
+        let report = {
+            let mut segments = sg_segments(&mut source.0, &mut destination.0);
+            mark(0x0400 + case as u32, active as u32);
+            let transfer = match gdma.prepare_segments(
+                &mut segments[..active],
+                &mut rx_descriptors.0,
+                &mut tx_descriptors.0,
+                BurstSize::Bytes32,
+            ) {
+                Ok(transfer) => transfer,
+                Err(error) => {
+                    mark(0xe400 + case as u32, active as u32);
+                    log::error!(
+                        "OPEN_RADIO_HIL gdma_mem2mem scatter_gather=FAIL stage=prepare frames={} error={:?}",
+                        active,
+                        error,
+                    );
+                    return;
+                }
+            };
+            let report = match transfer.start().wait_blocking(100_000_000) {
+                Ok(report) => report,
+                Err(error) => {
+                    mark(0xe410 + case as u32, active as u32);
+                    log::error!(
+                        "OPEN_RADIO_HIL gdma_mem2mem scatter_gather=FAIL stage=wait frames={} error={:?}",
+                        active,
+                        error,
+                    );
+                    return;
+                }
+            };
+            if let Err((frame, offset, actual, expected)) = verify_sg_segments(&segments, active) {
+                let detail = ((frame as u32 & 0xff) << 24)
+                    | ((offset as u32 & 0xfff) << 12)
+                    | (u32::from(actual) << 8)
+                    | u32::from(expected);
+                mark(0xe420 + case as u32, detail);
+                log::error!(
+                    "OPEN_RADIO_HIL gdma_mem2mem scatter_gather=FAIL stage=compare frames={} frame={} offset={} actual={} expected={}",
+                    active,
+                    frame,
+                    offset,
+                    actual,
+                    expected,
+                );
+                return;
+            }
+            report
+        };
+        if let Err((frame, offset, actual)) = verify_sg_guards(&destination.0, active) {
+            let detail =
+                ((frame as u32 & 0xff) << 24) | ((offset as u32 & 0xffff) << 8) | u32::from(actual);
+            mark(0xe430 + case as u32, detail);
+            log::error!(
+                "OPEN_RADIO_HIL gdma_mem2mem scatter_gather=FAIL stage=guard frames={} frame={} offset={} actual={}",
+                active,
+                frame,
+                offset,
+                actual,
+            );
+            return;
+        }
+        log::info!(
+            "OPEN_RADIO_HIL gdma_mem2mem scatter_gather=PASS frames={} bytes={} descriptors={} rx_raw={:08x} tx_raw={:08x}",
+            active,
+            report.bytes,
+            report.descriptors,
+            report.rx_raw,
+            report.tx_raw,
+        );
+    }
+
+    // Dropping an active owner must synchronously stop/reset the channel and
+    // preserve every byte outside the declared destinations. The following
+    // full asynchronous batch is also the recovery proof for that reset.
+    prepare_sg_storage(&mut source.0, &mut destination.0, 0xa0);
+    {
+        let mut segments = sg_segments(&mut source.0, &mut destination.0);
+        let transfer = match gdma.prepare_segments(
+            &mut segments,
+            &mut rx_descriptors.0,
+            &mut tx_descriptors.0,
+            BurstSize::Bytes32,
+        ) {
+            Ok(transfer) => transfer.start(),
+            Err(error) => {
+                mark(0xe440, FRAMES_PER_BATCH as u32);
+                log::error!(
+                    "OPEN_RADIO_HIL gdma_mem2mem cancellation=FAIL stage=prepare error={:?}",
+                    error,
+                );
+                return;
+            }
+        };
+        drop(transfer);
+    }
+    if let Err((frame, offset, actual)) = verify_sg_guards(&destination.0, FRAMES_PER_BATCH) {
+        let detail =
+            ((frame as u32 & 0xff) << 24) | ((offset as u32 & 0xffff) << 8) | u32::from(actual);
+        mark(0xe450, detail);
+        log::error!(
+            "OPEN_RADIO_HIL gdma_mem2mem cancellation=FAIL stage=guard frame={} offset={} actual={}",
+            frame,
+            offset,
+            actual,
+        );
+        return;
+    }
+    log::info!("OPEN_RADIO_HIL gdma_mem2mem cancellation=PASS");
+
+    prepare_sg_storage(&mut source.0, &mut destination.0, 0xc0);
+    let sg_report = {
+        let mut segments = sg_segments(&mut source.0, &mut destination.0);
+        mark(0x0500, FRAMES_PER_BATCH as u32);
+        let report = match gdma.prepare_segments(
+            &mut segments,
+            &mut rx_descriptors.0,
+            &mut tx_descriptors.0,
+            BurstSize::Bytes32,
+        ) {
+            Ok(transfer) => match transfer.start().await {
+                Ok(report) => report,
+                Err(error) => {
+                    mark(0xe510, FRAMES_PER_BATCH as u32);
+                    log::error!(
+                        "OPEN_RADIO_HIL gdma_mem2mem scatter_gather_async=FAIL stage=wait error={:?}",
+                        error,
+                    );
+                    return;
+                }
+            },
+            Err(error) => {
+                mark(0xe500, FRAMES_PER_BATCH as u32);
+                log::error!(
+                    "OPEN_RADIO_HIL gdma_mem2mem scatter_gather_async=FAIL stage=prepare error={:?}",
+                    error,
+                );
+                return;
+            }
+        };
+        if let Err((frame, offset, actual, expected)) =
+            verify_sg_segments(&segments, FRAMES_PER_BATCH)
+        {
+            let detail = ((frame as u32 & 0xff) << 24)
+                | ((offset as u32 & 0xfff) << 12)
+                | (u32::from(actual) << 8)
+                | u32::from(expected);
+            mark(0xe520, detail);
+            log::error!(
+                "OPEN_RADIO_HIL gdma_mem2mem scatter_gather_async=FAIL stage=compare frame={} offset={} actual={} expected={}",
+                frame,
+                offset,
+                actual,
+                expected,
+            );
+            return;
+        }
+        report
+    };
+    if let Err((frame, offset, actual)) = verify_sg_guards(&destination.0, FRAMES_PER_BATCH) {
+        let detail =
+            ((frame as u32 & 0xff) << 24) | ((offset as u32 & 0xffff) << 8) | u32::from(actual);
+        mark(0xe530, detail);
+        log::error!(
+            "OPEN_RADIO_HIL gdma_mem2mem scatter_gather_async=FAIL stage=guard frame={} offset={} actual={}",
+            frame,
+            offset,
+            actual,
+        );
+        return;
+    }
+    log::info!(
+        "OPEN_RADIO_HIL gdma_mem2mem scatter_gather_async=PASS frames={} bytes={} descriptors={} rx_raw={:08x} tx_raw={:08x}",
+        FRAMES_PER_BATCH,
+        sg_report.bytes,
+        sg_report.descriptors,
+        sg_report.rx_raw,
+        sg_report.tx_raw,
+    );
+
+    let mut elapsed_cycles = 0u32;
+    let mut retired_instructions = 0u32;
+    let mut active_cycles = 0u32;
+    let mut active_instructions = 0u32;
+    for iteration in 0..ITERATIONS {
+        prepare_sg_benchmark_storage(
+            &mut source.0,
+            &mut destination.0,
+            0xd0_u8.wrapping_add(iteration as u8),
+        );
+        let started_cycles = cycles();
+        let started_instructions = instructions();
+        copy_sg_benchmark_frames(&source.0, &mut destination.0);
+        elapsed_cycles = elapsed_cycles.wrapping_add(cycles().wrapping_sub(started_cycles));
+        retired_instructions =
+            retired_instructions.wrapping_add(instructions().wrapping_sub(started_instructions));
+        core::hint::black_box(destination.0[SG_DESTINATION_OFFSET]);
+    }
+    report_bytes(
+        6,
+        "cpu-scatter-dirty",
+        elapsed_cycles,
+        retired_instructions,
+        SG_BENCHMARK_BYTES,
+    );
+
+    let mut elapsed_cycles = 0u32;
+    let mut retired_instructions = 0u32;
+    for iteration in 0..ITERATIONS {
+        prepare_sg_benchmark_storage(
+            &mut source.0,
+            &mut destination.0,
+            0xe0_u8.wrapping_add(iteration as u8),
+        );
+        let started_cycles = cycles();
+        let started_instructions = instructions();
+        let mut segments = sg_benchmark_segments(&mut source.0, &mut destination.0);
+        let prepared = gdma
+            .prepare_segments(
+                &mut segments,
+                &mut rx_descriptors.0,
+                &mut tx_descriptors.0,
+                BurstSize::Bytes32,
+            )
+            .unwrap();
+        let mut transfer = prepared.start();
+        active_cycles = active_cycles.wrapping_add(cycles().wrapping_sub(started_cycles));
+        active_instructions =
+            active_instructions.wrapping_add(instructions().wrapping_sub(started_instructions));
+        poll_fn(|context| {
+            let poll_started_cycles = cycles();
+            let poll_started_instructions = instructions();
+            let result = Pin::new(&mut transfer).poll(context);
+            active_cycles = active_cycles.wrapping_add(cycles().wrapping_sub(poll_started_cycles));
+            active_instructions = active_instructions
+                .wrapping_add(instructions().wrapping_sub(poll_started_instructions));
+            result
+        })
+        .await
+        .unwrap();
+        drop(transfer);
+        elapsed_cycles = elapsed_cycles.wrapping_add(cycles().wrapping_sub(started_cycles));
+        retired_instructions =
+            retired_instructions.wrapping_add(instructions().wrapping_sub(started_instructions));
+        core::hint::black_box(segments[0].destination()[0]);
+    }
+    report_bytes(
+        7,
+        "gdma-scatter-async-dirty",
+        elapsed_cycles,
+        retired_instructions,
+        SG_BENCHMARK_BYTES,
+    );
+    report_bytes(
+        8,
+        "gdma-scatter-async-active",
+        active_cycles,
+        active_instructions,
+        SG_BENCHMARK_BYTES,
+    );
+
     let started_cycles = cycles();
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
-        dirty_batch(&mut source.0, iteration as u8);
+        dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
         gdma.prepare(
-            &mut destination.0,
-            &mut source.0,
+            &mut destination.0[..BATCH_SIZE],
+            &mut source.0[..BATCH_SIZE],
             &mut rx_descriptors.0,
             &mut tx_descriptors.0,
             BurstSize::Bytes32,
@@ -332,10 +866,10 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_cycles = cycles();
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
-        dirty_batch(&mut source.0, iteration as u8);
-        destination.0.copy_from_slice(&source.0);
-        checksum ^= prepare_next_batch(&mut next_source.0, iteration as u8);
-        core::hint::black_box(&destination.0[..]);
+        dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
+        destination.0[..BATCH_SIZE].copy_from_slice(&source.0[..BATCH_SIZE]);
+        checksum ^= prepare_next_batch(&mut next_source.0[..BATCH_SIZE], iteration as u8);
+        core::hint::black_box(&destination.0[..BATCH_SIZE]);
     }
     report(
         2,
@@ -347,10 +881,10 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_cycles = cycles();
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
-        dirty_batch(&mut source.0, iteration as u8);
+        dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
         gdma.prepare(
-            &mut destination.0,
-            &mut source.0,
+            &mut destination.0[..BATCH_SIZE],
+            &mut source.0[..BATCH_SIZE],
             &mut rx_descriptors.0,
             &mut tx_descriptors.0,
             BurstSize::Bytes32,
@@ -359,7 +893,7 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
         .start()
         .wait_blocking(100_000_000)
         .unwrap();
-        checksum ^= prepare_next_batch(&mut next_source.0, iteration as u8);
+        checksum ^= prepare_next_batch(&mut next_source.0[..BATCH_SIZE], iteration as u8);
         core::hint::black_box(destination.0[iteration % BATCH_SIZE]);
     }
     report(
@@ -372,18 +906,18 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_cycles = cycles();
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
-        dirty_batch(&mut source.0, iteration as u8);
+        dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
         let transfer = gdma
             .prepare(
-                &mut destination.0,
-                &mut source.0,
+                &mut destination.0[..BATCH_SIZE],
+                &mut source.0[..BATCH_SIZE],
                 &mut rx_descriptors.0,
                 &mut tx_descriptors.0,
                 BurstSize::Bytes32,
             )
             .unwrap()
             .start();
-        checksum ^= prepare_next_batch(&mut next_source.0, iteration as u8);
+        checksum ^= prepare_next_batch(&mut next_source.0[..BATCH_SIZE], iteration as u8);
         transfer.wait_blocking(100_000_000).unwrap();
         core::hint::black_box(destination.0[iteration % BATCH_SIZE]);
     }
@@ -397,10 +931,10 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_cycles = cycles();
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
-        dirty_batch(&mut source.0, iteration as u8);
+        dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
         gdma.prepare(
-            &mut destination.0,
-            &mut source.0,
+            &mut destination.0[..BATCH_SIZE],
+            &mut source.0[..BATCH_SIZE],
             &mut rx_descriptors.0,
             &mut tx_descriptors.0,
             BurstSize::Bytes32,
@@ -418,10 +952,13 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
         instructions().wrapping_sub(started_instructions),
     );
 
-    assert_eq!(&destination.0[..], &source.0[..]);
+    assert_eq!(&destination.0[..BATCH_SIZE], &source.0[..BATCH_SIZE]);
     mark(0x600d, BATCH_SIZE as u32);
     log::info!(
-        "OPEN_RADIO_HIL gdma_mem2mem result=PASS checksum={}",
-        checksum
+        "OPEN_RADIO_HIL gdma_mem2mem result=PASS checksum={} ethernet_offset={} ethernet_bytes={} scatter_cases=1,2,32 scatter_bytes={} cancellation=true",
+        checksum,
+        SG_DESTINATION_OFFSET,
+        ETHERNET_FRAME_SIZE,
+        SG_BATCH_BYTES,
     );
 }

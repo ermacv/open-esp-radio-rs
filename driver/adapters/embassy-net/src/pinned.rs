@@ -11,6 +11,8 @@ use crate::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
 use embassy_net_driver::{
     Capabilities, Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
 };
+#[cfg(feature = "tx-egress-scheduling")]
+use embassy_net_driver::{EgressMeta, EgressQueuePolicy, KeyedTxToken};
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
@@ -42,10 +44,175 @@ impl NetworkInterfaceId {
     }
 }
 
+/// Point-in-time ownership geometry of the direct pinned TX pool.
+///
+/// This is diagnostic evidence, not a scheduling input. Counts may change
+/// immediately after the snapshot because Core0 and Core1 own disjoint
+/// transitions concurrently. A complete accounting sample nevertheless lets
+/// the AP distinguish a genuinely empty producer frontier from credits held
+/// by another VIF or by the network driver's synchronous token boundary.
+#[cfg(feature = "tx-phase-telemetry")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PinnedTxOwnershipSnapshot {
+    pub free: usize,
+    pub ready_for_interface: usize,
+    pub ready_for_other_interfaces: usize,
+    pub ingress_reserved: usize,
+    pub application_reserved: usize,
+    pub tokens_in_flight: usize,
+}
+
+#[cfg(feature = "tx-phase-telemetry")]
+impl PinnedTxOwnershipSnapshot {
+    pub fn radio_owned(self, capacity: usize) -> usize {
+        capacity.saturating_sub(
+            self.free
+                .saturating_add(self.ready_for_interface)
+                .saturating_add(self.ready_for_other_interfaces)
+                .saturating_add(self.ingress_reserved)
+                .saturating_add(self.application_reserved)
+                .saturating_add(self.tokens_in_flight),
+        )
+    }
+}
+
 const PINNED_TX_CREDIT_WAKER_SLOTS: usize = 8;
+
+/// One HT A-MPDU worth of value-only ownership records.
+///
+/// Packet bytes remain in the two pinned pools. Only source/destination
+/// indices cross cores, avoiding a self-referential static queue of leases.
+#[cfg(feature = "tx-core1-materializer-probe")]
+pub const PINNED_TX_MATERIALIZATION_BATCH_CAPACITY: usize = 32;
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TxMaterializationPair {
+    source: u8,
+    destination: u8,
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TxMaterializationRequest {
+    interface: NetworkInterfaceId,
+    count: u8,
+    pairs: [TxMaterializationPair; PINNED_TX_MATERIALIZATION_BATCH_CAPACITY],
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+impl TxMaterializationRequest {
+    const fn empty(interface: NetworkInterfaceId) -> Self {
+        Self {
+            interface,
+            count: 0,
+            pairs: [TxMaterializationPair {
+                source: 0,
+                destination: 0,
+            }; PINNED_TX_MATERIALIZATION_BATCH_CAPACITY],
+        }
+    }
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TxMaterializationCompletion {
+    interface: NetworkInterfaceId,
+    count: u8,
+    destinations: [u8; PINNED_TX_MATERIALIZATION_BATCH_CAPACITY],
+    cancelled: bool,
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+impl TxMaterializationCompletion {
+    const fn empty(interface: NetworkInterfaceId) -> Self {
+        Self {
+            interface,
+            count: 0,
+            destinations: [0; PINNED_TX_MATERIALIZATION_BATCH_CAPACITY],
+            cancelled: false,
+        }
+    }
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TxCore1MaterializerSnapshot {
+    pub submitted_batches: u32,
+    pub completed_batches: u32,
+    pub materialized_frames: u32,
+    pub no_credit: u32,
+    pub cancelled_batches: u32,
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+impl TxCore1MaterializerSnapshot {
+    pub fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            submitted_batches: self
+                .submitted_batches
+                .wrapping_sub(earlier.submitted_batches),
+            completed_batches: self
+                .completed_batches
+                .wrapping_sub(earlier.completed_batches),
+            materialized_frames: self
+                .materialized_frames
+                .wrapping_sub(earlier.materialized_frames),
+            no_credit: self.no_credit.wrapping_sub(earlier.no_credit),
+            cancelled_batches: self
+                .cancelled_batches
+                .wrapping_sub(earlier.cancelled_batches),
+        }
+    }
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+pub struct TxCore1MaterializerCounters {
+    submitted_batches: AtomicU32,
+    completed_batches: AtomicU32,
+    materialized_frames: AtomicU32,
+    no_credit: AtomicU32,
+    cancelled_batches: AtomicU32,
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+impl TxCore1MaterializerCounters {
+    pub const fn new() -> Self {
+        Self {
+            submitted_batches: AtomicU32::new(0),
+            completed_batches: AtomicU32::new(0),
+            materialized_frames: AtomicU32::new(0),
+            no_credit: AtomicU32::new(0),
+            cancelled_batches: AtomicU32::new(0),
+        }
+    }
+
+    pub fn snapshot(&self) -> TxCore1MaterializerSnapshot {
+        TxCore1MaterializerSnapshot {
+            submitted_batches: self.submitted_batches.load(Ordering::Relaxed),
+            completed_batches: self.completed_batches.load(Ordering::Relaxed),
+            materialized_frames: self.materialized_frames.load(Ordering::Relaxed),
+            no_credit: self.no_credit.load(Ordering::Relaxed),
+            cancelled_batches: self.cancelled_batches.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+impl Default for TxCore1MaterializerCounters {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+pub static TX_CORE1_MATERIALIZER_COUNTERS: TxCore1MaterializerCounters =
+    TxCore1MaterializerCounters::new();
 
 #[cfg(feature = "tx-staging-copy-probe")]
 static TX_STAGING_COPY_PROBE: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "tx-core1-materializer-probe")]
+static TX_CORE1_MATERIALIZER_PROBE: AtomicBool = AtomicBool::new(false);
 
 /// Select the same-image PSRAM-to-DMA TX copy discriminator.
 ///
@@ -56,6 +223,18 @@ static TX_STAGING_COPY_PROBE: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "tx-staging-copy-probe")]
 pub fn configure_tx_staging_copy_probe(enabled: bool) {
     TX_STAGING_COPY_PROBE.store(enabled, Ordering::Release);
+}
+
+/// Select Core1 execution for already scheduled staged TX batches.
+#[cfg(feature = "tx-core1-materializer-probe")]
+pub fn configure_tx_core1_materializer_probe(enabled: bool) {
+    TX_CORE1_MATERIALIZER_PROBE.store(enabled, Ordering::Release);
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[inline]
+fn tx_core1_materializer_enabled() -> bool {
+    TX_CORE1_MATERIALIZER_PROBE.load(Ordering::Acquire)
 }
 
 #[cfg(feature = "tx-staging-copy-probe")]
@@ -85,6 +264,11 @@ impl<M: RawMutex> PinnedTxCreditWakers<M> {
 
     fn register(&self, interface: NetworkInterfaceId, cx: &mut Context<'_>) {
         self.slots[usize::from(interface.value())].register(cx.waker());
+    }
+
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    fn wake(&self, interface: NetworkInterfaceId) {
+        self.slots[usize::from(interface.value())].wake();
     }
 
     fn wake_all(&self) {
@@ -350,6 +534,18 @@ pub struct PinnedTxResources<
     free_staged: Channel<M, u8, TX_QUEUE_DEPTH>,
     #[cfg(feature = "tx-staging-copy-probe")]
     ready_staged: [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_requests:
+        [Channel<M, TxMaterializationRequest, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_completions:
+        [Channel<M, TxMaterializationCompletion, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_in_flight: AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_cancel: AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_wakers: PinnedTxCreditWakers<M>,
     next_interface: AtomicU32,
     tx_published: Signal<M, ()>,
     tx_credit_wakers: PinnedTxCreditWakers<M>,
@@ -361,6 +557,12 @@ pub struct PinnedTxResources<
     /// network device may exist while its role is stopped, so credit sharing
     /// must follow the active owner graph rather than the static device count.
     tx_active: AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_ingress_reserved: AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_application_reserved: AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_tokens_in_flight: AtomicU32,
 }
 
 /// Static storage owned by one permanent logical network endpoint.
@@ -410,6 +612,16 @@ impl<
             free_staged: Channel::new(),
             #[cfg(feature = "tx-staging-copy-probe")]
             ready_staged: [const { Channel::new() }; PINNED_TX_CREDIT_WAKER_SLOTS],
+            #[cfg(feature = "tx-core1-materializer-probe")]
+            materialization_requests: [const { Channel::new() }; PINNED_TX_CREDIT_WAKER_SLOTS],
+            #[cfg(feature = "tx-core1-materializer-probe")]
+            materialization_completions: [const { Channel::new() }; PINNED_TX_CREDIT_WAKER_SLOTS],
+            #[cfg(feature = "tx-core1-materializer-probe")]
+            materialization_in_flight: AtomicU32::new(0),
+            #[cfg(feature = "tx-core1-materializer-probe")]
+            materialization_cancel: AtomicU32::new(0),
+            #[cfg(feature = "tx-core1-materializer-probe")]
+            materialization_wakers: PinnedTxCreditWakers::new(),
             next_interface: AtomicU32::new(0),
             tx_published: Signal::new(),
             tx_credit_wakers: PinnedTxCreditWakers::new(),
@@ -418,6 +630,12 @@ impl<
             tx_staged_interfaces: AtomicU32::new(0),
             split: AtomicBool::new(false),
             tx_active: AtomicU32::new(0),
+            #[cfg(feature = "tx-phase-telemetry")]
+            tx_ingress_reserved: AtomicU32::new(0),
+            #[cfg(feature = "tx-phase-telemetry")]
+            tx_application_reserved: AtomicU32::new(0),
+            #[cfg(feature = "tx-phase-telemetry")]
+            tx_tokens_in_flight: AtomicU32::new(0),
         }
     }
 
@@ -433,7 +651,6 @@ impl<
             TX_QUEUE_DEPTH <= usize::from(u8::MAX) + 1,
             "pinned TX pool index must fit in u8"
         );
-
         assert!(
             !self.split.swap(true, Ordering::AcqRel),
             "pinned resources may only be split once"
@@ -443,9 +660,11 @@ impl<
                 .try_send(index as u8)
                 .expect("an empty free queue accepts every pool index");
             #[cfg(feature = "tx-staging-copy-probe")]
-            self.free_staged
-                .try_send(index as u8)
-                .expect("an empty staged free queue accepts every pool index");
+            {
+                self.free_staged
+                    .try_send(index as u8)
+                    .expect("an empty staged free queue accepts every pool index");
+            }
         }
         let pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> =
             Pin::into_ref(pool).get_ref();
@@ -464,12 +683,28 @@ impl<
                 ready_staged: &resources.ready_staged,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 staged_pool: &resources.staged_pool,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_requests: &resources.materialization_requests,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_completions: &resources.materialization_completions,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_in_flight: &resources.materialization_in_flight,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_cancel: &resources.materialization_cancel,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_wakers: &resources.materialization_wakers,
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
                 tx_credit_waiters: &resources.tx_credit_waiters,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 tx_staged_interfaces: &resources.tx_staged_interfaces,
                 tx_active: &resources.tx_active,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_ingress_reserved: &resources.tx_ingress_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_application_reserved: &resources.tx_application_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_tokens_in_flight: &resources.tx_tokens_in_flight,
                 tx_pool: pool,
             },
             PinnedTxConsumer {
@@ -483,6 +718,16 @@ impl<
                 ready_staged: &resources.ready_staged,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 staged_pool: &resources.staged_pool,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_requests: &resources.materialization_requests,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_completions: &resources.materialization_completions,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_in_flight: &resources.materialization_in_flight,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_cancel: &resources.materialization_cancel,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_wakers: &resources.materialization_wakers,
                 next_interface: &resources.next_interface,
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
@@ -490,6 +735,12 @@ impl<
                 #[cfg(feature = "tx-staging-copy-probe")]
                 tx_staged_interfaces: &resources.tx_staged_interfaces,
                 tx_active: &resources.tx_active,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_ingress_reserved: &resources.tx_ingress_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_application_reserved: &resources.tx_application_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_tokens_in_flight: &resources.tx_tokens_in_flight,
                 tx_pool: pool,
             },
         )
@@ -576,6 +827,16 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 ready_staged: tx.ready_staged,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 staged_pool: tx.staged_pool,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_requests: tx.materialization_requests,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_completions: tx.materialization_completions,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_in_flight: tx.materialization_in_flight,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_cancel: tx.materialization_cancel,
+                #[cfg(feature = "tx-core1-materializer-probe")]
+                materialization_wakers: tx.materialization_wakers,
                 interface,
                 tx_published: tx.tx_published,
                 tx_credit_wakers: tx.tx_credit_wakers,
@@ -583,6 +844,12 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 #[cfg(feature = "tx-staging-copy-probe")]
                 tx_staged_interfaces: tx.tx_staged_interfaces,
                 tx_active: tx.tx_active,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_ingress_reserved: tx.tx_ingress_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_application_reserved: tx.tx_application_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_tokens_in_flight: tx.tx_tokens_in_flight,
                 tx_pool: tx.tx_pool,
                 link: &resources.link,
                 hardware_address,
@@ -592,6 +859,10 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 waiting_for_tx_credit: false,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 staged_tx_selected: false,
+                #[cfg(feature = "tx-egress-scheduling")]
+                keyed_egress: None,
+                #[cfg(feature = "tx-egress-scheduling")]
+                keyed_run_length: 0,
                 checksum: ChecksumCapabilities::default(),
                 tx_reservation: (),
             },
@@ -639,12 +910,30 @@ pub struct PinnedTxProvider<
     ready_staged: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     #[cfg(feature = "tx-staging-copy-probe")]
     staged_pool: &'resources RxHandoffPool<FRAME_CAPACITY, QUEUE_DEPTH>,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_requests:
+        &'resources [Channel<M, TxMaterializationRequest, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_completions:
+        &'resources [Channel<M, TxMaterializationCompletion, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_in_flight: &'resources AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_cancel: &'resources AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
     #[cfg(feature = "tx-staging-copy-probe")]
     tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_ingress_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_application_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
@@ -684,6 +973,18 @@ pub struct SplitPinnedDevice<
     ready_staged: &'resources [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     #[cfg(feature = "tx-staging-copy-probe")]
     staged_pool: &'resources RxHandoffPool<FRAME_CAPACITY, TX_QUEUE_DEPTH>,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_requests:
+        &'resources [Channel<M, TxMaterializationRequest, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_completions:
+        &'resources [Channel<M, TxMaterializationCompletion, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_in_flight: &'resources AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_cancel: &'resources AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_wakers: &'resources PinnedTxCreditWakers<M>,
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
@@ -691,6 +992,12 @@ pub struct SplitPinnedDevice<
     #[cfg(feature = "tx-staging-copy-probe")]
     tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_ingress_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_application_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
     hardware_address: [u8; 6],
@@ -702,6 +1009,10 @@ pub struct SplitPinnedDevice<
     waiting_for_tx_credit: bool,
     #[cfg(feature = "tx-staging-copy-probe")]
     staged_tx_selected: bool,
+    #[cfg(feature = "tx-egress-scheduling")]
+    keyed_egress: Option<EgressMeta>,
+    #[cfg(feature = "tx-egress-scheduling")]
+    keyed_run_length: u8,
     checksum: ChecksumCapabilities,
     tx_reservation: (),
 }
@@ -736,10 +1047,12 @@ impl<
             "ingress TX reserve needs an application credit"
         );
         self.reserve_ingress_tx = true;
-        self.ingress_tx = Some(
-            self.try_take_free_tx()
-                .expect("an ingress-enabled endpoint needs one dedicated TX credit"),
-        );
+        let index = self
+            .try_take_free_tx()
+            .expect("an ingress-enabled endpoint needs one dedicated TX credit");
+        self.ingress_tx = Some(index);
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.tx_ingress_reserved.fetch_add(1, Ordering::Relaxed);
         self
     }
 
@@ -815,6 +1128,8 @@ impl<
             && let Poll::Ready(index) = self.poll_free_tx(cx)
         {
             self.ingress_tx = Some(index);
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.tx_ingress_reserved.fetch_add(1, Ordering::Relaxed);
         }
         self.ingress_tx.is_some()
     }
@@ -832,6 +1147,8 @@ impl<
         }
         if let Poll::Ready(index) = self.poll_free_tx(cx) {
             self.application_tx = Some(index);
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.tx_application_reserved.fetch_add(1, Ordering::Relaxed);
         }
         self.application_tx.is_some()
     }
@@ -856,6 +1173,8 @@ impl<
         };
         #[cfg(not(feature = "tx-staging-copy-probe"))]
         let lease = PinnedTransmitLease::Direct(self.tx_pool.claim_network(index));
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.tx_tokens_in_flight.fetch_add(1, Ordering::Relaxed);
         PinnedTransmitToken {
             free_tx: self.free_tx_return,
             ready_tx: self.ready_tx,
@@ -863,13 +1182,164 @@ impl<
             free_staged: self.free_staged_return,
             #[cfg(feature = "tx-staging-copy-probe")]
             ready_staged: self.ready_staged,
+            #[cfg(feature = "tx-staging-copy-probe")]
+            staged_pool: self.staged_pool,
             interface: self.interface,
             tx_published: self.tx_published,
             tx_credit_wakers: self.tx_credit_wakers,
             tx_credit_waiters: self.tx_credit_waiters,
             tx_active: self.tx_active,
+            #[cfg(feature = "tx-phase-telemetry")]
+            tx_tokens_in_flight: self.tx_tokens_in_flight,
+            tx_pool: self.tx_pool,
             lease: Some(lease),
             _reservation: &mut self.tx_reservation,
+        }
+    }
+
+    /// Execute at most one scheduler-selected copy batch in the network
+    /// task's driver poll. The radio submitted only value-level indices after
+    /// transferring each staged source to READY ownership, so this method is
+    /// the sole Core1 claimant of every source and reserved destination.
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    fn service_core1_materialization(&mut self, cx: &mut Context<'_>) {
+        if !self.staged_tx_selected || !tx_core1_materializer_enabled() {
+            return;
+        }
+        let interface_index = usize::from(self.interface.value());
+        let request_channel = &self.materialization_requests[interface_index];
+        let request = match request_channel.try_receive() {
+            Ok(request) => request,
+            Err(TryReceiveError::Empty) => {
+                self.materialization_wakers.register(self.interface, cx);
+                let Ok(request) = request_channel.try_receive() else {
+                    return;
+                };
+                request
+            }
+        };
+        assert_eq!(
+            request.interface, self.interface,
+            "materialization request crossed its logical interface"
+        );
+        let count = usize::from(request.count);
+        assert!(
+            count != 0 && count <= PINNED_TX_MATERIALIZATION_BATCH_CAPACITY,
+            "materialization request must contain one bounded burst"
+        );
+        let interface_bit = 1_u32 << self.interface.value();
+        let cancelled_before_copy =
+            self.materialization_cancel.load(Ordering::Acquire) & interface_bit != 0;
+        let mut completion = TxMaterializationCompletion::empty(self.interface);
+        completion.count = request.count;
+
+        for (completed, pair) in request.pairs[..count].iter().enumerate() {
+            let source = self.staged_pool.claim_network(pair.source);
+            if cancelled_before_copy {
+                let source_index = source.release();
+                if let Err(TrySendError::Full(_)) = self.free_staged_return.try_send(source_index) {
+                    unreachable!("cancelled materialization returns its unique staged credit");
+                }
+                let destination = self.tx_pool.claim_network(pair.destination);
+                let destination_index = destination.release();
+                if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(destination_index)
+                {
+                    unreachable!("cancelled materialization returns its unique DMA credit");
+                }
+                continue;
+            }
+
+            let length = source.frame().len();
+            let destination = self.tx_pool.claim_network(pair.destination);
+            let (destination_index, ()) = destination.publish(length, |dma| {
+                dma.copy_from_slice(source.frame());
+            });
+            completion.destinations[completed] = destination_index;
+            let source_index = source.release();
+            if let Err(TrySendError::Full(_)) = self.free_staged_return.try_send(source_index) {
+                unreachable!("materialization returns its unique staged credit");
+            }
+            if self.free_staged_return.len() == 1 {
+                self.tx_credit_wakers.wake_waiter_after(
+                    self.interface,
+                    self.tx_active,
+                    self.tx_credit_waiters,
+                );
+            }
+        }
+
+        let cancelled = cancelled_before_copy
+            || self.materialization_cancel.load(Ordering::Acquire) & interface_bit != 0;
+        if cancelled && !cancelled_before_copy {
+            for destination in completion.destinations[..count].iter().copied() {
+                let destination = self.tx_pool.claim_radio(destination);
+                let index = destination.release();
+                if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
+                    unreachable!("cancelled ready materialization returns its unique DMA credit");
+                }
+            }
+        }
+        completion.cancelled = cancelled;
+        if let Err(TrySendError::Full(_)) =
+            self.materialization_completions[interface_index].try_send(completion)
+        {
+            unreachable!("one completion slot exists for the sole in-flight materialization");
+        }
+        // Cancellation can race the narrow interval between the final cancel
+        // observation above and completion publication.  Re-check after the
+        // publication: either Core0 has already claimed and reclaimed the
+        // completion, or this worker still owns the sole receiver slot and
+        // must do so here.  This makes terminal cancellation independent of
+        // a later role/network poll.
+        let cancelled_after_publication =
+            !cancelled && self.materialization_cancel.load(Ordering::Acquire) & interface_bit != 0;
+        if cancelled_after_publication {
+            if let Ok(completion) = self.materialization_completions[interface_index].try_receive()
+            {
+                for index in completion.destinations[..count].iter().copied() {
+                    let destination = self.tx_pool.claim_radio(index);
+                    let index = destination.release();
+                    if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
+                        unreachable!("post-publication cancellation returns its unique DMA credit");
+                    }
+                }
+                TX_CORE1_MATERIALIZER_COUNTERS
+                    .cancelled_batches
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            self.materialization_cancel
+                .fetch_and(!interface_bit, Ordering::AcqRel);
+            self.materialization_in_flight
+                .fetch_and(!interface_bit, Ordering::AcqRel);
+        }
+        if cancelled {
+            self.materialization_cancel
+                .fetch_and(!interface_bit, Ordering::AcqRel);
+            self.materialization_in_flight
+                .fetch_and(!interface_bit, Ordering::AcqRel);
+            TX_CORE1_MATERIALIZER_COUNTERS
+                .cancelled_batches
+                .fetch_add(1, Ordering::Relaxed);
+        } else if !cancelled_after_publication {
+            TX_CORE1_MATERIALIZER_COUNTERS
+                .materialized_frames
+                .fetch_add(u32::from(request.count), Ordering::Relaxed);
+        }
+        TX_CORE1_MATERIALIZER_COUNTERS
+            .completed_batches
+            .fetch_add(1, Ordering::Relaxed);
+        self.tx_published.signal(());
+
+        // Servicing the request consumes the wake that brought this driver
+        // poll to Core1.  Re-arm the per-interface edge before returning: the
+        // newly released staged credits can let this same network poll
+        // publish the next packet, after which Core0 may submit a successor
+        // request without any unrelated network timer/IRQ to poll us again.
+        self.materialization_wakers.register(self.interface, cx);
+        if !request_channel.is_empty() {
+            // Close submit-between-completion-and-registration. There is only
+            // one affine request slot, so one self-wake is sufficient.
+            cx.waker().wake_by_ref();
         }
     }
 
@@ -1117,10 +1587,16 @@ impl<
                 .fetch_and(!(1_u32 << self.interface.value()), Ordering::AcqRel);
             self.waiting_for_tx_credit = false;
         }
-        for index in [self.ingress_tx.take(), self.application_tx.take()]
-            .into_iter()
-            .flatten()
+        let ingress = self.ingress_tx.take();
+        let application = self.application_tx.take();
+        #[cfg(feature = "tx-phase-telemetry")]
         {
+            self.tx_ingress_reserved
+                .fetch_sub(u32::from(ingress.is_some()), Ordering::Relaxed);
+            self.tx_application_reserved
+                .fetch_sub(u32::from(application.is_some()), Ordering::Relaxed);
+        }
+        for index in [ingress, application].into_iter().flatten() {
             #[cfg(feature = "tx-staging-copy-probe")]
             if self.staged_tx_selected {
                 if let Err(TrySendError::Full(_)) = self.free_staged_return.try_send(index) {
@@ -1168,11 +1644,16 @@ pub struct PinnedTransmitToken<
     free_staged: Sender<'resources, M, u8, QUEUE_DEPTH>,
     #[cfg(feature = "tx-staging-copy-probe")]
     ready_staged: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    staged_pool: &'resources RxHandoffPool<FRAME_CAPACITY, QUEUE_DEPTH>,
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_tokens_in_flight: &'resources AtomicU32,
+    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     lease: Option<PinnedTransmitLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
     _reservation: &'device mut (),
 }
@@ -1213,17 +1694,32 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         &self.interface
     }
 
-    fn release(mut self) {
+    fn release_index(mut self) -> u8 {
         let lease = self.lease.take().expect("live staged TX frame");
-        let index = lease.release();
-        if let Err(TrySendError::Full(_)) = self.free_staged.try_send(index) {
+        lease.release()
+    }
+
+    /// Publish this source index to the Core1 materializer without returning
+    /// its producer credit. The value-only request becomes the unique owner;
+    /// Core1 must claim the READY slot and perform the terminal release.
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    fn handoff_to_materializer(mut self) -> u8 {
+        let lease = self.lease.take().expect("live staged TX frame");
+        let length = lease.frame().len();
+        lease.republish(0, length)
+    }
+
+    fn release(self) {
+        let free_staged = self.free_staged;
+        let tx_credit_wakers = self.tx_credit_wakers;
+        let tx_credit_waiters = self.tx_credit_waiters;
+        let tx_active = self.tx_active;
+        let interface = self.interface;
+        let index = self.release_index();
+        if let Err(TrySendError::Full(_)) = free_staged.try_send(index) {
             unreachable!("staged TX frame returns its unique PSRAM index");
         }
-        self.tx_credit_wakers.wake_waiter_after(
-            self.interface,
-            self.tx_active,
-            self.tx_credit_waiters,
-        );
+        tx_credit_wakers.wake_waiter_after(interface, tx_active, tx_credit_waiters);
     }
 }
 
@@ -1344,10 +1840,13 @@ impl<
             }
         };
         #[cfg(feature = "tx-staging-copy-probe")]
-        let ready = if staged {
-            &self.ready_staged[usize::from(self.interface.value())]
+        let (ready, index) = if staged {
+            (
+                &self.ready_staged[usize::from(self.interface.value())],
+                index,
+            )
         } else {
-            &self.ready_tx[usize::from(self.interface.value())]
+            (&self.ready_tx[usize::from(self.interface.value())], index)
         };
         #[cfg(not(feature = "tx-staging-copy-probe"))]
         let _ = staged;
@@ -1356,6 +1855,48 @@ impl<
         if let Err(TrySendError::Full(_)) = ready.try_send(index) {
             unreachable!("one ready entry exists per non-free pinned TX slot");
         }
+        // Link-down and publication run on different cores. Shutdown first
+        // makes the VIF inactive and then drains its ready frontier, while a
+        // synchronous stack emission may already own the final token. Cover
+        // the opposite ordering here: if shutdown won the race before this
+        // publication, return every inactive-VIF owner immediately. No other
+        // token for this device can coexist because `_reservation` is affine.
+        if self.tx_active.load(Ordering::Acquire) & (1_u32 << self.interface.value()) == 0 {
+            let mut returned = 0usize;
+            while let Ok(stale_index) = ready.try_receive() {
+                #[cfg(feature = "tx-staging-copy-probe")]
+                if staged {
+                    let stale_index = self.staged_pool.claim_network(stale_index).release();
+                    if let Err(TrySendError::Full(_)) = self.free_staged.try_send(stale_index) {
+                        unreachable!("late staged publication returns its unique index");
+                    }
+                } else {
+                    let stale_index = self.tx_pool.claim_radio(stale_index).release();
+                    if let Err(TrySendError::Full(_)) = self.free_tx.try_send(stale_index) {
+                        unreachable!("late direct publication returns its unique index");
+                    }
+                }
+                #[cfg(not(feature = "tx-staging-copy-probe"))]
+                {
+                    let stale_index = self.tx_pool.claim_radio(stale_index).release();
+                    if let Err(TrySendError::Full(_)) = self.free_tx.try_send(stale_index) {
+                        unreachable!("late direct publication returns its unique index");
+                    }
+                }
+                returned = returned.saturating_add(1);
+            }
+            if returned != 0 {
+                self.tx_credit_wakers.wake_waiter_after(
+                    self.interface,
+                    self.tx_active,
+                    self.tx_credit_waiters,
+                );
+            }
+        }
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.tx_tokens_in_flight.fetch_sub(1, Ordering::Relaxed);
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_publication_geometry(self.free_tx.len(), ready.len());
         self.tx_published.signal(());
         #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_consume(
@@ -1378,6 +1919,8 @@ impl<
 {
     fn drop(&mut self) {
         if let Some(lease) = self.lease.take() {
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.tx_tokens_in_flight.fetch_sub(1, Ordering::Relaxed);
             let index = match lease {
                 PinnedTransmitLease::Direct(lease) => {
                     let index = lease.release();
@@ -1442,6 +1985,8 @@ impl<
         Self: 'device;
 
     fn receive(&mut self, cx: &mut Context<'_>) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        #[cfg(feature = "tx-core1-materializer-probe")]
+        self.service_core1_materialization(cx);
         if !self.poll_reserve_ingress_tx(cx) {
             return None;
         }
@@ -1454,6 +1999,8 @@ impl<
             .ingress_tx
             .take()
             .expect("ingress admission reserves one TX credit");
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.tx_ingress_reserved.fetch_sub(1, Ordering::Relaxed);
         Some((
             PinnedReceiveToken {
                 free_rx: self.free_rx,
@@ -1464,6 +2011,8 @@ impl<
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
+        #[cfg(feature = "tx-core1-materializer-probe")]
+        self.service_core1_materialization(cx);
         #[cfg(feature = "tx-phase-telemetry")]
         let started = TxPerformanceSample::read();
         let token = if !self.poll_reserve_application_tx(cx) {
@@ -1473,11 +2022,45 @@ impl<
                 .application_tx
                 .take()
                 .expect("application admission reserves one TX credit");
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
             Some(self.take_tx_token(index))
         };
         #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), token.is_some());
         token
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn transmit_for(
+        &mut self,
+        cx: &mut Context<'_>,
+        egress: EgressMeta,
+    ) -> KeyedTxToken<Self::TxToken<'_>> {
+        if self.keyed_egress != Some(egress) {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_egress_run(self.keyed_run_length);
+            self.keyed_egress = Some(egress);
+            self.keyed_run_length = 0;
+        }
+
+        #[cfg(feature = "tx-phase-telemetry")]
+        let started = TxPerformanceSample::read();
+        if !self.poll_reserve_application_tx(cx) {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
+            return KeyedTxToken::GlobalExhausted;
+        }
+        let index = self
+            .application_tx
+            .take()
+            .expect("keyed application admission reserves one TX credit");
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
+        self.keyed_run_length = self.keyed_run_length.saturating_add(1);
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), true);
+        KeyedTxToken::Granted(self.take_tx_token(index))
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
@@ -1490,6 +2073,23 @@ impl<
         capabilities.max_burst_size = Some(RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH));
         capabilities.checksum = self.checksum.clone();
         capabilities
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_queue_policy(&mut self) -> EgressQueuePolicy {
+        if self.link.is_up() && crate::resolved_egress_burst_enabled() {
+            EgressQueuePolicy::ResolvedEgressBurst {
+                max_packets: 32,
+                dispatch_quantum: crate::resolved_egress_dispatch_quantum(),
+                epoch: self.link.egress_epoch(),
+            }
+        } else {
+            // A permanent network stack survives radio role epochs. Returning
+            // FIFO while down resets stack-side burst cursors before the next
+            // peer generation becomes active; no down-state publication can
+            // reach the radio because inactive-VIF owners are reclaimed.
+            EgressQueuePolicy::Fifo
+        }
     }
 
     fn hardware_address(&self) -> HardwareAddress {
@@ -1566,12 +2166,25 @@ impl<
             .ingress_tx
             .take()
             .expect("ordered ingress admission reserves one TX credit");
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.inner
+            .tx_ingress_reserved
+            .fetch_sub(1, Ordering::Relaxed);
         let tx = self.inner.take_tx_token(tx_index);
         Some((rx, tx))
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
         self.inner.transmit(cx)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn transmit_for(
+        &mut self,
+        cx: &mut Context<'_>,
+        egress: EgressMeta,
+    ) -> KeyedTxToken<Self::TxToken<'_>> {
+        self.inner.transmit_for(cx, egress)
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
@@ -1586,6 +2199,11 @@ impl<
                 .min(TX_QUEUE_DEPTH),
         );
         capabilities
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_queue_policy(&mut self) -> EgressQueuePolicy {
+        self.inner.egress_queue_policy()
     }
 
     fn hardware_address(&self) -> HardwareAddress {
@@ -1889,6 +2507,18 @@ pub struct PinnedTxConsumer<
     ready_staged: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     #[cfg(feature = "tx-staging-copy-probe")]
     staged_pool: &'resources RxHandoffPool<FRAME_CAPACITY, QUEUE_DEPTH>,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_requests:
+        &'resources [Channel<M, TxMaterializationRequest, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_completions:
+        &'resources [Channel<M, TxMaterializationCompletion, 1>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_in_flight: &'resources AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_cancel: &'resources AtomicU32,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    materialization_wakers: &'resources PinnedTxCreditWakers<M>,
     next_interface: &'resources AtomicU32,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
@@ -1896,6 +2526,12 @@ pub struct PinnedTxConsumer<
     #[cfg(feature = "tx-staging-copy-probe")]
     tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_ingress_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_application_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
@@ -1914,6 +2550,15 @@ pub struct PinnedTxInterfaceConsumer<
 > {
     physical: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     interface: NetworkInterfaceId,
+}
+
+/// Non-blocking result of reclaiming one Core1-materialized burst.
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PinnedTxCore1MaterializationPoll {
+    Pending,
+    Ready(usize),
+    Cancelled,
 }
 
 impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Clone
@@ -2068,15 +2713,23 @@ impl<
     pub fn queue_len(&self) -> usize {
         #[cfg(feature = "tx-staging-copy-probe")]
         {
-            return (0..PINNED_TX_CREDIT_WAKER_SLOTS)
+            (0..PINNED_TX_CREDIT_WAKER_SLOTS)
                 .map(|interface| {
+                    #[cfg(feature = "tx-core1-materializer-probe")]
+                    let materialized = self.materialization_completions[interface]
+                        .len()
+                        .saturating_mul(PINNED_TX_MATERIALIZATION_BATCH_CAPACITY);
+                    #[cfg(not(feature = "tx-core1-materializer-probe"))]
+                    let materialized = 0;
                     if self.staging_for(NetworkInterfaceId::new(interface as u8)) {
-                        self.ready_staged[interface].len()
+                        self.ready_staged[interface]
+                            .len()
+                            .saturating_add(materialized)
                     } else {
-                        self.ready_tx[interface].len()
+                        self.ready_tx[interface].len().saturating_add(materialized)
                     }
                 })
-                .sum();
+                .sum()
         }
         #[cfg(not(feature = "tx-staging-copy-probe"))]
         self.ready_tx.iter().map(Channel::len).sum()
@@ -2105,11 +2758,75 @@ impl<
 
     /// Count the immutable FIFO frontier for one logical interface.
     pub fn queue_len_for(&self, interface: NetworkInterfaceId) -> usize {
+        #[cfg(feature = "tx-core1-materializer-probe")]
+        let materialized = self.materialization_completions[usize::from(interface.value())]
+            .len()
+            .saturating_mul(PINNED_TX_MATERIALIZATION_BATCH_CAPACITY);
+        #[cfg(not(feature = "tx-core1-materializer-probe"))]
+        let materialized = 0;
         #[cfg(feature = "tx-staging-copy-probe")]
         if self.staging_for(interface) {
-            return self.ready_staged[usize::from(interface.value())].len();
+            return self.ready_staged[usize::from(interface.value())]
+                .len()
+                .saturating_add(materialized);
         }
-        self.ready_tx[usize::from(interface.value())].len()
+        self.ready_tx[usize::from(interface.value())]
+            .len()
+            .saturating_add(materialized)
+    }
+
+    /// Return every not-yet-claimed frame for one logical interface.
+    ///
+    /// Role shutdown calls this only after its active/prepared radio owners
+    /// have reached a terminal boundary. These entries are therefore pure
+    /// network backlog: transmitting them in a later role epoch would be a
+    /// stale-VIF correctness error and retaining them would permanently steal
+    /// credits from the shared physical pool.
+    pub fn discard_ready_for(&self, interface: NetworkInterfaceId) -> usize {
+        let mut discarded = 0usize;
+        while let Some(frame) = self.try_receive_for(interface) {
+            drop(frame);
+            discarded = discarded.saturating_add(1);
+        }
+        discarded
+    }
+
+    /// Reclaim backlog published for every endpoint whose radio-side link is
+    /// inactive. This closes a narrow cross-core edge where a final network
+    /// poll can publish immediately around link-down.
+    pub fn discard_inactive_ready(&self) -> usize {
+        let active = self.tx_active.load(Ordering::Acquire);
+        let mut discarded = 0usize;
+        for interface in 0..PINNED_TX_CREDIT_WAKER_SLOTS {
+            if active & (1_u32 << interface) == 0 {
+                discarded = discarded.saturating_add(
+                    self.discard_ready_for(NetworkInterfaceId::new(interface as u8)),
+                );
+            }
+        }
+        discarded
+    }
+
+    /// Snapshot the direct pinned pool without claiming or returning a credit.
+    ///
+    /// The one-copy staging experiment owns a distinct free pool and must not
+    /// use this direct-pool invariant as evidence. Production direct TX and
+    /// the indexed stack-selector diagnostic both use this exact geometry.
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub fn ownership_snapshot_for(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxOwnershipSnapshot {
+        let ready_for_interface = self.ready_tx[usize::from(interface.value())].len();
+        let ready_total = self.ready_tx.iter().map(Channel::len).sum::<usize>();
+        PinnedTxOwnershipSnapshot {
+            free: self.free_tx.len(),
+            ready_for_interface,
+            ready_for_other_interfaces: ready_total.saturating_sub(ready_for_interface),
+            ingress_reserved: self.tx_ingress_reserved.load(Ordering::Relaxed) as usize,
+            application_reserved: self.tx_application_reserved.load(Ordering::Relaxed) as usize,
+            tokens_in_flight: self.tx_tokens_in_flight.load(Ordering::Relaxed) as usize,
+        }
     }
 
     pub async fn receive_for(
@@ -2199,6 +2916,11 @@ impl<
         self.physical.queue_len_for(self.interface)
     }
 
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub fn ownership_snapshot(&self) -> PinnedTxOwnershipSnapshot {
+        self.physical.ownership_snapshot_for(self.interface)
+    }
+
     pub async fn wait_ready(&self) {
         loop {
             if self.queue_len() != 0 {
@@ -2221,6 +2943,235 @@ impl<
             }
             self.physical.wait_publication().await;
         }
+    }
+
+    /// Number of staged packets which can be promoted without waiting for a
+    /// physical DMA credit at this instant.
+    ///
+    /// Direct endpoints need no promotion and therefore expose no artificial
+    /// limit. The value is a scheduling hint only: batch reservation remains
+    /// all-or-nothing so a concurrent direct endpoint cannot cause partial
+    /// ownership movement after this observation.
+    pub fn promotion_capacity(&self) -> usize {
+        #[cfg(feature = "tx-staging-copy-probe")]
+        if self.physical.staging_for(self.interface) {
+            return self.physical.free_tx_claim.len();
+        }
+        usize::MAX
+    }
+
+    /// Whether this same-image run moves selected staged bursts through the
+    /// Core1 driver poll. This is a runtime discriminator, not a second queue
+    /// topology: the AP scheduler and its selected peer/TID remain unchanged.
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    pub fn core1_materializer_selected(&self) -> bool {
+        self.physical.staging_for(self.interface) && tx_core1_materializer_enabled()
+    }
+
+    /// Transfer one already selected staged burst to the Core1 materializer.
+    ///
+    /// The method reserves every destination before changing a source owner.
+    /// Once it returns `true`, every occupied input slot is empty and the
+    /// value-only request owns the exact source/destination pairs. Only one
+    /// request may be in flight per logical interface.
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    pub fn try_submit_core1_materialization<const BATCH: usize>(
+        &self,
+        frames: &mut [Option<
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        >; BATCH],
+    ) -> bool {
+        assert!(
+            BATCH <= PINNED_TX_MATERIALIZATION_BATCH_CAPACITY,
+            "Core1 materialization batch exceeds one BA32 window"
+        );
+        if !self.core1_materializer_selected() {
+            return false;
+        }
+        let count = frames.iter().flatten().count();
+        if count == 0 {
+            return false;
+        }
+        assert!(
+            frames.iter().flatten().all(|frame| {
+                *frame.tag() == self.interface && matches!(frame, PinnedNetworkTxFrame::Staged(_))
+            }),
+            "Core1 materialization accepts one staged logical-interface burst"
+        );
+
+        let interface_index = usize::from(self.interface.value());
+        let interface_bit = 1_u32 << self.interface.value();
+        if self
+            .physical
+            .materialization_in_flight
+            .load(Ordering::Acquire)
+            & interface_bit
+            == 0
+            && let Ok(stale) =
+                self.physical.materialization_completions[interface_index].try_receive()
+        {
+            assert!(
+                stale.cancelled,
+                "an unclaimed successful materialization cannot cross a role epoch"
+            );
+        }
+        if self
+            .physical
+            .materialization_in_flight
+            .fetch_or(interface_bit, Ordering::AcqRel)
+            & interface_bit
+            != 0
+        {
+            return false;
+        }
+        self.physical
+            .materialization_cancel
+            .fetch_and(!interface_bit, Ordering::AcqRel);
+
+        let mut destinations = [None; PINNED_TX_MATERIALIZATION_BATCH_CAPACITY];
+        for destination in destinations.iter_mut().take(count) {
+            let Ok(index) = self.physical.free_tx_claim.try_receive() else {
+                for index in destinations.iter_mut().filter_map(Option::take) {
+                    if let Err(TrySendError::Full(_)) = self.physical.free_tx.try_send(index) {
+                        unreachable!("failed Core1 reservation returns its unique DMA credit");
+                    }
+                }
+                self.physical
+                    .materialization_in_flight
+                    .fetch_and(!interface_bit, Ordering::AcqRel);
+                TX_CORE1_MATERIALIZER_COUNTERS
+                    .no_credit
+                    .fetch_add(1, Ordering::Relaxed);
+                return false;
+            };
+            *destination = Some(index);
+        }
+
+        let mut request = TxMaterializationRequest::empty(self.interface);
+        request.count = u8::try_from(count).expect("BA32 materialization count fits u8");
+        let mut next = 0;
+        for slot in frames.iter_mut() {
+            let Some(frame) = slot.take() else {
+                continue;
+            };
+            let source = match frame {
+                PinnedNetworkTxFrame::Staged(source) => source.handoff_to_materializer(),
+                PinnedNetworkTxFrame::Direct(_) => unreachable!("validated staged batch"),
+            };
+            request.pairs[next] = TxMaterializationPair {
+                source,
+                destination: destinations[next]
+                    .take()
+                    .expect("one DMA destination was reserved per staged source"),
+            };
+            next += 1;
+        }
+        debug_assert_eq!(next, count);
+        debug_assert!(destinations.iter().all(Option::is_none));
+        if let Err(TrySendError::Full(_)) =
+            self.physical.materialization_requests[interface_index].try_send(request)
+        {
+            unreachable!("the in-flight bit reserves the sole materialization request slot");
+        }
+        TX_CORE1_MATERIALIZER_COUNTERS
+            .submitted_batches
+            .fetch_add(1, Ordering::Relaxed);
+        self.physical.materialization_wakers.wake(self.interface);
+        true
+    }
+
+    /// Reclaim the unique ready owners produced by Core1 without waiting.
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    pub fn poll_core1_materialization<const BATCH: usize>(
+        &self,
+        frames: &mut [Option<
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        >; BATCH],
+    ) -> PinnedTxCore1MaterializationPoll {
+        assert!(
+            BATCH <= PINNED_TX_MATERIALIZATION_BATCH_CAPACITY,
+            "Core1 completion batch exceeds one BA32 window"
+        );
+        assert!(
+            frames.iter().all(Option::is_none),
+            "Core1 completion requires an empty destination array"
+        );
+        let interface_index = usize::from(self.interface.value());
+        let Ok(completion) =
+            self.physical.materialization_completions[interface_index].try_receive()
+        else {
+            return PinnedTxCore1MaterializationPoll::Pending;
+        };
+        assert_eq!(
+            completion.interface, self.interface,
+            "materialization completion crossed its logical interface"
+        );
+        let interface_bit = 1_u32 << self.interface.value();
+        self.physical
+            .materialization_in_flight
+            .fetch_and(!interface_bit, Ordering::AcqRel);
+        self.physical
+            .materialization_cancel
+            .fetch_and(!interface_bit, Ordering::AcqRel);
+        if completion.cancelled {
+            return PinnedTxCore1MaterializationPoll::Cancelled;
+        }
+        let count = usize::from(completion.count);
+        assert!(count <= BATCH, "completion fits caller-owned burst array");
+        for (slot, index) in frames.iter_mut().zip(completion.destinations).take(count) {
+            *slot = Some(PinnedNetworkTxFrame::Direct(
+                self.physical.claim(self.interface, index),
+            ));
+        }
+        PinnedTxCore1MaterializationPoll::Ready(count)
+    }
+
+    /// Request terminal cancellation without stealing a pending Core1 request.
+    ///
+    /// If Core1 already published success, this method consumes that sole
+    /// completion and reclaims its ready DMA owners synchronously. Otherwise
+    /// the worker observes the cancel bit before or immediately after
+    /// publication and returns every source/destination credit itself.
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    pub fn cancel_core1_materialization(&self) -> bool {
+        let interface_bit = 1_u32 << self.interface.value();
+        if self
+            .physical
+            .materialization_in_flight
+            .load(Ordering::Acquire)
+            & interface_bit
+            == 0
+        {
+            return false;
+        }
+        self.physical
+            .materialization_cancel
+            .fetch_or(interface_bit, Ordering::AcqRel);
+        let interface_index = usize::from(self.interface.value());
+        if let Ok(completion) =
+            self.physical.materialization_completions[interface_index].try_receive()
+        {
+            if !completion.cancelled {
+                let count = usize::from(completion.count);
+                for index in completion.destinations[..count].iter().copied() {
+                    let destination = self.physical.claim(self.interface, index);
+                    drop(destination);
+                }
+            }
+            self.physical
+                .materialization_cancel
+                .fetch_and(!interface_bit, Ordering::AcqRel);
+            self.physical
+                .materialization_in_flight
+                .fetch_and(!interface_bit, Ordering::AcqRel);
+            if !completion.cancelled {
+                TX_CORE1_MATERIALIZER_COUNTERS
+                    .cancelled_batches
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        self.physical.materialization_wakers.wake(self.interface);
+        true
     }
 
     /// Promote one scheduled CPU packet into its final DMA-visible slot.
@@ -2288,6 +3239,147 @@ impl<
                 Ok(promoted)
             }
         }
+    }
+
+    /// Promote one bounded packet burst without partial ownership movement.
+    ///
+    /// Every occupied entry must belong to this interface. The method first
+    /// reserves all physical DMA credits required by staged entries. If that
+    /// reservation cannot be completed, it returns `false`, restores every
+    /// reserved credit and leaves `frames` byte-for-byte and owner-for-owner
+    /// unchanged. On success every occupied entry is direct DMA backing.
+    /// Staged producer credits are returned together and their waiter is
+    /// woken once for the complete burst rather than once per packet.
+    #[cfg(feature = "tx-staging-copy-probe")]
+    pub fn try_promote_batch<const BATCH: usize>(
+        &self,
+        frames: &mut [Option<
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        >; BATCH],
+    ) -> bool {
+        let staged_count = frames
+            .iter()
+            .flatten()
+            .filter(|frame| matches!(frame, PinnedNetworkTxFrame::Staged(_)))
+            .count();
+        if staged_count == 0 {
+            return true;
+        }
+
+        let mut reserved = [None; BATCH];
+        for slot in reserved.iter_mut().take(staged_count) {
+            let Ok(index) = self.physical.free_tx_claim.try_receive() else {
+                for index in reserved.iter_mut().filter_map(Option::take) {
+                    if let Err(TrySendError::Full(_)) = self.physical.free_tx.try_send(index) {
+                        unreachable!("failed batch reservation returns its physical TX credit");
+                    }
+                }
+                #[cfg(feature = "tx-phase-telemetry")]
+                {
+                    let now = TxPerformanceSample::read();
+                    TX_PERFORMANCE.record_promotion_no_credit(now, now);
+                }
+                return false;
+            };
+            *slot = Some(index);
+        }
+
+        let mut next_reserved = 0;
+        for slot in frames.iter_mut() {
+            let Some(frame) = slot.as_ref() else {
+                continue;
+            };
+            assert_eq!(
+                *frame.tag(),
+                self.interface,
+                "batch promotion cannot cross an interface boundary"
+            );
+            if matches!(frame, PinnedNetworkTxFrame::Direct(_)) {
+                continue;
+            }
+
+            let source = match slot.take().expect("checked occupied batch entry") {
+                PinnedNetworkTxFrame::Staged(source) => source,
+                PinnedNetworkTxFrame::Direct(_) => unreachable!("direct entry was skipped"),
+            };
+            let index = reserved[next_reserved]
+                .take()
+                .expect("one destination credit was reserved per staged source");
+            next_reserved += 1;
+
+            #[cfg(feature = "tx-phase-telemetry")]
+            let promotion_started = TxPerformanceSample::read();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let credit_acquired = promotion_started;
+            let length = source.as_slice().len();
+            let lease = self.physical.tx_pool.claim_network(index);
+            #[cfg(feature = "tx-phase-telemetry")]
+            let destination_claimed = TxPerformanceSample::read();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let publication_started = TxPerformanceSample::read();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let mut copy = TxPerformanceSample::default();
+            let (index, ()) = lease.publish(length, |dma| {
+                #[cfg(feature = "tx-phase-telemetry")]
+                let copy_started = TxPerformanceSample::read();
+                dma.copy_from_slice(source.as_slice());
+                #[cfg(feature = "tx-phase-telemetry")]
+                {
+                    copy = TxPerformanceSample::read().wrapping_delta_since(copy_started);
+                }
+            });
+            #[cfg(feature = "tx-phase-telemetry")]
+            let published = TxPerformanceSample::read();
+            let source_index = source.release_index();
+            if let Err(TrySendError::Full(_)) = self.physical.free_staged.try_send(source_index) {
+                unreachable!("batch promotion returns every unique staged TX credit");
+            }
+            // Preserve producer/copy overlap without returning to one wake
+            // per frame. The first returned index changes the staged pool
+            // from empty to ready and lets Core1 refill software backlog
+            // while Core0 copies the rest of this burst. If Core1 drains the
+            // pool concurrently, a later return creates a new real edge and
+            // legitimately wakes it again.
+            if self.physical.free_staged.len() == 1 {
+                self.physical.tx_credit_wakers.wake_waiter_after(
+                    self.interface,
+                    self.physical.tx_active,
+                    self.physical.tx_credit_waiters,
+                );
+            }
+            #[cfg(feature = "tx-phase-telemetry")]
+            let source_released = TxPerformanceSample::read();
+            let promoted = self.physical.claim(self.interface, index);
+            *slot = Some(PinnedNetworkTxFrame::Direct(promoted));
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_promotion(
+                length,
+                promotion_started,
+                credit_acquired,
+                destination_claimed,
+                copy,
+                publication_started,
+                published,
+                source_released,
+                TxPerformanceSample::read(),
+            );
+        }
+        debug_assert!(reserved.iter().all(Option::is_none));
+        true
+    }
+
+    /// Direct-only builds already satisfy the batch postcondition without an
+    /// ownership transition.
+    #[cfg(not(feature = "tx-staging-copy-probe"))]
+    pub fn try_promote_batch<const BATCH: usize>(
+        &self,
+        frames: &mut [Option<
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        >; BATCH],
+    ) -> bool {
+        frames.iter().flatten().all(|frame| {
+            *frame.tag() == self.interface && matches!(frame, PinnedNetworkTxFrame::Direct(_))
+        })
     }
 }
 
@@ -2419,6 +3511,7 @@ impl<
 
     pub fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
         self.rx_for(interface).set_link_state(state);
+        self.tx.discard_inactive_ready();
     }
 
     pub fn try_receive_tx(
@@ -2512,6 +3605,7 @@ impl<
 
     pub fn set_link_state(&self, state: LinkState) {
         self.rx.set_link_state(state);
+        self.tx.discard_inactive_ready();
     }
 
     pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
@@ -2588,7 +3682,10 @@ impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_
         // the remaining indices are additional credits, not additional
         // readiness edges. If another core drains the pool concurrently, a
         // later return legitimately creates a new edge and wakes again.
-        if self.free_tx.len() == 1 {
+        let woke_network = self.free_tx.len() == 1;
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_radio_return(woke_network);
+        if woke_network {
             self.tx_credit_wakers.wake_waiter_after(
                 self.interface,
                 self.tx_active,

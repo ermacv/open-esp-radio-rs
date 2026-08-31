@@ -1240,6 +1240,16 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
     ) -> Result<(), Self::Error> {
         <Esp32s31StaApConnectedTx<
             'resources,
@@ -1264,11 +1274,14 @@ where
             HEADROOM,
             TRAILER,
             QUEUE_DEPTH,
-        >>::cancel_prepared(self.tx_mut().active_mut().ok_or(
-            Esp32s31StaApStationTxError::Ownership(
-                Esp32s31StaApStationTxOwnershipError::AlreadyParked,
-            ),
-        )?)
+        >>::cancel_prepared(
+            self.tx_mut()
+                .active_mut()
+                .ok_or(Esp32s31StaApStationTxError::Ownership(
+                    Esp32s31StaApStationTxOwnershipError::AlreadyParked,
+                ))?,
+            network,
+        )
         .map_err(Esp32s31StaApStationTxError::Operation)?;
         self.park_tx(physical)
             .map_err(Esp32s31StaApStationTxError::Ownership)
@@ -1473,8 +1486,20 @@ where
         self.tx_mut().start_prepared(hardware, network)
     }
 
-    fn cancel_prepared(&mut self) -> Result<(), Self::Error> {
-        self.tx_mut().cancel_prepared()
+    fn cancel_prepared(
+        &mut self,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    ) -> Result<(), Self::Error> {
+        self.tx_mut().cancel_prepared(network)
     }
 
     fn can_prepare(&self) -> bool {

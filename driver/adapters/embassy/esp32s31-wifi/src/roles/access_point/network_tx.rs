@@ -4,6 +4,7 @@
 //! aggregate publication, retry, or completion policy.
 
 use super::*;
+use crate::datapath::software_tx_queue::{IndexedLeaseArena, RoundRobinTxQueues};
 use core::marker::PhantomData;
 
 // Retention is deliberately bounded independently of the physical producer
@@ -40,178 +41,17 @@ impl ApTxFlowKey {
     }
 }
 
-#[derive(Clone, Copy)]
-struct ApActiveFlow {
-    key: ApTxFlowKey,
-    head: u8,
-    tail: u8,
-    len: u8,
-}
-
 /// Single physical owner of every AP-retained network lease which is not yet
 /// encoded into an A-MPDU arena or published through ordinary TX.
 ///
 /// Active scheduling and both power-save policies store only indices into
 /// this arena. Their capacities therefore describe classifications of the
 /// same 66 producer credits, not three independent arrays of `B` handles.
-struct ApFrameLeaseArena<B> {
-    frames: [Option<B>; AP_ACTIVE_FRAME_CAPACITY],
-    free: [u8; AP_ACTIVE_FRAME_CAPACITY],
-    free_len: u8,
-    initialized: bool,
-}
-
-impl<B> ApFrameLeaseArena<B> {
-    const fn new() -> Self {
-        Self {
-            frames: [const { None }; AP_ACTIVE_FRAME_CAPACITY],
-            free: [0; AP_ACTIVE_FRAME_CAPACITY],
-            free_len: 0,
-            initialized: false,
-        }
-    }
-
-    fn initialize_free_list(&mut self) {
-        if self.initialized {
-            return;
-        }
-        for (index, free) in self.free.iter_mut().enumerate() {
-            *free = u8::try_from(index).expect("AP retained lease index fits u8");
-        }
-        self.free_len =
-            u8::try_from(AP_ACTIVE_FRAME_CAPACITY).expect("AP retained lease capacity fits u8");
-        self.initialized = true;
-    }
-
-    fn insert(&mut self, frame: B) -> Result<u8, B> {
-        self.initialize_free_list();
-        if self.free_len == 0 {
-            return Err(frame);
-        }
-        self.free_len -= 1;
-        let index = self.free[usize::from(self.free_len)];
-        self.frames[usize::from(index)] = Some(frame);
-        Ok(index)
-    }
-
-    fn take(&mut self, index: u8) -> B {
-        let frame = self.frames[usize::from(index)]
-            .take()
-            .expect("AP queue index names one retained lease");
-        self.free[usize::from(self.free_len)] = index;
-        self.free_len += 1;
-        frame
-    }
-}
+type ApFrameLeaseArena<B> = IndexedLeaseArena<B, AP_ACTIVE_FRAME_CAPACITY>;
 
 /// Intrusive per-flow FIFO links over [`ApFrameLeaseArena`].
-struct ApActiveFrameQueues {
-    next: [Option<u8>; AP_ACTIVE_FRAME_CAPACITY],
-    flows: [Option<ApActiveFlow>; AP_ACTIVE_FLOW_CAPACITY],
-    scheduler_cursor: u8,
-    len: u8,
-}
-
-impl ApActiveFrameQueues {
-    const fn new() -> Self {
-        Self {
-            next: [None; AP_ACTIVE_FRAME_CAPACITY],
-            flows: [const { None }; AP_ACTIVE_FLOW_CAPACITY],
-            scheduler_cursor: 0,
-            len: 0,
-        }
-    }
-
-    fn flow_index(&self, key: ApTxFlowKey) -> Option<usize> {
-        self.flows
-            .iter()
-            .position(|flow| flow.is_some_and(|flow| flow.key == key))
-    }
-
-    fn push(&mut self, key: ApTxFlowKey, frame_index: u8) -> Result<(), u8> {
-        let flow_index = if let Some(index) = self.flow_index(key) {
-            index
-        } else if let Some(index) = self.flows.iter().position(Option::is_none) {
-            index
-        } else {
-            return Err(frame_index);
-        };
-        debug_assert!(self.next[usize::from(frame_index)].is_none());
-        if let Some(flow) = self.flows[flow_index].as_mut() {
-            self.next[usize::from(flow.tail)] = Some(frame_index);
-            flow.tail = frame_index;
-            flow.len = flow
-                .len
-                .checked_add(1)
-                .expect("AP active flow cannot exceed bounded frame arena");
-        } else {
-            self.flows[flow_index] = Some(ApActiveFlow {
-                key,
-                head: frame_index,
-                tail: frame_index,
-                len: 1,
-            });
-        }
-        self.len = self
-            .len
-            .checked_add(1)
-            .expect("AP active frame arena length is bounded");
-        Ok(())
-    }
-
-    fn pop_flow_index(&mut self, flow_index: usize) -> Option<u8> {
-        let mut flow = self.flows.get(flow_index).copied().flatten()?;
-        let index = flow.head;
-        let next = self.next[usize::from(index)].take();
-        flow.len -= 1;
-        if flow.len == 0 {
-            self.flows[flow_index] = None;
-        } else {
-            flow.head = next.expect("nonterminal AP active frame has a successor");
-            self.flows[flow_index] = Some(flow);
-        }
-        self.len -= 1;
-        Some(index)
-    }
-
-    fn pop_key(&mut self, key: ApTxFlowKey) -> Option<u8> {
-        let flow = self.flow_index(key)?;
-        self.pop_flow_index(flow)
-    }
-
-    fn pop_scheduled(&mut self) -> Option<(ApTxFlowKey, u8)> {
-        for offset in 0..AP_ACTIVE_FLOW_CAPACITY {
-            let index = (usize::from(self.scheduler_cursor) + offset) % AP_ACTIVE_FLOW_CAPACITY;
-            let Some(flow) = self.flows[index] else {
-                continue;
-            };
-            self.scheduler_cursor =
-                u8::try_from((index + 1) % AP_ACTIVE_FLOW_CAPACITY).expect("flow index fits u8");
-            return self.pop_flow_index(index).map(|frame| (flow.key, frame));
-        }
-        None
-    }
-
-    fn len_for(&self, key: ApTxFlowKey) -> usize {
-        self.flow_index(key)
-            .and_then(|index| self.flows[index])
-            .map_or(0, |flow| usize::from(flow.len))
-    }
-
-    fn scheduled_len(&self) -> usize {
-        for offset in 0..AP_ACTIVE_FLOW_CAPACITY {
-            let index = (usize::from(self.scheduler_cursor) + offset) % AP_ACTIVE_FLOW_CAPACITY;
-            if let Some(flow) = self.flows[index] {
-                return usize::from(flow.len);
-            }
-        }
-        0
-    }
-
-    const fn len(&self) -> usize {
-        self.len as usize
-    }
-}
+type ApActiveFrameQueues =
+    RoundRobinTxQueues<ApTxFlowKey, AP_ACTIVE_FLOW_CAPACITY, AP_ACTIVE_FRAME_CAPACITY>;
 
 const fn aggregate_adapter_available(ordinary_publication_pending: bool) -> bool {
     !ordinary_publication_pending
@@ -440,6 +280,8 @@ struct PreparedStandby {
     admission: Esp32s31ApAggregateAdmission,
     policy: HtAmpduTxRolePolicy,
     admitted: usize,
+    #[cfg(feature = "tx-phase-telemetry")]
+    mismatch_claims: usize,
     #[cfg(any(feature = "diagnostics", test))]
     preparation_micros: u64,
 }
@@ -462,6 +304,8 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
     prepared_second: Option<N>,
     prepared_second_key: Option<ApTxFlowKey>,
     prepared_standby: Option<PreparedStandby>,
+    #[cfg(feature = "tx-core1-materializer-probe")]
+    core1_materialization_in_flight: bool,
     buffered_unicast: ApPowerSaveFrameQueue,
     buffered_group: ApGroupFrameQueue,
     prepared_buffered_release: Option<BufferedUnicastRelease<N>>,
@@ -501,6 +345,8 @@ where
             prepared_second: None,
             prepared_second_key: None,
             prepared_standby: None,
+            #[cfg(feature = "tx-core1-materializer-probe")]
+            core1_materialization_in_flight: false,
             buffered_unicast: ApPowerSaveFrameQueue::new(),
             buffered_group: ApGroupFrameQueue::new(),
             prepared_buffered_release: None,
@@ -523,6 +369,14 @@ where
             || self.prepared_standby.is_some()
             || self.prepared_buffered_release.is_some()
             || self.prepared_group_release.is_some()
+    }
+
+    pub(super) fn prepared_start_ready(&self) -> bool {
+        #[cfg(feature = "tx-core1-materializer-probe")]
+        if self.core1_materialization_in_flight {
+            return false;
+        }
+        self.has_prepared()
     }
 
     pub(super) fn prepared_frame_count(&self) -> usize {
@@ -647,6 +501,101 @@ impl<
 where
     M: RawMutex,
 {
+    pub(super) fn advance_prepared<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        self.prepare_ready_standby(aggregate, control, network)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.record_partial_frontier(network);
+        Ok(())
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn record_partial_frontier(
+        &self,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) {
+        let Some(batch) = self.prepared_standby.as_ref() else {
+            return;
+        };
+        if batch.admitted >= usize::from(batch.policy.frame_limit()) {
+            return;
+        }
+        let key = ApTxFlowKey {
+            peer: batch.admission.peer(),
+            tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+        };
+        let matching_retained = self.active_frames.len_for(key)
+            + usize::from(self.prepared_first_key == Some(key))
+            + usize::from(self.prepared_second_key == Some(key));
+        let retained = self.active_frames.len()
+            + usize::from(self.prepared_first.is_some())
+            + usize::from(self.prepared_second.is_some());
+        CORE0_PERFORMANCE.record_ap_partial_frontier(
+            matching_retained,
+            retained.saturating_sub(matching_retained),
+            network.queue_len(),
+            batch.mismatch_claims,
+        );
+        let ownership = network.ownership_snapshot();
+        let radio_owned = ownership.radio_owned(TX_QUEUE_DEPTH);
+        CORE0_PERFORMANCE.record_ap_partial_publication(
+            batch.admitted,
+            ownership.free,
+            ownership.ready_for_interface,
+            ownership.ready_for_other_interfaces,
+            ownership.ingress_reserved,
+            ownership.application_reserved,
+            ownership.tokens_in_flight,
+            radio_owned,
+            radio_owned.saturating_sub(batch.admitted.saturating_add(retained)),
+        );
+    }
+
     fn push_active_frame(
         &mut self,
         key: ApTxFlowKey,
@@ -663,10 +612,74 @@ where
         PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     > {
         let frame_index = self.frame_arena.insert(frame)?;
-        if self.active_frames.push(key, frame_index).is_err() {
+        if self.active_frames.push_back(key, frame_index).is_err() {
             return Err(self.frame_arena.take(frame_index));
         }
         Ok(())
+    }
+
+    fn push_active_frame_front(
+        &mut self,
+        key: ApTxFlowKey,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<
+        (),
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        let frame_index = self.frame_arena.insert(frame)?;
+        if self.active_frames.push_front(key, frame_index).is_err() {
+            return Err(self.frame_arena.take(frame_index));
+        }
+        Ok(())
+    }
+
+    fn restore_active_pair_front(
+        &mut self,
+        key: ApTxFlowKey,
+        first: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+        second: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) {
+        // `push_front` reverses insertion order. Restore the younger frame
+        // first so the next scheduler turn observes the original prefix.
+        self.restore_active_frame_front(key, second);
+        self.restore_active_frame_front(key, first);
+    }
+
+    fn restore_active_frame_front(
+        &mut self,
+        key: ApTxFlowKey,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) {
+        self.push_active_frame_front(key, frame)
+            .unwrap_or_else(|_| panic!("AP rollback lost its bounded arena credit"));
     }
 
     fn pop_active_key(
@@ -764,6 +777,18 @@ where
             let frame_key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
             if frame_key == key {
                 return Ok(Some(frame));
+            }
+            #[cfg(feature = "tx-phase-telemetry")]
+            if self
+                .prepared_standby
+                .as_ref()
+                .is_some_and(|batch| batch.admission.peer() == key.peer)
+            {
+                let batch = self
+                    .prepared_standby
+                    .as_mut()
+                    .expect("the checked AP standby remains owned");
+                batch.mismatch_claims = batch.mismatch_claims.saturating_add(1);
             }
             let _ = self.push_active_frame(frame_key, frame);
         }
@@ -1483,12 +1508,11 @@ where
                         // second lease for that exact fallback.
                         retained_aggregate_second = Some(second);
                     } else {
-                        let _ = self.push_active_frame(flow_key, second);
+                        self.restore_active_frame_front(flow_key, second);
                     }
                 }
                 Err(error) => {
-                    let _ = self.push_active_frame(flow_key, frame);
-                    let _ = self.push_active_frame(flow_key, second);
+                    self.restore_active_pair_front(flow_key, frame, second);
                     return Err(Esp32s31AccessPointDatapathError::Control(error));
                 }
             }
@@ -1531,16 +1555,18 @@ where
             let mut frame = match network.try_promote(frame) {
                 Ok(frame) => frame,
                 Err(frame) => {
-                    let _ = self.push_active_frame(flow_key, frame);
-                    let _ = self.push_active_frame(flow_key, second);
+                    self.restore_active_pair_front(flow_key, frame, second);
                     return Ok(WifiTxProgress::Complete);
                 }
             };
             let mut second = match network.try_promote(second) {
                 Ok(second) => second,
                 Err(second) => {
-                    let _ = self.push_active_frame(flow_key, PinnedNetworkTxFrame::Direct(frame));
-                    let _ = self.push_active_frame(flow_key, second);
+                    self.restore_active_pair_front(
+                        flow_key,
+                        PinnedNetworkTxFrame::Direct(frame),
+                        second,
+                    );
                     return Ok(WifiTxProgress::Complete);
                 }
             };
@@ -1604,7 +1630,7 @@ where
                 let mut next = match network.try_promote(next) {
                     Ok(next) => next,
                     Err(next) => {
-                        let _ = self.push_active_frame(flow_key, next);
+                        self.restore_active_frame_front(flow_key, next);
                         break;
                     }
                 };
@@ -1773,13 +1799,13 @@ where
         T: WifiTxTimer,
     {
         while self.can_prepare(aggregate, control.tx_pending()) {
-            let frame = if let Some(batch) = self.prepared_standby.as_ref() {
-                let key = ApTxFlowKey {
-                    peer: batch.admission.peer(),
-                    tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
-                };
-                self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
-            } else if let Some(first) = self.prepared_first.as_ref() {
+            if self.prepared_standby.is_some() {
+                if !self.prepare_existing_standby_batch(aggregate, control, network)? {
+                    break;
+                }
+                continue;
+            }
+            let frame = if let Some(first) = self.prepared_first.as_ref() {
                 let key = ApTxFlowKey::tid0_from_ethernet(first.as_slice());
                 self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
             } else {
@@ -1793,6 +1819,179 @@ where
             }
         }
         Ok(())
+    }
+
+    fn prepare_existing_standby_batch<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<bool, Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        let (admission, remaining) = {
+            let batch = self
+                .prepared_standby
+                .as_ref()
+                .expect("caller checked the prepared AP standby batch");
+            (
+                batch.admission,
+                usize::from(batch.policy.frame_limit()).saturating_sub(batch.admitted),
+            )
+        };
+        if remaining == 0 {
+            return Ok(false);
+        }
+        let key = ApTxFlowKey {
+            peer: admission.peer(),
+            tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+        };
+        let mut frames = [const { None }; SLOTS];
+        #[cfg(feature = "tx-core1-materializer-probe")]
+        let completed = if self.core1_materialization_in_flight {
+            match network.poll_core1_materialization(&mut frames) {
+                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Pending => {
+                    return Ok(false);
+                }
+                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Cancelled => {
+                    self.core1_materialization_in_flight = false;
+                    return Ok(false);
+                }
+                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Ready(count) => {
+                    self.core1_materialization_in_flight = false;
+                    Some(count)
+                }
+            }
+        } else {
+            None
+        };
+        #[cfg(not(feature = "tx-core1-materializer-probe"))]
+        let completed: Option<usize> = None;
+
+        let count = if let Some(count) = completed {
+            count
+        } else {
+            let burst_limit = remaining.min(SLOTS).min(network.promotion_capacity());
+            if burst_limit == 0 {
+                return Ok(false);
+            }
+            let mut count = 0;
+            while count < burst_limit {
+                let Some(frame) =
+                    self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
+                else {
+                    break;
+                };
+                debug_assert!(admission.accepts_ethernet(frame.as_slice()));
+                frames[count] = Some(frame);
+                count += 1;
+            }
+            if count == 0 {
+                return Ok(false);
+            }
+            #[cfg(feature = "tx-core1-materializer-probe")]
+            if network.core1_materializer_selected() {
+                if network.try_submit_core1_materialization(&mut frames) {
+                    self.core1_materialization_in_flight = true;
+                    return Ok(true);
+                }
+                for frame in frames[..count].iter_mut().rev().filter_map(Option::take) {
+                    self.restore_active_frame_front(key, frame);
+                }
+                return Ok(false);
+            }
+            count
+        };
+
+        #[cfg(any(feature = "diagnostics", test))]
+        let started = self.observer.map(AggregateTxObserver::now_micros);
+        if !network.try_promote_batch(&mut frames) {
+            for frame in frames[..count].iter_mut().rev().filter_map(Option::take) {
+                self.restore_active_frame_front(key, frame);
+            }
+            return Ok(false);
+        }
+
+        let peer = admission.peer();
+        for slot in frames[..count].iter_mut() {
+            let mut frame = slot
+                .take()
+                .expect("the selected AP burst retains every packet owner")
+                .into_direct()
+                .unwrap_or_else(|_| panic!("successful promotion leaves only DMA owners"));
+            let offset = frame.ethernet_offset();
+            let length = frame.ethernet_length();
+            let encoded = control
+                .mac
+                .engine_mut()
+                .encode_aggregate_ethernet_in_place(
+                    admission.binding(),
+                    frame.storage_mut(),
+                    offset,
+                    length,
+                )
+                .map_err(|error| {
+                    Esp32s31AccessPointDatapathError::Control(
+                        Esp32s31AccessPointControlError::from(error),
+                    )
+                })?;
+            aggregate
+                .standby_mut()
+                .expect("checked standby arena")
+                .push(peer, frame, encoded)
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+        }
+        let frame_limit;
+        {
+            let batch = self
+                .prepared_standby
+                .as_mut()
+                .expect("checked AP standby batch");
+            batch.admitted += count;
+            frame_limit = usize::from(batch.policy.frame_limit());
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                batch.preparation_micros = batch.preparation_micros.saturating_add(
+                    self.observer
+                        .map(|observer| observer.now_micros().saturating_sub(started.unwrap_or(0)))
+                        .unwrap_or(0),
+                );
+            }
+        }
+        let _ = frame_limit;
+        Ok(true)
     }
 
     fn prepare_retained_one<
@@ -1868,7 +2067,7 @@ where
                 Ok(frame) => frame,
                 Err(frame) => {
                     let key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
-                    let _ = self.push_active_frame(key, frame);
+                    self.restore_active_frame_front(key, frame);
                     return Ok(false);
                 }
             };
@@ -1945,16 +2144,18 @@ where
         let mut first = match network.try_promote(first) {
             Ok(first) => first,
             Err(first) => {
-                let _ = self.push_active_frame(first_key, first);
-                let _ = self.push_active_frame(first_key, frame);
+                self.restore_active_pair_front(first_key, first, frame);
                 return Ok(false);
             }
         };
         let mut frame = match network.try_promote(frame) {
             Ok(frame) => frame,
             Err(frame) => {
-                let _ = self.push_active_frame(first_key, PinnedNetworkTxFrame::Direct(first));
-                let _ = self.push_active_frame(first_key, frame);
+                self.restore_active_pair_front(
+                    first_key,
+                    PinnedNetworkTxFrame::Direct(first),
+                    frame,
+                );
                 return Ok(false);
             }
         };
@@ -2015,6 +2216,8 @@ where
             admission,
             policy,
             admitted: 2,
+            #[cfg(feature = "tx-phase-telemetry")]
+            mismatch_claims: 0,
             #[cfg(any(feature = "diagnostics", test))]
             preparation_micros: self
                 .observer
@@ -2083,6 +2286,8 @@ where
             return self.start_prepared_buffered_release(control, hardware);
         }
         self.prepare_ready_standby(aggregate, control, network)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.record_partial_frontier(network);
         let Some(_batch) = self.prepared_standby.take() else {
             loop {
                 let Some(frame) = self.prepared_first.take() else {
@@ -2169,12 +2374,31 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                TX_QUEUE_DEPTH,
+            >,
+        >,
     ) -> Result<(), Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
+        #[cfg(feature = "tx-core1-materializer-probe")]
+        if self.core1_materialization_in_flight {
+            network
+                .expect("an in-flight Core1 batch retains its interface capability")
+                .cancel_core1_materialization();
+            self.core1_materialization_in_flight = false;
+        }
+        #[cfg(not(feature = "tx-core1-materializer-probe"))]
+        let _ = network;
         self.rollback_prepared_buffered_release(control)?;
         self.discard_group_buffer(control)?;
         control
@@ -2614,7 +2838,7 @@ mod tests {
 
         fn push(&mut self, key: ApTxFlowKey, frame: B) -> Result<(), B> {
             let index = self.leases.insert(frame)?;
-            if self.queues.push(key, index).is_err() {
+            if self.queues.push_back(key, index).is_err() {
                 return Err(self.leases.take(index));
             }
             Ok(())

@@ -17,12 +17,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex,
-    signal::Signal,
-};
 #[cfg(feature = "mac-irq-diagnostics")]
 use embassy_sync::once_lock::OnceLock;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Timer;
 use open_esp_radio_embassy_net::SharedPinnedRxQueue;
 use open_esp_radio_esp32s31_hal::radio_arena::Esp32s31RadioOwnerArena;
@@ -44,7 +41,6 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
-    datapath::{DatapathRunner, DatapathRunnerExit, DatapathServices},
     datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch},
     datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer},
     datapath::rx::frontier::{
@@ -55,6 +51,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
     },
     datapath::rx::staging::Esp32s31StagedRxQueue,
+    datapath::{DatapathRunner, DatapathRunnerExit, DatapathServices},
     roles::station::connected::{
         ConnectedControlPublisher, ConnectedControlResources,
         ConnectedControlShutdown as Esp32s31ConnectedControlShutdown, ConnectedWpa2Security,
@@ -521,8 +518,7 @@ async fn connected_datapath_task(
         let result = poll_fn(|context| {
             let started = riscv::register::mcycle::read() as u32;
             let result = run.as_mut().poll(context);
-            let elapsed_cycles =
-                (riscv::register::mcycle::read() as u32).wrapping_sub(started);
+            let elapsed_cycles = (riscv::register::mcycle::read() as u32).wrapping_sub(started);
             let elapsed_micros = elapsed_cycles.div_ceil(cycles_per_micro);
             batch.polls = batch.polls.saturating_add(1);
             batch.poll_micros = batch.poll_micros.saturating_add(elapsed_micros);

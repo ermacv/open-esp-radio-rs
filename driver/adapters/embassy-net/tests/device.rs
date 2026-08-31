@@ -6,15 +6,23 @@ use core::{
 };
 use std::{sync::Arc, task::Wake};
 
+#[cfg(feature = "tx-egress-scheduling")]
+use embassy_net_driver::EgressQueuePolicy;
 use embassy_net_driver::{
     Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _,
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
+#[cfg(feature = "tx-staging-copy-probe")]
+use open_esp_radio_embassy_net::PinnedNetworkTxFrame;
 use open_esp_radio_embassy_net::{
     DualPinnedNetworkRunner, ETHERNET_HEADER_LEN, FrameLengthError, NetworkInterfaceId,
     PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, Resources,
     RxEnqueueError, SharedPinnedRxQueue,
+};
+#[cfg(feature = "tx-core1-materializer-probe")]
+use open_esp_radio_embassy_net::{
+    PinnedTxCore1MaterializationPoll, configure_tx_core1_materializer_probe,
 };
 
 const FRAME_CAPACITY: usize = 64;
@@ -22,6 +30,8 @@ const TX_HEADROOM: usize = 28;
 const TX_TRAILER: usize = 8;
 const TEST_ETHERNET_LENGTH: usize = ETHERNET_HEADER_LEN + 8;
 static SHARED_RX_RELEASES: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "tx-core1-materializer-probe")]
+static CORE1_MATERIALIZER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 struct CountWake(Arc<AtomicUsize>);
 
@@ -249,6 +259,47 @@ fn shared_staging_slot_reaches_device_without_a_second_pool_copy() {
     assert_eq!(shared_pool.claimed_slots(), 0);
 }
 
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn shared_rx_wrapper_delegates_the_inner_egress_policy() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let shared_pool = Box::leak(Box::new(RxHandoffPool::<FRAME_CAPACITY, 1>::new()));
+    let shared_queue = Box::leak(Box::new(SharedPinnedRxQueue::<NoopRawMutex, 1>::new()));
+    let (_publisher, consumer) = shared_queue.split(shared_pool, observe_shared_rx_release);
+    let (device, radio) = split_pinned!(
+        resources,
+        tx_pool,
+        NetworkInterfaceId::new(0),
+        [2, 0, 0, 0, 0, 1]
+    );
+    let mut device = device.with_ingress_tx_reserve().with_shared_rx(consumer);
+
+    assert_eq!(device.egress_queue_policy(), EgressQueuePolicy::Fifo);
+    radio.set_link_state(LinkState::Up);
+    assert_eq!(
+        device.egress_queue_policy(),
+        EgressQueuePolicy::ResolvedEgressBurst {
+            max_packets: 32,
+            dispatch_quantum: 4,
+            epoch: 1,
+        }
+    );
+    radio.set_link_state(LinkState::Down);
+    assert_eq!(device.egress_queue_policy(), EgressQueuePolicy::Fifo);
+    radio.set_link_state(LinkState::Up);
+    assert_eq!(
+        device.egress_queue_policy(),
+        EgressQueuePolicy::ResolvedEgressBurst {
+            max_packets: 32,
+            dispatch_quantum: 4,
+            epoch: 2,
+        }
+    );
+}
+
 #[test]
 fn copied_and_shared_rx_follow_one_publication_order() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 3>;
@@ -356,6 +407,7 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
         NetworkInterfaceId::new(0),
         [2, 0, 0, 0, 0, 1]
     );
+    radio.set_link_state(LinkState::Up);
     device
         .transmit(&mut context())
         .unwrap()
@@ -398,13 +450,15 @@ fn scheduled_staged_tx_keeps_ownership_until_one_dma_promotion_copy() {
     let station_interface = NetworkInterfaceId::new(0);
     let access_point_interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station, _station_rx) =
+    let (mut station, station_rx) =
         station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
-    let (access_point, _access_point_rx) =
+    let (access_point, access_point_rx) =
         access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
     let mut access_point = access_point.with_tx_staging_copy_selected(true);
     let station_tx = consumer.for_interface(station_interface);
     let access_point_tx = consumer.for_interface(access_point_interface);
+    station_rx.set_link_state(LinkState::Up);
+    access_point_rx.set_link_state(LinkState::Up);
 
     // Occupy the sole physical DMA credit through the direct STA endpoint.
     station
@@ -450,6 +504,325 @@ fn scheduled_staged_tx_keeps_ownership_until_one_dma_promotion_copy() {
     assert!(access_point.transmit(&mut context()).is_some());
 }
 
+#[cfg(feature = "tx-staging-copy-probe")]
+#[test]
+fn scheduled_staged_tx_promotes_a_complete_batch_in_order() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+
+    let endpoint_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (device, radio_state) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let mut device = device.with_tx_staging_copy_selected(true);
+    let radio = consumer.for_interface(interface);
+    radio_state.set_link_state(LinkState::Up);
+
+    for marker in 1..=3_u8 {
+        device
+            .transmit(&mut context())
+            .expect("the staged packet pool has one credit per frame")
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let mut batch = [
+        radio.try_receive(),
+        radio.try_receive(),
+        radio.try_receive(),
+    ];
+    assert!(radio.try_promote_batch(&mut batch));
+    for (index, frame) in batch.into_iter().enumerate() {
+        let frame = frame
+            .expect("every batch entry remains occupied")
+            .into_direct()
+            .unwrap_or_else(|_| panic!("successful batch promotion leaves only DMA owners"));
+        assert_eq!(frame.ethernet()[0], index as u8 + 1);
+        drop(frame);
+    }
+    assert!(device.transmit(&mut context()).is_some());
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[test]
+fn selected_batch_materializes_in_the_network_driver_poll() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+
+    let _guard = CORE1_MATERIALIZER_TEST_LOCK.lock().unwrap();
+    configure_tx_core1_materializer_probe(true);
+    let endpoint_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let mut device = device.with_tx_staging_copy_selected(true);
+    let radio = consumer.for_interface(interface);
+
+    for marker in 1..=3_u8 {
+        device
+            .transmit(&mut context())
+            .expect("the staged packet pool has one credit per frame")
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let mut batch = [
+        radio.try_receive(),
+        radio.try_receive(),
+        radio.try_receive(),
+    ];
+    assert!(radio.try_submit_core1_materialization(&mut batch));
+    assert!(batch.iter().all(Option::is_none));
+    assert_eq!(
+        radio.poll_core1_materialization(&mut batch),
+        PinnedTxCore1MaterializationPoll::Pending
+    );
+
+    // Driver::transmit is executed by the network runner on Core1 in the
+    // production split topology. Its bounded service turn performs the copy
+    // and publishes only one completion record for the complete batch.
+    drop(device.transmit(&mut context()));
+    assert_eq!(
+        radio.poll_core1_materialization(&mut batch),
+        PinnedTxCore1MaterializationPoll::Ready(3)
+    );
+    for (index, frame) in batch.into_iter().enumerate() {
+        let frame = frame
+            .expect("completion restores every selected owner")
+            .into_direct()
+            .unwrap_or_else(|_| panic!("Core1 completion contains only DMA owners"));
+        assert_eq!(frame.ethernet()[0], index as u8 + 1);
+        drop(frame);
+    }
+    configure_tx_core1_materializer_probe(false);
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[test]
+fn pending_core1_materialization_cancellation_returns_both_credit_classes() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+
+    let _guard = CORE1_MATERIALIZER_TEST_LOCK.lock().unwrap();
+    configure_tx_core1_materializer_probe(true);
+    let endpoint_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let mut device = device.with_tx_staging_copy_selected(true);
+    let radio = consumer.for_interface(interface);
+
+    for marker in 1..=3_u8 {
+        device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let mut batch = [
+        radio.try_receive(),
+        radio.try_receive(),
+        radio.try_receive(),
+    ];
+    assert!(radio.try_submit_core1_materialization(&mut batch));
+    assert!(radio.cancel_core1_materialization());
+    drop(device.transmit(&mut context()));
+    assert_eq!(
+        radio.poll_core1_materialization(&mut batch),
+        PinnedTxCore1MaterializationPoll::Cancelled
+    );
+
+    // The cancelled request returned all three staged sources and all three
+    // reserved physical destinations; neither pool depends on a later epoch.
+    for marker in 4..=6_u8 {
+        device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let mut replacement = [
+        radio.try_receive(),
+        radio.try_receive(),
+        radio.try_receive(),
+    ];
+    assert!(radio.try_promote_batch(&mut replacement));
+    drop(replacement);
+    configure_tx_core1_materializer_probe(false);
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[test]
+fn published_core1_materialization_cancellation_reclaims_ready_dma_owners() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+
+    let _guard = CORE1_MATERIALIZER_TEST_LOCK.lock().unwrap();
+    configure_tx_core1_materializer_probe(true);
+    let endpoint_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let mut device = device.with_tx_staging_copy_selected(true);
+    let radio = consumer.for_interface(interface);
+
+    for marker in 1..=3_u8 {
+        device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let mut batch = [
+        radio.try_receive(),
+        radio.try_receive(),
+        radio.try_receive(),
+    ];
+    assert!(radio.try_submit_core1_materialization(&mut batch));
+    drop(device.transmit(&mut context()));
+    assert!(radio.cancel_core1_materialization());
+    assert_eq!(
+        radio.poll_core1_materialization(&mut batch),
+        PinnedTxCore1MaterializationPoll::Pending
+    );
+
+    // Cancellation consumed the already-published completion and returned
+    // its READY destinations, so another full physical batch can be promoted.
+    for marker in 4..=6_u8 {
+        device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let mut replacement = [
+        radio.try_receive(),
+        radio.try_receive(),
+        radio.try_receive(),
+    ];
+    assert!(radio.try_promote_batch(&mut replacement));
+    drop(replacement);
+    configure_tx_core1_materializer_probe(false);
+}
+
+#[cfg(feature = "tx-core1-materializer-probe")]
+#[test]
+fn materializer_rearms_core1_wake_before_returning_a_staged_credit() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+
+    let _guard = CORE1_MATERIALIZER_TEST_LOCK.lock().unwrap();
+    configure_tx_core1_materializer_probe(true);
+    let endpoint_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let mut device = device.with_tx_staging_copy_selected(true);
+    let radio = consumer.for_interface(interface);
+
+    device
+        .transmit(&mut context())
+        .unwrap()
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(1));
+    let mut first = [radio.try_receive()];
+    assert!(radio.try_submit_core1_materialization(&mut first));
+
+    let wake_count = Arc::new(AtomicUsize::new(0));
+    let waker = Waker::from(Arc::new(CountWake(Arc::clone(&wake_count))));
+    let mut counted_context = Context::from_waker(&waker);
+    // This one poll both services the first copy and uses its returned staged
+    // credit to publish the successor. No empty driver poll exists between
+    // the two Core0 submissions.
+    device
+        .transmit(&mut counted_context)
+        .unwrap()
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(2));
+    assert_eq!(
+        radio.poll_core1_materialization(&mut first),
+        PinnedTxCore1MaterializationPoll::Ready(1)
+    );
+    drop(first);
+
+    let mut second = [radio.try_receive()];
+    let wakes_before = wake_count.load(Ordering::Relaxed);
+    assert!(radio.try_submit_core1_materialization(&mut second));
+    assert!(
+        wake_count.load(Ordering::Relaxed) > wakes_before,
+        "the successor request must wake the Core1 driver without a timer assist"
+    );
+    assert!(radio.cancel_core1_materialization());
+    drop(device.transmit(&mut counted_context));
+    configure_tx_core1_materializer_probe(false);
+}
+
+#[cfg(feature = "tx-staging-copy-probe")]
+#[test]
+fn scheduled_staged_tx_batch_reservation_is_all_or_nothing() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let station_resources = Box::leak(Box::new(EndpointResources::new()));
+    let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let station_interface = NetworkInterfaceId::new(0);
+    let access_point_interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut station, station_rx) =
+        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
+    let (access_point, access_point_rx) =
+        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    let mut access_point = access_point.with_tx_staging_copy_selected(true);
+    let station_tx = consumer.for_interface(station_interface);
+    let access_point_tx = consumer.for_interface(access_point_interface);
+    station_rx.set_link_state(LinkState::Up);
+    access_point_rx.set_link_state(LinkState::Up);
+
+    station
+        .transmit(&mut context())
+        .expect("the first physical credit is free")
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xd1));
+    let occupied = station_tx
+        .try_receive_direct()
+        .expect("STA retains one of two physical credits");
+    assert_eq!(access_point_tx.promotion_capacity(), 1);
+    for marker in 1..=2_u8 {
+        access_point
+            .transmit(&mut context())
+            .expect("AP staging is independent of physical credits")
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let mut batch = [access_point_tx.try_receive(), access_point_tx.try_receive()];
+
+    assert!(!access_point_tx.try_promote_batch(&mut batch));
+    for (index, frame) in batch.iter().enumerate() {
+        assert_eq!(frame.as_ref().unwrap().ethernet()[0], index as u8 + 1);
+        assert!(matches!(
+            frame.as_ref().unwrap(),
+            PinnedNetworkTxFrame::Staged(_)
+        ));
+    }
+
+    drop(occupied);
+    assert_eq!(access_point_tx.promotion_capacity(), 2);
+    assert!(access_point_tx.try_promote_batch(&mut batch));
+    for frame in batch.into_iter().flatten() {
+        drop(
+            frame
+                .into_direct()
+                .unwrap_or_else(|_| panic!("retry promotes every retained source")),
+        );
+    }
+}
+
 #[test]
 fn pinned_tx_batch_wait_does_not_claim_a_partial_prefix() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 3>;
@@ -462,6 +835,7 @@ fn pinned_tx_batch_wait_does_not_claim_a_partial_prefix() {
         NetworkInterfaceId::new(0),
         [2, 0, 0, 0, 0, 1]
     );
+    radio.set_link_state(LinkState::Up);
     let tx = radio.tx_consumer();
     let mut batch = pin!(tx.wait_queue_len_at_least(3));
 
@@ -611,6 +985,71 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
 }
 
 #[test]
+fn link_down_reclaims_unclaimed_vif_backlog_from_the_shared_pool() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    let station_resources = Box::leak(Box::new(EndpointResources::new()));
+    let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let station_interface = NetworkInterfaceId::new(0);
+    let access_point_interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut station, station_rx) =
+        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
+    let (mut access_point, access_point_rx) =
+        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    let radio = DualPinnedNetworkRunner::new(
+        station_interface,
+        station_rx,
+        access_point_interface,
+        access_point_rx,
+        consumer,
+    );
+    radio.set_link_state(station_interface, LinkState::Up);
+    radio.set_link_state(access_point_interface, LinkState::Up);
+
+    for marker in 0..2_u8 {
+        station
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    assert_eq!(radio.tx_consumer().queue_len_for(station_interface), 2);
+
+    radio.set_link_state(station_interface, LinkState::Down);
+    assert_eq!(radio.tx_consumer().queue_len_for(station_interface), 0);
+
+    // Cover the opposite cross-core ordering: link-down drains first, then
+    // the already-issued synchronous token completes its publication.
+    radio.set_link_state(station_interface, LinkState::Up);
+    let late = station
+        .transmit(&mut context())
+        .expect("one station token is issued before link-down");
+    radio.set_link_state(station_interface, LinkState::Down);
+    late.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xee));
+    assert_eq!(radio.tx_consumer().queue_len_for(station_interface), 0);
+
+    // A stale network poll may also acquire its token after the link already
+    // went down. Publication-time state is authoritative: such a frame must
+    // return its physical credit instead of becoming hidden VIF backlog.
+    station
+        .transmit(&mut context())
+        .expect("a stale poll can still own one globally free credit")
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xef));
+    assert_eq!(radio.tx_consumer().queue_len_for(station_interface), 0);
+
+    for _ in 0..4 {
+        access_point
+            .transmit(&mut context())
+            .expect("stopped STA backlog no longer owns a physical credit")
+            .consume(TEST_ETHERNET_LENGTH, |_| ());
+    }
+    assert!(access_point.transmit(&mut context()).is_none());
+}
+
+#[test]
 fn returned_shared_tx_credit_wakes_one_waiting_peer() {
     type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
@@ -722,6 +1161,7 @@ fn pinned_ingress_credit_survives_saturated_application_egress() {
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let (device, radio) = split_pinned!(resources, pool, NetworkInterfaceId::new(0), [0; 6]);
+    radio.set_link_state(LinkState::Up);
     let mut device = device.with_ingress_tx_reserve();
     let mut publisher = radio.rx_publisher();
 
@@ -756,6 +1196,8 @@ fn every_permanent_endpoint_keeps_its_own_ingress_credit() {
         access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
     let mut station = station.with_ingress_tx_reserve();
     let mut access_point = access_point.with_ingress_tx_reserve();
+    station_rx.set_link_state(LinkState::Up);
+    access_point_rx.set_link_state(LinkState::Up);
 
     station
         .transmit(&mut context())
@@ -786,6 +1228,63 @@ fn every_permanent_endpoint_keeps_its_own_ingress_credit() {
     drop(access_point_reply);
 }
 
+#[cfg(feature = "tx-phase-telemetry")]
+#[test]
+fn direct_pool_snapshot_accounts_reserves_tokens_ready_and_radio_owners() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    let station_resources = Box::leak(Box::new(EndpointResources::new()));
+    let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (station, station_rx) =
+        station_resources.split(provider, NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]);
+    let (access_point, access_point_rx) =
+        access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
+    station_rx.set_link_state(LinkState::Up);
+    access_point_rx.set_link_state(LinkState::Up);
+    let mut station = station.with_ingress_tx_reserve();
+    let _access_point = access_point.with_ingress_tx_reserve();
+
+    let token = station
+        .transmit(&mut context())
+        .expect("one application token remains available");
+    assert_eq!(
+        consumer.ownership_snapshot_for(NetworkInterfaceId::new(0)),
+        open_esp_radio_embassy_net::PinnedTxOwnershipSnapshot {
+            free: 1,
+            ready_for_interface: 0,
+            ready_for_other_interfaces: 0,
+            ingress_reserved: 2,
+            application_reserved: 0,
+            tokens_in_flight: 1,
+        }
+    );
+
+    token.consume(ETHERNET_HEADER_LEN, |_| ());
+    let published = consumer.ownership_snapshot_for(NetworkInterfaceId::new(0));
+    assert_eq!(published.free, 1);
+    assert_eq!(published.ready_for_interface, 1);
+    assert_eq!(published.ingress_reserved, 2);
+    assert_eq!(published.tokens_in_flight, 0);
+
+    let radio_owned = consumer
+        .try_receive_for(NetworkInterfaceId::new(0))
+        .expect("radio claims the published frame");
+    let claimed = consumer.ownership_snapshot_for(NetworkInterfaceId::new(0));
+    assert_eq!(claimed.ready_for_interface, 0);
+    assert_eq!(claimed.radio_owned(4), 1);
+    drop(radio_owned);
+    assert_eq!(
+        consumer
+            .ownership_snapshot_for(NetworkInterfaceId::new(0))
+            .free,
+        2
+    );
+}
+
 #[test]
 fn pinned_rx_and_tx_depths_are_independent() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 3>;
@@ -793,6 +1292,7 @@ fn pinned_rx_and_tx_depths_are_independent() {
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let (mut device, radio) = split_pinned!(resources, pool, NetworkInterfaceId::new(0), [0; 6]);
+    radio.set_link_state(LinkState::Up);
     let mut publisher = radio.rx_publisher();
     assert_eq!(device.capabilities().max_burst_size, Some(1));
 

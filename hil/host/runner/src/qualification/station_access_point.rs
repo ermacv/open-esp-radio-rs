@@ -363,6 +363,7 @@ fn start_session(
     let flow_config = || FlowConfig {
         payload_bytes: u16::try_from(config.payload_bytes).expect("validated payload fits u16"),
         offered_rate_bps: Some(config.rate_bps_per_flow),
+        pacing_group_datagrams: None,
     };
     let (direction, target_rx, target_tx) = match config.direction {
         crate::qualification::scenario::Direction::Rx => {

@@ -1730,9 +1730,9 @@ impl ProductionWifiEpochRunner {
             );
             store_access_point_rx_hardware_observation(
                 crate::Esp32s31DiagnosticRxStatistics::from_deltas(
-                rx_delta,
-                rx_decode_delta,
-                rx_hang_delta,
+                    rx_delta,
+                    rx_decode_delta,
+                    rx_hang_delta,
                 ),
             );
         };

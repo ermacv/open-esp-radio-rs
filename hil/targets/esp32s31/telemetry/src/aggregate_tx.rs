@@ -101,8 +101,7 @@ impl PreparedTxSchedulerTraceRecorder {
             .store(0, Ordering::Relaxed);
         self.scheduler_loop_resumed_micros
             .store(0, Ordering::Relaxed);
-        self.stop_poll_completed_micros
-            .store(0, Ordering::Relaxed);
+        self.stop_poll_completed_micros.store(0, Ordering::Relaxed);
         self.control_readiness_checked_micros
             .store(0, Ordering::Relaxed);
         self.prepared_readiness_checked_micros
@@ -161,8 +160,7 @@ impl PreparedTxSchedulerTraceRecorder {
         let scheduler_loop_resumed_micros = take_time(&self.scheduler_loop_resumed_micros);
         let stop_poll_completed_micros = take_time(&self.stop_poll_completed_micros);
         let control_readiness_checked_micros = take_time(&self.control_readiness_checked_micros);
-        let prepared_readiness_checked_micros =
-            take_time(&self.prepared_readiness_checked_micros);
+        let prepared_readiness_checked_micros = take_time(&self.prepared_readiness_checked_micros);
         let prepared_batch_checked_micros = take_time(&self.prepared_batch_checked_micros);
         let prepared_entry_micros = take_time(&self.prepared_entry_micros);
         let scheduler_passes = self.scheduler_passes.swap(0, Ordering::Relaxed);
@@ -221,18 +219,18 @@ impl PreparedTxSchedulerTimingCounters {
     }
 
     fn record(&self, completion_micros: u32, trace: PreparedTxSchedulerTrace) {
-        let active_return = trace.active_service_returned_micros as u32
-            & AggregateTxCounters::IRQ_TIME_MASK;
-        let scheduler_loop = trace.scheduler_loop_resumed_micros as u32
-            & AggregateTxCounters::IRQ_TIME_MASK;
-        let stop_poll = trace.stop_poll_completed_micros as u32
-            & AggregateTxCounters::IRQ_TIME_MASK;
-        let control_check = trace.control_readiness_checked_micros as u32
-            & AggregateTxCounters::IRQ_TIME_MASK;
-        let prepared_readiness = trace.prepared_readiness_checked_micros as u32
-            & AggregateTxCounters::IRQ_TIME_MASK;
-        let prepared_batch = trace.prepared_batch_checked_micros as u32
-            & AggregateTxCounters::IRQ_TIME_MASK;
+        let active_return =
+            trace.active_service_returned_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
+        let scheduler_loop =
+            trace.scheduler_loop_resumed_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
+        let stop_poll =
+            trace.stop_poll_completed_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
+        let control_check =
+            trace.control_readiness_checked_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
+        let prepared_readiness =
+            trace.prepared_readiness_checked_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
+        let prepared_batch =
+            trace.prepared_batch_checked_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
 
         let Some(completion_to_active_return) =
             Self::elapsed(completion_micros, trace.active_service_returned_micros)
@@ -244,7 +242,8 @@ impl PreparedTxSchedulerTimingCounters {
         else {
             return;
         };
-        let Some(stop_poll_micros) = Self::elapsed(scheduler_loop, trace.stop_poll_completed_micros)
+        let Some(stop_poll_micros) =
+            Self::elapsed(scheduler_loop, trace.stop_poll_completed_micros)
         else {
             return;
         };
@@ -268,7 +267,8 @@ impl PreparedTxSchedulerTimingCounters {
         else {
             return;
         };
-        let Some(control_to_entry) = Self::elapsed(control_check, trace.prepared_entry_micros) else {
+        let Some(control_to_entry) = Self::elapsed(control_check, trace.prepared_entry_micros)
+        else {
             return;
         };
 
@@ -289,8 +289,7 @@ impl PreparedTxSchedulerTimingCounters {
             .record(control_to_prepared_readiness);
         self.prepared_readiness_to_batch
             .record(prepared_readiness_to_batch);
-        self.prepared_batch_to_entry
-            .record(prepared_batch_to_entry);
+        self.prepared_batch_to_entry.record(prepared_batch_to_entry);
         self.control_check_to_prepared_entry
             .record(control_to_entry);
     }
@@ -525,8 +524,7 @@ impl AggregateTxCounters {
         self.last_completion_micros.store(0, Ordering::Relaxed);
         self.pending_tx_irq_micros.store(0, Ordering::Relaxed);
         self.prepared_scheduler_trace.reset();
-        self.ap_udp_claim_highest
-            .store(u32::MAX, Ordering::Relaxed);
+        self.ap_udp_claim_highest.store(u32::MAX, Ordering::Relaxed);
         self.ap_udp_claim_backward.store(0, Ordering::Relaxed);
         self.ap_udp_claim_first_previous
             .store(u32::MAX, Ordering::Relaxed);
@@ -754,11 +752,7 @@ impl AggregateTxCounters {
         );
     }
 
-    pub(crate) fn record_publication(
-        &self,
-        at_micros: u64,
-        program_micros: u64,
-    ) {
+    pub(crate) fn record_publication(&self, at_micros: u64, program_micros: u64) {
         let prepared_scheduler = self.prepared_scheduler_trace.take();
         let at_modulo = at_micros as u32 & Self::IRQ_TIME_MASK;
         let completion = self.last_completion_micros.swap(0, Ordering::AcqRel);
@@ -777,9 +771,8 @@ impl AggregateTxCounters {
             if let Some(trace) = prepared_scheduler {
                 let entry_micros = trace.prepared_entry_micros;
                 let entry_modulo = entry_micros as u32 & Self::IRQ_TIME_MASK;
-                let completion_to_entry = entry_modulo
-                    .wrapping_sub(completed_modulo)
-                    & Self::IRQ_TIME_MASK;
+                let completion_to_entry =
+                    entry_modulo.wrapping_sub(completed_modulo) & Self::IRQ_TIME_MASK;
                 let entry_to_publication =
                     at_modulo.wrapping_sub(entry_modulo) & Self::IRQ_TIME_MASK;
                 if completion_to_entry <= Self::IRQ_TIME_MASK / 2
@@ -804,10 +797,8 @@ impl AggregateTxCounters {
                 }
             }
         }
-        self.last_publication_micros.store(
-            Self::IRQ_TIME_VALID | at_modulo,
-            Ordering::Release,
-        );
+        self.last_publication_micros
+            .store(Self::IRQ_TIME_VALID | at_modulo, Ordering::Release);
         self.aggregate_publications.fetch_add(1, Ordering::Relaxed);
         Self::record_time(
             &self.publication_program_micros,
@@ -1152,9 +1143,7 @@ impl PreparedTxSchedulerTimingSnapshot {
     fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
             samples: self.samples.wrapping_sub(earlier.samples),
-            scheduler_passes: self
-                .scheduler_passes
-                .wrapping_sub(earlier.scheduler_passes),
+            scheduler_passes: self.scheduler_passes.wrapping_sub(earlier.scheduler_passes),
             scheduler_passes_lifetime_max: self.scheduler_passes_lifetime_max,
             control_ready_passes: self
                 .control_ready_passes
@@ -1761,10 +1750,7 @@ mod tests {
             15
         );
         assert_eq!(delta.prepared_scheduler_timing.stop_poll.micros, 5);
-        assert_eq!(
-            delta.prepared_scheduler_timing.control_readiness.micros,
-            15
-        );
+        assert_eq!(delta.prepared_scheduler_timing.control_readiness.micros, 15);
         assert_eq!(
             delta
                 .prepared_scheduler_timing

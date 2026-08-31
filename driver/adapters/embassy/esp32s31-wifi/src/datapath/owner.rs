@@ -89,6 +89,8 @@ where
             active_tx_interface: None,
             active_tx_origin: None,
             prepared_tx_interface: None,
+            #[cfg(feature = "tx-phase-telemetry")]
+            prepared_tx_completion: None,
             // Every control machine receives one initial finite step so it can
             // establish its first absolute deadline and publish startup work.
             control_ready_latched: true,
@@ -331,6 +333,16 @@ where
             }
             (_, Some(_)) => panic!("services reported prepared TX outside the DATAPATH scope"),
         }
+    }
+
+    /// Cancel the retained software transaction with the exact logical-VIF
+    /// capability that owns any out-of-core materialization request.
+    pub(super) fn cancel_prepared_network_tx(&mut self) -> Result<(), B::Error> {
+        let network = self
+            .services
+            .has_prepared_tx()
+            .then(|| self.tx_consumer_for(self.retained_prepared_tx_interface()));
+        self.services.cancel_prepared_tx(network.as_ref())
     }
 }
 

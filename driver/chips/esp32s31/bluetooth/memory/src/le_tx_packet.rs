@@ -8,6 +8,13 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_esp32s31_hal::{
+    BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+};
+use vcell::VolatileCell;
+
+/// Bytes in one common controller RX/TX buffer header.
+pub const BLUETOOTH_LE_BUFFER_HEADER_BYTES: usize = 0x18;
 /// Bytes preceding the maximum Link Layer payload in a controller TX allocation.
 pub const BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES: usize = 0x12;
 
@@ -16,6 +23,198 @@ const PDU_HEADER_BYTE: usize = CONTROLLER_METADATA_BYTES;
 const PDU_LENGTH_BYTE: usize = CONTROLLER_METADATA_BYTES + 1;
 const ALLOCATION_CLASS_BYTE: usize = 0x05;
 const ALLOCATION_STATE_BYTE: usize = 0x06;
+const HEADER_PACKET_TARGET_OFFSET: u32 = CONTROLLER_METADATA_BYTES as u32;
+
+/// Why a complete LE TX packet extent cannot inhabit controller SRAM.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum BluetoothLeTxPacketAddressError {
+    InvalidBase(BluetoothControllerSramAddressError),
+    ZeroCompressedBase,
+    UnsupportedAllocationSize,
+    ExtentOutsideControllerSram,
+}
+
+/// Validated controller-SRAM geometry for one complete LE TX packet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BluetoothLeTxPacketAddress<const ALLOCATION_BYTES: usize> {
+    base: BluetoothControllerSramAddress,
+    header_packet_target: BluetoothControllerSramAddress,
+}
+
+impl<const ALLOCATION_BYTES: usize> BluetoothLeTxPacketAddress<ALLOCATION_BYTES> {
+    pub(super) const fn new(address: u32) -> Result<Self, BluetoothLeTxPacketAddressError> {
+        if ALLOCATION_BYTES < BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES
+            || ALLOCATION_BYTES - BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES > u8::MAX as usize
+            || ALLOCATION_BYTES > u32::MAX as usize
+        {
+            return Err(BluetoothLeTxPacketAddressError::UnsupportedAllocationSize);
+        }
+        let base = match BluetoothControllerSramAddress::new(address) {
+            Ok(address) => address,
+            Err(error) => return Err(BluetoothLeTxPacketAddressError::InvalidBase(error)),
+        };
+        if base.compressed_image() == 0 {
+            return Err(BluetoothLeTxPacketAddressError::ZeroCompressedBase);
+        }
+        let header_packet_target_address = match address.checked_add(HEADER_PACKET_TARGET_OFFSET) {
+            Some(address) => address,
+            None => return Err(BluetoothLeTxPacketAddressError::ExtentOutsideControllerSram),
+        };
+        let last_aligned_offset = ((ALLOCATION_BYTES as u32 - 1) / 4) * 4;
+        let last_aligned_address = match address.checked_add(last_aligned_offset) {
+            Some(address) => address,
+            None => return Err(BluetoothLeTxPacketAddressError::ExtentOutsideControllerSram),
+        };
+        let header_packet_target =
+            match BluetoothControllerSramAddress::new(header_packet_target_address) {
+                Ok(address) => address,
+                Err(_) => {
+                    return Err(BluetoothLeTxPacketAddressError::ExtentOutsideControllerSram);
+                }
+            };
+        if BluetoothControllerSramAddress::new(last_aligned_address).is_err() {
+            return Err(BluetoothLeTxPacketAddressError::ExtentOutsideControllerSram);
+        }
+        Ok(Self {
+            base,
+            header_packet_target,
+        })
+    }
+
+    pub(super) const fn base_link(self) -> BluetoothLeTxPacketBaseLink {
+        BluetoothLeTxPacketBaseLink(self.base.compressed_image())
+    }
+
+    pub(super) const fn pdu_target_link(self) -> BluetoothLeTxPduTargetLink {
+        BluetoothLeTxPduTargetLink(self.header_packet_target.compressed_image())
+    }
+
+    const fn allocation_extent_image(self) -> u32 {
+        ((ALLOCATION_BYTES - BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES) as u32) << 3
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BluetoothLeTxPacketBaseLink(u32);
+
+impl BluetoothLeTxPacketBaseLink {
+    fn from_image(image: u32) -> Option<Self> {
+        (image != 0).then_some(Self(image))
+    }
+
+    const fn image(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BluetoothLeTxPduTargetLink(u32);
+
+impl BluetoothLeTxPduTargetLink {
+    fn from_image(image: u32) -> Option<Self> {
+        (image != 0).then_some(Self(image))
+    }
+
+    const fn image(self) -> u32 {
+        self.0
+    }
+}
+
+/// CPU-owned common TX buffer header before graph publication.
+#[repr(C, align(4))]
+pub(super) struct BluetoothLeTxBufferHeaderStorage {
+    words: [VolatileCell<u32>; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
+}
+
+impl BluetoothLeTxBufferHeaderStorage {
+    const COMPRESSED_LINK_MASK: u32 = 0x000f_ffff;
+    const ALLOCATION_EXTENT_MASK: u32 = 0x0000_07f8;
+
+    pub(super) const fn new() -> Self {
+        Self {
+            words: [const { VolatileCell::new(0) }; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
+        }
+    }
+
+    fn read_word(&self, index: usize) -> u32 {
+        self.words[index].get()
+    }
+
+    #[cfg(test)]
+    fn write_word(&self, index: usize, value: u32) {
+        self.words[index].set(value);
+    }
+
+    fn install(&self, words: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4]) {
+        for (cell, word) in self.words.iter().zip(words) {
+            cell.set(word);
+        }
+    }
+
+    pub(super) fn initialize_bound_tx<const ALLOCATION_BYTES: usize>(
+        &self,
+        packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
+    ) {
+        self.install([
+            0,
+            packet.base_link().image(),
+            0x80a0_0000 | packet.pdu_target_link().image(),
+            0,
+            packet.allocation_extent_image(),
+            0,
+        ]);
+    }
+
+    pub(super) fn packet_base_link(&self) -> Option<BluetoothLeTxPacketBaseLink> {
+        BluetoothLeTxPacketBaseLink::from_image(self.read_word(1) & Self::COMPRESSED_LINK_MASK)
+    }
+
+    pub(super) fn pdu_target_link(&self) -> Option<BluetoothLeTxPduTargetLink> {
+        BluetoothLeTxPduTargetLink::from_image(self.read_word(2) & Self::COMPRESSED_LINK_MASK)
+    }
+
+    pub(super) fn retains_allocation_extent<const ALLOCATION_BYTES: usize>(
+        &self,
+        packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
+    ) -> bool {
+        self.read_word(4) & Self::ALLOCATION_EXTENT_MASK == packet.allocation_extent_image()
+    }
+
+    #[cfg(test)]
+    pub(super) fn snapshot(&self) -> [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4] {
+        core::array::from_fn(|index| self.read_word(index))
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_retarget_packet_base<const ALLOCATION_BYTES: usize>(
+        &self,
+        packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
+    ) {
+        let current = self.read_word(1);
+        self.write_word(
+            1,
+            (current & !Self::COMPRESSED_LINK_MASK) | packet.base_link().image(),
+        );
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_retarget_pdu<const ALLOCATION_BYTES: usize>(
+        &self,
+        packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
+    ) {
+        let current = self.read_word(2);
+        self.write_word(
+            2,
+            (current & !Self::COMPRESSED_LINK_MASK) | packet.pdu_target_link().image(),
+        );
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_drop_allocation_extent(&self) {
+        let current = self.read_word(4);
+        self.write_word(4, current & !Self::ALLOCATION_EXTENT_MASK);
+    }
+}
 
 /// Why a Link Layer PDU cannot be installed in one controller TX allocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,8 +359,8 @@ impl<const ALLOCATION_BYTES: usize> Default for BluetoothLeTxPacketStorage<ALLOC
 #[cfg(test)]
 mod tests {
     use super::{
-        BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothLeTxPacketPrepareError,
-        BluetoothLeTxPacketStorage,
+        BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothLeTxBufferHeaderStorage,
+        BluetoothLeTxPacketAddress, BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketStorage,
     };
 
     #[test]
@@ -202,5 +401,28 @@ mod tests {
             })
         );
         assert_eq!(packet.snapshot(), before);
+    }
+
+    #[test]
+    fn buffer_header_retains_the_bound_packet_and_its_role_capacity() {
+        const LEGACY_ADVERTISING_ALLOCATION_BYTES: usize = BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + 37;
+        const DTM_ALLOCATION_BYTES: usize = BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + 255;
+
+        let advertising =
+            BluetoothLeTxPacketAddress::<LEGACY_ADVERTISING_ALLOCATION_BYTES>::new(0x2f00_0100)
+                .expect("the advertising allocation fits controller SRAM");
+        let dtm = BluetoothLeTxPacketAddress::<DTM_ALLOCATION_BYTES>::new(0x2f00_0100)
+            .expect("the DTM allocation fits controller SRAM");
+        let header = BluetoothLeTxBufferHeaderStorage::new();
+
+        header.initialize_bound_tx(advertising);
+
+        assert_eq!(header.packet_base_link(), Some(advertising.base_link()));
+        assert_eq!(
+            header.pdu_target_link(),
+            Some(advertising.pdu_target_link())
+        );
+        assert!(header.retains_allocation_extent(advertising));
+        assert!(!header.retains_allocation_extent(dtm));
     }
 }

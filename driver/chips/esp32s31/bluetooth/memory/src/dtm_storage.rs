@@ -32,8 +32,9 @@ use crate::{
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
     le_tx_packet::{
-        BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothLeTxPacketPreparedLength,
-        BluetoothLeTxPacketStorage,
+        BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
+        BluetoothLeTxBufferHeaderStorage, BluetoothLeTxPacketAddress,
+        BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
     },
     sram_link::BluetoothDtmBoundSramLinkAddress,
 };
@@ -44,8 +45,6 @@ pub const BLUETOOTH_DTM_LINK_STATE_BYTES: usize = 0x84;
 pub const BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES: usize = 0x60;
 /// Bytes allocated for the separate DTM scheduler context.
 pub const BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES: usize = 0x48;
-/// Bytes in every common RX/TX buffer header.
-pub const BLUETOOTH_DTM_BUFFER_HEADER_BYTES: usize = 0x18;
 /// Bytes preceding the maximum DTM receiver capacity.
 pub const BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES: usize = 0x1e;
 /// Maximum packet capacity supplied by the complete DTM allocator.
@@ -56,6 +55,8 @@ pub const BLUETOOTH_DTM_TX_PACKET_BYTES: usize =
 /// Logical bytes in the complete DTM RX packet allocation.
 pub const BLUETOOTH_DTM_RX_PACKET_BYTES: usize =
     BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES + BLUETOOTH_DTM_MAX_PACKET_CAPACITY;
+
+type BluetoothDtmTxPacketAddress = BluetoothLeTxPacketAddress<BLUETOOTH_DTM_TX_PACKET_BYTES>;
 
 /// First byte in the physical ESP32-S31 internal SRAM window.
 pub const BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW: u32 = 0x2f00_0000;
@@ -68,8 +69,6 @@ pub const BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW: u32 = 0x2f00_0000;
 pub const BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH: u32 = 0x2f08_0000;
 
 const RX_PACKET_LAST_ALIGNED_OFFSET: u32 = 0x11c;
-const TX_PACKET_LAST_ALIGNED_OFFSET: u32 = 0x110;
-const TX_HEADER_PACKET_TARGET_OFFSET: u32 = 0x10;
 const LINK_STATE_RX_HEAD_OFFSET: usize = 0x68 / 4;
 const LINK_STATE_TX_HEAD_OFFSET: usize = 0x6c / 4;
 const LINK_STATE_RX_TAIL_OFFSET: usize = 0x70 / 4;
@@ -131,72 +130,6 @@ impl BluetoothDtmSchedulerAllocationConfig {
             .wrapping_add(4)
             .wrapping_add(self.periodic_syncs as u32))
             & 0x0fff
-    }
-}
-
-/// Why a complete DTM TX packet extent cannot inhabit controller SRAM.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BluetoothDtmTxPacketAddressError {
-    /// The proposed base is not a reviewed compressed controller-SRAM address.
-    InvalidBase(BluetoothControllerSramAddressError),
-    /// The base encodes as the zero link used for an unbound header.
-    ZeroCompressedBase,
-    /// The aligned packet tail crosses the reviewed controller-SRAM window.
-    ExtentOutsideControllerSram,
-}
-
-/// Validated controller-SRAM geometry for one complete DTM TX packet.
-///
-/// This value proves only address range and alignment. It does not derive an
-/// address from Rust storage, dereference it or grant publication authority.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BluetoothDtmTxPacketAddress {
-    base: BluetoothControllerSramAddress,
-    header_packet_target: BluetoothControllerSramAddress,
-}
-
-impl BluetoothDtmTxPacketAddress {
-    /// Validate the base, header target and final aligned word of the
-    /// `0x111`-byte allocation.
-    const fn new(address: u32) -> Result<Self, BluetoothDtmTxPacketAddressError> {
-        let base = match BluetoothControllerSramAddress::new(address) {
-            Ok(address) => address,
-            Err(error) => return Err(BluetoothDtmTxPacketAddressError::InvalidBase(error)),
-        };
-        if base.compressed_image() == 0 {
-            return Err(BluetoothDtmTxPacketAddressError::ZeroCompressedBase);
-        }
-        let header_packet_target_address = match address.checked_add(TX_HEADER_PACKET_TARGET_OFFSET)
-        {
-            Some(address) => address,
-            None => return Err(BluetoothDtmTxPacketAddressError::ExtentOutsideControllerSram),
-        };
-        let last_aligned_address = match address.checked_add(TX_PACKET_LAST_ALIGNED_OFFSET) {
-            Some(address) => address,
-            None => return Err(BluetoothDtmTxPacketAddressError::ExtentOutsideControllerSram),
-        };
-        let header_packet_target =
-            match BluetoothControllerSramAddress::new(header_packet_target_address) {
-                Ok(address) => address,
-                Err(_) => {
-                    return Err(BluetoothDtmTxPacketAddressError::ExtentOutsideControllerSram);
-                }
-            };
-        if BluetoothControllerSramAddress::new(last_aligned_address).is_err() {
-            return Err(BluetoothDtmTxPacketAddressError::ExtentOutsideControllerSram);
-        }
-        Ok(Self {
-            base,
-            header_packet_target,
-        })
-    }
-
-    const fn base_link(self) -> BluetoothDtmTxPacketBaseLink {
-        BluetoothDtmTxPacketBaseLink(self.base.compressed_image())
-    }
-
-    const fn pdu_target_link(self) -> BluetoothDtmTxPduTargetLink {
-        BluetoothDtmTxPduTargetLink(self.header_packet_target.compressed_image())
     }
 }
 
@@ -402,18 +335,16 @@ pub struct BluetoothDtmSchedulerContextStorage {
     words: [u32; BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES / 4],
 }
 
-/// One zero-based common buffer-header allocation.
+/// One zero-based DTM RX buffer-header allocation.
 #[repr(C, align(4))]
-pub struct BluetoothDtmBufferHeaderStorage {
-    words: [VolatileCell<u32>; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
+struct BluetoothDtmRxBufferHeaderStorage {
+    words: [VolatileCell<u32>; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
 }
 
-impl BluetoothDtmBufferHeaderStorage {
+impl BluetoothDtmRxBufferHeaderStorage {
     const COMPRESSED_LINK_MASK: u32 = 0x000f_ffff;
     const RX_COMPLETION_OBSERVED_MASK: u32 = 0x8000_0000;
     const RX_SOFTWARE_TERMINAL_MASK: u32 = 1;
-    const TX_ALLOCATION_EXTENT_MASK: u32 = 0x0000_07f8;
-    const TX_FULL_CAPACITY_ALLOCATION_EXTENT: u32 = 0x0000_07f8;
 
     fn read_word(&self, index: usize) -> u32 {
         self.words[index].get()
@@ -423,25 +354,14 @@ impl BluetoothDtmBufferHeaderStorage {
         self.words[index].set(value);
     }
 
-    fn install(&self, words: [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4]) {
+    fn install(&self, words: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4]) {
         for (cell, word) in self.words.iter().zip(words) {
             cell.set(word);
         }
     }
 
-    fn snapshot_words(&self) -> [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4] {
+    fn snapshot_words(&self) -> [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4] {
         core::array::from_fn(|index| self.read_word(index))
-    }
-
-    fn initialize_bound_tx(&self, packet: BluetoothDtmTxPacketAddress) {
-        self.install([
-            0,
-            packet.base_link().image(),
-            0x80a0_0000 | packet.pdu_target_link().image(),
-            0,
-            Self::TX_FULL_CAPACITY_ALLOCATION_EXTENT,
-            0,
-        ]);
     }
 
     fn initialize_bound_rx(&self, packet: BluetoothDtmRxPacketAddress) {
@@ -450,19 +370,6 @@ impl BluetoothDtmBufferHeaderStorage {
 
     fn initialize_rx_swap_reserve(&self) {
         self.install([0, 0, 0x8080_0000, 0, 0, 0]);
-    }
-
-    fn tx_packet_base_link(&self) -> Option<BluetoothDtmTxPacketBaseLink> {
-        BluetoothDtmTxPacketBaseLink::from_image(self.read_word(1) & Self::COMPRESSED_LINK_MASK)
-    }
-
-    fn tx_pdu_target_link(&self) -> Option<BluetoothDtmTxPduTargetLink> {
-        BluetoothDtmTxPduTargetLink::from_image(self.read_word(2) & Self::COMPRESSED_LINK_MASK)
-    }
-
-    fn retains_full_capacity_tx_allocation_extent(&self) -> bool {
-        self.read_word(4) & Self::TX_ALLOCATION_EXTENT_MASK
-            == Self::TX_FULL_CAPACITY_ALLOCATION_EXTENT
     }
 
     fn rx_successor_link(&self) -> Option<BluetoothDtmRxHeaderSuccessorLink> {
@@ -531,62 +438,12 @@ impl BluetoothDtmBufferHeaderStorage {
     }
 
     #[cfg(test)]
-    fn model_retarget_tx_packet_base(&self, packet: BluetoothDtmTxPacketAddress) {
-        let current = self.read_word(1);
-        self.write_word(
-            1,
-            (current & !Self::COMPRESSED_LINK_MASK) | packet.base_link().image(),
-        );
-    }
-
-    #[cfg(test)]
-    fn model_retarget_tx_pdu(&self, packet: BluetoothDtmTxPacketAddress) {
-        let current = self.read_word(2);
-        self.write_word(
-            2,
-            (current & !Self::COMPRESSED_LINK_MASK) | packet.pdu_target_link().image(),
-        );
-    }
-
-    #[cfg(test)]
-    fn model_drop_full_capacity_tx_allocation_extent(&self) {
-        let current = self.read_word(4);
-        self.write_word(4, current & !Self::TX_ALLOCATION_EXTENT_MASK);
-    }
-
-    #[cfg(test)]
     fn model_retarget_rx_packet(&self, packet: BluetoothDtmRxPacketAddress) {
         let current = self.read_word(1);
         self.write_word(
             1,
             (current & !Self::COMPRESSED_LINK_MASK) | packet.compressed_image(),
         );
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BluetoothDtmTxPacketBaseLink(u32);
-
-impl BluetoothDtmTxPacketBaseLink {
-    fn from_image(image: u32) -> Option<Self> {
-        (image != 0).then_some(Self(image))
-    }
-
-    const fn image(self) -> u32 {
-        self.0
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BluetoothDtmTxPduTargetLink(u32);
-
-impl BluetoothDtmTxPduTargetLink {
-    fn from_image(image: u32) -> Option<Self> {
-        (image != 0).then_some(Self(image))
-    }
-
-    const fn image(self) -> u32 {
-        self.0
     }
 }
 
@@ -812,9 +669,9 @@ pub struct BluetoothDtmMemoryGraphStorage {
     link_state: BluetoothDtmLinkStateStorage,
     scheduler_context: BluetoothDtmSchedulerContextStorage,
     scheduler_item: BluetoothDtmSchedulerItemStorage,
-    rx_header: BluetoothDtmBufferHeaderStorage,
-    rx_swap_reserve: BluetoothDtmBufferHeaderStorage,
-    tx_header: BluetoothDtmBufferHeaderStorage,
+    rx_header: BluetoothDtmRxBufferHeaderStorage,
+    rx_swap_reserve: BluetoothDtmRxBufferHeaderStorage,
+    tx_header: BluetoothLeTxBufferHeaderStorage,
     tx_packet: BluetoothLeTxPacketStorage<BLUETOOTH_DTM_TX_PACKET_BYTES>,
     rx_packet: BluetoothDtmRxPacketStorage,
     #[pin]
@@ -2480,14 +2337,13 @@ impl BluetoothDtmMemoryGraphCpuOwned {
             });
         }
         let storage = self.storage.as_ref().get_ref();
-        if storage.tx_header.tx_packet_base_link() != Some(self.binding.tx_packet.base_link()) {
+        if storage.tx_header.packet_base_link() != Some(self.binding.tx_packet.base_link()) {
             return Err(BluetoothDtmMemoryGraphPrepareFailure {
                 owner: self,
                 error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderPacketBaseMismatch,
             });
         }
-        if storage.tx_header.tx_pdu_target_link() != Some(self.binding.tx_packet.pdu_target_link())
-        {
+        if storage.tx_header.pdu_target_link() != Some(self.binding.tx_packet.pdu_target_link()) {
             return Err(BluetoothDtmMemoryGraphPrepareFailure {
                 owner: self,
                 error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderPduTargetMismatch,
@@ -2495,7 +2351,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         }
         if !storage
             .tx_header
-            .retains_full_capacity_tx_allocation_extent()
+            .retains_allocation_extent(self.binding.tx_packet)
         {
             return Err(BluetoothDtmMemoryGraphPrepareFailure {
                 owner: self,
@@ -2668,15 +2524,13 @@ impl BluetoothDtmMemoryGraphStorage {
             scheduler_item: BluetoothDtmSchedulerItemStorage {
                 words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
             },
-            rx_header: BluetoothDtmBufferHeaderStorage {
-                words: [const { VolatileCell::new(0) }; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
+            rx_header: BluetoothDtmRxBufferHeaderStorage {
+                words: [const { VolatileCell::new(0) }; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
             },
-            rx_swap_reserve: BluetoothDtmBufferHeaderStorage {
-                words: [const { VolatileCell::new(0) }; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
+            rx_swap_reserve: BluetoothDtmRxBufferHeaderStorage {
+                words: [const { VolatileCell::new(0) }; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
             },
-            tx_header: BluetoothDtmBufferHeaderStorage {
-                words: [const { VolatileCell::new(0) }; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
-            },
+            tx_header: BluetoothLeTxBufferHeaderStorage::new(),
             tx_packet: BluetoothLeTxPacketStorage::new(),
             rx_packet: BluetoothDtmRxPacketStorage::new(),
             _pin: PhantomPinned,
@@ -2769,10 +2623,10 @@ mod tests {
     };
 
     use super::{
-        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_DTM_BUFFER_HEADER_BYTES,
-        BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
-        BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES,
-        BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
+        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_DTM_LINK_STATE_BYTES,
+        BLUETOOTH_DTM_MAX_PACKET_CAPACITY, BLUETOOTH_DTM_RX_PACKET_BYTES,
+        BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES, BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES,
+        BLUETOOTH_DTM_TX_PACKET_BYTES, BLUETOOTH_LE_BUFFER_HEADER_BYTES,
         BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCpuOwned,
         BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphPrepareError,
         BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
@@ -2790,9 +2644,9 @@ mod tests {
         link_state: [u32; BLUETOOTH_DTM_LINK_STATE_BYTES / 4],
         scheduler_context: [u32; BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES / 4],
         scheduler_item: [u32; BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4],
-        rx_header: [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
-        rx_swap_reserve: [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
-        tx_header: [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
+        rx_header: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
+        rx_swap_reserve: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
+        tx_header: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
         tx_packet: [u8; BLUETOOTH_DTM_TX_PACKET_BYTES],
         rx_packet: [u8; BLUETOOTH_DTM_RX_PACKET_BYTES],
     }
@@ -2804,7 +2658,7 @@ mod tests {
             scheduler_item: storage.scheduler_item.snapshot(),
             rx_header: storage.rx_header.snapshot_words(),
             rx_swap_reserve: storage.rx_swap_reserve.snapshot_words(),
-            tx_header: storage.tx_header.snapshot_words(),
+            tx_header: storage.tx_header.snapshot(),
             tx_packet: storage.tx_packet.snapshot(),
             rx_packet: storage.rx_packet.snapshot(),
         }
@@ -3050,7 +2904,7 @@ mod tests {
             .as_ref()
             .get_ref()
             .tx_header
-            .model_retarget_tx_packet_base(foreign.binding.tx_packet);
+            .model_retarget_packet_base(foreign.binding.tx_packet);
 
         let _owner = assert_rejected_before_builder(
             owner,
@@ -3067,7 +2921,7 @@ mod tests {
             .as_ref()
             .get_ref()
             .tx_header
-            .model_retarget_tx_pdu(foreign.binding.tx_packet);
+            .model_retarget_pdu(foreign.binding.tx_packet);
 
         let _owner = assert_rejected_before_builder(
             owner,
@@ -3083,7 +2937,7 @@ mod tests {
             .as_ref()
             .get_ref()
             .tx_header
-            .model_drop_full_capacity_tx_allocation_extent();
+            .model_drop_allocation_extent();
 
         let _owner = assert_rejected_before_builder(
             owner,

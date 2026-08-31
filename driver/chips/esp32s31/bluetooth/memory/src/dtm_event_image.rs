@@ -130,6 +130,94 @@ pub enum BluetoothDtmReceiverEventPhase {
     Recurring,
 }
 
+/// PHY choice admitted by a transmitter DTM scheduler item.
+///
+/// These variants retain the role-specific meaning established by the DTM
+/// command validator. They deliberately do not expose the controller field
+/// image used by the private SRAM codec.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmSchedulerTransmitterPhy {
+    /// LE 1M transmitter.
+    Le1M,
+    /// LE 2M transmitter.
+    Le2M,
+    /// LE Coded transmitter using S=8 coding.
+    LeCodedS8,
+    /// LE Coded transmitter using S=2 coding.
+    LeCodedS2,
+}
+
+/// PHY choice admitted by a receiver DTM scheduler item.
+///
+/// The receiver command has no S=2 selector. Encoding that restriction in the
+/// type prevents a transmitter-only choice from reaching the SRAM codec.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmSchedulerReceiverPhy {
+    /// LE 1M receiver.
+    Le1M,
+    /// LE 2M receiver.
+    Le2M,
+    /// Generic LE Coded receiver.
+    LeCoded,
+}
+
+/// Private encoding applied to both replicated scheduler PHY lanes.
+///
+/// Current vendor bodies prove that both lanes receive the same two-bit code,
+/// but do not establish independent names for the lanes. Keeping the code in
+/// this private value avoids inventing that missing hardware semantic.
+#[derive(Clone, Copy)]
+struct BluetoothDtmSchedulerPhyEncoding(u32);
+
+impl BluetoothDtmSchedulerPhyEncoding {
+    const fn for_transmitter(phy: BluetoothDtmSchedulerTransmitterPhy) -> Self {
+        Self(match phy {
+            BluetoothDtmSchedulerTransmitterPhy::Le1M => 0,
+            BluetoothDtmSchedulerTransmitterPhy::Le2M => 1,
+            BluetoothDtmSchedulerTransmitterPhy::LeCodedS8 => 2,
+            BluetoothDtmSchedulerTransmitterPhy::LeCodedS2 => 3,
+        })
+    }
+
+    const fn for_receiver(phy: BluetoothDtmSchedulerReceiverPhy) -> Self {
+        Self(match phy {
+            BluetoothDtmSchedulerReceiverPhy::Le1M => 0,
+            BluetoothDtmSchedulerReceiverPhy::Le2M => 1,
+            BluetoothDtmSchedulerReceiverPhy::LeCoded => 3,
+        })
+    }
+}
+
+/// Private codec for the link-state word changed by the DTM reset profile.
+///
+/// Both reviewed implementations select the same two-bit image in this word,
+/// and the complete descriptor is subsequently reachable by the controller.
+/// No field-specific hardware reader or independent bit names have been
+/// recovered, so only the observed aggregate DTM selection is exposed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BluetoothDtmLinkStateProfileWord(u32);
+
+impl BluetoothDtmLinkStateProfileWord {
+    const DIRECT_TEST_MODE_MASK: u32 = 0x0c00_0000;
+
+    pub(super) const fn from_storage(word: u32) -> Self {
+        Self(word)
+    }
+
+    const fn select_direct_test_mode(self) -> Self {
+        Self((self.0 & !Self::DIRECT_TEST_MODE_MASK) | Self::DIRECT_TEST_MODE_MASK)
+    }
+
+    pub(super) const fn into_storage(self) -> u32 {
+        self.0
+    }
+
+    #[cfg(test)]
+    pub(super) const fn direct_test_mode_is_selected(self) -> bool {
+        self.0 & Self::DIRECT_TEST_MODE_MASK == Self::DIRECT_TEST_MODE_MASK
+    }
+}
+
 /// Role and phase selecting one reviewed scheduler-item event transform.
 ///
 /// Transmitter events have no phase-dependent scheduler-item configuration.
@@ -138,25 +226,37 @@ pub enum BluetoothDtmReceiverEventPhase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmSchedulerItemEventType {
     /// One transmitter-test scheduler item.
-    Transmitter,
+    Transmitter(BluetoothDtmSchedulerTransmitterPhy),
     /// One receiver-test scheduler item in its explicit session phase.
-    Receiver(BluetoothDtmReceiverEventPhase),
+    Receiver {
+        /// Initial or recurring receiver configuration.
+        phase: BluetoothDtmReceiverEventPhase,
+        /// Receiver-valid PHY retained without exposing its field image.
+        phy: BluetoothDtmSchedulerReceiverPhy,
+    },
 }
 
 impl BluetoothDtmSchedulerItemEventType {
     /// Return the DTM role selected by this event type.
     pub const fn role(self) -> BluetoothDtmRole {
         match self {
-            Self::Transmitter => BluetoothDtmRole::Transmitter,
-            Self::Receiver(_) => BluetoothDtmRole::Receiver,
+            Self::Transmitter(_) => BluetoothDtmRole::Transmitter,
+            Self::Receiver { .. } => BluetoothDtmRole::Receiver,
         }
     }
 
     /// Return the receiver phase, or `None` for a transmitter event.
     pub const fn receiver_phase(self) -> Option<BluetoothDtmReceiverEventPhase> {
         match self {
-            Self::Transmitter => None,
-            Self::Receiver(phase) => Some(phase),
+            Self::Transmitter(_) => None,
+            Self::Receiver { phase, .. } => Some(phase),
+        }
+    }
+
+    const fn phy_encoding(self) -> BluetoothDtmSchedulerPhyEncoding {
+        match self {
+            Self::Transmitter(phy) => BluetoothDtmSchedulerPhyEncoding::for_transmitter(phy),
+            Self::Receiver { phy, .. } => BluetoothDtmSchedulerPhyEncoding::for_receiver(phy),
         }
     }
 }
@@ -173,8 +273,9 @@ pub struct BluetoothDtmLinkStateReviewedWords {
     pub(crate) word_04: u32,
     /// Complete word at byte offset `+0x08`; low 20 bits carry the RX tail.
     pub(crate) word_08: u32,
-    /// Complete word at byte offset `+0x14`.
-    pub(crate) word_14: u32,
+    /// Private word at byte offset `+0x14`; its field-specific hardware
+    /// meaning remains unresolved.
+    pub(super) profile_word_14: BluetoothDtmLinkStateProfileWord,
     /// Protocol-level CRC initialization value encoded in the low 24 bits by
     /// the private SRAM codec. The high byte remains opaque and preserved.
     pub(super) crc_init: BluetoothLeCrcInit,
@@ -213,7 +314,7 @@ impl BluetoothDtmLinkStateReviewedWords {
             None => self.word_08 & !LOW_TWENTY_MASK,
         };
         self.word_08 = (self.word_08 & 0xf00f_ffff) | 0x0ff0_0000;
-        self.word_14 |= 0xc000_0000;
+        self.profile_word_14 = self.profile_word_14.select_direct_test_mode();
         if matches!(role, BluetoothDtmRole::Receiver) {
             self.word_34 = 0;
         }
@@ -304,7 +405,6 @@ impl BluetoothDtmSchedulerItemReviewedWords {
     pub const fn apply_event(
         self,
         frequency: u8,
-        rate: u8,
         event_type: BluetoothDtmSchedulerItemEventType,
         scheduler_start: u32,
         scheduler_end: u32,
@@ -316,7 +416,7 @@ impl BluetoothDtmSchedulerItemReviewedWords {
                 BluetoothDtmRole::Transmitter => 0x10,
                 BluetoothDtmRole::Receiver => 0x40,
             };
-        let rate = rate as u32;
+        let rate = event_type.phy_encoding().0;
 
         Self {
             word_00: (self.word_00 & 0xff00_ffff) | ((role_byte as u32) << 16),
@@ -329,13 +429,15 @@ impl BluetoothDtmSchedulerItemReviewedWords {
                 | ((frequency as u32) << 8)
                 | 0x03,
             word_2c: match event_type {
-                BluetoothDtmSchedulerItemEventType::Transmitter => self.word_2c,
-                BluetoothDtmSchedulerItemEventType::Receiver(
-                    BluetoothDtmReceiverEventPhase::Initial,
-                ) => INITIAL_RECEIVER_CONFIGURATION_IMAGE,
-                BluetoothDtmSchedulerItemEventType::Receiver(
-                    BluetoothDtmReceiverEventPhase::Recurring,
-                ) => RECURRING_RECEIVER_CONFIGURATION_IMAGE,
+                BluetoothDtmSchedulerItemEventType::Transmitter(_) => self.word_2c,
+                BluetoothDtmSchedulerItemEventType::Receiver {
+                    phase: BluetoothDtmReceiverEventPhase::Initial,
+                    ..
+                } => INITIAL_RECEIVER_CONFIGURATION_IMAGE,
+                BluetoothDtmSchedulerItemEventType::Receiver {
+                    phase: BluetoothDtmReceiverEventPhase::Recurring,
+                    ..
+                } => RECURRING_RECEIVER_CONFIGURATION_IMAGE,
             },
             word_44: scheduler_start,
             word_48: scheduler_end,

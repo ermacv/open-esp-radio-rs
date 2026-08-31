@@ -39,6 +39,7 @@ pub use dtm_event_image::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
     BluetoothDtmReceiverEventPhase, BluetoothDtmRole, BluetoothDtmRxHeaderTailProjection,
     BluetoothDtmSchedulerItemEventType, BluetoothDtmSchedulerItemReviewedWords,
+    BluetoothDtmSchedulerReceiverPhy, BluetoothDtmSchedulerTransmitterPhy,
     BluetoothDtmTxHeaderHeadProjection,
 };
 pub use dtm_rx_result::{

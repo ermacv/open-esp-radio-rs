@@ -143,12 +143,18 @@ consumer and does not import advertising control flow.
 The reset transaction itself is now reproduced as a non-publishable reviewed
 region in the Bluetooth crate. It retains the exact low-twenty-bit compressed
 TX head at `+0x00` and RX tail at `+0x08`, including the overlapping `+0x02`
-halfword transform; five-bit rounded-power image at `+0x04`; high control bits at
-`+0x14`; high-byte-preserving `0x555555` image at `+0x2c`; RX-only zero at
+halfword transform; five-bit rounded-power image at `+0x04`; the exact
+`+0x14[27:26] = 0b11` reset profile; high-byte-preserving `0x555555` image at `+0x2c`; RX-only zero at
 `+0x34`; complete `0x71764129` word at `+0x38`; and six-bit configuration image
 at `+0x50`. Bounded inputs are rejected before any transform. The type exposes
 no controller address, storage publication or hardware-ownership transition,
 because the omitted descriptor words and their hardware consumer remain open.
+Complete current linked IR at `0x10054d44` applies write mask `0x0c000000` on
+every path; the complete current archive body and same-chip named
+`r_ble_lll_dtm_reset_link_state` independently set bit 27 followed by bit 26.
+The Rust memory codec therefore treats the pair as one DTM reset selection and
+does not invent separate hardware names for the two bits. This corrects the
+previous transcription that selected bits 31:30 instead.
 
 Receiver event construction subsequently replaces link-state word `+0x34`
 with `r_sched_timer_convertTimeToTicks(0)`, using the same retained
@@ -159,7 +165,7 @@ than a named packet-engine field.
 
 The scheduler-item update is now a second non-publishable reviewed region.
 It reproduces the role byte at `+0x02`, bit-31 publication prerequisite at
-`+0x04`, four-bit clear at `+0x08`, repeated two-bit rate image at `+0x14`,
+`+0x04`, four-bit clear at `+0x08`, repeated two-bit PHY image at `+0x14`,
 seven-bit frequency plus low-nibble image at `+0x18`, RX-only complete
 `0x000f0001` at `+0x2c`, two epoch-projected raw-time words at `+0x44/+0x48`
 and the low-byte clear at `+0x4c`. Complete common
@@ -264,7 +270,12 @@ one, two, three and zero to positional rate images zero, one, two and three.
 Consequently 1M/2M map to zero/one for both roles, selector-three Coded maps to
 two for TX and three for RX, and Coded S=2 selector four maps to three for TX
 but is unrepresentable for RX. The Rust event now enforces this asymmetry and
-cannot accept an odd frequency image or an arbitrary two-bit rate. These
+cannot accept an odd frequency image or an arbitrary two-bit PHY image. The
+memory boundary receives role-specific PHY variants and privately replicates
+the selected code into both lanes; no raw rate integer crosses that boundary.
+The two lane roles remain unnamed because the reviewed bodies prove identical
+producer writes and preservation through overlap insertion, not independent
+hardware meanings. These
 remain descriptor images rather than a packet-engine readiness claim; the
 scheduler-item type still cannot insert itself or produce a hardware-owned
 token.

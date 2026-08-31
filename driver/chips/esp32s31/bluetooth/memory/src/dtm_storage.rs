@@ -25,10 +25,10 @@ use vcell::VolatileCell;
 
 use crate::{
     dtm_event_image::{
-        BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
-        BluetoothDtmRxHeaderTailProjection, BluetoothDtmSchedulerHardwareChainWord,
-        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmTxHeaderHeadProjection,
-        BluetoothLeAccessAddress, BluetoothLeCrcInit,
+        BluetoothDtmLinkStateProfileWord, BluetoothDtmLinkStateReviewedWords,
+        BluetoothDtmPositionalEventWords, BluetoothDtmRxHeaderTailProjection,
+        BluetoothDtmSchedulerHardwareChainWord, BluetoothDtmSchedulerItemReviewedWords,
+        BluetoothDtmTxHeaderHeadProjection, BluetoothLeAccessAddress, BluetoothLeCrcInit,
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
     sram_link::BluetoothDtmBoundSramLinkAddress,
@@ -348,7 +348,7 @@ impl BluetoothDtmLinkStateStorage {
             word_00: self.read_word(0),
             word_04: self.read_word(1),
             word_08: self.read_word(2),
-            word_14: self.read_word(5),
+            profile_word_14: BluetoothDtmLinkStateProfileWord::from_storage(self.read_word(5)),
             crc_init: self.crc_init(),
             word_34: self.read_word(13),
             access_address: self.access_address(),
@@ -360,7 +360,7 @@ impl BluetoothDtmLinkStateStorage {
         self.write_word(0, words.word_00);
         self.write_word(1, words.word_04);
         self.write_word(2, words.word_08);
-        self.write_word(5, words.word_14);
+        self.write_word(5, words.profile_word_14.into_storage());
         self.write_crc_init(words.crc_init());
         self.write_word(13, words.word_34);
         self.write_access_address(words.access_address());
@@ -3006,6 +3006,28 @@ mod tests {
         assert_eq!(
             storage.link_state.reviewed_words().crc_init(),
             BluetoothLeCrcInit::DIRECT_TEST_MODE
+        );
+    }
+
+    #[test]
+    fn dtm_reset_selects_and_retains_the_reviewed_link_state_profile() {
+        let storage = BluetoothDtmMemoryGraphStorage::new();
+        let reset = storage.link_state.reviewed_words().apply_reset(
+            None,
+            None,
+            0,
+            0,
+            BluetoothDtmRole::Transmitter,
+        );
+
+        assert!(reset.profile_word_14.direct_test_mode_is_selected());
+        storage.link_state.write_reviewed_words(reset);
+        assert!(
+            storage
+                .link_state
+                .reviewed_words()
+                .profile_word_14
+                .direct_test_mode_is_selected()
         );
     }
 

@@ -32,7 +32,6 @@ pub enum BluetoothDtmSchedulerItemEventError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmSchedulerItemEvent {
     frequency: u8,
-    rate: u8,
     event_type: BluetoothDtmSchedulerItemEventType,
     scheduler_start: u32,
     scheduler_end: u32,
@@ -47,8 +46,7 @@ impl BluetoothDtmSchedulerItemEvent {
     ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
         Self::new(
             channel,
-            phy,
-            BluetoothDtmSchedulerItemEventType::Transmitter,
+            BluetoothDtmSchedulerItemEventType::Transmitter(phy.scheduler_transmitter_phy()),
             window.start().image(),
             window.end().image(),
         )
@@ -60,10 +58,18 @@ impl BluetoothDtmSchedulerItemEvent {
         phy: BluetoothDtmPhy,
         window: BluetoothDtmRxInitialEventWindow,
     ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
+        let phy = match phy.scheduler_receiver_phy() {
+            Ok(phy) => phy,
+            Err(_) => {
+                return Err(BluetoothDtmSchedulerItemEventError::LeCodedS2RequiresTransmitter);
+            }
+        };
         Self::new(
             channel,
-            phy,
-            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Initial),
+            BluetoothDtmSchedulerItemEventType::Receiver {
+                phase: BluetoothDtmReceiverEventPhase::Initial,
+                phy,
+            },
             window.start().image(),
             window.end().image(),
         )
@@ -75,10 +81,18 @@ impl BluetoothDtmSchedulerItemEvent {
         phy: BluetoothDtmPhy,
         window: BluetoothDtmRxRecurringEventWindow,
     ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
+        let phy = match phy.scheduler_receiver_phy() {
+            Ok(phy) => phy,
+            Err(_) => {
+                return Err(BluetoothDtmSchedulerItemEventError::LeCodedS2RequiresTransmitter);
+            }
+        };
         Self::new(
             channel,
-            phy,
-            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Recurring),
+            BluetoothDtmSchedulerItemEventType::Receiver {
+                phase: BluetoothDtmReceiverEventPhase::Recurring,
+                phy,
+            },
             window.start().image(),
             window.end().image(),
         )
@@ -87,20 +101,12 @@ impl BluetoothDtmSchedulerItemEvent {
     /// Convert typed internal inputs into the reviewed positional field images.
     const fn new(
         channel: BluetoothDtmChannel,
-        phy: BluetoothDtmPhy,
         event_type: BluetoothDtmSchedulerItemEventType,
         scheduler_start: u32,
         scheduler_end: u32,
     ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
-        let rate = match phy.scheduler_rate_image(event_type.role()) {
-            Ok(rate) => rate,
-            Err(_) => {
-                return Err(BluetoothDtmSchedulerItemEventError::LeCodedS2RequiresTransmitter);
-            }
-        };
         Ok(Self {
             frequency: channel.scheduler_frequency_image(),
-            rate,
             event_type,
             scheduler_start,
             scheduler_end,
@@ -114,13 +120,7 @@ impl BluetoothDtmSchedulerItemEvent {
         raw_start: u32,
         raw_end: u32,
     ) -> BluetoothDtmSchedulerItemReviewedWords {
-        current.apply_event(
-            self.frequency,
-            self.rate,
-            self.event_type,
-            raw_start,
-            raw_end,
-        )
+        current.apply_event(self.frequency, self.event_type, raw_start, raw_end)
     }
 
     /// Return the DTM role encoded by this validated scheduler item event.
@@ -164,6 +164,7 @@ mod tests {
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BluetoothDtmReceiverEventPhase, BluetoothDtmSchedulerItemEventType,
+        BluetoothDtmSchedulerReceiverPhy,
     };
 
     fn receiver_window() -> BluetoothDtmRxRecurringEventWindow {
@@ -186,7 +187,10 @@ mod tests {
         assert_eq!(event.role(), BluetoothDtmRole::Receiver);
         assert_eq!(
             event.event_type,
-            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Recurring)
+            BluetoothDtmSchedulerItemEventType::Receiver {
+                phase: BluetoothDtmReceiverEventPhase::Recurring,
+                phy: BluetoothDtmSchedulerReceiverPhy::LeCoded,
+            }
         );
     }
 
@@ -206,7 +210,10 @@ mod tests {
         assert_eq!(event.role(), BluetoothDtmRole::Receiver);
         assert_eq!(
             event.event_type,
-            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Initial)
+            BluetoothDtmSchedulerItemEventType::Receiver {
+                phase: BluetoothDtmReceiverEventPhase::Initial,
+                phy: BluetoothDtmSchedulerReceiverPhy::LeCoded,
+            }
         );
     }
 

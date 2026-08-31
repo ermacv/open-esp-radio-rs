@@ -9,7 +9,9 @@
 
 #![forbid(unsafe_code)]
 
-use crate::BluetoothDtmRole;
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmSchedulerReceiverPhy, BluetoothDtmSchedulerTransmitterPhy,
+};
 
 /// Why an HCI DTM channel cannot enter the reviewed domain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,20 +88,25 @@ impl BluetoothDtmPhy {
         self as u8
     }
 
-    /// Return the exact two-bit scheduler rate image when the role accepts it.
-    pub const fn scheduler_rate_image(
+    /// Project this HCI selector into the transmitter-valid scheduler domain.
+    pub(crate) const fn scheduler_transmitter_phy(self) -> BluetoothDtmSchedulerTransmitterPhy {
+        match self {
+            Self::Le1M => BluetoothDtmSchedulerTransmitterPhy::Le1M,
+            Self::Le2M => BluetoothDtmSchedulerTransmitterPhy::Le2M,
+            Self::LeCoded => BluetoothDtmSchedulerTransmitterPhy::LeCodedS8,
+            Self::LeCodedS2 => BluetoothDtmSchedulerTransmitterPhy::LeCodedS2,
+        }
+    }
+
+    /// Project this HCI selector into the receiver-valid scheduler domain.
+    pub(crate) const fn scheduler_receiver_phy(
         self,
-        role: BluetoothDtmRole,
-    ) -> Result<u8, BluetoothDtmPhyRoleError> {
-        match (self, role) {
-            (Self::Le1M, _) => Ok(0),
-            (Self::Le2M, _) => Ok(1),
-            (Self::LeCoded, BluetoothDtmRole::Transmitter) => Ok(2),
-            (Self::LeCoded, BluetoothDtmRole::Receiver) => Ok(3),
-            (Self::LeCodedS2, BluetoothDtmRole::Transmitter) => Ok(3),
-            (Self::LeCodedS2, BluetoothDtmRole::Receiver) => {
-                Err(BluetoothDtmPhyRoleError::LeCodedS2RequiresTransmitter)
-            }
+    ) -> Result<BluetoothDtmSchedulerReceiverPhy, BluetoothDtmPhyRoleError> {
+        match self {
+            Self::Le1M => Ok(BluetoothDtmSchedulerReceiverPhy::Le1M),
+            Self::Le2M => Ok(BluetoothDtmSchedulerReceiverPhy::Le2M),
+            Self::LeCoded => Ok(BluetoothDtmSchedulerReceiverPhy::LeCoded),
+            Self::LeCodedS2 => Err(BluetoothDtmPhyRoleError::LeCodedS2RequiresTransmitter),
         }
     }
 }
@@ -117,7 +124,9 @@ mod tests {
         BluetoothDtmChannel, BluetoothDtmChannelError, BluetoothDtmPhy, BluetoothDtmPhyError,
         BluetoothDtmPhyRoleError,
     };
-    use crate::BluetoothDtmRole;
+    use open_esp_radio_esp32s31_bluetooth_memory::{
+        BluetoothDtmSchedulerReceiverPhy, BluetoothDtmSchedulerTransmitterPhy,
+    };
 
     #[test]
     fn channel_domain_accepts_its_bounds_and_rejects_the_first_outside_image() {
@@ -131,26 +140,36 @@ mod tests {
 
     #[test]
     fn phy_role_domain_rejects_only_the_transmitter_only_receiver_case() {
-        let tx = BluetoothDtmRole::Transmitter;
-        let rx = BluetoothDtmRole::Receiver;
-
-        for phy in [
-            BluetoothDtmPhy::Le1M,
-            BluetoothDtmPhy::Le2M,
-            BluetoothDtmPhy::LeCoded,
-            BluetoothDtmPhy::LeCodedS2,
-        ] {
-            assert!(phy.scheduler_rate_image(tx).is_ok());
-        }
-        for phy in [
-            BluetoothDtmPhy::Le1M,
-            BluetoothDtmPhy::Le2M,
-            BluetoothDtmPhy::LeCoded,
-        ] {
-            assert!(phy.scheduler_rate_image(rx).is_ok());
-        }
         assert_eq!(
-            BluetoothDtmPhy::LeCodedS2.scheduler_rate_image(rx),
+            BluetoothDtmPhy::Le1M.scheduler_transmitter_phy(),
+            BluetoothDtmSchedulerTransmitterPhy::Le1M
+        );
+        assert_eq!(
+            BluetoothDtmPhy::Le2M.scheduler_transmitter_phy(),
+            BluetoothDtmSchedulerTransmitterPhy::Le2M
+        );
+        assert_eq!(
+            BluetoothDtmPhy::LeCoded.scheduler_transmitter_phy(),
+            BluetoothDtmSchedulerTransmitterPhy::LeCodedS8
+        );
+        assert_eq!(
+            BluetoothDtmPhy::LeCodedS2.scheduler_transmitter_phy(),
+            BluetoothDtmSchedulerTransmitterPhy::LeCodedS2
+        );
+        assert_eq!(
+            BluetoothDtmPhy::Le1M.scheduler_receiver_phy(),
+            Ok(BluetoothDtmSchedulerReceiverPhy::Le1M)
+        );
+        assert_eq!(
+            BluetoothDtmPhy::Le2M.scheduler_receiver_phy(),
+            Ok(BluetoothDtmSchedulerReceiverPhy::Le2M)
+        );
+        assert_eq!(
+            BluetoothDtmPhy::LeCoded.scheduler_receiver_phy(),
+            Ok(BluetoothDtmSchedulerReceiverPhy::LeCoded)
+        );
+        assert_eq!(
+            BluetoothDtmPhy::LeCodedS2.scheduler_receiver_phy(),
             Err(BluetoothDtmPhyRoleError::LeCodedS2RequiresTransmitter)
         );
     }

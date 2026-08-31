@@ -19651,25 +19651,26 @@ avoid assigning undocumented peripheral semantics.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BLE_PHY_INIT_TOGGLE</name>
+      <name>BLE_HW_POSITIONAL_WORD_1FF0</name>
       <description>Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete
-ESP32-S31 BLE PHY initialization writes zero and then one before touching any
-other radio register. The same ordered operation appears at the same block
-offset in the named ESP32-C61 counterpart, but neither artifact proves that
-this word belongs to the adjacent BTMAC dump range. No wider peripheral extent
-or reset/enable interpretation is claimed.
+ESP32-S31 BLE PHY initialization writes complete image zero followed by
+complete image one before touching any other radio register. The same ordered
+writes appear at the same block offset in the named ESP32-C61 counterpart, but
+neither artifact proves this word's hardware action or membership in the
+adjacent BTMAC dump range. No wider peripheral extent is claimed.
 </description>
       <baseAddress>0x20101FF0</baseAddress>
       <registers>
         <register>
-          <name>INIT_TOGGLE</name>
-          <description>Complete ordered images 0 then 1 at BLE PHY register-initialization entry.</description>
+          <name>VALUE</name>
+          <description>Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>POSITIONAL_IMAGE</name>
+              <description>Complete positional image; only the ordered zero-then-one publications are proven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -19678,24 +19679,26 @@ or reset/enable interpretation is claimed.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BLE_PHY_INIT_PHASE</name>
+      <name>BLE_HW_POSITIONAL_WORD_891C</name>
       <description>Narrow owner for the otherwise isolated word at 0x2010891C. Complete
-ESP32-S31 BLE PHY initialization writes phase image 0x20 before initializing
-the BLE hardware accelerator and image 0x40 after the surrounding BTMAC and
-accelerator sequence. The register's physical block and the meanings of the
-two phases remain unproved, so no neighboring 0x201088xx words are absorbed.
+ESP32-S31 BLE PHY initialization writes complete image 0x20 before initializing
+the BLE hardware accelerator and complete image 0x40 after the surrounding
+BTMAC and accelerator sequence. The register's physical block, hardware action
+and the meanings of the two images remain unproved, so no neighboring
+0x201088xx words are absorbed.
 </description>
       <baseAddress>0x2010891C</baseAddress>
       <registers>
         <register>
-          <name>INIT_PHASE</name>
-          <description>Complete ordered images 0x20 then 0x40 around BLE accelerator initialization.</description>
+          <name>VALUE</name>
+          <description>Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>POSITIONAL_IMAGE</name>
+              <description>Complete positional image; only the ordered 0x20-then-0x40 publications are proven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>

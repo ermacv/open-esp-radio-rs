@@ -6219,16 +6219,16 @@ access = "write-only"
 address = 537927664
 width = 32
 access = "write-only"
-identity = "BLE_PHY_INIT_TOGGLE.INIT_TOGGLE"
-peripheral = "BLE_PHY_INIT_TOGGLE"
-peripheral-type = "BlePhyInitToggle"
-peripheral-module = "ble_phy_init_toggle"
+identity = "BLE_HW_POSITIONAL_WORD_1FF0.VALUE"
+peripheral = "BLE_HW_POSITIONAL_WORD_1FF0"
+peripheral-type = "BleHwPositionalWord1ff0"
+peripheral-module = "ble_hw_positional_word_1ff0"
 scope = []
-register-method = "init_toggle"
+register-method = "value"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "POSITIONAL_IMAGE"
+method = "positional_image"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -38826,16 +38826,16 @@ access = "read-write"
 address = 537954588
 width = 32
 access = "write-only"
-identity = "BLE_PHY_INIT_PHASE.INIT_PHASE"
-peripheral = "BLE_PHY_INIT_PHASE"
-peripheral-type = "BlePhyInitPhase"
-peripheral-module = "ble_phy_init_phase"
+identity = "BLE_HW_POSITIONAL_WORD_891C.VALUE"
+peripheral = "BLE_HW_POSITIONAL_WORD_891C"
+peripheral-type = "BleHwPositionalWord891c"
+peripheral-module = "ble_hw_positional_word_891c"
 scope = []
-register-method = "init_phase"
+register-method = "value"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "POSITIONAL_IMAGE"
+method = "positional_image"
 bit-offset = 0
 bit-width = 32
 access = "write-only"

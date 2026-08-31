@@ -169,12 +169,12 @@ impl BluetoothTaskRegisters {
         let bluetooth = &self.bluetooth;
         let btmac = &bluetooth.btmac_ble_phy_init;
 
-        // Entry toggle and BTMAC prefix.
-        super::svd::zero_register_write::begin_ble_phy_register_initialization(
-            &bluetooth.ble_phy_init_toggle,
+        // Ordered positional images and BTMAC prefix.
+        super::svd::zero_register_write::publish_ble_positional_word_1ff0_image_0(
+            &bluetooth.ble_hw_positional_word_1ff0,
         );
-        super::svd::fixed_register_image::latch_ble_phy_register_initialization_entry(
-            &bluetooth.ble_phy_init_toggle,
+        super::svd::fixed_register_image::publish_ble_positional_word_1ff0_image_1(
+            &bluetooth.ble_hw_positional_word_1ff0,
         );
         super::svd::sampled_bit_zero_write::preserve_ble_phy_interrupt_source_17(btmac);
         super::svd::fixed_register_image::clear_all_ble_base_stack_interrupt_sources(btmac);
@@ -213,8 +213,8 @@ impl BluetoothTaskRegisters {
         super::generated::or_ble_phy_init_byte_2(btmac);
 
         super::svd::zero_register_write::clear_ble_phy_init_zero_0074(btmac);
-        super::svd::fixed_register_image::publish_ble_phy_init_phase_20(
-            &bluetooth.ble_phy_init_phase,
+        super::svd::fixed_register_image::publish_ble_positional_word_891c_image_20(
+            &bluetooth.ble_hw_positional_word_891c,
         );
         super::svd::fixed_register_image::publish_ble_phy_accelerator_config(
             &bluetooth.ble_hw_accelerator,
@@ -256,8 +256,8 @@ impl BluetoothTaskRegisters {
 
         super::generated::publish_ble_phy_init_high_half_0458(btmac);
         super::generated::publish_ble_phy_init_low_5_054c(btmac);
-        super::svd::fixed_register_image::publish_ble_phy_init_phase_40(
-            &bluetooth.ble_phy_init_phase,
+        super::svd::fixed_register_image::publish_ble_positional_word_891c_image_40(
+            &bluetooth.ble_hw_positional_word_891c,
         );
 
         if inputs.set_branch_control_0470_bit_18 {

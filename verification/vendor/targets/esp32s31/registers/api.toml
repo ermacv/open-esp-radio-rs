@@ -128,8 +128,8 @@ peripherals = [
     "BLE_HW_RESOLVING_LIST",
     "BLE_HW_RUNTIME_CONTROL",
     "BLE_ISO_SCHEDULER_NOTIFY",
-    "BLE_PHY_INIT_PHASE",
-    "BLE_PHY_INIT_TOGGLE",
+    "BLE_HW_POSITIONAL_WORD_1FF0",
+    "BLE_HW_POSITIONAL_WORD_891C",
     "BLE_SCAN_CONTROL",
     "BLE_SYNC_PUBLICATION",
     "BLUETOOTH_CONTROLLER_CORE",
@@ -1466,9 +1466,9 @@ register = "STATE_002C"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[zero-register-writes]]
-name = "begin_ble_phy_register_initialization"
-peripheral = "BLE_PHY_INIT_TOGGLE"
-register = "INIT_TOGGLE"
+name = "publish_ble_positional_word_1ff0_image_0"
+peripheral = "BLE_HW_POSITIONAL_WORD_1FF0"
+register = "VALUE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[zero-register-writes]]
@@ -1841,9 +1841,9 @@ steps = [
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 
 [[fixed-register-images]]
-name = "latch_ble_phy_register_initialization_entry"
-peripheral = "BLE_PHY_INIT_TOGGLE"
-register = "INIT_TOGGLE"
+name = "publish_ble_positional_word_1ff0_image_1"
+peripheral = "BLE_HW_POSITIONAL_WORD_1FF0"
+register = "VALUE"
 value = 0x00000001
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
@@ -1897,9 +1897,9 @@ value = 0x00000008
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
-name = "publish_ble_phy_init_phase_20"
-peripheral = "BLE_PHY_INIT_PHASE"
-register = "INIT_PHASE"
+name = "publish_ble_positional_word_891c_image_20"
+peripheral = "BLE_HW_POSITIONAL_WORD_891C"
+register = "VALUE"
 value = 0x00000020
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
@@ -1939,9 +1939,9 @@ value = 0x000007d0
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
-name = "publish_ble_phy_init_phase_40"
-peripheral = "BLE_PHY_INIT_PHASE"
-register = "INIT_PHASE"
+name = "publish_ble_positional_word_891c_image_40"
+peripheral = "BLE_HW_POSITIONAL_WORD_891C"
+register = "VALUE"
 value = 0x00000040
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 

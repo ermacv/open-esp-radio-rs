@@ -46497,98 +46497,100 @@ pub mod btdm_runtime_control {
         }
     }
 }
-#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes zero and then one before touching any other radio register. The same ordered operation appears at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves that this word belongs to the adjacent BTMAC dump range. No wider peripheral extent or reset/enable interpretation is claimed."]
-pub type BlePhyInitToggle = crate::Periph<ble_phy_init_toggle::RegisterBlock, 0x2010_1ff0>;
-impl core::fmt::Debug for BlePhyInitToggle {
+#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes complete image zero followed by complete image one before touching any other radio register. The same ordered writes appear at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves this word's hardware action or membership in the adjacent BTMAC dump range. No wider peripheral extent is claimed."]
+pub type BleHwPositionalWord1ff0 =
+    crate::Periph<ble_hw_positional_word_1ff0::RegisterBlock, 0x2010_1ff0>;
+impl core::fmt::Debug for BleHwPositionalWord1ff0 {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BlePhyInitToggle").finish()
+        f.debug_struct("BleHwPositionalWord1ff0").finish()
     }
 }
-#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes zero and then one before touching any other radio register. The same ordered operation appears at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves that this word belongs to the adjacent BTMAC dump range. No wider peripheral extent or reset/enable interpretation is claimed."]
-pub mod ble_phy_init_toggle {
+#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes complete image zero followed by complete image one before touching any other radio register. The same ordered writes appear at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves this word's hardware action or membership in the adjacent BTMAC dump range. No wider peripheral extent is claimed."]
+pub mod ble_hw_positional_word_1ff0 {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        init_toggle: InitToggle,
+        value: Value,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Complete ordered images 0 then 1 at BLE PHY register-initialization entry."]
+        #[doc = "0x00 - Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown."]
         #[inline(always)]
-        pub const fn init_toggle(&self) -> &InitToggle {
-            &self.init_toggle
+        pub const fn value(&self) -> &Value {
+            &self.value
         }
     }
-    #[doc = "INIT_TOGGLE (w) register accessor: Complete ordered images 0 then 1 at BLE PHY register-initialization entry.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_toggle::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_toggle`] module"]
-    #[doc(alias = "INIT_TOGGLE")]
-    pub type InitToggle = crate::Reg<init_toggle::InitToggleSpec>;
-    #[doc = "Complete ordered images 0 then 1 at BLE PHY register-initialization entry."]
-    pub mod init_toggle {
-        #[doc = "Register `INIT_TOGGLE` writer"]
-        pub type W = crate::W<InitToggleSpec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "VALUE (w) register accessor: Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value`] module"]
+    #[doc(alias = "VALUE")]
+    pub type Value = crate::Reg<value::ValueSpec>;
+    #[doc = "Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown."]
+    pub mod value {
+        #[doc = "Register `VALUE` writer"]
+        pub type W = crate::W<ValueSpec>;
+        #[doc = "Field `POSITIONAL_IMAGE` writer - Complete positional image; only the ordered zero-then-one publications are proven."]
+        pub type PositionalImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:31 - Complete positional image; only the ordered zero-then-one publications are proven."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitToggleSpec> {
-                ImageW::new(self, 0)
+            pub fn positional_image(&mut self) -> PositionalImageW<'_, ValueSpec> {
+                PositionalImageW::new(self, 0)
             }
         }
-        #[doc = "Complete ordered images 0 then 1 at BLE PHY register-initialization entry.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_toggle::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitToggleSpec;
-        impl crate::RegisterSpec for InitToggleSpec {
+        #[doc = "Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueSpec;
+        impl crate::RegisterSpec for ValueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`init_toggle::W`](W) writer structure"]
-        impl crate::Writable for InitToggleSpec {
+        #[doc = "`write(|w| ..)` method takes [`value::W`](W) writer structure"]
+        impl crate::Writable for ValueSpec {
             type Safety = crate::Unsafe;
         }
     }
 }
-#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes phase image 0x20 before initializing the BLE hardware accelerator and image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block and the meanings of the two phases remain unproved, so no neighboring 0x201088xx words are absorbed."]
-pub type BlePhyInitPhase = crate::Periph<ble_phy_init_phase::RegisterBlock, 0x2010_891c>;
-impl core::fmt::Debug for BlePhyInitPhase {
+#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes complete image 0x20 before initializing the BLE hardware accelerator and complete image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block, hardware action and the meanings of the two images remain unproved, so no neighboring 0x201088xx words are absorbed."]
+pub type BleHwPositionalWord891c =
+    crate::Periph<ble_hw_positional_word_891c::RegisterBlock, 0x2010_891c>;
+impl core::fmt::Debug for BleHwPositionalWord891c {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BlePhyInitPhase").finish()
+        f.debug_struct("BleHwPositionalWord891c").finish()
     }
 }
-#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes phase image 0x20 before initializing the BLE hardware accelerator and image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block and the meanings of the two phases remain unproved, so no neighboring 0x201088xx words are absorbed."]
-pub mod ble_phy_init_phase {
+#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes complete image 0x20 before initializing the BLE hardware accelerator and complete image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block, hardware action and the meanings of the two images remain unproved, so no neighboring 0x201088xx words are absorbed."]
+pub mod ble_hw_positional_word_891c {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        init_phase: InitPhase,
+        value: Value,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Complete ordered images 0x20 then 0x40 around BLE accelerator initialization."]
+        #[doc = "0x00 - Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown."]
         #[inline(always)]
-        pub const fn init_phase(&self) -> &InitPhase {
-            &self.init_phase
+        pub const fn value(&self) -> &Value {
+            &self.value
         }
     }
-    #[doc = "INIT_PHASE (w) register accessor: Complete ordered images 0x20 then 0x40 around BLE accelerator initialization.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_phase::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_phase`] module"]
-    #[doc(alias = "INIT_PHASE")]
-    pub type InitPhase = crate::Reg<init_phase::InitPhaseSpec>;
-    #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization."]
-    pub mod init_phase {
-        #[doc = "Register `INIT_PHASE` writer"]
-        pub type W = crate::W<InitPhaseSpec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "VALUE (w) register accessor: Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value`] module"]
+    #[doc(alias = "VALUE")]
+    pub type Value = crate::Reg<value::ValueSpec>;
+    #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown."]
+    pub mod value {
+        #[doc = "Register `VALUE` writer"]
+        pub type W = crate::W<ValueSpec>;
+        #[doc = "Field `POSITIONAL_IMAGE` writer - Complete positional image; only the ordered 0x20-then-0x40 publications are proven."]
+        pub type PositionalImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:31 - Complete positional image; only the ordered 0x20-then-0x40 publications are proven."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitPhaseSpec> {
-                ImageW::new(self, 0)
+            pub fn positional_image(&mut self) -> PositionalImageW<'_, ValueSpec> {
+                PositionalImageW::new(self, 0)
             }
         }
-        #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_phase::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitPhaseSpec;
-        impl crate::RegisterSpec for InitPhaseSpec {
+        #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueSpec;
+        impl crate::RegisterSpec for ValueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`init_phase::W`](W) writer structure"]
-        impl crate::Writable for InitPhaseSpec {
+        #[doc = "`write(|w| ..)` method takes [`value::W`](W) writer structure"]
+        impl crate::Writable for ValueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -56944,10 +56946,10 @@ pub struct Peripherals {
     pub btdm_low_power_config: BtdmLowPowerConfig,
     #[doc = "BTDM_RUNTIME_CONTROL"]
     pub btdm_runtime_control: BtdmRuntimeControl,
-    #[doc = "BLE_PHY_INIT_TOGGLE"]
-    pub ble_phy_init_toggle: BlePhyInitToggle,
-    #[doc = "BLE_PHY_INIT_PHASE"]
-    pub ble_phy_init_phase: BlePhyInitPhase,
+    #[doc = "BLE_HW_POSITIONAL_WORD_1FF0"]
+    pub ble_hw_positional_word_1ff0: BleHwPositionalWord1ff0,
+    #[doc = "BLE_HW_POSITIONAL_WORD_891C"]
+    pub ble_hw_positional_word_891c: BleHwPositionalWord891c,
     #[doc = "BLE_CONTROLLER_ADDRESS_SLOTS"]
     pub ble_controller_address_slots: BleControllerAddressSlots,
     #[doc = "BLE_HW_POSITIONAL_WORD_1874"]
@@ -57098,8 +57100,8 @@ impl Peripherals {
             btdm_scheduler_table: unsafe { BtdmSchedulerTable::steal() },
             btdm_low_power_config: unsafe { BtdmLowPowerConfig::steal() },
             btdm_runtime_control: unsafe { BtdmRuntimeControl::steal() },
-            ble_phy_init_toggle: unsafe { BlePhyInitToggle::steal() },
-            ble_phy_init_phase: unsafe { BlePhyInitPhase::steal() },
+            ble_hw_positional_word_1ff0: unsafe { BleHwPositionalWord1ff0::steal() },
+            ble_hw_positional_word_891c: unsafe { BleHwPositionalWord891c::steal() },
             ble_controller_address_slots: unsafe { BleControllerAddressSlots::steal() },
             ble_hw_positional_word_1874: unsafe { BleHwPositionalWord1874::steal() },
             ble_sync_publication: unsafe { BleSyncPublication::steal() },
@@ -57743,8 +57745,8 @@ pub mod peripheral_ownership {
         pub ble_hw_resolving_list: crate::BleHwResolvingList,
         pub ble_hw_runtime_control: crate::BleHwRuntimeControl,
         pub ble_iso_scheduler_notify: crate::BleIsoSchedulerNotify,
-        pub ble_phy_init_phase: crate::BlePhyInitPhase,
-        pub ble_phy_init_toggle: crate::BlePhyInitToggle,
+        pub ble_hw_positional_word_1ff0: crate::BleHwPositionalWord1ff0,
+        pub ble_hw_positional_word_891c: crate::BleHwPositionalWord891c,
         pub ble_scan_control: crate::BleScanControl,
         pub ble_sync_publication: crate::BleSyncPublication,
         pub bluetooth_controller_core: crate::BluetoothControllerCore,
@@ -57897,8 +57899,8 @@ pub mod peripheral_ownership {
             btdm_scheduler_table,
             btdm_low_power_config,
             btdm_runtime_control,
-            ble_phy_init_toggle,
-            ble_phy_init_phase,
+            ble_hw_positional_word_1ff0,
+            ble_hw_positional_word_891c,
             ble_controller_address_slots,
             ble_hw_positional_word_1874,
             ble_sync_publication,
@@ -58018,8 +58020,8 @@ pub mod peripheral_ownership {
                 ble_hw_resolving_list,
                 ble_hw_runtime_control,
                 ble_iso_scheduler_notify,
-                ble_phy_init_phase,
-                ble_phy_init_toggle,
+                ble_hw_positional_word_1ff0,
+                ble_hw_positional_word_891c,
                 ble_scan_control,
                 ble_sync_publication,
                 bluetooth_controller_core,
@@ -59571,15 +59573,15 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BLE_PHY_INIT_TOGGLE`.`INIT_TOGGLE`.
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_HW_POSITIONAL_WORD_1FF0`.`VALUE`.
     #[inline]
-    pub fn latch_ble_phy_register_initialization_entry(registers: &crate::BlePhyInitToggle) {
+    pub fn publish_ble_positional_word_1ff0_image_1(registers: &crate::BleHwPositionalWord1ff0) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_toggle()
+                .value()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
@@ -59675,15 +59677,15 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000020` to `BLE_PHY_INIT_PHASE`.`INIT_PHASE`.
+    /// Publish the SVD-qualified image `0x00000020` to `BLE_HW_POSITIONAL_WORD_891C`.`VALUE`.
     #[inline]
-    pub fn publish_ble_phy_init_phase_20(registers: &crate::BlePhyInitPhase) {
+    pub fn publish_ble_positional_word_891c_image_20(registers: &crate::BleHwPositionalWord891c) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_phase()
+                .value()
                 .write_with_zero(|writer| writer.bits(0x00000020));
         }
     }
@@ -59753,15 +59755,15 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000040` to `BLE_PHY_INIT_PHASE`.`INIT_PHASE`.
+    /// Publish the SVD-qualified image `0x00000040` to `BLE_HW_POSITIONAL_WORD_891C`.`VALUE`.
     #[inline]
-    pub fn publish_ble_phy_init_phase_40(registers: &crate::BlePhyInitPhase) {
+    pub fn publish_ble_positional_word_891c_image_40(registers: &crate::BleHwPositionalWord891c) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_phase()
+                .value()
                 .write_with_zero(|writer| writer.bits(0x00000040));
         }
     }
@@ -62082,13 +62084,13 @@ pub mod zero_register_write {
         }
     }
 
-    /// Publish zero to every bit of `BLE_PHY_INIT_TOGGLE`.`INIT_TOGGLE`.
+    /// Publish zero to every bit of `BLE_HW_POSITIONAL_WORD_1FF0`.`VALUE`.
     #[inline]
-    pub fn begin_ble_phy_register_initialization(registers: &crate::BlePhyInitToggle) {
+    pub fn publish_ble_positional_word_1ff0_image_0(registers: &crate::BleHwPositionalWord1ff0) {
         // SAFETY: the SVD extension and its provenance explicitly
         // qualify a complete zero write to this ordinary register.
         unsafe {
-            registers.init_toggle().write_with_zero(|writer| writer);
+            registers.value().write_with_zero(|writer| writer);
         }
     }
 

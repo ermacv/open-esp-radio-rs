@@ -2,7 +2,8 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    LeControllerBootstrapConfig, LeControllerHciEndpoints, LeControllerHciResources,
+    HciEpochIdentity, InProcessHciControllerEndpoint, LeControllerBootstrapConfig,
+    LeControllerHciEndpoints, LeControllerHciResources,
 };
 
 use crate::{
@@ -14,6 +15,28 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
+
+/// Whether one opaque HCI epoch admits work from the supplied endpoint.
+///
+/// This stays below the public chip API so semantic owner types can check
+/// affinity without exposing or reconstructing their retained epoch token.
+pub(crate) fn hci_epoch_accepts_endpoint<
+    M: RawMutex,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>(
+    epoch: HciEpochIdentity<'_>,
+    controller: &InProcessHciControllerEndpoint<
+        '_,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+) -> bool {
+    epoch.same_epoch(controller.epoch_identity())
+}
 
 /// Why a scheduler epoch could not acquire an HCI resource epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -591,6 +614,8 @@ mod tests {
         BluetoothSchedulerInitialized, BluetoothStopped,
     };
 
+    use super::hci_epoch_accepts_endpoint;
+
     type TestHciResources = LeControllerHciResources<NoopRawMutex, 1, 1, 31>;
 
     fn scheduler() -> BluetoothSchedulerInitialized<(), 4, 3> {
@@ -609,6 +634,18 @@ mod tests {
         )
         .expect("nonzero test profile");
         TestHciResources::new(config).expect("profile fits its bounded queues")
+    }
+
+    #[test]
+    fn opaque_hci_epoch_accepts_only_its_origin_endpoint() {
+        let mut matching_resources = hci();
+        let matching = matching_resources.split();
+        let epoch = matching.controller.epoch_identity();
+        assert!(hci_epoch_accepts_endpoint(epoch, &matching.controller));
+
+        let mut foreign_resources = hci();
+        let foreign = foreign_resources.split();
+        assert!(!hci_epoch_accepts_endpoint(epoch, &foreign.controller));
     }
 
     #[test]

@@ -1,9 +1,9 @@
-//! Portable ordering authority for LE DTM command responses.
+//! Portable ordering authority for LE Controller command responses.
 //!
 //! Radio progress and Controller-to-Host capacity are deliberately independent:
-//! a chip-specific runner may transform the retained radio owner while the exact
+//! a chip-specific runner may transform the retained owner while the exact
 //! Command Complete remains pending. Only successful insertion into the matching
-//! HCI epoch advances the order state to [`LeDtmResponsePublished`].
+//! HCI epoch advances the order state to [`LeControllerResponsePublished`].
 
 #![forbid(unsafe_code)]
 
@@ -11,9 +11,9 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
     HciChannelError, HciControllerResponse, HciEpochBound, HciEpochIdentity,
-    InProcessHciControllerEndpoint, LeDtmActiveSessionDisposition, LeDtmCommand,
-    LeDtmCommandCompleteEvent, LeDtmIdleSessionDisposition, LeReceiverTestV1Command,
-    LeTestEndCommand, LeTransmitterTestV1Command,
+    InProcessHciControllerEndpoint, LeControllerCommandComplete, LeDtmActiveSessionDisposition,
+    LeDtmCommand, LeDtmIdleSessionDisposition, LeReceiverTestV1Command, LeTestEndCommand,
+    LeTransmitterTestV1Command,
 };
 
 /// Route one endpoint-bound command while no DTM test is active.
@@ -54,7 +54,7 @@ pub fn route_idle_dtm_command<
                 LeDtmIdleCommandRoute::StartTransmitter { owner, command }
             }
             LeDtmIdleSessionDisposition::CompleteNoTest(response) => {
-                LeDtmIdleCommandRoute::ResponsePending(LeDtmResponsePending::new(
+                LeDtmIdleCommandRoute::ResponsePending(LeControllerResponsePending::new(
                     owner,
                     response,
                     owner_epoch,
@@ -83,7 +83,7 @@ pub enum LeDtmIdleCommandRoute<'epoch, 'command, Owner> {
         command: LeTransmitterTestV1Command,
     },
     /// Idle Test End became the standard zero-count response.
-    ResponsePending(LeDtmResponsePending<'epoch, Owner>),
+    ResponsePending(LeControllerResponsePending<'epoch, Owner>),
     /// Either idle owner or command belongs to another live Controller epoch.
     EndpointMismatch {
         /// Unchanged idle owner.
@@ -93,49 +93,52 @@ pub enum LeDtmIdleCommandRoute<'epoch, 'command, Owner> {
     },
 }
 
-/// A radio owner paired with one exact not-yet-published DTM response.
+/// An owner paired with one exact not-yet-published Controller response.
 ///
-/// The radio owner remains available by shared reference and may be transformed
-/// with [`Self::map_radio`] without exposing or rebuilding the response. Queue
+/// The owner remains available by shared reference and may be transformed with
+/// [`Self::map_owner`] without exposing or rebuilding the response. Queue
 /// backpressure, an endpoint mismatch, and every other transport error return
 /// this complete owner unchanged.
-#[must_use = "the radio owner and exact DTM response must remain retained"]
-pub struct LeDtmResponsePending<'epoch, Radio> {
-    radio: Radio,
-    response: LeDtmCommandCompleteEvent,
+#[must_use = "the owner and exact Controller response must remain retained"]
+pub struct LeControllerResponsePending<'epoch, Owner> {
+    owner: Owner,
+    response: LeControllerCommandComplete,
     hci_epoch: HciEpochIdentity<'epoch>,
 }
 
-impl<'epoch, Radio> LeDtmResponsePending<'epoch, Radio> {
-    /// Bind one radio owner to the response and HCI epoch which admitted it.
-    pub fn new(
-        radio: Radio,
-        response: LeDtmCommandCompleteEvent,
+impl<'epoch, Owner> LeControllerResponsePending<'epoch, Owner> {
+    /// Bind one owner to the response and HCI epoch which admitted it.
+    pub fn new<Response>(
+        owner: Owner,
+        response: Response,
         hci_epoch: HciEpochIdentity<'epoch>,
-    ) -> Self {
+    ) -> Self
+    where
+        Response: Into<LeControllerCommandComplete>,
+    {
         Self {
-            radio,
-            response,
+            owner,
+            response: response.into(),
             hci_epoch,
         }
     }
 
-    /// Borrow the independently progressing radio axis.
-    pub const fn radio(&self) -> &Radio {
-        &self.radio
+    /// Borrow the independently progressing owner axis.
+    pub const fn owner(&self) -> &Owner {
+        &self.owner
     }
 
-    /// Separate the radio from a unit response-order marker for typed composition.
+    /// Separate the owner from a unit response-order marker for typed composition.
     ///
     /// This is a consuming decomposition: the exact response bytes and epoch
-    /// remain in `LeDtmResponsePending<()>`, and neither output can be recreated
-    /// from the other. Chip-specific session aggregates immediately reunite
-    /// both outputs around their independently progressing radio axis.
-    pub fn into_parts(self) -> (Radio, LeDtmResponsePending<'epoch, ()>) {
+    /// remain in `LeControllerResponsePending<()>`, and neither output can be
+    /// recreated from the other. Chip-specific session aggregates immediately
+    /// reunite both outputs around their independently progressing owner axis.
+    pub fn into_parts(self) -> (Owner, LeControllerResponsePending<'epoch, ()>) {
         (
-            self.radio,
-            LeDtmResponsePending {
-                radio: (),
+            self.owner,
+            LeControllerResponsePending {
+                owner: (),
                 response: self.response,
                 hci_epoch: self.hci_epoch,
             },
@@ -164,13 +167,13 @@ impl<'epoch, Radio> LeDtmResponsePending<'epoch, Radio> {
         self.hci_epoch.same_epoch(controller.epoch_identity())
     }
 
-    /// Transform only the radio axis while retaining the exact response authority.
-    pub fn map_radio<Next>(
+    /// Transform only the owner axis while retaining the exact response authority.
+    pub fn map_owner<Next>(
         self,
-        map: impl FnOnce(Radio) -> Next,
-    ) -> LeDtmResponsePending<'epoch, Next> {
-        LeDtmResponsePending {
-            radio: map(self.radio),
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerResponsePending<'epoch, Next> {
+        LeControllerResponsePending {
+            owner: map(self.owner),
             response: self.response,
             hci_epoch: self.hci_epoch,
         }
@@ -179,7 +182,7 @@ impl<'epoch, Radio> LeDtmResponsePending<'epoch, Radio> {
     /// Attempt the sole durable publication through the matching HCI epoch.
     ///
     /// Capacity is not reserved. `Full` therefore returns `Pending` for an exact
-    /// later retry. No error releases the radio owner or response bytes.
+    /// later retry. No error releases the owner or response bytes.
     pub fn try_publish<
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
@@ -194,18 +197,18 @@ impl<'epoch, Radio> LeDtmResponsePending<'epoch, Radio> {
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-    ) -> LeDtmResponsePublication<'epoch, Radio> {
+    ) -> LeControllerResponsePublication<'epoch, Owner> {
         if !self.matches_endpoint(controller) {
-            return LeDtmResponsePublication::EndpointMismatch(self);
+            return LeControllerResponsePublication::EndpointMismatch(self);
         }
 
         match controller.try_publish(self.response.kind(), self.response.as_bytes()) {
-            Ok(()) => LeDtmResponsePublication::Published(LeDtmResponsePublished {
-                radio: self.radio,
+            Ok(()) => LeControllerResponsePublication::Published(LeControllerResponsePublished {
+                owner: self.owner,
                 hci_epoch: self.hci_epoch,
             }),
-            Err(HciChannelError::Full) => LeDtmResponsePublication::Pending(self),
-            Err(error) => LeDtmResponsePublication::Fault {
+            Err(HciChannelError::Full) => LeControllerResponsePublication::Pending(self),
+            Err(error) => LeControllerResponsePublication::Fault {
                 pending: self,
                 error,
             },
@@ -213,21 +216,21 @@ impl<'epoch, Radio> LeDtmResponsePending<'epoch, Radio> {
     }
 }
 
-/// A radio owner whose DTM response entered its matching HCI epoch.
+/// An owner whose Controller response entered its matching HCI epoch.
 ///
 /// This state contains no response bytes and exposes no publication operation,
 /// making a duplicate insertion unrepresentable. The retained epoch marker
 /// authorizes later command intake and the next ordered response transaction.
-#[must_use = "the active radio owner and its HCI affinity must remain retained"]
-pub struct LeDtmResponsePublished<'epoch, Radio> {
-    radio: Radio,
+#[must_use = "the owner and its HCI affinity must remain retained"]
+pub struct LeControllerResponsePublished<'epoch, Owner> {
+    owner: Owner,
     hci_epoch: HciEpochIdentity<'epoch>,
 }
 
-impl<'epoch, Radio> LeDtmResponsePublished<'epoch, Radio> {
-    /// Borrow the independently progressing radio axis.
-    pub const fn radio(&self) -> &Radio {
-        &self.radio
+impl<'epoch, Owner> LeControllerResponsePublished<'epoch, Owner> {
+    /// Borrow the independently progressing owner axis.
+    pub const fn owner(&self) -> &Owner {
+        &self.owner
     }
 
     /// Release the retained owner after the response was durably published.
@@ -235,45 +238,48 @@ impl<'epoch, Radio> LeDtmResponsePublished<'epoch, Radio> {
     /// The response authority is absent from this typestate, so consuming the
     /// owner cannot enable duplicate publication. Terminal session transitions
     /// use this edge before restoring their hardware graph.
-    pub fn into_radio(self) -> Radio {
-        self.radio
+    pub fn into_owner(self) -> Owner {
+        self.owner
     }
 
-    /// Separate the radio from its published unit order proof for typed composition.
-    pub fn into_parts(self) -> (Radio, LeDtmResponsePublished<'epoch, ()>) {
+    /// Separate the owner from its published unit order proof for typed composition.
+    pub fn into_parts(self) -> (Owner, LeControllerResponsePublished<'epoch, ()>) {
         (
-            self.radio,
-            LeDtmResponsePublished {
-                radio: (),
+            self.owner,
+            LeControllerResponsePublished {
+                owner: (),
                 hci_epoch: self.hci_epoch,
             },
         )
     }
 
-    /// Transform only the radio axis while retaining the published order proof.
-    pub fn map_radio<Next>(
+    /// Transform only the owner axis while retaining the published order proof.
+    pub fn map_owner<Next>(
         self,
-        map: impl FnOnce(Radio) -> Next,
-    ) -> LeDtmResponsePublished<'epoch, Next> {
-        LeDtmResponsePublished {
-            radio: map(self.radio),
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerResponsePublished<'epoch, Next> {
+        LeControllerResponsePublished {
+            owner: map(self.owner),
             hci_epoch: self.hci_epoch,
         }
     }
 
-    /// Begin the next ordered DTM response in this same live HCI epoch.
+    /// Begin the next ordered Controller response in this same live HCI epoch.
     ///
     /// The previous response authority has already been consumed by successful
     /// publication. A higher session layer must retain the semantic command and
-    /// radio owner needed to construct `response`; this transition supplies
+    /// owner needed to construct `response`; this transition supplies
     /// only ordering and endpoint affinity.
-    pub fn begin_next_response(
+    pub fn begin_next_response<Response>(
         self,
-        response: LeDtmCommandCompleteEvent,
-    ) -> LeDtmResponsePending<'epoch, Radio> {
-        LeDtmResponsePending {
-            radio: self.radio,
-            response,
+        response: Response,
+    ) -> LeControllerResponsePending<'epoch, Owner>
+    where
+        Response: Into<LeControllerCommandComplete>,
+    {
+        LeControllerResponsePending {
+            owner: self.owner,
+            response: response.into(),
             hci_epoch: self.hci_epoch,
         }
     }
@@ -304,7 +310,7 @@ impl<'epoch, Radio> LeDtmResponsePublished<'epoch, Radio> {
     ///
     /// The published response order and command must both belong to `controller`.
     /// A second start is converted into the standard Controller Busy response
-    /// while retaining `Radio` inside the next pending transaction. Test End
+    /// while retaining `Owner` inside the next pending transaction. Test End
     /// retains the published order proof beside its semantic command so a chip
     /// runner can quiesce exactly that radio before beginning its response.
     pub fn route_active_command<
@@ -323,7 +329,7 @@ impl<'epoch, Radio> LeDtmResponsePublished<'epoch, Radio> {
             PACKET_CAPACITY,
         >,
         command: HciEpochBound<'command, LeDtmCommand>,
-    ) -> LeDtmActiveCommandRoute<'epoch, 'command, Radio> {
+    ) -> LeDtmActiveCommandRoute<'epoch, 'command, Owner> {
         if !self.accepts_endpoint(controller) {
             return LeDtmActiveCommandRoute::EndpointMismatch {
                 published: self,
@@ -350,38 +356,38 @@ impl<'epoch, Radio> LeDtmResponsePublished<'epoch, Radio> {
 
 /// Portable result of routing one endpoint-bound command while DTM is active.
 #[must_use = "publish Busy, run Test End, or retain the exact epoch mismatch"]
-pub enum LeDtmActiveCommandRoute<'epoch, 'command, Radio> {
+pub enum LeDtmActiveCommandRoute<'epoch, 'command, Owner> {
     /// A second RX/TX start became an ordered Controller Busy response.
-    BusyResponsePending(LeDtmResponsePending<'epoch, Radio>),
+    BusyResponsePending(LeControllerResponsePending<'epoch, Owner>),
     /// Test End retains the exact active radio, order proof and semantic command.
     TestEnd {
         /// Published prior-response owner retaining the active radio.
-        published: LeDtmResponsePublished<'epoch, Radio>,
+        published: LeControllerResponsePublished<'epoch, Owner>,
         /// Semantic Test End command released only after epoch validation.
         command: LeTestEndCommand,
     },
     /// Either order or command belongs to another live Controller epoch.
     EndpointMismatch {
         /// Unchanged published owner retaining the exact radio.
-        published: LeDtmResponsePublished<'epoch, Radio>,
+        published: LeControllerResponsePublished<'epoch, Owner>,
         /// Unchanged semantic command retaining its source-epoch proof.
         command: HciEpochBound<'command, LeDtmCommand>,
     },
 }
 
-/// Result of one consuming DTM response publication attempt.
+/// Result of one consuming Controller response publication attempt.
 #[must_use = "retain the unchanged pending owner or the published order proof"]
-pub enum LeDtmResponsePublication<'epoch, Radio> {
+pub enum LeControllerResponsePublication<'epoch, Owner> {
     /// The response entered the matching queue exactly once.
-    Published(LeDtmResponsePublished<'epoch, Radio>),
+    Published(LeControllerResponsePublished<'epoch, Owner>),
     /// The matching queue is full; the complete owner is unchanged.
-    Pending(LeDtmResponsePending<'epoch, Radio>),
+    Pending(LeControllerResponsePending<'epoch, Owner>),
     /// The supplied endpoint belongs to another live HCI epoch.
-    EndpointMismatch(LeDtmResponsePending<'epoch, Radio>),
+    EndpointMismatch(LeControllerResponsePending<'epoch, Owner>),
     /// A non-capacity transport failure retained the complete owner.
     Fault {
-        /// Unchanged radio and response authority.
-        pending: LeDtmResponsePending<'epoch, Radio>,
+        /// Unchanged owner and response authority.
+        pending: LeControllerResponsePending<'epoch, Owner>,
         /// Exact validation or transport failure.
         error: HciChannelError,
     },
@@ -391,7 +397,7 @@ pub enum LeDtmResponsePublication<'epoch, Radio> {
 mod tests {
     use bt_hci::{
         ControllerToHostPacket, FromHciBytes, PacketKind,
-        cmd::le::LeTestEnd,
+        cmd::{Cmd, controller_baseband::Reset, le::LeTestEnd},
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
         param::Status,
         transport::Transport,
@@ -400,13 +406,14 @@ mod tests {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use super::{
-        LeDtmIdleCommandRoute, LeDtmResponsePending, LeDtmResponsePublication,
-        LeDtmResponsePublished, route_idle_dtm_command,
+        LeControllerResponsePending, LeControllerResponsePublication,
+        LeControllerResponsePublished, LeDtmIdleCommandRoute, route_idle_dtm_command,
     };
     use crate::{
-        HciChannelError, InProcessHciChannel, LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE,
-        LE_TRANSMITTER_TEST_V1_OPCODE, LeDtmActiveCommandRoute, LeDtmCommand,
-        LeReceiverTestV1Command, LeTestEndCommand,
+        BluetoothPublicDeviceAddress, HciChannelError, InProcessHciChannel,
+        LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE,
+        LeControllerBootstrap, LeControllerBootstrapConfig, LeDtmActiveCommandRoute, LeDtmCommand,
+        LeReceiverTestV1Command, LeTestEndCommand, OwnedBootstrapCommand,
     };
 
     const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
@@ -443,17 +450,18 @@ mod tests {
             .try_publish(PacketKind::Event, &HARDWARE_ERROR)
             .expect("the output queue starts empty");
 
-        let pending = LeDtmResponsePending::new(
+        let pending = LeControllerResponsePending::new(
             11_u8,
             receiver_command().into_started_command_complete(),
             controller.epoch_identity(),
         )
-        .map_radio(|radio| u16::from(radio) + 20);
+        .map_owner(|radio| u16::from(radio) + 20);
 
-        let LeDtmResponsePublication::Pending(pending) = pending.try_publish(&controller) else {
+        let LeControllerResponsePublication::Pending(pending) = pending.try_publish(&controller)
+        else {
             panic!("a full matching queue must retain the pending owner");
         };
-        assert_eq!(*pending.radio(), 31);
+        assert_eq!(*pending.owner(), 31);
 
         let mut buffer = [0; 16];
         let ControllerToHostPacket::Event(event) =
@@ -463,11 +471,12 @@ mod tests {
         };
         assert_eq!(event.kind, EventKind::HardwareError);
 
-        let LeDtmResponsePublication::Published(published) = pending.try_publish(&controller)
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&controller)
         else {
             panic!("the retained response must publish after capacity returns");
         };
-        assert_eq!(*published.radio(), 31);
+        assert_eq!(*published.owner(), 31);
         assert!(published.accepts_endpoint(&controller));
         assert_start_response(block_on(host.read(&mut buffer)).unwrap());
     }
@@ -480,19 +489,21 @@ mod tests {
         let (_first_host, first) = first_channel.split();
         let mut second_channel = Channel::new();
         let (_second_host, second) = second_channel.split();
-        let pending = LeDtmResponsePending::new(
+        let pending = LeControllerResponsePending::new(
             37_u8,
             receiver_command().into_started_command_complete(),
             first.epoch_identity(),
         );
 
-        let LeDtmResponsePublication::EndpointMismatch(pending) = pending.try_publish(&second)
+        let LeControllerResponsePublication::EndpointMismatch(pending) =
+            pending.try_publish(&second)
         else {
             panic!("a foreign endpoint must retain the complete pending owner");
         };
-        assert_eq!(*pending.radio(), 37);
+        assert_eq!(*pending.owner(), 37);
 
-        let LeDtmResponsePublication::Published(published) = pending.try_publish(&first) else {
+        let LeControllerResponsePublication::Published(published) = pending.try_publish(&first)
+        else {
             panic!("the original endpoint must accept the retained response");
         };
         assert!(published.accepts_endpoint(&first));
@@ -505,13 +516,14 @@ mod tests {
 
         let mut channel = TinyChannel::new();
         let (_host, controller) = channel.split();
-        let pending = LeDtmResponsePending::new(
+        let pending = LeControllerResponsePending::new(
             41_u8,
             receiver_command().into_started_command_complete(),
             controller.epoch_identity(),
         );
 
-        let LeDtmResponsePublication::Fault { pending, error } = pending.try_publish(&controller)
+        let LeControllerResponsePublication::Fault { pending, error } =
+            pending.try_publish(&controller)
         else {
             panic!("undersized packet storage must fail without releasing ownership");
         };
@@ -522,7 +534,7 @@ mod tests {
                 capacity: 3,
             }
         );
-        assert_eq!(*pending.radio(), 41);
+        assert_eq!(*pending.owner(), 41);
     }
 
     #[test]
@@ -534,17 +546,18 @@ mod tests {
         controller
             .try_publish(PacketKind::Event, &HARDWARE_ERROR)
             .expect("the first FIFO slot starts empty");
-        let pending = LeDtmResponsePending::new(
+        let pending = LeControllerResponsePending::new(
             43_u8,
             receiver_command().into_started_command_complete(),
             controller.epoch_identity(),
         );
 
-        let LeDtmResponsePublication::Published(published) = pending.try_publish(&controller)
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&controller)
         else {
             panic!("the second FIFO slot must accept the start response");
         };
-        assert_eq!(*published.radio(), 43);
+        assert_eq!(*published.owner(), 43);
 
         let mut buffer = [0; 16];
         let ControllerToHostPacket::Event(first) = block_on(host.read(&mut buffer)).unwrap() else {
@@ -553,10 +566,60 @@ mod tests {
         assert_eq!(first.kind, EventKind::HardwareError);
         assert_start_response(block_on(host.read(&mut buffer)).unwrap());
 
-        let published: LeDtmResponsePublished<'_, u16> =
-            published.map_radio(|radio| u16::from(radio) + 1);
-        assert_eq!(*published.radio(), 44);
+        let published: LeControllerResponsePublished<'_, u16> =
+            published.map_owner(|radio| u16::from(radio) + 1);
+        assert_eq!(*published.owner(), 44);
         assert!(published.accepts_endpoint(&controller));
+    }
+
+    #[test]
+    fn ordered_axis_retains_and_publishes_a_typed_bootstrap_completion() {
+        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+        let mut channel = Channel::new();
+        let (host, controller) = channel.split();
+        controller
+            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+            .expect("the output queue starts empty");
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
+            27,
+            1,
+        )
+        .expect("the test HCI profile is nonzero");
+        let mut bootstrap = LeControllerBootstrap::new(config);
+        let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::Reset);
+        let pending =
+            LeControllerResponsePending::new(RadioOwner(46), response, controller.epoch_identity());
+
+        let LeControllerResponsePublication::Pending(pending) = pending.try_publish(&controller)
+        else {
+            panic!("bootstrap response must retain its owner across backpressure");
+        };
+        assert_eq!(pending.owner(), &RadioOwner(46));
+
+        let mut buffer = [0; 16];
+        let ControllerToHostPacket::Event(older) = block_on(host.read(&mut buffer)).unwrap() else {
+            panic!("the older event changed packet kind");
+        };
+        assert_eq!(older.kind, EventKind::HardwareError);
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&controller)
+        else {
+            panic!("bootstrap response must publish after capacity returns");
+        };
+        assert_eq!(published.into_owner(), RadioOwner(46));
+
+        let ControllerToHostPacket::Event(event) = block_on(host.read(&mut buffer)).unwrap() else {
+            panic!("bootstrap completion changed packet kind");
+        };
+        let complete = CommandComplete::from_hci_bytes_complete(event.data)
+            .expect("bootstrap response is a complete bt-hci event");
+        let complete: CommandCompleteWithStatus<'_> = complete
+            .try_into()
+            .expect("Reset returns a standard status");
+        assert_eq!(complete.cmd_opcode, Reset::OPCODE);
+        assert_eq!(complete.status, Status::SUCCESS);
     }
 
     #[test]
@@ -565,20 +628,22 @@ mod tests {
 
         let mut channel = Channel::new();
         let (host, controller) = channel.split();
-        let start = LeDtmResponsePending::new(
+        let start = LeControllerResponsePending::new(
             47_u8,
             receiver_command().into_started_command_complete(),
             controller.epoch_identity(),
         );
-        let LeDtmResponsePublication::Published(started) = start.try_publish(&controller) else {
+        let LeControllerResponsePublication::Published(started) = start.try_publish(&controller)
+        else {
             panic!("the empty queue must accept the start response");
         };
         let ending =
             started.begin_next_response(test_end_command().into_ended_command_complete(0x3412));
-        let LeDtmResponsePublication::Published(ended) = ending.try_publish(&controller) else {
+        let LeControllerResponsePublication::Published(ended) = ending.try_publish(&controller)
+        else {
             panic!("the second slot must accept Test End after the start response");
         };
-        assert_eq!(ended.into_radio(), 47);
+        assert_eq!(ended.into_owner(), 47);
 
         let mut buffer = [0; 16];
         assert_start_response(block_on(host.read(&mut buffer)).unwrap());
@@ -613,10 +678,11 @@ mod tests {
         ) else {
             panic!("idle Test End must produce the standard zero-count response");
         };
-        let LeDtmResponsePublication::Pending(pending) = pending.try_publish(&controller) else {
+        let LeControllerResponsePublication::Pending(pending) = pending.try_publish(&controller)
+        else {
             panic!("the full queue must retain the exact idle owner and response");
         };
-        assert_eq!(pending.radio(), &RadioOwner(67));
+        assert_eq!(pending.owner(), &RadioOwner(67));
 
         let mut response_buffer = [0; 16];
         let ControllerToHostPacket::Event(older) =
@@ -625,11 +691,12 @@ mod tests {
             panic!("the retained older packet changed kind");
         };
         assert_eq!(older.kind, EventKind::HardwareError);
-        let LeDtmResponsePublication::Published(published) = pending.try_publish(&controller)
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&controller)
         else {
             panic!("idle Test End must publish once capacity returns");
         };
-        assert_eq!(published.into_radio(), RadioOwner(67));
+        assert_eq!(published.into_owner(), RadioOwner(67));
         assert_test_end_packet_count(
             block_on(host.read(&mut response_buffer)).expect("Test End response remains queued"),
             0,
@@ -763,12 +830,13 @@ mod tests {
 
         let mut channel = Channel::new();
         let (host, controller) = channel.split();
-        let start = LeDtmResponsePending::new(
+        let start = LeControllerResponsePending::new(
             RadioOwner(53),
             receiver_command().into_started_command_complete(),
             controller.epoch_identity(),
         );
-        let LeDtmResponsePublication::Published(started) = start.try_publish(&controller) else {
+        let LeControllerResponsePublication::Published(started) = start.try_publish(&controller)
+        else {
             panic!("the empty queue must accept the start response");
         };
 
@@ -792,17 +860,18 @@ mod tests {
         else {
             panic!("the portable active route must produce Controller Busy");
         };
-        let LeDtmResponsePublication::Pending(busy) = busy.try_publish(&controller) else {
+        let LeControllerResponsePublication::Pending(busy) = busy.try_publish(&controller) else {
             panic!("the queued start response must backpressure Controller Busy");
         };
-        assert_eq!(busy.radio(), &RadioOwner(53));
+        assert_eq!(busy.owner(), &RadioOwner(53));
 
         let mut buffer = [0; 16];
         assert_start_response(block_on(host.read(&mut buffer)).unwrap());
-        let LeDtmResponsePublication::Published(published) = busy.try_publish(&controller) else {
+        let LeControllerResponsePublication::Published(published) = busy.try_publish(&controller)
+        else {
             panic!("Controller Busy must publish once capacity returns");
         };
-        assert_eq!(published.into_radio(), RadioOwner(53));
+        assert_eq!(published.into_owner(), RadioOwner(53));
         assert_controller_busy(block_on(host.read(&mut buffer)).unwrap());
     }
 
@@ -812,12 +881,13 @@ mod tests {
 
         let mut channel = Channel::new();
         let (host, controller) = channel.split();
-        let start = LeDtmResponsePending::new(
+        let start = LeControllerResponsePending::new(
             RadioOwner(59),
             receiver_command().into_started_command_complete(),
             controller.epoch_identity(),
         );
-        let LeDtmResponsePublication::Published(started) = start.try_publish(&controller) else {
+        let LeControllerResponsePublication::Published(started) = start.try_publish(&controller)
+        else {
             panic!("the empty queue must accept the start response");
         };
         block_on(host.write(&LeTestEnd::new())).expect("Test End enters the real Host queue");
@@ -836,7 +906,7 @@ mod tests {
         else {
             panic!("Test End must remain semantic until hardware quiescence");
         };
-        assert_eq!(published.radio(), &RadioOwner(59));
+        assert_eq!(published.owner(), &RadioOwner(59));
         assert!(published.accepts_endpoint(&controller));
         let response = command.into_ended_command_complete(0x1234);
         let observed = parse_command_complete(response.as_bytes());
@@ -849,12 +919,13 @@ mod tests {
 
         let mut first_channel = Channel::new();
         let (_first_host, first_controller) = first_channel.split();
-        let start = LeDtmResponsePending::new(
+        let start = LeControllerResponsePending::new(
             RadioOwner(61),
             receiver_command().into_started_command_complete(),
             first_controller.epoch_identity(),
         );
-        let LeDtmResponsePublication::Published(started) = start.try_publish(&first_controller)
+        let LeControllerResponsePublication::Published(started) =
+            start.try_publish(&first_controller)
         else {
             panic!("the first endpoint must publish its start response");
         };
@@ -879,7 +950,7 @@ mod tests {
         else {
             panic!("a foreign command must not consume the first active owner");
         };
-        assert_eq!(published.radio(), &RadioOwner(61));
+        assert_eq!(published.owner(), &RadioOwner(61));
         assert!(published.accepts_endpoint(&first_controller));
         assert!(!published.accepts_endpoint(&second_controller));
         assert!(command.originates_from(&second_controller));

@@ -11,7 +11,8 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    InProcessHciControllerEndpoint, LeDtmResponsePending as PortableDtmResponsePending,
+    InProcessHciControllerEndpoint,
+    LeControllerResponsePending as PortableControllerResponsePending,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -119,7 +120,7 @@ trait TestEndResponseWaitSource {
     ) -> bool;
 }
 
-impl<Radio> TestEndResponseWaitSource for PortableDtmResponsePending<'_, Radio> {
+impl<Radio> TestEndResponseWaitSource for PortableControllerResponsePending<'_, Radio> {
     fn matches_endpoint<
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
@@ -135,7 +136,7 @@ impl<Radio> TestEndResponseWaitSource for PortableDtmResponsePending<'_, Radio> 
             PACKET_CAPACITY,
         >,
     ) -> bool {
-        PortableDtmResponsePending::matches_endpoint(self, controller)
+        PortableControllerResponsePending::matches_endpoint(self, controller)
     }
 }
 
@@ -338,8 +339,8 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        InProcessHciChannel, LE_RECEIVER_TEST_V1_OPCODE, LeDtmCommand, LeDtmResponsePending,
-        LeDtmResponsePublication,
+        InProcessHciChannel, LE_RECEIVER_TEST_V1_OPCODE, LeControllerResponsePending,
+        LeControllerResponsePublication, LeDtmCommand,
     };
     use std::{boxed::Box, task::Waker};
 
@@ -455,14 +456,14 @@ mod tests {
             1,
             16,
         >,
-    ) -> LeDtmResponsePending<'epoch, ()> {
+    ) -> LeControllerResponsePending<'epoch, ()> {
         let LeDtmCommand::ReceiverTestV1(command) =
             LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[7])
                 .expect("the reviewed receiver command is valid")
         else {
             panic!("receiver opcode changed semantic command kind");
         };
-        LeDtmResponsePending::new(
+        LeControllerResponsePending::new(
             (),
             command.into_started_command_complete(),
             controller.epoch_identity(),
@@ -549,7 +550,7 @@ mod tests {
         let mut channel = Channel::new();
         let (_host, controller) = channel.split();
         let pending = pending_response(&controller);
-        let LeDtmResponsePublication::Published(_published) =
+        let LeControllerResponsePublication::Published(_published) =
             pending_response(&controller).try_publish(&controller)
         else {
             panic!("the empty real HCI queue must accept the first response");
@@ -560,7 +561,7 @@ mod tests {
         assert!(wait.as_mut().poll(&mut context).is_pending());
         drop(wait);
 
-        let LeDtmResponsePublication::Pending(_retained) =
+        let LeControllerResponsePublication::Pending(_retained) =
             pending_response(&controller).try_publish(&controller)
         else {
             panic!("cancelling the capacity wait must leave the older packet queued");

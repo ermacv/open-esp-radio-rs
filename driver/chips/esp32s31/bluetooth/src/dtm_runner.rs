@@ -9,8 +9,8 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_bluetooth_hci::{
-    HciEpochBound, HciEpochIdentity, LeDtmCommand, LeDtmCommandCompleteEvent, LeDtmResponsePending,
-    LeReceiverTestV1Command, LeTransmitterTestV1Command,
+    HciEpochBound, HciEpochIdentity, LeControllerResponsePending, LeDtmCommand,
+    LeDtmCommandCompleteEvent, LeReceiverTestV1Command, LeTransmitterTestV1Command,
 };
 
 use crate::{
@@ -58,7 +58,7 @@ where
     StartFailed(BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>),
     /// Idle Test End became an ordered standard zero-count response.
     ResponsePending(
-        LeDtmResponsePending<
+        LeControllerResponsePending<
             'runtime,
             BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         >,

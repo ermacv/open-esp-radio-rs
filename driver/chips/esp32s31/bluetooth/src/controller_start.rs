@@ -2462,6 +2462,29 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Whether this idle Controller task accepts commands from the endpoint.
+    ///
+    /// The retained HCI epoch remains opaque. Callers can use this semantic
+    /// preflight before waiting on Host input, so a foreign empty endpoint is
+    /// rejected without consuming a command or parking indefinitely.
+    pub fn accepts_hci_endpoint<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> bool {
+        crate::hci::hci_epoch_accepts_endpoint(self.hci_epoch, controller)
+    }
+
     /// Consume the sole idle task and one endpoint-bound DTM command.
     ///
     /// Both this task's composition-time HCI epoch and the command's opaque

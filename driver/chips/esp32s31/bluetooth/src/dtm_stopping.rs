@@ -12,8 +12,8 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, InProcessHciControllerEndpoint, LeDtmCommandCompleteEvent,
-    LeDtmResponsePending, LeDtmResponsePublication, LeTestEndCommand,
+    HciChannelError, InProcessHciControllerEndpoint, LeControllerResponsePending,
+    LeControllerResponsePublication, LeDtmCommandCompleteEvent, LeTestEndCommand,
 };
 
 use crate::dtm_active_session::BluetoothDtmActiveRadio;
@@ -181,7 +181,8 @@ pub struct BluetoothDtmTestEndResponsePending<'runtime, S, const CAPACITY: usize
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    transaction: LeDtmResponsePending<'runtime, BluetoothDtmTestEndRecovery<'runtime, S, CAPACITY>>,
+    transaction:
+        LeControllerResponsePending<'runtime, BluetoothDtmTestEndRecovery<'runtime, S, CAPACITY>>,
 }
 
 /// Result of one consuming Test End response publication attempt.
@@ -307,8 +308,8 @@ where
         >,
     ) -> BluetoothDtmTestEndResponsePublication<'runtime, S, CAPACITY> {
         match self.transaction.try_publish(controller) {
-            LeDtmResponsePublication::Published(published) => {
-                let recovery = published.into_radio();
+            LeControllerResponsePublication::Published(published) => {
+                let recovery = published.into_owner();
                 let idle = recovery.stopping.response_published();
                 let mut task = recovery.task;
                 match task.restore_dtm_session_idle(idle) {
@@ -320,13 +321,13 @@ where
                     ),
                 }
             }
-            LeDtmResponsePublication::Pending(transaction) => {
+            LeControllerResponsePublication::Pending(transaction) => {
                 BluetoothDtmTestEndResponsePublication::Pending(Self { transaction })
             }
-            LeDtmResponsePublication::EndpointMismatch(transaction) => {
+            LeControllerResponsePublication::EndpointMismatch(transaction) => {
                 BluetoothDtmTestEndResponsePublication::EndpointMismatch(Self { transaction })
             }
-            LeDtmResponsePublication::Fault {
+            LeControllerResponsePublication::Fault {
                 pending: transaction,
                 error,
             } => BluetoothDtmTestEndResponsePublication::Fault {

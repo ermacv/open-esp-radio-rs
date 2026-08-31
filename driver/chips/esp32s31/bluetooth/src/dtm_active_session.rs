@@ -10,9 +10,10 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
     HciChannelError, HciEpochBound, InProcessHciControllerEndpoint,
+    LeControllerResponsePending as HciResponsePending,
+    LeControllerResponsePublication as HciResponsePublication,
+    LeControllerResponsePublished as HciResponsePublished,
     LeDtmActiveCommandRoute as HciActiveCommandRoute, LeDtmCommand, LeDtmCommandCompleteEvent,
-    LeDtmResponsePending as HciResponsePending, LeDtmResponsePublication as HciResponsePublication,
-    LeDtmResponsePublished as HciResponsePublished,
 };
 
 use crate::{
@@ -60,7 +61,7 @@ impl<'runtime> BluetoothDtmResponsePublished<'runtime> {
         response: LeDtmCommandCompleteEvent,
     ) -> HciResponsePending<'runtime, Owner> {
         self.transaction
-            .map_radio(|()| owner)
+            .map_owner(|()| owner)
             .begin_next_response(response)
     }
 }
@@ -326,7 +327,7 @@ where
         >,
         command: HciEpochBound<'command, LeDtmCommand>,
     ) -> BluetoothDtmActiveCommandRoute<'runtime, 'command, S, CAPACITY> {
-        let transaction = self.order.transaction.map_radio(|()| self.radio);
+        let transaction = self.order.transaction.map_owner(|()| self.radio);
         match transaction.route_active_command(controller, command) {
             HciActiveCommandRoute::BusyResponsePending(pending) => {
                 let (radio, transaction) = pending.into_parts();

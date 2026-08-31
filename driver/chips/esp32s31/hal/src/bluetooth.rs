@@ -17,12 +17,7 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerLowPowerHardwareInitialized as PacBluetoothModemLpTimerLowPowerHardwareInitialized,
     BluetoothModemLpTimerRegistersPrepared as PacBluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending as PacBluetoothModemLpTimerSoftwarePending,
-    BluetoothPrimaryInterruptEpoch,
-    BluetoothSchedulerDisableBusyObserved as PacSchedulerDisableBusyObserved,
-    BluetoothSchedulerDisableIdleObserved as PacSchedulerDisableIdleObserved,
-    BluetoothSchedulerDisableRequest as PacSchedulerDisableRequest,
-    BluetoothSchedulerDisableStep as PacSchedulerDisableStep,
-    BluetoothTaskRegisters as PacBluetoothTaskRegisters,
+    BluetoothPrimaryInterruptEpoch, BluetoothTaskRegisters as PacBluetoothTaskRegisters,
     BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, ModemSysconBluetoothObservation,
     PlatformClockPowerObservation, RadioHardware, RadioPhyReleaseError,
     SharedModemClockObservation,
@@ -36,14 +31,13 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
     BluetoothModemLpTimerOwnerError, BluetoothNrtInterruptAcknowledged,
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
-    BluetoothPhyRegisterInitInputs,
-    BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
-    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
-    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
-    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
-    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothPhyRegisterInitInputs, BluetoothSchedulerExecutionLockDisposition,
+    BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
+    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadError,
+    BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
@@ -763,7 +757,7 @@ impl BluetoothInterruptRegistersOwner {
     /// Link-Layer sources still need their own quiescence proof.
     pub fn deactivate(self) -> BluetoothInterruptOutputAfterRoutesOwner {
         BluetoothInterruptOutputAfterRoutesOwner {
-            registers: self.registers.deactivate(),
+            _registers: self.registers.deactivate(),
         }
     }
 }
@@ -775,148 +769,7 @@ impl BluetoothInterruptRegistersOwner {
 /// so this state deliberately has no conversion back to setup or cold owners.
 #[must_use = "post-route interrupt ownership awaits dynamic-source quiescence"]
 pub struct BluetoothInterruptOutputAfterRoutesOwner {
-    registers: open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPrepared,
-}
-
-/// HAL-owned scheduler disable after its single hardware command was published.
-///
-/// The task owner cannot be recovered while this value exists. Each
-/// [`Self::step`] consumes the state and performs exactly one status
-/// observation, which makes cancellation fail-stop and leaves no hidden
-/// spin-loop or RTOS dependency.
-#[must_use = "the disable transaction admits one bounded status observation"]
-pub struct BluetoothControllerSchedulerDisabling {
-    request: PacSchedulerDisableRequest,
-}
-
-/// Result of one bounded HAL scheduler-disable observation.
-#[must_use = "retain the resulting busy or idle terminal observation"]
-pub enum BluetoothControllerSchedulerDisableStep {
-    /// One fresh read observed BUSY set. No repeatable polling state escapes.
-    BusyObserved(BluetoothControllerSchedulerDisableBusyObserved),
-    /// A fresh status read observed the scheduler idle.
-    IdleObserved(BluetoothControllerSchedulerDisableIdleObserved),
-}
-
-/// HAL ownership after one fresh read observed the BUSY bit set.
-///
-/// This retains the task without a public escape or another `step`; a later
-/// event source must provide an affine recheck permit before it can progress.
-#[must_use = "the busy observation retains hardware until a proven recheck edge exists"]
-pub struct BluetoothControllerSchedulerDisableBusyObserved {
-    _observation: PacSchedulerDisableBusyObserved,
-}
-
-/// HAL ownership after one fresh read observed the BUSY bit clear.
-///
-/// IRQ routing, packet reclamation, BTBB, PHY and clock teardown remain later
-/// mandatory edges. This state deliberately claims none of them.
-#[must_use = "the idle-bit observation must continue through verified teardown"]
-pub struct BluetoothControllerSchedulerDisableIdleObserved {
-    _observation: PacSchedulerDisableIdleObserved,
-}
-
-/// Failed pre-MMIO scheduler-disable admission retaining the task owner.
-#[must_use = "a failed Controller scheduler disable still owns the HAL task owner"]
-pub struct BluetoothControllerSchedulerDisableBeginFailure {
-    task: BluetoothTaskOwner,
-    error: BluetoothControllerSchedulerDisableBeginError,
-}
-
-impl BluetoothControllerSchedulerDisableBeginFailure {
-    /// Return the exact finite admission failure reason.
-    pub const fn error(&self) -> BluetoothControllerSchedulerDisableBeginError {
-        self.error
-    }
-
-    /// Recover the unchanged HAL task owner and rejection reason.
-    pub fn into_parts(
-        self,
-    ) -> (
-        BluetoothTaskOwner,
-        BluetoothControllerSchedulerDisableBeginError,
-    ) {
-        (self.task, self.error)
-    }
-}
-
-impl core::fmt::Debug for BluetoothControllerSchedulerDisableBeginFailure {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("BluetoothControllerSchedulerDisableBeginFailure")
-            .field("error", &self.error())
-            .finish_non_exhaustive()
-    }
-}
-
-impl BluetoothControllerSchedulerDisabling {
-    /// Begin the reviewed scheduler-disable transaction while the caller
-    /// retains the separate interrupt route epoch for later quiescence.
-    ///
-    /// A controller-time latch still in flight is rejected before the request
-    /// write and returns the task owner unchanged. Powered task-stopping
-    /// lifecycle ownership remains an upper controller-layer requirement.
-    ///
-    /// # Safety
-    ///
-    /// `task` must belong to the unique powered controller in its stopping
-    /// lifecycle. No new scheduler work may be admitted after this call.
-    #[allow(
-        unsafe_code,
-        reason = "the caller must retain the unique powered task-stopping lifecycle"
-    )]
-    pub unsafe fn begin(
-        task: BluetoothTaskOwner,
-    ) -> Result<Self, BluetoothControllerSchedulerDisableBeginFailure> {
-        let BluetoothTaskOwner {
-            registers,
-            reunitable,
-        } = task;
-        match registers.begin_scheduler_disable() {
-            Ok(request) => Ok(Self { request }),
-            Err(failure) => {
-                let (task, error) = failure.into_parts();
-                Err(BluetoothControllerSchedulerDisableBeginFailure {
-                    task: BluetoothTaskOwner {
-                        registers: task,
-                        reunitable,
-                    },
-                    error,
-                })
-            }
-        }
-    }
-
-    /// Perform one fresh status observation after both CPU routes and shared
-    /// ISR access have ended, then return immediately.
-    ///
-    /// No active-route overload exists: current evidence does not establish a
-    /// race-free borrow of storage shared with a live ISR. A future route epoch
-    /// must supply either quiescence or a value-only ISR observation first.
-    pub fn step(
-        self,
-        interrupts: &mut BluetoothInterruptOutputAfterRoutesOwner,
-    ) -> BluetoothControllerSchedulerDisableStep {
-        match self
-            .request
-            .step_after_cpu_routes_disabled(&mut interrupts.registers)
-        {
-            PacSchedulerDisableStep::BusyObserved(observation) => {
-                BluetoothControllerSchedulerDisableStep::BusyObserved(
-                    BluetoothControllerSchedulerDisableBusyObserved {
-                        _observation: observation,
-                    },
-                )
-            }
-            PacSchedulerDisableStep::IdleObserved(observation) => {
-                BluetoothControllerSchedulerDisableStep::IdleObserved(
-                    BluetoothControllerSchedulerDisableIdleObserved {
-                        _observation: observation,
-                    },
-                )
-            }
-        }
-    }
+    _registers: open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPrepared,
 }
 
 /// Exclusive finite borrow of the Bluetooth controller task-side registers.

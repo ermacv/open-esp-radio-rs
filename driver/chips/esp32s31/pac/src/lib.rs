@@ -15,7 +15,6 @@ mod bluetooth_memory_lists;
 mod bluetooth_modem_lp_timer;
 mod bluetooth_phy_init;
 mod bluetooth_scheduler;
-mod bluetooth_scheduler_disable;
 mod bluetooth_scheduler_insertion;
 mod bluetooth_scheduler_lock_modify;
 mod bluetooth_scheduler_runtime;
@@ -125,11 +124,6 @@ pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerRunEventPublished,
-};
-pub use bluetooth_scheduler_disable::{
-    BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisableBeginFailure,
-    BluetoothSchedulerDisableBusyObserved, BluetoothSchedulerDisableIdleObserved,
-    BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableStep,
 };
 pub use bluetooth_scheduler_insertion::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,

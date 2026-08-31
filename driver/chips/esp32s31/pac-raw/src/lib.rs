@@ -40862,7 +40862,7 @@ pub mod bluetooth_controller_core {
         pub const fn scheduler_control(&self) -> &SchedulerControl {
             &self.scheduler_control
         }
-        #[doc = "0x04 - The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown."]
+        #[doc = "0x04 - The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown."]
         #[inline(always)]
         pub const fn scheduler_lifecycle_request(&self) -> &SchedulerLifecycleRequest {
             &self.scheduler_lifecycle_request
@@ -41188,11 +41188,11 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_LIFECYCLE_REQUEST (w) register accessor: The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_lifecycle_request`] module"]
+    #[doc = "SCHEDULER_LIFECYCLE_REQUEST (w) register accessor: The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_lifecycle_request`] module"]
     #[doc(alias = "SCHEDULER_LIFECYCLE_REQUEST")]
     pub type SchedulerLifecycleRequest =
         crate::Reg<scheduler_lifecycle_request::SchedulerLifecycleRequestSpec>;
-    #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown."]
+    #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown."]
     pub mod scheduler_lifecycle_request {
         #[doc = "Register `SCHEDULER_LIFECYCLE_REQUEST` writer"]
         pub type W = crate::W<SchedulerLifecycleRequestSpec>;
@@ -41205,7 +41205,7 @@ pub mod bluetooth_controller_core {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerLifecycleRequestSpec;
         impl crate::RegisterSpec for SchedulerLifecycleRequestSpec {
             type Ux = u32;
@@ -58514,14 +58514,6 @@ pub mod field_read {
         registers.irq_diagnostic_state().read().image().bits()
     }
 
-    /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
-    #[inline]
-    pub fn observe_bluetooth_interrupt_output_scheduler_busy(
-        registers: &crate::BluetoothSchedulerInterruptRuntime,
-    ) -> bool {
-        registers.scheduler_state().read().busy().bit()
-    }
-
     /// Read `BTDM_RUNTIME_CONTROL`.`STATUS_0038`.`IMAGE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_modem_lp_timer_status_0038(
@@ -59457,21 +59449,6 @@ pub mod fixed_register_image {
             registers
                 .irq_clear_1()
                 .write_with_zero(|writer| writer.bits(0x00001300));
-        }
-    }
-
-    /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LIFECYCLE_REQUEST`.
-    #[inline]
-    pub fn publish_bluetooth_scheduler_lifecycle_request_image_1(
-        registers: &crate::BluetoothControllerCore,
-    ) {
-        // SAFETY: generator validation proves that the target is a
-        // writable 32-bit ordinary or write-one-to-clear register,
-        // while reviewed provenance qualifies this exact image.
-        unsafe {
-            registers
-                .scheduler_lifecycle_request()
-                .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
 

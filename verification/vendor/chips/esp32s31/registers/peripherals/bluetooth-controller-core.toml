@@ -36,7 +36,7 @@ value = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "SCHEDULER_LIFECYCLE_REQUEST"
-description = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown."
+description = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown."
 addressOffset = 0x04
 size = 32
 access = "write-only"

@@ -1732,13 +1732,6 @@ value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
-[[fixed-register-images]]
-name = "publish_bluetooth_scheduler_lifecycle_request_image_1"
-peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SCHEDULER_LIFECYCLE_REQUEST"
-value = 0x00000001
-sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
-
 [[fixed-register-writes]]
 name = "start_bluetooth_runtime_timer"
 peripheral = "BTDM_RUNTIME_CONTROL"
@@ -3612,13 +3605,6 @@ name = "capture_bluetooth_irq_diagnostic_state"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
 register = "IRQ_DIAGNOSTIC_STATE"
 field = "IMAGE"
-sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
-
-[[field-reads]]
-name = "observe_bluetooth_interrupt_output_scheduler_busy"
-peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
-register = "SCHEDULER_STATE"
-field = "BUSY"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[field-reads]]

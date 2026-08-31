@@ -134,24 +134,6 @@ pub unsafe fn prepare_modem_lp_timer_registers() {
     let _terminal_owners = (task, prepared, interrupts);
 }
 
-/// Publish the scheduler lifecycle request for disable and perform one bounded
-/// BUSY sample through the exact production PAC transaction.
-///
-/// # Safety
-///
-/// The caller must be an isolated compiled-production probe modeling a
-/// powered task-stopping controller and a post-route observation point.
-#[allow(
-    unsafe_code,
-    reason = "the validation-only API preserves the powered scheduler prerequisite"
-)]
-#[inline(always)]
-pub unsafe fn disable_scheduler_and_sample_once() -> bool {
-    unsafe {
-        open_esp_radio_esp32s31_pac::validation::disable_bluetooth_scheduler_and_sample_once()
-    }
-}
-
 /// Execute one exact production memory-list pointer publication in an
 /// isolated comparison image.
 ///

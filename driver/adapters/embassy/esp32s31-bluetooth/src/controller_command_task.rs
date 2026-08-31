@@ -31,7 +31,7 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothDtmResetRestoreFailure, BluetoothDtmResetRestoreStep, BluetoothDtmResetStoppingFault,
     BluetoothDtmResetStoppingRunner, BluetoothDtmResetStoppingStep, BluetoothDtmResetStoppingWait,
     BluetoothDtmResponsePending, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerRunInterruptStorage,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerRunInterruptStorage,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -54,6 +54,7 @@ pub enum EmbassyBluetoothControllerCommandPhase {
     ResetRestore,
     ResetCompletion,
     ResetResponse,
+    UnownedFinishedList,
 }
 
 #[cfg_attr(
@@ -75,6 +76,7 @@ enum ControllerCommandStimulus {
     ResetCompletion,
     ResetResponse,
     IdleRestored,
+    UnownedFinishedList,
     Terminal,
 }
 
@@ -106,13 +108,13 @@ const fn reduce_controller_command_transition(
     use ControllerCommandAction::{Advance, Retain, Terminal};
     use ControllerCommandStimulus::{
         Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, ResetCompletion, ResetResponse,
-        ResetRestore, ResetStopping,
+        ResetRestore, ResetStopping, UnownedFinishedList,
     };
     use EmbassyBluetoothControllerCommandPhase::{
         Active as ActivePhase, FirstEvent as FirstEventPhase, Idle, IdleReset as IdleResetPhase,
         IdleResponse as IdleResponsePhase, ResetCompletion as ResetCompletionPhase,
         ResetResponse as ResetResponsePhase, ResetRestore as ResetRestorePhase,
-        ResetStopping as ResetStoppingPhase,
+        ResetStopping as ResetStoppingPhase, UnownedFinishedList as UnownedFinishedListPhase,
     };
 
     match (phase, stimulus) {
@@ -124,6 +126,10 @@ const fn reduce_controller_command_transition(
         (IdleResetPhase, IdleResponse) => Advance(IdleResponsePhase),
         (FirstEventPhase, IdleResponse) => Advance(IdleResponsePhase),
         (ActivePhase, ResetStopping) => Advance(ResetStoppingPhase),
+        (ActivePhase | ResetStoppingPhase, UnownedFinishedList) => {
+            Advance(UnownedFinishedListPhase)
+        }
+        (UnownedFinishedListPhase, UnownedFinishedList) => Retain,
         (ResetStoppingPhase, ResetRestore) => Advance(ResetRestorePhase),
         (ResetStoppingPhase | ResetRestorePhase, ResetCompletion) => Advance(ResetCompletionPhase),
         (ResetCompletionPhase, ResetResponse) => Advance(ResetResponsePhase),
@@ -133,6 +139,34 @@ const fn reduce_controller_command_transition(
             ControllerCommandStimulus::Terminal,
         ) => Terminal,
         _ => panic!("invalid Controller command actor transition"),
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+enum EmbassyBluetoothUnownedFinishedListOwner<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Active {
+        _task: EmbassyBluetoothDtmSessionTask<'runtime, S, CAPACITY>,
+        index: BluetoothSchedulerHardwareListIndex,
+    },
+    ResetStopping {
+        _runner: BluetoothDtmResetStoppingRunner<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<S, const CAPACITY: usize> EmbassyBluetoothUnownedFinishedListOwner<'_, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
+        match self {
+            Self::Active { index, .. } => *index,
+            Self::ResetStopping { observed, .. } => observed.index(),
+        }
     }
 }
 
@@ -164,6 +198,7 @@ where
     ResetRestore(BluetoothDtmResetRestoreFailure<'runtime, S, CAPACITY>),
     ResetCompletion(BluetoothDtmResetCompletionReady<'runtime, S, CAPACITY>),
     ResetResponse(BluetoothDtmResetResponsePending<'runtime, S, CAPACITY>),
+    UnownedFinishedList(EmbassyBluetoothUnownedFinishedListOwner<'runtime, S, CAPACITY>),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -184,6 +219,9 @@ where
             Self::ResetRestore(_) => EmbassyBluetoothControllerCommandPhase::ResetRestore,
             Self::ResetCompletion(_) => EmbassyBluetoothControllerCommandPhase::ResetCompletion,
             Self::ResetResponse(_) => EmbassyBluetoothControllerCommandPhase::ResetResponse,
+            Self::UnownedFinishedList(_) => {
+                EmbassyBluetoothControllerCommandPhase::UnownedFinishedList
+            }
         }
     }
 }
@@ -229,8 +267,8 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     Retryable(EmbassyBluetoothControllerRetry),
     /// The absolute Controller-time schedule is exhausted; the actor retains its owner.
     ControllerTimeExhausted,
-    /// A scheduler list unrelated to the current DTM transaction remains observable.
-    UnrelatedList(BluetoothSchedulerFinishedHardwareListObserved),
+    /// No installed role owns this scheduler list; its exact owner is quarantined in the actor.
+    UnownedFinishedList(BluetoothSchedulerHardwareListIndex),
     /// An unrecovered initial transition failed before scheduler `RUN`.
     ///
     /// The only automatic failure response is the separate, typed CleanTask
@@ -380,6 +418,38 @@ where
             ControllerCommandAction::Retain,
         );
         boundary
+    }
+
+    fn store_unowned_finished_list<'epoch, 'packet>(
+        &mut self,
+        from: EmbassyBluetoothControllerCommandPhase,
+        owner: EmbassyBluetoothUnownedFinishedListOwner<'runtime, S, CAPACITY>,
+    ) -> EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY> {
+        let index = owner.index();
+        self.store_transition(
+            from,
+            ControllerCommandStimulus::UnownedFinishedList,
+            EmbassyBluetoothControllerCommandState::UnownedFinishedList(owner),
+        );
+        EmbassyBluetoothControllerCommandBoundary::UnownedFinishedList(index)
+    }
+
+    fn retained_unowned_finished_list<'epoch, 'packet>(
+        &self,
+    ) -> EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY> {
+        let EmbassyBluetoothControllerCommandState::UnownedFinishedList(owner) =
+            self.owner.current()
+        else {
+            unreachable!("the selected unowned-list quarantine did not change")
+        };
+        assert_eq!(
+            reduce_controller_command_transition(
+                EmbassyBluetoothControllerCommandPhase::UnownedFinishedList,
+                ControllerCommandStimulus::UnownedFinishedList,
+            ),
+            ControllerCommandAction::Retain,
+        );
+        EmbassyBluetoothControllerCommandBoundary::UnownedFinishedList(owner.index())
     }
 
     fn terminal_boundary<'epoch, 'packet>(
@@ -834,9 +904,18 @@ where
                     };
                     let boundary = active.run(wakers, controller, buffer, recheck).await;
                     match boundary {
-                        EmbassyBluetoothDtmSessionBoundary::UnrelatedList(observed) => {
-                            return self.retain_boundary(
-                                EmbassyBluetoothControllerCommandBoundary::UnrelatedList(observed),
+                        EmbassyBluetoothDtmSessionBoundary::UnownedFinishedList(index) => {
+                            let EmbassyBluetoothControllerCommandState::Active(active) =
+                                self.owner.take()
+                            else {
+                                unreachable!("unowned list retained the selected active task")
+                            };
+                            return self.store_unowned_finished_list(
+                                EmbassyBluetoothControllerCommandPhase::Active,
+                                EmbassyBluetoothUnownedFinishedListOwner::Active {
+                                    _task: active,
+                                    index,
+                                },
                             );
                         }
                         EmbassyBluetoothDtmSessionBoundary::ResetBarrier(barrier) => {
@@ -944,11 +1023,12 @@ where
                                 ))
                         }
                         BluetoothDtmResetStoppingStep::UnrelatedList { runner, observed } => {
-                            self.owner.store(
-                                EmbassyBluetoothControllerCommandState::ResetStopping(runner),
-                            );
-                            return self.retain_boundary(
-                                EmbassyBluetoothControllerCommandBoundary::UnrelatedList(observed),
+                            return self.store_unowned_finished_list(
+                                EmbassyBluetoothControllerCommandPhase::ResetStopping,
+                                EmbassyBluetoothUnownedFinishedListOwner::ResetStopping {
+                                    _runner: runner,
+                                    observed,
+                                },
                             );
                         }
                         BluetoothDtmResetStoppingStep::Retryable(runner) => {
@@ -1089,6 +1169,9 @@ where
                         }
                     }
                 }
+                EmbassyBluetoothControllerCommandPhase::UnownedFinishedList => {
+                    return self.retained_unowned_finished_list();
+                }
             }
         }
     }
@@ -1107,16 +1190,17 @@ mod tests {
 
     #[test]
     fn reducer_closes_start_test_end_and_reset_paths_back_to_idle() {
-        use ControllerCommandAction::{Advance, Terminal};
+        use ControllerCommandAction::{Advance, Retain, Terminal};
         use ControllerCommandStimulus::{
             Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, ResetCompletion,
-            ResetResponse, ResetRestore, ResetStopping,
+            ResetResponse, ResetRestore, ResetStopping, UnownedFinishedList,
         };
         use EmbassyBluetoothControllerCommandPhase::{
             Active as ActivePhase, FirstEvent as FirstEventPhase, Idle,
             IdleReset as IdleResetPhase, IdleResponse as IdleResponsePhase,
             ResetCompletion as ResetCompletionPhase, ResetResponse as ResetResponsePhase,
             ResetRestore as ResetRestorePhase, ResetStopping as ResetStoppingPhase,
+            UnownedFinishedList as UnownedFinishedListPhase,
         };
 
         assert_eq!(
@@ -1159,6 +1243,18 @@ mod tests {
         assert_eq!(
             reduce_controller_command_transition(ActivePhase, ResetStopping),
             Advance(ResetStoppingPhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(ActivePhase, UnownedFinishedList),
+            Advance(UnownedFinishedListPhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(ResetStoppingPhase, UnownedFinishedList),
+            Advance(UnownedFinishedListPhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(UnownedFinishedListPhase, UnownedFinishedList),
+            Retain
         );
         assert_eq!(
             reduce_controller_command_transition(ResetStoppingPhase, ResetRestore),

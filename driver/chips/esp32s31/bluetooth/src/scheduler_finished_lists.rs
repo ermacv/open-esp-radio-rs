@@ -141,14 +141,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn captured_mask_yields_affine_list_observations_without_item_ownership() {
-        let mut backend = Backend {
+    fn backend(lists: &[u8]) -> Backend {
+        Backend {
             observation: Some(
-                BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[3, 9])
+                BluetoothSchedulerFinishedListObservation::from_lists_for_validation(lists)
                     .expect("semantic list set is valid"),
             ),
-        };
+        }
+    }
+
+    fn assert_list(
+        step: BluetoothSchedulerFinishedListWorkerStep,
+        expected_index: u8,
+        expected_more: bool,
+    ) {
+        match step {
+            BluetoothSchedulerFinishedListWorkerStep::List { observed, more } => {
+                assert_eq!(observed.index().get(), expected_index);
+                assert_eq!(more, expected_more);
+            }
+            _ => panic!("the scripted observation must yield one list"),
+        }
+    }
+
+    #[test]
+    fn multiple_lists_are_drained_lowest_first_one_per_step() {
+        let mut backend = backend(&[9, 3]);
         let mut worker = BluetoothSchedulerFinishedListWorker::new();
 
         worker
@@ -158,21 +176,49 @@ mod tests {
             worker.capture_with(&mut backend),
             Err(BluetoothSchedulerFinishedListCaptureError::DrainAlreadyActive)
         );
-        assert!(matches!(
-            worker.step(),
-            BluetoothSchedulerFinishedListWorkerStep::List {
-                observed,
-                more: true
-            } if observed.index().get() == 3
-        ));
+        assert_list(worker.step(), 3, true);
         assert!(worker.is_active());
-        assert!(matches!(
+        assert_list(worker.step(), 9, false);
+        assert!(!worker.is_active());
+        assert_eq!(
             worker.step(),
-            BluetoothSchedulerFinishedListWorkerStep::List {
-                observed,
-                more: false
-            } if observed.index().get() == 9
-        ));
+            BluetoothSchedulerFinishedListWorkerStep::Idle
+        );
+    }
+
+    #[test]
+    fn single_list_exhausts_the_capture() {
+        let mut backend = backend(&[3]);
+        let mut worker = BluetoothSchedulerFinishedListWorker::new();
+
+        worker.capture_with(&mut backend).unwrap();
+        assert_list(worker.step(), 3, false);
+        assert!(!worker.is_active());
+        assert_eq!(
+            worker.step(),
+            BluetoothSchedulerFinishedListWorkerStep::Idle
+        );
+    }
+
+    #[test]
+    fn list_zero_precedes_an_unowned_list_without_losing_the_capture() {
+        let mut backend = backend(&[0, 3]);
+        let mut worker = BluetoothSchedulerFinishedListWorker::new();
+
+        worker.capture_with(&mut backend).unwrap();
+        assert_list(worker.step(), 0, true);
+        assert!(worker.is_active());
+        assert_list(worker.step(), 3, false);
+        assert!(!worker.is_active());
+    }
+
+    #[test]
+    fn sole_list_zero_exhausts_the_capture() {
+        let mut backend = backend(&[0]);
+        let mut worker = BluetoothSchedulerFinishedListWorker::new();
+
+        worker.capture_with(&mut backend).unwrap();
+        assert_list(worker.step(), 0, false);
         assert!(!worker.is_active());
         assert_eq!(
             worker.step(),

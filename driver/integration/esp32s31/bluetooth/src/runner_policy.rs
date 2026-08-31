@@ -5,6 +5,7 @@
 pub(crate) enum CommandBoundaryClass {
     IdleRestored,
     Retryable,
+    UnownedFinishedList,
     Terminal,
 }
 
@@ -20,6 +21,7 @@ pub(crate) const fn reduce_command_boundary(class: CommandBoundaryClass) -> Comm
     match class {
         CommandBoundaryClass::IdleRestored => CommandBoundaryAction::Continue,
         CommandBoundaryClass::Retryable => CommandBoundaryAction::GateRetry,
+        CommandBoundaryClass::UnownedFinishedList => CommandBoundaryAction::Quarantine,
         CommandBoundaryClass::Terminal => CommandBoundaryAction::Quarantine,
     }
 }
@@ -100,6 +102,10 @@ mod tests {
         assert_eq!(
             reduce_command_boundary(CommandBoundaryClass::Retryable),
             CommandBoundaryAction::GateRetry
+        );
+        assert_eq!(
+            reduce_command_boundary(CommandBoundaryClass::UnownedFinishedList),
+            CommandBoundaryAction::Quarantine
         );
         assert_eq!(
             reduce_command_boundary(CommandBoundaryClass::Terminal),

@@ -165,7 +165,8 @@ enum Esp32s31BluetoothRouteQuarantine {
 enum Esp32s31BluetoothHardwareQuarantine<'packet, const SCHEDULER_CAPACITY: usize> {
     Command {
         _boundary: CommandBoundary<'packet, SCHEDULER_CAPACITY>,
-        _actor_empty: bool,
+        _actor:
+            EmbassyBluetoothControllerCommandTask<'static, PublishedStorage, SCHEDULER_CAPACITY>,
         _routes: Esp32s31BluetoothRouteQuarantine,
     },
     ModemTimer {
@@ -199,7 +200,9 @@ pub struct Esp32s31BluetoothHardwareRunner<
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
 > {
-    command: EmbassyBluetoothControllerCommandTask<'static, PublishedStorage, SCHEDULER_CAPACITY>,
+    command: Option<
+        EmbassyBluetoothControllerCommandTask<'static, PublishedStorage, SCHEDULER_CAPACITY>,
+    >,
     controller: LeControllerCommandEndpoint<
         'static,
         CriticalSectionRawMutex,
@@ -228,7 +231,6 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | EmbassyBluetoothControllerCommandBoundary::EndpointMismatch
         | EmbassyBluetoothControllerCommandBoundary::HciFault(_)
         | EmbassyBluetoothControllerCommandBoundary::ControllerTimeExhausted
-        | EmbassyBluetoothControllerCommandBoundary::UnrelatedList(_)
         | EmbassyBluetoothControllerCommandBoundary::FirstEventFailed(_)
         | EmbassyBluetoothControllerCommandBoundary::FirstPreparationCleanupFault { .. }
         | EmbassyBluetoothControllerCommandBoundary::FirstPreparationRestoreRejected(_)
@@ -240,6 +242,9 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | EmbassyBluetoothControllerCommandBoundary::TestEndStoppingFault(_)
         | EmbassyBluetoothControllerCommandBoundary::ResetStoppingFault(_) => {
             CommandBoundaryClass::Terminal
+        }
+        EmbassyBluetoothControllerCommandBoundary::UnownedFinishedList(_) => {
+            CommandBoundaryClass::UnownedFinishedList
         }
     };
     reduce_command_boundary(class)
@@ -347,7 +352,7 @@ impl<
     ) -> Self {
         let modem_driver = wakers.modem_timer().driver();
         Self {
-            command: EmbassyBluetoothControllerCommandTask::new(task),
+            command: Some(EmbassyBluetoothControllerCommandTask::new(task)),
             controller,
             modem_timer,
             modem_driver,
@@ -470,12 +475,16 @@ impl<
                     let _ = modem_driver.wait_ready(&*modem_timer).await;
                     modem_driver.drive_once(modem_timer)
                 };
-                let command = self.command.run(
-                    self.wakers,
-                    &mut self.controller,
-                    &mut self.packet,
-                    &mut self.recheck,
-                );
+                let command = self
+                    .command
+                    .as_mut()
+                    .expect("the live Controller loop retains its command actor")
+                    .run(
+                        self.wakers,
+                        &mut self.controller,
+                        &mut self.packet,
+                        &mut self.recheck,
+                    );
 
                 if primary_first {
                     match select(interrupt_fault, select(command, modem)).await {
@@ -504,11 +513,14 @@ impl<
                         yield_now().await;
                     }
                     CommandBoundaryAction::Quarantine => {
-                        let actor_empty = self.command.is_empty();
+                        let actor = self
+                            .command
+                            .take()
+                            .expect("terminal quarantine retains the exact command actor");
                         let routes = quarantine_routes(&mut self.interrupt);
                         retain_quarantine_forever(Esp32s31BluetoothHardwareQuarantine::Command {
                             _boundary: boundary,
-                            _actor_empty: actor_empty,
+                            _actor: actor,
                             _routes: routes,
                         })
                         .await;

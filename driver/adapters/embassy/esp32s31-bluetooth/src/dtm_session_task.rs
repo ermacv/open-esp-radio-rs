@@ -26,7 +26,7 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothDtmStoppingStep, BluetoothDtmTestEndResponsePending,
     BluetoothDtmTestEndResponsePublication, BluetoothDtmTestEndRestoreFailure,
     BluetoothDtmTestEndRestoreStep, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerRunInterruptStorage,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerRunInterruptStorage,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -80,6 +80,18 @@ where
     Stopping(BluetoothDtmStoppingRunner<'runtime, S, CAPACITY>),
     TestEndResponse(BluetoothDtmTestEndResponsePending<'runtime, S, CAPACITY>),
     Restore(BluetoothDtmTestEndRestoreFailure<'runtime, S, CAPACITY>),
+    UnownedPendingResponse {
+        _session: BluetoothDtmResponsePendingSession<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    UnownedCommandReady {
+        _session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    UnownedStopping {
+        _runner: BluetoothDtmStoppingRunner<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -94,6 +106,9 @@ where
             Self::Stopping(_) => EmbassyBluetoothDtmSessionPhase::Stopping,
             Self::TestEndResponse(_) => EmbassyBluetoothDtmSessionPhase::TestEndResponse,
             Self::Restore(_) => EmbassyBluetoothDtmSessionPhase::Restore,
+            Self::UnownedPendingResponse { .. }
+            | Self::UnownedCommandReady { .. }
+            | Self::UnownedStopping { .. } => EmbassyBluetoothDtmSessionPhase::UnownedFinishedList,
         }
     }
 }
@@ -112,6 +127,7 @@ enum EmbassyBluetoothDtmSessionPhase {
     Stopping,
     TestEndResponse,
     Restore,
+    UnownedFinishedList,
 }
 
 #[cfg_attr(
@@ -131,7 +147,7 @@ enum DtmSessionStimulus {
     RestoreRequired,
     Completed,
     Retry,
-    Unrelated,
+    UnownedFinishedList,
     RetainedEndpointMismatch,
     RetainedFault,
     RetainedExternalFrame,
@@ -172,10 +188,11 @@ const fn reduce_dtm_session_transition(
         Completed, Continue, ControllerResponsePending, ControllerTimeExhausted, ResetBarrier,
         RestoreRequired, RetainedEndpointMismatch, RetainedExternalFrame, RetainedFault, Retry,
         StoppingResponseReady, TerminalFault, TestEnd, TransferredControllerEndpointMismatch,
-        Unrelated,
+        UnownedFinishedList as UnownedFinishedListStimulus,
     };
     use EmbassyBluetoothDtmSessionPhase::{
         CommandReady, PendingResponse, Restore, Stopping, TestEndResponse,
+        UnownedFinishedList as UnownedFinishedListPhase,
     };
 
     match (phase, stimulus) {
@@ -187,7 +204,10 @@ const fn reduce_dtm_session_transition(
         (TestEndResponse | Restore, Completed) => TerminalBoundary,
         (PendingResponse | CommandReady | Stopping | TestEndResponse, Continue) => Advance(phase),
         (PendingResponse | CommandReady | Stopping | Restore, Retry) => RetainBoundary,
-        (PendingResponse | CommandReady | Stopping, Unrelated) => RetainBoundary,
+        (PendingResponse | CommandReady | Stopping, UnownedFinishedListStimulus) => {
+            Advance(UnownedFinishedListPhase)
+        }
+        (UnownedFinishedListPhase, UnownedFinishedListStimulus) => RetainBoundary,
         (PendingResponse | CommandReady | Stopping, ControllerTimeExhausted) => RetainBoundary,
         (PendingResponse | CommandReady | TestEndResponse, RetainedEndpointMismatch) => {
             RetainBoundary
@@ -211,8 +231,8 @@ pub enum EmbassyBluetoothDtmSessionBoundary<'runtime, 'epoch, 'packet, S, const 
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    /// One unrelated scheduler list remains owned by the outer dispatcher.
-    UnrelatedList(BluetoothSchedulerFinishedHardwareListObserved),
+    /// No installed role owns this scheduler list; the exact owner remains quarantined here.
+    UnownedFinishedList(BluetoothSchedulerHardwareListIndex),
     /// An accepted Reset remains paired opaquely with its active radio/order owner.
     ResetBarrier(BluetoothDtmActiveResetBarrier<'runtime, S, CAPACITY>),
     /// A non-command Host frame remains bound to its source HCI epoch and buffer.
@@ -274,7 +294,7 @@ impl<State> SessionOwnerSlot<State> {
     fn current(&self) -> &State {
         self.state
             .as_ref()
-            .expect("a non-terminal DTM task always retains one affine state")
+            .expect("a retained DTM task owns one affine state")
     }
 
     fn take(&mut self) -> State {
@@ -333,7 +353,7 @@ where
     }
 
     /// Whether completion, failure, or external policy transferred ownership
-    /// out of this task.
+    /// out of this task. An unowned-list quarantine intentionally remains non-empty.
     pub const fn is_empty(&self) -> bool {
         self.owner.is_empty()
     }
@@ -410,11 +430,17 @@ where
                 None
             }
             BluetoothDtmActiveSessionRadioStep::UnrelatedList { session, observed } => {
-                Some(self.retain_transition(
+                let index = observed.index();
+                self.store_transition(
                     EmbassyBluetoothDtmSessionPhase::PendingResponse,
-                    DtmSessionStimulus::Unrelated,
-                    EmbassyBluetoothDtmSessionState::PendingResponse(session),
-                    EmbassyBluetoothDtmSessionBoundary::UnrelatedList(observed),
+                    DtmSessionStimulus::UnownedFinishedList,
+                    EmbassyBluetoothDtmSessionState::UnownedPendingResponse {
+                        _session: session,
+                        observed,
+                    },
+                );
+                Some(EmbassyBluetoothDtmSessionBoundary::UnownedFinishedList(
+                    index,
                 ))
             }
             BluetoothDtmActiveSessionRadioStep::Retryable(session) => Some(self.retain_transition(
@@ -450,11 +476,17 @@ where
                 None
             }
             BluetoothDtmActiveSessionRadioStep::UnrelatedList { session, observed } => {
-                Some(self.retain_transition(
+                let index = observed.index();
+                self.store_transition(
                     EmbassyBluetoothDtmSessionPhase::CommandReady,
-                    DtmSessionStimulus::Unrelated,
-                    EmbassyBluetoothDtmSessionState::CommandReady(session),
-                    EmbassyBluetoothDtmSessionBoundary::UnrelatedList(observed),
+                    DtmSessionStimulus::UnownedFinishedList,
+                    EmbassyBluetoothDtmSessionState::UnownedCommandReady {
+                        _session: session,
+                        observed,
+                    },
+                );
+                Some(EmbassyBluetoothDtmSessionBoundary::UnownedFinishedList(
+                    index,
                 ))
             }
             BluetoothDtmActiveSessionRadioStep::Retryable(session) => Some(self.retain_transition(
@@ -490,11 +522,17 @@ where
                 None
             }
             BluetoothDtmStoppingStep::UnrelatedList { runner, observed } => {
-                Some(self.retain_transition(
+                let index = observed.index();
+                self.store_transition(
                     EmbassyBluetoothDtmSessionPhase::Stopping,
-                    DtmSessionStimulus::Unrelated,
-                    EmbassyBluetoothDtmSessionState::Stopping(runner),
-                    EmbassyBluetoothDtmSessionBoundary::UnrelatedList(observed),
+                    DtmSessionStimulus::UnownedFinishedList,
+                    EmbassyBluetoothDtmSessionState::UnownedStopping {
+                        _runner: runner,
+                        observed,
+                    },
+                );
+                Some(EmbassyBluetoothDtmSessionBoundary::UnownedFinishedList(
+                    index,
                 ))
             }
             BluetoothDtmStoppingStep::Retryable(runner) => Some(self.retain_transition(
@@ -899,6 +937,21 @@ where
         }
     }
 
+    fn unowned_finished_list_boundary<'epoch, 'packet>(
+        &self,
+    ) -> SessionBoundary<'runtime, 'epoch, 'packet, S, CAPACITY> {
+        let index = match self.owner.current() {
+            EmbassyBluetoothDtmSessionState::UnownedPendingResponse { observed, .. }
+            | EmbassyBluetoothDtmSessionState::UnownedCommandReady { observed, .. }
+            | EmbassyBluetoothDtmSessionState::UnownedStopping { observed, .. } => observed.index(),
+            _ => unreachable!("the selected unowned-list quarantine did not change"),
+        };
+        self.retain_existing_transition(
+            DtmSessionStimulus::UnownedFinishedList,
+            EmbassyBluetoothDtmSessionBoundary::UnownedFinishedList(index),
+        )
+    }
+
     /// Run until an externally meaningful lossless boundary.
     ///
     /// The packet buffer belongs to the caller because a returned non-command
@@ -944,6 +997,9 @@ where
                     self.drive_test_end_response(controller).await
                 }
                 EmbassyBluetoothDtmSessionPhase::Restore => return self.retry_restore(),
+                EmbassyBluetoothDtmSessionPhase::UnownedFinishedList => {
+                    return self.unowned_finished_list_boundary();
+                }
             };
             if let Some(boundary) = boundary {
                 return boundary;
@@ -1005,6 +1061,14 @@ mod tests {
         }
     }
 
+    enum FakeSessionState {
+        Active(FakeOwner),
+        Quarantined {
+            owner: FakeOwner,
+            observation: FakeOwner,
+        },
+    }
+
     async fn wait_while_owner_is_stored(owner: &SessionOwnerSlot<FakeOwner>) {
         let _borrowed_owner = owner.current();
         pending::<()>().await;
@@ -1038,12 +1102,39 @@ mod tests {
 
         let mut owner = slot.take();
         owner.generation = 2;
-        let observation = slot.retain(owner, "unrelated");
+        let observation = slot.retain(owner, "retryable");
 
-        assert_eq!(observation, "unrelated");
+        assert_eq!(observation, "retryable");
         assert_eq!(slot.current().generation, 2);
         assert_eq!(drops.get(), 0);
         assert!(!slot.is_empty());
+    }
+
+    #[test]
+    fn terminal_quarantine_retains_both_affine_owners() {
+        let drops = Rc::new(core::cell::Cell::new(0));
+        let mut slot = SessionOwnerSlot::new(FakeSessionState::Active(FakeOwner {
+            generation: 5,
+            drops: Rc::clone(&drops),
+        }));
+        let FakeSessionState::Active(owner) = slot.take() else {
+            panic!("the scripted state starts active")
+        };
+        slot.store(FakeSessionState::Quarantined {
+            owner,
+            observation: FakeOwner {
+                generation: 11,
+                drops: Rc::clone(&drops),
+            },
+        });
+
+        let FakeSessionState::Quarantined { owner, observation } = slot.current() else {
+            panic!("the unowned observation must terminate in quarantine")
+        };
+        assert_eq!((owner.generation, observation.generation), (5, 11));
+        assert_eq!(drops.get(), 0);
+        drop(slot);
+        assert_eq!(drops.get(), 2);
     }
 
     #[test]
@@ -1194,10 +1285,11 @@ mod tests {
             Completed, Continue, ControllerResponsePending, ControllerTimeExhausted, ResetBarrier,
             ResponsePublished, RestoreRequired, RetainedEndpointMismatch, RetainedExternalFrame,
             RetainedFault, Retry, StoppingResponseReady, TerminalFault, TestEnd,
-            TransferredControllerEndpointMismatch, Unrelated,
+            TransferredControllerEndpointMismatch, UnownedFinishedList,
         };
         use EmbassyBluetoothDtmSessionPhase::{
             CommandReady, PendingResponse, Restore, Stopping, TestEndResponse,
+            UnownedFinishedList as UnownedFinishedListPhase,
         };
 
         let cases = [
@@ -1215,7 +1307,26 @@ mod tests {
             (PendingResponse, Continue, Advance(PendingResponse)),
             (TestEndResponse, Continue, Advance(TestEndResponse)),
             (PendingResponse, Retry, RetainBoundary),
-            (Stopping, Unrelated, RetainBoundary),
+            (
+                PendingResponse,
+                UnownedFinishedList,
+                Advance(UnownedFinishedListPhase),
+            ),
+            (
+                CommandReady,
+                UnownedFinishedList,
+                Advance(UnownedFinishedListPhase),
+            ),
+            (
+                Stopping,
+                UnownedFinishedList,
+                Advance(UnownedFinishedListPhase),
+            ),
+            (
+                UnownedFinishedListPhase,
+                UnownedFinishedList,
+                RetainBoundary,
+            ),
             (PendingResponse, RetainedEndpointMismatch, RetainBoundary),
             (CommandReady, RetainedFault, RetainBoundary),
             (PendingResponse, ControllerTimeExhausted, RetainBoundary),

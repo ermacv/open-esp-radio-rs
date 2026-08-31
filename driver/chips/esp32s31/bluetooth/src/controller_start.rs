@@ -3279,6 +3279,38 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         run
     }
 
+    /// Perform one fresh fenced completion-list transfer for advertising.
+    pub fn observe_legacy_advertising_completion<'a>(
+        &mut self,
+        running: crate::BluetoothLegacyAdvertisingSchedulerRunning<'a>,
+        wake: crate::BluetoothSchedulerWakeBatch,
+    ) -> crate::BluetoothLegacyAdvertisingSchedulerCompletionStep<'a> {
+        self.runtime
+            .observe_legacy_advertising_completion(running, wake)
+    }
+
+    /// Continue one retained finished-list capture while advertising runs.
+    pub fn continue_legacy_advertising_running_finished_list_drain<'a>(
+        &mut self,
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
+            crate::BluetoothLegacyAdvertisingSchedulerRunning<'a>,
+        >,
+    ) -> crate::BluetoothLegacyAdvertisingSchedulerRunningDrainStep<'a> {
+        self.runtime
+            .continue_legacy_advertising_running_finished_list_drain(pending)
+    }
+
+    /// Continue one retained capture after advertising completion was observed.
+    pub fn continue_legacy_advertising_completed_finished_list_drain<'a>(
+        &mut self,
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
+            crate::BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+    ) -> crate::BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'a> {
+        self.runtime
+            .continue_legacy_advertising_completed_finished_list_drain(pending)
+    }
+
     /// Perform one fresh fenced completion-list transfer and immediately join
     /// its affine result to this exact running DTM graph.
     ///
@@ -3301,7 +3333,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// call together with the unchanged running or newly completed graph.
     pub fn continue_dtm_running_finished_list_drain<Role>(
         &mut self,
-        pending: crate::BluetoothDtmSchedulerFinishedListDrainPending<
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
             crate::BluetoothDtmSchedulerRunning<Role>,
         >,
     ) -> crate::BluetoothDtmSchedulerRunningDrainStep<Role> {
@@ -3317,7 +3349,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// losslessly.
     pub fn continue_dtm_completed_finished_list_drain<Role>(
         &mut self,
-        pending: crate::BluetoothDtmSchedulerFinishedListDrainPending<
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
             crate::BluetoothDtmSchedulerCompletionObserved<Role>,
         >,
     ) -> crate::BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {

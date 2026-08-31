@@ -23,13 +23,13 @@ use crate::{
     BluetoothDtmPostUnlinkArmStep, BluetoothDtmPostUnlinkAwaiting, BluetoothDtmReceiverEvent,
     BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole, BluetoothDtmRxCompletionOutcome,
     BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
-    BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerFinishedListDrainPending,
-    BluetoothDtmSchedulerFinishedListDrainState, BluetoothDtmSchedulerHardwareHeadEmptyObserved,
+    BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerHardwareHeadEmptyObserved,
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerHeadPublished,
     BluetoothDtmSchedulerRecycleStep, BluetoothDtmSchedulerRunning,
     BluetoothDtmSchedulerRunningDrainStep, BluetoothDtmSchedulerRxSuccessRecycleStep,
     BluetoothDtmSchedulerSoftwareListRemovalReady, BluetoothDtmSoftwareListRemovalPublishedStep,
     BluetoothDtmTransmitterEvent, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
     BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
     BluetoothSchedulerWakeBatch,
 };
@@ -49,11 +49,11 @@ enum BluetoothDtmRoleCompletionPhase<'runtime, S, const CAPACITY: usize, Role> {
     },
     RunningDrain {
         task: Task<'runtime, S, CAPACITY>,
-        pending: BluetoothDtmSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
+        pending: BluetoothSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
     },
     CompletionDrain {
         task: Task<'runtime, S, CAPACITY>,
-        pending: BluetoothDtmSchedulerFinishedListDrainPending<
+        pending: BluetoothSchedulerFinishedListDrainPending<
             BluetoothDtmSchedulerCompletionObserved<Role>,
         >,
     },
@@ -419,15 +419,15 @@ enum BluetoothDtmRoleCompletionAdvance<'runtime, S, const CAPACITY: usize, Role>
 
 fn drained_or_pending_running<'runtime, S, const CAPACITY: usize, Role>(
     task: Task<'runtime, S, CAPACITY>,
-    drain: BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
+    drain: BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
 ) -> BluetoothDtmRoleCompletionAdvance<'runtime, S, CAPACITY, Role> {
     match drain {
-        BluetoothDtmSchedulerFinishedListDrainState::Drained(running) => {
+        BluetoothSchedulerFinishedListDrainState::Drained(running) => {
             BluetoothDtmRoleCompletionAdvance::WaitScheduler(
                 BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
             )
         }
-        BluetoothDtmSchedulerFinishedListDrainState::Pending(pending) => {
+        BluetoothSchedulerFinishedListDrainState::Pending(pending) => {
             BluetoothDtmRoleCompletionAdvance::Continue(
                 BluetoothDtmRoleCompletionPhase::RunningDrain { task, pending },
             )
@@ -437,15 +437,13 @@ fn drained_or_pending_running<'runtime, S, const CAPACITY: usize, Role>(
 
 fn drained_or_pending_completed<'runtime, S, const CAPACITY: usize, Role>(
     task: Task<'runtime, S, CAPACITY>,
-    drain: BluetoothDtmSchedulerFinishedListDrainState<
-        BluetoothDtmSchedulerCompletionObserved<Role>,
-    >,
+    drain: BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
 ) -> BluetoothDtmRoleCompletionPhase<'runtime, S, CAPACITY, Role> {
     match drain {
-        BluetoothDtmSchedulerFinishedListDrainState::Drained(completed) => {
+        BluetoothSchedulerFinishedListDrainState::Drained(completed) => {
             BluetoothDtmRoleCompletionPhase::CompletionObserved { task, completed }
         }
-        BluetoothDtmSchedulerFinishedListDrainState::Pending(pending) => {
+        BluetoothSchedulerFinishedListDrainState::Pending(pending) => {
             BluetoothDtmRoleCompletionPhase::CompletionDrain { task, pending }
         }
     }

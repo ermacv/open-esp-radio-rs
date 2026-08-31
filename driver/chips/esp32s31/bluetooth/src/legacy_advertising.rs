@@ -11,6 +11,8 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertiserTxInFlight;
 use open_esp_radio_bluetooth_ll::{
     advertiser::{
         LegacyAdvertiserEnabled, LegacyAdvertiserTxPrepared, LegacyAdvertisingTxIdentity,
@@ -24,6 +26,14 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
     BluetoothLegacyAdvertisingMemoryGraphPacketPrepared, BluetoothLegacyAdvertisingPduError,
 };
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothLegacyAdvertisingMemoryGraphCompletionObservation,
+    BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
+    BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
+    BluetoothLegacyAdvertisingMemoryGraphRunning,
+    BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared,
@@ -32,16 +42,12 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
     BluetoothLegacyAdvertisingPrimaryChannel,
 };
-#[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
-    BluetoothLegacyAdvertisingMemoryGraphRunning,
-};
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareRunCommandPublished,
 };
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -406,7 +412,7 @@ impl<'a> BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a> {
         publication: &BluetoothSchedulerHardwareListHeadPublished,
     ) -> BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
         BluetoothLegacyAdvertisingHeadPublishedEvent {
-            prepared: self.prepared,
+            in_flight: self.prepared.into_submitted(),
             memory: self.memory.into_head_published(publication),
             scheduler_window: self.scheduler_window,
         }
@@ -424,7 +430,7 @@ impl<'a> BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a> {
 /// Hardware-visible advertising event after exact scheduler-head publication.
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
-    prepared: LegacyAdvertiserTxPrepared<'a>,
+    in_flight: LegacyAdvertiserTxInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
@@ -440,9 +446,9 @@ impl<'a> BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
         run: &BluetoothSchedulerHardwareRunCommandPublished,
     ) -> BluetoothLegacyAdvertisingRunningEvent<'a> {
         BluetoothLegacyAdvertisingRunningEvent {
-            _prepared: self.prepared,
+            in_flight: self.in_flight,
             memory: self.memory.into_running(run),
-            _scheduler_window: self.scheduler_window,
+            scheduler_window: self.scheduler_window,
         }
     }
 }
@@ -450,15 +456,87 @@ impl<'a> BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
 /// Hardware-owned advertising event admitted through the complete RUN suffix.
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingRunningEvent<'a> {
-    _prepared: LegacyAdvertiserTxPrepared<'a>,
+    in_flight: LegacyAdvertiserTxInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphRunning,
-    _scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
 
 #[cfg(target_arch = "riscv32")]
 impl BluetoothLegacyAdvertisingRunningEvent<'_> {
     pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.memory.scheduler_item_address()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRunningEvent<'a> {
+    pub(crate) fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothLegacyAdvertisingRunningEventCompletionObservation<'a> {
+        let Self {
+            in_flight,
+            memory,
+            scheduler_window,
+        } = self;
+        match memory.observe_completion(observed) {
+            BluetoothLegacyAdvertisingMemoryGraphCompletionObservation::ListMismatch {
+                owner,
+                observed,
+            } => BluetoothLegacyAdvertisingRunningEventCompletionObservation::ListMismatch {
+                item: Self {
+                    in_flight,
+                    memory: owner,
+                    scheduler_window,
+                },
+                observed,
+            },
+            BluetoothLegacyAdvertisingMemoryGraphCompletionObservation::StillInFlight(memory) => {
+                BluetoothLegacyAdvertisingRunningEventCompletionObservation::StillInFlight(Self {
+                    in_flight,
+                    memory,
+                    scheduler_window,
+                })
+            }
+            BluetoothLegacyAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                memory,
+            ) => BluetoothLegacyAdvertisingRunningEventCompletionObservation::CompletionObserved(
+                BluetoothLegacyAdvertisingCompletionObservedEvent {
+                    _in_flight: in_flight,
+                    memory,
+                    _scheduler_window: scheduler_window,
+                },
+            ),
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingRunningEventCompletionObservation<'a> {
+    ListMismatch {
+        item: BluetoothLegacyAdvertisingRunningEvent<'a>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothLegacyAdvertisingRunningEvent<'a>),
+    CompletionObserved(BluetoothLegacyAdvertisingCompletionObservedEvent<'a>),
+}
+
+/// Hardware-owned advertising event after a non-sentinel completion status.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingCompletionObservedEvent<'a> {
+    _in_flight: LegacyAdvertiserTxInFlight<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
+    _scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothLegacyAdvertisingCompletionObservedEvent<'_> {
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    pub(crate) const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
+        self.memory.status()
     }
 }
 

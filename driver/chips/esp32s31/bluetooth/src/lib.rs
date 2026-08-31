@@ -403,8 +403,12 @@ pub use scheduler::{
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{
     BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
-    BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerFinishedListDrainPending,
-    BluetoothDtmSchedulerFinishedListDrainState, BluetoothDtmSchedulerRunningDrainStep,
+    BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerRunningDrainStep,
+    BluetoothLegacyAdvertisingSchedulerCompletionObserved,
+    BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep,
+    BluetoothLegacyAdvertisingSchedulerCompletionStep,
+    BluetoothLegacyAdvertisingSchedulerRunningDrainStep,
+    BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{

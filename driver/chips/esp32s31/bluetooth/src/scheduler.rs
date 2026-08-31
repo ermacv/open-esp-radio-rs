@@ -6,6 +6,11 @@ use crate::dtm_event_prepare::{
     BluetoothDtmCompletionObservedEvent, BluetoothDtmReviewedEventWordsPlan,
     BluetoothDtmRunningEventCompletionObservation, BluetoothDtmSchedulerBookkeepingPrepared,
 };
+#[cfg(target_arch = "riscv32")]
+use crate::legacy_advertising::{
+    BluetoothLegacyAdvertisingCompletionObservedEvent,
+    BluetoothLegacyAdvertisingRunningEventCompletionObservation,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
     BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
@@ -208,6 +213,33 @@ pub struct BluetoothLegacyAdvertisingSchedulerRunning<'a> {
     item: crate::legacy_advertising::BluetoothLegacyAdvertisingRunningEvent<'a>,
     run: BluetoothSchedulerHardwareRunCommandPublished,
     _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+/// Advertising graph with one non-sentinel scheduler completion observation.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed advertising graph must advance through unlink and recycle"]
+pub struct BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a> {
+    item: BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+    _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothLegacyAdvertisingSchedulerCompletionObserved<'_> {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+
+    pub const fn status(
+        &self,
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingSchedulerItemCompletionStatus
+    {
+        self.item.status()
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -1030,15 +1062,15 @@ impl<Role> BluetoothDtmSchedulerCompletionObserved<Role> {
 ///
 /// This token is created only by a bounded drain step which consumed one list
 /// and observed that the same capture retained another list. It cannot be
-/// constructed, copied or detached from the DTM graph owner it protects.
+/// constructed, copied or detached from the graph owner it protects.
 #[must_use = "the retained finished-list capture must be continued or preserved"]
 #[cfg(any(test, target_arch = "riscv32"))]
-pub struct BluetoothDtmSchedulerFinishedListDrainPending<Owner> {
+pub struct BluetoothSchedulerFinishedListDrainPending<Owner> {
     owner: Owner,
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
-impl<Owner> BluetoothDtmSchedulerFinishedListDrainPending<Owner> {
+impl<Owner> BluetoothSchedulerFinishedListDrainPending<Owner> {
     const fn new(owner: Owner) -> Self {
         Self { owner }
     }
@@ -1057,24 +1089,101 @@ impl<Owner> BluetoothDtmSchedulerFinishedListDrainPending<Owner> {
 /// `Drained` contains the ordinary graph owner only when the captured set is
 /// exhausted. `Pending` retains both that owner and the provenance required to
 /// consume the next list from the same capture.
-#[must_use = "the DTM graph and any pending finished-list capture must be retained"]
+#[must_use = "the graph and any pending finished-list capture must be retained"]
 #[cfg(any(test, target_arch = "riscv32"))]
-pub enum BluetoothDtmSchedulerFinishedListDrainState<Owner> {
+pub enum BluetoothSchedulerFinishedListDrainState<Owner> {
     /// The captured set is exhausted; no continuation is permitted.
     Drained(Owner),
     /// The same captured set retains another list.
-    Pending(BluetoothDtmSchedulerFinishedListDrainPending<Owner>),
+    Pending(BluetoothSchedulerFinishedListDrainPending<Owner>),
 }
 
 #[cfg(any(test, target_arch = "riscv32"))]
-impl<Owner> BluetoothDtmSchedulerFinishedListDrainState<Owner> {
+impl<Owner> BluetoothSchedulerFinishedListDrainState<Owner> {
     fn from_worker_step(owner: Owner, more: bool) -> Self {
         if more {
-            Self::Pending(BluetoothDtmSchedulerFinishedListDrainPending::new(owner))
+            Self::Pending(BluetoothSchedulerFinishedListDrainPending::new(owner))
         } else {
             Self::Drained(owner)
         }
     }
+}
+
+/// One bounded Controller-owned advertising completion attempt.
+#[must_use = "the advertising graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingSchedulerCompletionStep<'a> {
+    DrainAlreadyActive(BluetoothLegacyAdvertisingSchedulerRunning<'a>),
+    SchedulerIdentityMismatch(BluetoothLegacyAdvertisingSchedulerRunning<'a>),
+    NoFinishedList(BluetoothLegacyAdvertisingSchedulerRunning<'a>),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothLegacyAdvertisingSchedulerRunning<'a>,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(
+        BluetoothSchedulerFinishedListDrainState<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
+    ),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<
+            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+    ),
+}
+
+/// One bounded continuation while an advertising graph remains running.
+#[must_use = "the advertising graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingSchedulerRunningDrainStep<'a> {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
+    ),
+    DrainLost(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
+    ),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothLegacyAdvertisingSchedulerRunning<'a>,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(
+        BluetoothSchedulerFinishedListDrainState<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
+    ),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<
+            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+    ),
+}
+
+/// One bounded continuation after advertising completion was observed.
+#[must_use = "the advertising completion and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'a> {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<
+            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+    ),
+    DrainLost(
+        BluetoothSchedulerFinishedListDrainPending<
+            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+    ),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    RepeatedAdvertisingList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
 }
 
 /// One bounded Controller-owned DTM completion attempt.
@@ -1090,15 +1199,15 @@ pub enum BluetoothDtmSchedulerCompletionStep<Role> {
     /// The selected list is not DTM list zero and remains available to dispatch.
     UnrelatedList {
         /// Running graph, paired with continuation provenance only when needed.
-        drain: BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
+        drain: BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
         /// Affine observation for the actual list owner.
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
     /// DTM list zero was reported but its status remains the in-flight sentinel.
-    StillInFlight(BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>),
+    StillInFlight(BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>),
     /// One non-sentinel status was observed without returning CPU ownership.
     CompletionObserved(
-        BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
+        BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
     ),
 }
 
@@ -1113,24 +1222,24 @@ pub enum BluetoothDtmSchedulerCompletionStep<Role> {
 pub enum BluetoothDtmSchedulerRunningDrainStep<Role> {
     /// The supplied running graph does not belong to this Controller epoch.
     SchedulerIdentityMismatch(
-        BluetoothDtmSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
+        BluetoothSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
     ),
     /// The capture identified by the token is no longer active. The token and
     /// graph owner are retained losslessly for fail-stop handling.
-    DrainLost(BluetoothDtmSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>),
+    DrainLost(BluetoothSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>),
     /// One non-DTM list remains available to its owning dispatcher.
     UnrelatedList {
         /// Running graph, paired with continuation provenance only when needed.
-        drain: BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
+        drain: BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
         /// Affine observation for the actual list owner.
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
     /// DTM list zero was selected but its item remains in flight.
-    StillInFlight(BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>),
+    StillInFlight(BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>),
     /// DTM completion was observed while the same captured transfer may still
     /// retain unrelated lists.
     CompletionObserved(
-        BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
+        BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
     ),
 }
 
@@ -1146,23 +1255,18 @@ pub enum BluetoothDtmSchedulerRunningDrainStep<Role> {
 pub enum BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {
     /// The supplied completion does not belong to this Controller epoch.
     SchedulerIdentityMismatch(
-        BluetoothDtmSchedulerFinishedListDrainPending<
-            BluetoothDtmSchedulerCompletionObserved<Role>,
-        >,
+        BluetoothSchedulerFinishedListDrainPending<BluetoothDtmSchedulerCompletionObserved<Role>>,
     ),
     /// The capture identified by the token is no longer active. The token and
     /// completion owner are retained losslessly for fail-stop handling.
     DrainLost(
-        BluetoothDtmSchedulerFinishedListDrainPending<
-            BluetoothDtmSchedulerCompletionObserved<Role>,
-        >,
+        BluetoothSchedulerFinishedListDrainPending<BluetoothDtmSchedulerCompletionObserved<Role>>,
     ),
     /// One unrelated list remains available to its owning dispatcher.
     UnrelatedList {
         /// Completion owner, paired with continuation provenance only when needed.
-        drain: BluetoothDtmSchedulerFinishedListDrainState<
-            BluetoothDtmSchedulerCompletionObserved<Role>,
-        >,
+        drain:
+            BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
         /// Affine observation for the actual list owner.
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
@@ -1170,9 +1274,8 @@ pub enum BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {
     /// retained for fail-stop handling.
     RepeatedDtmList {
         /// Completion owner, paired with continuation provenance only when needed.
-        drain: BluetoothDtmSchedulerFinishedListDrainState<
-            BluetoothDtmSchedulerCompletionObserved<Role>,
-        >,
+        drain:
+            BluetoothSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
         /// Impossible repeated list-zero observation.
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
@@ -2759,6 +2862,210 @@ impl<const SCHEDULER_CAPACITY: usize>
         self._scheduler_list.retain_published_first_item(address);
         Ok(publication)
     }
+
+    /// Perform one fresh fenced completion-list transfer for advertising.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_legacy_advertising_completion<'a>(
+        &mut self,
+        running: BluetoothLegacyAdvertisingSchedulerRunning<'a>,
+        wake: BluetoothSchedulerWakeBatch,
+    ) -> BluetoothLegacyAdvertisingSchedulerCompletionStep<'a> {
+        let address = running.scheduler_item_address();
+        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothLegacyAdvertisingSchedulerCompletionStep::SchedulerIdentityMismatch(
+                running,
+            );
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothLegacyAdvertisingSchedulerCompletionStep::DrainAlreadyActive(running);
+        }
+
+        if self
+            .task
+            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake)
+            .is_err()
+        {
+            return BluetoothLegacyAdvertisingSchedulerCompletionStep::DrainAlreadyActive(running);
+        }
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
+            self.runtime.scheduler_finished_lists_mut().step()
+        else {
+            return BluetoothLegacyAdvertisingSchedulerCompletionStep::NoFinishedList(running);
+        };
+
+        let BluetoothLegacyAdvertisingSchedulerRunning {
+            item,
+            run,
+            _reservation,
+        } = running;
+        match item.observe_completion(observed) {
+            BluetoothLegacyAdvertisingRunningEventCompletionObservation::ListMismatch {
+                item,
+                observed,
+            } => BluetoothLegacyAdvertisingSchedulerCompletionStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothLegacyAdvertisingSchedulerRunning {
+                        item,
+                        run,
+                        _reservation,
+                    },
+                    more,
+                ),
+                observed,
+            },
+            BluetoothLegacyAdvertisingRunningEventCompletionObservation::StillInFlight(item) => {
+                BluetoothLegacyAdvertisingSchedulerCompletionStep::StillInFlight(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothLegacyAdvertisingSchedulerRunning {
+                            item,
+                            run,
+                            _reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+            BluetoothLegacyAdvertisingRunningEventCompletionObservation::CompletionObserved(
+                item,
+            ) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothLegacyAdvertisingSchedulerCompletionStep::CompletionObserved(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothLegacyAdvertisingSchedulerCompletionObserved {
+                            item,
+                            run,
+                            _reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue the same captured drain while advertising remains running.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_legacy_advertising_running_finished_list_drain<'a>(
+        &mut self,
+        pending: BluetoothSchedulerFinishedListDrainPending<
+            BluetoothLegacyAdvertisingSchedulerRunning<'a>,
+        >,
+    ) -> BluetoothLegacyAdvertisingSchedulerRunningDrainStep<'a> {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothLegacyAdvertisingSchedulerRunningDrainStep::SchedulerIdentityMismatch(
+                pending,
+            );
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothLegacyAdvertisingSchedulerRunningDrainStep::DrainLost(pending);
+        }
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
+            self.runtime.scheduler_finished_lists_mut().step()
+        else {
+            return BluetoothLegacyAdvertisingSchedulerRunningDrainStep::DrainLost(pending);
+        };
+
+        let BluetoothLegacyAdvertisingSchedulerRunning {
+            item,
+            run,
+            _reservation,
+        } = pending.into_owner();
+        match item.observe_completion(observed) {
+            BluetoothLegacyAdvertisingRunningEventCompletionObservation::ListMismatch {
+                item,
+                observed,
+            } => BluetoothLegacyAdvertisingSchedulerRunningDrainStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothLegacyAdvertisingSchedulerRunning {
+                        item,
+                        run,
+                        _reservation,
+                    },
+                    more,
+                ),
+                observed,
+            },
+            BluetoothLegacyAdvertisingRunningEventCompletionObservation::StillInFlight(item) => {
+                BluetoothLegacyAdvertisingSchedulerRunningDrainStep::StillInFlight(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothLegacyAdvertisingSchedulerRunning {
+                            item,
+                            run,
+                            _reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+            BluetoothLegacyAdvertisingRunningEventCompletionObservation::CompletionObserved(
+                item,
+            ) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothLegacyAdvertisingSchedulerRunningDrainStep::CompletionObserved(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothLegacyAdvertisingSchedulerCompletionObserved {
+                            item,
+                            run,
+                            _reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue the same captured drain after advertising completion.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_legacy_advertising_completed_finished_list_drain<'a>(
+        &mut self,
+        pending: BluetoothSchedulerFinishedListDrainPending<
+            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+        >,
+    ) -> BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'a> {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_completion_observed_first_item(address)
+        {
+            return BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
+                pending,
+            );
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::DrainLost(
+                pending,
+            );
+        }
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
+            self.runtime.scheduler_finished_lists_mut().step()
+        else {
+            return BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::DrainLost(
+                pending,
+            );
+        };
+        let completed = pending.into_owner();
+        if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
+            BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::RepeatedAdvertisingList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
+                observed,
+            }
+        } else {
+            BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
+                observed,
+            }
+        }
+    }
+
     /// Perform one fresh, bounded DTM completion observation.
     ///
     /// The affine list token never crosses this Controller operation before it
@@ -2795,7 +3102,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         match item.observe_completion(observed) {
             BluetoothDtmRunningEventCompletionObservation::ListMismatch { item, observed } => {
                 BluetoothDtmSchedulerCompletionStep::UnrelatedList {
-                    drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerRunning { item, run },
                         more,
                     ),
@@ -2804,7 +3111,7 @@ impl<const SCHEDULER_CAPACITY: usize>
             }
             BluetoothDtmRunningEventCompletionObservation::StillInFlight(item) => {
                 BluetoothDtmSchedulerCompletionStep::StillInFlight(
-                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerRunning { item, run },
                         more,
                     ),
@@ -2814,7 +3121,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 self._scheduler_list
                     .retain_completion_observed_first_item(address);
                 BluetoothDtmSchedulerCompletionStep::CompletionObserved(
-                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerCompletionObserved { item, run },
                         more,
                     ),
@@ -2832,7 +3139,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn continue_dtm_running_finished_list_drain<Role>(
         &mut self,
-        pending: BluetoothDtmSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
+        pending: BluetoothSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
     ) -> BluetoothDtmSchedulerRunningDrainStep<Role> {
         let address = pending.owner().scheduler_item_address();
         if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
@@ -2854,7 +3161,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         match item.observe_completion(observed) {
             BluetoothDtmRunningEventCompletionObservation::ListMismatch { item, observed } => {
                 BluetoothDtmSchedulerRunningDrainStep::UnrelatedList {
-                    drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerRunning { item, run },
                         more,
                     ),
@@ -2863,7 +3170,7 @@ impl<const SCHEDULER_CAPACITY: usize>
             }
             BluetoothDtmRunningEventCompletionObservation::StillInFlight(item) => {
                 BluetoothDtmSchedulerRunningDrainStep::StillInFlight(
-                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerRunning { item, run },
                         more,
                     ),
@@ -2873,7 +3180,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 self._scheduler_list
                     .retain_completion_observed_first_item(address);
                 BluetoothDtmSchedulerRunningDrainStep::CompletionObserved(
-                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerCompletionObserved { item, run },
                         more,
                     ),
@@ -2892,7 +3199,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn continue_dtm_completed_finished_list_drain<Role>(
         &mut self,
-        pending: BluetoothDtmSchedulerFinishedListDrainPending<
+        pending: BluetoothSchedulerFinishedListDrainPending<
             BluetoothDtmSchedulerCompletionObserved<Role>,
         >,
     ) -> BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {
@@ -2917,16 +3224,12 @@ impl<const SCHEDULER_CAPACITY: usize>
         let completed = pending.into_owner();
         if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
             BluetoothDtmSchedulerCompletionObservedDrainStep::RepeatedDtmList {
-                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
-                    completed, more,
-                ),
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
                 observed,
             }
         } else {
             BluetoothDtmSchedulerCompletionObservedDrainStep::UnrelatedList {
-                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
-                    completed, more,
-                ),
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
                 observed,
             }
         }
@@ -3443,8 +3746,8 @@ mod tests {
     }
 
     use super::{
-        BluetoothDtmControllerEventPreparationError, BluetoothDtmSchedulerFinishedListDrainState,
-        BluetoothSchedulerEmptyListMergeError, BluetoothSchedulerExclusiveListEpoch,
+        BluetoothDtmControllerEventPreparationError, BluetoothSchedulerEmptyListMergeError,
+        BluetoothSchedulerExclusiveListEpoch, BluetoothSchedulerFinishedListDrainState,
         BluetoothSchedulerHardwareListsCleared,
     };
 
@@ -3463,8 +3766,8 @@ mod tests {
         let drained_owner = Rc::new(());
         let drained_identity = Rc::clone(&drained_owner);
         let drained =
-            BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(drained_owner, false);
-        let BluetoothDtmSchedulerFinishedListDrainState::Drained(drained_owner) = drained else {
+            BluetoothSchedulerFinishedListDrainState::from_worker_step(drained_owner, false);
+        let BluetoothSchedulerFinishedListDrainState::Drained(drained_owner) = drained else {
             panic!("an exhausted capture must return the ordinary owner");
         };
         assert!(Rc::ptr_eq(&drained_owner, &drained_identity));
@@ -3472,8 +3775,8 @@ mod tests {
         let pending_owner = Rc::new(());
         let pending_identity = Rc::clone(&pending_owner);
         let pending =
-            BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(pending_owner, true);
-        let BluetoothDtmSchedulerFinishedListDrainState::Pending(pending) = pending else {
+            BluetoothSchedulerFinishedListDrainState::from_worker_step(pending_owner, true);
+        let BluetoothSchedulerFinishedListDrainState::Pending(pending) = pending else {
             panic!("a retained capture must keep continuation provenance");
         };
         assert!(Rc::ptr_eq(pending.owner(), &pending_identity));

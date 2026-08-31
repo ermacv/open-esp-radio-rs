@@ -22,7 +22,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 16;
+pub(crate) const RESEARCH_SCHEMA: u32 = 17;
 const MAX_RESEARCH_EVENT_ROUTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -44,12 +44,30 @@ impl ResearchRankingStrategy {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchFocus {
+    #[default]
+    All,
+    HardwareAccess,
+}
+
+impl ResearchFocus {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::HardwareAccess => "hardware-access",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ResearchNextOptions<'a> {
     pub(crate) scope: Option<&'a str>,
     pub(crate) protocol: Option<&'a str>,
     pub(crate) finding: Option<&'a str>,
     pub(crate) strategy: ResearchRankingStrategy,
+    pub(crate) focus: ResearchFocus,
     pub(crate) budget: Option<u64>,
     pub(crate) limit: usize,
 }
@@ -502,6 +520,7 @@ pub(crate) struct ResearchNextReport {
     pub(crate) schema_version: u32,
     pub(crate) command: String,
     pub(crate) project: String,
+    pub(crate) focus: ResearchFocus,
     pub(crate) protocol: Option<String>,
     pub(crate) scope: Option<String>,
     pub(crate) analyzed_scopes: Vec<String>,
@@ -712,8 +731,13 @@ pub(crate) fn next(
         .collect::<Result<Vec<_>>>()?;
     let actions = coalesce_actions(ranked);
     let prerequisites = build_prerequisites(&actions);
-    let prerequisite_indices = ranked_prerequisite_indices(&prerequisites, options.strategy);
-    let action_indices = ranked_action_indices(&actions, options.strategy);
+    let prerequisite_indices = ranked_prerequisite_indices_for_focus(
+        &prerequisites,
+        &actions,
+        options.strategy,
+        options.focus,
+    );
+    let action_indices = ranked_action_indices_for_focus(&actions, options.strategy, options.focus);
     let minimum_cost = prerequisite_indices
         .iter()
         .map(|index| prerequisites[*index].estimated_cost_units)
@@ -753,6 +777,7 @@ pub(crate) fn next(
         schema_version: RESEARCH_SCHEMA,
         command: "research next".to_owned(),
         project: session.project.id.clone(),
+        focus: options.focus,
         protocol: selected_protocol.map(str::to_owned),
         scope: options.scope.map(str::to_owned),
         analyzed_scopes,
@@ -2097,18 +2122,21 @@ fn normalize_protocol_filter(value: &str) -> Result<&'static str> {
     })
 }
 
-fn ranked_action_indices(
+fn ranked_action_indices_for_focus(
     candidates: &[ResearchAction],
     strategy: ResearchRankingStrategy,
+    focus: ResearchFocus,
 ) -> Vec<usize> {
     let mut indices = (0..candidates.len())
         .filter(|index| {
-            strategy != ResearchRankingStrategy::Frontier
-                || !candidates.iter().enumerate().any(|(other_index, other)| {
-                    other_index != *index
-                        && actionability_lane(other) == actionability_lane(&candidates[*index])
-                        && dominates(other, &candidates[*index])
-                })
+            action_matches_focus(&candidates[*index], focus)
+                && (strategy != ResearchRankingStrategy::Frontier
+                    || !candidates.iter().enumerate().any(|(other_index, other)| {
+                        other_index != *index
+                            && action_matches_focus(other, focus)
+                            && actionability_lane(other) == actionability_lane(&candidates[*index])
+                            && dominates(other, &candidates[*index])
+                    }))
         })
         .collect::<Vec<_>>();
     indices.sort_by(|left, right| {
@@ -2129,6 +2157,35 @@ fn ranked_action_indices(
             })
     });
     indices
+}
+
+#[cfg(test)]
+fn ranked_action_indices(
+    candidates: &[ResearchAction],
+    strategy: ResearchRankingStrategy,
+) -> Vec<usize> {
+    ranked_action_indices_for_focus(candidates, strategy, ResearchFocus::All)
+}
+
+fn action_matches_focus(action: &ResearchAction, focus: ResearchFocus) -> bool {
+    focus == ResearchFocus::All
+        || action
+            .findings
+            .iter()
+            .any(|finding| finding_matches_focus(finding, focus))
+}
+
+fn finding_matches_focus(finding: &ResearchFinding, focus: ResearchFocus) -> bool {
+    match focus {
+        ResearchFocus::All => true,
+        ResearchFocus::HardwareAccess => {
+            matches!(&finding.subject, ResearchSubject::MmioRegister { .. })
+                || matches!(
+                    finding.kind.as_str(),
+                    "register-model" | "register-write-semantics" | "memory-load" | "memory-store"
+                )
+        }
+    }
 }
 
 fn actionability_lane(action: &ResearchAction) -> u8 {
@@ -4374,27 +4431,48 @@ fn build_prerequisites(actions: &[ResearchAction]) -> Vec<ResearchPrerequisiteAc
         .collect()
 }
 
-fn ranked_prerequisite_indices(
+fn ranked_prerequisite_indices_for_focus(
     prerequisites: &[ResearchPrerequisiteAction],
+    actions: &[ResearchAction],
     strategy: ResearchRankingStrategy,
+    focus: ResearchFocus,
 ) -> Vec<usize> {
+    let eligible_findings = actions
+        .iter()
+        .flat_map(|action| &action.findings)
+        .filter(|finding| finding_matches_focus(finding, focus))
+        .map(|finding| finding.id.as_str())
+        .collect::<BTreeSet<_>>();
     let mut indices = (0..prerequisites.len())
         .filter(|index| {
             let prerequisite = &prerequisites[*index];
-            strategy != ResearchRankingStrategy::Frontier
-                || !prerequisites
-                    .iter()
-                    .enumerate()
-                    .any(|(other_index, other)| {
-                        other_index != *index
-                            && required_surface_lane(other) == required_surface_lane(prerequisite)
-                            && other.benefit_points >= prerequisite.benefit_points
-                            && other.estimated_cost_units <= prerequisite.estimated_cost_units
-                            && (other.benefit_points > prerequisite.benefit_points
-                                || other.estimated_cost_units < prerequisite.estimated_cost_units)
-                    })
+            prerequisite_matches_focus(prerequisite, &eligible_findings)
+                && (strategy != ResearchRankingStrategy::Frontier
+                    || !prerequisites
+                        .iter()
+                        .enumerate()
+                        .any(|(other_index, other)| {
+                            other_index != *index
+                                && prerequisite_matches_focus(other, &eligible_findings)
+                                && required_surface_lane(other)
+                                    == required_surface_lane(prerequisite)
+                                && other.benefit_points >= prerequisite.benefit_points
+                                && other.estimated_cost_units <= prerequisite.estimated_cost_units
+                                && (other.benefit_points > prerequisite.benefit_points
+                                    || other.estimated_cost_units
+                                        < prerequisite.estimated_cost_units)
+                        }))
         })
         .collect::<Vec<_>>();
+    sort_prerequisite_indices(&mut indices, prerequisites, strategy);
+    indices
+}
+
+fn sort_prerequisite_indices(
+    indices: &mut [usize],
+    prerequisites: &[ResearchPrerequisiteAction],
+    strategy: ResearchRankingStrategy,
+) {
     indices.sort_by(|left, right| {
         let left = &prerequisites[*left];
         let right = &prerequisites[*right];
@@ -4413,7 +4491,16 @@ fn ranked_prerequisite_indices(
                     .then_with(|| left.id.cmp(&right.id)),
             })
     });
-    indices
+}
+
+fn prerequisite_matches_focus(
+    prerequisite: &ResearchPrerequisiteAction,
+    eligible_findings: &BTreeSet<&str>,
+) -> bool {
+    prerequisite
+        .satisfies_finding_ids
+        .iter()
+        .any(|finding| eligible_findings.contains(finding.as_str()))
 }
 
 fn required_surface_lane(prerequisite: &ResearchPrerequisiteAction) -> u8 {
@@ -5153,9 +5240,20 @@ mod tests {
         limit: usize,
         budget: Option<u64>,
     ) -> ResearchNextReport {
+        report_from_actions_with_focus(actions, strategy, ResearchFocus::All, limit, budget)
+    }
+
+    fn report_from_actions_with_focus(
+        actions: Vec<ResearchAction>,
+        strategy: ResearchRankingStrategy,
+        focus: ResearchFocus,
+        limit: usize,
+        budget: Option<u64>,
+    ) -> ResearchNextReport {
         let prerequisites = build_prerequisites(&actions);
-        let prerequisite_indices = ranked_prerequisite_indices(&prerequisites, strategy);
-        let action_indices = ranked_action_indices(&actions, strategy);
+        let prerequisite_indices =
+            ranked_prerequisite_indices_for_focus(&prerequisites, &actions, strategy, focus);
+        let action_indices = ranked_action_indices_for_focus(&actions, strategy, focus);
         let (steps, consumed_budget) = select_ranked_steps(
             &prerequisites,
             &prerequisite_indices,
@@ -5171,6 +5269,7 @@ mod tests {
             schema_version: RESEARCH_SCHEMA,
             command: "research next".to_owned(),
             project: "fixture".to_owned(),
+            focus,
             protocol: None,
             scope: None,
             analyzed_scopes,
@@ -5752,7 +5851,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 16);
+        assert_eq!(report.schema_version, 17);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -5765,6 +5864,83 @@ mod tests {
                 .collect::<BTreeSet<_>>()
                 .len(),
             3
+        );
+    }
+
+    #[test]
+    fn hardware_access_focus_keeps_inventory_and_selects_only_direct_hardware_work() {
+        let mut interface = accumulator("interface-slot", "interface-layout");
+        interface.subject = ResearchSubject::InterfaceObservation {
+            observation: "controller-table@+0x4/32".to_owned(),
+            contract: "controller-table".to_owned(),
+            source: "controller".to_owned(),
+            offset: 4,
+            width: 32,
+            selector: Some("slot".to_owned()),
+            call_sites: vec![0x1000],
+        };
+        interface.blocker_resolution_route = None;
+        interface.consumers = vec![ResearchConsumer::InterfacePackSlot {
+            resolution: ResearchConsumerResolution::NeedsAnchor,
+            path: Some(PathBuf::from("interfaces.toml")),
+            contract: "controller-table".to_owned(),
+            anchor: None,
+            template: None,
+            offset: 4,
+            width: 32,
+            diagnostic: Some("create interface anchor".to_owned()),
+        }];
+        let mut interface = finalize_test(
+            interface,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect function interface-slot --project project.toml",
+        );
+        interface.score = 10_000;
+
+        let mut generic = ranked_candidate("unresolved-call", 1_000, 1, 1);
+        generic.score = 9_000;
+
+        let mut memory = accumulator("sram-load", "memory-load");
+        memory.direct.insert("controller::packet".to_owned());
+        let mut memory = finalize_test(
+            memory,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect function controller::packet --project project.toml",
+        );
+        memory.score = 1;
+        let memory_action_id = memory.id.clone();
+        let actions = vec![interface, generic, memory];
+
+        let all = report_from_actions_with_focus(
+            actions.clone(),
+            ResearchRankingStrategy::Impact,
+            ResearchFocus::All,
+            10,
+            None,
+        );
+        let hardware = report_from_actions_with_focus(
+            actions,
+            ResearchRankingStrategy::Impact,
+            ResearchFocus::HardwareAccess,
+            10,
+            None,
+        );
+
+        assert_eq!(hardware.focus, ResearchFocus::HardwareAccess);
+        assert_eq!(hardware.inventory, all.inventory);
+        assert_eq!(hardware.inventory.findings.len(), 3);
+        assert_eq!(hardware.inventory.actions.len(), 3);
+        assert_eq!(hardware.inventory.prerequisites.len(), 1);
+        assert_eq!(hardware.selection.eligible_prerequisites, 0);
+        assert_eq!(hardware.selection.eligible_actions, 1);
+        assert_eq!(
+            hardware.selection.steps,
+            [ResearchStepRef {
+                kind: ResearchStepKind::Action,
+                id: memory_action_id,
+            }]
         );
     }
 
@@ -7196,7 +7372,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_sixteen_serializes_routes_query_and_executable_actions() {
+    fn schema_seventeen_serializes_focus_routes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -7221,7 +7397,8 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 16);
+        assert_eq!(value["schema_version"], 17);
+        assert_eq!(value["focus"], "all");
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(

@@ -804,6 +804,7 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert_eq!(arguments.strategy, ResearchRankingArg::QuickWins);
+        assert_eq!(arguments.focus, ResearchFocusArg::All);
         assert_eq!(arguments.protocol.as_deref(), Some("ieee802154"));
         assert_eq!(arguments.scope.as_deref(), Some("ieee802154"));
         assert_eq!(arguments.budget, Some(12));
@@ -859,6 +860,29 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert_eq!(arguments.finding.as_deref(), Some("register-0x20103100-32"));
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "research".to_owned(),
+            "next".to_owned(),
+            "--focus".to_owned(),
+            "hardware-access".to_owned(),
+        ])
+        .unwrap();
+        let Command::ResearchNext(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.focus, ResearchFocusArg::HardwareAccess);
+        assert!(
+            ParsedInvocation::parse([
+                "project".to_owned(),
+                "research".to_owned(),
+                "next".to_owned(),
+                "--focus".to_owned(),
+                "hardware".to_owned(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

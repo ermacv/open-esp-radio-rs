@@ -40,6 +40,30 @@ impl BluetoothLeAccessAddress {
     }
 }
 
+/// One protocol-level Bluetooth LE CRC initialization value retained by the
+/// SRAM codec.
+///
+/// The containing controller word has a semantically unresolved opaque high
+/// byte. This type owns only the protocol-defined low 24 bits and does not
+/// assert which hardware block consumes them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BluetoothLeCrcInit(u32);
+
+impl BluetoothLeCrcInit {
+    const CONTROLLER_IMAGE_MASK: u32 = 0x00ff_ffff;
+
+    /// Bluetooth Core Direct Test Mode CRC preset.
+    pub(super) const DIRECT_TEST_MODE: Self = Self(0x0055_5555);
+
+    pub(super) const fn from_controller_word(word: u32) -> Self {
+        Self(word & Self::CONTROLLER_IMAGE_MASK)
+    }
+
+    pub(super) const fn apply_to_controller_word(self, word: u32) -> u32 {
+        (word & !Self::CONTROLLER_IMAGE_MASK) | self.0
+    }
+}
+
 /// DTM role shared by the CPU-owned link-state and scheduler-item formats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmRole {
@@ -107,8 +131,9 @@ pub struct BluetoothDtmLinkStateReviewedWords {
     pub word_08: u32,
     /// Complete word at byte offset `+0x14`.
     pub word_14: u32,
-    /// Complete word at byte offset `+0x2c`.
-    pub word_2c: u32,
+    /// Protocol-level CRC initialization value encoded in the low 24 bits by
+    /// the private SRAM codec. The high byte remains opaque and preserved.
+    pub(super) crc_init: BluetoothLeCrcInit,
     /// Complete word at byte offset `+0x34`.
     pub word_34: u32,
     /// Protocol-level synchronization value encoded by the private SRAM
@@ -140,12 +165,12 @@ impl BluetoothDtmLinkStateReviewedWords {
         self.word_04 = (self.word_04 & !LINK_STATE_POWER_MASK) | ((rounded_power as u32) << 23);
         self.word_08 = (self.word_08 & 0xf000_0000) | 0x0ff0_0000 | rx_tail;
         self.word_14 |= 0xc000_0000;
-        self.word_2c = (self.word_2c & 0xff00_0000) | 0x0055_5555;
         if matches!(role, BluetoothDtmRole::Receiver) {
             self.word_34 = 0;
         }
         self.word_50 = (self.word_50 & !LINK_STATE_CONFIG_MASK) | ((config as u32) << 24);
-        self.with_access_address(BluetoothLeAccessAddress::DIRECT_TEST_MODE)
+        self.with_crc_init(BluetoothLeCrcInit::DIRECT_TEST_MODE)
+            .with_access_address(BluetoothLeAccessAddress::DIRECT_TEST_MODE)
     }
 
     /// Apply the role-specific link-state write performed while constructing
@@ -183,6 +208,15 @@ impl BluetoothDtmLinkStateReviewedWords {
 
     pub(super) const fn access_address(self) -> BluetoothLeAccessAddress {
         self.access_address
+    }
+
+    pub(super) const fn crc_init(self) -> BluetoothLeCrcInit {
+        self.crc_init
+    }
+
+    const fn with_crc_init(mut self, crc_init: BluetoothLeCrcInit) -> Self {
+        self.crc_init = crc_init;
+        self
     }
 
     const fn with_access_address(mut self, access_address: BluetoothLeAccessAddress) -> Self {

@@ -26,7 +26,7 @@ use vcell::VolatileCell;
 use crate::{
     dtm_event_image::{
         BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
-        BluetoothDtmSchedulerItemReviewedWords, BluetoothLeAccessAddress,
+        BluetoothDtmSchedulerItemReviewedWords, BluetoothLeAccessAddress, BluetoothLeCrcInit,
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
     sram_link::BluetoothDtmBoundSramLinkAddress,
@@ -303,6 +303,7 @@ pub struct BluetoothDtmLinkStateStorage {
 }
 
 impl BluetoothDtmLinkStateStorage {
+    const CRC_INIT_WORD: usize = 0x2c / 4;
     const ACCESS_ADDRESS_WORD: usize = 0x38 / 4;
 
     fn read_word(&self, index: usize) -> u32 {
@@ -327,6 +328,15 @@ impl BluetoothDtmLinkStateStorage {
         self.write_word(Self::ACCESS_ADDRESS_WORD, access_address.controller_image());
     }
 
+    fn crc_init(&self) -> BluetoothLeCrcInit {
+        BluetoothLeCrcInit::from_controller_word(self.read_word(Self::CRC_INIT_WORD))
+    }
+
+    fn write_crc_init(&self, crc_init: BluetoothLeCrcInit) {
+        let word = self.read_word(Self::CRC_INIT_WORD);
+        self.write_word(Self::CRC_INIT_WORD, crc_init.apply_to_controller_word(word));
+    }
+
     #[cfg(test)]
     fn snapshot(&self) -> [u32; BLUETOOTH_DTM_LINK_STATE_BYTES / 4] {
         core::array::from_fn(|index| self.read_word(index))
@@ -338,7 +348,7 @@ impl BluetoothDtmLinkStateStorage {
             word_04: self.read_word(1),
             word_08: self.read_word(2),
             word_14: self.read_word(5),
-            word_2c: self.read_word(11),
+            crc_init: self.crc_init(),
             word_34: self.read_word(13),
             access_address: self.access_address(),
             word_50: self.read_word(20),
@@ -350,7 +360,7 @@ impl BluetoothDtmLinkStateStorage {
         self.write_word(1, words.word_04);
         self.write_word(2, words.word_08);
         self.write_word(5, words.word_14);
-        self.write_word(11, words.word_2c);
+        self.write_crc_init(words.crc_init());
         self.write_word(13, words.word_34);
         self.write_access_address(words.access_address());
         self.write_word(20, words.word_50);
@@ -2688,7 +2698,7 @@ impl Default for BluetoothDtmMemoryGraphStorage {
 mod tests {
     use core::{convert::Infallible, fmt::Debug};
 
-    use crate::dtm_event_image::{BluetoothDtmRole, BluetoothLeAccessAddress};
+    use crate::dtm_event_image::{BluetoothDtmRole, BluetoothLeAccessAddress, BluetoothLeCrcInit};
     use open_esp_radio_esp32s31_hal::{
         BluetoothControllerSramAddress, BluetoothSchedulerFinishedListObservation,
         BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
@@ -2867,7 +2877,6 @@ mod tests {
         link_state.word_04 = 0x1111_1111;
         link_state.word_08 = 0xdef0_0000 | rx_tail;
         link_state.word_14 = 0x2222_2222;
-        link_state.word_2c = 0x3333_3333;
         link_state.word_34 = 0x4444_4444;
         link_state.word_50 = 0x6666_6666;
 
@@ -2908,6 +2917,25 @@ mod tests {
         assert_eq!(
             storage.link_state.reviewed_words().access_address(),
             BluetoothLeAccessAddress::DIRECT_TEST_MODE
+        );
+    }
+
+    #[test]
+    fn dtm_crc_initialization_round_trips_semantically() {
+        let storage = BluetoothDtmMemoryGraphStorage::new();
+        let reset = storage.link_state.reviewed_words().apply_reset(
+            None,
+            None,
+            0,
+            0,
+            BluetoothDtmRole::Transmitter,
+        );
+
+        assert_eq!(reset.crc_init(), BluetoothLeCrcInit::DIRECT_TEST_MODE);
+        storage.link_state.write_reviewed_words(reset);
+        assert_eq!(
+            storage.link_state.reviewed_words().crc_init(),
+            BluetoothLeCrcInit::DIRECT_TEST_MODE
         );
     }
 

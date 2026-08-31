@@ -123,9 +123,21 @@ same positional word; Core 6.1 [Vol 6, Part B, Section
 specifies that value as the Access Address for the applicable advertising
 physical channel packets. This cross-role evidence supports the private
 protocol value and SRAM codec only: it does not import advertising flow or
-claim a traced hardware consumer. Likewise, the `0x555555` low-24-bit image is
-not promoted into a public `CRC_INIT` field until an independent packet-engine
-consumer proves that field boundary.
+claim a traced hardware consumer.
+
+The fixed low-24-bit `0x555555` image is now retained by a private
+protocol-level LE CRC-initialization type while the containing word's high byte
+remains opaque. Bluetooth Core 6.1 [Vol 6, Part F, Section
+4.1.3](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/direct-test-mode.html)
+requires the CRC shift register to be preset with `0x555555` for every LE test
+packet. Independent current-linked legacy advertising reset
+`r_sym_ble_fxKAT8in6cXLv0gLB2W5` preserves the same high-byte boundary and
+installs the same low-24-bit image. Core 6.1 [Vol 6, Part B, Section
+3.1.1](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/link-layer-specification.html)
+requires the same CRC preset for non-periodic Advertising Physical Channel
+PDUs. This is sufficient to name the private protocol value and its low-24-bit
+SRAM codec, but it does not identify or grant ownership of the hardware
+consumer and does not import advertising control flow.
 
 The reset transaction itself is now reproduced as a non-publishable reviewed
 region in the Bluetooth crate. It retains the exact low-twenty-bit compressed

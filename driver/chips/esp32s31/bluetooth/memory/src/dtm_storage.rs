@@ -26,7 +26,7 @@ use vcell::VolatileCell;
 use crate::{
     dtm_event_image::{
         BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
-        BluetoothDtmSchedulerItemReviewedWords,
+        BluetoothDtmSchedulerItemReviewedWords, BluetoothLeAccessAddress,
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
     sram_link::BluetoothDtmBoundSramLinkAddress,
@@ -303,6 +303,8 @@ pub struct BluetoothDtmLinkStateStorage {
 }
 
 impl BluetoothDtmLinkStateStorage {
+    const ACCESS_ADDRESS_WORD: usize = 0x38 / 4;
+
     fn read_word(&self, index: usize) -> u32 {
         self.words[index].get()
     }
@@ -315,6 +317,14 @@ impl BluetoothDtmLinkStateStorage {
         for word in &self.words {
             word.set(0);
         }
+    }
+
+    fn access_address(&self) -> BluetoothLeAccessAddress {
+        BluetoothLeAccessAddress::from_controller_image(self.read_word(Self::ACCESS_ADDRESS_WORD))
+    }
+
+    fn write_access_address(&self, access_address: BluetoothLeAccessAddress) {
+        self.write_word(Self::ACCESS_ADDRESS_WORD, access_address.controller_image());
     }
 
     #[cfg(test)]
@@ -330,7 +340,7 @@ impl BluetoothDtmLinkStateStorage {
             word_14: self.read_word(5),
             word_2c: self.read_word(11),
             word_34: self.read_word(13),
-            word_38: self.read_word(14),
+            access_address: self.access_address(),
             word_50: self.read_word(20),
         }
     }
@@ -342,7 +352,7 @@ impl BluetoothDtmLinkStateStorage {
         self.write_word(5, words.word_14);
         self.write_word(11, words.word_2c);
         self.write_word(13, words.word_34);
-        self.write_word(14, words.word_38);
+        self.write_access_address(words.access_address());
         self.write_word(20, words.word_50);
     }
 }
@@ -2678,6 +2688,7 @@ impl Default for BluetoothDtmMemoryGraphStorage {
 mod tests {
     use core::{convert::Infallible, fmt::Debug};
 
+    use crate::dtm_event_image::{BluetoothDtmRole, BluetoothLeAccessAddress};
     use open_esp_radio_esp32s31_hal::{
         BluetoothControllerSramAddress, BluetoothSchedulerFinishedListObservation,
         BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
@@ -2690,17 +2701,16 @@ mod tests {
         BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
         BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES,
         BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
-        BluetoothDtmLinkStateReviewedWords, BluetoothDtmMemoryGraphCompletionObservation,
-        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleCleaned,
-        BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecyclePrepared,
-        BluetoothDtmMemoryGraphRunning, BluetoothDtmMemoryGraphRxSuccessObserved,
-        BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmMemoryGraphStorage,
-        BluetoothDtmPositionalEventSeed, BluetoothDtmPositionalEventWords,
-        BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
-        BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerItemCompletionStatus,
-        BluetoothDtmSchedulerItemReviewedWords, LINK_STATE_RX_TAIL_OFFSET, LOW_TWENTY_MASK,
-        SCHEDULER_ITEM_STATUS_OFFSET,
+        BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCpuOwned,
+        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphPrepareError,
+        BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
+        BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRunning,
+        BluetoothDtmMemoryGraphRxSuccessObserved, BluetoothDtmMemoryGraphRxSuccessRecycleError,
+        BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
+        BluetoothDtmPositionalEventWords, BluetoothDtmRxResultProjection,
+        BluetoothDtmRxResultProjectionError, BluetoothDtmSchedulerAllocationConfig,
+        BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemReviewedWords,
+        LINK_STATE_RX_TAIL_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2851,23 +2861,22 @@ mod tests {
         let current = seed.words();
         let tx_head = seed.tx_head().compressed_image();
         let rx_tail = seed.rx_tail().compressed_image();
-        let link_state = current.scheduler_item().word_08 & LOW_TWENTY_MASK;
+        let link_state_link = current.scheduler_item().word_08 & LOW_TWENTY_MASK;
+        let mut link_state = current.link_state();
+        link_state.word_00 = 0xabc0_0000 | tx_head;
+        link_state.word_04 = 0x1111_1111;
+        link_state.word_08 = 0xdef0_0000 | rx_tail;
+        link_state.word_14 = 0x2222_2222;
+        link_state.word_2c = 0x3333_3333;
+        link_state.word_34 = 0x4444_4444;
+        link_state.word_50 = 0x6666_6666;
 
         BluetoothDtmPositionalEventWords::new(
-            BluetoothDtmLinkStateReviewedWords {
-                word_00: 0xabc0_0000 | tx_head,
-                word_04: 0x1111_1111,
-                word_08: 0xdef0_0000 | rx_tail,
-                word_14: 0x2222_2222,
-                word_2c: 0x3333_3333,
-                word_34: 0x4444_4444,
-                word_38: 0x5555_5555,
-                word_50: 0x6666_6666,
-            },
+            link_state,
             BluetoothDtmSchedulerItemReviewedWords {
                 word_00: 0x7777_7777,
                 word_04: 0x8888_8888,
-                word_08: 0x9990_0000 | link_state,
+                word_08: 0x9990_0000 | link_state_link,
                 word_0c: 0x1212_1212,
                 word_10: 0x3434_3434,
                 word_14: 0xaaaa_aaaa,
@@ -2878,6 +2887,28 @@ mod tests {
                 word_4c: 0xffff_ffff,
             },
         )
+    }
+
+    #[test]
+    fn dtm_access_address_initialization_round_trips_semantically() {
+        let storage = BluetoothDtmMemoryGraphStorage::new();
+        let reset = storage.link_state.reviewed_words().apply_reset(
+            None,
+            None,
+            0,
+            0,
+            BluetoothDtmRole::Transmitter,
+        );
+
+        assert_eq!(
+            reset.access_address(),
+            BluetoothLeAccessAddress::DIRECT_TEST_MODE
+        );
+        storage.link_state.write_reviewed_words(reset);
+        assert_eq!(
+            storage.link_state.reviewed_words().access_address(),
+            BluetoothLeAccessAddress::DIRECT_TEST_MODE
+        );
     }
 
     fn assert_prepare_failure_unchanged<BuildError: Debug + Eq + PartialEq>(

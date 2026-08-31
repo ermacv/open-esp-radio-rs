@@ -19,6 +19,27 @@ const SCHEDULER_ROUNDED_POWER_REGION_MASK: u32 = 0x0ff0_0000;
 const INITIAL_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x000f_0001;
 const RECURRING_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x0000_0001;
 
+/// One protocol-level Bluetooth LE access address retained by the SRAM codec.
+///
+/// This value identifies the producer-side packet synchronization value. It
+/// does not assert which hardware block consumes the containing descriptor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BluetoothLeAccessAddress(u32);
+
+impl BluetoothLeAccessAddress {
+    /// Bluetooth Core Direct Test Mode synchronization word in controller bit
+    /// order.
+    pub(super) const DIRECT_TEST_MODE: Self = Self(0x7176_4129);
+
+    pub(super) const fn from_controller_image(image: u32) -> Self {
+        Self(image)
+    }
+
+    pub(super) const fn controller_image(self) -> u32 {
+        self.0
+    }
+}
+
 /// DTM role shared by the CPU-owned link-state and scheduler-item formats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmRole {
@@ -90,8 +111,9 @@ pub struct BluetoothDtmLinkStateReviewedWords {
     pub word_2c: u32,
     /// Complete word at byte offset `+0x34`.
     pub word_34: u32,
-    /// Complete word at byte offset `+0x38`.
-    pub word_38: u32,
+    /// Protocol-level synchronization value encoded by the private SRAM
+    /// codec. This does not grant hardware-consumer authority.
+    pub(super) access_address: BluetoothLeAccessAddress,
     /// Complete word at byte offset `+0x50`.
     pub word_50: u32,
 }
@@ -102,7 +124,7 @@ impl BluetoothDtmLinkStateReviewedWords {
     /// All positional encoding stays inside the controller-memory codec. The
     /// caller supplies only validated semantic values and bound graph links.
     pub const fn apply_reset(
-        self,
+        mut self,
         tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
         rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
         rounded_power: u8,
@@ -114,19 +136,16 @@ impl BluetoothDtmLinkStateReviewedWords {
         let word_00_with_link = (self.word_00 & !LOW_TWENTY_MASK) | tx_head;
         let transformed_high_half = (((word_00_with_link >> 16) as u16 & 0x600f) | 0x8ff0) as u32;
 
-        Self {
-            word_00: (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16),
-            word_04: (self.word_04 & !LINK_STATE_POWER_MASK) | ((rounded_power as u32) << 23),
-            word_08: (self.word_08 & 0xf000_0000) | 0x0ff0_0000 | rx_tail,
-            word_14: self.word_14 | 0xc000_0000,
-            word_2c: (self.word_2c & 0xff00_0000) | 0x0055_5555,
-            word_34: match role {
-                BluetoothDtmRole::Transmitter => self.word_34,
-                BluetoothDtmRole::Receiver => 0,
-            },
-            word_38: 0x7176_4129,
-            word_50: (self.word_50 & !LINK_STATE_CONFIG_MASK) | ((config as u32) << 24),
+        self.word_00 = (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16);
+        self.word_04 = (self.word_04 & !LINK_STATE_POWER_MASK) | ((rounded_power as u32) << 23);
+        self.word_08 = (self.word_08 & 0xf000_0000) | 0x0ff0_0000 | rx_tail;
+        self.word_14 |= 0xc000_0000;
+        self.word_2c = (self.word_2c & 0xff00_0000) | 0x0055_5555;
+        if matches!(role, BluetoothDtmRole::Receiver) {
+            self.word_34 = 0;
         }
+        self.word_50 = (self.word_50 & !LINK_STATE_CONFIG_MASK) | ((config as u32) << 24);
+        self.with_access_address(BluetoothLeAccessAddress::DIRECT_TEST_MODE)
     }
 
     /// Apply the role-specific link-state write performed while constructing
@@ -160,6 +179,15 @@ impl BluetoothDtmLinkStateReviewedWords {
     /// Return the compressed private RX-tail link image.
     pub const fn rx_tail_link_image(self) -> u32 {
         self.word_08 & LOW_TWENTY_MASK
+    }
+
+    pub(super) const fn access_address(self) -> BluetoothLeAccessAddress {
+        self.access_address
+    }
+
+    const fn with_access_address(mut self, access_address: BluetoothLeAccessAddress) -> Self {
+        self.access_address = access_address;
+        self
     }
 }
 

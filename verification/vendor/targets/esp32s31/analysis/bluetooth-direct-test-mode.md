@@ -110,10 +110,22 @@ from the private controller-SRAM graph:
 | `+0x08` | Active image. TX and RX context construction clear it before setup and store exactly one after setup; command admission and Test End test it for zero/nonzero state. It is not a graph pointer. |
 | `+0x14` | Full link-state pointer installed by graph allocation and consumed by event construction. This is the environment's private-graph root. |
 
-The fixed `0x71764129` word agrees with the standardized DTM access address,
-but its descriptor offset is still recorded positionally. Likewise, the
-`0x555555` low-24-bit image is not promoted into a public `CRC_INIT` field
-until an independent packet-engine consumer proves that field boundary.
+The fixed `0x71764129` word is now retained by a private protocol-level LE
+access-address type. Bluetooth Core 6.1 [Vol 6, Part F,
+Section 4.1.2](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/direct-test-mode.html)
+specifies the DTM synchronization word in transmission order. Applying the
+Core [little-endian Link Layer bit-order
+rules](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/link-layer-specification.html)
+produces the controller image `0x71764129`. Independent current-linked legacy
+advertising reset `r_sym_ble_fxKAT8in6cXLv0gLB2W5` writes `0x8e89bed6` to the
+same positional word; Core 6.1 [Vol 6, Part B, Section
+2.1.2](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/link-layer-specification.html)
+specifies that value as the Access Address for the applicable advertising
+physical channel packets. This cross-role evidence supports the private
+protocol value and SRAM codec only: it does not import advertising flow or
+claim a traced hardware consumer. Likewise, the `0x555555` low-24-bit image is
+not promoted into a public `CRC_INIT` field until an independent packet-engine
+consumer proves that field boundary.
 
 The reset transaction itself is now reproduced as a non-publishable reviewed
 region in the Bluetooth crate. It retains the exact low-twenty-bit compressed

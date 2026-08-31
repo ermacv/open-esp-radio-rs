@@ -64,13 +64,14 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphRxSuccessRecycleFailure,
     BluetoothDtmMemoryGraphRxSuccessRecyclePrepared,
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
-    BluetoothDtmMemoryGraphTxPacketPrepared, BluetoothDtmPositionalEventSeed,
-    BluetoothDtmPreparedTxPacketStorage, BluetoothDtmRxBufferHeaderImage,
-    BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage,
-    BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
-    BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
-    BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
-    BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
+    BluetoothDtmMemoryGraphTxPacketPrepareFailure, BluetoothDtmMemoryGraphTxPacketPrepared,
+    BluetoothDtmPositionalEventSeed, BluetoothDtmPreparedTxPacketStorage,
+    BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError,
+    BluetoothDtmRxPacketStorage, BluetoothDtmSchedulerAllocationConfig,
+    BluetoothDtmSchedulerContextStorage, BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
+    BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketPreparation,
+    BluetoothDtmTxPacketPrepareError, BluetoothDtmTxPacketStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use sram_link::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};

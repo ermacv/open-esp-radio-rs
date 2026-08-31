@@ -4,9 +4,10 @@
 //! `r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr` construct the complete 24-byte
 //! allocation-time header now owned by the controller-memory layer. The DTM
 //! allocator always requests the full eight-bit payload capacity. Current and
-//! named `dtm_tx_create_ctx` bodies then write the four positional packet bytes
-//! and bounded payload modeled by this LLL extension. Both layers remain
-//! CPU-only and expose no hardware publication token.
+//! named `dtm_tx_create_ctx` bodies then write the standard no-CTE PDU header,
+//! payload length, two positional allocator bytes and bounded payload modeled
+//! by this LLL extension. Both layers remain CPU-only and expose no hardware
+//! publication token.
 
 #![forbid(unsafe_code)]
 
@@ -41,7 +42,13 @@ impl BluetoothDtmTxGraphPrepare for BluetoothDtmMemoryGraphCpuOwned {
     ) -> BluetoothDtmPreparedTxGraph {
         let mut payload = [0; BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES];
         pattern.fill_reviewed(&mut payload[..usize::from(length.hci_image())]);
-        let memory = self.prepare_tx_packet(pattern.hci_selector(), length.hci_image(), &payload);
+        let memory =
+            match self.prepare_tx_packet(pattern.hci_selector(), length.hci_image(), &payload) {
+                Ok(memory) => memory,
+                Err(_) => {
+                    unreachable!("a typed DTM payload pattern always has a standard PDU Type")
+                }
+            };
         BluetoothDtmPreparedTxGraph {
             memory,
             pattern,
@@ -111,7 +118,10 @@ impl BluetoothDtmTxPacketPrepare for BluetoothDtmTxPacketStorage {
         pattern: BluetoothDtmPayloadPattern,
         length: BluetoothDtmPayloadLength,
     ) -> BluetoothDtmPreparedTxPacket<'_> {
-        let mut preparation = self.begin_prepare(pattern.hci_selector(), length.hci_image());
+        let mut preparation = match self.begin_prepare(pattern.hci_selector(), length.hci_image()) {
+            Ok(preparation) => preparation,
+            Err(_) => unreachable!("a typed DTM payload pattern always has a standard PDU Type"),
+        };
         pattern.fill_reviewed(preparation.payload_mut());
         BluetoothDtmPreparedTxPacket {
             pattern,
@@ -144,8 +154,9 @@ impl<'storage> BluetoothDtmPreparedTxPacket<'storage> {
 
     /// Borrow the open packet prefix and declared payload.
     ///
-    /// Only bytes `+0x05`, `+0x06`, `+0x10` and `+0x11` have reviewed writes;
-    /// the other prefix bytes retain their CPU-owned slot images.
+    /// The reviewed prefix contains two positional allocator bytes, the
+    /// standard no-CTE PDU header and its payload length. Other prefix bytes
+    /// retain their CPU-owned slot images.
     pub fn prepared_bytes(&self) -> &[u8] {
         self.storage.prepared_bytes()
     }

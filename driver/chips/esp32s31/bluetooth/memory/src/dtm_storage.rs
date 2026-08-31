@@ -594,6 +594,37 @@ pub struct BluetoothDtmTxPacketStorage {
     bytes: [u8; BLUETOOTH_DTM_TX_PACKET_BYTES],
 }
 
+/// Why a lower-layer selector cannot form a standard LE Test PDU header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmTxPacketPrepareError {
+    /// The LE Test PDU Type field admits exactly the eight standard DTM types.
+    UnsupportedPayloadType,
+}
+
+/// One standard LE Test PDU header without a Constant Tone Extension.
+///
+/// The current linked producer writes the payload Type and leaves the CP field
+/// clear. Encoding remains private to the packet codec; this value does not
+/// claim that a particular hardware block consumes the packet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothLeTestPduHeader(u8);
+
+impl BluetoothLeTestPduHeader {
+    const PDU_HEADER_BYTE: usize = 0x10;
+
+    const fn without_cte(payload_type: u8) -> Result<Self, BluetoothDtmTxPacketPrepareError> {
+        if payload_type <= 7 {
+            Ok(Self(payload_type))
+        } else {
+            Err(BluetoothDtmTxPacketPrepareError::UnsupportedPayloadType)
+        }
+    }
+
+    const fn controller_image(self) -> u8 {
+        self.0
+    }
+}
+
 impl BluetoothDtmTxPacketStorage {
     /// Create zeroed, CPU-owned storage without allocating.
     pub const fn new() -> Self {
@@ -602,22 +633,37 @@ impl BluetoothDtmTxPacketStorage {
         }
     }
 
-    /// Install the four positional DTM prefix bytes and exclusively borrow the
-    /// declared payload for an upper-layer pattern generator.
+    /// Validate and install one no-CTE LE Test PDU header, retain the reviewed
+    /// allocator bytes and exclusively borrow the declared payload.
     pub fn begin_prepare(
         &mut self,
-        pattern_selector: u8,
+        payload_type: u8,
+        payload_length: u8,
+    ) -> Result<BluetoothDtmTxPacketPreparation<'_>, BluetoothDtmTxPacketPrepareError> {
+        let pdu_header = BluetoothLeTestPduHeader::without_cte(payload_type)?;
+
+        Ok(self.begin_prepare_with_header(pdu_header, payload_length))
+    }
+
+    fn begin_prepare_with_header(
+        &mut self,
+        pdu_header: BluetoothLeTestPduHeader,
         payload_length: u8,
     ) -> BluetoothDtmTxPacketPreparation<'_> {
         self.bytes[0x05] = 2;
         self.bytes[0x06] = 0;
-        self.bytes[0x10] = pattern_selector;
+        self.write_pdu_header(pdu_header);
         self.bytes[0x11] = payload_length;
 
         BluetoothDtmTxPacketPreparation {
+            _pdu_header: pdu_header,
             payload_length: payload_length as usize,
             storage: self,
         }
+    }
+
+    fn write_pdu_header(&mut self, pdu_header: BluetoothLeTestPduHeader) {
+        self.bytes[BluetoothLeTestPduHeader::PDU_HEADER_BYTE] = pdu_header.controller_image();
     }
 
     /// Borrow the complete CPU-owned allocation image for review and tests.
@@ -634,10 +680,10 @@ impl Default for BluetoothDtmTxPacketStorage {
 
 /// Exclusive CPU-owned TX packet preparation in progress.
 ///
-/// The memory layer deliberately treats the selector and payload bytes as
-/// positional. Standard DTM pattern semantics remain in the LLL/portable
-/// Controller above this type.
+/// The memory layer owns the standard no-CTE header encoding. Payload-pattern
+/// generation remains in the LLL/portable Controller above this type.
 pub struct BluetoothDtmTxPacketPreparation<'storage> {
+    _pdu_header: BluetoothLeTestPduHeader,
     payload_length: usize,
     storage: &'storage mut BluetoothDtmTxPacketStorage,
 }
@@ -651,6 +697,7 @@ impl<'storage> BluetoothDtmTxPacketPreparation<'storage> {
     /// Finish the CPU-only transform without publishing the packet.
     pub fn finish(self) -> BluetoothDtmPreparedTxPacketStorage<'storage> {
         BluetoothDtmPreparedTxPacketStorage {
+            _pdu_header: self._pdu_header,
             payload_length: self.payload_length,
             storage: self.storage,
         }
@@ -659,6 +706,7 @@ impl<'storage> BluetoothDtmTxPacketPreparation<'storage> {
 
 /// Affine CPU-owned view of one positionally prepared TX packet slot.
 pub struct BluetoothDtmPreparedTxPacketStorage<'storage> {
+    _pdu_header: BluetoothLeTestPduHeader,
     payload_length: usize,
     storage: &'storage mut BluetoothDtmTxPacketStorage,
 }
@@ -2306,16 +2354,11 @@ impl BluetoothDtmMemoryGraphReclaimed {
 pub struct BluetoothDtmMemoryGraphTxPacketPrepared {
     storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
     binding: BluetoothDtmMemoryGraphBinding,
-    pattern_selector: u8,
+    _pdu_header: BluetoothLeTestPduHeader,
     payload_length: u8,
 }
 
 impl BluetoothDtmMemoryGraphTxPacketPrepared {
-    /// Return the positional DTM pattern selector written into the packet.
-    pub const fn pattern_selector(&self) -> u8 {
-        self.pattern_selector
-    }
-
     /// Return the declared packet payload length.
     pub const fn payload_length(&self) -> u8 {
         self.payload_length
@@ -2358,6 +2401,40 @@ impl BluetoothDtmMemoryGraphTxPacketPrepared {
     }
 }
 
+/// Failed TX packet preparation retaining the byte-unchanged graph owner.
+///
+/// The LE Test PDU header is validated before any packet byte is written.
+pub struct BluetoothDtmMemoryGraphTxPacketPrepareFailure {
+    owner: BluetoothDtmMemoryGraphCpuOwned,
+    error: BluetoothDtmTxPacketPrepareError,
+}
+
+impl BluetoothDtmMemoryGraphTxPacketPrepareFailure {
+    /// Return the finite packet-header validation failure.
+    pub const fn error(&self) -> BluetoothDtmTxPacketPrepareError {
+        self.error
+    }
+
+    /// Recover the byte-unchanged owner and exact validation failure.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphCpuOwned,
+        BluetoothDtmTxPacketPrepareError,
+    ) {
+        (self.owner, self.error)
+    }
+}
+
+impl core::fmt::Debug for BluetoothDtmMemoryGraphTxPacketPrepareFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmMemoryGraphTxPacketPrepareFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
 impl BluetoothDtmMemoryGraphCpuOwned {
     /// Borrow the location proof without granting publication authority.
     pub const fn binding(&self) -> &BluetoothDtmMemoryGraphBinding {
@@ -2379,28 +2456,40 @@ impl BluetoothDtmMemoryGraphCpuOwned {
 
     /// Consume this graph and install one complete CPU-owned TX packet image.
     ///
+    /// The LE Test PDU Type is validated before the first mutation; rejection
+    /// returns this exact byte-unchanged owner for retry or shutdown.
+    ///
     /// The fixed payload array makes the copy total for every accepted `u8`
     /// length; no callback can claim readiness without supplying all declared
     /// bytes. Bytes after the declared payload remain unchanged.
     pub fn prepare_tx_packet(
         mut self,
-        pattern_selector: u8,
+        payload_type: u8,
         payload_length: u8,
         payload: &[u8; BLUETOOTH_DTM_MAX_PACKET_CAPACITY],
-    ) -> BluetoothDtmMemoryGraphTxPacketPrepared {
+    ) -> Result<
+        BluetoothDtmMemoryGraphTxPacketPrepared,
+        BluetoothDtmMemoryGraphTxPacketPrepareFailure,
+    > {
+        let pdu_header = match BluetoothLeTestPduHeader::without_cte(payload_type) {
+            Ok(pdu_header) => pdu_header,
+            Err(error) => {
+                return Err(BluetoothDtmMemoryGraphTxPacketPrepareFailure { owner: self, error });
+            }
+        };
         let packet = self.storage.as_mut().project().tx_packet;
-        let mut preparation = packet.begin_prepare(pattern_selector, payload_length);
+        let mut preparation = packet.begin_prepare_with_header(pdu_header, payload_length);
         preparation
             .payload_mut()
             .copy_from_slice(&payload[..payload_length as usize]);
         let _prepared = preparation.finish();
 
-        BluetoothDtmMemoryGraphTxPacketPrepared {
+        Ok(BluetoothDtmMemoryGraphTxPacketPrepared {
             storage: self.storage,
             binding: self.binding,
-            pattern_selector,
+            _pdu_header: pdu_header,
             payload_length,
-        }
+        })
     }
 
     /// Build and commit one role-neutral positional event-word image.
@@ -2720,7 +2809,8 @@ mod tests {
         BluetoothDtmPositionalEventWords, BluetoothDtmRxResultProjection,
         BluetoothDtmRxResultProjectionError, BluetoothDtmSchedulerAllocationConfig,
         BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemReviewedWords,
-        LINK_STATE_RX_TAIL_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_STATUS_OFFSET,
+        BluetoothDtmTxPacketPrepareError, LINK_STATE_RX_TAIL_OFFSET, LOW_TWENTY_MASK,
+        SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2964,6 +3054,7 @@ mod tests {
         payload[..3].copy_from_slice(&[0xaa, 0xbb, 0xcc]);
         let owner = model_owner(0x2f00_0500)
             .prepare_tx_packet(7, 3, &payload)
+            .expect("standard LE Test PDU Type prepares")
             .discard_packet_readiness();
         let before = snapshot(owner.storage.as_ref().get_ref());
 
@@ -3256,12 +3347,50 @@ mod tests {
     #[test]
     fn graph_tx_slot_retains_the_declared_payload() {
         let mut graph = BluetoothDtmMemoryGraphStorage::new();
-        let mut preparation = graph.tx_packet_mut().begin_prepare(7, 3);
+        let mut preparation = graph
+            .tx_packet_mut()
+            .begin_prepare(7, 3)
+            .expect("standard LE Test PDU Type prepares");
         preparation
             .payload_mut()
             .copy_from_slice(&[0xaa, 0xbb, 0xcc]);
         let prepared = preparation.finish();
 
         assert_eq!(prepared.payload(), [0xaa, 0xbb, 0xcc]);
+    }
+
+    #[test]
+    fn every_standard_le_test_pdu_type_reaches_packet_readiness() {
+        let payload = [0; BLUETOOTH_DTM_MAX_PACKET_CAPACITY];
+        let mut owner = model_owner(0x2f00_2100);
+
+        for payload_type in 0..=7 {
+            let prepared = owner
+                .prepare_tx_packet(payload_type, 0, &payload)
+                .expect("all standard LE Test PDU Types prepare");
+            owner = prepared.discard_packet_readiness();
+        }
+    }
+
+    #[test]
+    fn unsupported_le_test_pdu_type_returns_the_unchanged_owner() {
+        let payload = [0; BLUETOOTH_DTM_MAX_PACKET_CAPACITY];
+        let owner = model_owner(0x2f00_2500);
+        let before = snapshot(owner.storage.as_ref().get_ref());
+
+        let failure = match owner.prepare_tx_packet(8, 3, &payload) {
+            Ok(_) => panic!("an unsupported LE Test PDU Type cannot claim readiness"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothDtmTxPacketPrepareError::UnsupportedPayloadType
+        );
+        let (owner, error) = failure.into_parts();
+        assert_eq!(
+            error,
+            BluetoothDtmTxPacketPrepareError::UnsupportedPayloadType
+        );
+        assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
     }
 }

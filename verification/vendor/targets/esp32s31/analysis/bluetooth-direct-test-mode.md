@@ -274,7 +274,14 @@ The TX payload construction has no allocator requirement. Complete current
 selectors 1, 2, 4, 5, 6 and 7 fill `0x0f`, `0x55`, `0xff`, `0x00`, `0xf0`
 and `0xaa`, while selectors 0 and 3 copy PRBS9 and PRBS15 respectively. The
 body stores the selector and eight-bit length directly before the payload and
-copies exactly that many bytes.
+copies exactly that many bytes. The TX header independently points to this
+selector byte at packet `+0x10`. Bluetooth Core 6.1 [Vol 6, Part F, Section
+4.1.4](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/direct-test-mode.html)
+defines the LE Test PDU as an eight-bit header, an eight-bit payload-length
+field, an optional CTEInfo field and the payload. Its low-four-bit Type values
+zero through seven exactly match these producer selectors. The current body
+therefore produces a no-CTE standard LE Test PDU header at `+0x10`, its payload
+length at `+0x11` and payload at `+0x12`.
 
 The current and initial 255-byte PRBS tables are byte-identical. PRBS9 has
 SHA-256 `e2a8f5102484eb3bda6e3b5ebb6917bdf31920d3351d68d8b46a645e57356678`;
@@ -286,10 +293,15 @@ at most 255 bytes in caller-owned storage, rejects a short destination before
 mutation and returns an affine read-only payload view. Production composition
 instead consumes the bound graph owner, copies every declared payload byte and
 returns a typed packet-ready graph retaining the validated pattern and length.
+The lower packet codec now validates the standard Type domain before its first
+write and retains a private no-CTE PDU-header value in that ready state. An
+unsupported raw lower selector returns the byte-unchanged graph owner and
+cannot claim packet readiness.
 Only that state can enter a transmitter event plan; the receiver plan accepts
 the ordinary graph. The TX proof survives the positional-event and scheduler-
 bookkeeping transitions. All of these states remain CPU-owned: no packet
-header publication, fence or hardware ownership is implied.
+header publication, fence, hardware ownership or hardware-consumer identity is
+implied.
 
 The generic TX-buffer/header allocator is narrow enough to replace as well.
 Current `r_sym_ble_4FZFpypyQDtGoyqc084f` is instruction-identical to named

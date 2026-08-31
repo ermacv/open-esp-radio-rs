@@ -7,10 +7,12 @@
 
 #![forbid(unsafe_code)]
 
-use core::{marker::PhantomPinned, pin::Pin};
+use core::{marker::PhantomPinned, num::NonZeroU32, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -83,6 +85,8 @@ const SCHEDULER_ITEM_WORD_38_OFFSET: usize = 0x38 / 4;
 const SCHEDULER_ITEM_WORD_44_OFFSET: usize = 0x44 / 4;
 const SCHEDULER_ITEM_WORD_48_OFFSET: usize = 0x48 / 4;
 const SCHEDULER_ITEM_WORD_4C_OFFSET: usize = 0x4c / 4;
+const SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET: usize = 0x50 / 4;
+const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 
 type AdvertisingTxPacketAddress =
     BluetoothLeTxPacketAddress<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>;
@@ -711,6 +715,33 @@ impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
             .prepared_pdu(self.packet_length)
     }
 
+    /// Exact CPU-owned scheduler-item identity selected by this graph.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item.controller_address()
+    }
+
+    /// Install the common pre-publication scheduler bookkeeping.
+    pub fn prepare_scheduler_bookkeeping(
+        mut self,
+    ) -> BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+        let item = self.storage.as_mut().project().scheduler_item;
+        let previous_control = item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].get();
+        let previous_status = item.words[SCHEDULER_ITEM_WORD_38_OFFSET].get();
+        let previous_completed_link = item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET].get();
+        item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(previous_control & !0xff);
+        item.words[SCHEDULER_ITEM_WORD_38_OFFSET].set(u32::MAX);
+        item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET].set(0);
+
+        BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            packet_length: self.packet_length,
+            previous_control,
+            previous_status,
+            previous_completed_link,
+        }
+    }
+
     /// Roll back the private event image and recover a reusable graph.
     pub fn cancel(self) -> BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
         let mut owner = BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
@@ -719,6 +750,227 @@ impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
         };
         owner.reinitialize_graph();
         owner
+    }
+}
+
+/// Advertising graph with common scheduler bookkeeping but no list ownership.
+#[must_use = "the scheduler-prepared graph must remain owned or be cancelled"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+    storage: Pin<&'static mut BluetoothLegacyAdvertisingMemoryGraphStorage>,
+    binding: BluetoothLegacyAdvertisingMemoryGraphBinding,
+    packet_length: AdvertisingTxPacketLength,
+    previous_control: u32,
+    previous_status: u32,
+    previous_completed_link: u32,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item.controller_address()
+    }
+
+    /// Prepare the sole-item links for an independently proven empty list.
+    pub fn prepare_empty_list_link(
+        mut self,
+    ) -> BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
+        let item = self.storage.as_mut().project().scheduler_item;
+        let previous_hardware_chain = item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get();
+        let previous_software_next = item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].get();
+        item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET]
+            .set(previous_hardware_chain & !SCHEDULER_ITEM_HARDWARE_NEXT_MASK);
+        item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].set(0);
+
+        BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            packet_length: self.packet_length,
+            previous_control: self.previous_control,
+            previous_status: self.previous_status,
+            previous_completed_link: self.previous_completed_link,
+            previous_hardware_chain,
+            previous_software_next,
+        }
+    }
+
+    pub fn cancel(mut self) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+        let item = self.storage.as_mut().project().scheduler_item;
+        item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(self.previous_control);
+        item.words[SCHEDULER_ITEM_WORD_38_OFFSET].set(self.previous_status);
+        item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET].set(self.previous_completed_link);
+        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            packet_length: self.packet_length,
+        }
+    }
+}
+
+/// Advertising graph whose sole scheduler item has null list links.
+#[must_use = "the empty-list candidate must remain owned or be cancelled"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
+    storage: Pin<&'static mut BluetoothLegacyAdvertisingMemoryGraphStorage>,
+    binding: BluetoothLegacyAdvertisingMemoryGraphBinding,
+    packet_length: AdvertisingTxPacketLength,
+    previous_control: u32,
+    previous_status: u32,
+    previous_completed_link: u32,
+    previous_hardware_chain: u32,
+    previous_software_next: u32,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item.controller_address()
+    }
+
+    /// Consume rollback authority after the exact list-zero head publication.
+    pub fn into_head_published(
+        self,
+        publication: &BluetoothSchedulerHardwareListHeadPublished,
+    ) -> BluetoothLegacyAdvertisingMemoryGraphHeadPublished {
+        assert_eq!(
+            publication.index(),
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            "legacy advertising uses the reviewed primary scheduler list"
+        );
+        assert_eq!(
+            publication.head().address(),
+            Some(self.scheduler_item_address()),
+            "the published scheduler head must name the retained advertising graph"
+        );
+        BluetoothLegacyAdvertisingMemoryGraphHeadPublished {
+            storage: self.storage,
+            binding: self.binding,
+            packet_length: self.packet_length,
+        }
+    }
+
+    pub fn cancel(mut self) -> BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+        let item = self.storage.as_mut().project().scheduler_item;
+        item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].set(self.previous_hardware_chain);
+        item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].set(self.previous_software_next);
+        BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            packet_length: self.packet_length,
+            previous_control: self.previous_control,
+            previous_status: self.previous_status,
+            previous_completed_link: self.previous_completed_link,
+        }
+    }
+}
+
+/// Hardware-visible advertising graph after exact list-head publication.
+#[must_use = "the head-published graph must reach RUN or remain fail-stop owned"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphHeadPublished {
+    storage: Pin<&'static mut BluetoothLegacyAdvertisingMemoryGraphStorage>,
+    binding: BluetoothLegacyAdvertisingMemoryGraphBinding,
+    packet_length: AdvertisingTxPacketLength,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphHeadPublished {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item.controller_address()
+    }
+
+    pub fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothLegacyAdvertisingMemoryGraphRunning {
+        assert_eq!(
+            run.index(),
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            "legacy advertising uses the reviewed primary scheduler list"
+        );
+        assert_eq!(
+            run.head().address(),
+            Some(self.scheduler_item_address()),
+            "the RUN proof must retain the published advertising graph"
+        );
+        BluetoothLegacyAdvertisingMemoryGraphRunning {
+            storage: self.storage,
+            binding: self.binding,
+            _packet_length: self.packet_length,
+        }
+    }
+}
+
+/// Hardware-owned advertising graph admitted through the exact RUN suffix.
+#[must_use = "the running graph must advance through fenced completion"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphRunning {
+    storage: Pin<&'static mut BluetoothLegacyAdvertisingMemoryGraphStorage>,
+    binding: BluetoothLegacyAdvertisingMemoryGraphBinding,
+    _packet_length: AdvertisingTxPacketLength,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphRunning {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item.controller_address()
+    }
+
+    pub fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothLegacyAdvertisingMemoryGraphCompletionObservation {
+        if observed.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            return BluetoothLegacyAdvertisingMemoryGraphCompletionObservation::ListMismatch {
+                owner: self,
+                observed,
+            };
+        }
+        let status = self.storage.as_ref().get_ref().scheduler_item.words
+            [SCHEDULER_ITEM_WORD_38_OFFSET]
+            .get();
+        if status == u32::MAX {
+            BluetoothLegacyAdvertisingMemoryGraphCompletionObservation::StillInFlight(self)
+        } else {
+            BluetoothLegacyAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                BluetoothLegacyAdvertisingMemoryGraphCompletionObserved {
+                    owner: self,
+                    status: match NonZeroU32::new(status) {
+                        None => BluetoothLegacyAdvertisingSchedulerItemCompletionStatus::Zero,
+                        Some(status) => {
+                            BluetoothLegacyAdvertisingSchedulerItemCompletionStatus::NonZero(status)
+                        }
+                    },
+                },
+            )
+        }
+    }
+}
+
+/// Semantic non-sentinel advertising scheduler status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
+    Zero,
+    NonZero(NonZeroU32),
+}
+
+/// One bounded completion observation of a running advertising graph.
+#[must_use = "the observation and graph owners must remain paired"]
+pub enum BluetoothLegacyAdvertisingMemoryGraphCompletionObservation {
+    ListMismatch {
+        owner: BluetoothLegacyAdvertisingMemoryGraphRunning,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothLegacyAdvertisingMemoryGraphRunning),
+    CompletionObserved(BluetoothLegacyAdvertisingMemoryGraphCompletionObserved),
+}
+
+/// Hardware-owned graph after a non-sentinel status observation.
+#[must_use = "the completed graph must advance through unlink and recycle"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphCompletionObserved {
+    owner: BluetoothLegacyAdvertisingMemoryGraphRunning,
+    status: BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphCompletionObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.owner.scheduler_item_address()
+    }
+
+    pub const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
+        self.status
     }
 }
 
@@ -896,6 +1148,10 @@ impl Default for BluetoothLegacyAdvertisingMemoryGraphStorage {
 
 #[cfg(test)]
 mod tests {
+    use open_esp_radio_esp32s31_hal::{
+        BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    };
+
     use super::{
         BluetoothLegacyAdvertisingMemoryGraphModelAddress,
         BluetoothLegacyAdvertisingMemoryGraphStorage,
@@ -909,6 +1165,20 @@ mod tests {
             .expect("the model base uses controller SRAM syntax");
         BluetoothLegacyAdvertisingMemoryGraphStorage::pin_static_model(storage, base)
             .expect("the complete graph fits physical controller SRAM")
+    }
+
+    fn first_event() -> super::BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+        owner()
+            .prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6])
+            .expect("the encoded advertising PDU fits")
+            .reset_link_state(0)
+            .expect("the PDU selects the restricted reset")
+            .prepare_first_event(
+                crate::BluetoothLegacyAdvertisingPrimaryChannel::Channel37,
+                1_000,
+                1_128,
+            )
+            .expect("the bound single-item graph is intact")
     }
 
     #[test]
@@ -974,19 +1244,51 @@ mod tests {
 
     #[test]
     fn first_event_preparation_is_affine_and_cancellation_restores_the_graph() {
-        let prepared = owner()
-            .prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6])
-            .expect("the encoded advertising PDU fits")
-            .reset_link_state(0)
-            .expect("the PDU selects the restricted reset")
-            .prepare_first_event(
-                crate::BluetoothLegacyAdvertisingPrimaryChannel::Channel37,
-                1_000,
-                1_128,
-            )
-            .expect("the bound single-item graph is intact");
+        let prepared = first_event();
 
         assert_eq!(prepared.pdu(), &[0x02, 6, 1, 2, 3, 4, 5, 6]);
         assert!(prepared.cancel().retains_reviewed_graph());
+    }
+
+    #[test]
+    fn scheduler_prefix_and_empty_list_links_cancel_back_to_the_event() {
+        let empty = first_event()
+            .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link();
+        let prepared = empty.cancel().cancel();
+
+        assert_eq!(prepared.pdu(), &[0x02, 6, 1, 2, 3, 4, 5, 6]);
+        assert!(prepared.cancel().retains_reviewed_graph());
+    }
+
+    #[test]
+    fn fenced_list_zero_observation_classifies_a_completed_event_once() {
+        let prepared = first_event().prepare_scheduler_bookkeeping();
+        prepared.storage.as_ref().get_ref().scheduler_item.words
+            [super::SCHEDULER_ITEM_WORD_38_OFFSET]
+            .set(0);
+        let running = super::BluetoothLegacyAdvertisingMemoryGraphRunning {
+            storage: prepared.storage,
+            binding: prepared.binding,
+            _packet_length: prepared.packet_length,
+        };
+        let observation =
+            BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0])
+                .expect("list zero is representable");
+        let BluetoothSchedulerFinishedListPop::List { observed, .. } = observation.pop_lowest()
+        else {
+            panic!("the semantic observation contains list zero")
+        };
+
+        let super::BluetoothLegacyAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+            completed,
+        ) = running.observe_completion(observed)
+        else {
+            panic!("status zero is a completed advertising item")
+        };
+        assert_eq!(
+            completed.status(),
+            super::BluetoothLegacyAdvertisingSchedulerItemCompletionStatus::Zero
+        );
     }
 }

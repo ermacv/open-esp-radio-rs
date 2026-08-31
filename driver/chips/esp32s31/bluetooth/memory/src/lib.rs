@@ -90,16 +90,23 @@ pub use legacy_advertising_storage::{
     BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES, BluetoothLegacyAdvertisingMemoryGraphBindError,
     BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphBinding,
+    BluetoothLegacyAdvertisingMemoryGraphCompletionObservation,
+    BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
     BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared,
     BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
     BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure,
     BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
     BluetoothLegacyAdvertisingMemoryGraphIdentity,
     BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
     BluetoothLegacyAdvertisingMemoryGraphLinkStateResetFailure,
     BluetoothLegacyAdvertisingMemoryGraphPacketPrepareFailure,
     BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphRunning,
+    BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
     BluetoothLegacyAdvertisingMemoryGraphStorage,
+    BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};

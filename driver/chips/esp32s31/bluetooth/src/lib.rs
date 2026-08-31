@@ -47,9 +47,10 @@
 //! PAC without exporting register authority. The remaining components are not
 //! connected across the missing live primary-ISR/executor composition,
 //! feature-specific NRT classification and live-route
-//! prerequisites. Recurring event preparation now retains exact active role
-//! ownership, while live timing, the concrete session pump and in-flight
-//! Test-End quiescence remain absent. Stable two-owner ISR publication is
+//! prerequisites. Recurring event preparation retains exact active role
+//! ownership, and bounded first-event, active, recurring and terminal-neutral
+//! quiescence runners preserve it. The sole outer command/wake loop and live
+//! route composition remain absent. Stable two-owner ISR publication is
 //! connected, but no
 //! current finite state
 //! claims that the complete controller lifecycle, HCI transport, task or live
@@ -88,14 +89,20 @@ mod dtm_parameters;
 mod dtm_payload;
 mod dtm_post_unlink;
 #[cfg(target_arch = "riscv32")]
+mod dtm_quiescence;
+#[cfg(any(target_arch = "riscv32", test))]
+mod dtm_quiescence_policy;
+#[cfg(target_arch = "riscv32")]
+mod dtm_reset;
+#[cfg(any(target_arch = "riscv32", test))]
+mod dtm_reset_order;
+#[cfg(target_arch = "riscv32")]
 mod dtm_runner;
 mod dtm_rx_completion;
 mod dtm_scheduler_item;
 mod dtm_session;
 #[cfg(target_arch = "riscv32")]
 mod dtm_stopping;
-#[cfg(any(target_arch = "riscv32", test))]
-mod dtm_stopping_policy;
 mod dtm_timing;
 mod dtm_tx_packet;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -223,6 +230,14 @@ pub use dtm_post_unlink::{BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlink
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
     BluetoothPrimaryOrdinaryPublication, BluetoothPrimarySerializedServiceStep,
+};
+#[cfg(target_arch = "riscv32")]
+pub use dtm_reset::{
+    BluetoothDtmResetComplete, BluetoothDtmResetCompletionReady, BluetoothDtmResetCompletionStart,
+    BluetoothDtmResetResponsePending, BluetoothDtmResetResponsePublication,
+    BluetoothDtmResetRestoreFailure, BluetoothDtmResetRestoreStep, BluetoothDtmResetStoppingFault,
+    BluetoothDtmResetStoppingFaultCause, BluetoothDtmResetStoppingRetryCause,
+    BluetoothDtmResetStoppingRunner, BluetoothDtmResetStoppingStep, BluetoothDtmResetStoppingWait,
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_runner::{

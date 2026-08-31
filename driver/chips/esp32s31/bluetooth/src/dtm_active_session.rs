@@ -119,7 +119,18 @@ pub struct BluetoothDtmActiveResetBarrier<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    _barrier: HciResetBarrier<'runtime, BluetoothDtmActiveRadio<'runtime, S, CAPACITY>>,
+    radio: BluetoothDtmActiveRadio<'runtime, S, CAPACITY>,
+    barrier: HciResetBarrier<'runtime, ()>,
+}
+
+impl<'runtime, S, const CAPACITY: usize> BluetoothDtmActiveResetBarrier<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Begin terminal-neutral quiescence without releasing Reset/order authority.
+    pub fn begin_quiescence(self) -> crate::BluetoothDtmResetStoppingRunner<'runtime, S, CAPACITY> {
+        crate::BluetoothDtmResetStoppingRunner::new(self.radio, self.barrier)
+    }
 }
 
 /// Typed result of routing one complete Controller classification while DTM is active.
@@ -345,35 +356,37 @@ where
         >,
         command: HciEpochBound<'command, LeControllerCommandClassification>,
     ) -> BluetoothDtmActiveControllerCommandRoute<'runtime, 'command, S, CAPACITY> {
-        let transaction = self.order.transaction.map_owner(|()| self.radio);
-        match controller.route_classified_command(transaction, command) {
+        let Self { radio, order } = self;
+        match controller.route_classified_command(order.transaction, command) {
             HciClassifiedCommandRoute::ResponsePending(pending) => {
-                let (radio, transaction) = pending.into_parts();
                 BluetoothDtmActiveControllerCommandRoute::ResponsePending(
                     BluetoothDtmActiveSession {
                         radio,
-                        order: BluetoothDtmResponsePending { transaction },
+                        order: BluetoothDtmResponsePending {
+                            transaction: pending,
+                        },
                     },
                 )
             }
             HciClassifiedCommandRoute::Dtm { published, command } => {
                 match command.into_active_session_disposition() {
                     LeDtmActiveSessionDisposition::RejectControllerBusy(response) => {
-                        let (radio, transaction) =
-                            published.begin_next_response(response).into_parts();
                         BluetoothDtmActiveControllerCommandRoute::ResponsePending(
                             BluetoothDtmActiveSession {
                                 radio,
-                                order: BluetoothDtmResponsePending { transaction },
+                                order: BluetoothDtmResponsePending {
+                                    transaction: published.begin_next_response(response),
+                                },
                             },
                         )
                     }
                     LeDtmActiveSessionDisposition::End(command) => {
-                        let (radio, transaction) = published.into_parts();
                         BluetoothDtmActiveControllerCommandRoute::TestEnd(
                             crate::BluetoothDtmStoppingRunner::new(
                                 radio,
-                                BluetoothDtmResponsePublished { transaction },
+                                BluetoothDtmResponsePublished {
+                                    transaction: published,
+                                },
                                 command,
                             ),
                         )
@@ -382,15 +395,16 @@ where
             }
             HciClassifiedCommandRoute::ResetBarrier(barrier) => {
                 BluetoothDtmActiveControllerCommandRoute::ResetBarrier(
-                    BluetoothDtmActiveResetBarrier { _barrier: barrier },
+                    BluetoothDtmActiveResetBarrier { radio, barrier },
                 )
             }
             HciClassifiedCommandRoute::EndpointMismatch { published, command } => {
-                let (radio, transaction) = published.into_parts();
                 BluetoothDtmActiveControllerCommandRoute::EndpointMismatch {
                     session: BluetoothDtmActiveSession {
                         radio,
-                        order: BluetoothDtmResponsePublished { transaction },
+                        order: BluetoothDtmResponsePublished {
+                            transaction: published,
+                        },
                     },
                     command,
                 }

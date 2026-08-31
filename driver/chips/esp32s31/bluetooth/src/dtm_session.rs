@@ -18,7 +18,9 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 
 use crate::BluetoothDtmDefaultTxPowerDbm;
 #[cfg(any(target_arch = "riscv32", test))]
-use crate::dtm_event_prepare::{BluetoothDtmTestEndReport, BluetoothDtmTestEndedCpuOwned};
+use crate::dtm_event_prepare::{
+    BluetoothDtmQuiescedCpuOwned, BluetoothDtmTestEndReport, BluetoothDtmTestEndedCpuOwned,
+};
 
 /// Composition-owned immutable inputs for one reusable DTM runtime.
 ///
@@ -197,6 +199,14 @@ impl BluetoothDtmSessionIdle {
         }
     }
 
+    /// Return a terminal-neutral, fully reclaimed active graph to idle retention.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn from_quiesced(quiesced: BluetoothDtmQuiescedCpuOwned) -> Self {
+        Self {
+            graph: quiesced.into_reclaimed_graph(),
+        }
+    }
+
     /// Reinitialize the retained graph and begin one fresh allocation epoch.
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn begin_epoch(self) -> BluetoothDtmSessionGraphReady {
@@ -275,6 +285,7 @@ mod tests {
         BluetoothDtmRuntimeSessionBeginError, BluetoothDtmSessionIdle,
     };
     use crate::BluetoothDtmDefaultTxPowerDbm;
+    use crate::dtm_event_prepare::BluetoothDtmQuiescedCpuOwned;
 
     const fn runtime_config() -> BluetoothDtmRuntimeConfig {
         BluetoothDtmRuntimeConfig::new(
@@ -323,6 +334,31 @@ mod tests {
     fn cancelling_graph_ready_returns_the_graph_to_idle_retention() {
         let idle = BluetoothDtmSessionIdle::new(graph()).begin_epoch().cancel();
         let _ready = idle.begin_epoch();
+    }
+
+    #[test]
+    fn terminal_neutral_quiesced_graph_restores_the_exact_runtime_slot() {
+        let mut runtime = BluetoothDtmRuntimeResources::from_claimed_graph(
+            runtime_config().default_tx_power_dbm(),
+            graph(),
+        );
+        let active = runtime
+            .begin_session_epoch()
+            .expect("the retained idle graph begins one epoch")
+            .into_graph();
+        assert!(!runtime.session_is_idle());
+
+        let quiesced = BluetoothDtmQuiescedCpuOwned::from_cpu_owned_for_test(active);
+        let idle = BluetoothDtmSessionIdle::from_quiesced(quiesced);
+        assert!(
+            runtime.restore_idle(idle).is_ok(),
+            "the neutral reclaimed owner restores its exact vacant slot"
+        );
+
+        assert!(runtime.session_is_idle());
+        let _next_epoch = runtime
+            .begin_session_epoch()
+            .expect("the restored graph is reusable without terminal command policy");
     }
 
     #[test]

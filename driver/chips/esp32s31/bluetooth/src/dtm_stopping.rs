@@ -17,42 +17,22 @@ use open_esp_radio_bluetooth_hci::{
 };
 
 use crate::dtm_active_session::BluetoothDtmActiveRadio;
-use crate::dtm_session::BluetoothDtmSessionStopping;
-use crate::dtm_stopping_policy::{
-    BluetoothDtmTestEndRetryAction, BluetoothDtmTestEndRetryOwnership,
-    bluetooth_dtm_test_end_retry_action,
+use crate::dtm_quiescence::{
+    BluetoothDtmQuiescenceFault, BluetoothDtmQuiescenceFaultCause,
+    BluetoothDtmQuiescenceRetryCause, BluetoothDtmQuiescenceRunner, BluetoothDtmQuiescenceStep,
+    BluetoothDtmQuiescenceWait,
 };
+use crate::dtm_session::BluetoothDtmSessionStopping;
 use crate::{
-    BluetoothControllerPublishedTaskService, BluetoothDtmActiveCompletion,
-    BluetoothDtmActiveCompletionFault, BluetoothDtmActiveCompletionFaultCause,
-    BluetoothDtmActiveCompletionStep, BluetoothDtmActiveCpuOwned, BluetoothDtmActivePostUnlinkWait,
-    BluetoothDtmActiveSchedulerWait, BluetoothDtmPostUnlinkWakeCell,
-    BluetoothDtmRecurringCancellationDrain, BluetoothDtmRecurringCancellationDrainStep,
-    BluetoothDtmRecurringControllerTimeWait, BluetoothDtmRecurringFault,
-    BluetoothDtmRecurringFaultCause, BluetoothDtmRecurringRetry, BluetoothDtmRecurringRetryCause,
-    BluetoothDtmRecurringRunner, BluetoothDtmRecurringRunnerCancel,
-    BluetoothDtmRecurringRunnerStep, BluetoothDtmResponsePublished, BluetoothDtmSessionIdle,
-    BluetoothDtmTestEndReport, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
+    BluetoothControllerPublishedTaskService, BluetoothDtmActiveCompletionFaultCause,
+    BluetoothDtmActiveCpuOwned, BluetoothDtmPostUnlinkWakeCell, BluetoothDtmRecurringFaultCause,
+    BluetoothDtmResponsePublished, BluetoothDtmSessionIdle, BluetoothDtmTestEndReport,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
+    BluetoothSchedulerWakeCell,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
     BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>;
-
-enum BluetoothDtmStoppingPhase<'runtime, S, const CAPACITY: usize>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    Completion(BluetoothDtmActiveCompletion<'runtime, S, CAPACITY>),
-    SchedulerWait(BluetoothDtmActiveSchedulerWait<'runtime, S, CAPACITY>),
-    PostUnlinkWait(BluetoothDtmActivePostUnlinkWait<'runtime, S, CAPACITY>),
-    CancelRecurring(BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>),
-    CancelRejected(BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>),
-    CancelRetry(BluetoothDtmRecurringRetry<'runtime, S, CAPACITY>),
-    CancellationDrain(BluetoothDtmRecurringCancellationDrain<'runtime, S, CAPACITY>),
-    FinishPublished(BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>),
-    FinishPublishedRetry(BluetoothDtmRecurringRetry<'runtime, S, CAPACITY>),
-}
 
 /// A latched Test End command and the exact active graph it must quiesce.
 #[must_use = "advance, wait, retry or retain the complete Test End transaction"]
@@ -62,7 +42,7 @@ where
 {
     command: LeTestEndCommand,
     order: BluetoothDtmResponsePublished<'runtime>,
-    phase: BluetoothDtmStoppingPhase<'runtime, S, CAPACITY>,
+    quiescence: BluetoothDtmQuiescenceRunner<'runtime, S, CAPACITY>,
 }
 
 /// Borrowed wait source for the current stopping phase.
@@ -349,21 +329,6 @@ pub enum BluetoothDtmStoppingFaultCause {
     UnexpectedPublishedHeadTransition,
 }
 
-#[allow(
-    dead_code,
-    reason = "fail-stop ownership deliberately has no graph reconstruction API"
-)]
-enum BluetoothDtmStoppingFaultOwner<'runtime, S, const CAPACITY: usize>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    Completion(BluetoothDtmActiveCompletionFault<'runtime, S, CAPACITY>),
-    Recurring(BluetoothDtmRecurringFault<'runtime, S, CAPACITY>),
-    PublishedRunner(BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>),
-    PublishedWait(BluetoothDtmRecurringControllerTimeWait<'runtime, S, CAPACITY>),
-    PublishedRetry(BluetoothDtmRecurringRetry<'runtime, S, CAPACITY>),
-}
-
 /// Opaque fail-stop Test End owner.
 #[must_use = "retain the exact command and graph for diagnostic shutdown"]
 pub struct BluetoothDtmStoppingFault<'runtime, S, const CAPACITY: usize>
@@ -373,7 +338,7 @@ where
     cause: BluetoothDtmStoppingFaultCause,
     _command: LeTestEndCommand,
     _order: BluetoothDtmResponsePublished<'runtime>,
-    _owner: BluetoothDtmStoppingFaultOwner<'runtime, S, CAPACITY>,
+    _quiescence: BluetoothDtmQuiescenceFault<'runtime, S, CAPACITY>,
 }
 
 impl<S, const CAPACITY: usize> BluetoothDtmStoppingFault<'_, S, CAPACITY>
@@ -395,84 +360,39 @@ where
         order: BluetoothDtmResponsePublished<'runtime>,
         command: LeTestEndCommand,
     ) -> Self {
-        let phase = match radio {
-            BluetoothDtmActiveRadio::Completion(completion) => {
-                BluetoothDtmStoppingPhase::Completion(completion)
-            }
-            BluetoothDtmActiveRadio::SchedulerWait(wait) => {
-                BluetoothDtmStoppingPhase::SchedulerWait(wait)
-            }
-            BluetoothDtmActiveRadio::PostUnlinkWait(wait) => {
-                BluetoothDtmStoppingPhase::PostUnlinkWait(wait)
-            }
-            BluetoothDtmActiveRadio::Recurring(recurring) => {
-                BluetoothDtmStoppingPhase::CancelRecurring(recurring)
-            }
-            BluetoothDtmActiveRadio::ControllerTimeWait(wait) => {
-                BluetoothDtmStoppingPhase::CancelRecurring(wait.resume())
-            }
-            BluetoothDtmActiveRadio::Retryable(retry) => {
-                let ownership = match retry.cause() {
-                    BluetoothDtmRecurringRetryCause::Preparation(_)
-                    | BluetoothDtmRecurringRetryCause::HeadPublication(_) => {
-                        BluetoothDtmTestEndRetryOwnership::BeforeHead
-                    }
-                    BluetoothDtmRecurringRetryCause::SchedulerStart(_) => {
-                        BluetoothDtmTestEndRetryOwnership::HeadPublished
-                    }
-                };
-                match bluetooth_dtm_test_end_retry_action(ownership) {
-                    BluetoothDtmTestEndRetryAction::CancelBeforeHead => {
-                        BluetoothDtmStoppingPhase::CancelRetry(retry)
-                    }
-                    BluetoothDtmTestEndRetryAction::FinishPublishedHead => {
-                        BluetoothDtmStoppingPhase::FinishPublishedRetry(retry)
-                    }
-                }
-            }
-        };
         Self {
             command,
             order,
-            phase,
+            quiescence: BluetoothDtmQuiescenceRunner::new(radio),
         }
     }
 
     /// Borrow the exact current wait source without moving the affine runner.
     pub fn wait(&self) -> Option<BluetoothDtmStoppingWait<'_>> {
-        match &self.phase {
-            BluetoothDtmStoppingPhase::SchedulerWait(wait) => {
-                Some(BluetoothDtmStoppingWait::Scheduler(wait.wake()))
+        match self.quiescence.wait() {
+            Some(BluetoothDtmQuiescenceWait::Scheduler(wake)) => {
+                Some(BluetoothDtmStoppingWait::Scheduler(wake))
             }
-            BluetoothDtmStoppingPhase::PostUnlinkWait(wait) => {
-                Some(BluetoothDtmStoppingWait::PostUnlink(wait.wake()))
+            Some(BluetoothDtmQuiescenceWait::PostUnlink(wake)) => {
+                Some(BluetoothDtmStoppingWait::PostUnlink(wake))
             }
-            BluetoothDtmStoppingPhase::CancellationDrain(_) => {
+            Some(BluetoothDtmQuiescenceWait::ControllerTime) => {
                 Some(BluetoothDtmStoppingWait::ControllerTime)
             }
-            BluetoothDtmStoppingPhase::Completion(_)
-            | BluetoothDtmStoppingPhase::CancelRecurring(_)
-            | BluetoothDtmStoppingPhase::CancelRejected(_)
-            | BluetoothDtmStoppingPhase::CancelRetry(_)
-            | BluetoothDtmStoppingPhase::FinishPublished(_)
-            | BluetoothDtmStoppingPhase::FinishPublishedRetry(_) => None,
+            None => None,
         }
     }
 
     /// Borrow the current retry reason without exposing its retained owner.
     pub fn retry_cause(&self) -> Option<BluetoothDtmStoppingRetryCause<'_, S::Error>> {
-        match &self.phase {
-            BluetoothDtmStoppingPhase::CancelRejected(_) => {
+        match self.quiescence.retry_cause() {
+            Some(BluetoothDtmQuiescenceRetryCause::CancellationRejected) => {
                 Some(BluetoothDtmStoppingRetryCause::CancellationRejected)
             }
-            BluetoothDtmStoppingPhase::FinishPublishedRetry(retry) => match retry.cause() {
-                BluetoothDtmRecurringRetryCause::SchedulerStart(error) => {
-                    Some(BluetoothDtmStoppingRetryCause::SchedulerStart(error))
-                }
-                BluetoothDtmRecurringRetryCause::Preparation(_)
-                | BluetoothDtmRecurringRetryCause::HeadPublication(_) => None,
-            },
-            _ => None,
+            Some(BluetoothDtmQuiescenceRetryCause::SchedulerStart(error)) => {
+                Some(BluetoothDtmStoppingRetryCause::SchedulerStart(error))
+            }
+            None => None,
         }
     }
 
@@ -481,51 +401,67 @@ where
         let Self {
             command,
             order,
-            phase,
+            quiescence,
         } = self;
-        match phase {
-            BluetoothDtmStoppingPhase::Completion(completion) => {
-                step_completion(command, order, completion)
+        match quiescence.step() {
+            BluetoothDtmQuiescenceStep::Continue(quiescence) => {
+                BluetoothDtmStoppingStep::Continue(Self {
+                    command,
+                    order,
+                    quiescence,
+                })
             }
-            BluetoothDtmStoppingPhase::SchedulerWait(wait) => {
-                let _observed = wait.wake().take();
-                step_completion(command, order, wait.resume())
+            BluetoothDtmQuiescenceStep::Waiting(quiescence) => {
+                BluetoothDtmStoppingStep::Waiting(Self {
+                    command,
+                    order,
+                    quiescence,
+                })
             }
-            BluetoothDtmStoppingPhase::PostUnlinkWait(wait) => {
-                step_completion(command, order, wait.resume())
+            BluetoothDtmQuiescenceStep::UnrelatedList {
+                runner: quiescence,
+                observed,
+            } => BluetoothDtmStoppingStep::UnrelatedList {
+                runner: Self {
+                    command,
+                    order,
+                    quiescence,
+                },
+                observed,
+            },
+            BluetoothDtmQuiescenceStep::Retryable(quiescence) => {
+                BluetoothDtmStoppingStep::Retryable(Self {
+                    command,
+                    order,
+                    quiescence,
+                })
             }
-            BluetoothDtmStoppingPhase::CancelRecurring(recurring)
-            | BluetoothDtmStoppingPhase::CancelRejected(recurring) => {
-                finish_cancellation(command, order, recurring.cancel())
-            }
-            BluetoothDtmStoppingPhase::CancelRetry(retry) => {
-                finish_cancellation(command, order, retry.cancel_for_test_end())
-            }
-            BluetoothDtmStoppingPhase::CancellationDrain(drain) => {
-                step_cancellation_drain(command, order, drain)
-            }
-            BluetoothDtmStoppingPhase::FinishPublished(recurring) => {
-                step_published_head(command, order, recurring)
-            }
-            BluetoothDtmStoppingPhase::FinishPublishedRetry(retry) => {
-                step_published_head(command, order, retry.retry())
+            BluetoothDtmQuiescenceStep::CpuOwned(owner) => response_ready(command, order, owner),
+            BluetoothDtmQuiescenceStep::Fault(quiescence) => {
+                BluetoothDtmStoppingStep::Fault(BluetoothDtmStoppingFault {
+                    cause: stopping_fault_cause(quiescence.cause()),
+                    _command: command,
+                    _order: order,
+                    _quiescence: quiescence,
+                })
             }
         }
     }
 }
 
-fn runner<'runtime, S, const CAPACITY: usize>(
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
-    phase: BluetoothDtmStoppingPhase<'runtime, S, CAPACITY>,
-) -> BluetoothDtmStoppingRunner<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    BluetoothDtmStoppingRunner {
-        command,
-        order,
-        phase,
+const fn stopping_fault_cause(
+    cause: BluetoothDtmQuiescenceFaultCause,
+) -> BluetoothDtmStoppingFaultCause {
+    match cause {
+        BluetoothDtmQuiescenceFaultCause::Completion(cause) => {
+            BluetoothDtmStoppingFaultCause::Completion(cause)
+        }
+        BluetoothDtmQuiescenceFaultCause::Recurring(cause) => {
+            BluetoothDtmStoppingFaultCause::Recurring(cause)
+        }
+        BluetoothDtmQuiescenceFaultCause::UnexpectedPublishedHeadTransition => {
+            BluetoothDtmStoppingFaultCause::UnexpectedPublishedHeadTransition
+        }
     }
 }
 
@@ -553,200 +489,5 @@ where
         order,
         task,
         stopping: BluetoothDtmSessionStopping::new(ended),
-    })
-}
-
-fn step_completion<'runtime, S, const CAPACITY: usize>(
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
-    completion: BluetoothDtmActiveCompletion<'runtime, S, CAPACITY>,
-) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    match completion.step() {
-        BluetoothDtmActiveCompletionStep::Continue(completion) => {
-            BluetoothDtmStoppingStep::Continue(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::Completion(completion),
-            ))
-        }
-        BluetoothDtmActiveCompletionStep::WaitScheduler(wait) => {
-            BluetoothDtmStoppingStep::Waiting(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::SchedulerWait(wait),
-            ))
-        }
-        BluetoothDtmActiveCompletionStep::UnrelatedList {
-            completion,
-            observed,
-        } => BluetoothDtmStoppingStep::UnrelatedList {
-            runner: runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::Completion(completion),
-            ),
-            observed,
-        },
-        BluetoothDtmActiveCompletionStep::WaitPostUnlink(wait) => {
-            BluetoothDtmStoppingStep::Waiting(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::PostUnlinkWait(wait),
-            ))
-        }
-        BluetoothDtmActiveCompletionStep::CpuOwned(owner) => response_ready(command, order, owner),
-        BluetoothDtmActiveCompletionStep::Fault(fault) => {
-            BluetoothDtmStoppingStep::Fault(BluetoothDtmStoppingFault {
-                cause: BluetoothDtmStoppingFaultCause::Completion(fault.cause()),
-                _command: command,
-                _order: order,
-                _owner: BluetoothDtmStoppingFaultOwner::Completion(fault),
-            })
-        }
-    }
-}
-
-fn finish_cancellation<'runtime, S, const CAPACITY: usize>(
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
-    cancelled: BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY>,
-) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    match cancelled {
-        BluetoothDtmRecurringRunnerCancel::CpuOwned(owner) => response_ready(command, order, owner),
-        BluetoothDtmRecurringRunnerCancel::NeedsControllerTimeDrain(drain) => {
-            BluetoothDtmStoppingStep::Continue(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::CancellationDrain(drain),
-            ))
-        }
-        BluetoothDtmRecurringRunnerCancel::CancellationRejected(recurring) => {
-            BluetoothDtmStoppingStep::Retryable(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::CancelRejected(recurring),
-            ))
-        }
-        BluetoothDtmRecurringRunnerCancel::HeadPublished(recurring) => {
-            BluetoothDtmStoppingStep::Continue(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::FinishPublished(recurring),
-            ))
-        }
-        BluetoothDtmRecurringRunnerCancel::Fault(fault) => {
-            BluetoothDtmStoppingStep::Fault(BluetoothDtmStoppingFault {
-                cause: BluetoothDtmStoppingFaultCause::Recurring(fault.cause()),
-                _command: command,
-                _order: order,
-                _owner: BluetoothDtmStoppingFaultOwner::Recurring(fault),
-            })
-        }
-    }
-}
-
-fn step_cancellation_drain<'runtime, S, const CAPACITY: usize>(
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
-    drain: BluetoothDtmRecurringCancellationDrain<'runtime, S, CAPACITY>,
-) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    match drain.step() {
-        BluetoothDtmRecurringCancellationDrainStep::Waiting(drain) => {
-            BluetoothDtmStoppingStep::Waiting(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::CancellationDrain(drain),
-            ))
-        }
-        BluetoothDtmRecurringCancellationDrainStep::CpuOwned(owner) => {
-            response_ready(command, order, owner)
-        }
-        BluetoothDtmRecurringCancellationDrainStep::Fault(fault) => {
-            BluetoothDtmStoppingStep::Fault(BluetoothDtmStoppingFault {
-                cause: BluetoothDtmStoppingFaultCause::Recurring(fault.cause()),
-                _command: command,
-                _order: order,
-                _owner: BluetoothDtmStoppingFaultOwner::Recurring(fault),
-            })
-        }
-    }
-}
-
-fn step_published_head<'runtime, S, const CAPACITY: usize>(
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
-    recurring: BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>,
-) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    match recurring.step() {
-        BluetoothDtmRecurringRunnerStep::Running(completion) => {
-            BluetoothDtmStoppingStep::Continue(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::Completion(completion),
-            ))
-        }
-        BluetoothDtmRecurringRunnerStep::Retryable(retry)
-            if matches!(
-                retry.cause(),
-                BluetoothDtmRecurringRetryCause::SchedulerStart(_)
-            ) =>
-        {
-            BluetoothDtmStoppingStep::Retryable(runner(
-                command,
-                order,
-                BluetoothDtmStoppingPhase::FinishPublishedRetry(retry),
-            ))
-        }
-        BluetoothDtmRecurringRunnerStep::Fault(fault) => {
-            BluetoothDtmStoppingStep::Fault(BluetoothDtmStoppingFault {
-                cause: BluetoothDtmStoppingFaultCause::Recurring(fault.cause()),
-                _command: command,
-                _order: order,
-                _owner: BluetoothDtmStoppingFaultOwner::Recurring(fault),
-            })
-        }
-        BluetoothDtmRecurringRunnerStep::Continue(recurring) => unexpected_published(
-            command,
-            order,
-            BluetoothDtmStoppingFaultOwner::PublishedRunner(recurring),
-        ),
-        BluetoothDtmRecurringRunnerStep::WaitControllerTime(wait) => unexpected_published(
-            command,
-            order,
-            BluetoothDtmStoppingFaultOwner::PublishedWait(wait),
-        ),
-        BluetoothDtmRecurringRunnerStep::Retryable(retry) => unexpected_published(
-            command,
-            order,
-            BluetoothDtmStoppingFaultOwner::PublishedRetry(retry),
-        ),
-    }
-}
-
-fn unexpected_published<'runtime, S, const CAPACITY: usize>(
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
-    owner: BluetoothDtmStoppingFaultOwner<'runtime, S, CAPACITY>,
-) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    BluetoothDtmStoppingStep::Fault(BluetoothDtmStoppingFault {
-        cause: BluetoothDtmStoppingFaultCause::UnexpectedPublishedHeadTransition,
-        _command: command,
-        _order: order,
-        _owner: owner,
     })
 }

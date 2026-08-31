@@ -317,7 +317,7 @@ gaps = [
 [[capabilities]]
 id = "hci-controller-endpoints"
 title = "RTOS-free affine HCI Controller endpoints"
-scope = "One bounded HCI epoch split into disjoint Host raw Controller and mutable bootstrap owners for an operational session runner"
+scope = "One bounded HCI epoch split into a disjoint Host transport and sole combined Controller transport and mutable-bootstrap command owner for an operational session runner"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -376,7 +376,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "idle-command-intake-and-reset-barrier-completion-missing" },
+  { axis = "implementation", id = "idle-command-intake-and-reset-runner-integration-missing" },
   { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
@@ -405,7 +405,7 @@ gaps = [
 [[capabilities]]
 id = "typed-hci-controller"
 title = "Typed bt-hci Controller implementation"
-scope = "HCI command event ACL credit and error semantics plus endpoint-bound idle DTM start exhaustive active-command classification ordered terminal busy and software-bootstrap responses opaque Reset barrier and Test End progression through one sole ESP32-S31 active-session task"
+scope = "HCI command event ACL credit and error semantics plus endpoint-bound idle DTM start exhaustive active-command classification ordered terminal busy and software-bootstrap responses chip-private active Reset quiescence and restoration plus Test End progression through the ESP32-S31 active-session task"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -414,7 +414,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "sole-idle-hci-command-loop-and-reset-quiescence-completion-missing" },
+  { axis = "implementation", id = "sole-idle-hci-command-loop-and-reset-runner-integration-missing" },
   { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },

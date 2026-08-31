@@ -106,6 +106,31 @@ impl BluetoothDtmTestEndReport {
     }
 }
 
+/// Terminal-neutral proof that an active DTM graph is fully reclaimed.
+///
+/// Construction is restricted to active TX/RX owners after scheduler removal,
+/// unlink, timeline release and recycle. Command policy may turn this proof into
+/// a Test End report or return it directly to the idle runtime for Reset.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the reclaimed graph must reach one terminal session owner"]
+pub(crate) struct BluetoothDtmQuiescedCpuOwned {
+    memory: BluetoothDtmMemoryGraphReclaimed,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothDtmQuiescedCpuOwned {
+    pub(crate) fn into_reclaimed_graph(self) -> BluetoothDtmMemoryGraphReclaimed {
+        self.memory
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_cpu_owned_for_test(memory: BluetoothDtmMemoryGraphCpuOwned) -> Self {
+        Self {
+            memory: memory.into_reclaimed(),
+        }
+    }
+}
+
 /// Completed DTM command retaining its static graph until response handoff.
 ///
 /// This state is constructible only from an active role after its event has
@@ -116,7 +141,7 @@ impl BluetoothDtmTestEndReport {
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the Test End result and reclaimed graph must reach the session owner"]
 pub struct BluetoothDtmTestEndedCpuOwned {
-    memory: BluetoothDtmMemoryGraphReclaimed,
+    quiesced: BluetoothDtmQuiescedCpuOwned,
     report: BluetoothDtmTestEndReport,
 }
 
@@ -129,7 +154,7 @@ impl BluetoothDtmTestEndedCpuOwned {
 
     /// Release the pinned graph to the idle session after response handoff.
     pub fn into_reclaimed_graph(self) -> BluetoothDtmMemoryGraphReclaimed {
-        self.memory
+        self.quiesced.into_reclaimed_graph()
     }
 }
 
@@ -579,11 +604,22 @@ impl BluetoothDtmActiveReceiverCpuOwned {
     /// in-flight owner reaches this type. The returned value retains the graph
     /// while the caller stages the Command Complete response.
     pub fn into_test_ended(self) -> BluetoothDtmTestEndedCpuOwned {
+        let report = BluetoothDtmTestEndReport::Receiver {
+            received_packets: self.session.received_packet_count(),
+        };
         BluetoothDtmTestEndedCpuOwned {
-            memory: self.memory.into_reclaimed(),
-            report: BluetoothDtmTestEndReport::Receiver {
-                received_packets: self.session.received_packet_count(),
+            quiesced: BluetoothDtmQuiescedCpuOwned {
+                memory: self.memory.into_reclaimed(),
             },
+            report,
+        }
+    }
+
+    /// End active hardware ownership without attaching HCI terminal policy.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_quiesced(self) -> BluetoothDtmQuiescedCpuOwned {
+        BluetoothDtmQuiescedCpuOwned {
+            memory: self.memory.into_reclaimed(),
         }
     }
 }
@@ -1622,8 +1658,18 @@ impl BluetoothDtmActiveTransmitterCpuOwned {
     /// standardized HCI result.
     pub fn into_test_ended(self) -> BluetoothDtmTestEndedCpuOwned {
         BluetoothDtmTestEndedCpuOwned {
-            memory: self.memory.into_reclaimed(),
+            quiesced: BluetoothDtmQuiescedCpuOwned {
+                memory: self.memory.into_reclaimed(),
+            },
             report: BluetoothDtmTestEndReport::Transmitter,
+        }
+    }
+
+    /// End active hardware ownership without attaching HCI terminal policy.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_quiesced(self) -> BluetoothDtmQuiescedCpuOwned {
+        BluetoothDtmQuiescedCpuOwned {
+            memory: self.memory.into_reclaimed(),
         }
     }
 }

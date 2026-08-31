@@ -173,7 +173,7 @@ where
 }
 
 /// CPU-owned active role after complete scheduler removal and recycle.
-#[must_use = "the active role must recur or enter the proven Test End path"]
+#[must_use = "the active role must recur or enter proven terminal quiescence"]
 pub enum BluetoothDtmActiveCpuOwned<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
@@ -183,7 +183,7 @@ where
 }
 
 /// Exact Controller and active TX graph at the only CPU-owned command boundary.
-#[must_use = "the transmitter must recur or enter the proven Test End path"]
+#[must_use = "the transmitter must recur or enter proven terminal quiescence"]
 pub struct BluetoothDtmActiveTransmitterReady<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
@@ -223,7 +223,7 @@ where
 }
 
 /// Exact Controller and active RX graph at the only CPU-owned command boundary.
-#[must_use = "the receiver must recur or enter the proven Test End path"]
+#[must_use = "the receiver must recur or enter proven terminal quiescence"]
 pub struct BluetoothDtmActiveReceiverReady<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
@@ -1207,9 +1207,9 @@ where
     /// Preparation and head-publication rejection retain a cancellable CPU
     /// owner. Scheduler-start rejection retains an already published head, so
     /// the returned cancellation disposition reports `HeadPublished` instead
-    /// of fabricating rollback. The Test End runner uses that distinction to
-    /// finish exactly the hardware-visible event.
-    pub(crate) fn cancel_for_test_end(
+    /// of fabricating rollback. The terminal quiescence runner uses that
+    /// distinction to finish exactly the hardware-visible event.
+    pub(crate) fn cancel_for_quiescence(
         self,
     ) -> BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY> {
         self.runner.cancel()

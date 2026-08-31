@@ -1,10 +1,10 @@
-//! Hardware-independent stop decision for one active LE DTM event.
+//! Hardware-independent quiescence decision for one active LE DTM event.
 
 #![forbid(unsafe_code)]
 
 /// Hardware visibility retained by a rejected recurring transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BluetoothDtmTestEndRetryOwnership {
+pub(crate) enum BluetoothDtmQuiescenceRetryOwnership {
     /// Preparation or HEAD publication was rejected before hardware visibility.
     BeforeHead,
     /// `HEAD` is visible but `RUN` has not succeeded yet.
@@ -13,22 +13,22 @@ pub(crate) enum BluetoothDtmTestEndRetryOwnership {
 
 /// Sole quiescence action permitted by the retry owner's visibility.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BluetoothDtmTestEndRetryAction {
+pub(crate) enum BluetoothDtmQuiescenceRetryAction {
     /// Cancel the still CPU-owned recurring transaction.
     CancelBeforeHead,
     /// Retry scheduler start and complete exactly the visible final event.
     FinishPublishedHead,
 }
 
-pub(crate) const fn bluetooth_dtm_test_end_retry_action(
-    ownership: BluetoothDtmTestEndRetryOwnership,
-) -> BluetoothDtmTestEndRetryAction {
+pub(crate) const fn bluetooth_dtm_quiescence_retry_action(
+    ownership: BluetoothDtmQuiescenceRetryOwnership,
+) -> BluetoothDtmQuiescenceRetryAction {
     match ownership {
-        BluetoothDtmTestEndRetryOwnership::BeforeHead => {
-            BluetoothDtmTestEndRetryAction::CancelBeforeHead
+        BluetoothDtmQuiescenceRetryOwnership::BeforeHead => {
+            BluetoothDtmQuiescenceRetryAction::CancelBeforeHead
         }
-        BluetoothDtmTestEndRetryOwnership::HeadPublished => {
-            BluetoothDtmTestEndRetryAction::FinishPublishedHead
+        BluetoothDtmQuiescenceRetryOwnership::HeadPublished => {
+            BluetoothDtmQuiescenceRetryAction::FinishPublishedHead
         }
     }
 }
@@ -36,14 +36,14 @@ pub(crate) const fn bluetooth_dtm_test_end_retry_action(
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothDtmTestEndRetryAction, BluetoothDtmTestEndRetryOwnership,
-        bluetooth_dtm_test_end_retry_action,
+        BluetoothDtmQuiescenceRetryAction, BluetoothDtmQuiescenceRetryOwnership,
+        bluetooth_dtm_quiescence_retry_action,
     };
 
     #[test]
     fn retry_visibility_selects_cancel_or_one_final_event() {
-        use BluetoothDtmTestEndRetryAction::{CancelBeforeHead, FinishPublishedHead};
-        use BluetoothDtmTestEndRetryOwnership::{BeforeHead, HeadPublished};
+        use BluetoothDtmQuiescenceRetryAction::{CancelBeforeHead, FinishPublishedHead};
+        use BluetoothDtmQuiescenceRetryOwnership::{BeforeHead, HeadPublished};
 
         let cases = [
             (BeforeHead, CancelBeforeHead),
@@ -51,7 +51,7 @@ mod tests {
         ];
 
         for (ownership, expected) in cases {
-            assert_eq!(bluetooth_dtm_test_end_retry_action(ownership), expected);
+            assert_eq!(bluetooth_dtm_quiescence_retry_action(ownership), expected);
         }
     }
 }

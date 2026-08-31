@@ -67,7 +67,7 @@ impl<'epoch> HciEpochBound<'epoch, LeDtmCommand> {
 /// Classify one validated command without executing radio or Link-Layer work.
 ///
 /// DTM decoding runs first because it distinguishes malformed input for its
-/// three known opcodes from an opcode outside that command family. The latter
+/// known opcodes from an opcode outside that command family. The latter
 /// is decoded only when it belongs to the closed bootstrap table; otherwise
 /// classification builds its terminal owned Unknown Command response.
 /// Classification never observes or advances a bootstrap epoch. No branch
@@ -77,7 +77,7 @@ pub fn classify_le_controller_command(
 ) -> LeControllerCommandClassification {
     match LeDtmCommand::decode(command) {
         Ok(command) => LeControllerCommandClassification::Dtm(command),
-        Err(error) => match error.into_invalid_parameters_command_complete() {
+        Err(error) => match error.into_command_complete() {
             Ok(response) => LeControllerCommandClassification::MalformedDtm(response),
             Err(_) => match OwnedBootstrapCommand::decode(command) {
                 Ok(command) => LeControllerCommandClassification::Bootstrap(command),
@@ -110,8 +110,9 @@ mod tests {
     use super::{LeControllerCommandClassification, classify_le_controller_command};
     use crate::{
         BluetoothPublicDeviceAddress, BootstrapCommand, BootstrapPhase, HciCommandPacket,
-        LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE,
-        LeControllerBootstrap, LeControllerBootstrapConfig, LeDtmCommand, OwnedBootstrapCommand,
+        LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE, LE_TEST_END_OPCODE,
+        LE_TRANSMITTER_TEST_V1_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE, LeControllerBootstrap,
+        LeControllerBootstrapConfig, LeDtmCommand, OwnedBootstrapCommand,
     };
 
     #[test]
@@ -221,7 +222,7 @@ mod tests {
             &[39],
         ));
 
-        let LeControllerCommandClassification::Dtm(LeDtmCommand::ReceiverTestV1(command)) =
+        let LeControllerCommandClassification::Dtm(LeDtmCommand::ReceiverTest(command)) =
             classified
         else {
             panic!("valid receiver test did not become a semantic DTM command");
@@ -230,11 +231,33 @@ mod tests {
     }
 
     #[test]
-    fn every_malformed_known_dtm_family_produces_invalid_parameters() {
-        for (opcode, parameters) in [
-            (LE_RECEIVER_TEST_V1_OPCODE, &[][..]),
-            (LE_TRANSMITTER_TEST_V1_OPCODE, &[0, 1, 8][..]),
-            (LE_TEST_END_OPCODE, &[0][..]),
+    fn known_dtm_rejections_retain_their_required_status() {
+        for (opcode, parameters, status) in [
+            (
+                LE_RECEIVER_TEST_V1_OPCODE,
+                &[][..],
+                HciError::INVALID_HCI_PARAMETERS.to_status(),
+            ),
+            (
+                LE_TRANSMITTER_TEST_V1_OPCODE,
+                &[0, 1, 8][..],
+                HciError::INVALID_HCI_PARAMETERS.to_status(),
+            ),
+            (
+                LE_RECEIVER_TEST_V2_OPCODE,
+                &[0, 4, 0][..],
+                HciError::UNSUPPORTED.to_status(),
+            ),
+            (
+                LE_TRANSMITTER_TEST_V2_OPCODE,
+                &[0, 1, 0, 5][..],
+                HciError::UNSUPPORTED.to_status(),
+            ),
+            (
+                LE_TEST_END_OPCODE,
+                &[0][..],
+                HciError::INVALID_HCI_PARAMETERS.to_status(),
+            ),
         ] {
             let classified =
                 classify_le_controller_command(HciCommandPacket::for_test(opcode, parameters));
@@ -242,10 +265,7 @@ mod tests {
                 panic!("malformed known DTM command escaped its command family");
             };
             assert_eq!(response.opcode(), opcode);
-            assert_eq!(
-                response.status(),
-                HciError::INVALID_HCI_PARAMETERS.to_status()
-            );
+            assert_eq!(response.status(), status);
         }
     }
 

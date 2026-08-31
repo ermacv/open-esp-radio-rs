@@ -14,8 +14,8 @@ use crate::{
     HciChannelError, HciClassifiedCommandIntake, HciControllerResponse, HciEpochBound,
     HciEpochIdentity, HostToControllerFrame, LeControllerCommandClassification,
     LeControllerCommandComplete, LeControllerCommandEndpoint, LeDtmActiveSessionDisposition,
-    LeDtmCommand, LeDtmIdleSessionDisposition, LeReceiverTestV1Command, LeTestEndCommand,
-    LeTransmitterTestV1Command, OwnedBootstrapCommand,
+    LeDtmCommand, LeDtmIdleSessionDisposition, LeReceiverTestCommand, LeTestEndCommand,
+    LeTransmitterTestCommand, OwnedBootstrapCommand,
 };
 
 /// A combined Controller endpoint does not match retained affine HCI authority.
@@ -95,7 +95,7 @@ pub enum LeControllerCommandIntake<'epoch, 'command, 'buffer, Owner> {
 #[must_use = "retain the deferred receiver start until hardware starts or rejects it"]
 pub struct LeControllerDeferredReceiverStart<'epoch, Owner> {
     ready: LeControllerCommandReady<'epoch, Owner>,
-    command: LeReceiverTestV1Command,
+    command: LeReceiverTestCommand,
 }
 
 impl<'epoch, Owner> LeControllerDeferredReceiverStart<'epoch, Owner> {
@@ -105,7 +105,7 @@ impl<'epoch, Owner> LeControllerDeferredReceiverStart<'epoch, Owner> {
     }
 
     /// Borrow the validated receiver command without releasing response order.
-    pub const fn command(&self) -> &LeReceiverTestV1Command {
+    pub const fn command(&self) -> &LeReceiverTestCommand {
         &self.command
     }
 
@@ -157,7 +157,7 @@ impl<'epoch, Owner> LeControllerDeferredReceiverStart<'epoch, Owner> {
 #[must_use = "retain the deferred transmitter start until hardware starts or rejects it"]
 pub struct LeControllerDeferredTransmitterStart<'epoch, Owner> {
     ready: LeControllerCommandReady<'epoch, Owner>,
-    command: LeTransmitterTestV1Command,
+    command: LeTransmitterTestCommand,
 }
 
 impl<'epoch, Owner> LeControllerDeferredTransmitterStart<'epoch, Owner> {
@@ -167,7 +167,7 @@ impl<'epoch, Owner> LeControllerDeferredTransmitterStart<'epoch, Owner> {
     }
 
     /// Borrow the validated transmitter command without releasing response order.
-    pub const fn command(&self) -> &LeTransmitterTestV1Command {
+    pub const fn command(&self) -> &LeTransmitterTestCommand {
         &self.command
     }
 
@@ -891,9 +891,10 @@ mod tests {
     };
     use crate::{
         BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, LE_RECEIVER_TEST_V1_OPCODE,
-        LE_TRANSMITTER_TEST_V1_OPCODE, LeControllerBootstrapConfig,
+        LE_RECEIVER_TEST_V2_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE, LeControllerBootstrapConfig,
         LeControllerClassifiedCommandRoute, LeControllerCommandEndpoint,
         LeControllerCommandReadyClaim, LeControllerHciEndpoints, LeControllerHciResources,
+        LeDtmModulationIndex, LeDtmPhy,
     };
 
     #[derive(Debug, Eq, PartialEq)]
@@ -1281,7 +1282,7 @@ mod tests {
         block_on(
             receiver
                 .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[13])),
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V2_OPCODE, &[13, 2, 1])),
         )
         .expect("the receiver command enters the real Host queue");
         let mut receiver_buffer = [0; 16];
@@ -1295,6 +1296,11 @@ mod tests {
         };
         assert_eq!(start.owner(), &RadioOwner(71));
         assert_eq!(start.command().channel().index(), 13);
+        assert_eq!(start.command().phy(), LeDtmPhy::Le2M);
+        assert_eq!(
+            start.command().modulation_index(),
+            LeDtmModulationIndex::Stable
+        );
         let (owner, continuation) = start.into_parts();
         assert_eq!(owner, RadioOwner(71));
         let pending = continuation
@@ -1309,15 +1315,15 @@ mod tests {
         let mut response_buffer = [0; 16];
         assert_command_status(
             block_on(receiver.host.read(&mut response_buffer)).unwrap(),
-            LE_RECEIVER_TEST_V1_OPCODE,
+            LE_RECEIVER_TEST_V2_OPCODE,
             Status::SUCCESS,
         );
 
         let mut transmitter_resources = controller_resources();
         let mut transmitter = transmitter_resources.split();
         block_on(transmitter.host.write(&RawCommand::new(
-            LE_TRANSMITTER_TEST_V1_OPCODE,
-            &[17, 23, 2],
+            LE_TRANSMITTER_TEST_V2_OPCODE,
+            &[17, 23, 2, 4],
         )))
         .expect("the transmitter command enters the real Host queue");
         let mut transmitter_buffer = [0; 16];
@@ -1333,6 +1339,7 @@ mod tests {
         assert_eq!(start.command().channel().index(), 17);
         assert_eq!(start.command().payload_length(), 23);
         assert_eq!(start.command().payload_pattern().hci_parameter(), 2);
+        assert_eq!(start.command().phy(), LeDtmPhy::LeCodedS2);
         let pending = start
             .map_owner(|RadioOwner(owner)| RadioOwner(owner + 1))
             .into_started_response();
@@ -1344,7 +1351,7 @@ mod tests {
         assert_eq!(published.owner(), &RadioOwner(74));
         assert_command_status(
             block_on(transmitter.host.read(&mut response_buffer)).unwrap(),
-            LE_TRANSMITTER_TEST_V1_OPCODE,
+            LE_TRANSMITTER_TEST_V2_OPCODE,
             Status::SUCCESS,
         );
     }
@@ -1357,7 +1364,7 @@ mod tests {
         block_on(
             receiver
                 .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[13])),
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V2_OPCODE, &[13, 3, 0])),
         )
         .unwrap();
         let mut command_buffer = [0; 16];
@@ -1385,7 +1392,7 @@ mod tests {
         assert_eq!(ready.owner(), &RadioOwner(92));
         assert_command_status(
             block_on(receiver.host.read(&mut response_buffer)).unwrap(),
-            LE_RECEIVER_TEST_V1_OPCODE,
+            LE_RECEIVER_TEST_V2_OPCODE,
             HciError::HARDWARE_FAILURE.to_status(),
         );
     }
@@ -1633,7 +1640,7 @@ mod tests {
         block_on(
             endpoints
                 .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[11])),
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V2_OPCODE, &[11, 2, 0])),
         )
         .expect("the receiver command enters the real Host queue");
         let mut command_buffer = [0; 16];
@@ -1663,13 +1670,13 @@ mod tests {
         };
         assert_command_status(
             block_on(endpoints.host.read(&mut buffer)).unwrap(),
-            LE_RECEIVER_TEST_V1_OPCODE,
+            LE_RECEIVER_TEST_V2_OPCODE,
             HciError::CONTROLLER_BUSY.to_status(),
         );
 
         block_on(endpoints.host.write(&RawCommand::new(
-            LE_TRANSMITTER_TEST_V1_OPCODE,
-            &[17, 23, 2],
+            LE_TRANSMITTER_TEST_V2_OPCODE,
+            &[17, 23, 2, 3],
         )))
         .expect("the transmitter command enters the real Host queue");
         let transmitter = intake_command(&endpoints.controller, ready, &mut command_buffer);
@@ -1691,7 +1698,7 @@ mod tests {
         assert_eq!(ready.owner(), &RadioOwner(53));
         assert_command_status(
             block_on(endpoints.host.read(&mut buffer)).unwrap(),
-            LE_TRANSMITTER_TEST_V1_OPCODE,
+            LE_TRANSMITTER_TEST_V2_OPCODE,
             HciError::CONTROLLER_BUSY.to_status(),
         );
     }

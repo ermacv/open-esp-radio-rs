@@ -1,4 +1,4 @@
-//! Executor-neutral HCI codec for the three legacy LE Direct Test Mode commands.
+//! Executor-neutral HCI codec for the supported LE Direct Test Mode commands.
 //!
 //! This module stops at the semantic HCI boundary. Decoding a command does not
 //! start a radio, reserve a scheduler item, prove controller readiness or imply
@@ -26,6 +26,10 @@ pub const LE_RECEIVER_TEST_V1_OPCODE: Opcode = Opcode::new(OpcodeGroup::LE, 0x00
 pub const LE_TRANSMITTER_TEST_V1_OPCODE: Opcode = Opcode::new(OpcodeGroup::LE, 0x001e);
 /// HCI LE Test End command opcode.
 pub const LE_TEST_END_OPCODE: Opcode = Opcode::new(OpcodeGroup::LE, 0x001f);
+/// HCI LE Receiver Test v2 command opcode.
+pub const LE_RECEIVER_TEST_V2_OPCODE: Opcode = Opcode::new(OpcodeGroup::LE, 0x0033);
+/// HCI LE Transmitter Test v2 command opcode.
+pub const LE_TRANSMITTER_TEST_V2_OPCODE: Opcode = Opcode::new(OpcodeGroup::LE, 0x0034);
 
 /// One RF channel in the legacy LE test-channel domain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,7 +53,7 @@ impl LeDtmChannel {
     }
 }
 
-/// Payload pattern selected by LE Transmitter Test v1.
+/// Payload pattern selected by a supported LE Transmitter Test command.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum LeDtmPayloadPattern {
@@ -93,13 +97,72 @@ impl LeDtmPayloadPattern {
     }
 }
 
-/// A decoded command in the closed legacy LE DTM HCI subset.
+/// PHY selected by a normalized LE DTM start command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum LeDtmPhy {
+    /// LE 1M PHY.
+    Le1M = 1,
+    /// LE 2M PHY.
+    Le2M = 2,
+    /// Generic LE Coded receiver or S=8 transmitter.
+    LeCoded = 3,
+    /// LE Coded S=2 transmitter-only selection.
+    LeCodedS2 = 4,
+}
+
+impl LeDtmPhy {
+    const fn from_receiver_parameter(selector: u8) -> Option<Self> {
+        match selector {
+            1 => Some(Self::Le1M),
+            2 => Some(Self::Le2M),
+            3 => Some(Self::LeCoded),
+            _ => None,
+        }
+    }
+
+    const fn from_transmitter_parameter(selector: u8) -> Option<Self> {
+        match selector {
+            1 => Some(Self::Le1M),
+            2 => Some(Self::Le2M),
+            3 => Some(Self::LeCoded),
+            4 => Some(Self::LeCodedS2),
+            _ => None,
+        }
+    }
+
+    /// Return the standard HCI selector.
+    pub const fn hci_parameter(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Expected modulation-index class for an LE Receiver Test.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeDtmModulationIndex {
+    /// The transmitter uses the standard modulation-index requirements.
+    Standard,
+    /// The transmitter uses the stable modulation-index requirements.
+    Stable,
+}
+
+impl LeDtmModulationIndex {
+    const fn from_hci_parameter(parameter: u8) -> Option<Self> {
+        match parameter {
+            0 => Some(Self::Standard),
+            1 => Some(Self::Stable),
+            _ => None,
+        }
+    }
+}
+
+/// A decoded command in the closed supported LE DTM HCI subset.
 #[derive(Debug, Eq, PartialEq)]
 pub enum LeDtmCommand {
-    /// Begin an LE 1M receiver test.
-    ReceiverTestV1(LeReceiverTestV1Command),
-    /// Begin an LE 1M transmitter test.
-    TransmitterTestV1(LeTransmitterTestV1Command),
+    /// Begin a normalized receiver test.
+    ReceiverTest(LeReceiverTestCommand),
+    /// Begin a normalized transmitter test.
+    TransmitterTest(LeTransmitterTestCommand),
     /// End the active LE test.
     TestEnd(LeTestEndCommand),
 }
@@ -124,7 +187,12 @@ impl LeDtmCommand {
                     channel: parameters[0],
                 },
             )?;
-            Ok(Self::ReceiverTestV1(LeReceiverTestV1Command { channel }))
+            Ok(Self::ReceiverTest(LeReceiverTestCommand {
+                kind: LeDtmCommandKind::ReceiverTestV1,
+                channel,
+                phy: LeDtmPhy::Le1M,
+                modulation_index: LeDtmModulationIndex::Standard,
+            }))
         } else if opcode == LE_TRANSMITTER_TEST_V1_OPCODE {
             require_parameter_length(LeDtmCommandKind::TransmitterTestV1, parameters, 3)?;
             let channel = LeDtmChannel::from_hci_parameter(parameters[0]).ok_or(
@@ -139,10 +207,65 @@ impl LeDtmCommand {
                     selector: parameters[2],
                 },
             )?;
-            Ok(Self::TransmitterTestV1(LeTransmitterTestV1Command {
+            Ok(Self::TransmitterTest(LeTransmitterTestCommand {
+                kind: LeDtmCommandKind::TransmitterTestV1,
                 channel,
                 payload_length: parameters[1],
                 pattern,
+                phy: LeDtmPhy::Le1M,
+            }))
+        } else if opcode == LE_RECEIVER_TEST_V2_OPCODE {
+            require_parameter_length(LeDtmCommandKind::ReceiverTestV2, parameters, 3)?;
+            let channel = LeDtmChannel::from_hci_parameter(parameters[0]).ok_or(
+                LeDtmCommandDecodeError::ChannelOutsideTestDomain {
+                    command: LeDtmCommandKind::ReceiverTestV2,
+                    channel: parameters[0],
+                },
+            )?;
+            let phy = LeDtmPhy::from_receiver_parameter(parameters[1]).ok_or(
+                LeDtmCommandDecodeError::UnsupportedPhy {
+                    command: LeDtmCommandKind::ReceiverTestV2,
+                    selector: parameters[1],
+                },
+            )?;
+            let modulation_index = LeDtmModulationIndex::from_hci_parameter(parameters[2]).ok_or(
+                LeDtmCommandDecodeError::UnsupportedModulationIndex {
+                    command: LeDtmCommandKind::ReceiverTestV2,
+                    parameter: parameters[2],
+                },
+            )?;
+            Ok(Self::ReceiverTest(LeReceiverTestCommand {
+                kind: LeDtmCommandKind::ReceiverTestV2,
+                channel,
+                phy,
+                modulation_index,
+            }))
+        } else if opcode == LE_TRANSMITTER_TEST_V2_OPCODE {
+            require_parameter_length(LeDtmCommandKind::TransmitterTestV2, parameters, 4)?;
+            let channel = LeDtmChannel::from_hci_parameter(parameters[0]).ok_or(
+                LeDtmCommandDecodeError::ChannelOutsideTestDomain {
+                    command: LeDtmCommandKind::TransmitterTestV2,
+                    channel: parameters[0],
+                },
+            )?;
+            let pattern = LeDtmPayloadPattern::from_hci_parameter(parameters[2]).ok_or(
+                LeDtmCommandDecodeError::UnsupportedPayloadPattern {
+                    command: LeDtmCommandKind::TransmitterTestV2,
+                    selector: parameters[2],
+                },
+            )?;
+            let phy = LeDtmPhy::from_transmitter_parameter(parameters[3]).ok_or(
+                LeDtmCommandDecodeError::UnsupportedPhy {
+                    command: LeDtmCommandKind::TransmitterTestV2,
+                    selector: parameters[3],
+                },
+            )?;
+            Ok(Self::TransmitterTest(LeTransmitterTestCommand {
+                kind: LeDtmCommandKind::TransmitterTestV2,
+                channel,
+                payload_length: parameters[1],
+                pattern,
+                phy,
             }))
         } else if opcode == LE_TEST_END_OPCODE {
             require_parameter_length(LeDtmCommandKind::TestEnd, parameters, 0)?;
@@ -155,8 +278,8 @@ impl LeDtmCommand {
     /// Kind of this decoded command without inspecting its parameters.
     pub const fn kind(&self) -> LeDtmCommandKind {
         match self {
-            Self::ReceiverTestV1(_) => LeDtmCommandKind::ReceiverTestV1,
-            Self::TransmitterTestV1(_) => LeDtmCommandKind::TransmitterTestV1,
+            Self::ReceiverTest(command) => command.kind(),
+            Self::TransmitterTest(command) => command.kind(),
             Self::TestEnd(_) => LeDtmCommandKind::TestEnd,
         }
     }
@@ -169,8 +292,8 @@ impl LeDtmCommand {
     /// caller-selected HCI status.
     pub fn into_idle_session_disposition(self) -> LeDtmIdleSessionDisposition {
         match self {
-            Self::ReceiverTestV1(command) => LeDtmIdleSessionDisposition::StartReceiver(command),
-            Self::TransmitterTestV1(command) => {
+            Self::ReceiverTest(command) => LeDtmIdleSessionDisposition::StartReceiver(command),
+            Self::TransmitterTest(command) => {
                 LeDtmIdleSessionDisposition::StartTransmitter(command)
             }
             Self::TestEnd(command) => {
@@ -187,15 +310,15 @@ impl LeDtmCommand {
     /// or mutating that active session.
     pub fn into_active_session_disposition(self) -> LeDtmActiveSessionDisposition {
         match self {
-            Self::ReceiverTestV1(_) => LeDtmActiveSessionDisposition::RejectControllerBusy(
+            Self::ReceiverTest(command) => LeDtmActiveSessionDisposition::RejectControllerBusy(
                 LeDtmCommandCompleteEvent::without_return_parameters(
-                    LE_RECEIVER_TEST_V1_OPCODE,
+                    command.opcode(),
                     HciError::CONTROLLER_BUSY.to_status(),
                 ),
             ),
-            Self::TransmitterTestV1(_) => LeDtmActiveSessionDisposition::RejectControllerBusy(
+            Self::TransmitterTest(command) => LeDtmActiveSessionDisposition::RejectControllerBusy(
                 LeDtmCommandCompleteEvent::without_return_parameters(
-                    LE_TRANSMITTER_TEST_V1_OPCODE,
+                    command.opcode(),
                     HciError::CONTROLLER_BUSY.to_status(),
                 ),
             ),
@@ -209,9 +332,9 @@ impl LeDtmCommand {
 #[must_use = "the idle DTM command must start hardware or publish its response"]
 pub enum LeDtmIdleSessionDisposition {
     /// Start one receiver test through the chip-specific hardware runner.
-    StartReceiver(LeReceiverTestV1Command),
+    StartReceiver(LeReceiverTestCommand),
     /// Start one transmitter test through the chip-specific hardware runner.
-    StartTransmitter(LeTransmitterTestV1Command),
+    StartTransmitter(LeTransmitterTestCommand),
     /// Publish the successful zero-count response for Test End without a test.
     CompleteNoTest(LeDtmCommandCompleteEvent),
 }
@@ -233,6 +356,10 @@ pub enum LeDtmCommandKind {
     ReceiverTestV1,
     /// LE Transmitter Test v1.
     TransmitterTestV1,
+    /// LE Receiver Test v2.
+    ReceiverTestV2,
+    /// LE Transmitter Test v2.
+    TransmitterTestV2,
     /// LE Test End.
     TestEnd,
 }
@@ -243,6 +370,8 @@ impl LeDtmCommandKind {
         match self {
             Self::ReceiverTestV1 => LE_RECEIVER_TEST_V1_OPCODE,
             Self::TransmitterTestV1 => LE_TRANSMITTER_TEST_V1_OPCODE,
+            Self::ReceiverTestV2 => LE_RECEIVER_TEST_V2_OPCODE,
+            Self::TransmitterTestV2 => LE_TRANSMITTER_TEST_V2_OPCODE,
             Self::TestEnd => LE_TEST_END_OPCODE,
         }
     }
@@ -251,7 +380,7 @@ impl LeDtmCommandKind {
 /// Why a semantic LE DTM command body was rejected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeDtmCommandDecodeError {
-    /// The opcode is outside the three-command DTM codec.
+    /// The opcode is outside the supported DTM command codec.
     UnsupportedOpcode {
         /// Unrecognized opcode.
         opcode: Opcode,
@@ -279,67 +408,113 @@ pub enum LeDtmCommandDecodeError {
         /// Rejected HCI selector value.
         selector: u8,
     },
+    /// The PHY selector is reserved for this command version or role.
+    UnsupportedPhy {
+        /// Known command whose PHY selector was rejected.
+        command: LeDtmCommandKind,
+        /// Rejected HCI selector value.
+        selector: u8,
+    },
+    /// The receiver modulation-index parameter is reserved.
+    UnsupportedModulationIndex {
+        /// Known command whose parameter was rejected.
+        command: LeDtmCommandKind,
+        /// Rejected HCI parameter value.
+        parameter: u8,
+    },
 }
 
 impl LeDtmCommandDecodeError {
-    /// Convert malformed input for a known DTM opcode into its required
-    /// Invalid HCI Command Parameters completion.
+    /// Convert rejected input for a known DTM opcode into its required
+    /// command completion.
     ///
     /// An unsupported opcode remains owned by the error so the outer Controller
     /// router can dispatch another command family or return Unknown HCI Command.
-    pub fn into_invalid_parameters_command_complete(
-        self,
-    ) -> Result<LeDtmCommandCompleteEvent, Self> {
-        let command = match self {
+    pub fn into_command_complete(self) -> Result<LeDtmCommandCompleteEvent, Self> {
+        let (command, status) = match self {
             Self::UnsupportedOpcode { .. } => return Err(self),
             Self::InvalidParameterLength { command, .. }
             | Self::ChannelOutsideTestDomain { command, .. }
-            | Self::UnsupportedPayloadPattern { command, .. } => command,
+            | Self::UnsupportedPayloadPattern { command, .. }
+            | Self::UnsupportedModulationIndex { command, .. } => {
+                (command, HciError::INVALID_HCI_PARAMETERS.to_status())
+            }
+            Self::UnsupportedPhy { command, .. } => (command, HciError::UNSUPPORTED.to_status()),
         };
         Ok(LeDtmCommandCompleteEvent::without_return_parameters(
             command.opcode(),
-            HciError::INVALID_HCI_PARAMETERS.to_status(),
+            status,
         ))
     }
 }
 
-/// Validated LE Receiver Test v1 command awaiting controller execution.
+/// Normalized validated LE Receiver Test command awaiting controller execution.
 #[derive(Debug, Eq, PartialEq)]
-pub struct LeReceiverTestV1Command {
+pub struct LeReceiverTestCommand {
+    kind: LeDtmCommandKind,
     channel: LeDtmChannel,
+    phy: LeDtmPhy,
+    modulation_index: LeDtmModulationIndex,
 }
 
-impl LeReceiverTestV1Command {
+impl LeReceiverTestCommand {
+    const fn kind(&self) -> LeDtmCommandKind {
+        self.kind
+    }
+
+    /// Exact HCI command version retained for response identity.
+    pub const fn opcode(&self) -> Opcode {
+        self.kind.opcode()
+    }
+
     /// Requested LE test channel.
     pub const fn channel(&self) -> LeDtmChannel {
         self.channel
     }
 
+    /// Requested receiver PHY.
+    pub const fn phy(&self) -> LeDtmPhy {
+        self.phy
+    }
+
+    /// Expected transmitter modulation-index class.
+    pub const fn modulation_index(&self) -> LeDtmModulationIndex {
+        self.modulation_index
+    }
+
     /// Consume the command after its first receiver event reached hardware.
     pub fn into_started_command_complete(self) -> LeDtmCommandCompleteEvent {
-        LeDtmCommandCompleteEvent::without_return_parameters(
-            LE_RECEIVER_TEST_V1_OPCODE,
-            Status::SUCCESS,
-        )
+        LeDtmCommandCompleteEvent::without_return_parameters(self.kind.opcode(), Status::SUCCESS)
     }
 
     pub(crate) fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
         LeDtmCommandCompleteEvent::without_return_parameters(
-            LE_RECEIVER_TEST_V1_OPCODE,
+            self.kind.opcode(),
             HciError::HARDWARE_FAILURE.to_status(),
         )
     }
 }
 
-/// Validated LE Transmitter Test v1 command awaiting controller execution.
+/// Normalized validated LE Transmitter Test command awaiting controller execution.
 #[derive(Debug, Eq, PartialEq)]
-pub struct LeTransmitterTestV1Command {
+pub struct LeTransmitterTestCommand {
+    kind: LeDtmCommandKind,
     channel: LeDtmChannel,
     payload_length: u8,
     pattern: LeDtmPayloadPattern,
+    phy: LeDtmPhy,
 }
 
-impl LeTransmitterTestV1Command {
+impl LeTransmitterTestCommand {
+    const fn kind(&self) -> LeDtmCommandKind {
+        self.kind
+    }
+
+    /// Exact HCI command version retained for response identity.
+    pub const fn opcode(&self) -> Opcode {
+        self.kind.opcode()
+    }
+
     /// Requested LE test channel.
     pub const fn channel(&self) -> LeDtmChannel {
         self.channel
@@ -355,17 +530,19 @@ impl LeTransmitterTestV1Command {
         self.pattern
     }
 
+    /// Requested transmitter PHY.
+    pub const fn phy(&self) -> LeDtmPhy {
+        self.phy
+    }
+
     /// Consume the command after its first transmitter event reached hardware.
     pub fn into_started_command_complete(self) -> LeDtmCommandCompleteEvent {
-        LeDtmCommandCompleteEvent::without_return_parameters(
-            LE_TRANSMITTER_TEST_V1_OPCODE,
-            Status::SUCCESS,
-        )
+        LeDtmCommandCompleteEvent::without_return_parameters(self.kind.opcode(), Status::SUCCESS)
     }
 
     pub(crate) fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
         LeDtmCommandCompleteEvent::without_return_parameters(
-            LE_TRANSMITTER_TEST_V1_OPCODE,
+            self.kind.opcode(),
             HciError::HARDWARE_FAILURE.to_status(),
         )
     }
@@ -496,9 +673,10 @@ mod tests {
     use crate::{HostToControllerFrame, InProcessHciChannel};
 
     use super::{
-        LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE,
+        LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE, LE_TEST_END_OPCODE,
+        LE_TRANSMITTER_TEST_V1_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE,
         LeDtmActiveSessionDisposition, LeDtmCommand, LeDtmCommandDecodeError, LeDtmCommandKind,
-        LeDtmIdleSessionDisposition, LeDtmPayloadPattern,
+        LeDtmIdleSessionDisposition, LeDtmModulationIndex, LeDtmPayloadPattern, LeDtmPhy,
     };
 
     type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
@@ -506,14 +684,14 @@ mod tests {
     #[test]
     fn all_command_bodies_decode_semantically_and_typed_test_end_crosses_the_boundary() {
         let receiver = LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[39]).unwrap();
-        let LeDtmCommand::ReceiverTestV1(receiver) = receiver else {
+        let LeDtmCommand::ReceiverTest(receiver) = receiver else {
             panic!("receiver command changed semantic kind");
         };
         assert_eq!(receiver.channel().index(), 39);
 
         let transmitter =
             LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V1_OPCODE, &[7, 255, 6]).unwrap();
-        let LeDtmCommand::TransmitterTestV1(transmitter) = transmitter else {
+        let LeDtmCommand::TransmitterTest(transmitter) = transmitter else {
             panic!("transmitter command changed semantic kind");
         };
         assert_eq!(transmitter.channel().index(), 7);
@@ -523,8 +701,64 @@ mod tests {
             LeDtmPayloadPattern::Repeated00001111
         );
 
+        let LeDtmCommand::ReceiverTest(receiver) =
+            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V2_OPCODE, &[12, 3, 1]).unwrap()
+        else {
+            panic!("enhanced receiver command changed semantic kind");
+        };
+        assert_eq!(receiver.opcode(), LE_RECEIVER_TEST_V2_OPCODE);
+        assert_eq!(receiver.phy(), LeDtmPhy::LeCoded);
+        assert_eq!(receiver.modulation_index(), LeDtmModulationIndex::Stable);
+
+        let LeDtmCommand::TransmitterTest(transmitter) =
+            LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V2_OPCODE, &[18, 255, 4, 4]).unwrap()
+        else {
+            panic!("enhanced transmitter command changed semantic kind");
+        };
+        assert_eq!(transmitter.opcode(), LE_TRANSMITTER_TEST_V2_OPCODE);
+        assert_eq!(transmitter.phy(), LeDtmPhy::LeCodedS2);
+
         let test_end = cross_hci_boundary(&LeTestEnd::new());
         assert!(matches!(test_end, LeDtmCommand::TestEnd(_)));
+    }
+
+    #[test]
+    fn v2_phy_and_modulation_domains_normalize_without_version_specific_tokens() {
+        for (selector, expected) in [
+            (1, LeDtmPhy::Le1M),
+            (2, LeDtmPhy::Le2M),
+            (3, LeDtmPhy::LeCoded),
+        ] {
+            for (parameter, modulation) in [
+                (0, LeDtmModulationIndex::Standard),
+                (1, LeDtmModulationIndex::Stable),
+            ] {
+                let LeDtmCommand::ReceiverTest(command) = LeDtmCommand::decode_body(
+                    LE_RECEIVER_TEST_V2_OPCODE,
+                    &[39, selector, parameter],
+                )
+                .expect("the standard receiver mode must normalize") else {
+                    unreachable!()
+                };
+                assert_eq!(command.phy(), expected);
+                assert_eq!(command.modulation_index(), modulation);
+            }
+        }
+
+        for (selector, expected) in [
+            (1, LeDtmPhy::Le1M),
+            (2, LeDtmPhy::Le2M),
+            (3, LeDtmPhy::LeCoded),
+            (4, LeDtmPhy::LeCodedS2),
+        ] {
+            let LeDtmCommand::TransmitterTest(command) =
+                LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V2_OPCODE, &[39, 255, 7, selector])
+                    .expect("the standard transmitter mode must normalize")
+            else {
+                unreachable!()
+            };
+            assert_eq!(command.phy(), expected);
+        }
     }
 
     #[test]
@@ -547,6 +781,30 @@ mod tests {
                 &[0, 0][..],
                 LeDtmCommandKind::TransmitterTestV1,
                 3,
+            ),
+            (
+                LE_RECEIVER_TEST_V2_OPCODE,
+                &[0, 1][..],
+                LeDtmCommandKind::ReceiverTestV2,
+                3,
+            ),
+            (
+                LE_RECEIVER_TEST_V2_OPCODE,
+                &[0, 1, 0, 0][..],
+                LeDtmCommandKind::ReceiverTestV2,
+                3,
+            ),
+            (
+                LE_TRANSMITTER_TEST_V2_OPCODE,
+                &[0, 0, 0][..],
+                LeDtmCommandKind::TransmitterTestV2,
+                4,
+            ),
+            (
+                LE_TRANSMITTER_TEST_V2_OPCODE,
+                &[0, 0, 0, 1, 0][..],
+                LeDtmCommandKind::TransmitterTestV2,
+                4,
             ),
             (
                 LE_TRANSMITTER_TEST_V1_OPCODE,
@@ -583,6 +841,41 @@ mod tests {
                 selector: 8,
             })
         );
+        assert_eq!(
+            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V2_OPCODE, &[0, 4, 0]),
+            Err(LeDtmCommandDecodeError::UnsupportedPhy {
+                command: LeDtmCommandKind::ReceiverTestV2,
+                selector: 4,
+            })
+        );
+        assert!(matches!(
+            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V2_OPCODE, &[0, 0, 0]),
+            Err(LeDtmCommandDecodeError::UnsupportedPhy {
+                command: LeDtmCommandKind::ReceiverTestV2,
+                selector: 0,
+            })
+        ));
+        assert_eq!(
+            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V2_OPCODE, &[0, 1, 2]),
+            Err(LeDtmCommandDecodeError::UnsupportedModulationIndex {
+                command: LeDtmCommandKind::ReceiverTestV2,
+                parameter: 2,
+            })
+        );
+        assert_eq!(
+            LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V2_OPCODE, &[0, 1, 0, 5]),
+            Err(LeDtmCommandDecodeError::UnsupportedPhy {
+                command: LeDtmCommandKind::TransmitterTestV2,
+                selector: 5,
+            })
+        );
+        assert!(matches!(
+            LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V2_OPCODE, &[0, 1, 0, 0]),
+            Err(LeDtmCommandDecodeError::UnsupportedPhy {
+                command: LeDtmCommandKind::TransmitterTestV2,
+                selector: 0,
+            })
+        ));
         assert!(matches!(
             LeDtmCommand::decode_body(Opcode::UNSOLICITED, &[]),
             Err(LeDtmCommandDecodeError::UnsupportedOpcode { .. })
@@ -590,16 +883,17 @@ mod tests {
     }
 
     #[test]
-    fn malformed_known_opcodes_build_invalid_parameters_completions() {
+    fn rejected_known_opcodes_build_specified_command_completions() {
         for (opcode, parameters) in [
             (LE_RECEIVER_TEST_V1_OPCODE, &[][..]),
             (LE_RECEIVER_TEST_V1_OPCODE, &[40][..]),
             (LE_TRANSMITTER_TEST_V1_OPCODE, &[0, 1, 8][..]),
+            (LE_RECEIVER_TEST_V2_OPCODE, &[0, 1, 2][..]),
             (LE_TEST_END_OPCODE, &[0][..]),
         ] {
             let response = LeDtmCommand::decode_body(opcode, parameters)
                 .expect_err("malformed known command must fail closed")
-                .into_invalid_parameters_command_complete()
+                .into_command_complete()
                 .expect("known DTM opcode must retain its response identity");
             let observed = parse_command_complete(response.as_bytes());
             assert_eq!(observed.cmd_opcode, opcode);
@@ -610,10 +904,23 @@ mod tests {
             assert!(observed.return_param_bytes.is_empty());
         }
 
+        for (opcode, parameters) in [
+            (LE_RECEIVER_TEST_V2_OPCODE, &[0, 4, 0][..]),
+            (LE_TRANSMITTER_TEST_V2_OPCODE, &[0, 1, 0, 5][..]),
+        ] {
+            let response = LeDtmCommand::decode_body(opcode, parameters)
+                .expect_err("a reserved PHY must fail closed")
+                .into_command_complete()
+                .expect("the known DTM opcode retains response identity");
+            let observed = parse_command_complete(response.as_bytes());
+            assert_eq!(observed.cmd_opcode, opcode);
+            assert_eq!(observed.status, HciError::UNSUPPORTED.to_status());
+        }
+
         let unsupported = LeDtmCommand::decode_body(Opcode::UNSOLICITED, &[])
             .expect_err("unsupported opcode remains outside the DTM response scope");
         assert_eq!(
-            unsupported.into_invalid_parameters_command_complete(),
+            unsupported.into_command_complete(),
             Err(LeDtmCommandDecodeError::UnsupportedOpcode {
                 opcode: Opcode::UNSOLICITED,
             })
@@ -622,7 +929,7 @@ mod tests {
 
     #[test]
     fn successful_starts_roundtrip_through_bt_hci_event_types() {
-        let LeDtmCommand::ReceiverTestV1(receiver) =
+        let LeDtmCommand::ReceiverTest(receiver) =
             LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[3]).unwrap()
         else {
             unreachable!()
@@ -633,7 +940,7 @@ mod tests {
         assert_eq!(observed.status, Status::SUCCESS);
         assert!(observed.return_param_bytes.is_empty());
 
-        let LeDtmCommand::TransmitterTestV1(transmitter) =
+        let LeDtmCommand::TransmitterTest(transmitter) =
             LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V1_OPCODE, &[5, 37, 2]).unwrap()
         else {
             unreachable!()
@@ -643,6 +950,26 @@ mod tests {
         assert_eq!(observed.cmd_opcode, LE_TRANSMITTER_TEST_V1_OPCODE);
         assert_eq!(observed.status, Status::SUCCESS);
         assert!(observed.return_param_bytes.is_empty());
+
+        let LeDtmCommand::ReceiverTest(receiver) =
+            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V2_OPCODE, &[3, 2, 0]).unwrap()
+        else {
+            unreachable!()
+        };
+        let receiver_complete = receiver.into_started_command_complete();
+        let observed = parse_command_complete(receiver_complete.as_bytes());
+        assert_eq!(observed.cmd_opcode, LE_RECEIVER_TEST_V2_OPCODE);
+        assert_eq!(observed.status, Status::SUCCESS);
+
+        let LeDtmCommand::TransmitterTest(transmitter) =
+            LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V2_OPCODE, &[5, 37, 2, 3]).unwrap()
+        else {
+            unreachable!()
+        };
+        let transmitter_complete = transmitter.into_started_command_complete();
+        let observed = parse_command_complete(transmitter_complete.as_bytes());
+        assert_eq!(observed.cmd_opcode, LE_TRANSMITTER_TEST_V2_OPCODE);
+        assert_eq!(observed.status, Status::SUCCESS);
     }
 
     #[test]
@@ -687,6 +1014,14 @@ mod tests {
             (
                 LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V1_OPCODE, &[5, 37, 2]).unwrap(),
                 LE_TRANSMITTER_TEST_V1_OPCODE,
+            ),
+            (
+                LeDtmCommand::decode_body(LE_RECEIVER_TEST_V2_OPCODE, &[3, 2, 0]).unwrap(),
+                LE_RECEIVER_TEST_V2_OPCODE,
+            ),
+            (
+                LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V2_OPCODE, &[5, 37, 2, 4]).unwrap(),
+                LE_TRANSMITTER_TEST_V2_OPCODE,
             ),
         ] {
             let LeDtmActiveSessionDisposition::RejectControllerBusy(response) =

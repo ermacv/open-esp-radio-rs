@@ -13,8 +13,8 @@
 //! [`LeControllerBootstrap`] implements a closed software-only HCI command
 //! subset for Host initialization; Link-Layer commands remain owned by an
 //! outer router.
-//! The separate closed LE DTM codec validates Receiver Test v1, Transmitter
-//! Test v1 and Test End into owned semantic commands. Its reviewed idle/active
+//! The separate closed LE DTM codec normalizes Receiver/Transmitter Test v1 and
+//! v2 plus Test End into owned semantic commands. Its reviewed idle/active
 //! session policy retains start/Test End ownership for a hardware runner and
 //! builds only the exact no-test success or active-start busy responses; it
 //! does not dispatch commands or claim radio work.
@@ -66,11 +66,12 @@ pub(crate) use channel::{
 };
 pub use classification::{LeControllerCommandClassification, classify_le_controller_command};
 pub use dtm::{
-    LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE,
-    LE_TRANSMITTER_TEST_V1_OPCODE, LeDtmActiveSessionDisposition, LeDtmChannel, LeDtmCommand,
-    LeDtmCommandCompleteEvent, LeDtmCommandDecodeError, LeDtmCommandKind,
-    LeDtmIdleSessionDisposition, LeDtmPayloadPattern, LeReceiverTestV1Command, LeTestEndCommand,
-    LeTransmitterTestV1Command,
+    LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE,
+    LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE,
+    LeDtmActiveSessionDisposition, LeDtmChannel, LeDtmCommand, LeDtmCommandCompleteEvent,
+    LeDtmCommandDecodeError, LeDtmCommandKind, LeDtmIdleSessionDisposition, LeDtmModulationIndex,
+    LeDtmPayloadPattern, LeDtmPhy, LeReceiverTestCommand, LeTestEndCommand,
+    LeTransmitterTestCommand,
 };
 pub use dtm_order::{
     LeControllerActiveDtmCommandRoute, LeControllerClassifiedCommand,

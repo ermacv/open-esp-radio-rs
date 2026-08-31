@@ -9,6 +9,7 @@ use crate::dtm_event_prepare::{
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
     BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
+    BluetoothSchedulerWindowReservation,
 };
 use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerModemTimerRuntime,
@@ -26,9 +27,10 @@ use crate::{
 use crate::{
     BluetoothControllerTimeSample, BluetoothDtmSchedulerItemEvent,
     BluetoothDtmSchedulerReservation, BluetoothDtmSchedulerSequenceAuthorizationFailure,
-    BluetoothSchedulerInstant, BluetoothSchedulerReservationError,
-    BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
-    BluetoothSchedulerTimingPolicy, controller_time::BluetoothControllerSchedulerNow,
+    BluetoothLegacyAdvertisingFirstEventCandidate, BluetoothSchedulerInstant,
+    BluetoothSchedulerReservationError, BluetoothSchedulerSequenceAuthorizationError,
+    BluetoothSchedulerSequenceReady, BluetoothSchedulerTimingPolicy,
+    controller_time::BluetoothControllerSchedulerNow,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
@@ -59,6 +61,98 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerSoftwareListRemovalReady,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
+
+/// Fresh initial-admission sample sealed by the controller-time worker.
+///
+/// External code can carry this capability but cannot create one from an
+/// integer timestamp. It is distinct from the later sequence-deadline sample.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh admission observation must be consumed or retained"]
+pub struct BluetoothLegacyAdvertisingAdmissionObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// Fresh post-overlap sequence sample sealed by the controller-time worker.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh sequence observation must be consumed or retained"]
+pub struct BluetoothLegacyAdvertisingSequenceObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// First advertising event after common timeline admission and before the
+/// second sequence deadline.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the admitted event must pass sequence authorization or be retained"]
+pub struct BluetoothLegacyAdvertisingFirstPreSequence<'a> {
+    candidate: BluetoothLegacyAdvertisingFirstEventCandidate<'a>,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerInitialAdmissionResolved>,
+}
+
+/// First advertising descriptor paired with its exact accepted timeline slot.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the prepared event must be published, cancelled through its controller, or retained"]
+pub struct BluetoothLegacyAdvertisingFirstEventPrepared<'a> {
+    image: crate::legacy_advertising::BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothLegacyAdvertisingFirstEventPrepared<'_> {
+    pub const fn identity(
+        &self,
+    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingTxIdentity {
+        self.image.identity()
+    }
+
+    pub fn pdu(&self) -> &[u8] {
+        self.image.pdu()
+    }
+
+    /// Opaque nominal phase required by later advertising events.
+    pub const fn phase(&self) -> crate::BluetoothLegacyAdvertisingEventPhase {
+        self.image.phase()
+    }
+}
+
+/// Finite reason a first advertising event returned to pre-admission state.
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingFirstEventPreparationError {
+    Timeline(BluetoothSchedulerReservationError),
+    Sequence(BluetoothSchedulerSequenceAuthorizationError),
+    EventImage(
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    ),
+}
+
+/// Rejected first advertising event retaining the exact cancellable candidate.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the advertising candidate remains recoverable"]
+pub struct BluetoothLegacyAdvertisingFirstEventPreparationFailure<'a> {
+    candidate: BluetoothLegacyAdvertisingFirstEventCandidate<'a>,
+    error: BluetoothLegacyAdvertisingFirstEventPreparationError,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingFirstEventPreparationFailure<'a> {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingFirstEventPreparationError {
+        self.error
+    }
+
+    pub fn into_candidate(self) -> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
+        self.candidate
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl core::fmt::Debug for BluetoothLegacyAdvertisingFirstEventPreparationFailure<'_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyAdvertisingFirstEventPreparationFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
 
 /// Exclusive empty scheduler-list epoch owned by the source controller.
 ///
@@ -1325,6 +1419,115 @@ impl<const SCHEDULER_CAPACITY: usize>
         self.task.drain_orphan_controller_time()
     }
 
+    /// Admit one already projected first advertising event into the common timeline.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure returns the exact affine candidate"
+        )
+    )]
+    pub fn admit_legacy_advertising_first_event<'a>(
+        &mut self,
+        candidate: BluetoothLegacyAdvertisingFirstEventCandidate<'a>,
+        admission: BluetoothLegacyAdvertisingAdmissionObservation,
+    ) -> Result<
+        BluetoothLegacyAdvertisingFirstPreSequence<'a>,
+        BluetoothLegacyAdvertisingFirstEventPreparationFailure<'a>,
+    > {
+        let raw_window = candidate.raw_window();
+        let timing_policy =
+            BluetoothSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        match self
+            .runtime
+            .scheduler_timeline_mut()
+            .reserve_initial_window(
+                raw_window.start(),
+                raw_window.end(),
+                timing_policy,
+                admission.sample,
+            ) {
+            Ok(reservation) => Ok(BluetoothLegacyAdvertisingFirstPreSequence {
+                candidate,
+                reservation,
+            }),
+            Err(error) => Err(BluetoothLegacyAdvertisingFirstEventPreparationFailure {
+                candidate,
+                error: BluetoothLegacyAdvertisingFirstEventPreparationError::Timeline(error),
+            }),
+        }
+    }
+
+    /// Authorize the second deadline and encode the overlap-resolved event image.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure returns the exact affine candidate"
+        )
+    )]
+    pub fn prepare_legacy_advertising_first_event<'a>(
+        &mut self,
+        admitted: BluetoothLegacyAdvertisingFirstPreSequence<'a>,
+        sequence: BluetoothLegacyAdvertisingSequenceObservation,
+    ) -> Result<
+        BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        BluetoothLegacyAdvertisingFirstEventPreparationFailure<'a>,
+    > {
+        let BluetoothLegacyAdvertisingFirstPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        let reservation = match reservation.authorize_sequence(sequence.sample) {
+            Ok(reservation) => reservation,
+            Err(failure) => {
+                let error = failure.error();
+                self.release_scheduler_reservation(failure.into_reservation());
+                return Err(BluetoothLegacyAdvertisingFirstEventPreparationFailure {
+                    candidate,
+                    error: BluetoothLegacyAdvertisingFirstEventPreparationError::Sequence(error),
+                });
+            }
+        };
+        let resolved_window = reservation.window();
+        match candidate.prepare_resolved_event_image(resolved_window) {
+            Ok(image) => Ok(BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation }),
+            Err(failure) => {
+                let error = failure.error();
+                let candidate = failure.into_candidate();
+                self.release_scheduler_reservation(reservation);
+                Err(BluetoothLegacyAdvertisingFirstEventPreparationFailure {
+                    candidate,
+                    error: BluetoothLegacyAdvertisingFirstEventPreparationError::EventImage(error),
+                })
+            }
+        }
+    }
+
+    /// Release an unpublished first advertising event and restore both owners.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub fn cancel_legacy_advertising_first_event<'a>(
+        &mut self,
+        prepared: BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+    ) -> crate::BluetoothLegacyAdvertisingCancelled<'a> {
+        let BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation } = prepared;
+        self.release_scheduler_reservation(reservation);
+        image.cancel()
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn release_scheduler_reservation<State>(
+        &mut self,
+        reservation: BluetoothSchedulerWindowReservation<State>,
+    ) {
+        self.runtime
+            .scheduler_timeline_mut()
+            .release(reservation)
+            .expect("a reservation created by this Controller must release into the same timeline");
+    }
+
     #[cfg(any(target_arch = "riscv32", test))]
     fn admit_initial_dtm_event(
         &mut self,
@@ -1400,10 +1603,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &mut self,
         reservation: BluetoothDtmSchedulerReservation<State>,
     ) {
-        self.runtime
-            .scheduler_timeline_mut()
-            .release(reservation.into_window())
-            .expect("a reservation created by this Controller must release into the same timeline");
+        self.release_scheduler_reservation(reservation.into_window());
     }
 
     /// Reject initial TX before RF readiness can form a scheduler candidate.
@@ -2931,6 +3131,20 @@ mod tests {
 
     use std::{cell::RefCell, rc::Rc, vec::Vec};
 
+    use open_esp_radio_bluetooth_ll::{
+        LeDeviceAddress, LeDeviceAddressKind,
+        advertiser::LegacyAdvertiserStandby,
+        advertising::{
+            AdvertisingInterval, LegacyAdvertisingData, LegacyNonconnectableAdvertisement,
+            LegacyNonconnectableAdvertisingSet, PrimaryAdvertisingChannelMap,
+        },
+    };
+    use open_esp_radio_esp32s31_bluetooth_memory::{
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothLegacyAdvertisingMemoryGraphModelAddress,
+        BluetoothLegacyAdvertisingMemoryGraphStorage,
+    };
+
     use crate::{
         BluetoothClockedResources, BluetoothControllerRuntimeResources,
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
@@ -2938,6 +3152,33 @@ mod tests {
         BluetoothDtmSchedulerItemEvent, BluetoothRadioHardware, BluetoothSchedulerInstant,
         BluetoothStopped, controller_time::BluetoothControllerSchedulerNow,
     };
+
+    fn legacy_advertiser_enabled()
+    -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertiserEnabled<'static> {
+        let advertisement = LegacyNonconnectableAdvertisement::new(
+            LeDeviceAddress::from_wire_bytes([6, 5, 4, 3, 2, 1], LeDeviceAddressKind::Public),
+            LegacyAdvertisingData::new(&[2, 1, 6]).expect("the fixed data fits"),
+        );
+        LegacyAdvertiserStandby::new()
+            .configure(LegacyNonconnectableAdvertisingSet::new(
+                advertisement,
+                PrimaryAdvertisingChannelMap::all(),
+                AdvertisingInterval::new(AdvertisingInterval::MIN_UNITS)
+                    .expect("the minimum interval is valid"),
+            ))
+            .enable()
+            .expect("the first generation is available")
+    }
+
+    fn legacy_advertising_memory() -> BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
+        let storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothLegacyAdvertisingMemoryGraphStorage::new(),
+        ));
+        let base = BluetoothLegacyAdvertisingMemoryGraphModelAddress::new(0x2f00_0100)
+            .expect("the model base uses controller SRAM syntax");
+        BluetoothLegacyAdvertisingMemoryGraphStorage::pin_static_model(storage, base)
+            .expect("the advertising graph fits physical controller SRAM")
+    }
 
     #[test]
     fn first_preparation_completion_classifies_every_portable_error_branch() {
@@ -3241,6 +3482,80 @@ mod tests {
                 crate::BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
             )
         );
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
+    }
+
+    #[test]
+    fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
+        struct AdvertisingPlatform;
+
+        let stopped = BluetoothStopped::from_hardware(
+            AdvertisingPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let scale = scheduler.controller_time_scale();
+        let config = scheduler.scheduler_config();
+        let reset = crate::BluetoothLegacyAdvertisingPrepared::prepare(
+            legacy_advertiser_enabled(),
+            legacy_advertising_memory(),
+        )
+        .expect("the bounded portable packet fits")
+        .reset_link_state(crate::BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(0))
+        .expect("the portable packet selects the restricted reset");
+        let candidate = reset
+            .form_first_event_candidate(
+                crate::BluetoothLegacyAdvertisingTimingObservation {
+                    current: BluetoothSchedulerInstant::from_image(10_000),
+                    radio_ready: BluetoothSchedulerInstant::from_image(11_999),
+                    epoch: BluetoothControllerSchedulerEpoch::new(
+                        BluetoothControllerTimeSample::for_validation(100),
+                        1_000,
+                        scale,
+                    ),
+                },
+                config,
+            )
+            .expect("the first event projects into the retained epoch");
+        let identity = candidate.identity();
+        let raw_start = candidate.raw_window().start();
+
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let admitted = task
+            .admit_legacy_advertising_first_event(
+                candidate,
+                super::BluetoothLegacyAdvertisingAdmissionObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(
+                        raw_start.wrapping_sub(100),
+                    ),
+                },
+            )
+            .expect("the first guarded deadline remains open");
+        let prepared = task
+            .prepare_legacy_advertising_first_event(
+                admitted,
+                super::BluetoothLegacyAdvertisingSequenceObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(
+                        raw_start.wrapping_sub(50),
+                    ),
+                },
+            )
+            .expect("the second guarded deadline remains open");
+        assert_eq!(prepared.identity(), identity);
+        assert_eq!(prepared.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
+
+        let cancelled = task.cancel_legacy_advertising_first_event(prepared);
+        let (enabled, memory) = cancelled.into_parts();
+        assert_eq!(enabled.prepare_next().identity(), identity);
+        assert!(memory.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
         drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());
     }

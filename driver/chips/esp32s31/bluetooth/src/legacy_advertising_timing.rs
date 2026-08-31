@@ -25,6 +25,13 @@ pub(crate) struct BluetoothLegacyAdvertisingEventWindow {
     end: BluetoothSchedulerInstant,
 }
 
+/// Opaque nominal advertising phase retained for recurring scheduling.
+///
+/// No integer conversion is public; only the chip scheduler can interpret the
+/// phase inside its retained controller epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLegacyAdvertisingEventPhase(BluetoothSchedulerInstant);
+
 /// Ordered live timing capability for one first advertising event.
 ///
 /// The type is public only so an affine controller owner can pass it across
@@ -120,6 +127,10 @@ impl BluetoothLegacyAdvertisingEventWindow {
             epoch.raw_time_for_scheduler_time(self.start.image()),
             epoch.raw_time_for_scheduler_time(self.end.image()),
         )
+    }
+
+    pub(crate) const fn phase(self) -> BluetoothLegacyAdvertisingEventPhase {
+        BluetoothLegacyAdvertisingEventPhase(self.anchor)
     }
 }
 

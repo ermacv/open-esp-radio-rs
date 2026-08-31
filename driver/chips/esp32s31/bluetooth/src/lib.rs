@@ -326,6 +326,8 @@ pub use legacy_advertising::{
     BluetoothLegacyAdvertisingFirstEventTimingFailure,
 };
 #[cfg(any(target_arch = "riscv32", test))]
+pub use legacy_advertising_timing::BluetoothLegacyAdvertisingEventPhase;
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingEventWindow;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingTimingObservation;
@@ -400,6 +402,14 @@ pub use scheduler::{
     BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
     BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerFinishedListDrainPending,
     BluetoothDtmSchedulerFinishedListDrainState, BluetoothDtmSchedulerRunningDrainStep,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{
+    BluetoothLegacyAdvertisingAdmissionObservation,
+    BluetoothLegacyAdvertisingFirstEventPreparationError,
+    BluetoothLegacyAdvertisingFirstEventPreparationFailure,
+    BluetoothLegacyAdvertisingFirstEventPrepared, BluetoothLegacyAdvertisingFirstPreSequence,
+    BluetoothLegacyAdvertisingSequenceObservation,
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{

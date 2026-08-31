@@ -2,9 +2,10 @@
 //!
 //! This boundary lowers one portable `ADV_NONCONN_IND` transmission into a
 //! bounded PDU and a reviewed S31 descriptor graph. It deliberately
-//! stops before scheduler admission: the SRAM allocation, reviewed restricted
-//! link-state reset and first-event timing candidate are bound, but no common
-//! timeline reservation, hardware-list role or completion contract exists yet.
+//! stops before hardware publication: the SRAM allocation, reviewed restricted
+//! link-state reset, first-event timing, common timeline admission and final
+//! CPU-owned descriptor image are bound, but no hardware-list role or
+//! completion contract exists yet.
 //! Consequently this module cannot turn protocol work into `InFlight` or
 //! publish scheduler `HEAD`/`RUN`.
 
@@ -22,6 +23,12 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLeTxPacketPrepareError, BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
     BluetoothLegacyAdvertisingMemoryGraphPacketPrepared, BluetoothLegacyAdvertisingPduError,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+    BluetoothLegacyAdvertisingPrimaryChannel,
 };
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -231,9 +238,115 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
         self.raw_window.duration()
     }
 
+    pub(crate) const fn raw_window(&self) -> BluetoothSchedulerRawWindow {
+        self.raw_window
+    }
+
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure returns the exact affine candidate"
+        )
+    )]
+    pub(crate) fn prepare_resolved_event_image(
+        self,
+        resolved_window: BluetoothSchedulerRawWindow,
+    ) -> Result<
+        BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+        BluetoothLegacyAdvertisingFirstEventImagePrepareFailure<'a>,
+    > {
+        let Self {
+            reset,
+            scheduler_window,
+            raw_window,
+        } = self;
+        let BluetoothLegacyAdvertisingLinkStateReset { prepared, memory } = reset;
+        let channel = match prepared.identity().channel() {
+            PrimaryAdvertisingChannel::Channel37 => {
+                BluetoothLegacyAdvertisingPrimaryChannel::Channel37
+            }
+            PrimaryAdvertisingChannel::Channel38 => {
+                BluetoothLegacyAdvertisingPrimaryChannel::Channel38
+            }
+            PrimaryAdvertisingChannel::Channel39 => {
+                BluetoothLegacyAdvertisingPrimaryChannel::Channel39
+            }
+        };
+        match memory.prepare_first_event(channel, resolved_window.start(), resolved_window.end()) {
+            Ok(memory) => Ok(BluetoothLegacyAdvertisingFirstEventImagePrepared {
+                prepared,
+                memory,
+                scheduler_window,
+            }),
+            Err(failure) => {
+                let (memory, error) = failure.into_parts();
+                Err(BluetoothLegacyAdvertisingFirstEventImagePrepareFailure {
+                    candidate: Self {
+                        reset: BluetoothLegacyAdvertisingLinkStateReset { prepared, memory },
+                        scheduler_window,
+                        raw_window,
+                    },
+                    error,
+                })
+            }
+        }
+    }
+
     /// Cancel before timeline admission and recover both ordinary owners.
     pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
         self.reset.cancel()
+    }
+}
+
+/// Portable work paired with a complete CPU-owned first-event SRAM image.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the event image must remain paired with its scheduler reservation"]
+pub(crate) struct BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
+    prepared: LegacyAdvertiserTxPrepared<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
+    pub(crate) const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+        self.prepared.identity()
+    }
+
+    pub(crate) fn pdu(&self) -> &[u8] {
+        self.memory.pdu()
+    }
+
+    pub(crate) const fn phase(&self) -> crate::BluetoothLegacyAdvertisingEventPhase {
+        self.scheduler_window.phase()
+    }
+
+    pub(crate) fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
+        BluetoothLegacyAdvertisingCancelled {
+            enabled: self.prepared.cancel(),
+            memory: self.memory.cancel(),
+        }
+    }
+}
+
+/// Failed private event encoding retaining the pre-admission candidate.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothLegacyAdvertisingFirstEventImagePrepareFailure<'a> {
+    candidate: BluetoothLegacyAdvertisingFirstEventCandidate<'a>,
+    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingFirstEventImagePrepareFailure<'a> {
+    pub(crate) const fn error(
+        &self,
+    ) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+        self.error
+    }
+
+    pub(crate) fn into_candidate(self) -> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
+        self.candidate
     }
 }
 

@@ -24,7 +24,9 @@ supply current behavior or layout.
 | `r_sym_ble_fiiv8hEPVagnOAVa7EM2` | reset an advertising role |
 | `r_sym_ble_cfILxLFIWftw22I0zQab` | allocate the private advertising graph |
 | `r_sym_ble_8UzoZYkzYu9MXbM1vyWN` | start an advertising role |
+| `r_sym_ble_grUssKu7oWAkmdueH0Od` | initialize the first-event delay |
 | `r_sym_ble_mqh4OXzoN59kvnkKFMA1` | schedule its first primary event |
+| `r_sym_ble_GESyjhFJ89FTdFkUqASV` | form one advertising scheduler window |
 | `r_sym_ble_77zgK6v8rbStzf0ReBjv` | schedule its next primary event |
 | `r_sym_ble_pfcv0QVYrNS6KoQetydw` | recycle a completed scheduler item |
 
@@ -46,10 +48,11 @@ allocation now lives inside a pinned, physically bounded graph. The graph
 binds the common TX header to its packet, installs that header as the sole TX
 head/tail, keeps the RX chain absent, retains one separately allocated common
 scheduler context, binds the first scheduler item back to this link state and
-installs that item as the link-state scheduler head. The owner adds the
-channel's frequency projection and supports lossless cancellation of both
-portable and SRAM owners. It cannot publish a hardware scheduler head or
-claim that the PDU is in flight.
+installs that item as the link-state scheduler head. Channel identity stays at
+the portable boundary; only the private memory codec lowers it to the S31
+frequency field. The owner supports lossless cancellation of both portable
+and SRAM owners. It cannot publish a hardware scheduler head or claim that the
+PDU is in flight.
 
 The public named archive proves that legacy primary allocation calls
 `r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr`; its allocation prefix and PDU
@@ -77,6 +80,26 @@ guessed bit meaning: same-chip `priv_config_opts_ro` is 46 bytes and its exact
 byte at `+0x29` is `3`, matching the current body's six-bit copy. Reset creates
 a separate non-publishable typestate; cancellation clears the packet and
 rebuilds the allocation graph before returning it to the portable owner.
+
+Complete current `r_sym_ble_mqh4OXzoN59kvnkKFMA1` and named
+`r_ble_lll_adv_sched_first_pri_event` close the first-event producer. Named
+`r_ble_lll_adv_init`, matching current `r_sym_ble_grUssKu7oWAkmdueH0Od`,
+initializes a 2000-microsecond first-event delay. The first event samples the
+always-awake radio path and scheduler time, adds the common 107-unit
+preparation lead, and forms the LE 1M duration as `payload_length * 8 + 80`.
+If the radio observation is later than the nominal start, it shifts start and
+end together and preserves duration. Both positions then pass through the
+retained scheduler epoch into raw controller time.
+
+The private SRAM codec detaches the sole allocation-time scheduler item from
+the link-state head, lowers channel 37/38/39 into the packet frequency field,
+selects the legacy LE 1M transmitter role, copies the reset link state's
+rounded power, installs the accepted raw window and clears the event-local
+bookkeeping fields. No field mask, rounded-power image or frequency integer
+crosses into the controller/LL layer. Before this mutation, the common Rust
+timeline performs guarded initial admission, duration-preserving overlap
+displacement and a separate fresh sequence-deadline check. Rejection releases
+the exact slot and returns the unchanged affine candidate.
 
 ## Minimum production admission contract
 
@@ -110,22 +133,22 @@ not required.
 
 The encoded PDU now reaches a fully address-bound, CPU-owned controller graph
 without raw SRAM fields escaping the memory codec. Allocation-time packet,
-header, link-state, scheduler-context and scheduler-item links plus the
-restricted link-state reset are closed. The remaining descriptor blocker is
-the first-primary-event transform: selected frequency/whitening, scheduler
-role/rate projection and the initial raw scheduler window. Publication and
-completion follow that transform. A hardware-frontier query currently asks for one project-local
-assertion at `0x2010199c/16`, but the reviewed chip model already identifies it
-as `BLE_HW_CTE_RING_CONTROL.RING_CONTROL`. It is reached through generic CTE
+header, link-state, scheduler-context and scheduler-item links, restricted
+link-state reset, first-event timing, common timeline admission and the
+first-primary-event descriptor transform are closed. The remaining critical
+path is affine hardware-list publication followed by exact finished-list,
+unlink and portable completion ownership. A hardware-frontier query currently
+asks for one project-local assertion at `0x2010199c/16`, but the reviewed chip
+model already identifies it as `BLE_HW_CTE_RING_CONTROL.RING_CONTROL`. It is
+reached through generic CTE
 support and is not used by the restricted no-CTE transmission, so it is not an
 admission blocker. Broad register discovery is therefore not the critical
 path. Diagnostic logging, extended advertising, periodic advertising, scan
 responses, RX buffers, sleep-enabled wake and coexistence are also not
 blockers for the restricted first transmission.
 
-The next review should therefore reduce the first-event body for the fixed
-no-RX/no-CTE profile, then reuse the existing affine empty-list publication
-and completion lifecycle. It should not reproduce vendor callback
+The next implementation should therefore reuse the existing affine empty-list
+publication and completion lifecycle. It should not reproduce vendor callback
 containers or attempt to make every reachable advertising function
 semantically complete.
 

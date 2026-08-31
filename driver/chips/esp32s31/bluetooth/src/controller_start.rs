@@ -234,6 +234,30 @@ pub struct BluetoothDtmSchedulerStartFailure<Role, E> {
     head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
 }
 
+/// Failed advertising scheduler start before the synchronous run suffix began.
+#[must_use = "a failed advertising scheduler start still owns its published graph"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothLegacyAdvertisingSchedulerStartFailure<'a, E> {
+    error: E,
+    head: crate::BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a, E> BluetoothLegacyAdvertisingSchedulerStartFailure<'a, E> {
+    pub const fn error(&self) -> &E {
+        &self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        E,
+        crate::BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
+    ) {
+        (self.error, self.head)
+    }
+}
+
 #[cfg(target_arch = "riscv32")]
 impl<Role, E> BluetoothDtmSchedulerStartFailure<Role, E> {
     /// Inspect the exact stable-storage rejection.
@@ -3125,6 +3149,22 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     {
         self.runtime.publish_dtm_scheduler_head(merged)
     }
+
+    /// Publish the first advertising item through the same exclusive head edge.
+    #[expect(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection returns the complete advertising graph"
+    )]
+    pub fn publish_legacy_advertising_scheduler_head<'a>(
+        &mut self,
+        merged: crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+    ) -> Result<
+        crate::BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
+        crate::BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure<'a>,
+    > {
+        self.runtime
+            .publish_legacy_advertising_scheduler_head(merged)
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -3190,12 +3230,53 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         };
         let address = head.scheduler_item_address();
         let (item, publication) = head.into_parts();
+        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
+        Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
+    }
+
+    /// Admit one published advertising graph through the common RUN suffix.
+    #[expect(
+        clippy::result_large_err,
+        reason = "a start rejection returns the complete published advertising graph"
+    )]
+    pub fn start_legacy_advertising_scheduler<'a>(
+        &mut self,
+        head: crate::BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
+    ) -> Result<
+        crate::BluetoothLegacyAdvertisingSchedulerRunning<'a>,
+        BluetoothLegacyAdvertisingSchedulerStartFailure<'a, S::Error>,
+    >
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
+            Ok(interrupts) => interrupts,
+            Err(error) => {
+                return Err(BluetoothLegacyAdvertisingSchedulerStartFailure { error, head });
+            }
+        };
+        let address = head.scheduler_item_address();
+        let (item, publication, reservation) = head.into_parts();
+        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
+        Ok(crate::BluetoothLegacyAdvertisingSchedulerRunning::new(
+            item,
+            run,
+            reservation,
+        ))
+    }
+
+    fn publish_scheduler_run_suffix(
+        &mut self,
+        address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
+        publication: open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHeadPublished,
+        interrupts: BluetoothSchedulerRunInterruptsPrepared,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareRunCommandPublished {
         let event = self
             .runtime
             .publish_scheduler_run_event(publication, interrupts);
         let run = self.runtime.publish_scheduler_hardware_run_command(event);
-        self.runtime.retain_running_dtm_first_item(address);
-        Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
+        self.runtime.retain_running_first_item(address);
+        run
     }
 
     /// Perform one fresh fenced completion-list transfer and immediately join

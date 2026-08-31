@@ -26,9 +26,22 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared,
     BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
     BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
     BluetoothLegacyAdvertisingPrimaryChannel,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
+    BluetoothLegacyAdvertisingMemoryGraphRunning,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareRunCommandPublished,
 };
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -322,11 +335,130 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
         self.scheduler_window.phase()
     }
 
+    pub(crate) fn prepare_scheduler_bookkeeping(
+        self,
+    ) -> BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared<'a> {
+        BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared {
+            prepared: self.prepared,
+            memory: self.memory.prepare_scheduler_bookkeeping(),
+            scheduler_window: self.scheduler_window,
+        }
+    }
+
     pub(crate) fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
         BluetoothLegacyAdvertisingCancelled {
             enabled: self.prepared.cancel(),
             memory: self.memory.cancel(),
         }
+    }
+}
+
+/// Portable event paired with common scheduler bookkeeping.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared<'a> {
+    prepared: LegacyAdvertiserTxPrepared<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared<'a> {
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    pub(crate) fn prepare_empty_list_link(
+        self,
+    ) -> BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a> {
+        BluetoothLegacyAdvertisingEmptyListLinkPrepared {
+            prepared: self.prepared,
+            memory: self.memory.prepare_empty_list_link(),
+            scheduler_window: self.scheduler_window,
+        }
+    }
+
+    pub(crate) fn cancel(self) -> BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
+        BluetoothLegacyAdvertisingFirstEventImagePrepared {
+            prepared: self.prepared,
+            memory: self.memory.cancel(),
+            scheduler_window: self.scheduler_window,
+        }
+    }
+}
+
+/// CPU-owned advertising event joined to an independently proven empty list.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a> {
+    prepared: LegacyAdvertiserTxPrepared<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a> {
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_head_published(
+        self,
+        publication: &BluetoothSchedulerHardwareListHeadPublished,
+    ) -> BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
+        BluetoothLegacyAdvertisingHeadPublishedEvent {
+            prepared: self.prepared,
+            memory: self.memory.into_head_published(publication),
+            scheduler_window: self.scheduler_window,
+        }
+    }
+
+    pub(crate) fn cancel(self) -> BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared<'a> {
+        BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared {
+            prepared: self.prepared,
+            memory: self.memory.cancel(),
+            scheduler_window: self.scheduler_window,
+        }
+    }
+}
+
+/// Hardware-visible advertising event after exact scheduler-head publication.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
+    prepared: LegacyAdvertiserTxPrepared<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    pub(crate) fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothLegacyAdvertisingRunningEvent<'a> {
+        BluetoothLegacyAdvertisingRunningEvent {
+            _prepared: self.prepared,
+            memory: self.memory.into_running(run),
+            _scheduler_window: self.scheduler_window,
+        }
+    }
+}
+
+/// Hardware-owned advertising event admitted through the complete RUN suffix.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingRunningEvent<'a> {
+    _prepared: LegacyAdvertiserTxPrepared<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphRunning,
+    _scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothLegacyAdvertisingRunningEvent<'_> {
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
     }
 }
 

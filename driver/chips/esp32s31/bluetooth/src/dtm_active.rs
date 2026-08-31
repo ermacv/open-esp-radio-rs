@@ -25,12 +25,12 @@ use crate::{
     BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
     BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerFinishedListDrainPending,
     BluetoothDtmSchedulerFinishedListDrainState, BluetoothDtmSchedulerHardwareHeadEmptyObserved,
-    BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerHeadPublicationError,
-    BluetoothDtmSchedulerHeadPublished, BluetoothDtmSchedulerRecycleStep,
-    BluetoothDtmSchedulerRunning, BluetoothDtmSchedulerRunningDrainStep,
-    BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
-    BluetoothDtmSoftwareListRemovalPublishedStep, BluetoothDtmTransmitterEvent,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
+    BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerHeadPublished,
+    BluetoothDtmSchedulerRecycleStep, BluetoothDtmSchedulerRunning,
+    BluetoothDtmSchedulerRunningDrainStep, BluetoothDtmSchedulerRxSuccessRecycleStep,
+    BluetoothDtmSchedulerSoftwareListRemovalReady, BluetoothDtmSoftwareListRemovalPublishedStep,
+    BluetoothDtmTransmitterEvent, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
     BluetoothSchedulerWakeBatch,
 };
 
@@ -1239,7 +1239,7 @@ pub enum BluetoothDtmRecurringRetryCause<E> {
     /// CPU-owned preparation rejected after returning the unchanged active role.
     Preparation(BluetoothDtmControllerEventPreparationError),
     /// The prepared merge remained CPU-owned because head publication was rejected.
-    HeadPublication(BluetoothDtmSchedulerHeadPublicationError),
+    HeadPublication(BluetoothSchedulerHeadPublicationError),
     /// Dynamic interrupt preparation rejected the unchanged published head.
     SchedulerStart(E),
 }

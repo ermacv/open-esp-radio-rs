@@ -114,6 +114,126 @@ impl BluetoothLegacyAdvertisingFirstEventPrepared<'_> {
     }
 }
 
+/// Lossless rejection while joining one advertising item to the empty list.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the unchanged advertising event remains prepared and CPU-owned"]
+pub struct BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'a> {
+    error: BluetoothSchedulerEmptyListMergeError,
+    prepared: BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'a> {
+    pub const fn error(&self) -> BluetoothSchedulerEmptyListMergeError {
+        self.error
+    }
+
+    pub fn into_prepared(self) -> BluetoothLegacyAdvertisingFirstEventPrepared<'a> {
+        self.prepared
+    }
+}
+
+/// First advertising event joined to the source-owned empty scheduler list.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the merged advertising event must be published or cancelled"]
+pub struct BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a> {
+    item: crate::legacy_advertising::BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a>,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'_> {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        BluetoothSchedulerHardwareListIndex::ZERO
+    }
+}
+
+/// Lossless rejection before advertising scheduler-head MMIO publication.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the unchanged advertising merge remains CPU-owned"]
+pub struct BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure<'a> {
+    error: BluetoothSchedulerHeadPublicationError,
+    merged: BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure<'a> {
+    pub const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
+        self.error
+    }
+
+    pub fn into_merged(self) -> BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a> {
+        self.merged
+    }
+}
+
+/// Advertising graph whose first scheduler item is hardware-visible.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the published advertising head must advance through the RUN suffix"]
+pub struct BluetoothLegacyAdvertisingSchedulerHeadPublished<'a> {
+    item: crate::legacy_advertising::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
+    publication: BluetoothSchedulerHardwareListHeadPublished,
+    _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingSchedulerHeadPublished<'a> {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.publication.index()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        crate::legacy_advertising::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
+        BluetoothSchedulerHardwareListHeadPublished,
+        BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+    ) {
+        (self.item, self.publication, self._reservation)
+    }
+}
+
+/// Advertising graph admitted through head, interrupt, event and RUN publication.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the running advertising graph must advance through owned completion"]
+pub struct BluetoothLegacyAdvertisingSchedulerRunning<'a> {
+    item: crate::legacy_advertising::BluetoothLegacyAdvertisingRunningEvent<'a>,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+    _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingSchedulerRunning<'a> {
+    pub(crate) fn new(
+        item: crate::legacy_advertising::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+        reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+    ) -> Self {
+        let item = item.into_running(&run);
+        Self {
+            item,
+            run,
+            _reservation: reservation,
+        }
+    }
+
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+}
+
 /// Finite reason a first advertising event returned to pre-admission state.
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -201,9 +321,9 @@ impl BluetoothSchedulerExclusiveListEpoch {
     fn prepare_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
-    ) -> Result<(), BluetoothDtmEmptySchedulerMergeError> {
+    ) -> Result<(), BluetoothSchedulerEmptyListMergeError> {
         if self.state != BluetoothSchedulerExclusiveListState::Empty {
-            return Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty);
+            return Err(BluetoothSchedulerEmptyListMergeError::ListNotEmpty);
         }
         self.state = BluetoothSchedulerExclusiveListState::FirstItemPrepared { address };
         Ok(())
@@ -322,9 +442,9 @@ impl BluetoothSchedulerExclusiveListEpoch {
     }
 }
 
-/// Why the first DTM item could not consume the exclusive empty-list epoch.
+/// Why a first scheduler item could not consume the exclusive empty-list epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmEmptySchedulerMergeError {
+pub enum BluetoothSchedulerEmptyListMergeError {
     /// Another item already consumed this scheduler epoch's empty-list proof.
     ListNotEmpty,
 }
@@ -383,7 +503,7 @@ pub enum BluetoothDtmControllerEventPreparationError {
     #[cfg(target_arch = "riscv32")]
     Graph(BluetoothDtmMemoryGraphPrepareError),
     /// The exclusive source-owned scheduler list still retains an item.
-    EmptyList(BluetoothDtmEmptySchedulerMergeError),
+    EmptyList(BluetoothSchedulerEmptyListMergeError),
 }
 
 /// Closed first-start completion class after the exact idle graph is restored.
@@ -683,7 +803,7 @@ pub(crate) struct BluetoothDtmEmptySchedulerMergeFailure<Role, Phase>
 where
     Phase: BluetoothDtmSchedulerItemPhase<Role>,
 {
-    error: BluetoothDtmEmptySchedulerMergeError,
+    error: BluetoothSchedulerEmptyListMergeError,
     item: BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase>,
 }
 
@@ -693,7 +813,7 @@ where
     Phase: BluetoothDtmSchedulerItemPhase<Role>,
 {
     /// Exact reason the list owner rejected this item.
-    pub(crate) const fn error(&self) -> BluetoothDtmEmptySchedulerMergeError {
+    pub(crate) const fn error(&self) -> BluetoothSchedulerEmptyListMergeError {
         self.error
     }
 
@@ -755,14 +875,14 @@ pub struct BluetoothDtmRecurringSchedulerItemPhase {
 
 /// Why a prepared first-item merge could not publish its scheduler head.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmSchedulerHeadPublicationError {
+pub enum BluetoothSchedulerHeadPublicationError {
     /// The merge belongs to another scheduler epoch or list identity.
     SchedulerIdentityMismatch,
     /// The selected address aliases the reserved empty hardware-head image.
     EncodesEmptyHead,
 }
 
-impl From<BluetoothSchedulerHardwareListHeadError> for BluetoothDtmSchedulerHeadPublicationError {
+impl From<BluetoothSchedulerHardwareListHeadError> for BluetoothSchedulerHeadPublicationError {
     fn from(error: BluetoothSchedulerHardwareListHeadError) -> Self {
         match error {
             BluetoothSchedulerHardwareListHeadError::EncodesEmptyHead => Self::EncodesEmptyHead,
@@ -776,7 +896,7 @@ pub struct BluetoothDtmSchedulerHeadPublicationFailure<Role, Phase>
 where
     Phase: BluetoothDtmSchedulerItemPhase<Role>,
 {
-    error: BluetoothDtmSchedulerHeadPublicationError,
+    error: BluetoothSchedulerHeadPublicationError,
     merged: BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
 }
 
@@ -785,7 +905,7 @@ where
     Phase: BluetoothDtmSchedulerItemPhase<Role>,
 {
     /// Exact reason no scheduler head was published.
-    pub const fn error(&self) -> BluetoothDtmSchedulerHeadPublicationError {
+    pub const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
         self.error
     }
 
@@ -1515,6 +1635,63 @@ impl<const SCHEDULER_CAPACITY: usize>
         let BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation } = prepared;
         self.release_scheduler_reservation(reservation);
         image.cancel()
+    }
+
+    /// Join one prepared advertising item to this epoch's empty scheduler list.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains the complete advertising event"
+    )]
+    pub fn prepare_legacy_advertising_empty_list_merge<'a>(
+        &mut self,
+        prepared: BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+    ) -> Result<
+        BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+        BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'a>,
+    > {
+        let BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation } = prepared;
+        let item = image.prepare_scheduler_bookkeeping();
+        let address = item.scheduler_item_address();
+        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+            return Err(BluetoothLegacyAdvertisingEmptySchedulerMergeFailure {
+                error,
+                prepared: BluetoothLegacyAdvertisingFirstEventPrepared {
+                    image: item.cancel(),
+                    reservation,
+                },
+            });
+        }
+        Ok(BluetoothLegacyAdvertisingEmptySchedulerMergePrepared {
+            item: item.prepare_empty_list_link(),
+            reservation,
+        })
+    }
+
+    /// Cancel a not-yet-published advertising merge through the same list epoch.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "an identity rejection retains the complete advertising merge"
+    )]
+    pub fn cancel_legacy_advertising_empty_list_merge<'a>(
+        &mut self,
+        merged: BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+    ) -> Result<
+        BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+    > {
+        if !self
+            ._scheduler_list
+            .cancel_first_item(merged.scheduler_item_address())
+        {
+            return Err(merged);
+        }
+        let BluetoothLegacyAdvertisingEmptySchedulerMergePrepared { item, reservation } = merged;
+        Ok(BluetoothLegacyAdvertisingFirstEventPrepared {
+            image: item.cancel().cancel(),
+            reservation,
+        })
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
@@ -2508,10 +2685,6 @@ impl<const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "pre-MMIO rejection returns the complete no-alloc affine DTM graph"
     )]
-    #[allow(
-        unsafe_code,
-        reason = "the terminal Controller state proves inactive routes while this scheduler retains the graph and exact list identity"
-    )]
     pub(crate) fn publish_dtm_scheduler_head<Role, Phase>(
         &mut self,
         merged: BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
@@ -2523,28 +2696,68 @@ impl<const SCHEDULER_CAPACITY: usize>
         Phase: BluetoothDtmSchedulerItemPhase<Role>,
     {
         let address = merged.scheduler_item_address();
-        if !self._scheduler_list.can_publish_first_item(address) {
-            return Err(BluetoothDtmSchedulerHeadPublicationFailure {
-                error: BluetoothDtmSchedulerHeadPublicationError::SchedulerIdentityMismatch,
-                merged,
-            });
-        }
-        let head = match BluetoothSchedulerHardwareListHead::from_address(address) {
-            Ok(head) => head,
-            Err(error) => {
-                return Err(BluetoothDtmSchedulerHeadPublicationFailure {
-                    error: error.into(),
-                    merged,
-                });
-            }
-        };
-        let publication = unsafe {
-            self.task
-                .publish_scheduler_hardware_list_head(merged.hardware_list_index(), head)
-        };
+        let publication =
+            match self.publish_first_scheduler_item_head(address, merged.hardware_list_index()) {
+                Ok(publication) => publication,
+                Err(error) => {
+                    return Err(BluetoothDtmSchedulerHeadPublicationFailure { error, merged });
+                }
+            };
         let item = merged.item.into_head_published(&publication);
-        self._scheduler_list.retain_published_first_item(address);
         Ok(BluetoothDtmSchedulerHeadPublished { item, publication })
+    }
+
+    /// Publish one prepared advertising item through the common head edge.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection retains the complete advertising merge"
+    )]
+    pub(crate) fn publish_legacy_advertising_scheduler_head<'a>(
+        &mut self,
+        merged: BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+    ) -> Result<
+        BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
+        BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure<'a>,
+    > {
+        let address = merged.scheduler_item_address();
+        let publication =
+            match self.publish_first_scheduler_item_head(address, merged.hardware_list_index()) {
+                Ok(publication) => publication,
+                Err(error) => {
+                    return Err(BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure {
+                        error,
+                        merged,
+                    });
+                }
+            };
+        let BluetoothLegacyAdvertisingEmptySchedulerMergePrepared { item, reservation } = merged;
+        let item = item.into_head_published(&publication);
+        Ok(BluetoothLegacyAdvertisingSchedulerHeadPublished {
+            item,
+            publication,
+            _reservation: reservation,
+        })
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the powered task owner and exclusive list identity jointly authorize the typed PAC publication"
+    )]
+    fn publish_first_scheduler_item_head(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> Result<BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHeadPublicationError>
+    {
+        if !self._scheduler_list.can_publish_first_item(address) {
+            return Err(BluetoothSchedulerHeadPublicationError::SchedulerIdentityMismatch);
+        }
+        let head = BluetoothSchedulerHardwareListHead::from_address(address)?;
+        let publication = unsafe { self.task.publish_scheduler_hardware_list_head(index, head) };
+        self._scheduler_list.retain_published_first_item(address);
+        Ok(publication)
     }
     /// Perform one fresh, bounded DTM completion observation.
     ///
@@ -3185,7 +3398,7 @@ mod tests {
         use super::{
             BluetoothDtmControllerEventPreparationError as PreparationError,
             BluetoothDtmControllerTimeAcquisitionError as TimeError,
-            BluetoothDtmEmptySchedulerMergeError, BluetoothDtmFirstPreparationCompletionClass,
+            BluetoothDtmFirstPreparationCompletionClass, BluetoothSchedulerEmptyListMergeError,
             BluetoothSchedulerReservationError as ReservationError,
             BluetoothSchedulerSequenceAuthorizationError as SequenceError,
             classify_dtm_first_preparation_completion,
@@ -3220,7 +3433,7 @@ mod tests {
             PreparationError::ControllerTime(TimeError::OwnershipLost),
             PreparationError::ControllerTime(TimeError::Faulted),
             PreparationError::ControllerTime(TimeError::Cancelled),
-            PreparationError::EmptyList(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty),
+            PreparationError::EmptyList(BluetoothSchedulerEmptyListMergeError::ListNotEmpty),
         ] {
             assert_eq!(
                 classify_dtm_first_preparation_completion(error),
@@ -3230,8 +3443,8 @@ mod tests {
     }
 
     use super::{
-        BluetoothDtmControllerEventPreparationError, BluetoothDtmEmptySchedulerMergeError,
-        BluetoothDtmSchedulerFinishedListDrainState, BluetoothSchedulerExclusiveListEpoch,
+        BluetoothDtmControllerEventPreparationError, BluetoothDtmSchedulerFinishedListDrainState,
+        BluetoothSchedulerEmptyListMergeError, BluetoothSchedulerExclusiveListEpoch,
         BluetoothSchedulerHardwareListsCleared,
     };
 
@@ -3280,7 +3493,7 @@ mod tests {
         assert_eq!(list.prepare_first_item(first), Ok(()));
         assert_eq!(
             list.prepare_first_item(other),
-            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+            Err(BluetoothSchedulerEmptyListMergeError::ListNotEmpty)
         );
         assert!(!list.cancel_first_item(other));
         assert!(list.cancel_first_item(first));
@@ -3308,7 +3521,7 @@ mod tests {
         assert!(list.retains_running_first_item(first));
         assert_eq!(
             list.prepare_first_item(other),
-            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+            Err(BluetoothSchedulerEmptyListMergeError::ListNotEmpty)
         );
         list.retain_completion_observed_first_item(first);
         assert!(list.retains_completion_observed_first_item(first));
@@ -3316,7 +3529,7 @@ mod tests {
         assert!(!list.cancel_first_item(first));
         assert_eq!(
             list.prepare_first_item(other),
-            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+            Err(BluetoothSchedulerEmptyListMergeError::ListNotEmpty)
         );
         list.retain_hardware_head_empty_first_item(first);
         assert!(!list.retains_completion_observed_first_item(first));
@@ -3326,13 +3539,13 @@ mod tests {
         assert!(list.retains_unlinked_first_item(first));
         assert_eq!(
             list.prepare_first_item(other),
-            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+            Err(BluetoothSchedulerEmptyListMergeError::ListNotEmpty)
         );
         list.retain_software_list_removal_ready_first_item(first);
         assert!(list.retains_software_list_removal_ready_first_item(first));
         assert_eq!(
             list.prepare_first_item(other),
-            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+            Err(BluetoothSchedulerEmptyListMergeError::ListNotEmpty)
         );
         list.commit_recycled_first_item();
         assert_eq!(list.prepare_first_item(other), Ok(()));
@@ -3365,7 +3578,7 @@ mod tests {
             .retain_published_first_item(address);
 
         let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
-        task.retain_running_dtm_first_item(address);
+        task.retain_running_first_item(address);
         drop((interrupt, task, modem_timer));
 
         assert!(
@@ -3552,6 +3765,14 @@ mod tests {
         assert_eq!(prepared.identity(), identity);
         assert_eq!(prepared.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
 
+        let merged = match task.prepare_legacy_advertising_empty_list_merge(prepared) {
+            Ok(merged) => merged,
+            Err(_) => panic!("the pristine exclusive list must accept the advertising item"),
+        };
+        let prepared = match task.cancel_legacy_advertising_empty_list_merge(merged) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("the same scheduler epoch must restore the unpublished event"),
+        };
         let cancelled = task.cancel_legacy_advertising_first_event(prepared);
         let (enabled, memory) = cancelled.into_parts();
         assert_eq!(enabled.prepare_next().identity(), identity);

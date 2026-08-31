@@ -31,8 +31,8 @@ use crate::{
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmControllerRxPreparationFailure,
     BluetoothDtmControllerTxPreparationFailure, BluetoothDtmEmptySchedulerMergePrepared,
     BluetoothDtmInitialSchedulerItemPhase, BluetoothDtmReceiverEvent,
-    BluetoothDtmSchedulerHeadPublicationError, BluetoothDtmSchedulerHeadPublished,
-    BluetoothDtmSchedulerRunning, BluetoothDtmSessionIdle, BluetoothDtmTransmitterEvent,
+    BluetoothDtmSchedulerHeadPublished, BluetoothDtmSchedulerRunning, BluetoothDtmSessionIdle,
+    BluetoothDtmTransmitterEvent, BluetoothSchedulerHeadPublicationError,
     BluetoothSchedulerRunInterruptStorage,
 };
 
@@ -568,7 +568,7 @@ where
 #[must_use = "the retry cause should be inspected before advancing the retained runner"]
 pub enum BluetoothDtmFirstRunnerRetryCause<E> {
     /// The CPU-owned graph could not become the scheduler hardware-list head.
-    HeadPublication(BluetoothDtmSchedulerHeadPublicationError),
+    HeadPublication(BluetoothSchedulerHeadPublicationError),
     /// Dynamic scheduler interrupt preparation rejected the published head.
     SchedulerStart(E),
 }

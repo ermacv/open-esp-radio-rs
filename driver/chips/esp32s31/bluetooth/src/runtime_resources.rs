@@ -282,7 +282,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     /// split as the HAL task owner. A mismatched address therefore fails closed
     /// against the retained published-head identity.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn retain_running_dtm_first_item(
+    pub(crate) fn retain_running_first_item(
         &mut self,
         address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
     ) {

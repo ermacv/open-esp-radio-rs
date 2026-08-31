@@ -131,11 +131,11 @@ pub mod validation;
 
 #[cfg(target_arch = "riscv32")]
 pub use baseband::{BluetoothBasebandInitializationReport, BluetoothControllerBasebandInitialized};
+pub use ble_phy::BluetoothBlePhyInitializationReport;
 #[cfg(target_arch = "riscv32")]
 pub use ble_phy::BluetoothControllerBlePhyEngineInitialized;
 #[cfg(target_arch = "riscv32")]
 pub(crate) use ble_phy::BluetoothDtmRfReady;
-pub use ble_phy::{BluetoothBlePhyInitializationConfig, BluetoothBlePhyInitializationReport};
 pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockEnableFailure, BluetoothClockError,
     BluetoothClockState, BluetoothClockedResources,

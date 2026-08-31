@@ -85,16 +85,16 @@ impl BluetoothPhyEnvironmentAddress {
 
 /// Complete external inputs read by the recovered BLE PHY init body.
 ///
-/// Names remain positional where the vendor bytes do not prove hardware
-/// meaning. The two option values are deliberately separate because the
-/// vendor obtains them through separate linked-state reads.
+/// The timing source remains private Controller policy. The two public BLE
+/// configuration values retain their recovered semantic names rather than the
+/// offsets at which one vendor implementation happened to store them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPhyRegisterInitInputs {
-    private_configuration_byte_0x10: u8,
+    private_timing_source_byte: u8,
     environment: BluetoothPhyEnvironmentAddress,
     resolving_list: BluetoothControllerSramAddress,
-    option_byte_0x55_nonzero: bool,
-    option_byte_0x59: u8,
+    ignore_allowlist_for_directed_advertising: bool,
+    backoff_rssi_dbm: i8,
 }
 
 impl BluetoothPhyRegisterInitInputs {
@@ -103,18 +103,18 @@ impl BluetoothPhyRegisterInitInputs {
     /// Both values are typed address images, but this value does not prove
     /// their allocation, contents, lifetime, or exclusive ownership.
     pub const fn new(
-        private_configuration_byte_0x10: u8,
+        private_timing_source_byte: u8,
         environment: BluetoothPhyEnvironmentAddress,
         resolving_list: BluetoothControllerSramAddress,
-        option_byte_0x55_nonzero: bool,
-        option_byte_0x59: u8,
+        ignore_allowlist_for_directed_advertising: bool,
+        backoff_rssi_dbm: i8,
     ) -> Self {
         Self {
-            private_configuration_byte_0x10,
+            private_timing_source_byte,
             environment,
             resolving_list,
-            option_byte_0x55_nonzero,
-            option_byte_0x59,
+            ignore_allowlist_for_directed_advertising,
+            backoff_rssi_dbm,
         }
     }
 }
@@ -161,7 +161,7 @@ impl BluetoothTaskRegisters {
     }
 
     fn initialize_ble_phy_registers_leaf(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
-        let timing_byte = inputs.private_configuration_byte_0x10.wrapping_sub(1);
+        let timing_byte = inputs.private_timing_source_byte.wrapping_sub(1);
         let environment = inputs.environment.address();
         let environment_member = inputs.environment.compressed_member(0x2c);
         let environment_tail = environment + ENVIRONMENT_LAST_OFFSET;
@@ -261,13 +261,13 @@ impl BluetoothTaskRegisters {
             &bluetooth.ble_phy_init_phase,
         );
 
-        if inputs.option_byte_0x55_nonzero {
+        if inputs.ignore_allowlist_for_directed_advertising {
             super::generated::enable_ble_phy_init_branch_control_0470(btmac);
         }
 
         super::svd::zero_based_field_write::publish_ble_phy_runtime_configuration(
             &bluetooth.ble_hw_runtime_control,
-            inputs.option_byte_0x59,
+            inputs.backoff_rssi_dbm as u8,
             true,
         );
         super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(

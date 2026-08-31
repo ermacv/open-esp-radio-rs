@@ -14,54 +14,45 @@ use crate::baseband::BluetoothControllerBasebandInitialized;
 #[cfg(target_arch = "riscv32")]
 use crate::resources::BluetoothInterruptBankOwner;
 
-/// Source-owned values consumed by the finite BLE PHY register transaction.
+/// Source-owned normal BLE PHY policy for the reviewed ESP32-S31 baseline.
 ///
-/// Names remain positional where recovered code has not yet established a
-/// stable hardware meaning. Keeping them explicit prevents one vendor build's
-/// private configuration object from becoming an implicit ABI dependency.
+/// The caller cannot override values recovered from the target's private and
+/// public Controller configuration. Parameterized variants remain confined to
+/// validation probes so production never acquires a vendor-object ABI.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothBlePhyInitializationConfig {
-    private_configuration_byte_0x10: u8,
-    option_byte_0x55_nonzero: bool,
-    option_byte_0x59: u8,
+#[cfg(any(target_arch = "riscv32", test))]
+struct BluetoothBlePhyInitializationProfile {
+    private_timing_source_byte: u8,
+    ignore_allowlist_for_directed_advertising: bool,
+    backoff_rssi_dbm: i8,
 }
 
-impl BluetoothBlePhyInitializationConfig {
-    /// Capture every non-address input consumed by the reviewed transaction.
-    pub const fn new(
-        private_configuration_byte_0x10: u8,
-        option_byte_0x55_nonzero: bool,
-        option_byte_0x59: u8,
-    ) -> Self {
-        Self {
-            private_configuration_byte_0x10,
-            option_byte_0x55_nonzero,
-            option_byte_0x59,
-        }
-    }
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothBlePhyInitializationProfile {
+    const NORMAL: Self = Self {
+        private_timing_source_byte: 61,
+        ignore_allowlist_for_directed_advertising: false,
+        backoff_rssi_dbm: -100,
+    };
 
-    /// Return the still-positional byte read from private configuration `+0x10`.
-    pub const fn private_configuration_byte_0x10(self) -> u8 {
-        self.private_configuration_byte_0x10
-    }
-
-    /// Return whether the still-positional `+0x55` option selects its branch.
-    pub const fn option_byte_0x55_nonzero(self) -> bool {
-        self.option_byte_0x55_nonzero
-    }
-
-    /// Return the still-positional runtime byte read at `+0x59`.
-    pub const fn option_byte_0x59(self) -> u8 {
-        self.option_byte_0x59
+    const fn register_inputs(
+        self,
+        storage: &open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyEngineCpuOwned,
+    ) -> BluetoothPhyRegisterInitInputs {
+        let binding = storage.binding();
+        BluetoothPhyRegisterInitInputs::new(
+            self.private_timing_source_byte,
+            binding.environment_address(),
+            binding.resolving_list_address(),
+            self.ignore_allowlist_for_directed_advertising,
+            self.backoff_rssi_dbm,
+        )
     }
 }
 
-/// Value-only observation of the completed BLE PHY register transaction.
+/// Observation that the source-owned normal BLE PHY transaction completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothBlePhyInitializationReport {
-    /// Exact source-owned configuration consumed by this Controller epoch.
-    pub config: BluetoothBlePhyInitializationConfig,
-}
+pub struct BluetoothBlePhyInitializationReport;
 
 /// One standalone RF-ready observation in the retained scheduler epoch.
 ///
@@ -175,7 +166,7 @@ impl<
 where
     M: RawMutex,
 {
-    /// Inspect the exact source-owned configuration used by this epoch.
+    /// Observe completion of the source-owned normal BLE PHY transaction.
     pub const fn report(&self) -> BluetoothBlePhyInitializationReport {
         self.report
     }
@@ -260,7 +251,6 @@ where
     pub fn initialize_ble_phy_engine(
         mut self,
         storage: BluetoothBlePhyEngineCpuOwned,
-        config: BluetoothBlePhyInitializationConfig,
     ) -> BluetoothControllerBlePhyEngineInitialized<
         P,
         M,
@@ -270,7 +260,7 @@ where
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     > {
-        let report = apply_register_init(&storage, config, |inputs| {
+        let report = apply_register_init(&storage, |inputs| {
             // SAFETY: `self` retains the powered scheduler/HCI, low-power,
             // common-PHY and BTBB owners. `storage` is a consumed static owner
             // for the complete published allocation graph and is moved into
@@ -294,18 +284,10 @@ where
 #[cfg(any(target_arch = "riscv32", test))]
 fn apply_register_init(
     storage: &open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyEngineCpuOwned,
-    config: BluetoothBlePhyInitializationConfig,
     initialize: impl FnOnce(BluetoothPhyRegisterInitInputs),
 ) -> BluetoothBlePhyInitializationReport {
-    let binding = storage.binding();
-    initialize(BluetoothPhyRegisterInitInputs::new(
-        config.private_configuration_byte_0x10,
-        binding.environment_address(),
-        binding.resolving_list_address(),
-        config.option_byte_0x55_nonzero,
-        config.option_byte_0x59,
-    ));
-    BluetoothBlePhyInitializationReport { config }
+    initialize(BluetoothBlePhyInitializationProfile::NORMAL.register_inputs(storage));
+    BluetoothBlePhyInitializationReport
 }
 
 #[cfg(test)]
@@ -314,7 +296,7 @@ mod tests {
         BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
     };
 
-    use super::{BluetoothBlePhyInitializationConfig, apply_register_init};
+    use super::{BluetoothBlePhyInitializationReport, apply_register_init};
 
     #[test]
     fn register_transition_consumes_one_complete_input_set() {
@@ -324,13 +306,12 @@ mod tests {
             .expect("model base uses the controller-SRAM encoding");
         let owner = BluetoothBlePhyEngineStorage::pin_static_model(storage, base)
             .expect("complete model storage fits physical SRAM");
-        let config = BluetoothBlePhyInitializationConfig::new(61, false, 0);
         let mut calls = 0;
 
-        let report = apply_register_init(&owner, config, |_| calls += 1);
+        let report = apply_register_init(&owner, |_| calls += 1);
 
         assert_eq!(calls, 1);
-        assert_eq!(report.config, config);
+        assert_eq!(report, BluetoothBlePhyInitializationReport);
         assert!(owner.binding().range().0 < owner.binding().range().1);
     }
 }

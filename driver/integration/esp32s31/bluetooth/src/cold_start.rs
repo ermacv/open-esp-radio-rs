@@ -12,9 +12,8 @@ use open_esp_radio_bluetooth_hci::{
     LeControllerHciResourcesError,
 };
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothBasebandInitializationReport, BluetoothBlePhyInitializationConfig,
-    BluetoothBlePhyInitializationReport, BluetoothClockEnableFailure,
-    BluetoothControllerHciInitializationFailure,
+    BluetoothBasebandInitializationReport, BluetoothBlePhyInitializationReport,
+    BluetoothClockEnableFailure, BluetoothControllerHciInitializationFailure,
     BluetoothControllerInterruptOwnerPublicationFailure, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerLowPowerHardwareInitializationFailure,
     BluetoothControllerPhyClientAcquireFailure, BluetoothControllerPhyInitializationFailure,
@@ -157,16 +156,14 @@ type InterruptOwnersReady<
     PC,
 >;
 
-/// Every explicit source or product input for one production Controller epoch.
+/// Every product input for one production Controller epoch.
 ///
-/// There are deliberately no defaults. The three BLE-PHY positional inputs
-/// and the DTM allocation policy are reviewed facts of the selected vendor
-/// baseline, not generic application preferences.
+/// Recovered target facts, including the normal BLE-PHY policy, remain owned
+/// by the chip driver and cannot be overridden by an application.
 pub struct Esp32s31BluetoothColdStartConfig {
     le_acl_data_packet_length: u16,
     total_num_le_acl_data_packets: u8,
     retained_calibration: Option<PhyCalibrationSnapshot>,
-    ble_phy: BluetoothBlePhyInitializationConfig,
     dtm: BluetoothDtmRuntimeConfig,
     recheck_period: EmbassyBluetoothDtmRecheckPeriod,
 }
@@ -177,7 +174,6 @@ impl Esp32s31BluetoothColdStartConfig {
         le_acl_data_packet_length: u16,
         total_num_le_acl_data_packets: u8,
         retained_calibration: Option<PhyCalibrationSnapshot>,
-        ble_phy: BluetoothBlePhyInitializationConfig,
         dtm: BluetoothDtmRuntimeConfig,
         recheck_period: EmbassyBluetoothDtmRecheckPeriod,
     ) -> Self {
@@ -185,7 +181,6 @@ impl Esp32s31BluetoothColdStartConfig {
             le_acl_data_packet_length,
             total_num_le_acl_data_packets,
             retained_calibration,
-            ble_phy,
             dtm,
             recheck_period,
         }
@@ -534,7 +529,6 @@ pub async fn start_esp32s31_bluetooth<
         le_acl_data_packet_length,
         total_num_le_acl_data_packets,
         retained_calibration,
-        ble_phy,
         dtm,
         recheck_period,
     } = config;
@@ -698,8 +692,7 @@ pub async fn start_esp32s31_bluetooth<
     let baseband_initialized = initialized.initialize_baseband();
     let baseband = baseband_initialized.baseband_report();
     let (ble_phy_memory, dtm_runtime) = memory.into_parts();
-    let ble_phy_initialized =
-        baseband_initialized.initialize_ble_phy_engine(ble_phy_memory, ble_phy);
+    let ble_phy_initialized = baseband_initialized.initialize_ble_phy_engine(ble_phy_memory);
     let ble_phy = ble_phy_initialized.report();
     let ready = ble_phy_initialized
         .prepare_controller_output_and_start_runtime_timer()

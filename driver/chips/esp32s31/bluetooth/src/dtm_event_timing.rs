@@ -48,7 +48,7 @@ pub(crate) struct BluetoothDtmSchedulerMargin(u8);
 impl BluetoothDtmSchedulerMargin {
     /// Construct the exact margin initialized by the reviewed standalone LLL.
     pub(crate) const fn reviewed_standalone() -> Self {
-        Self(106)
+        Self(107)
     }
 
     const fn scheduler_delta(self) -> u32 {
@@ -344,14 +344,14 @@ mod tests {
     fn initial_receiver_window_selects_the_later_fresh_anchor() {
         let nominal =
             BluetoothDtmRxInitialEventWindow::new(config(), instant(1_000), instant(2_045));
-        assert_eq!(nominal.anchor().image(), 2_046);
+        assert_eq!(nominal.anchor().image(), 2_047);
         assert_eq!(nominal.start().image(), 1_940);
-        assert_eq!(nominal.end().image(), 3_046);
+        assert_eq!(nominal.end().image(), 3_047);
 
         let rf_limited =
             BluetoothDtmRxInitialEventWindow::new(config(), instant(1_000), instant(2_047));
         assert_eq!(rf_limited.anchor().image(), 2_047);
-        assert_eq!(rf_limited.start().image(), 1_941);
+        assert_eq!(rf_limited.start().image(), 1_940);
         assert_eq!(rf_limited.end().image(), 3_047);
     }
 
@@ -359,9 +359,9 @@ mod tests {
     fn initial_receiver_window_uses_signed_wrapping_order() {
         let nominal =
             BluetoothDtmRxInitialEventWindow::new(config(), instant(0xffff_ffe0), instant(1_013));
-        assert_eq!(nominal.anchor().image(), 1_014);
+        assert_eq!(nominal.anchor().image(), 1_015);
         assert_eq!(nominal.start().image(), 908);
-        assert_eq!(nominal.end().image(), 2_014);
+        assert_eq!(nominal.end().image(), 2_015);
 
         let rf_limited =
             BluetoothDtmRxInitialEventWindow::new(config(), instant(0xffff_ffe0), instant(1_015));
@@ -374,14 +374,14 @@ mod tests {
 
         let nominal =
             BluetoothDtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_160));
-        assert_eq!(nominal.anchor().image(), 1_161);
+        assert_eq!(nominal.anchor().image(), 1_162);
         assert_eq!(nominal.start().image(), 1_055);
-        assert_eq!(nominal.end().image(), 2_161);
+        assert_eq!(nominal.end().image(), 2_162);
 
         let rf_limited =
             BluetoothDtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_162));
         assert_eq!(rf_limited.anchor().image(), 1_162);
-        assert_eq!(rf_limited.start().image(), 1_056);
+        assert_eq!(rf_limited.start().image(), 1_055);
         assert_eq!(rf_limited.end().image(), 2_162);
     }
 
@@ -391,9 +391,9 @@ mod tests {
 
         let nominal =
             BluetoothDtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(128));
-        assert_eq!(nominal.anchor().image(), 129);
+        assert_eq!(nominal.anchor().image(), 130);
         assert_eq!(nominal.start().image(), 23);
-        assert_eq!(nominal.end().image(), 1_129);
+        assert_eq!(nominal.end().image(), 1_130);
 
         let rf_limited =
             BluetoothDtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(130));
@@ -405,13 +405,13 @@ mod tests {
         let timing = timing(0, BluetoothDtmPhy::Le1M, 0);
 
         let nominal = timing.initial_event_window(config(), instant(1_000), instant(2_045));
-        assert_eq!(nominal.anchor().image(), 2_046);
+        assert_eq!(nominal.anchor().image(), 2_047);
         assert_eq!(nominal.start().image(), 1_940);
-        assert_eq!(nominal.end().image(), 4_182);
+        assert_eq!(nominal.end().image(), 4_183);
 
         let rf_limited = timing.initial_event_window(config(), instant(1_000), instant(2_100));
         assert_eq!(rf_limited.anchor().image(), 2_100);
-        assert_eq!(rf_limited.start().image(), 1_994);
+        assert_eq!(rf_limited.start().image(), 1_993);
         assert_eq!(rf_limited.end().image(), 4_236);
     }
 
@@ -423,7 +423,7 @@ mod tests {
 
         assert_eq!(advance.intervals_advanced(), 1);
         assert_eq!(advance.window().anchor().image(), 2_725);
-        assert_eq!(advance.window().start().image(), 2_619);
+        assert_eq!(advance.window().start().image(), 2_618);
         assert_eq!(advance.window().end().image(), 4_861);
     }
 
@@ -435,7 +435,7 @@ mod tests {
 
         assert_eq!(advance.intervals_advanced(), 4);
         assert_eq!(advance.window().anchor().image(), 4_600);
-        assert_eq!(advance.window().start().image(), 4_494);
+        assert_eq!(advance.window().start().image(), 4_493);
     }
 
     #[test]

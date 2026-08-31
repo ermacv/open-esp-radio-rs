@@ -1823,7 +1823,7 @@ mod tests {
         tx_timing().initial_event_window(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(64),
-            BluetoothDtmSchedulerInstant::from_image(1_118),
+            BluetoothDtmSchedulerInstant::from_image(1_119),
         )
     }
 
@@ -1831,7 +1831,7 @@ mod tests {
         crate::BluetoothDtmRxInitialEventWindow::new(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(64),
-            BluetoothDtmSchedulerInstant::from_image(1_118),
+            BluetoothDtmSchedulerInstant::from_image(1_119),
         )
     }
 

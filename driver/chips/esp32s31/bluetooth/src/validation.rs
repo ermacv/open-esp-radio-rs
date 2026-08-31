@@ -194,22 +194,22 @@ pub unsafe fn program_memory_list_pointer(
 )]
 #[inline(always)]
 pub unsafe fn initialize_phy_registers(
-    private_configuration_byte_0x10: u8,
+    private_timing_source_byte: u8,
     environment_address: u32,
     resolving_list_address: u32,
-    option_byte_0x55_nonzero: bool,
-    option_byte_0x59: u8,
+    ignore_allowlist_for_directed_advertising: bool,
+    backoff_rssi_dbm: i8,
 ) -> bool {
     let Ok(resolving_list) = BluetoothControllerSramAddress::new(resolving_list_address) else {
         return false;
     };
     unsafe {
         open_esp_radio_esp32s31_pac::validation::initialize_bluetooth_phy_registers(
-            private_configuration_byte_0x10,
+            private_timing_source_byte,
             environment_address,
             resolving_list,
-            option_byte_0x55_nonzero,
-            option_byte_0x59,
+            ignore_allowlist_for_directed_advertising,
+            backoff_rssi_dbm,
         )
     }
 }

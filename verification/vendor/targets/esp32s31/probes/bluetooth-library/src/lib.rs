@@ -177,11 +177,11 @@ pub extern "C" fn open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_pe
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_yo6_ggv(
-    private_configuration_byte_0x10: u32,
+    private_timing_source_byte: u32,
     environment_address: u32,
     resolving_list_address: u32,
-    option_byte_0x55_nonzero: u32,
-    option_byte_0x59: u32,
+    ignore_allowlist_for_directed_advertising: u32,
+    backoff_rssi_image: u32,
 ) {
     // SAFETY: every comparison case models the recovered prerequisite state,
     // supplies live controller storage for the execution lifetime, performs
@@ -190,11 +190,11 @@ pub extern "C" fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_y
     unsafe {
         let _accepted =
             open_esp_radio_esp32s31_bluetooth::validation::initialize_phy_registers(
-                private_configuration_byte_0x10 as u8,
+                private_timing_source_byte as u8,
                 environment_address,
                 resolving_list_address,
-                option_byte_0x55_nonzero != 0,
-                option_byte_0x59 as u8,
+                ignore_allowlist_for_directed_advertising != 0,
+                backoff_rssi_image as i8,
             );
     }
 }

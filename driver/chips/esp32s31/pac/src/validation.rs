@@ -212,21 +212,21 @@ pub unsafe fn program_bluetooth_memory_list_pointer(
 )]
 #[inline(always)]
 pub unsafe fn initialize_bluetooth_phy_registers(
-    private_configuration_byte_0x10: u8,
+    private_timing_source_byte: u8,
     environment_address: u32,
     resolving_list: crate::BluetoothControllerSramAddress,
-    option_byte_0x55_nonzero: bool,
-    option_byte_0x59: u8,
+    ignore_allowlist_for_directed_advertising: bool,
+    backoff_rssi_dbm: i8,
 ) -> bool {
     let Ok(environment) = BluetoothPhyEnvironmentAddress::new(environment_address) else {
         return false;
     };
     let inputs = BluetoothPhyRegisterInitInputs::new(
-        private_configuration_byte_0x10,
+        private_timing_source_byte,
         environment,
         resolving_list,
-        option_byte_0x55_nonzero,
-        option_byte_0x59,
+        ignore_allowlist_for_directed_advertising,
+        backoff_rssi_dbm,
     );
     let cold = RadioHardware::for_validation().into_bluetooth();
     let (mut task, interrupts) = cold.separate_interrupt_owner();

@@ -1,0 +1,13 @@
+[package]
+name = "open-esp-radio-bluetooth-ll"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free Bluetooth LE Link Layer protocol and role state"
+
+[dependencies]
+
+[lints]
+workspace = true

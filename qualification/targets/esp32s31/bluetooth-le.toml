@@ -22,6 +22,7 @@ required-capabilities = [
   "hci-bootstrap",
   "hci-controller-endpoints",
   "packet-dataplane",
+  "portable-legacy-advertising",
   "le-link-layer",
   "typed-hci-controller",
   "async-controller-runtime",
@@ -382,18 +383,29 @@ gaps = [
 ]
 
 [[capabilities]]
+id = "portable-legacy-advertising"
+title = "Portable legacy non-connectable advertising"
+scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty primary channel selection affine per-channel event progression and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "bluetooth-core-protocol-state"
+hil-not-applicable = "hardware-independent-protocol-state"
+async-not-applicable = "pure-finite-state-transition"
+
+[[capabilities]]
 id = "le-link-layer"
 title = "Bluetooth LE Link Layer"
-scope = "Legacy advertising scanning one peripheral connection reliability supervision and minimum LL control procedures"
+scope = "Production legacy advertising scanning one peripheral connection reliability supervision and minimum LL control procedures"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-depends-on = ["packet-dataplane"]
+depends-on = ["packet-dataplane", "portable-legacy-advertising"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "advertising-scanning-connection-and-llcp-missing" },
+  { axis = "implementation", id = "legacy-advertising-chip-owner-scanning-connection-and-llcp-missing" },
   { axis = "host", id = "virtual-clock-link-layer-tests-missing" },
   { axis = "vendor", id = "link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },

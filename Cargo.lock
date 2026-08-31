@@ -2260,6 +2260,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-bluetooth-ll"
+version = "0.1.0"
+
+[[package]]
 name = "open-esp-radio-dma"
 version = "0.1.0"
 

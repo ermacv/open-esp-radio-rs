@@ -14,6 +14,7 @@ members = [
     "driver/adapters/esp-hal/esp32s31-ieee802154",
     "driver/adapters/esp-hal/esp32s31-wifi",
     "driver/bluetooth/hci",
+    "driver/bluetooth/ll",
     "driver/ieee802154",
     "driver/wifi/ap",
     "driver/wifi/sta",

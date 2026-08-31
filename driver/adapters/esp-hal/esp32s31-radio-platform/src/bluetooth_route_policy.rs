@@ -2,13 +2,13 @@
 
 #![forbid(unsafe_code)]
 
-pub(crate) const REQUIRED_PRIORITY_LEVEL: u8 = 3;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BluetoothInterruptRouteError {
-    PrimaryPriority,
-    ModemLpTimerPriority,
-    NrtPriority,
+pub enum EspHalBluetoothInterruptRouteError {
+    /// A complete Bluetooth route epoch is already live process-wide.
+    AlreadyBound,
+    /// No complete Bluetooth route epoch is currently live.
+    Inactive,
+    /// Disable was attempted away from the route epoch's binding core.
     WrongCore,
 }
 
@@ -97,79 +97,89 @@ pub(crate) fn service_stable_owner<Owner, Output>(
     slot.as_mut().map(service)
 }
 
-/// Validate the complete route set before any route can be installed.
-pub(crate) const fn validate_route_priorities(
-    primary: u8,
-    modem_lp_timer: u8,
-    nrt: u8,
-) -> Result<(), BluetoothInterruptRouteError> {
-    if primary != REQUIRED_PRIORITY_LEVEL {
-        return Err(BluetoothInterruptRouteError::PrimaryPriority);
-    }
-    if modem_lp_timer != REQUIRED_PRIORITY_LEVEL {
-        return Err(BluetoothInterruptRouteError::ModemLpTimerPriority);
-    }
-    if nrt != REQUIRED_PRIORITY_LEVEL {
-        return Err(BluetoothInterruptRouteError::NrtPriority);
-    }
-    Ok(())
+/// Host-testable ownership model for one process-wide interrupt-route epoch.
+///
+/// The target adapter stores the dispatch function beside the same binding
+/// core. This model owns the transition policy without depending on ESP-HAL.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BluetoothInterruptRouteState<Core> {
+    bound_core: Option<Core>,
 }
 
-/// Reject teardown from a CPU other than the route's binding core.
-pub(crate) const fn validate_quiesce_core(
-    is_binding_core: bool,
-) -> Result<(), BluetoothInterruptRouteError> {
-    if !is_binding_core {
-        return Err(BluetoothInterruptRouteError::WrongCore);
+impl<Core: Copy + Eq> BluetoothInterruptRouteState<Core> {
+    #[cfg(test)]
+    pub(crate) const fn inactive() -> Self {
+        Self { bound_core: None }
     }
-    Ok(())
+
+    pub(crate) const fn from_bound_core(bound_core: Option<Core>) -> Self {
+        Self { bound_core }
+    }
+
+    pub(crate) fn bind(&mut self, core: Core) -> Result<(), EspHalBluetoothInterruptRouteError> {
+        if self.bound_core.is_some() {
+            return Err(EspHalBluetoothInterruptRouteError::AlreadyBound);
+        }
+        self.bound_core = Some(core);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn dispatch_is_live(&self) -> bool {
+        self.bound_core.is_some()
+    }
+
+    pub(crate) fn disable(
+        &mut self,
+        current_core: Core,
+    ) -> Result<(), EspHalBluetoothInterruptRouteError> {
+        let Some(bound_core) = self.bound_core else {
+            return Err(EspHalBluetoothInterruptRouteError::Inactive);
+        };
+        if current_core != bound_core {
+            return Err(EspHalBluetoothInterruptRouteError::WrongCore);
+        }
+        self.bound_core = None;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothInterruptRouteError, BluetoothModemLpTimerInterruptAdmission,
+        BluetoothInterruptRouteState, BluetoothModemLpTimerInterruptAdmission,
         BluetoothModemLpTimerStoragePhase, BluetoothModemLpTimerTaskTakeAdmission,
-        EspHalBluetoothInterruptStorageError, REQUIRED_PRIORITY_LEVEL,
+        EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError,
         classify_modem_lp_timer_interrupt, classify_modem_lp_timer_task_take,
         ready_owner_restore_is_admitted, service_stable_owner, validate_interrupt_storage,
-        validate_quiesce_core, validate_route_priorities,
     };
 
     #[test]
-    fn complete_level_three_route_set_is_accepted() {
+    fn route_epoch_binds_once_and_dispatches_only_while_live() {
+        let mut state = BluetoothInterruptRouteState::from_bound_core(None);
+        assert!(!state.dispatch_is_live());
+        assert_eq!(state.bind(0_u8), Ok(()));
+        assert!(state.dispatch_is_live());
         assert_eq!(
-            validate_route_priorities(
-                REQUIRED_PRIORITY_LEVEL,
-                REQUIRED_PRIORITY_LEVEL,
-                REQUIRED_PRIORITY_LEVEL,
-            ),
-            Ok(())
+            state.bind(0),
+            Err(EspHalBluetoothInterruptRouteError::AlreadyBound)
         );
     }
 
     #[test]
-    fn any_invalid_priority_rejects_the_route_set_before_binding() {
+    fn route_epoch_disable_is_same_core_and_consumes_live_dispatch() {
+        let mut state = BluetoothInterruptRouteState::inactive();
+        assert_eq!(state.bind(1_u8), Ok(()));
         assert_eq!(
-            validate_route_priorities(2, REQUIRED_PRIORITY_LEVEL, REQUIRED_PRIORITY_LEVEL),
-            Err(BluetoothInterruptRouteError::PrimaryPriority)
+            state.disable(0),
+            Err(EspHalBluetoothInterruptRouteError::WrongCore)
         );
+        assert!(state.dispatch_is_live());
+        assert_eq!(state.disable(1), Ok(()));
+        assert!(!state.dispatch_is_live());
         assert_eq!(
-            validate_route_priorities(REQUIRED_PRIORITY_LEVEL, 2, REQUIRED_PRIORITY_LEVEL),
-            Err(BluetoothInterruptRouteError::ModemLpTimerPriority)
-        );
-        assert_eq!(
-            validate_route_priorities(REQUIRED_PRIORITY_LEVEL, REQUIRED_PRIORITY_LEVEL, 2),
-            Err(BluetoothInterruptRouteError::NrtPriority)
-        );
-    }
-
-    #[test]
-    fn quiesce_is_affine_to_the_binding_core() {
-        assert_eq!(validate_quiesce_core(true), Ok(()));
-        assert_eq!(
-            validate_quiesce_core(false),
-            Err(BluetoothInterruptRouteError::WrongCore)
+            state.disable(1),
+            Err(EspHalBluetoothInterruptRouteError::Inactive)
         );
     }
 

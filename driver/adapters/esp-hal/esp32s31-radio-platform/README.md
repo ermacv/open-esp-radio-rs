@@ -20,21 +20,29 @@ is intentionally impossible today. Wi-Fi must migrate to this coordinator
 before coexistence can be enabled.
 
 The pinned ESP32-S31 PAC names all three Controller sources as `BT_MAC`,
-`MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter compile-checks those
-identities against the reviewed source-124/source-127/source-133 policies and
-contains one same-core, level-three bind/disable set. The primitives remain
-crate-private: scheduler-list drain and executor notification must be composed
-before a public live interrupt epoch can safely enable any route. Both unique
-register owners are already published atomically
-in stable process-wide slots. The published lease can run the finite primary
-classifier, opaque default NRT acknowledgement and timer register disposition
-while retaining their owners in those slots. The chip Controller consumes
-that semantic primary result and durably updates both scheduler cells from the
-same temporal observation. It also lets Controller task code take a
-software-pending timer owner and return only its fully rearmed successor. The
-chip crate durably coalesces source-127 task readiness before exposing a wake
-disposition, and owns the bounded modem-timer queue, epoch and backpressured
-expiration handoff, so this adapter does not duplicate Controller policy.
+`MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter routes those typed identities
+for the reviewed source-124/source-127/source-133 policies and contains one
+same-core, level-three bind/disable set. `bind_routes` borrows the
+stable publication and returns one affine
+`BoundEspHalBluetoothInterruptEpoch`. The adapter owns the exact three ESP-HAL
+handlers; integration publishes one full-controller dispatcher that receives
+a fixed `Primary`, `ModemLpTimer`, or `NrtDefault` role. The roles therefore
+cannot be exchanged by passing handlers in the wrong order. Full dispatcher
+state must be stable before bind. The callback/live marker is installed before
+the first route is enabled, so even an immediately pending interrupt observes
+the complete dispatcher. Successful same-core disable closes all three routes
+and clears the dispatcher while the epoch ends its borrow; dropping the epoch
+is fail-stop and cannot globally remint another live route. The three private
+bound-service entries first check the live epoch marker and otherwise perform
+no register access. They run only the finite primary classifier, opaque
+default NRT acknowledgement or timer register disposition. The chip Controller
+consumes those semantic results and durably updates its scheduler/task cells.
+A fatal stable-storage result quarantines the asserted CPU route before the
+adapter-owned hard handler returns.
+It also lets Controller task code take a software-pending timer owner and
+return only its fully rearmed successor. The chip crate owns executor
+notification, the bounded modem-timer queue and backpressured expiration
+handoff, so this adapter does not duplicate Controller policy.
 
 The Bluetooth clock/reset sequence is pinned to the reviewed ESP-IDF source:
 

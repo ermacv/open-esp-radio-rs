@@ -202,28 +202,6 @@ where
         (interrupts, timer)
     }
 
-    pub(crate) fn modem_lp_timer_software_parts_mut(
-        &mut self,
-    ) -> (
-        &mut crate::BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
-        &mut open_esp_radio_esp32s31_hal::BluetoothModemLpTimerEpoch,
-        &crate::BluetoothModemLpTimerEventCell,
-    ) {
-        self.initialized
-            .initialized
-            .controller
-            .modem_lp_timer_software_parts_mut()
-    }
-
-    pub(crate) const fn modem_lp_timer_worker_wake(
-        &self,
-    ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
-        self.initialized
-            .initialized
-            .controller
-            .modem_lp_timer_worker_wake()
-    }
-
     /// Split the already initialized scheduler and HCI resources after this
     /// complete BLE-PHY owner has reached stable final placement.
     pub(crate) fn split_runtime(
@@ -232,6 +210,7 @@ where
         crate::BluetoothControllerRuntimeEndpoints<
             '_,
             M,
+            MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,

@@ -158,22 +158,24 @@ pub use controller_start::{
     BluetoothControllerIdleResponsePending, BluetoothControllerIdleResponsePublication,
     BluetoothControllerInterruptOwnerPublicationFailure,
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
-    BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
-    BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
-    BluetoothControllerPublishedInterruptService, BluetoothControllerPublishedRuntimeEndpoints,
-    BluetoothControllerPublishedRuntimeSplit, BluetoothControllerPublishedRuntimeSplitFailure,
-    BluetoothControllerPublishedTaskService, BluetoothControllerSchedulerCurrentBeginError,
-    BluetoothControllerSchedulerCurrentBeginFailure, BluetoothControllerSchedulerCurrentError,
-    BluetoothControllerSchedulerCurrentFailure, BluetoothControllerSchedulerCurrentPending,
-    BluetoothControllerSchedulerCurrentStep, BluetoothControllerSchedulerEpochRetained,
-    BluetoothControllerSchedulerEpochUnavailable, BluetoothControllerSchedulerNowReady,
-    BluetoothControllerTimeOrphanDrainStep, BluetoothDtmControllerInitialPreparationFailure,
-    BluetoothDtmControllerPreparationOutcome, BluetoothDtmControllerPreparationPending,
-    BluetoothDtmControllerPreparationStep, BluetoothDtmControllerPreparationTerminal,
-    BluetoothDtmPostUnlinkArmStep, BluetoothDtmSchedulerStartFailure,
-    BluetoothDtmSoftwareListRemovalPublishedStep, BluetoothInterruptOwnerStorage,
-    BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
-    BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
+    BluetoothControllerModemTimerBegin, BluetoothControllerModemTimerReadiness,
+    BluetoothControllerModemTimerReadinessClass, BluetoothControllerModemTimerRearm,
+    BluetoothControllerModemTimerStep, BluetoothControllerModemTimerTask,
+    BluetoothControllerOutputTimerStarted, BluetoothControllerPublishedInterruptService,
+    BluetoothControllerPublishedRuntimeEndpoints, BluetoothControllerPublishedRuntimeSplit,
+    BluetoothControllerPublishedRuntimeSplitFailure, BluetoothControllerPublishedTaskService,
+    BluetoothControllerSchedulerCurrentBeginError, BluetoothControllerSchedulerCurrentBeginFailure,
+    BluetoothControllerSchedulerCurrentError, BluetoothControllerSchedulerCurrentFailure,
+    BluetoothControllerSchedulerCurrentPending, BluetoothControllerSchedulerCurrentStep,
+    BluetoothControllerSchedulerEpochRetained, BluetoothControllerSchedulerEpochUnavailable,
+    BluetoothControllerSchedulerNowReady, BluetoothControllerTimeOrphanDrainStep,
+    BluetoothDtmControllerInitialPreparationFailure, BluetoothDtmControllerPreparationOutcome,
+    BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
+    BluetoothDtmControllerPreparationTerminal, BluetoothDtmPostUnlinkArmStep,
+    BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedStep,
+    BluetoothInterruptOwnerStorage, BluetoothModemLpTimerInterruptDispatchStorage,
+    BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothSchedulerRunInterruptStorage,
+    BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use controller_time::{
@@ -347,8 +349,8 @@ pub use resources::{BluetoothStopped, BluetoothStoppedReleaseFailure};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime_resources::BluetoothControllerPoweredTaskRuntime;
 pub use runtime_resources::{
-    BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
-    BluetoothControllerTaskRuntime,
+    BluetoothControllerInterruptRuntime, BluetoothControllerModemTimerRuntime,
+    BluetoothControllerRuntimeResources, BluetoothControllerTaskRuntime,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{

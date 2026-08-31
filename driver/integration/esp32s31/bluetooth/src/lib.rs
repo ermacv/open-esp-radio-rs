@@ -1,13 +1,25 @@
-//! Production ownership of ESP32-S31 Bluetooth controller storage.
+//! Production ownership and final IRQ composition for ESP32-S31 Bluetooth.
 //!
 //! This crate owns placement and one-time acquisition for both the BLE PHY
-//! environment and one DTM event graph. Controller-memory layout and address
-//! validation remain in the chip memory crate. A successful DTM claim binds
-//! the graph directly to its immutable runtime configuration and idle-session
-//! owner for later composition with HAL, HCI and IRQ owners.
+//! environment and one DTM event graph. It also installs the final target-only
+//! bridge from the three typed ESP-HAL routes through the complete chip ISR
+//! service to durable Embassy notification. Controller-memory layout and
+//! address validation remain in the chip memory crate. Command/HCI ownership
+//! is composed by the outer Controller runner rather than by an IRQ callback.
 
 #![no_std]
 #![deny(unsafe_code)]
+
+#[cfg(any(test, target_arch = "riscv32"))]
+mod interrupt_fault;
+#[cfg(target_arch = "riscv32")]
+mod interrupt_runtime;
+
+#[cfg(target_arch = "riscv32")]
+pub use interrupt_runtime::{
+    Esp32s31BluetoothInterruptBindError, Esp32s31BluetoothInterruptFault,
+    Esp32s31BluetoothInterruptRuntime, bind_production_bluetooth_interrupt_runtime,
+};
 
 use core::sync::atomic::{AtomicBool, Ordering};
 

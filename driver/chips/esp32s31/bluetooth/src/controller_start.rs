@@ -24,13 +24,17 @@ use crate::dtm_post_unlink::{
     BluetoothDtmPostUnlinkTake,
 };
 #[cfg(target_arch = "riscv32")]
+use crate::modem_lp_timer_queue::{
+    BluetoothModemLpTimerExpirationState, BluetoothModemLpTimerSoftwareState,
+    BluetoothModemLpTimerSoftwareStateStep,
+};
+#[cfg(target_arch = "riscv32")]
 use crate::{
     BluetoothControllerBlePhyEngineInitialized, BluetoothControllerInterruptRuntime,
-    BluetoothControllerPoweredTaskRuntime, BluetoothControllerRuntimeEndpoints,
-    BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
-    BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
-    BluetoothModemLpTimerPublishedInterruptStep, BluetoothModemLpTimerSoftwareStep,
-    BluetoothModemLpTimerSoftwareWork, BluetoothModemLpTimerStableInterruptStep,
+    BluetoothControllerModemTimerRuntime, BluetoothControllerPoweredTaskRuntime,
+    BluetoothControllerRuntimeEndpoints, BluetoothModemLpTimerEventCell,
+    BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
+    BluetoothModemLpTimerPublishedInterruptStep, BluetoothModemLpTimerStableInterruptStep,
     BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryInterruptStep,
     BluetoothPrimaryPublishedInterruptStep,
 };
@@ -292,149 +296,250 @@ pub enum BluetoothDtmPostUnlinkArmStep<Role> {
     Armed(crate::BluetoothDtmPostUnlinkAwaiting<Role>),
 }
 
+/// Stable state retained inside the disjoint source-127 task endpoint.
 #[cfg(target_arch = "riscv32")]
-enum BluetoothControllerModemLpTimerSoftwarePhase<'runtime, const CAPACITY: usize> {
-    Work(BluetoothModemLpTimerSoftwareWork<'runtime, CAPACITY>),
-    Expiration(BluetoothModemLpTimerExpirationPending<'runtime, CAPACITY>),
+enum BluetoothControllerModemTimerTaskPhase {
+    Idle,
+    Work(BluetoothModemLpTimerSoftwareState),
+    Expiration(BluetoothModemLpTimerExpirationState),
+    Rearm(BluetoothModemLpTimerInterruptReadyOwner),
 }
 
-/// One borrowed source-127 task epoch tied to Controller runtime and ISR storage.
+/// Borrowed readiness class for the source-127 task endpoint.
 ///
-/// This value retains the unique HAL owner, mutable queue/epoch borrows and the
-/// stable-storage lease. It can advance only one bounded queue or publication
-/// edge per [`step`](Self::step) call.
-#[must_use = "source-127 task ownership must reach publication and rearm"]
+/// The value carries no timer owner and may be held by an executor wait future.
+/// The affine queue, epoch and HAL phase remain inside
+/// [`BluetoothControllerModemTimerTask`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, const CAPACITY: usize>
-where
-    S: BluetoothModemLpTimerSoftwareOwnerStorage,
-{
-    phase: BluetoothControllerModemLpTimerSoftwarePhase<'runtime, CAPACITY>,
-    events: &'runtime BluetoothModemLpTimerEventCell,
-    storage: &'runtime S,
+pub enum BluetoothControllerModemTimerReadinessClass {
+    /// No interrupt-owned software work is known to be pending.
+    Interrupt,
+    /// One finite software transition can run immediately.
+    Step,
+    /// Expiration publication is waiting for the one-event cell to become empty.
+    EventCapacity,
+    /// A fully rearmed owner is ready for stable-storage restoration.
+    Rearm,
 }
 
-/// Result of one Controller-level source-127 task step.
-#[must_use = "retain the returned task work or the failed ready owner"]
+/// Owner-free borrowed readiness observation for source 127.
+#[must_use = "readiness must be checked before polling again"]
 #[cfg(target_arch = "riscv32")]
-pub enum BluetoothControllerModemLpTimerSoftwareStep<'runtime, S, const CAPACITY: usize>
-where
-    S: BluetoothModemLpTimerSoftwareOwnerStorage,
-{
-    /// One due expiration now owns the publication edge.
-    ExpirationPending(BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>),
-    /// The durable cell accepted one expiration and task work may continue.
-    Published {
-        /// Retained timer work after successful publication.
-        work: BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>,
-        /// Wake disposition for the event consumer.
-        publication: BluetoothModemLpTimerEventPublication,
-    },
-    /// The event cell is occupied; no expiration or owner was lost.
-    Backpressured(BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>),
-    /// Immediate compare programming requires one later fresh recheck.
-    Recheck(BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>),
-    /// Queue work completed and the ready owner returned to stable ISR storage.
+pub struct BluetoothControllerModemTimerReadiness<'task> {
+    class: BluetoothControllerModemTimerReadinessClass,
+    worker_wake: &'task crate::BluetoothModemLpTimerWorkerWakeCell,
+    events: &'task BluetoothModemLpTimerEventCell,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothControllerModemTimerReadiness<'_> {
+    /// Exact state an executor wait is observing.
+    pub const fn class(&self) -> BluetoothControllerModemTimerReadinessClass {
+        self.class
+    }
+
+    /// Recheck readiness after registering the executor's own waker.
+    ///
+    /// This operation is borrowed and value-only. It neither acquires stable
+    /// ownership nor advances queue or register state.
+    pub fn is_ready(&self) -> bool {
+        match self.class {
+            BluetoothControllerModemTimerReadinessClass::Interrupt => self.worker_wake.is_pending(),
+            BluetoothControllerModemTimerReadinessClass::Step
+            | BluetoothControllerModemTimerReadinessClass::Rearm => true,
+            BluetoothControllerModemTimerReadinessClass::EventCapacity => !self.events.is_pending(),
+        }
+    }
+}
+
+/// Result of acquiring one durable source-127 software-pending owner.
+#[must_use = "a begin result must be handled without losing stable readiness"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothControllerModemTimerBegin<E> {
+    /// No durable interrupt publication currently requests task work.
+    NotReady,
+    /// The owner entered the endpoint and one finite software step is ready.
+    Started,
+    /// Stable storage rejected acquisition; the endpoint remains idle.
+    StorageRejected(E),
+    /// A software or rearm phase is already retained by this endpoint.
+    AlreadyActive,
+}
+
+/// Result of one finite source-127 task transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use = "the next source-127 readiness class must be observed"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothControllerModemTimerStep {
+    /// No software owner has been acquired.
+    Idle,
+    /// One expiration now owns the durable publication edge.
+    ExpirationPending(BluetoothModemLpTimerExpiration),
+    /// The expiration was published and later work remains retained.
+    Published(BluetoothModemLpTimerEventPublication),
+    /// The expiration cell is occupied and the unchanged publication remains retained.
+    Backpressured(BluetoothModemLpTimerExpiration),
+    /// Immediate compare disposition requires a later fresh finite recheck.
+    Recheck,
+    /// Queue processing produced a fully rearmed owner retained inside the endpoint.
+    RearmPending,
+}
+
+/// Result of restoring the fully rearmed owner to stable ISR storage.
+#[must_use = "a rejected rearm remains retained by the timer task"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothControllerModemTimerRearm<E> {
+    /// The ready owner is back in stable interrupt storage.
     Rearmed,
-    /// Stable storage rejected the fully rearmed owner and it remains retained.
-    RestoreFailed(BluetoothControllerModemLpTimerRestoreFailure<S::RestoreError>),
+    /// Stable storage rejected restoration; the exact ready owner remains private.
+    StorageRejected(E),
+    /// No fully rearmed owner is currently retained.
+    NotReady,
 }
 
-/// Failed source-127 stable restore retaining the unique ready owner.
-#[must_use = "a failed source-127 restore still owns the timer registers"]
+/// Disjoint task-context source-127 owner for one final Controller runtime.
+///
+/// This endpoint exclusively owns the mutable timer queue and positional epoch.
+/// Stable storage is shared only as the platform exchange boundary with the
+/// interrupt service. All affine HAL states remain private across borrowed
+/// readiness and finite `begin`, `step`, and `rearm` calls, so an executor
+/// future never needs to own them.
+#[must_use = "the modem timer task retains source-127 queue and hardware ownership"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothControllerModemLpTimerRestoreFailure<E> {
-    error: E,
-    owner: BluetoothModemLpTimerInterruptReadyOwner,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<E> BluetoothControllerModemLpTimerRestoreFailure<E> {
-    /// Inspect the exact platform rejection.
-    pub const fn error(&self) -> &E {
-        &self.error
-    }
-
-    /// Recover the platform error and unchanged ready owner.
-    pub fn into_parts(self) -> (E, BluetoothModemLpTimerInterruptReadyOwner) {
-        (self.error, self.owner)
-    }
+pub struct BluetoothControllerModemTimerTask<'runtime, S, const CAPACITY: usize> {
+    storage: &'runtime S,
+    runtime: BluetoothControllerModemTimerRuntime<'runtime, CAPACITY>,
+    phase: BluetoothControllerModemTimerTaskPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'runtime, S, const CAPACITY: usize>
-    BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>
+impl<'runtime, S, const CAPACITY: usize> BluetoothControllerModemTimerTask<'runtime, S, CAPACITY>
 where
     S: BluetoothModemLpTimerSoftwareOwnerStorage,
 {
-    /// Inspect an expiration blocked on durable publication, if any.
-    pub const fn pending_expiration(&self) -> Option<BluetoothModemLpTimerExpiration> {
-        match &self.phase {
-            BluetoothControllerModemLpTimerSoftwarePhase::Work(_) => None,
-            BluetoothControllerModemLpTimerSoftwarePhase::Expiration(pending) => {
-                Some(pending.event())
-            }
+    fn new(
+        storage: &'runtime S,
+        runtime: BluetoothControllerModemTimerRuntime<'runtime, CAPACITY>,
+    ) -> Self {
+        Self {
+            storage,
+            runtime,
+            phase: BluetoothControllerModemTimerTaskPhase::Idle,
         }
     }
 
-    /// Execute one bounded queue, publication or rearm edge.
-    pub fn step(self) -> BluetoothControllerModemLpTimerSoftwareStep<'runtime, S, CAPACITY> {
-        let Self {
-            phase,
-            events,
-            storage,
-        } = self;
+    /// Borrow the current owner-free readiness predicate.
+    pub fn readiness(&self) -> BluetoothControllerModemTimerReadiness<'_> {
+        let class = match &self.phase {
+            BluetoothControllerModemTimerTaskPhase::Idle => {
+                BluetoothControllerModemTimerReadinessClass::Interrupt
+            }
+            BluetoothControllerModemTimerTaskPhase::Work(_) => {
+                BluetoothControllerModemTimerReadinessClass::Step
+            }
+            BluetoothControllerModemTimerTaskPhase::Expiration(_) => {
+                BluetoothControllerModemTimerReadinessClass::EventCapacity
+            }
+            BluetoothControllerModemTimerTaskPhase::Rearm(_) => {
+                BluetoothControllerModemTimerReadinessClass::Rearm
+            }
+        };
+        BluetoothControllerModemTimerReadiness {
+            class,
+            worker_wake: self.runtime.worker_wake(),
+            events: self.runtime.events(),
+        }
+    }
+
+    /// Acquire exactly one software-pending owner after borrowed readiness.
+    pub fn begin(&mut self) -> BluetoothControllerModemTimerBegin<S::TakeError> {
+        if !matches!(self.phase, BluetoothControllerModemTimerTaskPhase::Idle) {
+            return BluetoothControllerModemTimerBegin::AlreadyActive;
+        }
+        if !self.runtime.worker_wake().is_pending() {
+            return BluetoothControllerModemTimerBegin::NotReady;
+        }
+        match self.storage.take_modem_lp_timer_software_pending() {
+            Ok(owner) => {
+                self.runtime.worker_wake.take();
+                self.phase = BluetoothControllerModemTimerTaskPhase::Work(
+                    BluetoothModemLpTimerSoftwareState::begin(owner, self.runtime.epoch),
+                );
+                BluetoothControllerModemTimerBegin::Started
+            }
+            Err(error) => BluetoothControllerModemTimerBegin::StorageRejected(error),
+        }
+    }
+
+    /// Advance exactly one queue, publication or compare transition.
+    pub fn step(&mut self) -> BluetoothControllerModemTimerStep {
+        let phase = core::mem::replace(
+            &mut self.phase,
+            BluetoothControllerModemTimerTaskPhase::Idle,
+        );
         match phase {
-            BluetoothControllerModemLpTimerSoftwarePhase::Work(work) => match work.step() {
-                BluetoothModemLpTimerSoftwareStep::Expiration(pending) => {
-                    BluetoothControllerModemLpTimerSoftwareStep::ExpirationPending(Self {
-                        phase: BluetoothControllerModemLpTimerSoftwarePhase::Expiration(pending),
-                        events,
-                        storage,
-                    })
-                }
-                BluetoothModemLpTimerSoftwareStep::Recheck(work) => {
-                    BluetoothControllerModemLpTimerSoftwareStep::Recheck(Self {
-                        phase: BluetoothControllerModemLpTimerSoftwarePhase::Work(work),
-                        events,
-                        storage,
-                    })
-                }
-                BluetoothModemLpTimerSoftwareStep::Rearmed(owner) => {
-                    match storage.restore_modem_lp_timer_ready(owner) {
-                        Ok(()) => BluetoothControllerModemLpTimerSoftwareStep::Rearmed,
-                        Err((error, owner)) => {
-                            BluetoothControllerModemLpTimerSoftwareStep::RestoreFailed(
-                                BluetoothControllerModemLpTimerRestoreFailure { error, owner },
-                            )
-                        }
+            BluetoothControllerModemTimerTaskPhase::Idle => BluetoothControllerModemTimerStep::Idle,
+            BluetoothControllerModemTimerTaskPhase::Work(work) => {
+                match work.step(self.runtime.queue, self.runtime.epoch) {
+                    BluetoothModemLpTimerSoftwareStateStep::Expiration(pending) => {
+                        let event = pending.event();
+                        self.phase = BluetoothControllerModemTimerTaskPhase::Expiration(pending);
+                        BluetoothControllerModemTimerStep::ExpirationPending(event)
+                    }
+                    BluetoothModemLpTimerSoftwareStateStep::Recheck(work) => {
+                        self.phase = BluetoothControllerModemTimerTaskPhase::Work(work);
+                        BluetoothControllerModemTimerStep::Recheck
+                    }
+                    BluetoothModemLpTimerSoftwareStateStep::Rearmed(owner) => {
+                        self.phase = BluetoothControllerModemTimerTaskPhase::Rearm(owner);
+                        BluetoothControllerModemTimerStep::RearmPending
                     }
                 }
-            },
-            BluetoothControllerModemLpTimerSoftwarePhase::Expiration(pending) => {
-                match pending.publish(events) {
+            }
+            BluetoothControllerModemTimerTaskPhase::Expiration(pending) => {
+                let event = pending.event();
+                match pending.publish(self.runtime.events()) {
                     Ok((work, publication)) => {
-                        BluetoothControllerModemLpTimerSoftwareStep::Published {
-                            work: Self {
-                                phase: BluetoothControllerModemLpTimerSoftwarePhase::Work(work),
-                                events,
-                                storage,
-                            },
-                            publication,
-                        }
+                        self.phase = BluetoothControllerModemTimerTaskPhase::Work(work);
+                        BluetoothControllerModemTimerStep::Published(publication)
                     }
                     Err(pending) => {
-                        BluetoothControllerModemLpTimerSoftwareStep::Backpressured(Self {
-                            phase: BluetoothControllerModemLpTimerSoftwarePhase::Expiration(
-                                pending,
-                            ),
-                            events,
-                            storage,
-                        })
+                        self.phase = BluetoothControllerModemTimerTaskPhase::Expiration(pending);
+                        BluetoothControllerModemTimerStep::Backpressured(event)
                     }
                 }
             }
+            BluetoothControllerModemTimerTaskPhase::Rearm(owner) => {
+                self.phase = BluetoothControllerModemTimerTaskPhase::Rearm(owner);
+                BluetoothControllerModemTimerStep::RearmPending
+            }
         }
+    }
+
+    /// Restore one fully rearmed owner to stable source-127 interrupt storage.
+    pub fn rearm(&mut self) -> BluetoothControllerModemTimerRearm<S::RestoreError> {
+        let phase = core::mem::replace(
+            &mut self.phase,
+            BluetoothControllerModemTimerTaskPhase::Idle,
+        );
+        let BluetoothControllerModemTimerTaskPhase::Rearm(owner) = phase else {
+            self.phase = phase;
+            return BluetoothControllerModemTimerRearm::NotReady;
+        };
+        self.runtime.worker_wake.take();
+        match self.storage.restore_modem_lp_timer_ready(owner) {
+            Ok(()) => BluetoothControllerModemTimerRearm::Rearmed,
+            Err((error, owner)) => {
+                self.phase = BluetoothControllerModemTimerTaskPhase::Rearm(owner);
+                BluetoothControllerModemTimerRearm::StorageRejected(error)
+            }
+        }
+    }
+
+    /// Consume one durably published expiration, if present.
+    pub fn take_expiration(&mut self) -> Option<BluetoothModemLpTimerExpiration> {
+        self.runtime.events().take()
     }
 }
 
@@ -489,6 +594,7 @@ pub struct BluetoothControllerPublishedRuntimeEndpoints<
     'runtime,
     M,
     S,
+    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -500,6 +606,8 @@ pub struct BluetoothControllerPublishedRuntimeEndpoints<
     pub interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
     /// Sole idle task carrying this epoch's affine next-command authority.
     pub task: BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>,
+    /// Disjoint source-127 queue, epoch and stable-storage task endpoint.
+    pub modem_timer: BluetoothControllerModemTimerTask<'runtime, S, MODEM_TIMER_CAPACITY>,
     /// Disjoint Host transport and combined Controller command endpoint.
     pub hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<
         'runtime,
@@ -522,6 +630,7 @@ pub enum BluetoothControllerPublishedRuntimeSplit<
     'runtime,
     M,
     S,
+    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -535,6 +644,7 @@ pub enum BluetoothControllerPublishedRuntimeSplit<
             'runtime,
             M,
             S,
+            MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
@@ -547,6 +657,7 @@ pub enum BluetoothControllerPublishedRuntimeSplit<
             'runtime,
             M,
             S,
+            MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
@@ -562,6 +673,7 @@ pub struct BluetoothControllerPublishedRuntimeSplitFailure<
     'runtime,
     M,
     S,
+    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -571,6 +683,7 @@ pub struct BluetoothControllerPublishedRuntimeSplitFailure<
 {
     _interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
     _task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    _modem_timer: BluetoothControllerModemTimerTask<'runtime, S, MODEM_TIMER_CAPACITY>,
     _hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<
         'runtime,
         M,
@@ -2671,6 +2784,7 @@ impl<
     >
 where
     M: RawMutex,
+    S: BluetoothModemLpTimerSoftwareOwnerStorage,
 {
     /// Borrow the complete final Controller and DTM runtime as disjoint
     /// interrupt, task and HCI endpoints.
@@ -2684,6 +2798,7 @@ where
         'runtime,
         M,
         S,
+        MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
@@ -2701,6 +2816,7 @@ where
             BluetoothControllerRuntimeEndpoints {
                 interrupt,
                 task,
+                modem_timer,
                 hci,
             },
             rf_ready,
@@ -2718,6 +2834,7 @@ where
             rf_ready,
             scheduler_epoch,
         };
+        let modem_timer = BluetoothControllerModemTimerTask::new(_storage, modem_timer);
         let mut hci = hci;
         match hci.controller.claim_initial_command_ready(task) {
             open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::Ready(ready) => {
@@ -2725,6 +2842,7 @@ where
                     BluetoothControllerPublishedRuntimeEndpoints {
                         interrupt,
                         task: BluetoothControllerIdleCommandTask::from_ready(ready),
+                        modem_timer,
                         hci,
                     },
                 )
@@ -2734,6 +2852,7 @@ where
                     BluetoothControllerPublishedRuntimeSplitFailure {
                         _interrupt: interrupt,
                         _task: task,
+                        _modem_timer: modem_timer,
                         _hci: hci,
                     },
                 )
@@ -2759,32 +2878,6 @@ where
     /// Conditional runtime-control branch retained across publication.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
         self.runtime_control
-    }
-
-    /// Acquire source-127 task ownership from stable ISR storage.
-    ///
-    /// Success borrows this complete Controller state until queue work has
-    /// durably published every expiration and restored the fully rearmed owner.
-    /// The CPU routes remain inactive in this lifecycle state.
-    pub fn begin_modem_lp_timer_software_work(
-        &mut self,
-    ) -> Result<
-        BluetoothControllerModemLpTimerSoftwareWork<'_, S, MODEM_TIMER_CAPACITY>,
-        S::TakeError,
-    >
-    where
-        S: BluetoothModemLpTimerSoftwareOwnerStorage,
-    {
-        let owner = self._storage.take_modem_lp_timer_software_pending()?;
-        self.initialized.modem_lp_timer_worker_wake().take();
-        let (queue, epoch, events) = self.initialized.modem_lp_timer_software_parts_mut();
-        Ok(BluetoothControllerModemLpTimerSoftwareWork {
-            phase: BluetoothControllerModemLpTimerSoftwarePhase::Work(
-                BluetoothModemLpTimerSoftwareWork::begin(queue, epoch, owner),
-            ),
-            events,
-            storage: &self._storage,
-        })
     }
 }
 
@@ -3009,16 +3102,6 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Sole bounded finished-list worker for task-side draining.
     pub fn scheduler_finished_lists(&mut self) -> &mut crate::BluetoothSchedulerFinishedListWorker {
         self.runtime.scheduler_finished_lists()
-    }
-
-    /// Durable source-127 task-readiness handoff.
-    pub const fn modem_lp_timer_worker_wake(&self) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
-        self.runtime.modem_lp_timer_worker_wake()
-    }
-
-    /// Durable modem low-power timer expiration handoff.
-    pub const fn modem_lp_timer_events(&self) -> &crate::BluetoothModemLpTimerEventCell {
-        self.runtime.modem_lp_timer_events()
     }
 
     /// Durable ready notification for the Controller-owned post-unlink mailbox.
@@ -3281,6 +3364,17 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
 #[cfg(target_arch = "riscv32")]
 impl<S> BluetoothControllerPublishedInterruptService<'_, S> {
+    /// Borrow the exact stable-storage publication backing this interrupt
+    /// service.
+    ///
+    /// Platform integration uses this only after the complete service and its
+    /// executor notifications have reached stable storage, then binds the CPU
+    /// routes as the final activation edge. The borrow cannot duplicate or
+    /// recover the affine publication owner.
+    pub const fn storage(&self) -> &S {
+        self.storage
+    }
+
     /// Service, durably publish and route one primary source-124 epoch through
     /// the Controller-owned post-unlink mailbox.
     ///

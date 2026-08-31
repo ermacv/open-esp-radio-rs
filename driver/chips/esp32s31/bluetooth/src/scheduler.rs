@@ -12,8 +12,8 @@ use crate::scheduler_timeline::{
     BluetoothSchedulerSequenceAuthorizationFailure,
 };
 use crate::{
-    BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
-    BluetoothControllerRuntimeResources, BluetoothDtmRole,
+    BluetoothControllerInterruptRuntime, BluetoothControllerModemTimerRuntime,
+    BluetoothControllerPoweredTaskRuntime, BluetoothControllerRuntimeResources, BluetoothDtmRole,
     controller_hal::BluetoothControllerHalInitialized,
     dtm_event_prepare::{
         BluetoothDtmEmptyListLinkPrepared, BluetoothDtmHeadPublishedEvent,
@@ -2752,13 +2752,14 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     ) -> (
         BluetoothControllerInterruptRuntime<'_>,
         BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>,
+        BluetoothControllerModemTimerRuntime<'_, MODEM_TIMER_CAPACITY>,
     ) {
         let task = &mut self.task;
         let time_scale = self.time_scale;
         let standalone_always_awake = &self._standalone_always_awake;
         let config = self.config;
         let scheduler_list = &mut self._scheduler_list;
-        let (interrupt, software) = self.runtime.split();
+        let (interrupt, software, modem_timer) = self.runtime.split();
         (
             interrupt,
             BluetoothControllerPoweredTaskRuntime::new(
@@ -2769,25 +2770,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 config,
                 scheduler_list,
             ),
+            modem_timer,
         )
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn modem_lp_timer_software_parts_mut(
-        &mut self,
-    ) -> (
-        &mut crate::BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
-        &mut open_esp_radio_esp32s31_hal::BluetoothModemLpTimerEpoch,
-        &crate::BluetoothModemLpTimerEventCell,
-    ) {
-        self.runtime.modem_lp_timer_software_parts_mut()
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn modem_lp_timer_worker_wake(
-        &self,
-    ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
-        self.runtime.modem_lp_timer_worker_wake()
     }
 }
 
@@ -3062,9 +3046,9 @@ mod tests {
             ._scheduler_list
             .retain_published_first_item(address);
 
-        let (interrupt, mut task) = scheduler.split_runtime();
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
         task.retain_running_dtm_first_item(address);
-        drop((interrupt, task));
+        drop((interrupt, task, modem_timer));
 
         assert!(
             scheduler
@@ -3107,7 +3091,7 @@ mod tests {
         assert_eq!(scheduler.modem_timer_capacity(), 4);
         assert_eq!(scheduler.scheduler_capacity(), 3);
         assert!(scheduler.runtime_is_pristine());
-        let (interrupt, task) = scheduler.split_runtime();
+        let (interrupt, task, modem_timer) = scheduler.split_runtime();
         assert!(core::ptr::eq(
             interrupt.scheduler_wake(),
             task.scheduler_wake()
@@ -3117,7 +3101,7 @@ mod tests {
             crate::controller_time::BluetoothControllerTimeWorkerPhase::Idle
         );
         assert!(!task.controller_time_needs_recheck());
-        drop((interrupt, task));
+        drop((interrupt, task, modem_timer));
         drop(scheduler);
         assert_eq!(PLATFORM_DROPS.load(Ordering::Relaxed), 0);
     }
@@ -3160,7 +3144,7 @@ mod tests {
             BluetoothDtmSchedulerInstant::from_image(1_000)
         );
 
-        let (interrupt, mut task) = scheduler.split_runtime();
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
         let reservation = task
             .admit_initial_dtm_event(
                 event,
@@ -3178,7 +3162,7 @@ mod tests {
                 crate::BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
             )
         );
-        drop((interrupt, task));
+        drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());
     }
 
@@ -3220,7 +3204,7 @@ mod tests {
             BluetoothDtmSchedulerInstant::from_image(1_000)
         );
 
-        let (interrupt, mut task) = scheduler.split_runtime();
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
         let reservation = task
             .reserve_recurring_dtm_event(event, &now)
             .expect("the exact recurring window is initially free");
@@ -3234,7 +3218,7 @@ mod tests {
                 crate::BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
             )
         );
-        drop((interrupt, task));
+        drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());
     }
 }

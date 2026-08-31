@@ -445,8 +445,102 @@ pub fn step_modem_lp_timer_interrupt<'queue, const CAPACITY: usize>(
 pub struct BluetoothModemLpTimerSoftwareWork<'queue, const CAPACITY: usize> {
     queue: &'queue mut BluetoothModemLpTimerQueue<CAPACITY>,
     epoch: &'queue mut BluetoothModemLpTimerEpoch,
+    state: BluetoothModemLpTimerSoftwareState,
+}
+
+/// Non-borrowing source-127 software state retained by the final task endpoint.
+///
+/// Queue and epoch storage are deliberately supplied only for one finite
+/// operation. This lets an executor borrow readiness without moving the affine
+/// HAL owner into a future or constructing a self-referential task value.
+pub(crate) struct BluetoothModemLpTimerSoftwareState {
     owner: BluetoothModemLpTimerSoftwarePendingOwner,
     dispatch_requested: bool,
+}
+
+/// One finite step of non-borrowing source-127 software state.
+pub(crate) enum BluetoothModemLpTimerSoftwareStateStep {
+    Expiration(BluetoothModemLpTimerExpirationState),
+    Recheck(BluetoothModemLpTimerSoftwareState),
+    Rearmed(BluetoothModemLpTimerInterruptReadyOwner),
+}
+
+/// Non-borrowing expiration publication gate for the final task endpoint.
+pub(crate) struct BluetoothModemLpTimerExpirationState {
+    state: BluetoothModemLpTimerSoftwareState,
+    event: BluetoothModemLpTimerExpiration,
+}
+
+impl BluetoothModemLpTimerExpirationState {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn event(&self) -> BluetoothModemLpTimerExpiration {
+        self.event
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn publish(
+        self,
+        events: &BluetoothModemLpTimerEventCell,
+    ) -> Result<
+        (
+            BluetoothModemLpTimerSoftwareState,
+            BluetoothModemLpTimerEventPublication,
+        ),
+        Self,
+    > {
+        match events.publish(self.event) {
+            Ok(publication) => Ok((self.state, publication)),
+            Err(event) => Err(Self {
+                state: self.state,
+                event,
+            }),
+        }
+    }
+}
+
+impl BluetoothModemLpTimerSoftwareState {
+    pub(crate) fn begin(
+        owner: BluetoothModemLpTimerSoftwarePendingOwner,
+        epoch: &mut BluetoothModemLpTimerEpoch,
+    ) -> Self {
+        let registers = owner.register_observation();
+        epoch.advance_for_handler_registers(registers);
+        Self {
+            owner,
+            dispatch_requested: registers.state_0024_low_byte_was_nonzero(),
+        }
+    }
+
+    pub(crate) fn step<const CAPACITY: usize>(
+        mut self,
+        queue: &mut BluetoothModemLpTimerQueue<CAPACITY>,
+        epoch: &mut BluetoothModemLpTimerEpoch,
+    ) -> BluetoothModemLpTimerSoftwareStateStep {
+        let now = self.owner.sample_counter(epoch).instant();
+        if self.dispatch_requested
+            && let Some(event) = queue.pop_due(now)
+        {
+            return BluetoothModemLpTimerSoftwareStateStep::Expiration(
+                BluetoothModemLpTimerExpirationState { state: self, event },
+            );
+        }
+
+        let disposition = match queue.next_deadline(now) {
+            Some(deadline) => self.owner.program_compare(deadline, *epoch),
+            None => {
+                self.owner.disable_compare();
+                return BluetoothModemLpTimerSoftwareStateStep::Rearmed(
+                    self.owner.complete_software(),
+                );
+            }
+        };
+        if disposition == BluetoothModemLpTimerCompareDisposition::Immediate {
+            self.dispatch_requested = true;
+            BluetoothModemLpTimerSoftwareStateStep::Recheck(self)
+        } else {
+            BluetoothModemLpTimerSoftwareStateStep::Rearmed(self.owner.complete_software())
+        }
+    }
 }
 
 impl<'queue, const CAPACITY: usize> BluetoothModemLpTimerSoftwareWork<'queue, CAPACITY> {
@@ -456,13 +550,11 @@ impl<'queue, const CAPACITY: usize> BluetoothModemLpTimerSoftwareWork<'queue, CA
         epoch: &'queue mut BluetoothModemLpTimerEpoch,
         owner: BluetoothModemLpTimerSoftwarePendingOwner,
     ) -> Self {
-        let registers = owner.register_observation();
-        epoch.advance_for_handler_registers(registers);
+        let state = BluetoothModemLpTimerSoftwareState::begin(owner, epoch);
         Self {
             queue,
             epoch,
-            owner,
-            dispatch_requested: registers.state_0024_low_byte_was_nonzero(),
+            state,
         }
     }
 
@@ -471,28 +563,36 @@ impl<'queue, const CAPACITY: usize> BluetoothModemLpTimerSoftwareWork<'queue, CA
     /// At most one due timer is removed. If no expiration is due, the method
     /// performs exactly one compare disposition and the final fresh read only
     /// after every removed expiration has crossed the publication gate.
-    pub fn step(mut self) -> BluetoothModemLpTimerSoftwareStep<'queue, CAPACITY> {
-        let now = self.owner.sample_counter(self.epoch).instant();
-        if self.dispatch_requested
-            && let Some(event) = self.queue.pop_due(now)
-        {
-            return BluetoothModemLpTimerSoftwareStep::Expiration(
-                BluetoothModemLpTimerExpirationPending { work: self, event },
-            );
-        }
-
-        let disposition = match self.queue.next_deadline(now) {
-            Some(deadline) => self.owner.program_compare(deadline, *self.epoch),
-            None => {
-                self.owner.disable_compare();
-                return BluetoothModemLpTimerSoftwareStep::Rearmed(self.owner.complete_software());
+    pub fn step(self) -> BluetoothModemLpTimerSoftwareStep<'queue, CAPACITY> {
+        let Self {
+            queue,
+            epoch,
+            state,
+        } = self;
+        match state.step(queue, epoch) {
+            BluetoothModemLpTimerSoftwareStateStep::Expiration(pending) => {
+                let event = pending.event;
+                BluetoothModemLpTimerSoftwareStep::Expiration(
+                    BluetoothModemLpTimerExpirationPending {
+                        work: Self {
+                            queue,
+                            epoch,
+                            state: pending.state,
+                        },
+                        event,
+                    },
+                )
             }
-        };
-        if disposition == BluetoothModemLpTimerCompareDisposition::Immediate {
-            self.dispatch_requested = true;
-            BluetoothModemLpTimerSoftwareStep::Recheck(self)
-        } else {
-            BluetoothModemLpTimerSoftwareStep::Rearmed(self.owner.complete_software())
+            BluetoothModemLpTimerSoftwareStateStep::Recheck(state) => {
+                BluetoothModemLpTimerSoftwareStep::Recheck(Self {
+                    queue,
+                    epoch,
+                    state,
+                })
+            }
+            BluetoothModemLpTimerSoftwareStateStep::Rearmed(owner) => {
+                BluetoothModemLpTimerSoftwareStep::Rearmed(owner)
+            }
         }
     }
 }

@@ -6,8 +6,9 @@ use open_esp_radio_bluetooth_hci::{
 };
 
 use crate::{
-    BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
-    BluetoothSchedulerInitialized, BluetoothSchedulerSoftwareConfig,
+    BluetoothControllerInterruptRuntime, BluetoothControllerModemTimerRuntime,
+    BluetoothControllerPoweredTaskRuntime, BluetoothSchedulerInitialized,
+    BluetoothSchedulerSoftwareConfig,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothLowPowerRuntimeControlObservation,
@@ -222,6 +223,7 @@ where
 pub struct BluetoothControllerRuntimeEndpoints<
     'runtime,
     M,
+    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -233,6 +235,8 @@ pub struct BluetoothControllerRuntimeEndpoints<
     pub interrupt: BluetoothControllerInterruptRuntime<'runtime>,
     /// Task-side scheduler workers.
     pub task: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+    /// Unique mutable source-127 queue and epoch runtime.
+    pub modem_timer: BluetoothControllerModemTimerRuntime<'runtime, MODEM_TIMER_CAPACITY>,
     /// Disjoint Host transport and combined Controller command endpoint.
     pub hci: LeControllerHciEndpoints<
         'runtime,
@@ -300,16 +304,18 @@ where
     ) -> BluetoothControllerRuntimeEndpoints<
         '_,
         M,
+        MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     > {
-        let (interrupt, task) = self.scheduler.split_runtime();
+        let (interrupt, task, modem_timer) = self.scheduler.split_runtime();
         let hci = self.hci.split();
         BluetoothControllerRuntimeEndpoints {
             interrupt,
             task,
+            modem_timer,
             hci,
         }
     }
@@ -451,6 +457,7 @@ where
     ) -> BluetoothControllerRuntimeEndpoints<
         '_,
         M,
+        MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
@@ -483,26 +490,6 @@ where
         self.timer_hardware.take().expect(
             "private Controller invariant retains the low-power timer owner until activation",
         )
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn modem_lp_timer_software_parts_mut(
-        &mut self,
-    ) -> (
-        &mut crate::BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
-        &mut open_esp_radio_esp32s31_hal::BluetoothModemLpTimerEpoch,
-        &crate::BluetoothModemLpTimerEventCell,
-    ) {
-        self.controller
-            .scheduler
-            .modem_lp_timer_software_parts_mut()
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn modem_lp_timer_worker_wake(
-        &self,
-    ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
-        self.controller.scheduler.modem_lp_timer_worker_wake()
     }
 
     /// Conditional runtime-control branch observed by the exact hardware
@@ -622,12 +609,18 @@ mod tests {
         let BluetoothControllerRuntimeEndpoints {
             interrupt,
             task,
+            modem_timer,
             hci,
         } = controller.split_runtime();
         assert!(core::ptr::eq(
             interrupt.scheduler_wake(),
             task.scheduler_wake()
         ));
+        assert!(core::ptr::eq(
+            interrupt.modem_lp_timer_worker_wake(),
+            modem_timer.worker_wake()
+        ));
+        assert!(modem_timer.queue_is_empty());
         let LeControllerHciEndpoints { host, controller } = hci;
         block_on(async {
             host.write(&Reset::new())

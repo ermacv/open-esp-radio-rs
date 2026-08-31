@@ -61,7 +61,40 @@ pub struct BluetoothControllerInterruptRuntime<'runtime> {
     scheduler_wake: &'runtime BluetoothSchedulerWakeCell,
     scheduler_lock_modify_events: &'runtime BluetoothSchedulerLockModifyEventCell,
     modem_lp_timer_worker_wake: &'runtime BluetoothModemLpTimerWorkerWakeCell,
-    modem_lp_timer_events: &'runtime BluetoothModemLpTimerEventCell,
+}
+
+/// Unique mutable modem-timer runtime for one Controller epoch.
+///
+/// This endpoint is disjoint from both interrupt publication and command-task
+/// scheduler ownership. It is kept crate-private at the final composition
+/// boundary, where stable source-127 storage is joined to it by the typed modem
+/// timer task.
+#[must_use = "the modem-timer runtime must remain paired with its Controller epoch"]
+pub struct BluetoothControllerModemTimerRuntime<'runtime, const MODEM_TIMER_CAPACITY: usize> {
+    pub(crate) queue: &'runtime mut BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
+    #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
+    pub(crate) epoch: &'runtime mut BluetoothModemLpTimerEpoch,
+    pub(crate) worker_wake: &'runtime BluetoothModemLpTimerWorkerWakeCell,
+    pub(crate) events: &'runtime BluetoothModemLpTimerEventCell,
+}
+
+impl<const MODEM_TIMER_CAPACITY: usize>
+    BluetoothControllerModemTimerRuntime<'_, MODEM_TIMER_CAPACITY>
+{
+    /// Borrow the durable source-127 readiness cell without acquiring work.
+    pub const fn worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
+        self.worker_wake
+    }
+
+    /// Borrow the durable expiration handoff without acquiring timer ownership.
+    pub const fn events(&self) -> &BluetoothModemLpTimerEventCell {
+        self.events
+    }
+
+    /// Whether this endpoint still owns an empty software queue.
+    pub fn queue_is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
 }
 
 impl BluetoothControllerInterruptRuntime<'_> {
@@ -79,18 +112,13 @@ impl BluetoothControllerInterruptRuntime<'_> {
     pub const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
         self.modem_lp_timer_worker_wake
     }
-
-    /// Durable modem LP timer expiration handoff for this epoch.
-    pub const fn modem_lp_timer_events(&self) -> &BluetoothModemLpTimerEventCell {
-        self.modem_lp_timer_events
-    }
 }
 
 /// Task-side events and workers for the same borrowed Controller epoch.
 ///
 /// The mutable worker references make a second task endpoint impossible. The
-/// event cells are shared only with the matching interrupt endpoint returned
-/// by the same [`BluetoothControllerRuntimeResources::split`] call.
+/// scheduler event cells are shared only with the matching interrupt endpoint
+/// returned by the same [`BluetoothControllerRuntimeResources::split`] call.
 #[must_use = "the task endpoint must remain paired with its interrupt endpoint"]
 pub struct BluetoothControllerTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
     scheduler_wake: &'runtime BluetoothSchedulerWakeCell,
@@ -99,8 +127,6 @@ pub struct BluetoothControllerTaskRuntime<'runtime, const SCHEDULER_CAPACITY: us
     scheduler_finished_lists: &'runtime mut BluetoothSchedulerFinishedListWorker,
     #[cfg(any(target_arch = "riscv32", test))]
     scheduler_timeline: &'runtime mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY>,
-    modem_lp_timer_worker_wake: &'runtime BluetoothModemLpTimerWorkerWakeCell,
-    modem_lp_timer_events: &'runtime BluetoothModemLpTimerEventCell,
 }
 
 impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDULER_CAPACITY> {
@@ -136,16 +162,6 @@ impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDUL
         &mut self,
     ) -> &mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY> {
         self.scheduler_timeline
-    }
-
-    /// Durable source-127 task-readiness handoff for this epoch.
-    pub const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
-        self.modem_lp_timer_worker_wake
-    }
-
-    /// Durable modem LP timer expiration handoff for this epoch.
-    pub const fn modem_lp_timer_events(&self) -> &BluetoothModemLpTimerEventCell {
-        self.modem_lp_timer_events
     }
 }
 
@@ -223,16 +239,6 @@ impl<const SCHEDULER_CAPACITY: usize>
     /// The sole bounded finished-list worker for this powered epoch.
     pub fn scheduler_finished_lists(&mut self) -> &mut BluetoothSchedulerFinishedListWorker {
         self.runtime.scheduler_finished_lists()
-    }
-
-    /// Durable source-127 task-readiness handoff for this epoch.
-    pub const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
-        self.runtime.modem_lp_timer_worker_wake()
-    }
-
-    /// Durable modem LP timer expiration handoff for this epoch.
-    pub const fn modem_lp_timer_events(&self) -> &BluetoothModemLpTimerEventCell {
-        self.runtime.modem_lp_timer_events()
     }
 
     /// Advance one scheduler lock/modify transaction using the matching HAL
@@ -351,6 +357,7 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     ) -> (
         BluetoothControllerInterruptRuntime<'_>,
         BluetoothControllerTaskRuntime<'_, SCHEDULER_CAPACITY>,
+        BluetoothControllerModemTimerRuntime<'_, MODEM_TIMER_CAPACITY>,
     ) {
         let scheduler_wake = &self.scheduler_wake;
         let scheduler_lock_modify_events = &self.scheduler_lock_modify_events;
@@ -361,7 +368,6 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 scheduler_wake,
                 scheduler_lock_modify_events,
                 modem_lp_timer_worker_wake,
-                modem_lp_timer_events,
             },
             BluetoothControllerTaskRuntime {
                 scheduler_wake,
@@ -370,29 +376,13 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 scheduler_finished_lists: &mut self.scheduler_finished_lists,
                 #[cfg(any(target_arch = "riscv32", test))]
                 scheduler_timeline: &mut self.scheduler_timeline,
-                modem_lp_timer_worker_wake,
-                modem_lp_timer_events,
             },
-        )
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
-        &self.modem_lp_timer_worker_wake
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn modem_lp_timer_software_parts_mut(
-        &mut self,
-    ) -> (
-        &mut BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
-        &mut BluetoothModemLpTimerEpoch,
-        &BluetoothModemLpTimerEventCell,
-    ) {
-        (
-            &mut self.modem_lp_timer_queue,
-            &mut self.modem_lp_timer_epoch,
-            &self.modem_lp_timer_events,
+            BluetoothControllerModemTimerRuntime {
+                queue: &mut self.modem_lp_timer_queue,
+                epoch: &mut self.modem_lp_timer_epoch,
+                worker_wake: modem_lp_timer_worker_wake,
+                events: modem_lp_timer_events,
+            },
         )
     }
 }
@@ -407,6 +397,7 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize> Default
 
 #[cfg(test)]
 mod tests {
+    use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerInstant;
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::BluetoothControllerRuntimeResources;
@@ -441,7 +432,7 @@ mod tests {
     #[test]
     fn split_borrows_one_matching_interrupt_and_task_epoch() {
         let mut resources = BluetoothControllerRuntimeResources::<4, 3>::new();
-        let (interrupt, mut task) = resources.split();
+        let (interrupt, mut task, modem_timer) = resources.split();
 
         assert!(core::ptr::eq(
             interrupt.scheduler_wake(),
@@ -452,17 +443,38 @@ mod tests {
             task.scheduler_lock_modify_events()
         ));
         assert!(core::ptr::eq(
-            interrupt.modem_lp_timer_events(),
-            task.modem_lp_timer_events()
-        ));
-        assert!(core::ptr::eq(
             interrupt.modem_lp_timer_worker_wake(),
-            task.modem_lp_timer_worker_wake()
+            modem_timer.worker_wake()
         ));
         assert!(task.scheduler_lock_modify_worker().is_idle());
         assert!(!task.scheduler_finished_lists().is_active());
         assert!(task.scheduler_timeline_mut().is_empty());
-        drop((interrupt, task));
+        assert!(modem_timer.queue_is_empty());
+        drop((interrupt, task, modem_timer));
+        assert!(resources.is_pristine());
+    }
+
+    #[test]
+    fn split_assigns_mutable_timer_queue_only_to_the_modem_task_endpoint() {
+        let mut resources = BluetoothControllerRuntimeResources::<2, 1>::new();
+        let (interrupt, task, modem_timer) = resources.split();
+
+        assert!(core::ptr::eq(
+            interrupt.modem_lp_timer_worker_wake(),
+            modem_timer.worker_wake()
+        ));
+        let token = modem_timer
+            .queue
+            .schedule(
+                BluetoothModemLpTimerInstant::from_bits(10),
+                BluetoothModemLpTimerInstant::from_bits(20),
+            )
+            .expect("the disjoint timer endpoint owns both fixed slots");
+        assert!(!modem_timer.queue_is_empty());
+        assert!(modem_timer.queue.cancel(token));
+        assert!(modem_timer.queue_is_empty());
+
+        drop((interrupt, task, modem_timer));
         assert!(resources.is_pristine());
     }
 
@@ -490,7 +502,7 @@ mod tests {
             scale,
         );
 
-        let (interrupt, mut task) = resources.split();
+        let (interrupt, mut task, modem_timer) = resources.split();
         let reservation = task
             .scheduler_timeline_mut()
             .reserve_recurring_dtm_event(event, epoch, timing_policy)
@@ -498,7 +510,7 @@ mod tests {
         assert!(!task.scheduler_timeline_mut().is_empty());
 
         assert!(task.scheduler_timeline_mut().release(reservation).is_ok());
-        drop((interrupt, task));
+        drop((interrupt, task, modem_timer));
         assert!(resources.is_pristine());
     }
 }

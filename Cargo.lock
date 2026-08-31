@@ -2297,6 +2297,7 @@ dependencies = [
  "bt-hci",
  "embassy-futures",
  "embassy-sync 0.8.0",
+ "embassy-time",
  "open-esp-radio-bluetooth-hci",
  "open-esp-radio-esp32s31-bluetooth",
  "open-esp-radio-esp32s31-hal",
@@ -2306,8 +2307,11 @@ dependencies = [
 name = "open-esp-radio-esp32s31-bluetooth-integration"
 version = "0.1.0"
 dependencies = [
+ "embassy-sync 0.8.0",
  "open-esp-radio-esp32s31-bluetooth",
+ "open-esp-radio-esp32s31-bluetooth-embassy",
  "open-esp-radio-esp32s31-bluetooth-memory",
+ "open-esp-radio-esp32s31-radio-platform-esp-hal",
  "static_cell",
 ]
 

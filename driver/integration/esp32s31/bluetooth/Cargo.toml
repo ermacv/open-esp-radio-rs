@@ -8,9 +8,14 @@ repository.workspace = true
 description = "Production ESP32-S31 Bluetooth controller composition"
 
 [dependencies]
+embassy-sync = "0.8.0"
 open-esp-radio-esp32s31-bluetooth = { path = "../../../chips/esp32s31/bluetooth" }
 open-esp-radio-esp32s31-bluetooth-memory = { path = "../../../chips/esp32s31/bluetooth/memory" }
 static_cell = "2.1.1"
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+open-esp-radio-esp32s31-bluetooth-embassy = { path = "../../../adapters/embassy/esp32s31-bluetooth" }
+open-esp-radio-esp32s31-radio-platform-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-radio-platform", features = ["esp32s31"] }
 
 [lints]
 workspace = true

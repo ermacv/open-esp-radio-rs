@@ -84,7 +84,7 @@ gaps = [
   { axis = "implementation", id = "live-route-and-idle-to-active-session-composition-missing" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
-  { axis = "async", id = "stable-route-and-controller-task-wake-composition-missing" },
+  { axis = "async", id = "stable-route-ready-but-controller-task-runner-composition-missing" },
 ]
 
 [[capabilities]]
@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "powered-absolute-deadline-recheck-provider-missing" },
+  { axis = "implementation", id = "absolute-deadline-provider-not-yet-composed-into-powered-runner" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-task-and-recheck-deadline-policy-missing" },
@@ -156,10 +156,10 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "scanner-resume-action-deferred-until-scan-ull" },
-  { axis = "implementation", id = "source-127-live-route-and-feature-specific-nrt-policy-missing" },
+  { axis = "implementation", id = "source-127-task-not-yet-composed-into-outer-runner-and-feature-specific-nrt-policy-missing" },
   { axis = "vendor", id = "complete-interrupt-production-trace-missing" },
   { axis = "hil", id = "bluetooth-interrupt-epoch-hil-missing" },
-  { axis = "async", id = "live-source-127-owner-runner-and-bounded-finished-list-role-dispatch-missing" },
+  { axis = "async", id = "source-127-wake-ready-but-outer-runner-and-bounded-finished-list-role-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -380,7 +380,7 @@ gaps = [
   { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
-  { axis = "async", id = "live-source-127-deadline-and-unrelated-list-dispatch-missing" },
+  { axis = "async", id = "source-127-and-deadline-adapters-ready-but-outer-runner-and-unrelated-list-dispatch-missing" },
 ]
 
 [[capabilities]]

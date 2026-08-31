@@ -32,6 +32,8 @@ pub use coordinator::BluetoothPlatformBusy;
 
 #[cfg(feature = "esp32s31")]
 pub use bluetooth_interrupt::{
+    BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
+    EspHalBluetoothInterruptRouteDisableFailure, EspHalBluetoothInterruptSource,
     EspHalBluetoothInterruptStorage, EspHalBluetoothModemLpTimerInterruptStep,
     EspHalBluetoothModemLpTimerRestoreFailure, EspHalBluetoothModemLpTimerStorageError,
     EspHalBluetoothNrtInterruptStep, EspHalBluetoothPrimaryInterruptStep,
@@ -39,7 +41,9 @@ pub use bluetooth_interrupt::{
     PublishedEspHalBluetoothInterruptOwners,
 };
 #[cfg(feature = "esp32s31")]
-pub use bluetooth_route_policy::EspHalBluetoothInterruptStorageError;
+pub use bluetooth_route_policy::{
+    EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError,
+};
 
 #[cfg(feature = "esp32s31")]
 pub use esp32s31::{EspHalBluetoothPlatform, EspHalRadioPlatform};

@@ -416,6 +416,26 @@ impl BluetoothDtmPositionalEventWords {
     }
 }
 
-pub(super) const fn clear_scheduler_hardware_next_link(word: u32) -> u32 {
-    word & !LOW_TWENTY_MASK
+/// Private codec for the complete scheduler-item word containing the
+/// hardware-consumed successor link.
+///
+/// The common scheduler treats the low twenty bits as a compressed successor
+/// and preserves the independent prefix. Keeping the complete word inside
+/// this type lets the memory owner terminate or roll back the chain without
+/// exposing the field image to its typestate transitions.
+#[derive(Clone, Copy)]
+pub(super) struct BluetoothDtmSchedulerHardwareChainWord(u32);
+
+impl BluetoothDtmSchedulerHardwareChainWord {
+    pub(super) const fn from_storage(word: u32) -> Self {
+        Self(word)
+    }
+
+    pub(super) const fn terminate(self) -> Self {
+        Self(self.0 & !LOW_TWENTY_MASK)
+    }
+
+    pub(super) const fn into_storage(self) -> u32 {
+        self.0
+    }
 }

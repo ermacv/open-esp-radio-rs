@@ -651,12 +651,19 @@ formed. The later interrupt-preparation and RUN suffix must consume that exact
 head before the graph can enter its distinct running state.
 
 The controller-memory layer now implements the item half of that first merge
-as a separate cancellable typestate. It clears the submitted item's compressed
-hardware-next link while preserving the allocation image and clears the
-source software-next link. The Rust scheduler epoch intentionally replaces the
-three vendor manager pointers instead of materializing their private ABI. At
-this controller-memory boundary alone, the state performs neither a visibility
-fence nor an MMIO publication.
+as a separate cancellable typestate. Complete current
+`r_sym_bt_YRnBzKlWCjsIbotqvNyS` proves that scheduler-item word `+0x00[19:0]`
+is the compressed hardware-next link: its non-null path installs the compressed
+successor while preserving bits `31:20`, and its null path clears only that
+link field. The singleton DTM graph uses a private complete-word SRAM codec to
+terminate the chain; neither the mask nor a forgeable successor escapes the
+memory crate. Before publication, cancellation restores the exact captured
+field-containing word. Recycle performs the same terminal transition only
+after consuming completion and software-list-removal proofs. The source
+software-next link is cleared separately. The Rust scheduler epoch
+intentionally replaces the three vendor manager pointers instead of
+materializing their private ABI. At this controller-memory boundary alone, the
+state performs neither a visibility fence nor an MMIO publication.
 
 The initialized scheduler now supplies that consuming join. It advances its
 exclusive list from `Empty` to the exact prepared item identity at the same
@@ -877,10 +884,12 @@ only adds buffer recycle work. A retained multi-list mask continues one affine
 observation per call without a second batch or another MMIO transfer; once it
 is exhausted, the running owner returns to the wake-gated state. A missing
 batch preserves the complete DTM owner and performs no STATUS or REPORT access.
-Individual source 27/28 roles and the REPORT clear/ack rule are still
-unresolved, so the write-bearing transfer is deliberately not used as a
-timer-driven polling primitive. Other-role mapping and dispatch remain outside
-this closure.
+List-zero authority comes only from bit zero of the fresh finished-list
+status, not from any raw IRQ class. Individual source 27/28 roles, the mapping
+from all dynamic raw sources to the finished mask and the REPORT clear/ack
+rule are still unresolved, so the write-bearing transfer is deliberately not
+used as a timer-driven polling primitive. Other-role mapping and dispatch
+remain outside this closure.
 
 The always-awake time-read prefix is now exact. Complete
 `r_sym_bt_KrvfcwDw4eZoaTPVdFj5` sets `SLEEP_TIMER_CONTROL.LATCH_REQUEST` at

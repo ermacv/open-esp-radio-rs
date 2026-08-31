@@ -26,9 +26,9 @@ use vcell::VolatileCell;
 use crate::{
     dtm_event_image::{
         BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
-        BluetoothDtmRxHeaderTailProjection, BluetoothDtmSchedulerItemReviewedWords,
-        BluetoothDtmTxHeaderHeadProjection, BluetoothLeAccessAddress, BluetoothLeCrcInit,
-        clear_scheduler_hardware_next_link,
+        BluetoothDtmRxHeaderTailProjection, BluetoothDtmSchedulerHardwareChainWord,
+        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmTxHeaderHeadProjection,
+        BluetoothLeAccessAddress, BluetoothLeCrcInit,
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
     sram_link::BluetoothDtmBoundSramLinkAddress,
@@ -386,6 +386,24 @@ impl BluetoothDtmSchedulerItemStorage {
 
     fn write_word(&self, index: usize, value: u32) {
         self.words[index].set(value);
+    }
+
+    fn hardware_chain_word(&self) -> BluetoothDtmSchedulerHardwareChainWord {
+        BluetoothDtmSchedulerHardwareChainWord::from_storage(
+            self.read_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET),
+        )
+    }
+
+    fn write_hardware_chain_word(&self, word: BluetoothDtmSchedulerHardwareChainWord) {
+        self.write_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET, word.into_storage());
+    }
+
+    /// Terminate the hardware-consumed scheduler chain and return the exact
+    /// prior field-containing word for pre-publication rollback.
+    fn terminate_hardware_chain(&self) -> BluetoothDtmSchedulerHardwareChainWord {
+        let previous = self.hardware_chain_word();
+        self.write_hardware_chain_word(previous.terminate());
+        previous
     }
 
     fn clear(&self) {
@@ -1357,12 +1375,8 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
     #[doc(hidden)]
     pub fn prepare_empty_list_link(mut self) -> BluetoothDtmMemoryGraphEmptyListLinkPrepared {
         let storage = self.storage.as_mut().project().scheduler_item;
-        let previous_hardware_next = storage.read_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET);
+        let previous_hardware_chain = storage.terminate_hardware_chain();
         let previous_software_next = storage.read_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET);
-        storage.write_word(
-            SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
-            clear_scheduler_hardware_next_link(previous_hardware_next),
-        );
         storage.write_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET, 0);
 
         BluetoothDtmMemoryGraphEmptyListLinkPrepared {
@@ -1372,7 +1386,7 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
             previous_control: self.previous_control,
             previous_status: self.previous_status,
             previous_completed_link: self.previous_completed_link,
-            previous_hardware_next,
+            previous_hardware_chain,
             previous_software_next,
         }
     }
@@ -1408,7 +1422,7 @@ pub struct BluetoothDtmMemoryGraphEmptyListLinkPrepared {
     previous_control: u32,
     previous_status: u32,
     previous_completed_link: u32,
-    previous_hardware_next: u32,
+    previous_hardware_chain: BluetoothDtmSchedulerHardwareChainWord,
     previous_software_next: u32,
 }
 
@@ -1449,11 +1463,9 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
 
     /// Cancel before visibility or publication and recover bookkeeping state.
     pub fn cancel(mut self) -> BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
-        self.storage.as_mut().project().scheduler_item.write_word(
-            SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
-            self.previous_hardware_next,
-        );
-        self.storage.as_mut().project().scheduler_item.write_word(
+        let scheduler_item = self.storage.as_mut().project().scheduler_item;
+        scheduler_item.write_hardware_chain_word(self.previous_hardware_chain);
+        scheduler_item.write_word(
             SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET,
             self.previous_software_next,
         );
@@ -1701,11 +1713,7 @@ impl BluetoothDtmMemoryGraphRecyclePrepared {
         } = owner;
         let scheduler_item = storage.as_mut().project().scheduler_item;
         scheduler_item.write_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, 0);
-        let hardware_next = scheduler_item.read_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET);
-        scheduler_item.write_word(
-            SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
-            clear_scheduler_hardware_next_link(hardware_next),
-        );
+        let _ = scheduler_item.terminate_hardware_chain();
 
         BluetoothDtmMemoryGraphRecycleCleaned {
             storage,

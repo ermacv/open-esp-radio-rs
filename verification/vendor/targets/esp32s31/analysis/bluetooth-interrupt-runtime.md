@@ -120,6 +120,16 @@ proven:
 | only bank 0 source 21 | no | yes | no |
 | none of these sources | no work | no | no |
 
+All three dynamic classes ultimately enqueue the same static recycle event.
+The task callback always drains scheduler work for both ordinary and marked
+batches; the marker controls only an additional buffer-recycle suffix. Source
+27 and source 28 are collapsed into one boolean before this boundary and
+cannot be named individually from the reviewed software. The raw ISR never
+reads `SCHEDULER_FINISHED_LIST_STATUS`; that task-side read belongs exclusively
+to the later worker. Consequently a source-124 batch is an affine permission
+to make one fresh scheduler observation, not proof that any particular raw
+source completed a hardware list.
+
 Bank 1 source 3 has precedence over the bank-zero branch. Its reference gate
 reads `SCHEDULER_STATE` at `0x2010_107c`; when bit 31 is clear it writes zero
 to `SCHEDULER_REFERENCE` at `0x2010_1078` and dispatches selector 6. The

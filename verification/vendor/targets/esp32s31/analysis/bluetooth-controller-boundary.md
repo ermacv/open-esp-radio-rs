@@ -396,7 +396,7 @@ The decisive gaps are not HCI packet syntax. They are:
   resume and is deferred with the scanning ULL role rather than DTM;
 - remaining scheduler command opcodes, any operational meaning of the
   lock/modify diagnostic result, the raw-status-to-finished-list mapping,
-  completion fence and timebase semantics;
+  finished-list REPORT side effect and timebase semantics;
 - the meanings of the three compressed-pointer RX-list selectors, their
   element layouts, hardware current-to-next rotation, alignment and ownership
   barriers;

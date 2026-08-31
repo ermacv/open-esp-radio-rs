@@ -250,7 +250,7 @@ run-event-argument = 0
 callback-profile = "ble-controller-all"
 callback-source = "ble-controller"
 callback-function = "ble-controller::r_sym_bt_uNi9OHmE7XdXfGqTelU5"
-rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, the scheduler-init binding to the exact callback, direct generic eventq_get/event.run sites, typed direct receive-result provenance into event.run, and same-basic-block CFG ordering from receive to run. The R9-to-controller-source-124 association and callback semantics are reviewed knowledge; the concrete enqueue-to-receive queue identity and execution replay remain unresolved."
+rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, the scheduler-init binding to the exact callback, direct generic eventq_get/event.run sites, typed direct receive-result provenance into event.run, and same-basic-block CFG ordering from receive to run. Same-chip named bodies map this path to radio ISR, recycle ISR and recycle task roles; ordinary and marked batches both execute scheduler drain while the marker adds only buffer recycle. The R9-to-controller-source-124 association and callback semantics are reviewed knowledge; the concrete enqueue-to-receive queue identity, execution replay and raw-source-to-finished-mask relation remain unresolved."
 
 # Finished-list publication uses broker source zero. Scheduler init attaches
 # that exact source object, while base-stack enable contains the reviewed

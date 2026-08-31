@@ -327,6 +327,17 @@ header words after zero-initialization are `[0, base, 0x80a00000 | payload, 0,
 0x000007f8, 0]`, where both pointers are the reviewed low-twenty-bit compressed
 images.
 
+The raw header-image constructors are no longer part of the open API. The
+pinned memory graph initializes all three headers through private codecs and,
+before invoking any positional-event builder, verifies that the selected TX
+header still names both this graph's packet base and its `+0x10` LE Test PDU,
+that its full-capacity allocation profile is retained, and that the selected
+RX-tail header still names this graph's RX packet. A mismatch returns the same
+byte-unchanged CPU owner and cannot reach HEAD or RUN. The ordinary producer
+and named predecessor establish the TX PDU target and profile; no independent
+packet-engine reader has yet established names for the opaque header lanes or
+the physical interpretation of the allocation extent.
+
 The open packet slot consequently owns `0x12 + 0xff = 0x111` bytes with
 four-byte alignment and validates the final aligned word as well as its base
 and payload prefix against the controller-SRAM window. Preparation writes the
@@ -478,6 +489,9 @@ revision and initializes its positional byte `+0x24` to `0x7f`.
 
 The complete allocation order is link state, scheduler context, scheduler
 item, bound RX packet/header, unbound swap header and bound TX packet/header.
+The production API exposes only this affine graph-level packet preparation;
+the former standalone packet-slot and raw header/address façades were removed
+because they could not carry graph identity into hardware publication.
 The finite failure results are `-1` for link-state allocation, zero for the
 separate context and `2`, `3`, `4`, `5` for scheduler, RX, swap-header and TX
 stages. Every partial failure walks the same graph-free path before releasing

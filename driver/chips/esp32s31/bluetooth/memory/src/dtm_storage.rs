@@ -134,7 +134,7 @@ impl BluetoothDtmSchedulerAllocationConfig {
 
 /// Why a complete DTM TX packet extent cannot inhabit controller SRAM.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmTxPacketAddressError {
+enum BluetoothDtmTxPacketAddressError {
     /// The proposed base is not a reviewed compressed controller-SRAM address.
     InvalidBase(BluetoothControllerSramAddressError),
     /// The base encodes as the zero link used for an unbound header.
@@ -148,7 +148,7 @@ pub enum BluetoothDtmTxPacketAddressError {
 /// This value proves only address range and alignment. It does not derive an
 /// address from Rust storage, dereference it or grant publication authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmTxPacketAddress {
+struct BluetoothDtmTxPacketAddress {
     base: BluetoothControllerSramAddress,
     header_packet_target: BluetoothControllerSramAddress,
 }
@@ -156,7 +156,7 @@ pub struct BluetoothDtmTxPacketAddress {
 impl BluetoothDtmTxPacketAddress {
     /// Validate the base, header target and final aligned word of the
     /// `0x111`-byte allocation.
-    pub const fn new(address: u32) -> Result<Self, BluetoothDtmTxPacketAddressError> {
+    const fn new(address: u32) -> Result<Self, BluetoothDtmTxPacketAddressError> {
         let base = match BluetoothControllerSramAddress::new(address) {
             Ok(address) => address,
             Err(error) => return Err(BluetoothDtmTxPacketAddressError::InvalidBase(error)),
@@ -189,45 +189,18 @@ impl BluetoothDtmTxPacketAddress {
         })
     }
 
-    const fn base_compressed_image(self) -> u32 {
-        self.base.compressed_image()
+    const fn base_link(self) -> BluetoothDtmTxPacketBaseLink {
+        BluetoothDtmTxPacketBaseLink(self.base.compressed_image())
     }
 
-    const fn header_packet_target_compressed_image(self) -> u32 {
-        self.header_packet_target.compressed_image()
-    }
-}
-
-/// Complete six-word allocation-time image of one DTM TX buffer header.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmTxBufferHeaderImage {
-    words: [u32; 6],
-}
-
-impl BluetoothDtmTxBufferHeaderImage {
-    /// Build the exact header image used by the full-capacity DTM allocation.
-    pub const fn new(packet: BluetoothDtmTxPacketAddress) -> Self {
-        Self {
-            words: [
-                0,
-                packet.base_compressed_image(),
-                0x80a0_0000 | packet.header_packet_target_compressed_image(),
-                0,
-                0x0000_07f8,
-                0,
-            ],
-        }
-    }
-
-    /// Return all six little-endian positional words without publication.
-    pub const fn words(self) -> [u32; 6] {
-        self.words
+    const fn pdu_target_link(self) -> BluetoothDtmTxPduTargetLink {
+        BluetoothDtmTxPduTargetLink(self.header_packet_target.compressed_image())
     }
 }
 
 /// Why a complete DTM RX packet extent cannot inhabit controller SRAM.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmRxPacketAddressError {
+enum BluetoothDtmRxPacketAddressError {
     /// The proposed base is not a reviewed compressed controller-SRAM address.
     InvalidBase(BluetoothControllerSramAddressError),
     /// The base encodes as the zero link used by the unbound swap reserve.
@@ -241,13 +214,13 @@ pub enum BluetoothDtmRxPacketAddressError {
 /// This value proves only address range and alignment. It does not derive an
 /// address from Rust storage, dereference it or grant publication authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmRxPacketAddress {
+struct BluetoothDtmRxPacketAddress {
     base: BluetoothControllerSramAddress,
 }
 
 impl BluetoothDtmRxPacketAddress {
     /// Validate the base and final aligned word of the `0x11d`-byte allocation.
-    pub const fn new(address: u32) -> Result<Self, BluetoothDtmRxPacketAddressError> {
+    const fn new(address: u32) -> Result<Self, BluetoothDtmRxPacketAddressError> {
         let base = match BluetoothControllerSramAddress::new(address) {
             Ok(address) => address,
             Err(error) => return Err(BluetoothDtmRxPacketAddressError::InvalidBase(error)),
@@ -267,33 +240,6 @@ impl BluetoothDtmRxPacketAddress {
 
     const fn compressed_image(self) -> u32 {
         self.base.compressed_image()
-    }
-}
-
-/// Complete zero-based allocation-time image of the bound DTM RX header.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmRxBufferHeaderImage {
-    words: [u32; 6],
-}
-
-impl BluetoothDtmRxBufferHeaderImage {
-    /// Bind the RX packet while preserving the exact positional high image.
-    pub const fn new(packet: BluetoothDtmRxPacketAddress) -> Self {
-        Self {
-            words: [0, packet.compressed_image(), 0x8080_0000, 0, 0, 0],
-        }
-    }
-
-    /// Return all six little-endian positional words without publication.
-    pub const fn words(self) -> [u32; 6] {
-        self.words
-    }
-
-    /// Initial image of the separately allocated software swap reserve.
-    pub const fn unbound_swap_reserve() -> Self {
-        Self {
-            words: [0, 0, 0x8080_0000, 0, 0, 0],
-        }
     }
 }
 
@@ -461,9 +407,11 @@ pub struct BluetoothDtmBufferHeaderStorage {
 }
 
 impl BluetoothDtmBufferHeaderStorage {
-    const RX_LINK_MASK: u32 = 0x000f_ffff;
+    const COMPRESSED_LINK_MASK: u32 = 0x000f_ffff;
     const RX_COMPLETION_OBSERVED_MASK: u32 = 0x8000_0000;
     const RX_SOFTWARE_TERMINAL_MASK: u32 = 1;
+    const TX_ALLOCATION_EXTENT_MASK: u32 = 0x0000_07f8;
+    const TX_FULL_CAPACITY_ALLOCATION_EXTENT: u32 = 0x0000_07f8;
 
     fn read_word(&self, index: usize) -> u32 {
         self.words[index].get()
@@ -483,23 +431,57 @@ impl BluetoothDtmBufferHeaderStorage {
         core::array::from_fn(|index| self.read_word(index))
     }
 
+    fn initialize_bound_tx(&self, packet: BluetoothDtmTxPacketAddress) {
+        self.install([
+            0,
+            packet.base_link().image(),
+            0x80a0_0000 | packet.pdu_target_link().image(),
+            0,
+            Self::TX_FULL_CAPACITY_ALLOCATION_EXTENT,
+            0,
+        ]);
+    }
+
+    fn initialize_bound_rx(&self, packet: BluetoothDtmRxPacketAddress) {
+        self.install([0, packet.compressed_image(), 0x8080_0000, 0, 0, 0]);
+    }
+
+    fn initialize_rx_swap_reserve(&self) {
+        self.install([0, 0, 0x8080_0000, 0, 0, 0]);
+    }
+
+    fn tx_packet_base_link(&self) -> Option<BluetoothDtmTxPacketBaseLink> {
+        BluetoothDtmTxPacketBaseLink::from_image(self.read_word(1) & Self::COMPRESSED_LINK_MASK)
+    }
+
+    fn tx_pdu_target_link(&self) -> Option<BluetoothDtmTxPduTargetLink> {
+        BluetoothDtmTxPduTargetLink::from_image(self.read_word(2) & Self::COMPRESSED_LINK_MASK)
+    }
+
+    fn retains_full_capacity_tx_allocation_extent(&self) -> bool {
+        self.read_word(4) & Self::TX_ALLOCATION_EXTENT_MASK
+            == Self::TX_FULL_CAPACITY_ALLOCATION_EXTENT
+    }
+
     fn rx_successor_link(&self) -> Option<BluetoothDtmRxHeaderSuccessorLink> {
-        BluetoothDtmRxHeaderSuccessorLink::from_image(self.read_word(0) & Self::RX_LINK_MASK)
+        BluetoothDtmRxHeaderSuccessorLink::from_image(
+            self.read_word(0) & Self::COMPRESSED_LINK_MASK,
+        )
     }
 
     fn set_rx_successor_link(&self, link: Option<BluetoothDtmRxHeaderSuccessorLink>) {
         let current = self.read_word(0);
         let image = link.map_or(0, BluetoothDtmRxHeaderSuccessorLink::image);
-        self.write_word(0, (current & !Self::RX_LINK_MASK) | image);
+        self.write_word(0, (current & !Self::COMPRESSED_LINK_MASK) | image);
     }
 
     fn rx_packet_link(&self) -> Option<BluetoothDtmRxPacketLink> {
-        BluetoothDtmRxPacketLink::from_image(self.read_word(1) & Self::RX_LINK_MASK)
+        BluetoothDtmRxPacketLink::from_image(self.read_word(1) & Self::COMPRESSED_LINK_MASK)
     }
 
     fn clear_rx_packet_link(&self) {
         let current = self.read_word(1);
-        self.write_word(1, current & !Self::RX_LINK_MASK);
+        self.write_word(1, current & !Self::COMPRESSED_LINK_MASK);
     }
 
     /// Observe the controller-written completion state only after the exact
@@ -544,6 +526,65 @@ impl BluetoothDtmBufferHeaderStorage {
 
     fn copy_complete_rx_image_from(&self, source: &Self) {
         self.install(source.snapshot_words());
+    }
+
+    #[cfg(test)]
+    fn model_retarget_tx_packet_base(&self, packet: BluetoothDtmTxPacketAddress) {
+        let current = self.read_word(1);
+        self.write_word(
+            1,
+            (current & !Self::COMPRESSED_LINK_MASK) | packet.base_link().image(),
+        );
+    }
+
+    #[cfg(test)]
+    fn model_retarget_tx_pdu(&self, packet: BluetoothDtmTxPacketAddress) {
+        let current = self.read_word(2);
+        self.write_word(
+            2,
+            (current & !Self::COMPRESSED_LINK_MASK) | packet.pdu_target_link().image(),
+        );
+    }
+
+    #[cfg(test)]
+    fn model_drop_full_capacity_tx_allocation_extent(&self) {
+        let current = self.read_word(4);
+        self.write_word(4, current & !Self::TX_ALLOCATION_EXTENT_MASK);
+    }
+
+    #[cfg(test)]
+    fn model_retarget_rx_packet(&self, packet: BluetoothDtmRxPacketAddress) {
+        let current = self.read_word(1);
+        self.write_word(
+            1,
+            (current & !Self::COMPRESSED_LINK_MASK) | packet.compressed_image(),
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothDtmTxPacketBaseLink(u32);
+
+impl BluetoothDtmTxPacketBaseLink {
+    fn from_image(image: u32) -> Option<Self> {
+        (image != 0).then_some(Self(image))
+    }
+
+    const fn image(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothDtmTxPduTargetLink(u32);
+
+impl BluetoothDtmTxPduTargetLink {
+    fn from_image(image: u32) -> Option<Self> {
+        (image != 0).then_some(Self(image))
+    }
+
+    const fn image(self) -> u32 {
+        self.0
     }
 }
 
@@ -609,7 +650,7 @@ impl BluetoothDtmRxHeaderCompletionObservation {
 /// LLL packet-pattern preparation. It exposes no raw address or publication
 /// operation.
 #[repr(C, align(4))]
-pub struct BluetoothDtmTxPacketStorage {
+struct BluetoothDtmTxPacketStorage {
     bytes: [u8; BLUETOOTH_DTM_TX_PACKET_BYTES],
 }
 
@@ -645,23 +686,10 @@ impl BluetoothLeTestPduHeader {
 }
 
 impl BluetoothDtmTxPacketStorage {
-    /// Create zeroed, CPU-owned storage without allocating.
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         Self {
             bytes: [0; BLUETOOTH_DTM_TX_PACKET_BYTES],
         }
-    }
-
-    /// Validate and install one no-CTE LE Test PDU header, retain the reviewed
-    /// allocator bytes and exclusively borrow the declared payload.
-    pub fn begin_prepare(
-        &mut self,
-        payload_type: u8,
-        payload_length: u8,
-    ) -> Result<BluetoothDtmTxPacketPreparation<'_>, BluetoothDtmTxPacketPrepareError> {
-        let pdu_header = BluetoothLeTestPduHeader::without_cte(payload_type)?;
-
-        Ok(self.begin_prepare_with_header(pdu_header, payload_length))
     }
 
     fn begin_prepare_with_header(
@@ -684,11 +712,6 @@ impl BluetoothDtmTxPacketStorage {
     fn write_pdu_header(&mut self, pdu_header: BluetoothLeTestPduHeader) {
         self.bytes[BluetoothLeTestPduHeader::PDU_HEADER_BYTE] = pdu_header.controller_image();
     }
-
-    /// Borrow the complete CPU-owned allocation image for review and tests.
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
-    }
 }
 
 impl Default for BluetoothDtmTxPacketStorage {
@@ -701,7 +724,7 @@ impl Default for BluetoothDtmTxPacketStorage {
 ///
 /// The memory layer owns the standard no-CTE header encoding. Payload-pattern
 /// generation remains in the LLL/portable Controller above this type.
-pub struct BluetoothDtmTxPacketPreparation<'storage> {
+struct BluetoothDtmTxPacketPreparation<'storage> {
     _pdu_header: BluetoothLeTestPduHeader,
     payload_length: usize,
     storage: &'storage mut BluetoothDtmTxPacketStorage,
@@ -709,47 +732,17 @@ pub struct BluetoothDtmTxPacketPreparation<'storage> {
 
 impl<'storage> BluetoothDtmTxPacketPreparation<'storage> {
     /// Borrow exactly the declared payload bytes for bounded pattern filling.
-    pub fn payload_mut(&mut self) -> &mut [u8] {
+    fn payload_mut(&mut self) -> &mut [u8] {
         &mut self.storage.bytes[BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES..][..self.payload_length]
     }
 
     /// Finish the CPU-only transform without publishing the packet.
-    pub fn finish(self) -> BluetoothDtmPreparedTxPacketStorage<'storage> {
-        BluetoothDtmPreparedTxPacketStorage {
-            _pdu_header: self._pdu_header,
-            payload_length: self.payload_length,
-            storage: self.storage,
-        }
-    }
-}
-
-/// Affine CPU-owned view of one positionally prepared TX packet slot.
-pub struct BluetoothDtmPreparedTxPacketStorage<'storage> {
-    _pdu_header: BluetoothLeTestPduHeader,
-    payload_length: usize,
-    storage: &'storage mut BluetoothDtmTxPacketStorage,
-}
-
-impl<'storage> BluetoothDtmPreparedTxPacketStorage<'storage> {
-    /// Borrow the reviewed prefix and declared payload only.
-    pub fn prepared_bytes(&self) -> &[u8] {
-        &self.storage.bytes[..BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES + self.payload_length]
-    }
-
-    /// Borrow only the declared payload bytes.
-    pub fn payload(&self) -> &[u8] {
-        &self.storage.bytes[BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES..][..self.payload_length]
-    }
-
-    /// Return the sole CPU-owned backing slot.
-    pub fn release(self) -> &'storage mut BluetoothDtmTxPacketStorage {
-        self.storage
-    }
+    fn finish(self) {}
 }
 
 /// CPU-owned RX packet allocation with only the reviewed DTM defaults exposed.
 #[repr(C, align(4))]
-pub struct BluetoothDtmRxPacketStorage {
+struct BluetoothDtmRxPacketStorage {
     words: [VolatileCell<u32>; RX_PACKET_WORDS],
 }
 
@@ -762,7 +755,7 @@ impl BluetoothDtmRxPacketStorage {
 
     /// Create one zero-based slot and apply the reviewed maximum-capacity
     /// allocation and re-arm images.
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         let mut storage = Self {
             words: [const { VolatileCell::new(0) }; RX_PACKET_WORDS],
         };
@@ -1186,10 +1179,18 @@ pub enum BluetoothDtmMemoryGraphPrepareError<BuildError = Infallible> {
     CurrentTxHeadUnbound,
     /// The current private TX head does not name this graph's bound TX header.
     CurrentTxHeadIdentityMismatch,
+    /// The selected TX header no longer names this graph's packet allocation.
+    CurrentTxHeaderPacketBaseMismatch,
+    /// The selected TX header no longer names this graph's LE Test PDU.
+    CurrentTxHeaderPduTargetMismatch,
+    /// The selected TX header lost the reviewed full-capacity allocation profile.
+    CurrentTxHeaderAllocationExtentMismatch,
     /// The current private RX-tail word contains the unbound zero link.
     CurrentRxTailUnbound,
     /// The current private RX tail names neither of this graph's two RX headers.
     CurrentRxTailIdentityMismatch,
+    /// The selected RX-tail header no longer names this graph's packet allocation.
+    CurrentRxTailPacketMismatch,
     /// Link-state `+0x00` does not retain this graph's freshly sampled TX head.
     LinkStateTxHeadMismatch {
         /// Current private-chain projection required by this graph.
@@ -1210,9 +1211,10 @@ pub enum BluetoothDtmMemoryGraphPrepareError<BuildError = Infallible> {
 
 /// Failed positional preparation retaining the exact CPU-owned graph.
 ///
-/// Current anchors, builder execution and all three candidate anchors are
-/// checked before the first backing-storage write. `into_parts` therefore
-/// returns the byte-unchanged owner for retry or explicit shutdown.
+/// Current header-to-packet bindings, builder execution and all three
+/// candidate descriptor anchors are checked before the first backing-storage
+/// write. `into_parts` therefore returns the byte-unchanged owner for retry or
+/// explicit shutdown.
 pub struct BluetoothDtmMemoryGraphPrepareFailure<BuildError = Infallible> {
     owner: BluetoothDtmMemoryGraphCpuOwned,
     error: BluetoothDtmMemoryGraphPrepareError<BuildError>,
@@ -1248,10 +1250,11 @@ impl<BuildError: core::fmt::Debug> core::fmt::Debug
 
 /// CPU-owned graph after exactly nineteen positional event words were stored.
 ///
-/// The public input images remain forgeable, so this state proves only that
-/// the candidate retained this graph's three current links and that no omitted
-/// offset was written. It has no packet-ready, list insertion, fence,
-/// publication or hardware-ownership authority.
+/// This state proves that the selected TX/RX headers retain this graph's
+/// packet allocations, that the TX header retains its PDU target and reviewed
+/// allocation extent, and that the candidate retained the three descriptor
+/// links. It does not by itself prove fresh TX packet contents and has no list
+/// insertion, fence, publication or hardware-ownership authority.
 ///
 /// ```compile_fail
 /// use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphPositionalEventPrepared;
@@ -2486,7 +2489,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         preparation
             .payload_mut()
             .copy_from_slice(&payload[..payload_length as usize]);
-        let _prepared = preparation.finish();
+        preparation.finish();
 
         Ok(BluetoothDtmMemoryGraphTxPacketPrepared {
             storage: self.storage,
@@ -2496,12 +2499,14 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         })
     }
 
-    /// Build and commit one role-neutral positional event-word image.
+    /// Validate the complete private packet chain, then build and commit one
+    /// role-neutral positional event-word image.
     ///
     /// The consuming closure receives current words and current private links
-    /// from this exact owner. Builder failure and every anchor mismatch return
-    /// the byte-unchanged owner. Once validation succeeds, committing all
-    /// nineteen offsets is infallible and remains entirely CPU-owned.
+    /// from this exact owner. Header-binding, builder and descriptor-anchor
+    /// failures return the byte-unchanged owner. Once validation succeeds,
+    /// committing all nineteen offsets is infallible and remains entirely
+    /// CPU-owned.
     pub fn try_prepare_positional_event<BuildError>(
         mut self,
         build: impl FnOnce(
@@ -2537,6 +2542,29 @@ impl BluetoothDtmMemoryGraphCpuOwned {
                 error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeadIdentityMismatch,
             });
         }
+        let storage = self.storage.as_ref().get_ref();
+        if storage.tx_header.tx_packet_base_link() != Some(self.binding.tx_packet.base_link()) {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderPacketBaseMismatch,
+            });
+        }
+        if storage.tx_header.tx_pdu_target_link() != Some(self.binding.tx_packet.pdu_target_link())
+        {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderPduTargetMismatch,
+            });
+        }
+        if !storage
+            .tx_header
+            .retains_full_capacity_tx_allocation_extent()
+        {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderAllocationExtentMismatch,
+            });
+        }
         let rx_tail = match BluetoothDtmBoundSramLinkAddress::new(rx_tail_address) {
             Ok(rx_tail) => rx_tail,
             Err(_) => {
@@ -2550,6 +2578,19 @@ impl BluetoothDtmMemoryGraphCpuOwned {
             return Err(BluetoothDtmMemoryGraphPrepareFailure {
                 owner: self,
                 error: BluetoothDtmMemoryGraphPrepareError::CurrentRxTailIdentityMismatch,
+            });
+        }
+        let selected_rx_tail = if rx_tail == self.binding.rx_header {
+            &storage.rx_header
+        } else {
+            &storage.rx_swap_reserve
+        };
+        if selected_rx_tail.rx_packet_link()
+            != Some(BluetoothDtmRxPacketLink::from_bound(self.binding.rx_packet))
+        {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::CurrentRxTailPacketMismatch,
             });
         }
         let tx_header_head = BluetoothDtmTxHeaderHeadProjection::from_bound(tx_head);
@@ -2612,9 +2653,6 @@ impl BluetoothDtmMemoryGraphCpuOwned {
     }
 
     fn initialize_reviewed_allocation(&mut self, config: BluetoothDtmSchedulerAllocationConfig) {
-        let rx_header = BluetoothDtmRxBufferHeaderImage::new(self.binding.rx_packet).words();
-        let rx_swap_reserve = BluetoothDtmRxBufferHeaderImage::unbound_swap_reserve().words();
-        let tx_header = BluetoothDtmTxBufferHeaderImage::new(self.binding.tx_packet).words();
         let link_state = self.binding.link_state.compressed_image();
         let scheduler_context = self.binding.scheduler_context.compressed_image();
         let rx_header_address = self.binding.rx_header.controller_address().address();
@@ -2625,9 +2663,13 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         storage.link_state.clear();
         storage.scheduler_context.words.fill(0);
         storage.scheduler_item.clear();
-        storage.rx_header.install(rx_header);
-        storage.rx_swap_reserve.install(rx_swap_reserve);
-        storage.tx_header.install(tx_header);
+        storage
+            .rx_header
+            .initialize_bound_rx(self.binding.rx_packet);
+        storage.rx_swap_reserve.initialize_rx_swap_reserve();
+        storage
+            .tx_header
+            .initialize_bound_tx(self.binding.tx_packet);
         storage.tx_packet.bytes.fill(0);
         storage.rx_packet.clear();
         storage.rx_packet.initialize_reviewed_allocation_fields();
@@ -2769,11 +2811,6 @@ impl BluetoothDtmMemoryGraphStorage {
         owner.initialize_reviewed_allocation(config);
         Ok(owner)
     }
-
-    /// Borrow the sole TX packet backing slot for CPU-only LLL preparation.
-    pub fn tx_packet_mut(&mut self) -> &mut BluetoothDtmTxPacketStorage {
-        &mut self.tx_packet
-    }
 }
 
 impl Default for BluetoothDtmMemoryGraphStorage {
@@ -2784,7 +2821,7 @@ impl Default for BluetoothDtmMemoryGraphStorage {
 
 #[cfg(test)]
 mod tests {
-    use core::{convert::Infallible, fmt::Debug};
+    use core::{cell::Cell, convert::Infallible, fmt::Debug};
 
     use crate::dtm_event_image::{BluetoothDtmRole, BluetoothLeAccessAddress, BluetoothLeCrcInit};
     use open_esp_radio_esp32s31_hal::{
@@ -3048,6 +3085,90 @@ mod tests {
         assert_eq!(error, expected);
         assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
         owner
+    }
+
+    fn assert_rejected_before_builder(
+        owner: BluetoothDtmMemoryGraphCpuOwned,
+        expected: BluetoothDtmMemoryGraphPrepareError,
+    ) -> BluetoothDtmMemoryGraphCpuOwned {
+        let builder_called = Cell::new(false);
+        let owner = assert_prepare_failure_unchanged(
+            owner,
+            |seed| {
+                builder_called.set(true);
+                Ok::<_, Infallible>(candidate_words(seed))
+            },
+            expected,
+        );
+        assert!(!builder_called.get());
+        owner
+    }
+
+    #[test]
+    fn positional_preparation_rejects_a_foreign_tx_packet_base_before_builder() {
+        let owner = model_owner(0x2f00_0100);
+        let foreign = model_owner(0x2f00_2000);
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .tx_header
+            .model_retarget_tx_packet_base(foreign.binding.tx_packet);
+
+        let _owner = assert_rejected_before_builder(
+            owner,
+            BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderPacketBaseMismatch,
+        );
+    }
+
+    #[test]
+    fn positional_preparation_rejects_a_foreign_tx_pdu_before_builder() {
+        let owner = model_owner(0x2f00_0100);
+        let foreign = model_owner(0x2f00_2000);
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .tx_header
+            .model_retarget_tx_pdu(foreign.binding.tx_packet);
+
+        let _owner = assert_rejected_before_builder(
+            owner,
+            BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderPduTargetMismatch,
+        );
+    }
+
+    #[test]
+    fn positional_preparation_rejects_a_lost_tx_allocation_extent_before_builder() {
+        let owner = model_owner(0x2f00_0100);
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .tx_header
+            .model_drop_full_capacity_tx_allocation_extent();
+
+        let _owner = assert_rejected_before_builder(
+            owner,
+            BluetoothDtmMemoryGraphPrepareError::CurrentTxHeaderAllocationExtentMismatch,
+        );
+    }
+
+    #[test]
+    fn positional_preparation_rejects_a_foreign_rx_packet_before_builder() {
+        let owner = model_owner(0x2f00_0100);
+        let foreign = model_owner(0x2f00_2000);
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .rx_header
+            .model_retarget_rx_packet(foreign.binding.rx_packet);
+
+        let _owner = assert_rejected_before_builder(
+            owner,
+            BluetoothDtmMemoryGraphPrepareError::CurrentRxTailPacketMismatch,
+        );
     }
 
     #[test]
@@ -3344,21 +3465,6 @@ mod tests {
         let _owner =
             BluetoothDtmMemoryGraphStorage::pin_static_model(storage, valid, allocation_config())
                 .expect("returned allocation can be bound exactly once");
-    }
-
-    #[test]
-    fn graph_tx_slot_retains_the_declared_payload() {
-        let mut graph = BluetoothDtmMemoryGraphStorage::new();
-        let mut preparation = graph
-            .tx_packet_mut()
-            .begin_prepare(7, 3)
-            .expect("standard LE Test PDU Type prepares");
-        preparation
-            .payload_mut()
-            .copy_from_slice(&[0xaa, 0xbb, 0xcc]);
-        let prepared = preparation.finish();
-
-        assert_eq!(prepared.payload(), [0xaa, 0xbb, 0xcc]);
     }
 
     #[test]

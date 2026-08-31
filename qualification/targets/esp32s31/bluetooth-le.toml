@@ -264,8 +264,8 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "live-packet-engine-header-consumer-missing" },
-  { axis = "vendor", id = "packet-engine-header-consumer-and-publication-order-missing" },
+  { axis = "implementation", id = "packet-engine-header-field-interpretation-missing" },
+  { axis = "vendor", id = "packet-engine-header-field-reader-and-meaning-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
 ]
 

@@ -291,10 +291,7 @@ pub use dtm_stopping::{
 pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
 pub use dtm_tx_packet::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES,
-    BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES, BluetoothDtmPreparedTxGraph,
-    BluetoothDtmPreparedTxPacket, BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxGraphPrepare,
-    BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketPrepare,
-    BluetoothDtmTxPacketStorage,
+    BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES, BluetoothDtmPreparedTxGraph, BluetoothDtmTxGraphPrepare,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use hci::{

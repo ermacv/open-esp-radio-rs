@@ -110,6 +110,7 @@ mod hci;
 mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
+mod legacy_advertising;
 mod modem_lp_timer_queue;
 mod nrt_interrupt;
 #[cfg(target_arch = "riscv32")]
@@ -311,6 +312,10 @@ pub use interrupt_classifier::{
 };
 pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
+};
+pub use legacy_advertising::{
+    BluetoothLegacyAdvertisingFrequency, BluetoothLegacyAdvertisingPreparationError,
+    BluetoothLegacyAdvertisingPrepared,
 };
 pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,

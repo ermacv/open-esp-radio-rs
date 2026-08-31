@@ -2288,6 +2288,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "open-esp-radio-bluetooth-hci",
+ "open-esp-radio-bluetooth-ll",
  "open-esp-radio-esp32s31-bluetooth-memory",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",

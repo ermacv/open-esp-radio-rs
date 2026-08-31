@@ -181,7 +181,7 @@ pub extern "C" fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_y
     environment_address: u32,
     resolving_list_address: u32,
     ignore_allowlist_for_directed_advertising: u32,
-    backoff_rssi_image: u32,
+    runtime_configuration_low_byte: u32,
 ) {
     // SAFETY: every comparison case models the recovered prerequisite state,
     // supplies live controller storage for the execution lifetime, performs
@@ -194,7 +194,7 @@ pub extern "C" fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_y
                 environment_address,
                 resolving_list_address,
                 ignore_allowlist_for_directed_advertising != 0,
-                backoff_rssi_image as i8,
+                runtime_configuration_low_byte as u8,
             );
     }
 }

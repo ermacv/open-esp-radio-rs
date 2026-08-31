@@ -2911,8 +2911,8 @@ bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "REFERENCE_PATH_STATE"
-method = "reference_path_state"
+svd-name = "STATE_29"
+method = "state_29"
 bit-offset = 29
 bit-width = 1
 access = "read-write"
@@ -6126,12 +6126,12 @@ access = "write-only"
 address = 537926520
 width = 32
 access = "write-only"
-identity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_LATCH"
+identity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_FOLLOWUP"
 peripheral = "BLE_HW_RUNTIME_CONTROL"
 peripheral-type = "BleHwRuntimeControl"
 peripheral-module = "ble_hw_runtime_control"
 scope = []
-register-method = "phy_init_configuration_latch"
+register-method = "phy_init_configuration_followup"
 
 [[registers.fields]]
 svd-name = "IMAGE"

@@ -49,19 +49,19 @@ pub struct BluetoothSchedulerReferenceCleared {
 #[must_use = "the scheduler work observation must be consumed by one controller path"]
 pub struct BluetoothSchedulerWorkObservation {
     busy: bool,
-    reference_path_state: bool,
+    state_29: bool,
     current_hardware_list: BluetoothSchedulerHardwareListIndex,
 }
 
 impl BluetoothSchedulerWorkObservation {
     const fn new(
         busy: bool,
-        reference_path_state: bool,
+        state_29: bool,
         current_hardware_list: BluetoothSchedulerHardwareListIndex,
     ) -> Self {
         Self {
             busy,
-            reference_path_state,
+            state_29,
             current_hardware_list,
         }
     }
@@ -71,13 +71,13 @@ impl BluetoothSchedulerWorkObservation {
     #[doc(hidden)]
     pub const fn from_fields_for_validation(
         busy: bool,
-        reference_state_29: bool,
+        state_29: bool,
         current_hardware_list: u8,
     ) -> Self {
         assert!(current_hardware_list < 16);
         Self::new(
             busy,
-            reference_state_29,
+            state_29,
             BluetoothSchedulerHardwareListIndex(current_hardware_list),
         )
     }
@@ -87,9 +87,9 @@ impl BluetoothSchedulerWorkObservation {
         self.busy
     }
 
-    /// Whether the reviewed reference path was active at this temporal point.
-    pub const fn reference_path_active(&self) -> bool {
-        self.busy && self.reference_path_state
+    /// Whether the reviewed deferred-work predicate is true at this point.
+    pub const fn deferred_work_requested(&self) -> bool {
+        self.busy && self.state_29
     }
 
     /// Hardware-list index captured from the same scheduler-state sample.
@@ -310,7 +310,7 @@ trait BluetoothSchedulerInterruptControl {
 #[derive(Clone, Copy)]
 struct SchedulerStateObservation {
     busy: bool,
-    reference_path_state: bool,
+    state_29: bool,
     current_hardware_list: BluetoothSchedulerHardwareListIndex,
 }
 
@@ -320,13 +320,13 @@ struct HardwareSchedulerInterruptControl<'a> {
 
 impl BluetoothSchedulerInterruptControl for HardwareSchedulerInterruptControl<'_> {
     fn read_scheduler_state(&mut self) -> SchedulerStateObservation {
-        let (busy, reference_path_state, current_link_index) =
+        let (busy, state_29, current_link_index) =
             super::svd::field_snapshot_read::observe_bluetooth_scheduler_interrupt_state(
                 self.registers,
             );
         SchedulerStateObservation {
             busy,
-            reference_path_state,
+            state_29,
             current_hardware_list: BluetoothSchedulerHardwareListIndex(current_link_index),
         }
     }
@@ -394,11 +394,7 @@ fn execute_work_observation(
     control: &mut impl BluetoothSchedulerInterruptControl,
 ) -> BluetoothSchedulerWorkObservation {
     let state = control.read_scheduler_state();
-    BluetoothSchedulerWorkObservation::new(
-        state.busy,
-        state.reference_path_state,
-        state.current_hardware_list,
-    )
+    BluetoothSchedulerWorkObservation::new(state.busy, state.state_29, state.current_hardware_list)
 }
 
 fn execute_finished_list_transfer(
@@ -616,12 +612,12 @@ mod tests {
             states: [
                 SchedulerStateObservation {
                     busy: false,
-                    reference_path_state: false,
+                    state_29: false,
                     current_hardware_list: BluetoothSchedulerHardwareListIndex(3),
                 },
                 SchedulerStateObservation {
                     busy: true,
-                    reference_path_state: true,
+                    state_29: true,
                     current_hardware_list: BluetoothSchedulerHardwareListIndex(9),
                 },
             ],
@@ -635,7 +631,7 @@ mod tests {
 
         assert!(!gate.is_busy());
         assert!(work.is_busy());
-        assert!(work.reference_path_active());
+        assert!(work.deferred_work_requested());
         assert_eq!(work.current_hardware_list().get(), 9);
         assert_eq!(
             recorder.operations,

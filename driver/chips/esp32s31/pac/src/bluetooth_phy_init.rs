@@ -85,16 +85,15 @@ impl BluetoothPhyEnvironmentAddress {
 
 /// Complete external inputs read by the recovered BLE PHY init body.
 ///
-/// The timing source remains private Controller policy. The two public BLE
-/// configuration values retain their recovered semantic names rather than the
-/// offsets at which one vendor implementation happened to store them.
+/// The timing source remains private Controller policy. Values whose hardware
+/// meaning is not proven retain positional configuration names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPhyRegisterInitInputs {
     private_timing_source_byte: u8,
     environment: BluetoothPhyEnvironmentAddress,
     resolving_list: BluetoothControllerSramAddress,
     ignore_allowlist_for_directed_advertising: bool,
-    backoff_rssi_dbm: i8,
+    runtime_configuration_low_byte: u8,
 }
 
 impl BluetoothPhyRegisterInitInputs {
@@ -107,14 +106,14 @@ impl BluetoothPhyRegisterInitInputs {
         environment: BluetoothPhyEnvironmentAddress,
         resolving_list: BluetoothControllerSramAddress,
         ignore_allowlist_for_directed_advertising: bool,
-        backoff_rssi_dbm: i8,
+        runtime_configuration_low_byte: u8,
     ) -> Self {
         Self {
             private_timing_source_byte,
             environment,
             resolving_list,
             ignore_allowlist_for_directed_advertising,
-            backoff_rssi_dbm,
+            runtime_configuration_low_byte,
         }
     }
 }
@@ -267,10 +266,10 @@ impl BluetoothTaskRegisters {
 
         super::svd::zero_based_field_write::publish_ble_phy_runtime_configuration(
             &bluetooth.ble_hw_runtime_control,
-            inputs.backoff_rssi_dbm as u8,
+            inputs.runtime_configuration_low_byte,
             true,
         );
-        super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(
+        super::svd::fixed_register_image::publish_ble_phy_init_followup_image_1(
             &bluetooth.ble_hw_runtime_control,
         );
         super::generated::enable_ble_phy_interrupt_sources_11_15_20_24(btmac);

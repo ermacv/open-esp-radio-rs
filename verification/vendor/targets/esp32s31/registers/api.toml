@@ -1947,9 +1947,9 @@ value = 0x00000040
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
-name = "latch_ble_phy_runtime_configuration"
+name = "publish_ble_phy_init_followup_image_1"
 peripheral = "BLE_HW_RUNTIME_CONTROL"
-register = "PHY_INIT_CONFIGURATION_LATCH"
+register = "PHY_INIT_CONFIGURATION_FOLLOWUP"
 value = 0x00000001
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
@@ -3521,7 +3521,7 @@ sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPS
 name = "observe_bluetooth_scheduler_interrupt_state"
 peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
 register = "SCHEDULER_STATE"
-fields = ["BUSY", "REFERENCE_PATH_STATE", "CURRENT_LINK_INDEX"]
+fields = ["BUSY", "STATE_29", "CURRENT_LINK_INDEX"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[zero-based-field-writes]]

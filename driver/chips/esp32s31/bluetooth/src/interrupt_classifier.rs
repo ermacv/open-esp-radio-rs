@@ -188,7 +188,7 @@ impl BluetoothSchedulerReferenceGate {
     }
 }
 
-/// Required reference-path disposition selected after the first state read.
+/// Required scheduler-reference disposition selected after the first read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothSchedulerReferenceAction {
     /// Write zero to `SCHEDULER_REFERENCE` before the later work observation.
@@ -216,15 +216,15 @@ impl BluetoothSchedulerWorkClassifier {
         self,
         observation: &BluetoothSchedulerWorkObservation,
     ) -> BluetoothSchedulerWorkerWake {
-        let reference_state = observation.reference_path_active();
+        let deferred_work_requested = observation.deferred_work_requested();
         BluetoothSchedulerWorkerWake {
-            class: if self.mark_candidate && reference_state {
+            class: if self.mark_candidate && deferred_work_requested {
                 BluetoothSchedulerWorkerWakeClass::Marked
             } else {
                 BluetoothSchedulerWorkerWakeClass::Ordinary
             },
-            reference_state_publication: if self.state_publication_requested {
-                Some(reference_state)
+            deferred_work_publication: if self.state_publication_requested {
+                Some(deferred_work_requested)
             } else {
                 None
             },
@@ -235,10 +235,10 @@ impl BluetoothSchedulerWorkClassifier {
 /// Sticky class carried by the single deferred scheduler work item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothSchedulerWorkerWakeClass {
-    /// Process scheduler work without setting the reference-path marker.
+    /// Process scheduler work without setting the deferred-work marker.
     Ordinary,
-    /// Preserve that the reference path was active when a mark-capable source
-    /// fired. The marker must remain sticky if wakes are coalesced.
+    /// Preserve that the deferred-work predicate was true when a mark-capable
+    /// source fired. The marker remains sticky if wakes are coalesced.
     Marked,
 }
 
@@ -246,21 +246,21 @@ pub enum BluetoothSchedulerWorkerWakeClass {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothSchedulerWorkerWake {
     class: BluetoothSchedulerWorkerWakeClass,
-    reference_state_publication: Option<bool>,
+    deferred_work_publication: Option<bool>,
 }
 
 impl BluetoothSchedulerWorkerWake {
-    /// Whether this wake carries the sticky reference-path marker.
+    /// Whether this wake carries the sticky deferred-work marker.
     pub const fn class(self) -> BluetoothSchedulerWorkerWakeClass {
         self.class
     }
 
-    /// Optional reference-state value published by the reviewed software path.
+    /// Optional combined deferred-work value published by the reviewed path.
     ///
     /// This records the exact binary behavior needed to evaluate a replacement
     /// worker. It does not make the vendor callback selector an open-driver ABI.
-    pub const fn reference_state_publication(self) -> Option<bool> {
-        self.reference_state_publication
+    pub const fn deferred_work_publication(self) -> Option<bool> {
+        self.deferred_work_publication
     }
 }
 
@@ -290,7 +290,7 @@ mod tests {
     const fn classify_work(
         trigger: BluetoothPrimarySchedulerTrigger,
         busy: bool,
-        reference_state_29: bool,
+        state_29: bool,
     ) -> Option<BluetoothSchedulerWorkerWake> {
         match trigger.work_inputs() {
             Some((mark_candidate, state_publication_requested)) => Some(
@@ -300,9 +300,7 @@ mod tests {
                 }
                 .classify(
                     &BluetoothSchedulerWorkObservation::from_fields_for_validation(
-                        busy,
-                        reference_state_29,
-                        0,
+                        busy, state_29, 0,
                     ),
                 ),
             ),
@@ -407,15 +405,12 @@ mod tests {
             )
             .expect("source 21 must request work");
             assert_eq!(wake.class(), BluetoothSchedulerWorkerWakeClass::Ordinary);
-            assert_eq!(
-                wake.reference_state_publication(),
-                Some(expected_publication)
-            );
+            assert_eq!(wake.deferred_work_publication(), Some(expected_publication));
         }
     }
 
     #[test]
-    fn sources_twenty_seven_or_twenty_eight_mark_only_the_active_reference_path() {
+    fn sources_twenty_seven_or_twenty_eight_mark_only_requested_deferred_work() {
         let unmarked = classify_work(
             BluetoothPrimarySchedulerTrigger::Bank0Sources27Or28 {
                 source_21_pending: false,
@@ -438,7 +433,7 @@ mod tests {
             BluetoothSchedulerWorkerWakeClass::Ordinary
         );
         assert_eq!(marked.class(), BluetoothSchedulerWorkerWakeClass::Marked);
-        assert_eq!(marked.reference_state_publication(), None);
+        assert_eq!(marked.deferred_work_publication(), None);
     }
 
     #[test]
@@ -453,7 +448,7 @@ mod tests {
         .expect("combined bank-zero trigger must request work");
 
         assert_eq!(wake.class(), BluetoothSchedulerWorkerWakeClass::Marked);
-        assert_eq!(wake.reference_state_publication(), Some(true));
+        assert_eq!(wake.deferred_work_publication(), Some(true));
     }
 
     #[test]
@@ -480,8 +475,8 @@ mod tests {
             BluetoothSchedulerWorkerWakeClass::Ordinary
         );
         assert_eq!(marked.class(), BluetoothSchedulerWorkerWakeClass::Marked);
-        assert_eq!(ordinary.reference_state_publication(), Some(true));
-        assert_eq!(marked.reference_state_publication(), Some(true));
+        assert_eq!(ordinary.deferred_work_publication(), Some(true));
+        assert_eq!(marked.deferred_work_publication(), Some(true));
     }
 
     #[test]

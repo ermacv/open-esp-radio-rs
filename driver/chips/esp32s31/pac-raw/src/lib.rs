@@ -45124,7 +45124,7 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub const fn scheduler_reference(&self) -> &SchedulerReference {
             &self.scheduler_reference
         }
-        #[doc = "0x7c - The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
+        #[doc = "0x7c - The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
         #[inline(always)]
         pub const fn scheduler_state(&self) -> &SchedulerState {
             &self.scheduler_state
@@ -45183,10 +45183,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_STATE (rw) register accessor: The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
+    #[doc = "SCHEDULER_STATE (rw) register accessor: The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
     #[doc(alias = "SCHEDULER_STATE")]
     pub type SchedulerState = crate::Reg<scheduler_state::SchedulerStateSpec>;
-    #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
+    #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
     pub mod scheduler_state {
         #[doc = "Register `SCHEDULER_STATE` reader"]
         pub type R = crate::R<SchedulerStateSpec>;
@@ -45204,10 +45204,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub type OpaqueState24_28R = crate::FieldReader;
         #[doc = "Field `OPAQUE_STATE_24_28` writer - "]
         pub type OpaqueState24_28W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
-        #[doc = "Field `REFERENCE_PATH_STATE` reader - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
-        pub type ReferencePathStateR = crate::BitReader;
-        #[doc = "Field `REFERENCE_PATH_STATE` writer - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
-        pub type ReferencePathStateW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STATE_29` reader - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
+        pub type State29R = crate::BitReader;
+        #[doc = "Field `STATE_29` writer - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
+        pub type State29W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `OPAQUE_STATE_30` reader - "]
         pub type OpaqueState30R = crate::BitReader;
         #[doc = "Field `OPAQUE_STATE_30` writer - "]
@@ -45232,10 +45232,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn opaque_state_24_28(&self) -> OpaqueState24_28R {
                 OpaqueState24_28R::new(((self.bits >> 24) & 0x1f) as u8)
             }
-            #[doc = "Bit 29 - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
+            #[doc = "Bit 29 - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
             #[inline(always)]
-            pub fn reference_path_state(&self) -> ReferencePathStateR {
-                ReferencePathStateR::new(((self.bits >> 29) & 1) != 0)
+            pub fn state_29(&self) -> State29R {
+                State29R::new(((self.bits >> 29) & 1) != 0)
             }
             #[doc = "Bit 30"]
             #[inline(always)]
@@ -45264,10 +45264,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn opaque_state_24_28(&mut self) -> OpaqueState24_28W<'_, SchedulerStateSpec> {
                 OpaqueState24_28W::new(self, 24)
             }
-            #[doc = "Bit 29 - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
+            #[doc = "Bit 29 - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
             #[inline(always)]
-            pub fn reference_path_state(&mut self) -> ReferencePathStateW<'_, SchedulerStateSpec> {
-                ReferencePathStateW::new(self, 29)
+            pub fn state_29(&mut self) -> State29W<'_, SchedulerStateSpec> {
+                State29W::new(self, 29)
             }
             #[doc = "Bit 30"]
             #[inline(always)]
@@ -45280,7 +45280,7 @@ pub mod bluetooth_scheduler_interrupt_runtime {
                 BusyW::new(self, 31)
             }
         }
-        #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerStateSpec;
         impl crate::RegisterSpec for SchedulerStateSpec {
             type Ux = u32;
@@ -47856,7 +47856,7 @@ pub mod ble_hw_runtime_control {
         clear: [Clear; 8],
         _reserved2: [u8; 0x04],
         phy_init_configuration: PhyInitConfiguration,
-        phy_init_configuration_latch: PhyInitConfigurationLatch,
+        phy_init_configuration_followup: PhyInitConfigurationFollowup,
         _reserved4: [u8; 0x0c],
         config_0088: Config0088,
         _reserved5: [u8; 0x04],
@@ -47891,10 +47891,10 @@ pub mod ble_hw_runtime_control {
         pub const fn phy_init_configuration(&self) -> &PhyInitConfiguration {
             &self.phy_init_configuration
         }
-        #[doc = "0x78 - Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."]
+        #[doc = "0x78 - Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown."]
         #[inline(always)]
-        pub const fn phy_init_configuration_latch(&self) -> &PhyInitConfigurationLatch {
-            &self.phy_init_configuration_latch
+        pub const fn phy_init_configuration_followup(&self) -> &PhyInitConfigurationFollowup {
+            &self.phy_init_configuration_followup
         }
         #[doc = "0x88 - Complete image formed from the low five bits of one controller configuration byte."]
         #[inline(always)]
@@ -47995,30 +47995,30 @@ pub mod ble_hw_runtime_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PHY_INIT_CONFIGURATION_LATCH (w) register accessor: Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_latch::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_configuration_latch`] module"]
-    #[doc(alias = "PHY_INIT_CONFIGURATION_LATCH")]
-    pub type PhyInitConfigurationLatch =
-        crate::Reg<phy_init_configuration_latch::PhyInitConfigurationLatchSpec>;
-    #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."]
-    pub mod phy_init_configuration_latch {
-        #[doc = "Register `PHY_INIT_CONFIGURATION_LATCH` writer"]
-        pub type W = crate::W<PhyInitConfigurationLatchSpec>;
+    #[doc = "PHY_INIT_CONFIGURATION_FOLLOWUP (w) register accessor: Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_followup::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_configuration_followup`] module"]
+    #[doc(alias = "PHY_INIT_CONFIGURATION_FOLLOWUP")]
+    pub type PhyInitConfigurationFollowup =
+        crate::Reg<phy_init_configuration_followup::PhyInitConfigurationFollowupSpec>;
+    #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown."]
+    pub mod phy_init_configuration_followup {
+        #[doc = "Register `PHY_INIT_CONFIGURATION_FOLLOWUP` writer"]
+        pub type W = crate::W<PhyInitConfigurationFollowupSpec>;
         #[doc = "Field `IMAGE` writer - "]
         pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, PhyInitConfigurationLatchSpec> {
+            pub fn image(&mut self) -> ImageW<'_, PhyInitConfigurationFollowupSpec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_latch::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PhyInitConfigurationLatchSpec;
-        impl crate::RegisterSpec for PhyInitConfigurationLatchSpec {
+        #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_followup::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitConfigurationFollowupSpec;
+        impl crate::RegisterSpec for PhyInitConfigurationFollowupSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`phy_init_configuration_latch::W`](W) writer structure"]
-        impl crate::Writable for PhyInitConfigurationLatchSpec {
+        #[doc = "`write(|w| ..)` method takes [`phy_init_configuration_followup::W`](W) writer structure"]
+        impl crate::Writable for PhyInitConfigurationFollowupSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -59024,7 +59024,7 @@ pub mod field_read {
 /// Safe same-sample observations through reviewed SVD fields.
 pub mod field_snapshot_read {
 
-    /// Read `BUSY`, `REFERENCE_PATH_STATE`, `CURRENT_LINK_INDEX` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
+    /// Read `BUSY`, `STATE_29`, `CURRENT_LINK_INDEX` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
     #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_scheduler_interrupt_state(
@@ -59033,7 +59033,7 @@ pub mod field_snapshot_read {
         let sample = registers.scheduler_state().read();
         (
             sample.busy().bit(),
-            sample.reference_path_state().bit(),
+            sample.state_29().bit(),
             sample.current_link_index().bits(),
         )
     }
@@ -59789,15 +59789,15 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BLE_HW_RUNTIME_CONTROL`.`PHY_INIT_CONFIGURATION_LATCH`.
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_HW_RUNTIME_CONTROL`.`PHY_INIT_CONFIGURATION_FOLLOWUP`.
     #[inline]
-    pub fn latch_ble_phy_runtime_configuration(registers: &crate::BleHwRuntimeControl) {
+    pub fn publish_ble_phy_init_followup_image_1(registers: &crate::BleHwRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .phy_init_configuration_latch()
+                .phy_init_configuration_followup()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }

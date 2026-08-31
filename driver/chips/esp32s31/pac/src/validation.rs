@@ -216,7 +216,7 @@ pub unsafe fn initialize_bluetooth_phy_registers(
     environment_address: u32,
     resolving_list: crate::BluetoothControllerSramAddress,
     ignore_allowlist_for_directed_advertising: bool,
-    backoff_rssi_dbm: i8,
+    runtime_configuration_low_byte: u8,
 ) -> bool {
     let Ok(environment) = BluetoothPhyEnvironmentAddress::new(environment_address) else {
         return false;
@@ -226,7 +226,7 @@ pub unsafe fn initialize_bluetooth_phy_registers(
         environment,
         resolving_list,
         ignore_allowlist_for_directed_advertising,
-        backoff_rssi_dbm,
+        runtime_configuration_low_byte,
     );
     let cold = RadioHardware::for_validation().into_bluetooth();
     let (mut task, interrupts) = cold.separate_interrupt_owner();

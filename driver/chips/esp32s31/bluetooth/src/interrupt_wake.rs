@@ -1,6 +1,6 @@
 //! Lock-free handoff from the bounded Bluetooth hard handler to one worker.
 //!
-//! The recovered reference path owns one static scheduler event. Repeated
+//! The recovered deferred-work path owns one static scheduler event. Repeated
 //! queue insertion is coalesced, while its one-bit marker remains sticky until
 //! the worker dequeues the event. This cell preserves exactly that contract
 //! without an RTOS queue, allocation, or a callback-list ABI.

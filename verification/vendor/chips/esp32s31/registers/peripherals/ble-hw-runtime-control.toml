@@ -61,8 +61,8 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "PHY_INIT_CONFIGURATION_LATCH"
-description = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."
+name = "PHY_INIT_CONFIGURATION_FOLLOWUP"
+description = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown."
 addressOffset = 0x78
 size = 32
 access = "write-only"
@@ -152,14 +152,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_LATCH"
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_FOLLOWUP"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_LATCH.IMAGE"
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_FOLLOWUP.IMAGE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"

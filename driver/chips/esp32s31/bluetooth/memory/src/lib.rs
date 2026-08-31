@@ -37,8 +37,9 @@ pub use ble_phy_engine::{
 
 pub use dtm_event_image::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
-    BluetoothDtmReceiverEventPhase, BluetoothDtmRole, BluetoothDtmSchedulerItemEventType,
-    BluetoothDtmSchedulerItemReviewedWords,
+    BluetoothDtmReceiverEventPhase, BluetoothDtmRole, BluetoothDtmRxHeaderTailProjection,
+    BluetoothDtmSchedulerItemEventType, BluetoothDtmSchedulerItemReviewedWords,
+    BluetoothDtmTxHeaderHeadProjection,
 };
 pub use dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError};
 #[cfg(not(target_arch = "riscv32"))]

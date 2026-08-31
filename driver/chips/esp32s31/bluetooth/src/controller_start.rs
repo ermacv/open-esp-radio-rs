@@ -2207,12 +2207,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &self,
         role: crate::BluetoothDtmRole,
     ) -> crate::BluetoothDtmLinkStateReset {
-        crate::BluetoothDtmLinkStateReset::new(
-            None,
-            None,
-            self.dtm_resources.default_tx_power_dbm(),
-            role,
-        )
+        crate::BluetoothDtmLinkStateReset::new(self.dtm_resources.default_tx_power_dbm(), role)
     }
 
     fn cancel_dtm_preparation_phase(

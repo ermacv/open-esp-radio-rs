@@ -10,10 +10,12 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmBoundSramLinkAddress;
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmRxHeaderTailProjection, BluetoothDtmTxHeaderHeadProjection,
 };
 
 /// Source-level default transmit power consumed by the S31 DTM profile.
@@ -83,8 +85,8 @@ impl BluetoothDtmHardwareProfile {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothDtmLinkStateReset {
-    tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
-    rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
+    tx_header_head: Option<BluetoothDtmTxHeaderHeadProjection>,
+    rx_header_tail: Option<BluetoothDtmRxHeaderTailProjection>,
     hardware_profile: BluetoothDtmHardwareProfile,
     role: BluetoothDtmRole,
 }
@@ -96,14 +98,12 @@ impl BluetoothDtmLinkStateReset {
     /// Callers cannot supply either the private rounded-power image or the
     /// positional configuration image.
     pub(crate) const fn new(
-        tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
-        rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
         default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm,
         role: BluetoothDtmRole,
     ) -> Self {
         Self {
-            tx_head,
-            rx_tail,
+            tx_header_head: None,
+            rx_header_tail: None,
             hardware_profile: BluetoothDtmHardwareProfile::reviewed_esp32s31(default_tx_power_dbm),
             role,
         }
@@ -120,8 +120,8 @@ impl BluetoothDtmLinkStateReset {
         current: BluetoothDtmLinkStateReviewedWords,
     ) -> BluetoothDtmLinkStateReviewedWords {
         current.apply_reset(
-            self.tx_head,
-            self.rx_tail,
+            self.tx_header_head,
+            self.rx_header_tail,
             self.hardware_profile.rounded_power(),
             BluetoothDtmHardwareProfile::REVIEWED_CONFIG,
             self.role,
@@ -140,12 +140,12 @@ impl BluetoothDtmLinkStateReset {
     /// earlier event or another graph.
     pub(crate) const fn with_private_links(
         self,
-        tx_head: BluetoothDtmBoundSramLinkAddress,
-        rx_tail: BluetoothDtmBoundSramLinkAddress,
+        tx_header_head: BluetoothDtmTxHeaderHeadProjection,
+        rx_header_tail: BluetoothDtmRxHeaderTailProjection,
     ) -> Self {
         Self {
-            tx_head: Some(tx_head),
-            rx_tail: Some(rx_tail),
+            tx_header_head: Some(tx_header_head),
+            rx_header_tail: Some(rx_header_tail),
             ..self
         }
     }

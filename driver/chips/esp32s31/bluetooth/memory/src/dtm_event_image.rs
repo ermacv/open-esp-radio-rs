@@ -19,6 +19,50 @@ const SCHEDULER_ROUNDED_POWER_REGION_MASK: u32 = 0x0ff0_0000;
 const INITIAL_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x000f_0001;
 const RECURRING_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x0000_0001;
 
+/// Opaque controller projection of this graph's current TX-header head.
+///
+/// The memory graph creates this value only while producing a positional
+/// event seed. It carries neither a general SRAM address nor publication
+/// authority, so it cannot be substituted for the RX-header tail projection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothDtmTxHeaderHeadProjection(u32);
+
+impl BluetoothDtmTxHeaderHeadProjection {
+    pub(super) const fn from_bound(address: BluetoothDtmBoundSramLinkAddress) -> Self {
+        Self(address.compressed_image())
+    }
+
+    const fn from_link_state_word(word: u32) -> Self {
+        Self(word & LOW_TWENTY_MASK)
+    }
+
+    const fn apply_to_link_state_word(self, word: u32) -> u32 {
+        (word & !LOW_TWENTY_MASK) | self.0
+    }
+}
+
+/// Opaque controller projection of this graph's current RX-header tail.
+///
+/// The memory graph creates this value only while producing a positional
+/// event seed. It carries neither a general SRAM address nor publication
+/// authority, so it cannot be substituted for the TX-header head projection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothDtmRxHeaderTailProjection(u32);
+
+impl BluetoothDtmRxHeaderTailProjection {
+    pub(super) const fn from_bound(address: BluetoothDtmBoundSramLinkAddress) -> Self {
+        Self(address.compressed_image())
+    }
+
+    const fn from_link_state_word(word: u32) -> Self {
+        Self(word & LOW_TWENTY_MASK)
+    }
+
+    const fn apply_to_link_state_word(self, word: u32) -> u32 {
+        (word & !LOW_TWENTY_MASK) | self.0
+    }
+}
+
 /// One protocol-level Bluetooth LE access address retained by the SRAM codec.
 ///
 /// This value identifies the producer-side packet synchronization value. It
@@ -150,20 +194,25 @@ impl BluetoothDtmLinkStateReviewedWords {
     /// caller supplies only validated semantic values and bound graph links.
     pub const fn apply_reset(
         mut self,
-        tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
-        rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
+        tx_head: Option<BluetoothDtmTxHeaderHeadProjection>,
+        rx_tail: Option<BluetoothDtmRxHeaderTailProjection>,
         rounded_power: u8,
         config: u8,
         role: BluetoothDtmRole,
     ) -> Self {
-        let tx_head = compressed_or_zero(tx_head);
-        let rx_tail = compressed_or_zero(rx_tail);
-        let word_00_with_link = (self.word_00 & !LOW_TWENTY_MASK) | tx_head;
+        let word_00_with_link = match tx_head {
+            Some(tx_head) => tx_head.apply_to_link_state_word(self.word_00),
+            None => self.word_00 & !LOW_TWENTY_MASK,
+        };
         let transformed_high_half = (((word_00_with_link >> 16) as u16 & 0x600f) | 0x8ff0) as u32;
 
         self.word_00 = (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16);
         self.word_04 = (self.word_04 & !LINK_STATE_POWER_MASK) | ((rounded_power as u32) << 23);
-        self.word_08 = (self.word_08 & 0xf000_0000) | 0x0ff0_0000 | rx_tail;
+        self.word_08 = match rx_tail {
+            Some(rx_tail) => rx_tail.apply_to_link_state_word(self.word_08),
+            None => self.word_08 & !LOW_TWENTY_MASK,
+        };
+        self.word_08 = (self.word_08 & 0xf00f_ffff) | 0x0ff0_0000;
         self.word_14 |= 0xc000_0000;
         if matches!(role, BluetoothDtmRole::Receiver) {
             self.word_34 = 0;
@@ -318,13 +367,6 @@ impl BluetoothDtmSchedulerItemReviewedWords {
     }
 }
 
-const fn compressed_or_zero(address: Option<BluetoothDtmBoundSramLinkAddress>) -> u32 {
-    match address {
-        Some(address) => address.compressed_image(),
-        None => 0,
-    }
-}
-
 /// Complete CPU-side DTM event word subset accepted by the memory graph.
 ///
 /// This aggregate is positional, not proof that the upper DTM transforms were
@@ -357,4 +399,23 @@ impl BluetoothDtmPositionalEventWords {
     pub const fn scheduler_item(self) -> BluetoothDtmSchedulerItemReviewedWords {
         self.scheduler_item
     }
+
+    pub(super) const fn tx_header_head_projection(self) -> BluetoothDtmTxHeaderHeadProjection {
+        BluetoothDtmTxHeaderHeadProjection::from_link_state_word(self.link_state.word_00)
+    }
+
+    pub(super) const fn rx_header_tail_projection(self) -> BluetoothDtmRxHeaderTailProjection {
+        BluetoothDtmRxHeaderTailProjection::from_link_state_word(self.link_state.word_08)
+    }
+
+    pub(super) const fn scheduler_item_retains_link_state(
+        self,
+        link_state: BluetoothDtmBoundSramLinkAddress,
+    ) -> bool {
+        self.scheduler_item.word_08 & LOW_TWENTY_MASK == link_state.compressed_image()
+    }
+}
+
+pub(super) const fn clear_scheduler_hardware_next_link(word: u32) -> u32 {
+    word & !LOW_TWENTY_MASK
 }

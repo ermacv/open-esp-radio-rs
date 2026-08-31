@@ -259,7 +259,10 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
         let retained_window = self.reservation.window();
         let link_state = self
             .link_state
-            .with_private_links(seed.tx_head(), seed.rx_tail())
+            .with_private_links(
+                seed.tx_header_head_projection(),
+                seed.rx_header_tail_projection(),
+            )
             .apply(current.link_state())
             .apply_event_context(self.link_state.role(), epoch.raw_time_for_scheduler_time(0));
         let scheduler_item = event.apply_raw_window(
@@ -1753,9 +1756,8 @@ where
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
-        BluetoothDtmBoundSramLinkAddress, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmMemoryGraphStorage, BluetoothDtmRxResultProjection,
-        BluetoothDtmSchedulerAllocationConfig,
+        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphStorage,
+        BluetoothDtmRxResultProjection, BluetoothDtmSchedulerAllocationConfig,
     };
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
@@ -1795,7 +1797,7 @@ mod tests {
     }
 
     fn link_state(role: BluetoothDtmRole) -> BluetoothDtmLinkStateReset {
-        BluetoothDtmLinkStateReset::new(None, None, BluetoothDtmDefaultTxPowerDbm::new(0), role)
+        BluetoothDtmLinkStateReset::new(BluetoothDtmDefaultTxPowerDbm::new(0), role)
     }
 
     fn epoch() -> BluetoothControllerSchedulerEpoch {
@@ -1911,11 +1913,7 @@ mod tests {
     #[test]
     fn tx_plan_requires_and_retains_the_prepared_packet_identity() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let stale = BluetoothDtmBoundSramLinkAddress::new(0x2f00_0400)
-            .expect("stale model link remains syntactically valid");
         let reset = BluetoothDtmLinkStateReset::new(
-            Some(stale),
-            Some(stale),
             BluetoothDtmDefaultTxPowerDbm::new(20),
             BluetoothDtmRole::Transmitter,
         );
@@ -1939,7 +1937,7 @@ mod tests {
                 margin(),
                 tx_window(),
             )
-            .expect("fresh private links replace both stale plan links");
+            .expect("the consumed graph supplies both private link projections");
         let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
         assert_eq!(
             scheduler_prepared.packet_pattern(),

@@ -26,7 +26,9 @@ use vcell::VolatileCell;
 use crate::{
     dtm_event_image::{
         BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
-        BluetoothDtmSchedulerItemReviewedWords, BluetoothLeAccessAddress, BluetoothLeCrcInit,
+        BluetoothDtmRxHeaderTailProjection, BluetoothDtmSchedulerItemReviewedWords,
+        BluetoothDtmTxHeaderHeadProjection, BluetoothLeAccessAddress, BluetoothLeCrcInit,
+        clear_scheduler_hardware_next_link,
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
     sram_link::BluetoothDtmBoundSramLinkAddress,
@@ -90,7 +92,6 @@ const SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET: usize = 0x50 / 4;
 const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4;
 const RX_PACKET_WORDS: usize = BLUETOOTH_DTM_RX_PACKET_BYTES.div_ceil(4);
-const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 const PRIVATE_SCHEDULER_ALLOCATION_ADDITION: u32 = 5;
 
 /// Product-owned limits contributing to the DTM scheduler allocation field.
@@ -1137,8 +1138,8 @@ impl BluetoothDtmMemoryGraphBinding {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmPositionalEventSeed {
     words: BluetoothDtmPositionalEventWords,
-    tx_head: BluetoothDtmBoundSramLinkAddress,
-    rx_tail: BluetoothDtmBoundSramLinkAddress,
+    tx_header_head: BluetoothDtmTxHeaderHeadProjection,
+    rx_header_tail: BluetoothDtmRxHeaderTailProjection,
 }
 
 impl BluetoothDtmPositionalEventSeed {
@@ -1147,14 +1148,14 @@ impl BluetoothDtmPositionalEventSeed {
         self.words
     }
 
-    /// Return the current private TX-head link sampled from link-state `+0x6c`.
-    pub const fn tx_head(self) -> BluetoothDtmBoundSramLinkAddress {
-        self.tx_head
+    /// Return the current graph-bound TX-header head projection.
+    pub const fn tx_header_head_projection(self) -> BluetoothDtmTxHeaderHeadProjection {
+        self.tx_header_head
     }
 
-    /// Return the current private RX-tail link sampled from link-state `+0x70`.
-    pub const fn rx_tail(self) -> BluetoothDtmBoundSramLinkAddress {
-        self.rx_tail
+    /// Return the current graph-bound RX-header tail projection.
+    pub const fn rx_header_tail_projection(self) -> BluetoothDtmRxHeaderTailProjection {
+        self.rx_header_tail
     }
 }
 
@@ -1173,25 +1174,20 @@ pub enum BluetoothDtmMemoryGraphPrepareError<BuildError = Infallible> {
     CurrentRxTailIdentityMismatch,
     /// Link-state `+0x00` does not retain this graph's freshly sampled TX head.
     LinkStateTxHeadMismatch {
-        /// Current private-chain image required by this graph.
-        expected: u32,
-        /// Candidate low-twenty-bit image returned by the builder.
-        observed: u32,
+        /// Current private-chain projection required by this graph.
+        expected: BluetoothDtmTxHeaderHeadProjection,
+        /// Candidate projection returned by the builder.
+        observed: BluetoothDtmTxHeaderHeadProjection,
     },
     /// Link-state `+0x08` does not retain this graph's freshly sampled RX tail.
     LinkStateRxTailMismatch {
-        /// Current private-chain image required by this graph.
-        expected: u32,
-        /// Candidate low-twenty-bit image returned by the builder.
-        observed: u32,
+        /// Current private-chain projection required by this graph.
+        expected: BluetoothDtmRxHeaderTailProjection,
+        /// Candidate projection returned by the builder.
+        observed: BluetoothDtmRxHeaderTailProjection,
     },
     /// Scheduler-item `+0x08` no longer points to this graph's link-state.
-    SchedulerItemLinkStateMismatch {
-        /// Statically bound link-state image required by this graph.
-        expected: u32,
-        /// Candidate low-twenty-bit image returned by the builder.
-        observed: u32,
-    },
+    SchedulerItemLinkStateMismatch,
 }
 
 /// Failed positional preparation retaining the exact CPU-owned graph.
@@ -1365,7 +1361,7 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
         let previous_software_next = storage.read_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET);
         storage.write_word(
             SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
-            previous_hardware_next & !LOW_TWENTY_MASK,
+            clear_scheduler_hardware_next_link(previous_hardware_next),
         );
         storage.write_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET, 0);
 
@@ -1708,7 +1704,7 @@ impl BluetoothDtmMemoryGraphRecyclePrepared {
         let hardware_next = scheduler_item.read_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET);
         scheduler_item.write_word(
             SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
-            hardware_next & !LOW_TWENTY_MASK,
+            clear_scheduler_hardware_next_link(hardware_next),
         );
 
         BluetoothDtmMemoryGraphRecycleCleaned {
@@ -2548,12 +2544,12 @@ impl BluetoothDtmMemoryGraphCpuOwned {
                 error: BluetoothDtmMemoryGraphPrepareError::CurrentRxTailIdentityMismatch,
             });
         }
-        let tx_head_image = tx_head.compressed_image();
-        let rx_tail_image = rx_tail.compressed_image();
+        let tx_header_head = BluetoothDtmTxHeaderHeadProjection::from_bound(tx_head);
+        let rx_header_tail = BluetoothDtmRxHeaderTailProjection::from_bound(rx_tail);
         let seed = BluetoothDtmPositionalEventSeed {
             words: previous,
-            tx_head,
-            rx_tail,
+            tx_header_head,
+            rx_header_tail,
         };
         let candidate = match build(seed) {
             Ok(candidate) => candidate,
@@ -2565,35 +2561,30 @@ impl BluetoothDtmMemoryGraphCpuOwned {
             }
         };
 
-        let observed_tx_head = candidate.link_state().word_00 & LOW_TWENTY_MASK;
-        if observed_tx_head != tx_head_image {
+        let observed_tx_head = candidate.tx_header_head_projection();
+        if observed_tx_head != tx_header_head {
             return Err(BluetoothDtmMemoryGraphPrepareFailure {
                 owner: self,
                 error: BluetoothDtmMemoryGraphPrepareError::LinkStateTxHeadMismatch {
-                    expected: tx_head_image,
+                    expected: tx_header_head,
                     observed: observed_tx_head,
                 },
             });
         }
-        let observed_rx_tail = candidate.link_state().word_08 & LOW_TWENTY_MASK;
-        if observed_rx_tail != rx_tail_image {
+        let observed_rx_tail = candidate.rx_header_tail_projection();
+        if observed_rx_tail != rx_header_tail {
             return Err(BluetoothDtmMemoryGraphPrepareFailure {
                 owner: self,
                 error: BluetoothDtmMemoryGraphPrepareError::LinkStateRxTailMismatch {
-                    expected: rx_tail_image,
+                    expected: rx_header_tail,
                     observed: observed_rx_tail,
                 },
             });
         }
-        let expected_link_state = self.binding.link_state.compressed_image();
-        let observed_link_state = candidate.scheduler_item().word_08 & LOW_TWENTY_MASK;
-        if observed_link_state != expected_link_state {
+        if !candidate.scheduler_item_retains_link_state(self.binding.link_state) {
             return Err(BluetoothDtmMemoryGraphPrepareFailure {
                 owner: self,
-                error: BluetoothDtmMemoryGraphPrepareError::SchedulerItemLinkStateMismatch {
-                    expected: expected_link_state,
-                    observed: observed_link_state,
-                },
+                error: BluetoothDtmMemoryGraphPrepareError::SchedulerItemLinkStateMismatch,
             });
         }
 
@@ -2808,9 +2799,8 @@ mod tests {
         BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
         BluetoothDtmPositionalEventWords, BluetoothDtmRxResultProjection,
         BluetoothDtmRxResultProjectionError, BluetoothDtmSchedulerAllocationConfig,
-        BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemReviewedWords,
-        BluetoothDtmTxPacketPrepareError, LINK_STATE_RX_TAIL_OFFSET, LOW_TWENTY_MASK,
-        SCHEDULER_ITEM_STATUS_OFFSET,
+        BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmTxPacketPrepareError,
+        LINK_STATE_RX_TAIL_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2959,33 +2949,15 @@ mod tests {
 
     fn candidate_words(seed: BluetoothDtmPositionalEventSeed) -> BluetoothDtmPositionalEventWords {
         let current = seed.words();
-        let tx_head = seed.tx_head().compressed_image();
-        let rx_tail = seed.rx_tail().compressed_image();
-        let link_state_link = current.scheduler_item().word_08 & LOW_TWENTY_MASK;
-        let mut link_state = current.link_state();
-        link_state.word_00 = 0xabc0_0000 | tx_head;
-        link_state.word_04 = 0x1111_1111;
-        link_state.word_08 = 0xdef0_0000 | rx_tail;
-        link_state.word_14 = 0x2222_2222;
-        link_state.word_34 = 0x4444_4444;
-        link_state.word_50 = 0x6666_6666;
+        let link_state = current.link_state().apply_reset(
+            Some(seed.tx_header_head_projection()),
+            Some(seed.rx_header_tail_projection()),
+            0,
+            0,
+            BluetoothDtmRole::Transmitter,
+        );
 
-        BluetoothDtmPositionalEventWords::new(
-            link_state,
-            BluetoothDtmSchedulerItemReviewedWords {
-                word_00: 0x7777_7777,
-                word_04: 0x8888_8888,
-                word_08: 0x9990_0000 | link_state_link,
-                word_0c: 0x1212_1212,
-                word_10: 0x3434_3434,
-                word_14: 0xaaaa_aaaa,
-                word_18: 0xbbbb_bbbb,
-                word_2c: 0xcccc_cccc,
-                word_44: 0xdddd_dddd,
-                word_48: 0xeeee_eeee,
-                word_4c: 0xffff_ffff,
-            },
-        )
+        BluetoothDtmPositionalEventWords::new(link_state, current.scheduler_item())
     }
 
     #[test]

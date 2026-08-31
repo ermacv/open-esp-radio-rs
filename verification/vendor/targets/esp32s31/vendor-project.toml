@@ -118,6 +118,36 @@ include-reachable = true
 entry-contract = "none"
 output = "generated/findings/ble-controller-all.ir"
 
+# Diagnostic bodies are dead-stripped from the operational linked controller.
+# Analyze their authenticated archive members directly instead of retaining
+# debug code in the controller image or rebuilding an oracle application.
+[[analysis.ir]]
+id = "ble-phy-state-diagnostic"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_phy_hw_state_dump"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-phy-state-diagnostic.ir"
+
+[[analysis.ir]]
+id = "ble-coex-register-diagnostic"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_sym_ble_uPvbSnU52H5Jo6zGRBEO"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-coex-register-diagnostic.ir"
+
+[[analysis.ir]]
+id = "btdm-scheduler-diagnostic"
+sources = ["btdm-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_btdm_sched_list_details_dump"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/btdm-scheduler-diagnostic.ir"
+
 # Canonical BR/EDR controller image. The authenticated Classic controller,
 # shared BTDM, baseband and PHY archives remain the provenance authority; this
 # linked view only restores cross-archive call identity for generated analysis.
@@ -285,6 +315,9 @@ linked-ir = [
     "generated/findings/coex-all.ir",
     "generated/findings/btbb-all.ir",
     "generated/findings/ble-controller-all.ir",
+    "generated/findings/ble-phy-state-diagnostic.ir",
+    "generated/findings/ble-coex-register-diagnostic.ir",
+    "generated/findings/btdm-scheduler-diagnostic.ir",
     "generated/findings/bredr-controller-all.ir",
     "generated/findings/ble-controller-lifecycle.ir",
     "generated/findings/ble-hci-transport.ir",
@@ -370,6 +403,9 @@ profiles = [
     "coex-all",
     "btbb-all",
     "ble-controller-all",
+    "ble-phy-state-diagnostic",
+    "ble-coex-register-diagnostic",
+    "btdm-scheduler-diagnostic",
 ]
 
 [functions.review]
@@ -649,6 +685,33 @@ protocols = ["bluetooth", "ble", "coex"]
 profiles = ["btbb-all"]
 roots = ["btbb:coex_pti_v2"]
 include-reachable = true
+
+# Navigation-only diagnostic surfaces. They intentionally remain outside
+# operational publication debt while exposing the vendor's own block/offset
+# map and binary BLE state inventory for focused human review.
+[[review.scopes]]
+id = "shared-phy-register-diagnostics"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "shared"]
+profiles = ["archive-all"]
+roots = ["archive:phy_reg_check"]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-register-diagnostics"
+protocols = ["ble"]
+profiles = ["ble-phy-state-diagnostic", "ble-coex-register-diagnostic"]
+roots = [
+    "ble-diagnostics:r_ble_phy_hw_state_dump",
+    "ble-diagnostics:r_sym_ble_uPvbSnU52H5Jo6zGRBEO",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "btdm-scheduler-diagnostics"
+protocols = ["bluetooth", "ble", "shared"]
+profiles = ["btdm-scheduler-diagnostic"]
+roots = ["btdm-diagnostics:r_btdm_sched_list_details_dump"]
+include-reachable = false
 
 [[review.scopes]]
 id = "ble-controller-lifecycle"

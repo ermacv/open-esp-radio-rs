@@ -1,10 +1,10 @@
-//! Executor-neutral bookends for one reusable DTM memory-graph session.
+//! Reusable DTM memory-graph epochs and terminal response retention.
 //!
-//! This layer deliberately does not model controller execution. It provides
-//! only the honest bookends around that missing session pump: an idle graph can
-//! begin a fresh CPU-owned epoch, and an already ended test retains its graph
-//! and report until response publication. The allocation configuration is
-//! inseparable from the graph binding throughout both bookends.
+//! Controller execution lives in the first-event, active-session and stopping
+//! runners. This layer owns their reusable bookends: an idle graph begins a
+//! fresh CPU-owned epoch, and an ended test retains its graph and report until
+//! exact-once response publication. The allocation configuration stays
+//! inseparable from the graph binding throughout every epoch.
 
 #![forbid(unsafe_code)]
 
@@ -225,10 +225,11 @@ pub(crate) struct BluetoothDtmSessionGraphReady {
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmSessionGraphReady {
-    /// Release the fresh CPU owner to the concrete lower session pump.
+    /// Release the fresh CPU owner to the concrete lower event runner.
     ///
-    /// No session continuity is claimed beyond this edge. The future pump must
-    /// retain the exact lower typestate until it can produce a Test End owner.
+    /// This value alone does not claim continuity beyond the edge; the outer
+    /// command actor retains each lower typestate until it produces a terminal
+    /// Test End owner or an explicit fail-stop owner.
     pub fn into_graph(self) -> BluetoothDtmMemoryGraphCpuOwned {
         self.graph
     }

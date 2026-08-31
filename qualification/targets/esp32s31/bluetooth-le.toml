@@ -376,7 +376,7 @@ vendor-anchors = [
 gaps = [
   { axis = "implementation", id = "unrelated-list-dispatch-and-live-radio-role-composition-missing" },
   { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
-  { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
+  { axis = "vendor", id = "sleep-enabled-rf-wake-and-open-vendor-test-end-semantics-diverge" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
   { axis = "async", id = "unrelated-list-and-modem-expiration-dispatch-missing" },
 ]

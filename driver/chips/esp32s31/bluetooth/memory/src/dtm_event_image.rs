@@ -8,7 +8,11 @@
 
 #![forbid(unsafe_code)]
 
-use crate::BluetoothControllerSramLinkAddress;
+use crate::{
+    BluetoothControllerSramLinkAddress,
+    le_phy_packet::{BluetoothLeAccessAddress, BluetoothLeCrcInit},
+    le_tx_power::rounded_tx_power,
+};
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 const LINK_STATE_POWER_MASK: u32 = 0x0f80_0000;
@@ -60,51 +64,6 @@ impl BluetoothDtmRxHeaderTailProjection {
 
     const fn apply_to_link_state_word(self, word: u32) -> u32 {
         (word & !LOW_TWENTY_MASK) | self.0
-    }
-}
-
-/// One protocol-level Bluetooth LE access address retained by the SRAM codec.
-///
-/// This value identifies the producer-side packet synchronization value. It
-/// does not assert which hardware block consumes the containing descriptor.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct BluetoothLeAccessAddress(u32);
-
-impl BluetoothLeAccessAddress {
-    /// Bluetooth Core Direct Test Mode synchronization word in controller bit
-    /// order.
-    pub(super) const DIRECT_TEST_MODE: Self = Self(0x7176_4129);
-
-    pub(super) const fn from_controller_image(image: u32) -> Self {
-        Self(image)
-    }
-
-    pub(super) const fn controller_image(self) -> u32 {
-        self.0
-    }
-}
-
-/// One protocol-level Bluetooth LE CRC initialization value retained by the
-/// SRAM codec.
-///
-/// The containing controller word has a semantically unresolved opaque high
-/// byte. This type owns only the protocol-defined low 24 bits and does not
-/// assert which hardware block consumes them.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct BluetoothLeCrcInit(u32);
-
-impl BluetoothLeCrcInit {
-    const CONTROLLER_IMAGE_MASK: u32 = 0x00ff_ffff;
-
-    /// Bluetooth Core Direct Test Mode CRC preset.
-    pub(super) const DIRECT_TEST_MODE: Self = Self(0x0055_5555);
-
-    pub(super) const fn from_controller_word(word: u32) -> Self {
-        Self(word & Self::CONTROLLER_IMAGE_MASK)
-    }
-
-    pub(super) const fn apply_to_controller_word(self, word: u32) -> u32 {
-        (word & !Self::CONTROLLER_IMAGE_MASK) | self.0
     }
 }
 
@@ -297,7 +256,7 @@ impl BluetoothDtmLinkStateReviewedWords {
         mut self,
         tx_head: Option<BluetoothDtmTxHeaderHeadProjection>,
         rx_tail: Option<BluetoothDtmRxHeaderTailProjection>,
-        rounded_power: u8,
+        default_tx_power_dbm: i8,
         config: u8,
         role: BluetoothDtmRole,
     ) -> Self {
@@ -308,7 +267,8 @@ impl BluetoothDtmLinkStateReviewedWords {
         let transformed_high_half = (((word_00_with_link >> 16) as u16 & 0x600f) | 0x8ff0) as u32;
 
         self.word_00 = (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16);
-        self.word_04 = (self.word_04 & !LINK_STATE_POWER_MASK) | ((rounded_power as u32) << 23);
+        self.word_04 = (self.word_04 & !LINK_STATE_POWER_MASK)
+            | ((rounded_tx_power(default_tx_power_dbm) as u32) << 23);
         self.word_08 = match rx_tail {
             Some(rx_tail) => rx_tail.apply_to_link_state_word(self.word_08),
             None => self.word_08 & !LOW_TWENTY_MASK,
@@ -319,7 +279,7 @@ impl BluetoothDtmLinkStateReviewedWords {
             self.word_34 = 0;
         }
         self.word_50 = (self.word_50 & !LINK_STATE_CONFIG_MASK) | ((config as u32) << 24);
-        self.with_crc_init(BluetoothLeCrcInit::DIRECT_TEST_MODE)
+        self.with_crc_init(BluetoothLeCrcInit::LE_PRESET)
             .with_access_address(BluetoothLeAccessAddress::DIRECT_TEST_MODE)
     }
 

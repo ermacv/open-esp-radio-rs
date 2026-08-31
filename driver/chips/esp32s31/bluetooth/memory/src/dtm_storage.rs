@@ -28,9 +28,10 @@ use crate::{
         BluetoothDtmLinkStateProfileWord, BluetoothDtmLinkStateReviewedWords,
         BluetoothDtmPositionalEventWords, BluetoothDtmRxHeaderTailProjection,
         BluetoothDtmSchedulerHardwareChainWord, BluetoothDtmSchedulerItemReviewedWords,
-        BluetoothDtmTxHeaderHeadProjection, BluetoothLeAccessAddress, BluetoothLeCrcInit,
+        BluetoothDtmTxHeaderHeadProjection,
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
+    le_phy_packet::{BluetoothLeAccessAddress, BluetoothLeCrcInit},
     le_tx_packet::{
         BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
         BluetoothLeTxBufferHeaderStorage, BluetoothLeTxPacketAddress,
@@ -2598,8 +2599,11 @@ impl Default for BluetoothDtmMemoryGraphStorage {
 mod tests {
     use core::{cell::Cell, convert::Infallible, fmt::Debug};
 
-    use crate::dtm_event_image::{BluetoothDtmRole, BluetoothLeAccessAddress, BluetoothLeCrcInit};
     use crate::scheduler_context::BLUETOOTH_SCHEDULER_CONTEXT_BYTES;
+    use crate::{
+        dtm_event_image::BluetoothDtmRole,
+        le_phy_packet::{BluetoothLeAccessAddress, BluetoothLeCrcInit},
+    };
     use open_esp_radio_esp32s31_hal::{
         BluetoothControllerSramAddress, BluetoothSchedulerFinishedListObservation,
         BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
@@ -2813,11 +2817,11 @@ mod tests {
             BluetoothDtmRole::Transmitter,
         );
 
-        assert_eq!(reset.crc_init(), BluetoothLeCrcInit::DIRECT_TEST_MODE);
+        assert_eq!(reset.crc_init(), BluetoothLeCrcInit::LE_PRESET);
         storage.link_state.write_reviewed_words(reset);
         assert_eq!(
             storage.link_state.reviewed_words().crc_init(),
-            BluetoothLeCrcInit::DIRECT_TEST_MODE
+            BluetoothLeCrcInit::LE_PRESET
         );
     }
 

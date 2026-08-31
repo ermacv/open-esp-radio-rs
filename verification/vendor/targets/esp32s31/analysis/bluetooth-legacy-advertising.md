@@ -66,6 +66,18 @@ first-event bodies retain those offsets and ordering. These allocation-time
 links are now one private memory-codec operation; no compressed image or SRAM
 field escapes to the controller or Link Layer.
 
+Complete current `r_sym_ble_fxKAT8in6cXLv0gLB2W5` and named
+`r_ble_lll_adv_reset_link_state` establish the next transition. The private
+memory codec now applies their restricted LE 1M, no-RX, no-CTE and no-privacy
+projection from the prepared PDU and a signed dBm request. This includes the
+terminal TX-header link, absent RX link, shared rounded-power conversion,
+primary-advertising Access Address and CRC preset, public/direct-random address
+branches and the reviewed standalone option byte. The option value is not a
+guessed bit meaning: same-chip `priv_config_opts_ro` is 46 bytes and its exact
+byte at `+0x29` is `3`, matching the current body's six-bit copy. Reset creates
+a separate non-publishable typestate; cancellation clears the packet and
+rebuilds the allocation graph before returning it to the portable owner.
+
 ## Minimum production admission contract
 
 One advertising transmission may enter production only when current-artifact
@@ -98,11 +110,11 @@ not required.
 
 The encoded PDU now reaches a fully address-bound, CPU-owned controller graph
 without raw SRAM fields escaping the memory codec. Allocation-time packet,
-header, link-state, scheduler-context and scheduler-item links are closed. The
-remaining descriptor blocker is the event-time restricted no-CTE reset and
-first-primary-event transform: advertising access address, CRC init, LE 1M
-mode, frequency/whitening and the initial raw scheduler window. Publication
-and completion follow that transform. A hardware-frontier query currently asks for one project-local
+header, link-state, scheduler-context and scheduler-item links plus the
+restricted link-state reset are closed. The remaining descriptor blocker is
+the first-primary-event transform: selected frequency/whitening, scheduler
+role/rate projection and the initial raw scheduler window. Publication and
+completion follow that transform. A hardware-frontier query currently asks for one project-local
 assertion at `0x2010199c/16`, but the reviewed chip model already identifies it
 as `BLE_HW_CTE_RING_CONTROL.RING_CONTROL`. It is reached through generic CTE
 support and is not used by the restricted no-CTE transmission, so it is not an
@@ -111,9 +123,9 @@ path. Diagnostic logging, extended advertising, periodic advertising, scan
 responses, RX buffers, sleep-enabled wake and coexistence are also not
 blockers for the restricted first transmission.
 
-The next review should therefore reduce the reset and first-event bodies for
-the fixed no-RX/no-CTE profile, then reuse the existing affine empty-list
-publication and completion lifecycle. It should not reproduce vendor callback
+The next review should therefore reduce the first-event body for the fixed
+no-RX/no-CTE profile, then reuse the existing affine empty-list publication
+and completion lifecycle. It should not reproduce vendor callback
 containers or attempt to make every reachable advertising function
 semantically complete.
 

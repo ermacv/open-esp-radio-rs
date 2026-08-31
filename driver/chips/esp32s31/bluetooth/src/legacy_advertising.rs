@@ -20,8 +20,26 @@ use open_esp_radio_bluetooth_ll::{
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLeTxPacketPrepareError, BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
-    BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
+    BluetoothLegacyAdvertisingMemoryGraphPacketPrepared, BluetoothLegacyAdvertisingPduError,
 };
+
+/// Requested default transmit power for legacy advertising.
+///
+/// The physical dBm request remains semantic at this boundary. Its private S31
+/// descriptor encoding is selected only by the controller-memory codec.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLegacyAdvertisingDefaultTxPowerDbm(i8);
+
+impl BluetoothLegacyAdvertisingDefaultTxPowerDbm {
+    pub const fn new(dbm: i8) -> Self {
+        Self(dbm)
+    }
+
+    pub const fn dbm(self) -> i8 {
+        self.0
+    }
+}
 
 /// S31 packet-frequency image for one primary advertising channel.
 ///
@@ -121,12 +139,105 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         self.frequency
     }
 
+    /// Apply the reviewed no-RX/no-CTE/no-privacy LE 1M link-state reset.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure must return the exact affine prepared owner"
+    )]
+    pub fn reset_link_state(
+        self,
+        default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    ) -> Result<
+        BluetoothLegacyAdvertisingLinkStateReset<'a>,
+        BluetoothLegacyAdvertisingLinkStateResetError<'a>,
+    > {
+        let Self {
+            prepared,
+            memory,
+            frequency,
+        } = self;
+        match memory.reset_link_state(default_tx_power.dbm()) {
+            Ok(memory) => Ok(BluetoothLegacyAdvertisingLinkStateReset {
+                prepared,
+                memory,
+                frequency,
+            }),
+            Err(failure) => {
+                let (memory, error) = failure.into_parts();
+                Err(BluetoothLegacyAdvertisingLinkStateResetError {
+                    prepared: Self {
+                        prepared,
+                        memory,
+                        frequency,
+                    },
+                    error,
+                })
+            }
+        }
+    }
+
     /// Cancel before hardware admission and recover both affine owners.
     pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
         BluetoothLegacyAdvertisingCancelled {
             enabled: self.prepared.cancel(),
             memory: self.memory.cancel(),
         }
+    }
+}
+
+/// One reset advertising graph which still lacks scheduler event timing.
+#[must_use = "advance to event scheduling, cancel, or retain the reset owner"]
+pub struct BluetoothLegacyAdvertisingLinkStateReset<'a> {
+    prepared: LegacyAdvertiserTxPrepared<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
+    frequency: BluetoothLegacyAdvertisingFrequency,
+}
+
+impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+        self.prepared.identity()
+    }
+
+    pub const fn frequency(&self) -> BluetoothLegacyAdvertisingFrequency {
+        self.frequency
+    }
+
+    pub fn pdu(&self) -> &[u8] {
+        self.memory.pdu()
+    }
+
+    pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
+        BluetoothLegacyAdvertisingCancelled {
+            enabled: self.prepared.cancel(),
+            memory: self.memory.cancel(),
+        }
+    }
+}
+
+/// A packet prepared outside the portable producer did not match the
+/// restricted advertising reset contract.
+#[must_use = "the packet-prepared owner remains recoverable"]
+pub struct BluetoothLegacyAdvertisingLinkStateResetError<'a> {
+    prepared: BluetoothLegacyAdvertisingPrepared<'a>,
+    error: BluetoothLegacyAdvertisingPduError,
+}
+
+impl<'a> BluetoothLegacyAdvertisingLinkStateResetError<'a> {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingPduError {
+        self.error
+    }
+
+    pub fn into_prepared(self) -> BluetoothLegacyAdvertisingPrepared<'a> {
+        self.prepared
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyAdvertisingLinkStateResetError<'_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyAdvertisingLinkStateResetError")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
     }
 }
 
@@ -207,7 +318,7 @@ mod tests {
         BluetoothLegacyAdvertisingMemoryGraphStorage,
     };
 
-    use super::BluetoothLegacyAdvertisingPrepared;
+    use super::{BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothLegacyAdvertisingPrepared};
 
     fn enabled(
         channels: PrimaryAdvertisingChannelMap,
@@ -276,5 +387,24 @@ mod tests {
             assert_eq!(prepared.channel(), channel);
             assert_eq!(prepared.frequency().get(), frequency);
         }
+    }
+
+    #[test]
+    fn reset_retains_the_exact_protocol_work_and_remains_cancellable() {
+        let prepared = BluetoothLegacyAdvertisingPrepared::prepare(
+            enabled(PrimaryAdvertisingChannelMap::all()),
+            memory(),
+        )
+        .expect("bounded validated advertising data always fits the chip PDU");
+        let identity = prepared.identity();
+        let reset = prepared
+            .reset_link_state(BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(0))
+            .expect("the portable producer emits the restricted PDU form");
+
+        assert_eq!(reset.identity(), identity);
+        assert_eq!(reset.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
+        let (enabled, memory) = reset.cancel().into_parts();
+        assert_eq!(enabled.prepare_next().identity(), identity);
+        assert!(memory.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
     }
 }

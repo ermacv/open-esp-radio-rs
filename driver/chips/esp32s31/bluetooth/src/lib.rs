@@ -314,9 +314,10 @@ pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
 };
 pub use legacy_advertising::{
-    BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingFrequency,
-    BluetoothLegacyAdvertisingPreparationError, BluetoothLegacyAdvertisingPreparationErrorKind,
-    BluetoothLegacyAdvertisingPrepared,
+    BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    BluetoothLegacyAdvertisingFrequency, BluetoothLegacyAdvertisingLinkStateReset,
+    BluetoothLegacyAdvertisingLinkStateResetError, BluetoothLegacyAdvertisingPreparationError,
+    BluetoothLegacyAdvertisingPreparationErrorKind, BluetoothLegacyAdvertisingPrepared,
 };
 pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,

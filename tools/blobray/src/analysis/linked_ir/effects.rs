@@ -3,9 +3,11 @@
 use super::*;
 use open_radio_vendor_analysis_model::MemoryObjectLocation;
 
-fn context_write_masks(
+fn memory_write_masks(
     access: MemoryAccess,
     width: u8,
+    destination: &MemoryObjectLocation,
+    read_sources: &BTreeMap<u32, MemoryObjectLocation>,
     value: Option<&SymbolicValue>,
 ) -> (Option<u32>, Option<u32>, Option<u32>, Option<u32>) {
     if access != MemoryAccess::Write {
@@ -13,11 +15,18 @@ fn context_write_masks(
     }
     let width_mask = width_mask(width);
     let Some(SymbolicValue::MemoryImage {
-        and_mask, or_mask, ..
+        read_token,
+        and_mask,
+        or_mask,
     }) = value
     else {
         return (Some(width_mask), None, None, None);
     };
+    // A memory-derived bit is preserved only when the read and write name the
+    // same location. Across objects or offsets it is new destination data.
+    if read_sources.get(read_token) != Some(destination) {
+        return (Some(width_mask), None, None, None);
+    }
     let forced_one = or_mask & width_mask;
     let preserved = and_mask & !forced_one & width_mask;
     let forced_zero = width_mask & !(preserved | forced_one);
@@ -45,7 +54,7 @@ fn collect_memory_object_access_from_event(
         } => {
             if let Some(location) = address.memory_object_location_with_reads(read_sources) {
                 let (write_mask, preserved_mask, forced_zero_mask, forced_one_mask) =
-                    context_write_masks(*access, *width, value.as_ref());
+                    memory_write_masks(*access, *width, &location, read_sources, value.as_ref());
                 let Some(object) = LinkedMemoryObject::from_root(location.root, region) else {
                     return;
                 };

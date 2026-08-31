@@ -60,6 +60,7 @@ core0-rx-coarse-telemetry = ["dep:riscv"]
 # Core1 packet emission is measured at the paired embassy-net boundary.
 tx-phase-telemetry = [
     "core0-rx-coarse-telemetry",
+    "open-esp-radio-embassy-net/tx-egress-scheduling",
     "open-esp-radio-embassy-net/tx-phase-telemetry",
 ]
 tx-staging-copy-probe = ["open-esp-radio-embassy-net/tx-staging-copy-probe"]

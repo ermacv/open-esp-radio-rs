@@ -14,6 +14,15 @@ pub struct TxPerformanceSample {
     pub instructions: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TxShadowGrantObservation {
+    Matched,
+    NoWindow,
+    KeyMismatch,
+    CreditExhausted,
+    Unclassified,
+}
+
 impl TxPerformanceSample {
     #[inline(always)]
     pub fn read() -> Self {
@@ -48,6 +57,12 @@ pub struct TxPerformanceSnapshot {
     pub egress_run_31: u32,
     pub egress_run_32: u32,
     pub egress_run_other: u32,
+    pub shadow_grant_checks: u32,
+    pub shadow_grant_matches: u32,
+    pub shadow_grant_no_window: u32,
+    pub shadow_grant_key_mismatch: u32,
+    pub shadow_grant_credit_exhausted: u32,
+    pub shadow_grant_unclassified: u32,
     pub radio_returns: u32,
     pub radio_return_wakes: u32,
     pub publication_free_zero: u32,
@@ -103,6 +118,24 @@ impl TxPerformanceSnapshot {
             egress_run_31: self.egress_run_31.wrapping_sub(earlier.egress_run_31),
             egress_run_32: self.egress_run_32.wrapping_sub(earlier.egress_run_32),
             egress_run_other: self.egress_run_other.wrapping_sub(earlier.egress_run_other),
+            shadow_grant_checks: self
+                .shadow_grant_checks
+                .wrapping_sub(earlier.shadow_grant_checks),
+            shadow_grant_matches: self
+                .shadow_grant_matches
+                .wrapping_sub(earlier.shadow_grant_matches),
+            shadow_grant_no_window: self
+                .shadow_grant_no_window
+                .wrapping_sub(earlier.shadow_grant_no_window),
+            shadow_grant_key_mismatch: self
+                .shadow_grant_key_mismatch
+                .wrapping_sub(earlier.shadow_grant_key_mismatch),
+            shadow_grant_credit_exhausted: self
+                .shadow_grant_credit_exhausted
+                .wrapping_sub(earlier.shadow_grant_credit_exhausted),
+            shadow_grant_unclassified: self
+                .shadow_grant_unclassified
+                .wrapping_sub(earlier.shadow_grant_unclassified),
             radio_returns: self.radio_returns.wrapping_sub(earlier.radio_returns),
             radio_return_wakes: self
                 .radio_return_wakes
@@ -227,6 +260,12 @@ pub struct TxPerformanceCounters {
     egress_run_31: AtomicU32,
     egress_run_32: AtomicU32,
     egress_run_other: AtomicU32,
+    shadow_grant_checks: AtomicU32,
+    shadow_grant_matches: AtomicU32,
+    shadow_grant_no_window: AtomicU32,
+    shadow_grant_key_mismatch: AtomicU32,
+    shadow_grant_credit_exhausted: AtomicU32,
+    shadow_grant_unclassified: AtomicU32,
     radio_returns: AtomicU32,
     radio_return_wakes: AtomicU32,
     publication_free_zero: AtomicU32,
@@ -272,6 +311,12 @@ impl TxPerformanceCounters {
             egress_run_31: AtomicU32::new(0),
             egress_run_32: AtomicU32::new(0),
             egress_run_other: AtomicU32::new(0),
+            shadow_grant_checks: AtomicU32::new(0),
+            shadow_grant_matches: AtomicU32::new(0),
+            shadow_grant_no_window: AtomicU32::new(0),
+            shadow_grant_key_mismatch: AtomicU32::new(0),
+            shadow_grant_credit_exhausted: AtomicU32::new(0),
+            shadow_grant_unclassified: AtomicU32::new(0),
             radio_returns: AtomicU32::new(0),
             radio_return_wakes: AtomicU32::new(0),
             publication_free_zero: AtomicU32::new(0),
@@ -351,6 +396,24 @@ impl TxPerformanceCounters {
             32 => self.egress_run_32.fetch_add(1, Ordering::Relaxed),
             _ => self.egress_run_other.fetch_add(1, Ordering::Relaxed),
         };
+    }
+
+    #[inline(always)]
+    pub(crate) fn publish_shadow_grant(
+        &self,
+        observation: TxShadowGrantObservation,
+        checks: u32,
+        category: u32,
+    ) {
+        self.shadow_grant_checks.store(checks, Ordering::Relaxed);
+        match observation {
+            TxShadowGrantObservation::Matched => &self.shadow_grant_matches,
+            TxShadowGrantObservation::NoWindow => &self.shadow_grant_no_window,
+            TxShadowGrantObservation::KeyMismatch => &self.shadow_grant_key_mismatch,
+            TxShadowGrantObservation::CreditExhausted => &self.shadow_grant_credit_exhausted,
+            TxShadowGrantObservation::Unclassified => &self.shadow_grant_unclassified,
+        }
+        .store(category, Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -480,6 +543,14 @@ impl TxPerformanceCounters {
             egress_run_31: self.egress_run_31.load(Ordering::Relaxed),
             egress_run_32: self.egress_run_32.load(Ordering::Relaxed),
             egress_run_other: self.egress_run_other.load(Ordering::Relaxed),
+            shadow_grant_checks: self.shadow_grant_checks.load(Ordering::Relaxed),
+            shadow_grant_matches: self.shadow_grant_matches.load(Ordering::Relaxed),
+            shadow_grant_no_window: self.shadow_grant_no_window.load(Ordering::Relaxed),
+            shadow_grant_key_mismatch: self.shadow_grant_key_mismatch.load(Ordering::Relaxed),
+            shadow_grant_credit_exhausted: self
+                .shadow_grant_credit_exhausted
+                .load(Ordering::Relaxed),
+            shadow_grant_unclassified: self.shadow_grant_unclassified.load(Ordering::Relaxed),
             radio_returns: self.radio_returns.load(Ordering::Relaxed),
             radio_return_wakes: self.radio_return_wakes.load(Ordering::Relaxed),
             publication_free_zero: self.publication_free_zero.load(Ordering::Relaxed),
@@ -558,7 +629,9 @@ fn instruction_count() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot};
+    use super::{
+        TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot, TxShadowGrantObservation,
+    };
 
     const fn sample(cycles: u32, instructions: u32) -> TxPerformanceSample {
         TxPerformanceSample {
@@ -652,6 +725,11 @@ mod tests {
         counters.record_egress_run(31);
         counters.record_egress_run(32);
         counters.record_egress_run(7);
+        counters.publish_shadow_grant(TxShadowGrantObservation::Matched, 1, 1);
+        counters.publish_shadow_grant(TxShadowGrantObservation::NoWindow, 2, 1);
+        counters.publish_shadow_grant(TxShadowGrantObservation::KeyMismatch, 3, 1);
+        counters.publish_shadow_grant(TxShadowGrantObservation::CreditExhausted, 4, 1);
+        counters.publish_shadow_grant(TxShadowGrantObservation::Unclassified, 5, 1);
         counters.record_radio_return(true);
         counters.record_publication_geometry(0, 31);
         counters.record_publication_geometry(1, 32);
@@ -662,6 +740,12 @@ mod tests {
         assert_eq!(snapshot.egress_run_31, 1);
         assert_eq!(snapshot.egress_run_32, 1);
         assert_eq!(snapshot.egress_run_other, 1);
+        assert_eq!(snapshot.shadow_grant_checks, 5);
+        assert_eq!(snapshot.shadow_grant_matches, 1);
+        assert_eq!(snapshot.shadow_grant_no_window, 1);
+        assert_eq!(snapshot.shadow_grant_key_mismatch, 1);
+        assert_eq!(snapshot.shadow_grant_credit_exhausted, 1);
+        assert_eq!(snapshot.shadow_grant_unclassified, 1);
         assert_eq!(snapshot.radio_returns, 1);
         assert_eq!(snapshot.radio_return_wakes, 1);
         assert_eq!(snapshot.publication_free_zero, 1);

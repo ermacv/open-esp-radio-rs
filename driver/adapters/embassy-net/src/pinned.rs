@@ -1,13 +1,15 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
 #[cfg(feature = "tx-egress-scheduling")]
-use core::num::NonZeroU8;
+use core::num::{NonZeroU8, NonZeroU32};
 use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
     task::{Context, Poll},
 };
 
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+use crate::tx_performance::TxShadowGrantObservation;
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
 use embassy_net_driver::{
@@ -27,6 +29,10 @@ use open_esp_radio_dma::{
     RxNetworkLease, RxRadioLease, TaggedStableDmaBacking,
 };
 
+#[cfg(feature = "tx-phase-telemetry")]
+use crate::EgressShadowGrant;
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+use crate::EgressShadowGrantKey;
 use crate::{
     ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
 };
@@ -81,9 +87,24 @@ pub struct NetworkEndpointConfig<'registry> {
     egress_topology: EgressQueueTopology,
     #[cfg_attr(not(feature = "tx-egress-scheduling"), allow(dead_code))]
     peer_resolver: Option<&'registry dyn EgressPeerResolver>,
+    #[cfg(feature = "tx-phase-telemetry")]
+    shadow_grant: Option<&'registry EgressShadowGrant>,
 }
 
-impl NetworkEndpointConfig<'_> {
+impl<'registry> NetworkEndpointConfig<'registry> {
+    #[cfg(feature = "tx-egress-scheduling")]
+    const KEY_FORMAT: u32 = 0x5700_0000;
+    #[cfg(feature = "tx-egress-scheduling")]
+    const KEY_FORMAT_MASK: u32 = 0xff00_0000;
+    #[cfg(feature = "tx-egress-scheduling")]
+    const TOPOLOGY_MASK: u32 = 0x00ff_0000;
+    #[cfg(feature = "tx-egress-scheduling")]
+    const SINGLE_RADIO_PEER: u32 = 1 << 16;
+    #[cfg(feature = "tx-egress-scheduling")]
+    const PER_LINK_DESTINATION: u32 = 2 << 16;
+    #[cfg(feature = "tx-egress-scheduling")]
+    const ASSOCIATED_PEER: u32 = 3 << 16;
+
     /// Configure an endpoint whose routes all reach one physical radio peer.
     pub const fn single_radio_peer(
         interface: NetworkInterfaceId,
@@ -94,6 +115,8 @@ impl NetworkEndpointConfig<'_> {
             hardware_address,
             egress_topology: EgressQueueTopology::SingleRadioPeer,
             peer_resolver: None,
+            #[cfg(feature = "tx-phase-telemetry")]
+            shadow_grant: None,
         }
     }
 
@@ -108,21 +131,35 @@ impl NetworkEndpointConfig<'_> {
             hardware_address,
             egress_topology: EgressQueueTopology::PerLinkDestination,
             peer_resolver: None,
+            #[cfg(feature = "tx-phase-telemetry")]
+            shadow_grant: None,
         }
     }
 
     /// Configure a multi-peer endpoint from a radio-owned peer snapshot.
-    pub const fn associated_peers<'registry>(
+    pub const fn associated_peers(
         interface: NetworkInterfaceId,
         hardware_address: [u8; 6],
         peer_resolver: &'registry dyn EgressPeerResolver,
-    ) -> NetworkEndpointConfig<'registry> {
+    ) -> Self {
         NetworkEndpointConfig {
             interface,
             hardware_address,
             egress_topology: EgressQueueTopology::AssociatedPeer,
             peer_resolver: Some(peer_resolver),
+            #[cfg(feature = "tx-phase-telemetry")]
+            shadow_grant: None,
         }
+    }
+
+    /// Attach a diagnostic Core0 grant publication to this endpoint.
+    ///
+    /// Shadow observations never change admission and are compiled out of
+    /// ordinary production images.
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub const fn with_shadow_grant(mut self, grant: &'registry EgressShadowGrant) -> Self {
+        self.shadow_grant = Some(grant);
+        self
     }
 
     pub const fn interface(self) -> NetworkInterfaceId {
@@ -139,20 +176,16 @@ impl NetworkEndpointConfig<'_> {
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn classify(self, epoch: u32, route: EgressRoute) -> EgressKey {
-        const KEY_FORMAT: u32 = 0x5700_0000;
-        const SINGLE_RADIO_PEER: u32 = 1 << 16;
-        const PER_LINK_DESTINATION: u32 = 2 << 16;
-        const ASSOCIATED_PEER: u32 = 3 << 16;
-
-        let header =
-            KEY_FORMAT | (u32::from(self.interface.value()) << 8) | u32::from(route.traffic_class);
+        let header = Self::KEY_FORMAT
+            | (u32::from(self.interface.value()) << 8)
+            | u32::from(route.traffic_class);
         match (self.egress_topology, route.destination) {
             (EgressQueueTopology::SingleRadioPeer, HardwareAddress::Ethernet(_)) => {
-                EgressKey::from_words([header | SINGLE_RADIO_PEER, epoch, 0, 0])
+                EgressKey::from_words([header | Self::SINGLE_RADIO_PEER, epoch, 0, 0])
             }
             (EgressQueueTopology::PerLinkDestination, HardwareAddress::Ethernet(address)) => {
                 EgressKey::from_words([
-                    header | PER_LINK_DESTINATION,
+                    header | Self::PER_LINK_DESTINATION,
                     epoch,
                     u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
                     u32::from(u16::from_le_bytes([address[4], address[5]])),
@@ -164,7 +197,7 @@ impl NetworkEndpointConfig<'_> {
                 .map_or_else(
                     || {
                         EgressKey::from_words([
-                            header | PER_LINK_DESTINATION,
+                            header | Self::PER_LINK_DESTINATION,
                             epoch,
                             u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
                             u32::from(u16::from_le_bytes([address[4], address[5]])),
@@ -172,7 +205,7 @@ impl NetworkEndpointConfig<'_> {
                     },
                     |peer| {
                         EgressKey::from_words([
-                            header | ASSOCIATED_PEER,
+                            header | Self::ASSOCIATED_PEER,
                             epoch,
                             peer.generation().get(),
                             u32::from(peer.slot().get()),
@@ -181,6 +214,71 @@ impl NetworkEndpointConfig<'_> {
                 ),
             _ => EgressKey::from_route(route),
         }
+    }
+
+    /// Revalidate an opaque stack-retained key immediately before physical
+    /// SRAM admission.
+    ///
+    /// Route classification and final token allocation are separated by
+    /// arbitrary stack scheduling. Link lifecycle and AP reassociation may
+    /// advance in between, so a successful earlier lookup cannot authorize a
+    /// later DMA credit. This check remains policy-free: a future airtime
+    /// scheduler may additionally defer a valid key.
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn key_is_current(self, key: EgressKey, epoch: u32) -> bool {
+        let [header, key_epoch, generation, slot] = key.words();
+        if header & Self::KEY_FORMAT_MASK != Self::KEY_FORMAT
+            || ((header >> 8) & 0xff) != u32::from(self.interface.value())
+            || key_epoch != epoch
+        {
+            return false;
+        }
+
+        match (self.egress_topology, header & Self::TOPOLOGY_MASK) {
+            (EgressQueueTopology::SingleRadioPeer, Self::SINGLE_RADIO_PEER) => {
+                generation == 0 && slot == 0
+            }
+            (EgressQueueTopology::PerLinkDestination, Self::PER_LINK_DESTINATION) => {
+                slot <= u32::from(u16::MAX)
+            }
+            (EgressQueueTopology::AssociatedPeer, Self::PER_LINK_DESTINATION) => {
+                // Unknown unicast and group destinations retain their full
+                // link identity. A peer-directory revision advances `epoch`,
+                // so an old fallback key cannot survive association.
+                slot <= u32::from(u16::MAX)
+            }
+            (EgressQueueTopology::AssociatedPeer, Self::ASSOCIATED_PEER) => {
+                let Some(slot) = u8::try_from(slot).ok().and_then(NonZeroU8::new) else {
+                    return false;
+                };
+                let Some(generation) = NonZeroU32::new(generation) else {
+                    return false;
+                };
+                self.peer_resolver
+                    .is_some_and(|resolver| resolver.is_current(slot, generation))
+            }
+            _ => false,
+        }
+    }
+
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    fn shadow_grant_key(self, key: EgressKey) -> Option<EgressShadowGrantKey> {
+        let [header, _, generation, slot] = key.words();
+        if self.egress_topology != EgressQueueTopology::AssociatedPeer
+            || header & Self::KEY_FORMAT_MASK != Self::KEY_FORMAT
+            || header & Self::TOPOLOGY_MASK != Self::ASSOCIATED_PEER
+            || header as u8 != 0
+        {
+            return None;
+        }
+        Some(EgressShadowGrantKey::new(
+            self.interface.value(),
+            u8::try_from(slot).ok().and_then(NonZeroU8::new)?,
+            NonZeroU32::new(generation)?,
+            // The AP currently negotiates only best-effort TID 0. The generic
+            // route traffic class is not silently treated as a WMM mapping.
+            0,
+        ))
     }
 
     #[cfg(feature = "tx-egress-scheduling")]
@@ -1014,6 +1112,24 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 observed_peer_revision: 0,
                 #[cfg(feature = "tx-egress-scheduling")]
                 scheduling_epoch: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_serial: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_key: None,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_remaining: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_checks: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_matches: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_no_window: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_key_mismatch: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_credit_exhausted: 0,
+                #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+                shadow_grant_unclassified: 0,
                 checksum: ChecksumCapabilities::default(),
                 tx_reservation: (),
             },
@@ -1170,6 +1286,24 @@ pub struct SplitPinnedDevice<
     observed_peer_revision: u32,
     #[cfg(feature = "tx-egress-scheduling")]
     scheduling_epoch: u32,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_serial: u32,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_key: Option<EgressShadowGrantKey>,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_remaining: u8,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_checks: u32,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_matches: u32,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_no_window: u32,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_key_mismatch: u32,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_credit_exhausted: u32,
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    shadow_grant_unclassified: u32,
     checksum: ChecksumCapabilities,
     tx_reservation: (),
 }
@@ -1369,6 +1503,63 @@ impl<
             self.keyed_run_length = 0;
         }
         self.scheduling_epoch
+    }
+
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    fn record_shadow_grant(&mut self, observation: TxShadowGrantObservation) {
+        self.shadow_grant_checks = self.shadow_grant_checks.wrapping_add(1);
+        let category = match observation {
+            TxShadowGrantObservation::Matched => &mut self.shadow_grant_matches,
+            TxShadowGrantObservation::NoWindow => &mut self.shadow_grant_no_window,
+            TxShadowGrantObservation::KeyMismatch => &mut self.shadow_grant_key_mismatch,
+            TxShadowGrantObservation::CreditExhausted => &mut self.shadow_grant_credit_exhausted,
+            TxShadowGrantObservation::Unclassified => &mut self.shadow_grant_unclassified,
+        };
+        *category = category.wrapping_add(1);
+        TX_PERFORMANCE.publish_shadow_grant(observation, self.shadow_grant_checks, *category);
+    }
+
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+    fn observe_successful_shadow_grant(&mut self, egress: EgressKey) {
+        let Some(grant) = self.endpoint.shadow_grant else {
+            return;
+        };
+        let Some(requested) = self.endpoint.shadow_grant_key(egress) else {
+            self.record_shadow_grant(TxShadowGrantObservation::Unclassified);
+            return;
+        };
+        let Some(start_serial) = grant.serial() else {
+            self.record_shadow_grant(TxShadowGrantObservation::NoWindow);
+            return;
+        };
+        if start_serial != self.shadow_grant_serial {
+            match grant.snapshot() {
+                Some(snapshot) => {
+                    self.shadow_grant_serial = snapshot.serial();
+                    self.shadow_grant_key = Some(snapshot.key());
+                    self.shadow_grant_remaining = snapshot.frame_credits().get();
+                }
+                None => {
+                    self.shadow_grant_serial = start_serial;
+                    self.shadow_grant_key = None;
+                    self.shadow_grant_remaining = 0;
+                }
+            }
+        }
+        if grant.serial() != Some(start_serial) || self.shadow_grant_serial != start_serial {
+            self.record_shadow_grant(TxShadowGrantObservation::NoWindow);
+            return;
+        }
+        if self.shadow_grant_key.is_none() {
+            self.record_shadow_grant(TxShadowGrantObservation::NoWindow);
+        } else if self.shadow_grant_key != Some(requested) {
+            self.record_shadow_grant(TxShadowGrantObservation::KeyMismatch);
+        } else if self.shadow_grant_remaining == 0 {
+            self.record_shadow_grant(TxShadowGrantObservation::CreditExhausted);
+        } else {
+            self.shadow_grant_remaining -= 1;
+            self.record_shadow_grant(TxShadowGrantObservation::Matched);
+        }
     }
 
     /// Execute at most one scheduler-selected copy batch in the network
@@ -2217,6 +2408,14 @@ impl<
         cx: &mut Context<'_>,
         egress: EgressKey,
     ) -> EgressAdmission<Self::TxToken<'_>> {
+        #[cfg(feature = "tx-phase-telemetry")]
+        let started = TxPerformanceSample::read();
+        let epoch = self.refresh_scheduling_epoch();
+        if !self.endpoint.key_is_current(egress, epoch) {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
+            return EgressAdmission::KeyDeferred;
+        }
         if self.keyed_egress != Some(egress) {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_egress_run(self.keyed_run_length);
@@ -2224,8 +2423,6 @@ impl<
             self.keyed_run_length = 0;
         }
 
-        #[cfg(feature = "tx-phase-telemetry")]
-        let started = TxPerformanceSample::read();
         if !self.poll_reserve_application_tx(cx) {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
@@ -2237,6 +2434,8 @@ impl<
             .expect("keyed application admission reserves one TX credit");
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.observe_successful_shadow_grant(egress);
         self.keyed_run_length = self.keyed_run_length.saturating_add(1);
         #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), true);

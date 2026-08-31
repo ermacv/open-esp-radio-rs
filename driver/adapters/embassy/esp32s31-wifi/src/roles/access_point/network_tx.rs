@@ -395,6 +395,39 @@ where
         self.deadline_micros.is_some()
     }
 
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[inline(never)]
+    fn publish_shadow_grant(&self, identity: ApAssociationIdentity, frame_credits: u8) {
+        let grant = super::access_point_egress_shadow_grant();
+        let slot = u8::try_from(identity.association_id())
+            .ok()
+            .and_then(core::num::NonZeroU8::new)
+            .expect("an AP association slot is non-zero and byte-sized");
+        let generation = core::num::NonZeroU32::new(identity.association_epoch())
+            .expect("an AP association epoch is non-zero");
+        let frame_credits = core::num::NonZeroU8::new(frame_credits)
+            .expect("an AP aggregate policy has a non-zero frame limit");
+        grant
+            .publish(
+                EgressShadowGrantKey::new(
+                    crate::roles::concurrent::AP_NETWORK_INTERFACE_ID.value(),
+                    slot,
+                    generation,
+                    open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+                ),
+                frame_credits,
+            )
+            .expect("the Core0 shadow-grant publication is single-owner and non-reusable");
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[inline(never)]
+    fn clear_shadow_grant(&self) {
+        super::access_point_egress_shadow_grant()
+            .clear()
+            .expect("the Core0 shadow-grant publication is single-owner and non-reusable");
+    }
+
     pub(super) fn has_prepared(&self) -> bool {
         self.active_frames.len() != 0
             || self.prepared_first.is_some()
@@ -1853,6 +1886,8 @@ where
                 .prepared_standby
                 .take()
                 .expect("checked stale AP standby batch remains owned");
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.clear_shadow_grant();
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::StandbyCancelled);
@@ -2276,6 +2311,8 @@ where
             .expect("checked standby arena")
             .push(peer, frame, encoded)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.publish_shadow_grant(admission.association(), policy.frame_limit());
         self.prepared_standby = Some(PreparedStandby {
             admission,
             policy,
@@ -2419,6 +2456,10 @@ where
             control.observe_ht_aggregate(_batch.policy.rate());
         }
         self.prepare_ready_standby(aggregate, control, network)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        if self.prepared_standby.is_none() {
+            self.clear_shadow_grant();
+        }
         Ok(WifiTxProgress::Pending)
     }
 
@@ -2496,6 +2537,8 @@ where
                 observer.observe(AggregateTxObservation::StandbyCancelled);
             }
         }
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.clear_shadow_grant();
         Ok(())
     }
 

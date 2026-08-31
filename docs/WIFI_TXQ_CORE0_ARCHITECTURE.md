@@ -1384,9 +1384,38 @@ backing. The implemented classifier normalizes every infrastructure-STA route
 to one radio domain. For AP it resolves a destination into the current
 authorized peer slot and non-reusable association epoch through a bounded
 atomic snapshot. The snapshot changes queue identity and invalidates Xarxa's
-burst cursor, but does not authorize transmission. The next shadow-grant
-slice must compare Core0's airtime decision with that classified identity
-before active deferral is enabled. A grant then names exactly one key and
+burst cursor, but does not authorize transmission. Final device admission now
+revalidates the VIF, lifecycle epoch and live AP slot/generation before
+claiming SRAM; stale or foreign keys receive `KeyDeferred`, while global pool
+pressure remains `GlobalExhausted`.
+
+The first shadow-grant slice is also present in intrusive telemetry builds.
+Core0 publishes the identity and frame limit of each selected standby AP
+aggregate; Core1 spends a local diagnostic credit copy and reports matches,
+missing windows, mismatches and exhaustion without changing production
+admission. Because this window is derived from frames already admitted into
+SRAM, it validates identity and temporal overlap only. It cannot replace the
+required active-backlog stream from Core1 to the radio scheduler.
+
+Run `1788192866170-0003cece` measured that boundary after correcting credit
+accounting to include successful SRAM claims only. The two cycles delivered
+118.111/118.185 Mbit/s at HT40 MCS7 with BA32 and zero client-observed retries
+or failures. The current Core0 key matched 97.53%/97.40% of successful
+admissions; 2.45%/2.57% exhausted the local window, 37/45 admissions saw no
+stable window, and key mismatch/unclassified remained zero. This establishes
+the VIF/slot/generation/TID identity mapping for one peer, not scheduling
+authority or multi-peer fairness. The observer still raised Core1 admission
+from roughly 0.43 to 0.78 kcycles per successful packet and the diagnostic
+Core0 residence was about 46.1--46.3%, so it must remain a temporary probe.
+
+There is also a strict causality constraint: a standby-derived grant cannot
+authorize the packets from which that standby was built. Active deferral at
+this point would deadlock the empty pipeline. The candidate stream must be
+published before SRAM admission, must wake Core0 without an existing radio
+frame, and Core0 must return a grant from that early state. This is the next
+evolutionary boundary; the present seqlock shadow is not promoted to policy.
+
+The eventual production grant names exactly one key and
 carries bounded frame credits plus an airtime quantum. Core1 spends those
 credits locally, so ordinary packet emission does not bounce a shared atomic
 cache line. An exhausted, cancelled or temporarily progressless grant is
@@ -1424,7 +1453,9 @@ packet retained entirely above that boundary may still be selected after a
 later association and receive its new key. The grant/backlog protocol must
 either bind generation at enqueue or explicitly revoke those candidates on
 the peer-directory revision. This remains a prerequisite for active
-`KeyDeferred` admission.
+policy-driven `KeyDeferred` admission. The final admission recheck does close
+the narrower race where an already classified key becomes stale before token
+allocation.
 
 Control, neighbour discovery, authentication/EAPOL, BA/BAR and beacon work use
 a separate bounded reserve and may bypass a data grant. Sleeping or stale-

@@ -1042,11 +1042,17 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPe
     yield_now().await;
     let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
     runtime_log_reliably(format_args!(
-        "ONTXQ runs={} run31={} run32={} other={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",
+        "ONTXQ runs={} run31={} run32={} other={} shadow_checks={} shadow_matches={} shadow_no_window={} shadow_key_mismatch={} shadow_credit_exhausted={} shadow_unclassified={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",
         performance.egress_runs,
         performance.egress_run_31,
         performance.egress_run_32,
         performance.egress_run_other,
+        performance.shadow_grant_checks,
+        performance.shadow_grant_matches,
+        performance.shadow_grant_no_window,
+        performance.shadow_grant_key_mismatch,
+        performance.shadow_grant_credit_exhausted,
+        performance.shadow_grant_unclassified,
         performance.radio_returns,
         performance.radio_return_wakes,
         performance.publication_free_zero,

@@ -39,11 +39,17 @@ use embassy_sync::{
     waitqueue::GenericAtomicWaker,
 };
 
+#[cfg(feature = "tx-phase-telemetry")]
+mod egress_grant;
 mod egress_peer;
 mod pinned;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
+#[cfg(feature = "tx-phase-telemetry")]
+pub use egress_grant::{
+    EgressShadowGrant, EgressShadowGrantError, EgressShadowGrantKey, EgressShadowGrantSnapshot,
+};
 pub use egress_peer::{
     EgressPeerDirectory, EgressPeerDirectoryError, EgressPeerIdentity, EgressPeerResolver,
 };

@@ -10,7 +10,7 @@ use embassy_net_driver::{
     Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _,
 };
 #[cfg(feature = "tx-egress-scheduling")]
-use embassy_net_driver::{EgressRoute, EgressSchedule};
+use embassy_net_driver::{EgressAdmission, EgressKey, EgressRoute, EgressSchedule};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
 #[cfg(feature = "tx-staging-copy-probe")]
@@ -22,6 +22,8 @@ use open_esp_radio_embassy_net::{
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use open_esp_radio_embassy_net::{EgressPeerDirectory, EgressPeerIdentity};
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+use open_esp_radio_embassy_net::{EgressShadowGrant, EgressShadowGrantKey, TX_PERFORMANCE};
 #[cfg(feature = "tx-core1-materializer-probe")]
 use open_esp_radio_embassy_net::{
     PinnedTxCore1MaterializationPoll, configure_tx_core1_materializer_probe,
@@ -423,6 +425,129 @@ fn associated_peer_directory_advances_queue_identity_on_reassociation() {
         device.egress_key(second_route),
         "an unknown route keeps its link identity instead of inheriting a peer grant"
     );
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn final_keyed_admission_rejects_stale_and_foreign_peer_keys_before_sram_claim() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let peers = EgressPeerDirectory::<1>::new();
+    let address = [2, 0, 0, 0, 0, 3];
+    peers
+        .replace(&[EgressPeerIdentity::try_new(address, 1, 7)])
+        .unwrap();
+    let (provider, _consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(1);
+    let (mut device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::associated_peers(interface, [2, 0, 0, 0, 0, 2], &peers),
+    );
+    radio.set_link_state(LinkState::Up);
+    let route = EgressRoute {
+        destination: HardwareAddress::Ethernet(address),
+        traffic_class: 0,
+    };
+
+    let generation_seven = device.egress_key(route);
+    assert!(matches!(
+        device.transmit_for(&mut context(), generation_seven),
+        EgressAdmission::Granted(_)
+    ));
+
+    peers
+        .replace(&[EgressPeerIdentity::try_new(address, 1, 8)])
+        .unwrap();
+    assert!(matches!(
+        device.transmit_for(&mut context(), generation_seven),
+        EgressAdmission::KeyDeferred
+    ));
+
+    let current = device.egress_key(route);
+    assert!(matches!(
+        device.transmit_for(&mut context(), current),
+        EgressAdmission::Granted(_)
+    ));
+
+    let mut foreign_words = current.words();
+    foreign_words[0] ^= 1 << 8;
+    assert!(matches!(
+        device.transmit_for(&mut context(), EgressKey::from_words(foreign_words)),
+        EgressAdmission::KeyDeferred
+    ));
+}
+
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+#[test]
+fn shadow_grant_spends_local_credits_without_changing_real_admission() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let peers = EgressPeerDirectory::<1>::new();
+    let shadow = EgressShadowGrant::new();
+    let address = [2, 0, 0, 0, 0, 3];
+    let identity = EgressPeerIdentity::try_new(address, 1, 7).unwrap();
+    peers.replace(&[Some(identity)]).unwrap();
+    let (provider, _consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(1);
+    let endpoint = NetworkEndpointConfig::associated_peers(interface, [2, 0, 0, 0, 0, 2], &peers)
+        .with_shadow_grant(&shadow);
+    let (mut device, radio) = resources.split(provider, endpoint);
+    radio.set_link_state(LinkState::Up);
+    let key = device.egress_key(EgressRoute {
+        destination: HardwareAddress::Ethernet(address),
+        traffic_class: 0,
+    });
+    let before = TX_PERFORMANCE.snapshot();
+
+    assert!(matches!(
+        device.transmit_for(&mut context(), key),
+        EgressAdmission::Granted(_)
+    ));
+    shadow
+        .publish(
+            EgressShadowGrantKey::new(interface.value(), identity.slot(), identity.generation(), 0),
+            core::num::NonZeroU8::new(2).unwrap(),
+        )
+        .unwrap();
+    for _ in 0..3 {
+        assert!(matches!(
+            device.transmit_for(&mut context(), key),
+            EgressAdmission::Granted(_)
+        ));
+    }
+    shadow
+        .publish(
+            EgressShadowGrantKey::new(
+                interface.value(),
+                identity.slot(),
+                core::num::NonZeroU32::new(8).unwrap(),
+                0,
+            ),
+            core::num::NonZeroU8::new(1).unwrap(),
+        )
+        .unwrap();
+    assert!(matches!(
+        device.transmit_for(&mut context(), key),
+        EgressAdmission::Granted(_)
+    ));
+
+    let delta = TX_PERFORMANCE.snapshot().wrapping_delta_since(before);
+    assert_eq!(delta.shadow_grant_checks, 5);
+    assert_eq!(delta.shadow_grant_matches, 2);
+    assert_eq!(delta.shadow_grant_no_window, 1);
+    assert_eq!(delta.shadow_grant_key_mismatch, 1);
+    assert_eq!(delta.shadow_grant_credit_exhausted, 1);
+    assert_eq!(delta.shadow_grant_unclassified, 0);
 }
 
 #[test]

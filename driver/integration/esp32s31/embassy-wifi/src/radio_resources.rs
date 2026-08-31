@@ -267,14 +267,17 @@ pub(super) fn initialize_network(
         tx_provider,
         NetworkEndpointConfig::single_radio_peer(station_interface, station_address),
     );
-    let (access_point_device, access_point_rx) = access_point_resources.split(
-        tx_provider,
-        NetworkEndpointConfig::associated_peers(
-            access_point_interface,
-            access_point_address,
-            &AP_EGRESS_PEERS,
-        ),
+    let access_point_endpoint = NetworkEndpointConfig::associated_peers(
+        access_point_interface,
+        access_point_address,
+        &AP_EGRESS_PEERS,
     );
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    let access_point_endpoint = access_point_endpoint.with_shadow_grant(
+        open_esp_radio_esp32s31_wifi_embassy::roles::access_point::access_point_egress_shadow_grant(),
+    );
+    let (access_point_device, access_point_rx) =
+        access_point_resources.split(tx_provider, access_point_endpoint);
     let runner = DualPinnedNetworkRunner::new(
         station_interface,
         station_rx,
@@ -329,6 +332,10 @@ pub(crate) fn clear_access_point_egress_peers() {
     AP_EGRESS_PEERS
         .clear()
         .expect("AP egress peer publication generation is not reusable");
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_esp32s31_wifi_embassy::roles::access_point::access_point_egress_shadow_grant()
+        .clear()
+        .expect("AP egress shadow-grant publication generation is not reusable");
 }
 
 pub(super) fn initialize_ampdu() -> Result<RadioAmpduStorage, HtAmpduTxError> {

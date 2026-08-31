@@ -87,17 +87,41 @@ through an O(1) slot lookup. A disconnect/reassociation therefore cannot merge
 old and new Core0 flows or release a sleeping-peer payload into the reused
 slot. Focused regressions cover reuse of both the same AID and the same MAC.
 
+Final driver admission now revalidates every opaque key before claiming an
+SRAM slot. The check binds the key to the current logical interface, link/
+directory epoch, queue topology and, for an associated AP peer, the live slot
+plus non-zero association generation. A peer-directory update racing route
+classification therefore returns `KeyDeferred` without touching the physical
+pool. `GlobalExhausted` remains reserved for actual shared SRAM pressure. This
+is lifecycle validation only: a current key is not yet deferred by airtime or
+buffer policy.
+
 This does not yet make the earlier Xarxa socket backlog generation-owned. A
 payload which remains above egress classification until after reassociation
 can still acquire the new key when it is eventually selected. Final
 pre-classification backlog revocation, TID/AC grants and airtime debt still
 belong to the Core0 radio scheduler plus the future cross-core grant boundary.
 The adapter requests a BA32-sized keyed run and a four-packet socket quantum
-while the link is up, but its current `transmit_for` still grants from the same
-global direct-SRAM pool and does not yet return `KeyDeferred`. Therefore the
-current refactor fixes classification and post-classification generation
+while the link is up. Current keys still draw from the same global direct-SRAM
+pool. Therefore the current refactor fixes classification, the final
+classification-to-admission race and post-classification Core0 generation
 fencing, but does not yet implement airtime fairness, complete stale-backlog
 revocation or PSRAM spill.
+
+The intrusive TX telemetry image now also carries one diagnostic Core0 shadow
+window. When AP Core0 constructs a standby A-MPDU it publishes the exact VIF,
+peer slot, association generation, TID and bounded frame count. Core1 reads a
+coherent snapshot and spends the frame credits locally while recording
+`match`, `no_window`, `key_mismatch`, `credit_exhausted` and `unclassified`.
+Only a successful final SRAM claim spends a diagnostic credit; ordinary
+`GlobalExhausted` retries do not consume the window. Core1 checks the cheap
+publication serial on the common path and reloads the complete seqlock value
+only when the serial changes.
+The shadow result never changes packet admission or ownership. It is selected
+from work which has already crossed SRAM admission, so it measures cross-core
+identity/timing agreement but is not evidence that the future pre-SRAM
+scheduler is complete. Active policy deferral still requires a candidate/
+backlog stream into Core0 and an affine grant stream back.
 
 No payload-memory architecture changed in this step. Frames are still built
 directly in SRAM slots and transferred to Core0 without a complete-frame
@@ -112,14 +136,31 @@ Validated so far:
 - main repository: workspace `check`, `test`, `clippy`, `fmt`, focused adapter
   suites with scheduling enabled and disabled, and the complete source-only
   audit (including the HIL performance-image and Blobray target audits);
-- standalone manifests resolve with the updated revisions and lockfiles.
+- standalone manifests resolve with the updated revisions and lockfiles;
+- diagnostic image stack/placement/source-graph audit after moving the shadow
+  outside the AP async owner graph: AP service frame 22,688 bytes under its
+  26,624-byte limit.
 
-Hardware throughput and both-core residence are deliberately still pending.
-API cleanup is not performance evidence. The next production step is a
-same-ELF shadow admission experiment which records whether a Core0-owned
-peer/TID grant would accept or defer each resolved key without changing the
-current SRAM path. Only after owner conservation, sparse-peer latency and
-single-peer throughput remain unchanged should `KeyDeferred` become active.
+HIL run `1788192866170-0003cece` is the first valid successful-admission
+shadow sample. Its two AP HT40/MCS7 cycles delivered 118.111 and 118.185
+Mbit/s with BA32 and zero client-observed retries/failures. Of 160,485 and
+160,581 successful keyed admissions, 97.53% and 97.40% matched the current
+Core0 window, 2.45% and 2.57% arrived after its local BA32 credit copy was
+spent, only 37 and 45 observed no stable window, and none had a wrong or
+unclassified key. The preceding run `1788192340032-0003c4fb` is not credit
+evidence because its first probe incorrectly charged globally exhausted
+attempts; it led directly to the corrected accounting.
+
+The telemetry is still intrusive. Even after serial caching and replacing
+per-packet atomic RMW counters with single-writer stores, Core1 admission was
+about 0.78 kcycles per successful packet versus about 0.43 kcycles in the
+earlier coarse control, and Core0 task residence was about 46.1--46.3%. These
+numbers are probe cost/layout evidence, not a production CPU regression.
+More importantly, the shadow window is published from a standby aggregate
+whose packets already own SRAM. Turning it directly into active admission
+would create a circular dependency. The next step must first publish an early
+candidate/backlog stream to Core0 and return an affine grant stream; only that
+non-circular protocol may drive policy `KeyDeferred`.
 
 ## Historical design audit (superseded where it conflicts above)
 

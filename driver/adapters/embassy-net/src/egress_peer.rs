@@ -56,6 +56,15 @@ impl EgressPeerIdentity {
 pub trait EgressPeerResolver: Sync {
     fn resolve(&self, destination: [u8; 6]) -> Option<EgressPeerIdentity>;
 
+    /// Validate one previously resolved slot/generation at final admission.
+    ///
+    /// This is deliberately independent from destination lookup. The network
+    /// stack retains only the opaque device key after classification, while a
+    /// peer-directory publication may race that key with reassociation. A
+    /// successful result is still queue identity rather than radio authority;
+    /// it only proves that the classified generation remains current.
+    fn is_current(&self, slot: NonZeroU8, generation: NonZeroU32) -> bool;
+
     /// Monotonic completed-publication revision.
     fn revision(&self) -> u32;
 }
@@ -248,6 +257,20 @@ impl<const CAPACITY: usize> EgressPeerDirectory<CAPACITY> {
             .then_some(resolved)
             .flatten()
     }
+
+    fn lookup_slot(&self, slot: NonZeroU8) -> Option<EgressPeerIdentity> {
+        let start = self.sequence.load(Ordering::Acquire);
+        if start & 1 != 0 {
+            return None;
+        }
+        let resolved = self
+            .peers
+            .get(usize::from(slot.get()) - 1)
+            .and_then(PublishedPeer::load);
+        (self.sequence.load(Ordering::Acquire) == start)
+            .then_some(resolved)
+            .flatten()
+    }
 }
 
 impl<const CAPACITY: usize> Default for EgressPeerDirectory<CAPACITY> {
@@ -259,6 +282,11 @@ impl<const CAPACITY: usize> Default for EgressPeerDirectory<CAPACITY> {
 impl<const CAPACITY: usize> EgressPeerResolver for EgressPeerDirectory<CAPACITY> {
     fn resolve(&self, destination: [u8; 6]) -> Option<EgressPeerIdentity> {
         self.lookup(destination)
+    }
+
+    fn is_current(&self, slot: NonZeroU8, generation: NonZeroU32) -> bool {
+        self.lookup_slot(slot)
+            .is_some_and(|peer| peer.generation() == generation)
     }
 
     fn revision(&self) -> u32 {
@@ -289,6 +317,7 @@ mod tests {
         assert_eq!(directory.revision(), 1);
         assert_eq!(directory.resolve(A), first[0]);
         assert_eq!(directory.resolve(B), first[1]);
+        assert!(directory.is_current(peer(A, 1, 7).slot(), peer(A, 1, 7).generation()));
 
         assert_eq!(directory.replace(&first), Ok(false));
         assert_eq!(directory.revision(), 1);
@@ -298,6 +327,8 @@ mod tests {
         assert_eq!(directory.revision(), 2);
         assert_eq!(directory.resolve(A), replacement[0]);
         assert_eq!(directory.resolve(B), None);
+        assert!(!directory.is_current(peer(A, 1, 7).slot(), peer(A, 1, 7).generation()));
+        assert!(directory.is_current(peer(A, 1, 10).slot(), peer(A, 1, 10).generation()));
     }
 
     #[test]

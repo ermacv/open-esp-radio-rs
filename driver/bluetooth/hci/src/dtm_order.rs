@@ -376,13 +376,33 @@ where
             }
         }
     }
+
+    /// Apply one retained Reset after the outer lifecycle proves quiescence.
+    ///
+    /// Endpoint affinity is checked before bootstrap state changes. A mismatch
+    /// returns the complete barrier unchanged. On success the exact Reset token
+    /// is consumed once and only its ordered Command Complete remains pending,
+    /// so publication backpressure cannot repeat dispatch.
+    pub fn complete_reset_after_quiescence<'epoch, Owner>(
+        &mut self,
+        barrier: LeControllerResetBarrier<'epoch, Owner>,
+    ) -> LeControllerResetCompletion<'epoch, Owner> {
+        if !barrier.accepts_endpoint(self.transport()) {
+            return LeControllerResetCompletion::EndpointMismatch(barrier);
+        }
+
+        let LeControllerResetBarrier { published, command } = barrier;
+        let response = self.dispatch_bootstrap_command(command);
+        LeControllerResetCompletion::ResponsePending(published.begin_next_response(response))
+    }
 }
 
 /// An accepted Reset waiting for the outer lifecycle to quiesce active work.
 ///
-/// The prior-response order proof and exact Reset token remain private and
-/// inseparable. Constructing this barrier never changes bootstrap state and
-/// grants no Reset completion or owner-release operation.
+/// The prior-response order proof and exact Reset token remain private.
+/// Constructing this barrier never changes bootstrap state. Typed decomposition
+/// may release only the lifecycle owner while a unit barrier retains all HCI
+/// completion authority through external quiescence.
 #[must_use = "the Reset barrier must remain owned until lifecycle quiescence"]
 pub struct LeControllerResetBarrier<'epoch, Owner> {
     published: LeControllerResponsePublished<'epoch, Owner>,
@@ -424,6 +444,32 @@ impl<'epoch, Owner> LeControllerResetBarrier<'epoch, Owner> {
             command: self.command,
         }
     }
+
+    /// Separate the lifecycle owner from an opaque unit Reset continuation.
+    ///
+    /// The Reset command and published order proof remain together in the unit
+    /// barrier. A hardware-specific runner retains that barrier while advancing
+    /// `Owner`, then reunites its proven quiescent owner through
+    /// [`Self::map_owner`] before completion.
+    pub fn into_parts(self) -> (Owner, LeControllerResetBarrier<'epoch, ()>) {
+        let (owner, published) = self.published.into_parts();
+        (
+            owner,
+            LeControllerResetBarrier {
+                published,
+                command: self.command,
+            },
+        )
+    }
+}
+
+/// Result of applying one retained Reset through a combined Controller endpoint.
+#[must_use = "publish the Reset completion or retain the exact endpoint mismatch"]
+pub enum LeControllerResetCompletion<'epoch, Owner> {
+    /// Bootstrap Reset was applied exactly once and its ordered response remains pending.
+    ResponsePending(LeControllerResponsePending<'epoch, Owner>),
+    /// The endpoint belongs to another HCI epoch; Reset and owner are unchanged.
+    EndpointMismatch(LeControllerResetBarrier<'epoch, Owner>),
 }
 
 /// Portable result of routing one complete Controller classification.
@@ -484,7 +530,7 @@ mod tests {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use super::{
-        LeControllerResponsePending, LeControllerResponsePublication,
+        LeControllerResetCompletion, LeControllerResponsePending, LeControllerResponsePublication,
         LeControllerResponsePublished, LeDtmIdleCommandRoute, route_idle_dtm_command,
     };
     use crate::{
@@ -499,6 +545,9 @@ mod tests {
 
     #[derive(Debug, Eq, PartialEq)]
     struct RadioOwner(u32);
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct QuiescedOwner(u32);
 
     type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 16>;
 
@@ -1067,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn classified_router_hands_reset_to_lifecycle_policy_without_dispatch() {
+    fn reset_completion_is_exact_once_and_retained_through_backpressure() {
         let mut resources = controller_resources();
         let mut endpoints = resources.split();
         let start = LeControllerResponsePending::new(
@@ -1101,9 +1150,10 @@ mod tests {
         else {
             panic!("Reset must become an opaque lifecycle barrier");
         };
-        let barrier = barrier.map_owner(|RadioOwner(owner)| RadioOwner(owner + 1));
-        assert_eq!(barrier.owner(), &RadioOwner(61));
-        assert!(barrier.accepts_endpoint(endpoints.controller.transport()));
+        let (active, continuation) = barrier.into_parts();
+        assert_eq!(active, RadioOwner(60));
+        assert_eq!(continuation.owner(), &());
+        assert!(continuation.accepts_endpoint(endpoints.controller.transport()));
         assert_eq!(
             endpoints.controller.bootstrap_phase(),
             BootstrapPhase::AwaitingReset
@@ -1116,12 +1166,131 @@ mod tests {
             .transport()
             .try_publish(PacketKind::Event, &HARDWARE_ERROR)
             .expect("Reset produced no completion before lifecycle quiescence");
+
+        let barrier = continuation.map_owner(|()| QuiescedOwner(61));
+        let LeControllerResetCompletion::ResponsePending(pending) = endpoints
+            .controller
+            .complete_reset_after_quiescence(barrier)
+        else {
+            panic!("the matching endpoint must apply the quiesced Reset");
+        };
+        assert_eq!(pending.owner(), &QuiescedOwner(61));
+        assert_eq!(
+            endpoints.controller.bootstrap_phase(),
+            BootstrapPhase::Configuring
+        );
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(endpoints.controller.transport())
+        else {
+            panic!("the probe event must backpressure the exact Reset completion");
+        };
+        assert_eq!(pending.owner(), &QuiescedOwner(61));
+
         let ControllerToHostPacket::Event(event) =
             block_on(endpoints.host.read(&mut response_buffer)).unwrap()
         else {
             panic!("the retained probe event changed kind");
         };
         assert_eq!(event.kind, EventKind::HardwareError);
+
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(endpoints.controller.transport())
+        else {
+            panic!("the retained Reset completion must publish after capacity returns");
+        };
+        assert_eq!(published.into_owner(), QuiescedOwner(61));
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            Reset::OPCODE,
+            Status::SUCCESS,
+        );
+    }
+
+    #[test]
+    fn reset_completion_cross_epoch_rejection_retains_barrier_without_mutation() {
+        let mut first_resources = controller_resources();
+        let mut first = first_resources.split();
+        let start = LeControllerResponsePending::new(
+            RadioOwner(71),
+            receiver_command().into_started_command_complete(),
+            first.controller.transport().epoch_identity(),
+        );
+        let LeControllerResponsePublication::Published(started) =
+            start.try_publish(first.controller.transport())
+        else {
+            panic!("the first endpoint must publish its start response");
+        };
+        block_on(first.host.write(&Reset::new())).expect("Reset enters the first Host transport");
+        let mut command_buffer = [0; 16];
+        let classified = match first
+            .controller
+            .transport()
+            .try_receive_classified_command(&mut command_buffer)
+        {
+            Ok(classified) => classified,
+            Err(_) => panic!("the first endpoint must classify Reset"),
+        };
+        let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) = first
+            .controller
+            .route_classified_command(started, classified)
+        else {
+            panic!("Reset must become a lifecycle barrier");
+        };
+        let barrier = barrier.map_owner(|RadioOwner(owner)| QuiescedOwner(owner + 1));
+
+        let mut second_resources = controller_resources();
+        let mut second = second_resources.split();
+        let LeControllerResetCompletion::EndpointMismatch(barrier) =
+            second.controller.complete_reset_after_quiescence(barrier)
+        else {
+            panic!("the foreign endpoint must retain the exact Reset barrier");
+        };
+        assert_eq!(barrier.owner(), &QuiescedOwner(72));
+        assert!(barrier.accepts_endpoint(first.controller.transport()));
+        assert!(!barrier.accepts_endpoint(second.controller.transport()));
+        assert_eq!(
+            first.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+        assert_eq!(
+            second.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+
+        let LeControllerResetCompletion::ResponsePending(pending) =
+            first.controller.complete_reset_after_quiescence(barrier)
+        else {
+            panic!("the original endpoint must apply the retained Reset");
+        };
+        assert_eq!(pending.owner(), &QuiescedOwner(72));
+        assert_eq!(
+            first.controller.bootstrap_phase(),
+            BootstrapPhase::Configuring
+        );
+        assert_eq!(
+            second.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(first.controller.transport())
+        else {
+            panic!("the queued start response must retain Reset completion");
+        };
+        assert_eq!(pending.owner(), &QuiescedOwner(72));
+
+        let mut response_buffer = [0; 16];
+        assert_start_response(block_on(first.host.read(&mut response_buffer)).unwrap());
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(first.controller.transport())
+        else {
+            panic!("the original endpoint must publish after capacity returns");
+        };
+        assert_eq!(published.into_owner(), QuiescedOwner(72));
+        assert_command_status(
+            block_on(first.host.read(&mut response_buffer)).unwrap(),
+            Reset::OPCODE,
+            Status::SUCCESS,
+        );
     }
 
     #[test]

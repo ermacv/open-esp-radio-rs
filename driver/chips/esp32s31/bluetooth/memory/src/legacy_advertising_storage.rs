@@ -1,9 +1,9 @@
 //! Pinned CPU-owned storage for the first ESP32-S31 legacy advertising role.
 //!
-//! This module closes allocation and packet/header binding only. The private
-//! link-state and scheduler-item capacities are reserved in the same stable
-//! graph, but no unknown descriptor image is synthesized and no hardware list
-//! can be published from these states.
+//! This module closes allocation and the stable links between the common TX
+//! packet/header, advertising link state, scheduler context and first
+//! scheduler item. No event-time descriptor image is synthesized and no
+//! hardware list can be published from these states.
 
 #![forbid(unsafe_code)]
 
@@ -21,6 +21,7 @@ use crate::{
         BluetoothLeTxPacketAddress, BluetoothLeTxPacketPrepareError,
         BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
     },
+    scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         BluetoothControllerSramLinkAddress,
@@ -40,17 +41,136 @@ pub const BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES: usize =
 const LINK_STATE_WORDS: usize = BLUETOOTH_LEGACY_ADVERTISING_LINK_STATE_BYTES / 4;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES / 4;
 
+const LINK_STATE_SCHEDULER_HEAD_OFFSET: usize = 0x64 / 4;
+const LINK_STATE_RX_HEAD_OFFSET: usize = 0x68 / 4;
+const LINK_STATE_TX_HEAD_OFFSET: usize = 0x6c / 4;
+const LINK_STATE_RX_TAIL_OFFSET: usize = 0x70 / 4;
+const LINK_STATE_TX_TAIL_OFFSET: usize = 0x74 / 4;
+const LINK_STATE_RX_SWAP_RESERVE_OFFSET: usize = 0x78 / 4;
+const LINK_STATE_ALLOCATION_CONFIG_OFFSET: usize = 0x30 / 4;
+const LINK_STATE_ALLOCATION_CONFIG_IMAGE: u32 = 0x0000_1e00;
+
+const SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET: usize = 0;
+const SCHEDULER_ITEM_CONTEXT_OFFSET: usize = 1;
+const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
+#[cfg(test)]
+const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
+const SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE: u32 = 0x0010_0000;
+const SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE: u32 = 0x0060_0000;
+
 type AdvertisingTxPacketAddress =
     BluetoothLeTxPacketAddress<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 type AdvertisingTxPacketLength =
     BluetoothLeTxPacketPreparedLength<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 
+/// Opaque advertising link-state allocation before event-time preparation.
+#[repr(C, align(4))]
+struct BluetoothLegacyAdvertisingLinkStateStorage {
+    words: [VolatileCell<u32>; LINK_STATE_WORDS],
+}
+
+impl BluetoothLegacyAdvertisingLinkStateStorage {
+    const fn new() -> Self {
+        Self {
+            words: [const { VolatileCell::new(0) }; LINK_STATE_WORDS],
+        }
+    }
+
+    fn clear(&self) {
+        for word in &self.words {
+            word.set(0);
+        }
+    }
+
+    fn initialize_graph(
+        &self,
+        scheduler_item: BluetoothControllerSramLinkAddress,
+        tx_header: BluetoothControllerSramLinkAddress,
+    ) {
+        self.clear();
+        self.words[LINK_STATE_SCHEDULER_HEAD_OFFSET]
+            .set(scheduler_item.controller_address().address());
+        self.words[LINK_STATE_RX_HEAD_OFFSET].set(0);
+        self.words[LINK_STATE_TX_HEAD_OFFSET].set(tx_header.controller_address().address());
+        self.words[LINK_STATE_RX_TAIL_OFFSET].set(0);
+        self.words[LINK_STATE_TX_TAIL_OFFSET].set(tx_header.controller_address().address());
+        self.words[LINK_STATE_RX_SWAP_RESERVE_OFFSET].set(0);
+        self.words[LINK_STATE_ALLOCATION_CONFIG_OFFSET].set(LINK_STATE_ALLOCATION_CONFIG_IMAGE);
+    }
+
+    #[cfg(test)]
+    fn retains_graph(
+        &self,
+        scheduler_item: BluetoothControllerSramLinkAddress,
+        tx_header: BluetoothControllerSramLinkAddress,
+    ) -> bool {
+        self.words[LINK_STATE_SCHEDULER_HEAD_OFFSET].get()
+            == scheduler_item.controller_address().address()
+            && self.words[LINK_STATE_RX_HEAD_OFFSET].get() == 0
+            && self.words[LINK_STATE_TX_HEAD_OFFSET].get()
+                == tx_header.controller_address().address()
+            && self.words[LINK_STATE_RX_TAIL_OFFSET].get() == 0
+            && self.words[LINK_STATE_TX_TAIL_OFFSET].get()
+                == tx_header.controller_address().address()
+            && self.words[LINK_STATE_RX_SWAP_RESERVE_OFFSET].get() == 0
+            && self.words[LINK_STATE_ALLOCATION_CONFIG_OFFSET].get()
+                == LINK_STATE_ALLOCATION_CONFIG_IMAGE
+    }
+}
+
+/// Opaque first advertising scheduler-item allocation.
+#[repr(C, align(4))]
+struct BluetoothLegacyAdvertisingSchedulerItemStorage {
+    words: [VolatileCell<u32>; SCHEDULER_ITEM_WORDS],
+}
+
+impl BluetoothLegacyAdvertisingSchedulerItemStorage {
+    const fn new() -> Self {
+        Self {
+            words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
+        }
+    }
+
+    fn clear(&self) {
+        for word in &self.words {
+            word.set(0);
+        }
+    }
+
+    fn initialize_graph(
+        &self,
+        scheduler_context: BluetoothControllerSramLinkAddress,
+        link_state: BluetoothControllerSramLinkAddress,
+    ) {
+        self.clear();
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].set(SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE);
+        self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].set(scheduler_context.compressed_image());
+        self.words[SCHEDULER_ITEM_LINK_STATE_OFFSET]
+            .set(SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE | link_state.compressed_image());
+    }
+
+    #[cfg(test)]
+    fn retains_graph(
+        &self,
+        scheduler_context: BluetoothControllerSramLinkAddress,
+        link_state: BluetoothControllerSramLinkAddress,
+    ) -> bool {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get() & SCHEDULER_ITEM_HARDWARE_NEXT_MASK
+            == 0
+            && self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].get()
+                == scheduler_context.compressed_image()
+            && self.words[SCHEDULER_ITEM_LINK_STATE_OFFSET].get()
+                == SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE | link_state.compressed_image()
+    }
+}
+
 /// Stable storage for one restricted legacy advertising event graph.
 #[pin_project]
 #[repr(C)]
 pub struct BluetoothLegacyAdvertisingMemoryGraphStorage {
-    link_state: [VolatileCell<u32>; LINK_STATE_WORDS],
-    scheduler_item: [VolatileCell<u32>; SCHEDULER_ITEM_WORDS],
+    link_state: BluetoothLegacyAdvertisingLinkStateStorage,
+    scheduler_context: BluetoothSchedulerContextStorage,
+    scheduler_item: BluetoothLegacyAdvertisingSchedulerItemStorage,
     tx_header: BluetoothLeTxBufferHeaderStorage,
     tx_packet: BluetoothLeTxPacketStorage<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>,
     #[pin]
@@ -63,6 +183,10 @@ const LINK_STATE_OFFSET: u32 =
     core::mem::offset_of!(BluetoothLegacyAdvertisingMemoryGraphStorage, link_state) as u32;
 const SCHEDULER_ITEM_OFFSET: u32 =
     core::mem::offset_of!(BluetoothLegacyAdvertisingMemoryGraphStorage, scheduler_item) as u32;
+const SCHEDULER_CONTEXT_OFFSET: u32 = core::mem::offset_of!(
+    BluetoothLegacyAdvertisingMemoryGraphStorage,
+    scheduler_context
+) as u32;
 const TX_HEADER_OFFSET: u32 =
     core::mem::offset_of!(BluetoothLegacyAdvertisingMemoryGraphStorage, tx_header) as u32;
 const TX_PACKET_OFFSET: u32 =
@@ -159,6 +283,7 @@ pub struct BluetoothLegacyAdvertisingMemoryGraphBinding {
     base: BluetoothControllerSramAddress,
     end_exclusive: u32,
     link_state: BluetoothControllerSramLinkAddress,
+    scheduler_context: BluetoothControllerSramLinkAddress,
     scheduler_item: BluetoothControllerSramLinkAddress,
     tx_header: BluetoothControllerSramLinkAddress,
     tx_packet: AdvertisingTxPacketAddress,
@@ -189,6 +314,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphBinding {
         };
 
         let link_state = link(LINK_STATE_OFFSET)?;
+        let scheduler_context = link(SCHEDULER_CONTEXT_OFFSET)?;
         let scheduler_item = link(SCHEDULER_ITEM_OFFSET)?;
         let tx_header = link(TX_HEADER_OFFSET)?;
         let tx_packet = AdvertisingTxPacketAddress::new(address(TX_PACKET_OFFSET)?)
@@ -200,6 +326,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphBinding {
             base: base_address,
             end_exclusive: base + GRAPH_BYTES,
             link_state,
+            scheduler_context,
             scheduler_item,
             tx_header,
             tx_packet,
@@ -229,6 +356,10 @@ impl BluetoothLegacyAdvertisingMemoryGraphBinding {
         self.scheduler_item
     }
 
+    pub const fn scheduler_context_address(&self) -> BluetoothControllerSramAddress {
+        self.scheduler_context.controller_address()
+    }
+
     pub const fn tx_header_address(&self) -> BluetoothControllerSramLinkAddress {
         self.tx_header
     }
@@ -244,6 +375,17 @@ pub struct BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
 impl BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
     pub const fn binding(&self) -> &BluetoothLegacyAdvertisingMemoryGraphBinding {
         &self.binding
+    }
+
+    #[cfg(test)]
+    fn retains_reviewed_graph(&self) -> bool {
+        let storage = self.storage.as_ref().get_ref();
+        storage
+            .link_state
+            .retains_graph(self.binding.scheduler_item, self.binding.tx_header)
+            && storage
+                .scheduler_item
+                .retains_graph(self.binding.scheduler_context, self.binding.link_state)
     }
 
     /// Install one complete legacy advertising PDU without publishing the graph.
@@ -334,8 +476,9 @@ impl core::fmt::Debug for BluetoothLegacyAdvertisingMemoryGraphPacketPrepareFail
 impl BluetoothLegacyAdvertisingMemoryGraphStorage {
     pub const fn new() -> Self {
         Self {
-            link_state: [const { VolatileCell::new(0) }; LINK_STATE_WORDS],
-            scheduler_item: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
+            link_state: BluetoothLegacyAdvertisingLinkStateStorage::new(),
+            scheduler_context: BluetoothSchedulerContextStorage::new(),
+            scheduler_item: BluetoothLegacyAdvertisingSchedulerItemStorage::new(),
             tx_header: BluetoothLeTxBufferHeaderStorage::new(),
             tx_packet: BluetoothLeTxPacketStorage::new(),
             _pin: PhantomPinned,
@@ -388,16 +531,22 @@ impl BluetoothLegacyAdvertisingMemoryGraphStorage {
                 ));
             }
         };
-        let owner = BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
+        let mut owner = BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
             storage: Pin::static_mut(storage),
             binding,
         };
-        owner
-            .storage
-            .as_ref()
-            .get_ref()
-            .tx_header
-            .initialize_bound_tx(owner.binding.tx_packet);
+        let scheduler_item = owner.binding.scheduler_item;
+        let scheduler_context = owner.binding.scheduler_context;
+        let link_state = owner.binding.link_state;
+        let tx_header = owner.binding.tx_header;
+        let tx_packet = owner.binding.tx_packet;
+        let graph = owner.storage.as_mut().project();
+        graph.scheduler_context.clear();
+        graph.link_state.initialize_graph(scheduler_item, tx_header);
+        graph
+            .scheduler_item
+            .initialize_graph(scheduler_context, link_state);
+        graph.tx_header.initialize_bound_tx(tx_packet);
         Ok(owner)
     }
 }
@@ -428,6 +577,7 @@ mod tests {
     #[test]
     fn bound_graph_prepares_and_cancels_one_complete_advertising_pdu() {
         let owner = owner();
+        assert!(owner.retains_reviewed_graph());
         let identity = owner.binding().identity();
         let range = owner.binding().range();
         let prepared = owner
@@ -438,6 +588,7 @@ mod tests {
         assert_eq!(prepared.binding().identity(), identity);
 
         let owner = prepared.cancel();
+        assert!(owner.retains_reviewed_graph());
         assert_eq!(owner.binding().identity(), identity);
         assert_eq!(owner.binding().range(), range);
     }

@@ -42,17 +42,29 @@ primary channel maps and interval bounds. It encodes an exact bounded
 `ADV_NONCONN_IND` and retains generation, event and channel identity through
 an affine lifecycle. The S31 pre-admission owner installs that PDU in the
 common typed controller TX allocation used by DTM and advertising. That
-allocation now lives inside a pinned, physically bounded graph which reserves
-the advertising link state and scheduler item and binds the common TX header
-to its packet. The owner adds the channel's frequency projection and supports
-lossless cancellation of both portable and SRAM owners. It cannot publish a
-scheduler head or claim that the PDU is in flight.
+allocation now lives inside a pinned, physically bounded graph. The graph
+binds the common TX header to its packet, installs that header as the sole TX
+head/tail, keeps the RX chain absent, retains one separately allocated common
+scheduler context, binds the first scheduler item back to this link state and
+installs that item as the link-state scheduler head. The owner adds the
+channel's frequency projection and supports lossless cancellation of both
+portable and SRAM owners. It cannot publish a hardware scheduler head or
+claim that the PDU is in flight.
 
 The public named archive proves that legacy primary allocation calls
 `r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr`; its allocation prefix and PDU
 placement are therefore shared with DTM. The DTM graph typestate itself is not
 reused: advertising still has a different private link-state/scheduler graph
 and recurrence policy.
+
+The same archive's `r_ble_lll_adv_alloc_sch_items` establishes the separate
+common scheduler-context link, the scheduler-item-to-link-state link and the
+terminal first-item chain. `r_ble_lll_adv_start` independently stores that
+item as link-state scheduler head before calling
+`r_ble_lll_adv_sched_first_pri_event`. Current stripped allocation, start and
+first-event bodies retain those offsets and ordering. These allocation-time
+links are now one private memory-codec operation; no compressed image or SRAM
+field escapes to the controller or Link Layer.
 
 ## Minimum production admission contract
 
@@ -84,11 +96,13 @@ not required.
 
 ## Current blockers and non-blockers
 
-The encoded PDU now reaches an address-bound role-neutral controller TX chain
-without raw SRAM fields escaping the memory codec. The remaining blocker is
-the restricted no-CTE descriptor transform which connects that header to the
-reserved advertising link state and first scheduler item, followed by graph
-publication and completion. A hardware-frontier query currently asks for one project-local
+The encoded PDU now reaches a fully address-bound, CPU-owned controller graph
+without raw SRAM fields escaping the memory codec. Allocation-time packet,
+header, link-state, scheduler-context and scheduler-item links are closed. The
+remaining descriptor blocker is the event-time restricted no-CTE reset and
+first-primary-event transform: advertising access address, CRC init, LE 1M
+mode, frequency/whitening and the initial raw scheduler window. Publication
+and completion follow that transform. A hardware-frontier query currently asks for one project-local
 assertion at `0x2010199c/16`, but the reviewed chip model already identifies it
 as `BLE_HW_CTE_RING_CONTROL.RING_CONTROL`. It is reached through generic CTE
 support and is not used by the restricted no-CTE transmission, so it is not an
@@ -97,9 +111,11 @@ path. Diagnostic logging, extended advertising, periodic advertising, scan
 responses, RX buffers, sleep-enabled wake and coexistence are also not
 blockers for the restricted first transmission.
 
-The next review should therefore trace data backward from the first-event
-scheduler item and forward from its recycle callback. It should not attempt to
-make every reachable advertising function semantically complete.
+The next review should therefore reduce the reset and first-event bodies for
+the fixed no-RX/no-CTE profile, then reuse the existing affine empty-list
+publication and completion lifecycle. It should not reproduce vendor callback
+containers or attempt to make every reachable advertising function
+semantically complete.
 
 ```console
 tools/blobray/scripts/run-limited \

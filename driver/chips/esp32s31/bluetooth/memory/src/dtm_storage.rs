@@ -36,6 +36,7 @@ use crate::{
         BluetoothLeTxBufferHeaderStorage, BluetoothLeTxPacketAddress,
         BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
     },
+    scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         BluetoothControllerSramLinkAddress,
@@ -46,8 +47,6 @@ use crate::{
 pub const BLUETOOTH_DTM_LINK_STATE_BYTES: usize = 0x84;
 /// Bytes allocated for one DTM scheduler item.
 pub const BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES: usize = 0x60;
-/// Bytes allocated for the separate DTM scheduler context.
-pub const BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES: usize = 0x48;
 /// Bytes preceding the maximum DTM receiver capacity.
 pub const BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES: usize = 0x1e;
 /// Maximum packet capacity supplied by the complete DTM allocator.
@@ -320,12 +319,6 @@ impl BluetoothDtmSchedulerItemStorage {
         self.write_word(18, words.word_48);
         self.write_word(19, words.word_4c);
     }
-}
-
-/// Opaque CPU-owned scheduler-context allocation.
-#[repr(C, align(4))]
-pub struct BluetoothDtmSchedulerContextStorage {
-    words: [u32; BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES / 4],
 }
 
 /// One zero-based DTM RX buffer-header allocation.
@@ -660,7 +653,7 @@ impl Default for BluetoothDtmRxPacketStorage {
 #[repr(C)]
 pub struct BluetoothDtmMemoryGraphStorage {
     link_state: BluetoothDtmLinkStateStorage,
-    scheduler_context: BluetoothDtmSchedulerContextStorage,
+    scheduler_context: BluetoothSchedulerContextStorage,
     scheduler_item: BluetoothDtmSchedulerItemStorage,
     rx_header: BluetoothDtmRxBufferHeaderStorage,
     rx_swap_reserve: BluetoothDtmRxBufferHeaderStorage,
@@ -2447,7 +2440,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
 
         let storage = self.storage.as_mut().project();
         storage.link_state.clear();
-        storage.scheduler_context.words.fill(0);
+        storage.scheduler_context.clear();
         storage.scheduler_item.clear();
         storage
             .rx_header
@@ -2511,9 +2504,7 @@ impl BluetoothDtmMemoryGraphStorage {
             link_state: BluetoothDtmLinkStateStorage {
                 words: [const { VolatileCell::new(0) }; BLUETOOTH_DTM_LINK_STATE_BYTES / 4],
             },
-            scheduler_context: BluetoothDtmSchedulerContextStorage {
-                words: [0; BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES / 4],
-            },
+            scheduler_context: BluetoothSchedulerContextStorage::new(),
             scheduler_item: BluetoothDtmSchedulerItemStorage {
                 words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
             },
@@ -2608,6 +2599,7 @@ mod tests {
     use core::{cell::Cell, convert::Infallible, fmt::Debug};
 
     use crate::dtm_event_image::{BluetoothDtmRole, BluetoothLeAccessAddress, BluetoothLeCrcInit};
+    use crate::scheduler_context::BLUETOOTH_SCHEDULER_CONTEXT_BYTES;
     use open_esp_radio_esp32s31_hal::{
         BluetoothControllerSramAddress, BluetoothSchedulerFinishedListObservation,
         BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
@@ -2618,24 +2610,23 @@ mod tests {
     use super::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_DTM_LINK_STATE_BYTES,
         BLUETOOTH_DTM_MAX_PACKET_CAPACITY, BLUETOOTH_DTM_RX_PACKET_BYTES,
-        BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES, BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES,
-        BLUETOOTH_DTM_TX_PACKET_BYTES, BLUETOOTH_LE_BUFFER_HEADER_BYTES,
-        BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCpuOwned,
-        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphPrepareError,
-        BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
-        BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRunning,
-        BluetoothDtmMemoryGraphRxSuccessObserved, BluetoothDtmMemoryGraphRxSuccessRecycleError,
-        BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
-        BluetoothDtmPositionalEventWords, BluetoothDtmRxResultProjection,
-        BluetoothDtmRxResultProjectionError, BluetoothDtmSchedulerAllocationConfig,
-        BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmTxPacketPrepareError,
-        LINK_STATE_RX_TAIL_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
+        BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
+        BLUETOOTH_LE_BUFFER_HEADER_BYTES, BluetoothDtmMemoryGraphCompletionObservation,
+        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphModelAddress,
+        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleCleaned,
+        BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecyclePrepared,
+        BluetoothDtmMemoryGraphRunning, BluetoothDtmMemoryGraphRxSuccessObserved,
+        BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmMemoryGraphStorage,
+        BluetoothDtmPositionalEventSeed, BluetoothDtmPositionalEventWords,
+        BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
+        BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerItemCompletionStatus,
+        BluetoothDtmTxPacketPrepareError, LINK_STATE_RX_TAIL_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct GraphSnapshot {
         link_state: [u32; BLUETOOTH_DTM_LINK_STATE_BYTES / 4],
-        scheduler_context: [u32; BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES / 4],
+        scheduler_context: [u32; BLUETOOTH_SCHEDULER_CONTEXT_BYTES / 4],
         scheduler_item: [u32; BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4],
         rx_header: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
         rx_swap_reserve: [u32; BLUETOOTH_LE_BUFFER_HEADER_BYTES / 4],
@@ -2647,7 +2638,7 @@ mod tests {
     fn snapshot(storage: &BluetoothDtmMemoryGraphStorage) -> GraphSnapshot {
         GraphSnapshot {
             link_state: storage.link_state.snapshot(),
-            scheduler_context: storage.scheduler_context.words,
+            scheduler_context: storage.scheduler_context.snapshot(),
             scheduler_item: storage.scheduler_item.snapshot(),
             rx_header: storage.rx_header.snapshot_words(),
             rx_swap_reserve: storage.rx_swap_reserve.snapshot_words(),

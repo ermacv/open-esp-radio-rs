@@ -27,6 +27,7 @@ mod dtm_storage;
 mod le_tx_packet;
 mod legacy_advertising_storage;
 mod rx_memory_list;
+mod scheduler_context;
 mod sram_link;
 
 #[cfg(not(target_arch = "riscv32"))]
@@ -52,8 +53,8 @@ pub use dtm_storage::BluetoothDtmMemoryGraphModelAddress;
 pub use dtm_storage::{
     BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
     BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES,
-    BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES, BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES,
-    BLUETOOTH_DTM_TX_PACKET_BYTES, BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
+    BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
+    BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphEmptyListLinkPrepared,
@@ -69,8 +70,8 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
     BluetoothDtmMemoryGraphTxPacketPrepareFailure, BluetoothDtmMemoryGraphTxPacketPrepared,
     BluetoothDtmPositionalEventSeed, BluetoothDtmSchedulerAllocationConfig,
-    BluetoothDtmSchedulerContextStorage, BluetoothDtmSchedulerItemCompletionStatus,
-    BluetoothDtmSchedulerItemStorage, BluetoothDtmTxPacketPrepareError,
+    BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
+    BluetoothDtmTxPacketPrepareError,
 };
 pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
@@ -89,6 +90,7 @@ pub use legacy_advertising_storage::{
     BluetoothLegacyAdvertisingMemoryGraphStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
+pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};
 pub use sram_link::{
     BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
     BluetoothControllerSramLinkAddress, BluetoothControllerSramLinkAddressError,

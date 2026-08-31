@@ -182,11 +182,12 @@ pub use dtm_active::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_active_session::{
-    BluetoothDtmActiveCommandRoute, BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession,
-    BluetoothDtmActiveSessionFault, BluetoothDtmActiveSessionFaultCause,
-    BluetoothDtmActiveSessionRadioStep, BluetoothDtmCommandReadySession,
-    BluetoothDtmResponsePending, BluetoothDtmResponsePendingSession,
-    BluetoothDtmResponsePublication, BluetoothDtmResponsePublished,
+    BluetoothDtmActiveControllerCommandRoute, BluetoothDtmActiveDeferredBootstrap,
+    BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession, BluetoothDtmActiveSessionFault,
+    BluetoothDtmActiveSessionFaultCause, BluetoothDtmActiveSessionRadioStep,
+    BluetoothDtmCommandReadySession, BluetoothDtmResponsePending,
+    BluetoothDtmResponsePendingSession, BluetoothDtmResponsePublication,
+    BluetoothDtmResponsePublished,
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{

@@ -40,8 +40,8 @@ impl HciEpochIdentity<'_> {
 ///
 /// Only [`InProcessHciControllerEndpoint`] can mint this token, immediately
 /// after consuming and classifying a packet from its Host-to-Controller queue.
-/// The epoch marker remains opaque while [`Self::map`] and [`Self::try_map`]
-/// permit ownership-preserving semantic refinement without reconstructing it.
+/// The epoch marker remains opaque. Only crate-defined consuming refinements
+/// may change the semantic type while retaining that proof.
 #[must_use = "the semantic value and its HCI origin proof must remain paired"]
 pub struct HciEpochBound<'epoch, T> {
     hci_epoch: HciEpochIdentity<'epoch>,
@@ -58,16 +58,8 @@ impl<'epoch, T> HciEpochBound<'epoch, T> {
         &self.value
     }
 
-    /// Transform the semantic owner while preserving its exact origin epoch.
-    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> HciEpochBound<'epoch, U> {
-        HciEpochBound {
-            hci_epoch: self.hci_epoch,
-            value: map(self.value),
-        }
-    }
-
     /// Attempt one consuming semantic refinement without losing either branch.
-    pub fn try_map<U>(
+    pub(crate) fn try_map<U>(
         self,
         map: impl FnOnce(T) -> Result<U, T>,
     ) -> Result<HciEpochBound<'epoch, U>, Self> {

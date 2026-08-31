@@ -65,8 +65,9 @@ pub use dtm::{
     LeTransmitterTestV1Command,
 };
 pub use dtm_order::{
-    LeControllerResponsePending, LeControllerResponsePublication, LeControllerResponsePublished,
-    LeDtmActiveCommandRoute, LeDtmIdleCommandRoute, route_idle_dtm_command,
+    LeControllerClassifiedCommandRoute, LeControllerResponsePending,
+    LeControllerResponsePublication, LeControllerResponsePublished, LeDtmIdleCommandRoute,
+    route_idle_dtm_command,
 };
 pub use resources::{
     LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,

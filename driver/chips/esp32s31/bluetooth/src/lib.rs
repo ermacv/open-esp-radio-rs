@@ -100,6 +100,8 @@ mod dtm_reset_order;
 mod dtm_runner;
 mod dtm_rx_completion;
 mod dtm_scheduler_item;
+#[cfg(any(target_arch = "riscv32", test))]
+mod dtm_scheduler_reservation;
 mod dtm_session;
 #[cfg(target_arch = "riscv32")]
 mod dtm_stopping;
@@ -269,7 +271,11 @@ pub use dtm_rx_completion::{
 };
 pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
-    BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerTimingPolicy,
+    BluetoothDtmSchedulerItemReviewedWords,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use dtm_scheduler_reservation::{
+    BluetoothDtmSchedulerReservation, BluetoothDtmSchedulerSequenceAuthorizationFailure,
 };
 #[cfg(test)]
 pub(crate) use dtm_session::BluetoothDtmSessionStopping;
@@ -404,7 +410,8 @@ pub use scheduler_lock_modify::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler_timeline::{
-    BluetoothSchedulerRawWindow, BluetoothSchedulerReservation, BluetoothSchedulerReservationError,
+    BluetoothSchedulerRawWindow, BluetoothSchedulerReservationError,
     BluetoothSchedulerReservationReleaseError, BluetoothSchedulerReservationReleaseFailure,
     BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
+    BluetoothSchedulerTimingPolicy, BluetoothSchedulerWindowReservation,
 };

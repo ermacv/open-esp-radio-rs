@@ -401,12 +401,7 @@ mod tests {
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::BluetoothControllerRuntimeResources;
-    use crate::{
-        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
-        BluetoothDtmPhy, BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
-        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerTimingPolicy,
-        BluetoothSchedulerSoftwareConfig,
-    };
+    use crate::{BluetoothSchedulerSoftwareConfig, BluetoothSchedulerTimingPolicy};
 
     #[test]
     fn one_aggregate_starts_as_one_pristine_bounded_epoch() {
@@ -482,22 +477,7 @@ mod tests {
     fn controller_reservation_remains_in_the_runtime_epoch_until_explicit_release() {
         let mut resources = BluetoothControllerRuntimeResources::<4, 2>::new();
         let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
-        let epoch = BluetoothControllerSchedulerEpoch::new(
-            BluetoothControllerTimeSample::for_validation(0),
-            0,
-            scale,
-        );
-        let event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
-            BluetoothDtmChannel::new(0).expect("channel zero is valid"),
-            BluetoothDtmPhy::Le1M,
-            BluetoothDtmRxRecurringEventWindow::new(
-                BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-                BluetoothDtmSchedulerInstant::from_image(45),
-                BluetoothDtmSchedulerInstant::from_image(100),
-            ),
-        )
-        .expect("receiver event is valid");
-        let timing_policy = BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(
+        let timing_policy = BluetoothSchedulerTimingPolicy::from_scheduler_config(
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             scale,
         );
@@ -505,7 +485,7 @@ mod tests {
         let (interrupt, mut task, modem_timer) = resources.split();
         let reservation = task
             .scheduler_timeline_mut()
-            .reserve_recurring_dtm_event(event, epoch, timing_policy)
+            .reserve_recurring_window(45, 100, timing_policy)
             .expect("one runtime-owned scheduler slot is free");
         assert!(!task.scheduler_timeline_mut().is_empty());
 

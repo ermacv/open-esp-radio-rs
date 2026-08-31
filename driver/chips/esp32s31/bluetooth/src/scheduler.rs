@@ -9,7 +9,6 @@ use crate::dtm_event_prepare::{
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
     BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
-    BluetoothSchedulerSequenceAuthorizationFailure,
 };
 use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerModemTimerRuntime,
@@ -26,9 +25,10 @@ use crate::{
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::{
     BluetoothControllerTimeSample, BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent,
-    BluetoothDtmSchedulerTimingPolicy, BluetoothSchedulerReservation,
+    BluetoothDtmSchedulerReservation, BluetoothDtmSchedulerSequenceAuthorizationFailure,
     BluetoothSchedulerReservationError, BluetoothSchedulerSequenceAuthorizationError,
-    BluetoothSchedulerSequenceReady, controller_time::BluetoothControllerSchedulerNow,
+    BluetoothSchedulerSequenceReady, BluetoothSchedulerTimingPolicy,
+    controller_time::BluetoothControllerSchedulerNow,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
@@ -554,7 +554,7 @@ pub(crate) struct BluetoothDtmReceiverRecurringStaged {
 #[must_use = "the admitted transmitter must consume a later sequence sample or be cancelled"]
 pub(crate) struct BluetoothDtmTransmitterFirstPreSequence {
     staged: BluetoothDtmTransmitterFirstStaged,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
 }
 
 /// Initial receiver candidate after admission and overlap resolution.
@@ -562,7 +562,7 @@ pub(crate) struct BluetoothDtmTransmitterFirstPreSequence {
 #[must_use = "the admitted receiver must consume a later sequence sample or be cancelled"]
 pub(crate) struct BluetoothDtmReceiverFirstPreSequence {
     staged: BluetoothDtmReceiverFirstStaged,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
 }
 
 /// Recurring transmitter candidate after its exact-window reservation.
@@ -570,7 +570,7 @@ pub(crate) struct BluetoothDtmReceiverFirstPreSequence {
 #[must_use = "the reserved transmitter must consume a later sequence sample or be cancelled"]
 pub(crate) struct BluetoothDtmTransmitterRecurringPreSequence {
     staged: BluetoothDtmTransmitterRecurringStaged,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerRecurringReserved>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerRecurringReserved>,
 }
 
 /// Recurring receiver candidate after its exact-window reservation.
@@ -578,7 +578,7 @@ pub(crate) struct BluetoothDtmTransmitterRecurringPreSequence {
 #[must_use = "the reserved receiver must consume a later sequence sample or be cancelled"]
 pub(crate) struct BluetoothDtmReceiverRecurringPreSequence {
     staged: BluetoothDtmReceiverRecurringStaged,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerRecurringReserved>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerRecurringReserved>,
 }
 
 /// Lossless failure to join a DTM item to the exclusive empty scheduler list.
@@ -1321,14 +1321,22 @@ impl<const SCHEDULER_CAPACITY: usize>
         now: &BluetoothControllerSchedulerNow,
         admission_sample: BluetoothControllerTimeSample,
     ) -> Result<
-        BluetoothSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
+        BluetoothDtmSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
         BluetoothSchedulerReservationError,
     > {
+        let epoch = now.epoch();
         let timing_policy =
-            BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        self.runtime
+            BluetoothSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        let window = self
+            .runtime
             .scheduler_timeline_mut()
-            .reserve_initial_dtm_event(event, now.epoch(), timing_policy, admission_sample)
+            .reserve_initial_window(
+                event.raw_start(epoch),
+                event.raw_end(epoch),
+                timing_policy,
+                admission_sample,
+            )?;
+        Ok(BluetoothDtmSchedulerReservation::new(window, event, epoch))
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
@@ -1337,25 +1345,32 @@ impl<const SCHEDULER_CAPACITY: usize>
         event: BluetoothDtmSchedulerItemEvent,
         now: &BluetoothControllerSchedulerNow,
     ) -> Result<
-        BluetoothSchedulerReservation<BluetoothSchedulerRecurringReserved>,
+        BluetoothDtmSchedulerReservation<BluetoothSchedulerRecurringReserved>,
         BluetoothSchedulerReservationError,
     > {
+        let epoch = now.epoch();
         let timing_policy =
-            BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        self.runtime
+            BluetoothSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        let window = self
+            .runtime
             .scheduler_timeline_mut()
-            .reserve_recurring_dtm_event(event, now.epoch(), timing_policy)
+            .reserve_recurring_window(
+                event.raw_start(epoch),
+                event.raw_end(epoch),
+                timing_policy,
+            )?;
+        Ok(BluetoothDtmSchedulerReservation::new(window, event, epoch))
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
     fn finish_dtm_sequence_authorization<State>(
         &mut self,
         result: Result<
-            BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
-            BluetoothSchedulerSequenceAuthorizationFailure<State>,
+            BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
+            BluetoothDtmSchedulerSequenceAuthorizationFailure<State>,
         >,
     ) -> Result<
-        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
         BluetoothDtmControllerEventPreparationError,
     > {
         match result {
@@ -1372,11 +1387,11 @@ impl<const SCHEDULER_CAPACITY: usize>
     #[cfg(any(target_arch = "riscv32", test))]
     fn release_dtm_reservation<State>(
         &mut self,
-        reservation: BluetoothSchedulerReservation<State>,
+        reservation: BluetoothDtmSchedulerReservation<State>,
     ) {
         self.runtime
             .scheduler_timeline_mut()
-            .release(reservation)
+            .release(reservation.into_window())
             .expect("a reservation created by this Controller must release into the same timeline");
     }
 

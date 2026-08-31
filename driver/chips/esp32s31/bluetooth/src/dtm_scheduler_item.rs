@@ -10,18 +10,15 @@
 pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemReviewedWords;
 
 #[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
-use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothDtmReceiverEventPhase, BluetoothDtmSchedulerItemEventType,
-};
-use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
-
-#[cfg(any(target_arch = "riscv32", test))]
-use crate::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
+use crate::BluetoothControllerSchedulerEpoch;
 use crate::{
     BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmRxInitialEventWindow,
     BluetoothDtmRxRecurringEventWindow, BluetoothDtmTxEventWindow,
-    BluetoothSchedulerSoftwareConfig,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmReceiverEventPhase, BluetoothDtmSchedulerItemEventType,
 };
 
 /// Why one DTM scheduler-item event cannot be represented exactly.
@@ -29,55 +26,6 @@ use crate::{
 pub enum BluetoothDtmSchedulerItemEventError {
     /// HCI selector four is a transmitter-only DTM extension.
     LeCodedS2RequiresTransmitter,
-}
-
-/// Raw insertion timing policy derived from the common scheduler epoch.
-///
-/// Complete overlap admission converts the scheduler environment's first
-/// policy delta through the live Controller time scale for its late-start
-/// guard. `r_btdm_sched_calc_seq_time` converts the second delta before adding
-/// it to every item. Construction requires both source-owned values, so the two
-/// decisions cannot be drawn from different scheduler epochs.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmSchedulerTimingPolicy {
-    late_start_guard_raw_delta: u32,
-    sequence_lead_raw_delta: u32,
-}
-
-impl BluetoothDtmSchedulerTimingPolicy {
-    /// Derive both raw timing deltas for one initialized scheduler epoch.
-    pub const fn from_scheduler_config(
-        config: BluetoothSchedulerSoftwareConfig,
-        scale: BluetoothControllerTimeScale,
-    ) -> Self {
-        Self {
-            late_start_guard_raw_delta: scale
-                .raw_delta_from_scheduler(config.late_start_guard_scheduler_delta())
-                .whole,
-            sequence_lead_raw_delta: scale
-                .raw_delta_from_scheduler(config.sequence_lead_scheduler_delta())
-                .whole,
-        }
-    }
-
-    /// Whether one fresh sample still precedes the guarded item start.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn initial_deadline_is_open(
-        self,
-        sample: BluetoothControllerTimeSample,
-        raw_item_start: u32,
-    ) -> bool {
-        (sample
-            .raw_time()
-            .wrapping_add(self.late_start_guard_raw_delta)
-            .wrapping_sub(raw_item_start) as i32)
-            < 0
-    }
-
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn sequence_lead_raw_delta(self) -> u32 {
-        self.sequence_lead_raw_delta
-    }
 }
 
 /// Validated dynamic inputs to one DTM scheduler item.
@@ -208,16 +156,11 @@ pub(crate) const fn apply_overlap_insertion_power(
 
 #[cfg(test)]
 mod tests {
-    use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
-
-    use super::{
-        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
-        BluetoothDtmSchedulerTimingPolicy,
-    };
+    use super::{BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError};
     use crate::{
-        BluetoothControllerTimeSample, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
-        BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothSchedulerSoftwareConfig,
+        BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmRxInitialEventWindow,
+        BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
+        BluetoothSchedulerSoftwareConfig,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BluetoothDtmReceiverEventPhase, BluetoothDtmSchedulerItemEventType,
@@ -229,23 +172,6 @@ mod tests {
             BluetoothDtmSchedulerInstant::from_image(900),
             BluetoothDtmSchedulerInstant::from_image(1_020),
         )
-    }
-
-    #[test]
-    fn insertion_policy_uses_one_initialized_scheduler_epoch_scale() {
-        let policy = BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(
-            BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-            BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
-        );
-
-        assert_eq!(policy.sequence_lead_raw_delta(), 11);
-        assert!(
-            policy.initial_deadline_is_open(BluetoothControllerTimeSample::for_validation(92), 103)
-        );
-        assert!(
-            !policy
-                .initial_deadline_is_open(BluetoothControllerTimeSample::for_validation(93), 103)
-        );
     }
 
     #[test]

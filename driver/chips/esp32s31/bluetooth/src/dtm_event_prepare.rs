@@ -41,8 +41,8 @@ use crate::{
     BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPhy,
     BluetoothDtmPreparedTxGraph, BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole,
     BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-    BluetoothDtmSchedulerMargin, BluetoothDtmTxEventWindow, BluetoothDtmTxSchedulerTiming,
-    BluetoothSchedulerReservation, BluetoothSchedulerSequenceReady,
+    BluetoothDtmSchedulerMargin, BluetoothDtmSchedulerReservation, BluetoothDtmTxEventWindow,
+    BluetoothDtmTxSchedulerTiming, BluetoothSchedulerSequenceReady,
     dtm_rx_completion::BluetoothDtmReceiverSession,
     dtm_scheduler_item::apply_overlap_insertion_power,
 };
@@ -175,7 +175,7 @@ pub(crate) enum BluetoothDtmReviewedEventWordsPlanError {
 /// Rejected role composition retaining the exact sequence-ready reservation.
 pub(crate) struct BluetoothDtmReviewedEventWordsPlanFailure {
     error: BluetoothDtmReviewedEventWordsPlanError,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
 }
 
 impl BluetoothDtmReviewedEventWordsPlanFailure {
@@ -188,7 +188,7 @@ impl BluetoothDtmReviewedEventWordsPlanFailure {
     /// Recover the reservation for explicit scheduler release.
     pub fn into_reservation(
         self,
-    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
+    ) -> BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady> {
         self.reservation
     }
 }
@@ -213,7 +213,7 @@ impl core::fmt::Debug for BluetoothDtmReviewedEventWordsPlanFailure {
 /// can therefore only be formed from the window retained by that reservation.
 pub(crate) struct BluetoothDtmReviewedEventWordsPlan<Role> {
     link_state: BluetoothDtmLinkStateReset,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
@@ -221,13 +221,13 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn into_reservation(
         self,
-    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
+    ) -> BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady> {
         self.reservation
     }
 
     fn new_for_role(
         link_state: BluetoothDtmLinkStateReset,
-        reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
         expected: BluetoothDtmRole,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanFailure> {
         let link_role = link_state.role();
@@ -315,7 +315,7 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
     /// Pair a transmitter reset with its sequence-ready scheduler reservation.
     pub(crate) fn new_transmitter(
         link_state: BluetoothDtmLinkStateReset,
-        reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanFailure> {
         Self::new_for_role(link_state, reservation, BluetoothDtmRole::Transmitter)
     }
@@ -437,7 +437,7 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
     /// Pair a receiver reset with its sequence-ready scheduler reservation.
     pub(crate) fn new_receiver(
         link_state: BluetoothDtmLinkStateReset,
-        reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanFailure> {
         Self::new_for_role(link_state, reservation, BluetoothDtmRole::Receiver)
     }
@@ -883,7 +883,7 @@ where
     memory: BluetoothDtmMemoryGraphPositionalEventPrepared,
     context: BluetoothDtmEventContext,
     rollback: Phase::Rollback,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _state: PhantomData<(Role, Phase)>,
 }
 
@@ -920,7 +920,7 @@ impl
         self,
     ) -> (
         BluetoothDtmMemoryGraphCpuOwned,
-        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) {
         let BluetoothDtmEventContext::Transmitter(_) = self.context else {
             unreachable!()
@@ -941,7 +941,7 @@ impl
         self,
     ) -> (
         BluetoothDtmActiveTransmitterCpuOwned,
-        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) {
         let BluetoothDtmEventContext::Transmitter(context) = self.context else {
             unreachable!()
@@ -970,7 +970,7 @@ impl
         self,
     ) -> (
         BluetoothDtmReceiverCpuOwned,
-        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) {
         let BluetoothDtmEventContext::Receiver(context) = self.context else {
             unreachable!()
@@ -997,7 +997,7 @@ impl
         self,
     ) -> (
         BluetoothDtmActiveReceiverCpuOwned,
-        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) {
         let BluetoothDtmEventContext::Receiver(context) = self.context else {
             unreachable!()
@@ -1027,7 +1027,7 @@ where
     memory: BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
     context: BluetoothDtmEventContext,
     rollback: Phase::Rollback,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _state: PhantomData<(Role, Phase)>,
 }
 
@@ -1099,7 +1099,7 @@ where
     memory: BluetoothDtmMemoryGraphEmptyListLinkPrepared,
     context: BluetoothDtmEventContext,
     rollback: Phase::Rollback,
-    _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _state: PhantomData<(Role, Phase)>,
 }
 
@@ -1167,7 +1167,7 @@ where
 pub(crate) struct BluetoothDtmHeadPublishedEvent<Role> {
     memory: BluetoothDtmMemoryGraphHeadPublished,
     context: BluetoothDtmEventContext,
-    _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
@@ -1209,7 +1209,7 @@ impl<Role> BluetoothDtmHeadPublishedEvent<Role> {
 pub(crate) struct BluetoothDtmRunningEvent<Role> {
     memory: BluetoothDtmMemoryGraphRunning,
     context: BluetoothDtmEventContext,
-    _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
@@ -1286,7 +1286,7 @@ pub(crate) enum BluetoothDtmRunningEventCompletionObservation<Role> {
 pub(crate) struct BluetoothDtmCompletionObservedEvent<Role> {
     memory: BluetoothDtmMemoryGraphCompletionObserved,
     context: BluetoothDtmEventContext,
-    _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _reservation: BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
@@ -1342,10 +1342,12 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
                 });
             }
         };
-        let release = match timeline.prepare_release(reservation) {
+        let (window, event, epoch) = reservation.into_parts();
+        let release = match timeline.prepare_release(window) {
             Ok(release) => release,
             Err(failure) => {
-                let reservation = failure.into_reservation();
+                let reservation =
+                    BluetoothDtmSchedulerReservation::new(failure.into_reservation(), event, epoch);
                 let (memory, removal) = prepared.into_parts();
                 return Err(BluetoothDtmCompletionRecycleFailure {
                     error: BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch,
@@ -1423,10 +1425,12 @@ impl BluetoothDtmCompletionObservedEvent<BluetoothDtmReceiverEvent> {
                 });
             }
         };
-        let release = match timeline.prepare_release(reservation) {
+        let (window, event, epoch) = reservation.into_parts();
+        let release = match timeline.prepare_release(window) {
             Ok(release) => release,
             Err(failure) => {
-                let reservation = failure.into_reservation();
+                let reservation =
+                    BluetoothDtmSchedulerReservation::new(failure.into_reservation(), event, epoch);
                 let (memory, removal) = rx_prepared.into_recycle_prepared().into_parts();
                 return Err(BluetoothDtmCompletionRecycleFailure {
                     error: BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch,
@@ -1771,9 +1775,9 @@ mod tests {
         BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmRole,
         BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
         BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
-        BluetoothDtmSchedulerTimingPolicy, BluetoothDtmTxGraphPrepare, BluetoothDtmTxTimingMicros,
-        BluetoothSchedulerReservation, BluetoothSchedulerSequenceAuthorizationError,
-        BluetoothSchedulerSequenceReady,
+        BluetoothDtmSchedulerReservation, BluetoothDtmTxGraphPrepare, BluetoothDtmTxTimingMicros,
+        BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
+        BluetoothSchedulerTimingPolicy,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 
@@ -1851,8 +1855,8 @@ mod tests {
         .expect("selected PHY is valid for its role")
     }
 
-    fn timing_policy() -> BluetoothDtmSchedulerTimingPolicy {
-        BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(
+    fn timing_policy() -> BluetoothSchedulerTimingPolicy {
+        BluetoothSchedulerTimingPolicy::from_scheduler_config(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
         )
@@ -1865,17 +1869,24 @@ mod tests {
     fn reservation<const CAPACITY: usize>(
         timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
         role: BluetoothDtmRole,
-    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
+    ) -> BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady> {
         initial_reservation_for_event(timeline, item(role))
     }
 
     fn initial_reservation_for_event<const CAPACITY: usize>(
         timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
         event: BluetoothDtmSchedulerItemEvent,
-    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
-        timeline
-            .reserve_initial_dtm_event(event, epoch(), timing_policy(), admission_sample())
-            .expect("the first guarded deadline is open")
+    ) -> BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady> {
+        let epoch = epoch();
+        let window = timeline
+            .reserve_initial_window(
+                event.raw_start(epoch),
+                event.raw_end(epoch),
+                timing_policy(),
+                admission_sample(),
+            )
+            .expect("the first guarded deadline is open");
+        BluetoothDtmSchedulerReservation::new(window, event, epoch)
             .authorize_sequence(admission_sample())
             .expect("the initial sequence deadline is open")
     }
@@ -1883,10 +1894,16 @@ mod tests {
     fn recurring_reservation_for_event<const CAPACITY: usize>(
         timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
         event: BluetoothDtmSchedulerItemEvent,
-    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
-        timeline
-            .reserve_recurring_dtm_event(event, epoch(), timing_policy())
-            .expect("the exact recurring window is collision-free")
+    ) -> BluetoothDtmSchedulerReservation<BluetoothSchedulerSequenceReady> {
+        let epoch = epoch();
+        let window = timeline
+            .reserve_recurring_window(
+                event.raw_start(epoch),
+                event.raw_end(epoch),
+                timing_policy(),
+            )
+            .expect("the exact recurring window is collision-free");
+        BluetoothDtmSchedulerReservation::new(window, event, epoch)
             .authorize_sequence(admission_sample())
             .expect("the sole recurring sequence deadline is open")
     }
@@ -1934,7 +1951,7 @@ mod tests {
             .cancel()
             .cancel();
         let (_owner, reservation) = prepared.cancel_first();
-        assert!(timeline.release(reservation).is_ok());
+        assert!(timeline.release(reservation.into_window()).is_ok());
         assert!(timeline.is_empty());
     }
 
@@ -1965,7 +1982,7 @@ mod tests {
             .cancel_first();
 
         assert_eq!(owner.received_packet_count(), 0);
-        assert!(timeline.release(reservation).is_ok());
+        assert!(timeline.release(reservation.into_window()).is_ok());
         assert!(timeline.is_empty());
     }
 
@@ -2033,7 +2050,7 @@ mod tests {
             active.status(),
             BluetoothDtmSchedulerItemCompletionStatus::Zero
         );
-        assert!(timeline.release(reservation).is_ok());
+        assert!(timeline.release(reservation.into_window()).is_ok());
     }
 
     #[test]
@@ -2086,7 +2103,7 @@ mod tests {
         assert_eq!(active.margin(), margin());
         assert_eq!(active.last_committed_window, committed_window);
         assert_eq!(active.received_packet_count(), 0);
-        assert!(timeline.release(reservation).is_ok());
+        assert!(timeline.release(reservation.into_window()).is_ok());
     }
 
     #[test]
@@ -2233,20 +2250,27 @@ mod tests {
                 scheduler_item: BluetoothDtmRole::Receiver,
             }
         );
-        assert!(timeline.release(failure.into_reservation()).is_ok());
+        assert!(
+            timeline
+                .release(failure.into_reservation().into_window())
+                .is_ok()
+        );
     }
 
     #[test]
     fn sequence_authorization_rejects_the_second_guarded_deadline() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let reservation = timeline
-            .reserve_initial_dtm_event(
-                item(BluetoothDtmRole::Receiver),
-                epoch(),
+        let event = item(BluetoothDtmRole::Receiver);
+        let epoch = epoch();
+        let window = timeline
+            .reserve_initial_window(
+                event.raw_start(epoch),
+                event.raw_end(epoch),
                 timing_policy(),
                 admission_sample(),
             )
             .expect("the first guarded deadline is open");
+        let reservation = BluetoothDtmSchedulerReservation::new(window, event, epoch);
         let failure = reservation
             .authorize_sequence(BluetoothControllerTimeSample::for_validation(93))
             .expect_err("the second sample reaches the guarded start");
@@ -2254,6 +2278,10 @@ mod tests {
             failure.error(),
             BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired
         );
-        assert!(timeline.release(failure.into_reservation()).is_ok());
+        assert!(
+            timeline
+                .release(failure.into_reservation().into_window())
+                .is_ok()
+        );
     }
 }

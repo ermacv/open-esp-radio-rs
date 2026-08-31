@@ -2852,16 +2852,14 @@ impl<P> BluetoothControllerHalInitialized<P> {
 mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    use open_esp_radio_esp32s31_pac::RadioHardware;
-
     use std::{cell::RefCell, rc::Rc, vec::Vec};
 
     use crate::{
         BluetoothClockedResources, BluetoothControllerRuntimeResources,
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmPhy, BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothStopped,
-        controller_time::BluetoothControllerSchedulerNow,
+        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothRadioHardware,
+        BluetoothStopped, controller_time::BluetoothControllerSchedulerNow,
     };
 
     #[test]
@@ -3026,8 +3024,10 @@ mod tests {
     fn powered_task_split_retains_the_same_running_list_identity() {
         struct TaskSplitPlatform;
 
-        let stopped =
-            BluetoothStopped::from_hardware(TaskSplitPlatform, RadioHardware::for_validation());
+        let stopped = BluetoothStopped::from_hardware(
+            TaskSplitPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
         let (registers, platform) = stopped.into_parts();
         let clocked = BluetoothClockedResources::for_validation(registers, platform);
         let initialized = clocked.initialize_controller_hal_with(|_, _| {});
@@ -3061,7 +3061,7 @@ mod tests {
     fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
         PLATFORM_DROPS.store(0, Ordering::Relaxed);
         let stopped =
-            BluetoothStopped::from_hardware(FakePlatform, RadioHardware::for_validation());
+            BluetoothStopped::from_hardware(FakePlatform, BluetoothRadioHardware::for_validation());
         let (registers, platform) = stopped.into_parts();
         let clocked = BluetoothClockedResources::for_validation(registers, platform);
         let operations = Rc::new(RefCell::new(Vec::new()));
@@ -3110,8 +3110,10 @@ mod tests {
     fn rejected_initial_sequence_gate_releases_the_controller_owned_reservation() {
         struct AdmissionPlatform;
 
-        let stopped =
-            BluetoothStopped::from_hardware(AdmissionPlatform, RadioHardware::for_validation());
+        let stopped = BluetoothStopped::from_hardware(
+            AdmissionPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
         let (registers, platform) = stopped.into_parts();
         let clocked = BluetoothClockedResources::for_validation(registers, platform);
         let initialized = clocked.initialize_controller_hal_with(|_, _| {});
@@ -3170,8 +3172,10 @@ mod tests {
     fn rejected_recurring_sequence_gate_releases_the_controller_owned_reservation() {
         struct RecurringPlatform;
 
-        let stopped =
-            BluetoothStopped::from_hardware(RecurringPlatform, RadioHardware::for_validation());
+        let stopped = BluetoothStopped::from_hardware(
+            RecurringPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
         let (registers, platform) = stopped.into_parts();
         let clocked = BluetoothClockedResources::for_validation(registers, platform);
         let initialized = clocked.initialize_controller_hal_with(|_, _| {});

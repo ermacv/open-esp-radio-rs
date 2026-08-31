@@ -20,7 +20,6 @@ embassy-time = "0.5.1"
 open-esp-radio-bluetooth-hci = { path = "../../../bluetooth/hci" }
 open-esp-radio-esp32s31-bluetooth-embassy = { path = "../../../adapters/embassy/esp32s31-bluetooth" }
 open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy" }
-open-esp-radio-esp32s31-pac = { path = "../../../chips/esp32s31/pac" }
 open-esp-radio-esp32s31-radio-platform-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-radio-platform", features = ["esp32s31"] }
 
 [lints]

@@ -19,14 +19,13 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothControllerPhyClientAcquireFailure, BluetoothControllerPhyInitializationFailure,
     BluetoothControllerPhyTrackingFailure, BluetoothControllerRuntimeResources,
     BluetoothDtmRuntimeConfig, BluetoothPhyInitializationConfig, BluetoothPhyInitializationReport,
-    BluetoothStopped,
+    BluetoothRadioHardware, BluetoothStopped,
 };
 use open_esp_radio_esp32s31_bluetooth_embassy::{
     EmbassyBluetoothDtmAbsoluteRecheck, EmbassyBluetoothDtmRecheckPeriod,
     EmbassyBluetoothDtmRecheckStartError,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyEngineCpuOwned;
-use open_esp_radio_esp32s31_pac::RadioHardware;
 use open_esp_radio_esp32s31_phy::{
     NoopPhyTargetObserver, PhyCalibrationCache, PhyCalibrationSnapshot,
 };
@@ -191,12 +190,12 @@ impl Esp32s31BluetoothColdStartConfig {
 #[must_use = "the radio root and platform reservation can still be recovered"]
 pub struct Esp32s31BluetoothUnpoweredOwners {
     platform: Platform,
-    hardware: RadioHardware,
+    hardware: BluetoothRadioHardware,
 }
 
 impl Esp32s31BluetoothUnpoweredOwners {
     /// Recover the unchanged platform reservation and radio root.
-    pub fn into_parts(self) -> (Platform, RadioHardware) {
+    pub fn into_parts(self) -> (Platform, BluetoothRadioHardware) {
         (self.platform, self.hardware)
     }
 }
@@ -324,9 +323,10 @@ pub struct Esp32s31BluetoothColdStartOutput<
 
 /// Why complete production cold start did not produce a runnable system.
 ///
-/// Every pre-reservation failure returns the caller's `RadioHardware`. Every
-/// post-reservation failure retains the slot, and every post-claim failure
-/// retains static memory until it is nested in the corresponding lower owner.
+/// Every pre-reservation failure returns the caller's Bluetooth radio root.
+/// Every post-reservation failure retains the slot, and every post-claim
+/// failure retains static memory until it is nested in the corresponding lower
+/// owner.
 #[must_use = "a failed cold start retains affine resources"]
 #[expect(
     clippy::large_enum_variant,
@@ -344,35 +344,35 @@ pub enum Esp32s31BluetoothColdStartError<
         /// Exact timebase error.
         error: EmbassyEsp32s31PhyTimeError,
         /// Unchanged caller-owned radio root.
-        hardware: RadioHardware,
+        hardware: BluetoothRadioHardware,
     },
     /// Another protocol owns the ESP-HAL coordinator.
     PlatformBusy {
         /// Exact coordinator rejection.
         error: BluetoothPlatformBusy,
         /// Unchanged caller-owned radio root.
-        hardware: RadioHardware,
+        hardware: BluetoothRadioHardware,
     },
     /// The HCI report contains a zero ACL length or credit count.
     HciConfig {
         /// Exact HCI profile rejection.
         error: BootstrapConfigError,
         /// Unchanged caller-owned radio root.
-        hardware: RadioHardware,
+        hardware: BluetoothRadioHardware,
     },
     /// The bounded HCI transport cannot retain its advertised packets.
     HciResources {
         /// Exact bounded-resource rejection.
         error: LeControllerHciResourcesError,
         /// Unchanged caller-owned radio root.
-        hardware: RadioHardware,
+        hardware: BluetoothRadioHardware,
     },
     /// A retained calibration snapshot used another schema.
     CalibrationSnapshotSchema {
         /// Schema carried by the rejected snapshot.
         observed: u16,
         /// Unchanged caller-owned radio root.
-        hardware: RadioHardware,
+        hardware: BluetoothRadioHardware,
     },
     /// Final process-lifetime placement was already reserved.
     StorageInUse {
@@ -518,7 +518,7 @@ pub async fn start_esp32s31_bluetooth<
     const PC: usize,
 >(
     platform_root: &'static EspHalRadioPlatform,
-    hardware: RadioHardware,
+    hardware: BluetoothRadioHardware,
     storage: &'static Esp32s31BluetoothSystemStorage<Platform, MT, SC, H2C, C2H, PC>,
     config: Esp32s31BluetoothColdStartConfig,
 ) -> Result<

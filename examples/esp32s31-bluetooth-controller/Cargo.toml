@@ -1,0 +1,45 @@
+[package]
+name = "open-esp-radio-esp32s31-bluetooth-controller-example"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+embassy-time = "0.5.1"
+static_cell = "2.1.1"
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+bt-hci = "=0.9.0"
+embassy-executor = { version = "0.10.0", default-features = false }
+embassy-futures = "0.1.2"
+esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["auto", "esp32s31", "log-04"] }
+open-esp-radio-esp32s31-bluetooth = { path = "../../driver/chips/esp32s31/bluetooth" }
+open-esp-radio-esp32s31-bluetooth-embassy = { path = "../../driver/adapters/embassy/esp32s31-bluetooth" }
+open-esp-radio-esp32s31-bluetooth-integration = { path = "../../driver/integration/esp32s31/bluetooth" }
+open-esp-radio-esp32s31-bluetooth-memory = { path = "../../driver/chips/esp32s31/bluetooth/memory" }
+open-esp-radio-esp32s31-embassy-runtime = { path = "../../driver/adapters/embassy/esp32s31-platform", features = ["esp32s31"] }
+open-esp-radio-esp32s31-radio-platform-esp-hal = { path = "../../driver/adapters/esp-hal/esp32s31-radio-platform", features = ["esp32s31"] }
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = "fat"
+opt-level = 3
+panic = "abort"
+strip = false
+
+[patch."https://github.com/esp-rs/esp-pacs"]
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "85d2b4ddde2072c9b2c2f27046893c1ba8679aae" }
+
+[patch."https://github.com/ermacv/embassy.git"]
+embassy-futures = { version = "0.1.2", registry = "crates-io" }
+embassy-sync = { version = "0.8.0", registry = "crates-io" }
+embassy-time = { version = "0.5.1", registry = "crates-io" }
+
+[workspace]
+resolver = "3"

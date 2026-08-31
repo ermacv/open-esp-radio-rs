@@ -345,7 +345,7 @@ pub use primary_interrupt::{
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
     BluetoothPrimaryPublishedInterruptStep, BluetoothPrimarySchedulerEvent, step_primary_interrupt,
 };
-pub use resources::{BluetoothStopped, BluetoothStoppedReleaseFailure};
+pub use resources::{BluetoothRadioHardware, BluetoothStopped, BluetoothStoppedReleaseFailure};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime_resources::BluetoothControllerPoweredTaskRuntime;
 pub use runtime_resources::{

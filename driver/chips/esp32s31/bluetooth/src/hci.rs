@@ -562,6 +562,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        BluetoothClockedResources, BluetoothControllerHciInitializationError,
+        BluetoothControllerRuntimeEndpoints, BluetoothControllerRuntimeResources,
+        BluetoothRadioHardware, BluetoothSchedulerInitialized, BluetoothStopped,
+    };
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
@@ -569,18 +574,11 @@ mod tests {
         LeControllerHciResources,
         bt_hci::{cmd::controller_baseband::Reset, transport::Transport},
     };
-    use open_esp_radio_esp32s31_pac::RadioHardware;
-
-    use crate::{
-        BluetoothClockedResources, BluetoothControllerHciInitializationError,
-        BluetoothControllerRuntimeEndpoints, BluetoothControllerRuntimeResources,
-        BluetoothSchedulerInitialized, BluetoothStopped,
-    };
 
     type TestHciResources = LeControllerHciResources<NoopRawMutex, 1, 1, 31>;
 
     fn scheduler() -> BluetoothSchedulerInitialized<(), 4, 3> {
-        let stopped = BluetoothStopped::from_hardware((), RadioHardware::for_validation());
+        let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());
         let (registers, platform) = stopped.into_parts();
         BluetoothClockedResources::for_validation(registers, platform)
             .initialize_controller_hal_with(|_, _| {})

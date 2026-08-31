@@ -41,12 +41,40 @@ use crate::controller_time::{
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
 };
 
+/// Opaque singleton root for one standalone Bluetooth lifecycle.
+///
+/// The protocol-neutral PAC owner is captured inside the chip crate. Product
+/// composition can acquire and move this affine value, but cannot reach PAC
+/// register partitions or depend on the PAC crate directly.
+#[must_use = "the Bluetooth radio root is the unique hardware owner"]
+pub struct BluetoothRadioHardware {
+    hardware: RadioHardware,
+}
+
+impl BluetoothRadioHardware {
+    /// Acquire the restricted radio singleton for standalone Bluetooth.
+    pub fn take() -> Option<Self> {
+        RadioHardware::take().map(|hardware| Self { hardware })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_validation() -> Self {
+        Self {
+            hardware: RadioHardware::for_validation(),
+        }
+    }
+
+    fn into_inner(self) -> RadioHardware {
+        self.hardware
+    }
+}
+
 /// Complete cold Bluetooth owner before any powered lifecycle transaction.
 ///
 /// This is the only public entry to and exit from the standalone Bluetooth
-/// lifecycle. Keeping the platform lease and protocol-neutral radio root in
-/// one affine value prevents owners from unrelated epochs being paired during
-/// clock enable, rollback, or a later Wi-Fi handoff.
+/// lifecycle. Keeping the platform lease and restricted radio root in one
+/// affine value prevents owners from unrelated epochs being paired during
+/// clock enable or rollback.
 #[must_use = "stopped Bluetooth retains the platform and radio owners"]
 pub struct BluetoothStopped<P> {
     registers: HalBluetoothColdOwner,
@@ -80,30 +108,30 @@ impl<P> core::fmt::Debug for BluetoothStoppedReleaseFailure<P> {
 }
 
 impl<P> BluetoothStopped<P> {
-    /// Bind one platform lease to the exact protocol-neutral radio root.
+    /// Bind one platform lease to the exact restricted Bluetooth radio root.
     ///
     /// This transition performs no MMIO. Once constructed, the pair can only
     /// move together through the typed Bluetooth lifecycle.
-    pub fn from_hardware(platform: P, hardware: RadioHardware) -> Self {
+    pub fn from_hardware(platform: P, hardware: BluetoothRadioHardware) -> Self {
         Self {
-            registers: HalBluetoothColdOwner::from_radio_hardware(hardware),
+            registers: HalBluetoothColdOwner::from_radio_hardware(hardware.into_inner()),
             platform,
         }
     }
 
-    /// Release an unpowered Bluetooth owner for another radio protocol.
+    /// Release an unpowered Bluetooth owner for caller-controlled rebinding.
     ///
     /// # Errors
     ///
     /// Returns [`BluetoothStoppedReleaseFailure`] retaining the complete
     /// stopped owner when TX-DC PWDET fields still await restoration.
-    pub fn release(self) -> Result<(P, RadioHardware), BluetoothStoppedReleaseFailure<P>> {
+    pub fn release(self) -> Result<(P, BluetoothRadioHardware), BluetoothStoppedReleaseFailure<P>> {
         let Self {
             registers,
             platform,
         } = self;
         match registers.release() {
-            Ok(hardware) => Ok((platform, hardware)),
+            Ok(hardware) => Ok((platform, BluetoothRadioHardware { hardware })),
             Err(failure) => {
                 let (registers, error) = failure.into_parts();
                 Err(BluetoothStoppedReleaseFailure {
@@ -506,12 +534,13 @@ impl BluetoothInterruptBankOwner {
 mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    use open_esp_radio_esp32s31_hal::SharedPhyAccess;
-    use open_esp_radio_esp32s31_pac::RadioHardware;
-
     use crate::controller_time::BluetoothControllerTimeWorkerPhase;
+    use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 
-    use super::{BluetoothStopped, BluetoothTeardownPendingPlatform, separate_interrupt_owner};
+    use super::{
+        BluetoothRadioHardware, BluetoothStopped, BluetoothTeardownPendingPlatform,
+        separate_interrupt_owner,
+    };
 
     static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -532,7 +561,7 @@ mod tests {
 
     #[test]
     fn task_and_interrupt_owners_reunite_into_the_same_radio_root() {
-        let stopped = BluetoothStopped::from_hardware((), RadioHardware::for_validation());
+        let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());
         let (registers, ()) = stopped.into_parts();
         let (task, setup) = separate_interrupt_owner(registers);
         assert_eq!(
@@ -554,7 +583,7 @@ mod tests {
     fn mutable_shared_phy_borrow_arms_fail_stop_reunion() {
         fn accepts_shared_phy(_: &mut impl SharedPhyAccess) {}
 
-        let stopped = BluetoothStopped::from_hardware((), RadioHardware::for_validation());
+        let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());
         let (registers, ()) = stopped.into_parts();
         let (mut task, setup) = separate_interrupt_owner(registers);
         {

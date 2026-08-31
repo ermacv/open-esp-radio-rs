@@ -19,6 +19,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_protection::TxProtectionAdmissionError,
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
+use open_esp_radio_wifi_ap::ApAssociationIdentity;
 
 use crate::{
     engine::{Esp32s31ApAggregateBinding, Esp32s31ApAggregateFrame},
@@ -30,6 +31,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApAggregateAdmission {
     binding: Esp32s31ApAggregateBinding,
+    association: ApAssociationIdentity,
     rate: HtRate,
     block_ack_window: u16,
     amsdu: bool,
@@ -38,12 +40,14 @@ pub struct Esp32s31ApAggregateAdmission {
 impl Esp32s31ApAggregateAdmission {
     pub(crate) const fn new(
         binding: Esp32s31ApAggregateBinding,
+        association: ApAssociationIdentity,
         rate: HtRate,
         block_ack_window: u16,
         amsdu: bool,
     ) -> Self {
         Self {
             binding,
+            association,
             rate,
             block_ack_window,
             amsdu,
@@ -52,6 +56,10 @@ impl Esp32s31ApAggregateAdmission {
 
     pub const fn peer(self) -> [u8; 6] {
         self.binding.peer()
+    }
+
+    pub const fn association(self) -> ApAssociationIdentity {
+        self.association
     }
 
     pub const fn binding(self) -> Esp32s31ApAggregateBinding {

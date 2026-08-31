@@ -37,10 +37,10 @@ use open_esp_radio_ieee80211::{
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
-    AccessPointService, ApAssociationCapabilities, ApBufferedGroupRelease,
-    ApBufferedUnicastRelease, ApDownlinkDisposition, ApMlmeAction, ApPeerBinding, ApPeerClose,
-    ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction,
-    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    AccessPointService, ApAssociationCapabilities, ApAssociationIdentity, ApBufferedGroupRelease,
+    ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition, ApMlmeAction,
+    ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus,
+    ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
@@ -1553,26 +1553,37 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         Ok(binding)
     }
 
-    pub fn downlink_disposition(
+    pub fn admit_downlink(
         &self,
         peer: [u8; 6],
-    ) -> Result<ApDownlinkDisposition, Esp32s31ApEngineError> {
-        Ok(self.service.downlink_disposition(peer)?)
+    ) -> Result<ApDownlinkAdmission, Esp32s31ApEngineError> {
+        Ok(self.service.admit_downlink(peer)?)
     }
 
     pub fn group_downlink_disposition(&self) -> ApDownlinkDisposition {
         self.service.group_downlink_disposition()
     }
 
-    pub fn commit_buffered_unicast(&mut self, peer: [u8; 6]) -> Result<u16, Esp32s31ApEngineError> {
-        Ok(self.service.commit_buffered_unicast(peer)?)
+    pub fn commit_buffered_unicast(
+        &mut self,
+        identity: ApAssociationIdentity,
+    ) -> Result<u16, Esp32s31ApEngineError> {
+        Ok(self.service.commit_buffered_unicast(identity)?)
     }
 
     pub fn begin_buffered_unicast_release(
         &mut self,
-        peer: [u8; 6],
+        identity: ApAssociationIdentity,
     ) -> Result<Option<ApBufferedUnicastRelease>, Esp32s31ApEngineError> {
-        Ok(self.service.begin_buffered_unicast_release(peer)?)
+        Ok(self.service.begin_buffered_unicast_release(identity)?)
+    }
+
+    pub fn association_is_current(&self, identity: ApAssociationIdentity) -> bool {
+        self.service.association_is_current(identity)
+    }
+
+    pub fn association_status(&self, identity: ApAssociationIdentity) -> Option<ApPeerStatus> {
+        self.service.bound_authorized_peer_status(identity)
     }
 
     pub fn complete_buffered_unicast_release(

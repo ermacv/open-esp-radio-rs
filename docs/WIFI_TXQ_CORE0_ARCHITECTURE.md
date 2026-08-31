@@ -1406,6 +1406,26 @@ algorithm, but its owner type is too late for this boundary: it receives a
 complete network frame after final backing was already chosen. Reuse its
 intrusive index semantics and rollback tests, not that complete-frame arena.
 
+The Core0 queue itself is now generation-correct. Its flow key contains the
+portable `ApAssociationIdentity` (`MAC + AID + non-reusable association
+epoch`) rather than a MAC alone. AP downlink admission returns this identity in
+the same transaction as the power-save decision. Active leases, prepared
+aggregate prefixes, sleeping-peer leases and affine power-save release tokens
+all retain it. Before dequeue, Core0 validates the identity through the AID
+slot in O(1) and drops the stale classified owner; it never reclassifies old
+payload under a replacement association. An encoded but not yet published
+standby A-MPDU is cancelled at the same validation boundary if its association
+has ended. This closes the post-SRAM lifecycle hole without changing the
+round-robin selection result for a live peer.
+
+It does not close the pre-SRAM lifetime yet. Xarxa packet storage which has not
+crossed egress classification carries no AP association generation, so a
+packet retained entirely above that boundary may still be selected after a
+later association and receive its new key. The grant/backlog protocol must
+either bind generation at enqueue or explicitly revoke those candidates on
+the peer-directory revision. This remains a prerequisite for active
+`KeyDeferred` admission.
+
 Control, neighbour discovery, authentication/EAPOL, BA/BAR and beacon work use
 a separate bounded reserve and may bypass a data grant. Sleeping or stale-
 generation peers retain only bounded PSRAM handles and are absent from the

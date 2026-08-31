@@ -568,6 +568,7 @@ where
         let rate = peer_ht_rate(self.engine.channel(), status.ht?)?;
         Some(Esp32s31ApAggregateAdmission::new(
             binding,
+            status.association_identity(),
             rate,
             agreement.window,
             agreement.amsdu,

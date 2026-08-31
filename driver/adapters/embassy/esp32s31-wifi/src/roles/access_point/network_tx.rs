@@ -23,20 +23,53 @@ const AP_ACTIVE_FRAME_CAPACITY: usize = AP_POWER_SAVE_FRAME_CAPACITY;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ApTxFlowKey {
-    peer: [u8; 6],
+    destination: [u8; 6],
+    association_epoch: u32,
+    association_id: u8,
     tid: u8,
 }
 
 impl ApTxFlowKey {
     const INVALID_PEER: [u8; 6] = [0; 6];
 
-    fn tid0_from_ethernet(ethernet: &[u8]) -> Self {
+    const fn associated(identity: ApAssociationIdentity) -> Self {
+        let association_id = identity.association_id();
+        assert!(association_id <= u8::MAX as u16);
         Self {
-            peer: ethernet
+            destination: identity.address(),
+            association_epoch: identity.association_epoch(),
+            association_id: association_id as u8,
+            tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+        }
+    }
+
+    fn unbound_from_ethernet(ethernet: &[u8]) -> Self {
+        Self {
+            destination: ethernet
                 .get(..6)
                 .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
                 .unwrap_or(Self::INVALID_PEER),
+            association_epoch: 0,
+            association_id: 0,
             tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+        }
+    }
+
+    fn association(self) -> Option<ApAssociationIdentity> {
+        ApAssociationIdentity::new(
+            self.destination,
+            u16::from(self.association_id),
+            self.association_epoch,
+        )
+    }
+
+    fn is_current(self, engine: &Esp32s31ApEngine<'_>) -> bool {
+        match self.association() {
+            Some(identity) => engine.association_is_current(identity),
+            None if self.destination[0] & 1 != 0 || self.destination == Self::INVALID_PEER => true,
+            None => engine
+                .peer_status(self.destination)
+                .is_none_or(|status| status.phase != ApPeerPhase::Authorized),
         }
     }
 }
@@ -58,7 +91,7 @@ const fn aggregate_adapter_available(ordinary_publication_pending: bool) -> bool
 }
 
 struct BufferedUnicast<B> {
-    peer: [u8; 6],
+    identity: ApAssociationIdentity,
     order: u64,
     frame: B,
 }
@@ -70,7 +103,7 @@ struct BufferedUnicastRelease<B> {
 
 #[derive(Clone, Copy)]
 struct BufferedUnicastIndex {
-    peer: [u8; 6],
+    identity: ApAssociationIdentity,
     order: u64,
     frame_index: u8,
 }
@@ -108,7 +141,7 @@ impl ApPowerSaveFrameQueue {
 
     fn push<B>(
         &mut self,
-        peer: [u8; 6],
+        identity: ApAssociationIdentity,
         frame: B,
         arena: &mut ApFrameLeaseArena<B>,
     ) -> Result<usize, B> {
@@ -119,7 +152,7 @@ impl ApPowerSaveFrameQueue {
         let order = self.next_order;
         self.next_order = self.next_order.wrapping_add(1);
         self.slots[index] = Some(BufferedUnicastIndex {
-            peer,
+            identity,
             order,
             frame_index,
         });
@@ -135,7 +168,7 @@ impl ApPowerSaveFrameQueue {
         let buffered = self.slots.get_mut(index)?.take()?;
         self.len -= 1;
         Some(BufferedUnicast {
-            peer: buffered.peer,
+            identity: buffered.identity,
             order: buffered.order,
             frame: arena.take(buffered.frame_index),
         })
@@ -151,20 +184,20 @@ impl ApPowerSaveFrameQueue {
             .insert(buffered.frame)
             .unwrap_or_else(|_| panic!("released AP power-save lease returns to its arena slot"));
         *slot = Some(BufferedUnicastIndex {
-            peer: buffered.peer,
+            identity: buffered.identity,
             order: buffered.order,
             frame_index,
         });
         self.len += 1;
     }
 
-    fn oldest_index_for(&self, peer: [u8; 6]) -> Option<usize> {
+    fn oldest_index_for(&self, identity: ApAssociationIdentity) -> Option<usize> {
         self.slots
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
                 let entry = entry.as_ref()?;
-                (entry.peer == peer).then_some((index, entry.order))
+                (entry.identity == identity).then_some((index, entry.order))
             })
             .min_by_key(|(_, order)| *order)
             .map(|(index, _)| index)
@@ -172,23 +205,23 @@ impl ApPowerSaveFrameQueue {
 
     fn oldest_releasable_peer(
         &self,
-        mut releasable: impl FnMut([u8; 6]) -> bool,
-    ) -> Option<[u8; 6]> {
+        mut releasable: impl FnMut(ApAssociationIdentity) -> bool,
+    ) -> Option<ApAssociationIdentity> {
         self.slots
             .iter()
             .flatten()
-            .filter(|entry| releasable(entry.peer))
+            .filter(|entry| releasable(entry.identity))
             .min_by_key(|entry| entry.order)
-            .map(|entry| entry.peer)
+            .map(|entry| entry.identity)
     }
 
     fn retain<B>(
         &mut self,
         arena: &mut ApFrameLeaseArena<B>,
-        mut keep: impl FnMut([u8; 6]) -> bool,
+        mut keep: impl FnMut(ApAssociationIdentity) -> bool,
     ) {
         for slot in &mut self.slots {
-            if slot.as_ref().is_some_and(|entry| !keep(entry.peer)) {
+            if slot.as_ref().is_some_and(|entry| !keep(entry.identity)) {
                 let removed = slot.take().expect("checked AP power-save entry");
                 drop(arena.take(removed.frame_index));
                 self.len -= 1;
@@ -565,10 +598,7 @@ where
         if batch.admitted >= usize::from(batch.policy.frame_limit()) {
             return;
         }
-        let key = ApTxFlowKey {
-            peer: batch.admission.peer(),
-            tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
-        };
+        let key = ApTxFlowKey::associated(batch.admission.association());
         let matching_retained = self.active_frames.len_for(key)
             + usize::from(self.prepared_first_key == Some(key))
             + usize::from(self.prepared_second_key == Some(key));
@@ -695,13 +725,19 @@ where
 
     fn pop_scheduled_active(
         &mut self,
+        engine: &Esp32s31ApEngine<'_>,
     ) -> Option<(
         ApTxFlowKey,
         PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     )> {
-        self.active_frames
-            .pop_scheduled()
-            .map(|(key, index)| (key, self.frame_arena.take(index)))
+        loop {
+            let (key, index) = self.active_frames.pop_scheduled()?;
+            let frame = self.frame_arena.take(index);
+            if key.is_current(engine) {
+                return Some((key, frame));
+            }
+            drop(frame);
+        }
     }
 
     fn observe_network_claim(
@@ -736,10 +772,9 @@ where
         >,
     ) -> Result<(), Esp32s31AccessPointDatapathError> {
         self.observe_network_claim(&frame);
-        let Some(frame) = self.retain_power_save(engine, frame)? else {
+        let Some((key, frame)) = self.retain_power_save(engine, frame)? else {
             return Ok(());
         };
-        let key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
         // The arena owns every default producer credit which is not already
         // held by active/standby DMA or power-save storage. A custom larger
         // producer cannot turn this bounded Core0 classifier into unbounded
@@ -766,15 +801,20 @@ where
         >,
         Esp32s31AccessPointDatapathError,
     > {
+        if !key.is_current(engine) {
+            while let Some(frame) = self.pop_active_key(key) {
+                drop(frame);
+            }
+            return Ok(None);
+        }
         if let Some(frame) = self.pop_active_key(key) {
             return Ok(Some(frame));
         }
         while let Some(frame) = network.try_receive() {
             self.observe_network_claim(&frame);
-            let Some(frame) = self.retain_power_save(engine, frame)? else {
+            let Some((frame_key, frame)) = self.retain_power_save(engine, frame)? else {
                 continue;
             };
-            let frame_key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
             if frame_key == key {
                 return Ok(Some(frame));
             }
@@ -782,7 +822,7 @@ where
             if self
                 .prepared_standby
                 .as_ref()
-                .is_some_and(|batch| batch.admission.peer() == key.peer)
+                .is_some_and(|batch| batch.admission.peer() == key.destination)
             {
                 let batch = self
                     .prepared_standby
@@ -807,13 +847,14 @@ where
             TX_QUEUE_DEPTH,
         >,
     ) -> Result<
-        Option<
+        Option<(
+            ApTxFlowKey,
             PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        >,
+        )>,
         Esp32s31AccessPointDatapathError,
     > {
-        if let Some((_, frame)) = self.pop_scheduled_active() {
-            return Ok(Some(frame));
+        if let Some((key, frame)) = self.pop_scheduled_active(engine) {
+            return Ok(Some((key, frame)));
         }
         let Some(frame) = network.try_receive() else {
             return Ok(None);
@@ -834,21 +875,23 @@ where
             TX_QUEUE_DEPTH,
         >,
     ) -> Result<
-        Option<
+        Option<(
+            ApTxFlowKey,
             PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        >,
+        )>,
         Esp32s31AccessPointDatapathError,
     > {
+        let unbound_key = ApTxFlowKey::unbound_from_ethernet(frame.as_slice());
         let Some(peer) = frame
             .as_slice()
             .get(..6)
             .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
         else {
-            return Ok(Some(frame));
+            return Ok(Some((unbound_key, frame)));
         };
         if peer[0] & 1 != 0 {
             if engine.group_downlink_disposition() == ApDownlinkDisposition::TransmitNow {
-                return Ok(Some(frame));
+                return Ok(Some((unbound_key, frame)));
             }
             let Ok(index) = self.buffered_group.push(frame, &mut self.frame_arena) else {
                 // The caller-owned queue is deliberately bounded. Releasing
@@ -867,27 +910,29 @@ where
             }
             return Ok(None);
         }
-        let disposition = match engine.downlink_disposition(peer) {
-            Ok(disposition) => disposition,
+        let admission = match engine.admit_downlink(peer) {
+            Ok(admission) => admission,
             // Preserve the ordinary admission path for an unknown or
             // unauthorized destination so its existing rejection accounting
             // remains authoritative.
-            Err(_) => return Ok(Some(frame)),
+            Err(_) => return Ok(Some((unbound_key, frame))),
         };
-        if disposition == ApDownlinkDisposition::TransmitNow {
-            return Ok(Some(frame));
+        let identity = admission.identity();
+        let key = ApTxFlowKey::associated(identity);
+        if admission.disposition() == ApDownlinkDisposition::TransmitNow {
+            return Ok(Some((key, frame)));
         }
 
         let Ok(index) = self
             .buffered_unicast
-            .push(peer, frame, &mut self.frame_arena)
+            .push(identity, frame, &mut self.frame_arena)
         else {
             // The bounded queue owns the complete default TX lease frontier.
             // A custom larger producer cannot force an allocation or an
             // unbounded retention path; its excess lease is released here.
             return Ok(None);
         };
-        if let Err(error) = engine.commit_buffered_unicast(peer) {
+        if let Err(error) = engine.commit_buffered_unicast(identity) {
             let _ = self
                 .buffered_unicast
                 .take_at(index, &mut self.frame_arena)
@@ -931,8 +976,8 @@ where
         }
 
         if let Some(release) = control.take_pending_buffered_release() {
-            let peer = release.peer();
-            if let Some(index) = self.buffered_unicast.oldest_index_for(peer) {
+            let identity = release.identity();
+            if let Some(index) = self.buffered_unicast.oldest_index_for(identity) {
                 let buffered = self
                     .buffered_unicast
                     .take_at(index, &mut self.frame_arena)
@@ -951,21 +996,17 @@ where
         // Peer teardown clears the portable counters. Release matching caller
         // leases at the same observation boundary instead of retaining stale
         // addresses into a later association generation.
-        self.buffered_unicast.retain(&mut self.frame_arena, |peer| {
+        self.buffered_unicast
+            .retain(&mut self.frame_arena, |identity| {
+                control.mac.engine().association_is_current(identity)
+            });
+        let Some(identity) = self.buffered_unicast.oldest_releasable_peer(|identity| {
             control
                 .mac
                 .engine()
-                .peer_status(peer)
-                .is_some_and(|status| status.phase == ApPeerPhase::Authorized)
-        });
-        let Some(peer) = self.buffered_unicast.oldest_releasable_peer(|peer| {
-            control
-                .mac
-                .engine()
-                .peer_status(peer)
+                .association_status(identity)
                 .is_some_and(|status| {
-                    status.phase == ApPeerPhase::Authorized
-                        && status.power_state == ApPeerPowerState::Active
+                    status.power_state == ApPeerPowerState::Active
                         && !status.buffered_release_in_flight
                 })
         }) else {
@@ -974,13 +1015,13 @@ where
         let Some(release) = control
             .mac
             .engine_mut()
-            .begin_buffered_unicast_release(peer)
+            .begin_buffered_unicast_release(identity)
             .map_err(Esp32s31AccessPointControlError::from)
             .map_err(Esp32s31AccessPointDatapathError::Control)?
         else {
             return Ok(false);
         };
-        let Some(index) = self.buffered_unicast.oldest_index_for(peer) else {
+        let Some(index) = self.buffered_unicast.oldest_index_for(identity) else {
             let _ = control
                 .mac
                 .engine_mut()
@@ -1475,11 +1516,10 @@ where
         if self.prepared_buffered_release.is_some() {
             return self.start_prepared_buffered_release(control, hardware);
         }
-        let Some((_, frame)) = self.pop_scheduled_active() else {
+        let Some((flow_key, frame)) = self.pop_scheduled_active(control.mac.engine()) else {
             return Ok(WifiTxProgress::Complete);
         };
         let admission = control.mac.aggregate_admission(frame.as_slice());
-        let flow_key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
         let mut retained_aggregate_second = None;
 
         // Open APs have no BlockAck owner, so they use bounded ordinary
@@ -1798,6 +1838,26 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
+        if self.prepared_standby.as_ref().is_some_and(|batch| {
+            !control
+                .mac
+                .engine()
+                .association_is_current(batch.admission.association())
+        }) {
+            aggregate
+                .standby_mut()
+                .expect("prepared batch owns standby arena")
+                .cancel_build()
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            let _ = self
+                .prepared_standby
+                .take()
+                .expect("checked stale AP standby batch remains owned");
+            #[cfg(any(feature = "diagnostics", test))]
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::StandbyCancelled);
+            }
+        }
         while self.can_prepare(aggregate, control.tx_pending()) {
             if self.prepared_standby.is_some() {
                 if !self.prepare_existing_standby_batch(aggregate, control, network)? {
@@ -1805,16 +1865,19 @@ where
                 }
                 continue;
             }
-            let frame = if let Some(first) = self.prepared_first.as_ref() {
-                let key = ApTxFlowKey::tid0_from_ethernet(first.as_slice());
+            let selected = if self.prepared_first.is_some() {
+                let key = self
+                    .prepared_first_key
+                    .expect("prepared AP frame retains its flow key");
                 self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
+                    .map(|frame| (key, frame))
             } else {
                 self.take_scheduled_active_or_network(control.mac.engine_mut(), network)?
             };
-            let Some(frame) = frame else {
+            let Some((key, frame)) = selected else {
                 break;
             };
-            if !self.prepare_retained_one(aggregate, control, frame, network)? {
+            if !self.prepare_retained_one(aggregate, control, key, frame, network)? {
                 break;
             }
         }
@@ -1874,10 +1937,7 @@ where
         if remaining == 0 {
             return Ok(false);
         }
-        let key = ApTxFlowKey {
-            peer: admission.peer(),
-            tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
-        };
+        let key = ApTxFlowKey::associated(admission.association());
         let mut frames = [const { None }; SLOTS];
         #[cfg(feature = "tx-core1-materializer-probe")]
         let completed = if self.core1_materialization_in_flight {
@@ -2020,6 +2080,7 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
+        key: ApTxFlowKey,
         frame: PinnedNetworkTxFrame<
             'resources,
             M,
@@ -2046,9 +2107,11 @@ where
         let started = self.observer.map(AggregateTxObserver::now_micros);
         if let Some(batch) = self.prepared_standby.as_ref() {
             let admission = batch.admission;
-            if !admission.accepts_ethernet(frame.as_slice()) {
+            if key != ApTxFlowKey::associated(admission.association())
+                || !admission.accepts_ethernet(frame.as_slice())
+            {
                 debug_assert!(self.prepared_first.is_none());
-                self.prepared_first_key = Some(ApTxFlowKey::tid0_from_ethernet(frame.as_slice()));
+                self.prepared_first_key = Some(key);
                 self.prepared_first = Some(frame);
                 return Ok(true);
             }
@@ -2066,7 +2129,6 @@ where
             let mut frame = match network.try_promote(frame) {
                 Ok(frame) => frame,
                 Err(frame) => {
-                    let key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
                     self.restore_active_frame_front(key, frame);
                     return Ok(false);
                 }
@@ -2110,7 +2172,7 @@ where
         }
 
         let Some(first) = self.prepared_first.take() else {
-            self.prepared_first_key = Some(ApTxFlowKey::tid0_from_ethernet(frame.as_slice()));
+            self.prepared_first_key = Some(key);
             self.prepared_first = Some(frame);
             return Ok(true);
         };
@@ -2119,13 +2181,15 @@ where
             .take()
             .expect("prepared AP frame retains its flow key");
         let admission = control.mac.aggregate_admission(first.as_slice());
-        let Some(admission) =
-            admission.filter(|admission| admission.accepts_ethernet(frame.as_slice()))
-        else {
+        let Some(admission) = admission.filter(|admission| {
+            first_key == key
+                && first_key == ApTxFlowKey::associated(admission.association())
+                && admission.accepts_ethernet(frame.as_slice())
+        }) else {
             debug_assert!(self.prepared_second.is_none());
             self.prepared_first_key = Some(first_key);
             self.prepared_first = Some(first);
-            self.prepared_second_key = Some(ApTxFlowKey::tid0_from_ethernet(frame.as_slice()));
+            self.prepared_second_key = Some(key);
             self.prepared_second = Some(frame);
             return Ok(true);
         };
@@ -2293,15 +2357,25 @@ where
                 let Some(frame) = self.prepared_first.take() else {
                     return Ok(WifiTxProgress::Complete);
                 };
-                let _ = self
+                let key = self
                     .prepared_first_key
                     .take()
                     .expect("prepared AP frame retains its flow key");
                 self.prepared_first = self.prepared_second.take();
                 self.prepared_first_key = self.prepared_second_key.take();
-                let Some(frame) = self.retain_power_save(control.mac.engine_mut(), frame)? else {
+                if !key.is_current(control.mac.engine()) {
+                    drop(frame);
+                    continue;
+                }
+                let Some((readmitted_key, frame)) =
+                    self.retain_power_save(control.mac.engine_mut(), frame)?
+                else {
                     continue;
                 };
+                if readmitted_key != key {
+                    drop(frame);
+                    continue;
+                }
                 return control
                     .start_network_tx(hardware, frame.as_slice())
                     .map_err(Esp32s31AccessPointDatapathError::Control);
@@ -2408,7 +2482,9 @@ where
         self.prepared_first_key = None;
         self.prepared_second = None;
         self.prepared_second_key = None;
-        while self.pop_scheduled_active().is_some() {}
+        while let Some((_, index)) = self.active_frames.pop_scheduled() {
+            drop(self.frame_arena.take(index));
+        }
         if self.prepared_standby.take().is_some() {
             aggregate
                 .standby_mut()
@@ -2821,7 +2897,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ApActiveFrameQueues, ApFrameLeaseArena, ApTxFlowKey, aggregate_adapter_available};
+    use super::{
+        ApActiveFrameQueues, ApAssociationIdentity, ApFrameLeaseArena, ApPowerSaveFrameQueue,
+        ApTxFlowKey, aggregate_adapter_available,
+    };
 
     struct TestActiveArena<B> {
         leases: ApFrameLeaseArena<B>,
@@ -2865,19 +2944,22 @@ mod tests {
         }
     }
 
-    const FLOW_A: ApTxFlowKey = ApTxFlowKey {
-        peer: [0x02, 0, 0, 0, 0, 1],
-        tid: 0,
-    };
-    const FLOW_B: ApTxFlowKey = ApTxFlowKey {
-        peer: [0x02, 0, 0, 0, 0, 2],
-        tid: 0,
-    };
+    const FLOW_A: ApTxFlowKey =
+        ApTxFlowKey::associated(ApAssociationIdentity::new([0x02, 0, 0, 0, 0, 1], 1, 10).unwrap());
+    const FLOW_B: ApTxFlowKey =
+        ApTxFlowKey::associated(ApAssociationIdentity::new([0x02, 0, 0, 0, 0, 2], 2, 11).unwrap());
+    const FLOW_A_REASSOCIATED: ApTxFlowKey =
+        ApTxFlowKey::associated(ApAssociationIdentity::new([0x02, 0, 0, 0, 0, 1], 1, 12).unwrap());
 
     #[test]
     fn ordinary_publication_blocks_aggregate_adapter_borrow() {
         assert!(aggregate_adapter_available(false));
         assert!(!aggregate_adapter_available(true));
+    }
+
+    #[test]
+    fn generation_bound_flow_key_stays_compact() {
+        assert_eq!(core::mem::size_of::<ApTxFlowKey>(), 12);
     }
 
     #[test]
@@ -2911,6 +2993,35 @@ mod tests {
         assert_eq!(arena.pop_scheduled(), Some((FLOW_B, 20)));
         assert_eq!(arena.pop_scheduled(), Some((FLOW_A, 11)));
         assert_eq!(arena.pop_scheduled(), Some((FLOW_B, 21)));
+    }
+
+    #[test]
+    fn active_arena_never_merges_reused_peer_generations() {
+        let mut arena = TestActiveArena::new();
+        arena.push(FLOW_A, 10).unwrap();
+        arena.push(FLOW_A_REASSOCIATED, 20).unwrap();
+
+        assert_eq!(arena.len_for(FLOW_A), 1);
+        assert_eq!(arena.len_for(FLOW_A_REASSOCIATED), 1);
+        assert_eq!(arena.pop_key(FLOW_A), Some(10));
+        assert_eq!(arena.pop_key(FLOW_A_REASSOCIATED), Some(20));
+    }
+
+    #[test]
+    fn power_save_queue_drops_only_the_stale_association_generation() {
+        let first = FLOW_A.association().unwrap();
+        let replacement = FLOW_A_REASSOCIATED.association().unwrap();
+        let mut leases = ApFrameLeaseArena::new();
+        let mut queue = ApPowerSaveFrameQueue::new();
+        queue.push(first, 10, &mut leases).unwrap();
+        queue.push(replacement, 20, &mut leases).unwrap();
+
+        queue.retain(&mut leases, |identity| identity == replacement);
+
+        assert_eq!(queue.len, 1);
+        assert_eq!(queue.oldest_index_for(first), None);
+        let index = queue.oldest_index_for(replacement).unwrap();
+        assert_eq!(queue.take_at(index, &mut leases).unwrap().frame, 20);
     }
 
     #[test]

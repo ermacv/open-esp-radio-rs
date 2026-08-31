@@ -73,7 +73,11 @@ Consequences:
 - resolved-link selection occurs before final SRAM ownership, so separate IP
   queues behind one next hop do not fragment its radio quantum;
 - Core0 remains authoritative for peer generation, association, BA, key and
-  rate state; the generic link key is not sufficient to authorize stale work;
+  rate state; its active and power-save queues now retain and validate the
+  exact AID plus association epoch instead of merging by MAC;
+- the generic link key is not sufficient to authorize stale work, and Xarxa
+  backlog which has not yet crossed classification is still not bound to an
+  association generation;
 - multiple sockets/protocols can still make independent admission decisions
   because there is no interface-wide grant boundary yet;
 - round-robin equal packet bursts are not airtime fairness;

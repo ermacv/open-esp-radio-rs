@@ -182,6 +182,72 @@ pub enum ApDownlinkDisposition {
     Buffer,
 }
 
+/// Non-reusable identity of one associated AP peer.
+///
+/// The association ID names a bounded peer-table slot, but that slot can be
+/// reused after teardown. The epoch fences retained data and scheduler state
+/// from a later association which happens to reuse the same slot or address.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApAssociationIdentity {
+    address: [u8; 6],
+    association_id: u16,
+    association_epoch: u32,
+}
+
+impl ApAssociationIdentity {
+    pub const fn new(
+        address: [u8; 6],
+        association_id: u16,
+        association_epoch: u32,
+    ) -> Option<Self> {
+        if address[0] & 1 != 0
+            || association_id == 0
+            || association_id as usize > AP_MAX_CLIENTS
+            || association_epoch == 0
+        {
+            return None;
+        }
+        Some(Self {
+            address,
+            association_id,
+            association_epoch,
+        })
+    }
+
+    pub const fn address(self) -> [u8; 6] {
+        self.address
+    }
+
+    pub const fn association_id(self) -> u16 {
+        self.association_id
+    }
+
+    pub const fn association_epoch(self) -> u32 {
+        self.association_epoch
+    }
+}
+
+/// Ownership decision for one authorized unicast downlink.
+///
+/// Keeping the generation-bound identity beside the power-save decision lets
+/// a caller retain the payload without rescanning the peer table or reducing
+/// its owner to a reusable MAC address.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApDownlinkAdmission {
+    identity: ApAssociationIdentity,
+    disposition: ApDownlinkDisposition,
+}
+
+impl ApDownlinkAdmission {
+    pub const fn identity(self) -> ApAssociationIdentity {
+        self.identity
+    }
+
+    pub const fn disposition(self) -> ApDownlinkDisposition {
+        self.disposition
+    }
+}
+
 /// Semantic result of one admitted PM-bit or PS-Poll observation.
 ///
 /// `ReleaseOne` reserves exactly one buffered-frame count until
@@ -201,19 +267,21 @@ pub enum ApPowerSaveAction {
 /// Affine reservation for one caller-owned buffered unicast frame.
 #[derive(Debug, Eq, PartialEq)]
 pub struct ApBufferedUnicastRelease {
-    peer: [u8; 6],
-    association_id: u16,
-    generation: u32,
+    identity: ApAssociationIdentity,
     more_data: bool,
 }
 
 impl ApBufferedUnicastRelease {
     pub const fn peer(&self) -> [u8; 6] {
-        self.peer
+        self.identity.address()
     }
 
     pub const fn association_id(&self) -> u16 {
-        self.association_id
+        self.identity.association_id()
+    }
+
+    pub const fn identity(&self) -> ApAssociationIdentity {
+        self.identity
     }
 
     /// Value for the 802.11 More Data bit on the released MPDU.
@@ -389,7 +457,6 @@ struct ApPeer {
     power_state: ApPeerPowerState,
     buffered_unicast_frames: u16,
     buffered_release_in_flight: bool,
-    buffered_release_generation: u32,
     last_activity_micros: u64,
     deadline_micros: u64,
 }
@@ -447,9 +514,16 @@ impl ApPeer {
             power_state: ApPeerPowerState::Active,
             buffered_unicast_frames: 0,
             buffered_release_in_flight: false,
-            buffered_release_generation: 0,
             last_activity_micros: now_micros,
             deadline_micros: now_micros.saturating_add(AP_ASSOCIATION_DEADLINE_MICROS),
+        }
+    }
+
+    const fn association_identity(&self) -> ApAssociationIdentity {
+        ApAssociationIdentity {
+            address: self.address,
+            association_id: self.association_id,
+            association_epoch: self.association_epoch,
         }
     }
 }
@@ -517,6 +591,16 @@ pub struct ApPeerStatus {
     pub buffered_release_in_flight: bool,
     pub last_activity_micros: u64,
     pub deadline_micros: u64,
+}
+
+impl ApPeerStatus {
+    pub const fn association_identity(self) -> ApAssociationIdentity {
+        ApAssociationIdentity {
+            address: self.address,
+            association_id: self.association_id,
+            association_epoch: self.association_epoch,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -783,24 +867,30 @@ impl<'peers> AccessPointService<'peers> {
     /// The service never stores the frame itself. A `Buffer` result requires
     /// the caller to retain the frame first and only then call
     /// [`Self::commit_buffered_unicast`].
-    pub fn downlink_disposition(
-        &self,
-        peer: [u8; 6],
-    ) -> Result<ApDownlinkDisposition, ApServiceError> {
+    pub fn admit_downlink(&self, peer: [u8; 6]) -> Result<ApDownlinkAdmission, ApServiceError> {
         let peer = self.checked_peer(peer)?;
         if peer.phase != ApPeerPhase::Authorized {
             return Err(ApServiceError::WrongPeerPhase);
         }
-        Ok(match peer.power_state {
+        let disposition = match peer.power_state {
             ApPeerPowerState::Active => ApDownlinkDisposition::TransmitNow,
             ApPeerPowerState::Sleeping => ApDownlinkDisposition::Buffer,
+        };
+        Ok(ApDownlinkAdmission {
+            identity: peer.association_identity(),
+            disposition,
         })
     }
 
     /// Commit one frame already retained by the caller's per-peer queue.
-    pub fn commit_buffered_unicast(&mut self, peer: [u8; 6]) -> Result<u16, ApServiceError> {
+    pub fn commit_buffered_unicast(
+        &mut self,
+        identity: ApAssociationIdentity,
+    ) -> Result<u16, ApServiceError> {
         let buffered = {
-            let peer = self.checked_peer_mut(peer)?;
+            let peer = self
+                .bound_association_mut(identity)
+                .ok_or(ApServiceError::UnknownPeer)?;
             if peer.phase != ApPeerPhase::Authorized
                 || peer.power_state != ApPeerPowerState::Sleeping
             {
@@ -822,10 +912,12 @@ impl<'peers> AccessPointService<'peers> {
     /// a second dequeue cannot overtake an unaccounted first frame.
     pub fn begin_buffered_unicast_release(
         &mut self,
-        peer: [u8; 6],
+        identity: ApAssociationIdentity,
     ) -> Result<Option<ApBufferedUnicastRelease>, ApServiceError> {
         let token = {
-            let peer = self.checked_peer_mut(peer)?;
+            let peer = self
+                .bound_association_mut(identity)
+                .ok_or(ApServiceError::UnknownPeer)?;
             if peer.phase != ApPeerPhase::Authorized {
                 return Err(ApServiceError::WrongPeerPhase);
             }
@@ -835,15 +927,9 @@ impl<'peers> AccessPointService<'peers> {
             if peer.buffered_unicast_frames == 0 {
                 return Ok(None);
             }
-            peer.buffered_release_generation = peer
-                .buffered_release_generation
-                .checked_add(1)
-                .ok_or(ApServiceError::BufferedTrafficOverflow)?;
             peer.buffered_release_in_flight = true;
             ApBufferedUnicastRelease {
-                peer: peer.address,
-                association_id: peer.association_id,
-                generation: peer.buffered_release_generation,
+                identity,
                 more_data: peer.buffered_unicast_frames > 1,
             }
         };
@@ -859,13 +945,13 @@ impl<'peers> AccessPointService<'peers> {
         delivered: bool,
     ) -> Result<u16, ApServiceError> {
         let remaining = {
-            let peer = self.checked_peer_mut(release.peer)?;
-            if peer.association_id != release.association_id {
-                return Err(ApServiceError::AssociationIdMismatch);
-            }
-            if !peer.buffered_release_in_flight
-                || peer.buffered_release_generation != release.generation
-            {
+            let peer = self
+                .bound_association_mut(release.identity)
+                .ok_or(ApServiceError::AssociationIdMismatch)?;
+            // The release is affine and this peer permits only one release
+            // in flight. Association identity fences slot reuse, so a second
+            // serial number would duplicate those two ownership invariants.
+            if !peer.buffered_release_in_flight {
                 return Err(ApServiceError::StaleBufferedRelease);
             }
             if delivered {
@@ -925,7 +1011,8 @@ impl<'peers> AccessPointService<'peers> {
                 if release_already_pending {
                     return Ok(ApPowerSaveAction::None);
                 }
-                Ok(match self.begin_buffered_unicast_release(peer)? {
+                let identity = self.checked_peer(peer)?.association_identity();
+                Ok(match self.begin_buffered_unicast_release(identity)? {
                     Some(release) => ApPowerSaveAction::ReleaseOne(release),
                     None => ApPowerSaveAction::None,
                 })
@@ -2039,6 +2126,60 @@ impl<'peers> AccessPointService<'peers> {
             .position(|existing| existing.as_ref().is_some_and(|value| value.address == peer))
     }
 
+    fn bound_association(&self, identity: ApAssociationIdentity) -> Option<&ApPeer> {
+        let index = usize::from(identity.association_id.checked_sub(1)?);
+        self.storage().peers.get(index)?.as_ref().filter(|peer| {
+            peer.address == identity.address
+                && peer.association_id == identity.association_id
+                && peer.association_epoch == identity.association_epoch
+        })
+    }
+
+    fn bound_association_mut(&mut self, identity: ApAssociationIdentity) -> Option<&mut ApPeer> {
+        let index = usize::from(identity.association_id.checked_sub(1)?);
+        self.storage_mut()
+            .peers
+            .get_mut(index)?
+            .as_mut()
+            .filter(|peer| {
+                peer.address == identity.address
+                    && peer.association_id == identity.association_id
+                    && peer.association_epoch == identity.association_epoch
+            })
+    }
+
+    /// Validate a retained association identity without scanning the peer
+    /// table. This is the queue-generation fence used immediately before a
+    /// caller releases old payload ownership into a new radio transaction.
+    pub fn association_is_current(&self, identity: ApAssociationIdentity) -> bool {
+        self.bound_association(identity)
+            .is_some_and(|peer| peer.phase == ApPeerPhase::Authorized)
+    }
+
+    /// Return the current authorized state after the same O(1) identity
+    /// validation when the caller also needs power-save or BA metadata.
+    pub fn bound_authorized_peer_status(
+        &self,
+        identity: ApAssociationIdentity,
+    ) -> Option<ApPeerStatus> {
+        let peer = self.bound_association(identity)?;
+        (peer.phase == ApPeerPhase::Authorized).then(|| ApPeerStatus {
+            address: peer.address,
+            association_id: peer.association_id,
+            association_epoch: peer.association_epoch,
+            phase: peer.phase,
+            maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+            ht: peer.ht,
+            qos_supported: peer.qos_supported,
+            tx_block_ack: peer.tx_block_ack.operational(),
+            power_state: peer.power_state,
+            buffered_unicast_frames: peer.buffered_unicast_frames,
+            buffered_release_in_flight: peer.buffered_release_in_flight,
+            last_activity_micros: peer.last_activity_micros,
+            deadline_micros: peer.deadline_micros,
+        })
+    }
+
     fn bound_peer(&self, binding: ApPeerBinding) -> Option<&ApPeer> {
         if self.storage().generation != binding.generation {
             return None;
@@ -2272,6 +2413,70 @@ mod tests {
         assert_eq!(service.bound_peer_status(first), None);
         assert_eq!(service.bound_peer_status(second).unwrap().address, OTHER);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn buffered_downlink_identity_cannot_cross_same_address_reassociation() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = AccessPointService::new_open(
+            AP,
+            AccessPointClientLimit::new(1).unwrap(),
+            AccessPointInactiveTimeout::default(),
+            &mut storage,
+        );
+        let open_security = ApAssociationSecurityObservation {
+            privacy: false,
+            rsn_ie: None,
+            rsn_ie_count: 0,
+            rsnxe: None,
+            rsnxe_count: 0,
+            legacy_wpa_present: false,
+            malformed_elements: false,
+        };
+
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_open(PEER, open_security, LEGACY_CAPABILITIES, 1)
+            .unwrap();
+        service
+            .observe_power_save(ApPowerSaveObservation::Sleeping { peer: PEER }, 2)
+            .unwrap();
+        let first = service.admit_downlink(PEER).unwrap();
+        assert_eq!(first.disposition(), ApDownlinkDisposition::Buffer);
+        service.commit_buffered_unicast(first.identity()).unwrap();
+        let release = service
+            .begin_buffered_unicast_release(first.identity())
+            .unwrap()
+            .unwrap();
+
+        service.remove_peer(PEER).unwrap();
+        service.authenticate_open(PEER, 3);
+        service
+            .associate_open(PEER, open_security, LEGACY_CAPABILITIES, 4)
+            .unwrap();
+        let second = service.admit_downlink(PEER).unwrap();
+        assert_eq!(
+            first.identity().association_id(),
+            second.identity().association_id()
+        );
+        assert_ne!(
+            first.identity().association_epoch(),
+            second.identity().association_epoch()
+        );
+        assert_eq!(
+            service.bound_authorized_peer_status(first.identity()),
+            None,
+            "an old queue owner must not bind to the reused AID and MAC"
+        );
+        assert_eq!(
+            service.complete_buffered_unicast_release(release, false),
+            Err(ApServiceError::AssociationIdMismatch),
+            "an affine release from the old epoch must fail closed"
+        );
+        assert_eq!(
+            service.commit_buffered_unicast(first.identity()),
+            Err(ApServiceError::UnknownPeer),
+        );
     }
 
     #[test]

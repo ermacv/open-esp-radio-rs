@@ -1,7 +1,7 @@
 # Wi-Fi TX network-driver API change audit
 
-Status: route/key separation and generation-bound AP peer publication complete,
-2026-08-31.
+Status: route/key separation, generation-bound AP peer publication and Core0
+queue fencing complete, 2026-08-31.
 
 ## Current implementation status
 
@@ -78,16 +78,26 @@ no writes, so buffered-frame counters and other unrelated AP status changes
 do not bounce the directory. The table is cleared at the terminal AP service
 edge.
 
-This endpoint topology is queue geometry, not radio authorization. The
-published association epoch prevents unrelated peer generations from sharing
-a queue identity, but it does not make queued payload valid for a later
-association. Final peer validation, backlog purge, TID/AC grants and airtime
-debt still belong to the Core0 radio owner. The adapter requests a BA32-sized
-keyed run and a four-packet socket quantum while the link is up, but its
-current `transmit_for` still grants from the same global direct-SRAM pool and
-does not yet return `KeyDeferred`. Therefore this refactor fixes the
-classification boundary but does not yet implement airtime fairness, stale
-backlog revocation or PSRAM spill.
+This endpoint topology is queue geometry, not radio authorization. Core0 now
+uses the same non-reusable `AID + association epoch` concept for every
+classified active SRAM lease, aggregate admission and power-save lease. The
+portable AP returns a typed association identity together with the downlink
+decision, and affine power-save release tokens validate that complete identity
+through an O(1) slot lookup. A disconnect/reassociation therefore cannot merge
+old and new Core0 flows or release a sleeping-peer payload into the reused
+slot. Focused regressions cover reuse of both the same AID and the same MAC.
+
+This does not yet make the earlier Xarxa socket backlog generation-owned. A
+payload which remains above egress classification until after reassociation
+can still acquire the new key when it is eventually selected. Final
+pre-classification backlog revocation, TID/AC grants and airtime debt still
+belong to the Core0 radio scheduler plus the future cross-core grant boundary.
+The adapter requests a BA32-sized keyed run and a four-packet socket quantum
+while the link is up, but its current `transmit_for` still grants from the same
+global direct-SRAM pool and does not yet return `KeyDeferred`. Therefore the
+current refactor fixes classification and post-classification generation
+fencing, but does not yet implement airtime fairness, complete stale-backlog
+revocation or PSRAM spill.
 
 No payload-memory architecture changed in this step. Frames are still built
 directly in SRAM slots and transferred to Core0 without a complete-frame

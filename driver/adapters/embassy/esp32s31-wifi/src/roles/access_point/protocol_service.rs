@@ -66,13 +66,10 @@ fn retain_ap_power_save_action(
             state: ApPeerPowerState::Active,
             buffered_frames,
         } if buffered_frames != 0 => {
-            if engine
-                .peer_status(peer)
-                .is_some_and(|status| status.buffered_release_in_flight)
-            {
-                None
-            } else {
-                engine.begin_buffered_unicast_release(peer)?
+            match engine.peer_status(peer) {
+                Some(status) if !status.buffered_release_in_flight => engine
+                    .begin_buffered_unicast_release(status.association_identity())?,
+                Some(_) | None => None,
             }
         }
         ApPowerSaveAction::None | ApPowerSaveAction::StateChanged { .. } => None,

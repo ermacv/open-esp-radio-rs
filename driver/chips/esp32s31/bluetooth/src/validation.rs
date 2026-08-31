@@ -197,7 +197,7 @@ pub unsafe fn initialize_phy_registers(
     private_timing_source_byte: u8,
     environment_address: u32,
     resolving_list_address: u32,
-    ignore_allowlist_for_directed_advertising: bool,
+    set_branch_control_0470_bit_18: bool,
     runtime_configuration_low_byte: u8,
 ) -> bool {
     let Ok(resolving_list) = BluetoothControllerSramAddress::new(resolving_list_address) else {
@@ -208,7 +208,7 @@ pub unsafe fn initialize_phy_registers(
             private_timing_source_byte,
             environment_address,
             resolving_list,
-            ignore_allowlist_for_directed_advertising,
+            set_branch_control_0470_bit_18,
             runtime_configuration_low_byte,
         )
     }

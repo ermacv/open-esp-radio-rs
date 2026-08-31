@@ -23,7 +23,7 @@ use crate::resources::BluetoothInterruptBankOwner;
 #[cfg(any(target_arch = "riscv32", test))]
 struct BluetoothBlePhyInitializationProfile {
     private_timing_source_byte: u8,
-    ignore_allowlist_for_directed_advertising: bool,
+    set_branch_control_0470_bit_18: bool,
     runtime_configuration_low_byte: u8,
 }
 
@@ -31,7 +31,7 @@ struct BluetoothBlePhyInitializationProfile {
 impl BluetoothBlePhyInitializationProfile {
     const NORMAL: Self = Self {
         private_timing_source_byte: 61,
-        ignore_allowlist_for_directed_advertising: false,
+        set_branch_control_0470_bit_18: false,
         runtime_configuration_low_byte: 0x9c,
     };
 
@@ -44,7 +44,7 @@ impl BluetoothBlePhyInitializationProfile {
             self.private_timing_source_byte,
             binding.environment_address(),
             binding.resolving_list_address(),
-            self.ignore_allowlist_for_directed_advertising,
+            self.set_branch_control_0470_bit_18,
             self.runtime_configuration_low_byte,
         )
     }

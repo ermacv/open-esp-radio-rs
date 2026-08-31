@@ -5109,8 +5109,8 @@ scope = []
 register-method = "init_branch_control_0470"
 
 [[registers.fields]]
-svd-name = "INIT_ENABLE_18"
-method = "init_enable_18"
+svd-name = "SET_BY_PHY_INIT_BRANCH_BIT_18"
+method = "set_by_phy_init_branch_bit_18"
 bit-offset = 18
 bit-width = 1
 access = "read-write"

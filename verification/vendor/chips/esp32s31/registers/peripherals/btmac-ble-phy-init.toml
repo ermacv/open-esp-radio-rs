@@ -221,7 +221,8 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_ENABLE_18"
+name = "SET_BY_PHY_INIT_BRANCH_BIT_18"
+description = "The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."
 bitOffset = 18
 bitWidth = 1
 
@@ -479,7 +480,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470.INIT_ENABLE_18"
+entity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470.SET_BY_PHY_INIT_BRANCH_BIT_18"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"

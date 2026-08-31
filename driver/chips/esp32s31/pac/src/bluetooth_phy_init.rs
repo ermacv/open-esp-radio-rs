@@ -92,7 +92,7 @@ pub struct BluetoothPhyRegisterInitInputs {
     private_timing_source_byte: u8,
     environment: BluetoothPhyEnvironmentAddress,
     resolving_list: BluetoothControllerSramAddress,
-    ignore_allowlist_for_directed_advertising: bool,
+    set_branch_control_0470_bit_18: bool,
     runtime_configuration_low_byte: u8,
 }
 
@@ -105,14 +105,14 @@ impl BluetoothPhyRegisterInitInputs {
         private_timing_source_byte: u8,
         environment: BluetoothPhyEnvironmentAddress,
         resolving_list: BluetoothControllerSramAddress,
-        ignore_allowlist_for_directed_advertising: bool,
+        set_branch_control_0470_bit_18: bool,
         runtime_configuration_low_byte: u8,
     ) -> Self {
         Self {
             private_timing_source_byte,
             environment,
             resolving_list,
-            ignore_allowlist_for_directed_advertising,
+            set_branch_control_0470_bit_18,
             runtime_configuration_low_byte,
         }
     }
@@ -260,8 +260,8 @@ impl BluetoothTaskRegisters {
             &bluetooth.ble_phy_init_phase,
         );
 
-        if inputs.ignore_allowlist_for_directed_advertising {
-            super::generated::enable_ble_phy_init_branch_control_0470(btmac);
+        if inputs.set_branch_control_0470_bit_18 {
+            super::generated::set_ble_phy_init_branch_control_0470_bit_18(btmac);
         }
 
         super::svd::zero_based_field_write::publish_ble_phy_runtime_configuration(

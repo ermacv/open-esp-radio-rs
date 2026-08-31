@@ -180,7 +180,7 @@ pub extern "C" fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_y
     private_timing_source_byte: u32,
     environment_address: u32,
     resolving_list_address: u32,
-    ignore_allowlist_for_directed_advertising: u32,
+    set_branch_control_0470_bit_18: u32,
     runtime_configuration_low_byte: u32,
 ) {
     // SAFETY: every comparison case models the recovered prerequisite state,
@@ -188,14 +188,13 @@ pub extern "C" fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_y
     // no later radio operation, and terminates without reconstructing cold
     // ownership.
     unsafe {
-        let _accepted =
-            open_esp_radio_esp32s31_bluetooth::validation::initialize_phy_registers(
-                private_timing_source_byte as u8,
-                environment_address,
-                resolving_list_address,
-                ignore_allowlist_for_directed_advertising != 0,
-                runtime_configuration_low_byte as u8,
-            );
+        let _accepted = open_esp_radio_esp32s31_bluetooth::validation::initialize_phy_registers(
+            private_timing_source_byte as u8,
+            environment_address,
+            resolving_list_address,
+            set_branch_control_0470_bit_18 != 0,
+            runtime_configuration_low_byte as u8,
+        );
     }
 }
 

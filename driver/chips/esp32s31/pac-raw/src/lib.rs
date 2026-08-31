@@ -40111,22 +40111,24 @@ pub mod btmac_ble_phy_init {
         pub type R = crate::R<InitBranchControl0470Spec>;
         #[doc = "Register `INIT_BRANCH_CONTROL_0470` writer"]
         pub type W = crate::W<InitBranchControl0470Spec>;
-        #[doc = "Field `INIT_ENABLE_18` reader - "]
-        pub type InitEnable18R = crate::BitReader;
-        #[doc = "Field `INIT_ENABLE_18` writer - "]
-        pub type InitEnable18W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` reader - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+        pub type SetByPhyInitBranchBit18R = crate::BitReader;
+        #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` writer - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+        pub type SetByPhyInitBranchBit18W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 18"]
+            #[doc = "Bit 18 - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
-            pub fn init_enable_18(&self) -> InitEnable18R {
-                InitEnable18R::new(((self.bits >> 18) & 1) != 0)
+            pub fn set_by_phy_init_branch_bit_18(&self) -> SetByPhyInitBranchBit18R {
+                SetByPhyInitBranchBit18R::new(((self.bits >> 18) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 18"]
+            #[doc = "Bit 18 - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
-            pub fn init_enable_18(&mut self) -> InitEnable18W<'_, InitBranchControl0470Spec> {
-                InitEnable18W::new(self, 18)
+            pub fn set_by_phy_init_branch_bit_18(
+                &mut self,
+            ) -> SetByPhyInitBranchBit18W<'_, InitBranchControl0470Spec> {
+                SetByPhyInitBranchBit18W::new(self, 18)
             }
         }
         #[doc = "One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_branch_control_0470::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_branch_control_0470::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -62704,9 +62706,9 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields [INIT_ENABLE_18] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields [SET_BY_PHY_INIT_BRANCH_BIT_18] while preserving the fresh register observation.
     #[inline]
-    pub fn enable_ble_phy_init_branch_control_0470(registers: &crate::BtmacBlePhyInit) {
+    pub fn set_ble_phy_init_branch_control_0470_bit_18(registers: &crate::BtmacBlePhyInit) {
         registers
             .init_branch_control_0470()
             .modify(|reader, writer| {
@@ -62714,8 +62716,8 @@ pub mod field_or_modify {
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
                 writer
-                    .init_enable_18()
-                    .bit(reader.init_enable_18().bit() || (input & 0x00000001) != 0)
+                    .set_by_phy_init_branch_bit_18()
+                    .bit(reader.set_by_phy_init_branch_bit_18().bit() || (input & 0x00000001) != 0)
             });
     }
 

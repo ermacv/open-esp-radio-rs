@@ -17080,7 +17080,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_ENABLE_18</name>
+              <name>SET_BY_PHY_INIT_BRANCH_BIT_18</name>
+              <description>The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven.</description>
               <bitOffset>18</bitOffset>
               <bitWidth>1</bitWidth>
             </field>

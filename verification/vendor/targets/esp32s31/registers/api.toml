@@ -3209,10 +3209,10 @@ exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[field-or-modifies]]
-name = "enable_ble_phy_init_branch_control_0470"
+name = "set_ble_phy_init_branch_control_0470_bit_18"
 peripheral = "BTMAC_BLE_PHY_INIT"
 register = "INIT_BRANCH_CONTROL_0470"
-fields = [{ field = "INIT_ENABLE_18", source-bit-offset = 0 }]
+fields = [{ field = "SET_BY_PHY_INIT_BRANCH_BIT_18", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]

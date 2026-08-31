@@ -90,9 +90,6 @@ const SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET: usize = 0x50 / 4;
 const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4;
 const RX_PACKET_WORDS: usize = BLUETOOTH_DTM_RX_PACKET_BYTES.div_ceil(4);
-const RX_PACKET_CAPACITY_WORD: usize = 1;
-const RX_PACKET_RESULT_WORD: usize = 3;
-const RX_PACKET_METADATA_WORD: usize = 6;
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 const PRIVATE_SCHEDULER_ALLOCATION_ADDITION: u32 = 5;
 
@@ -425,6 +422,10 @@ pub struct BluetoothDtmBufferHeaderStorage {
 }
 
 impl BluetoothDtmBufferHeaderStorage {
+    const RX_LINK_MASK: u32 = 0x000f_ffff;
+    const RX_COMPLETION_OBSERVED_MASK: u32 = 0x8000_0000;
+    const RX_SOFTWARE_TERMINAL_MASK: u32 = 1;
+
     fn read_word(&self, index: usize) -> u32 {
         self.words[index].get()
     }
@@ -441,6 +442,125 @@ impl BluetoothDtmBufferHeaderStorage {
 
     fn snapshot_words(&self) -> [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4] {
         core::array::from_fn(|index| self.read_word(index))
+    }
+
+    fn rx_successor_link(&self) -> Option<BluetoothDtmRxHeaderSuccessorLink> {
+        BluetoothDtmRxHeaderSuccessorLink::from_image(self.read_word(0) & Self::RX_LINK_MASK)
+    }
+
+    fn set_rx_successor_link(&self, link: Option<BluetoothDtmRxHeaderSuccessorLink>) {
+        let current = self.read_word(0);
+        let image = link.map_or(0, BluetoothDtmRxHeaderSuccessorLink::image);
+        self.write_word(0, (current & !Self::RX_LINK_MASK) | image);
+    }
+
+    fn rx_packet_link(&self) -> Option<BluetoothDtmRxPacketLink> {
+        BluetoothDtmRxPacketLink::from_image(self.read_word(1) & Self::RX_LINK_MASK)
+    }
+
+    fn clear_rx_packet_link(&self) {
+        let current = self.read_word(1);
+        self.write_word(1, current & !Self::RX_LINK_MASK);
+    }
+
+    /// Observe the controller-written completion state only after the exact
+    /// finished-list report fence retained by the recycle transaction.
+    fn observe_rx_completion_after_fence(
+        &self,
+        _fenced: &BluetoothDtmMemoryGraphRecyclePrepared,
+    ) -> BluetoothDtmRxHeaderCompletionObservation {
+        BluetoothDtmRxHeaderCompletionObservation(
+            self.read_word(3) & Self::RX_COMPLETION_OBSERVED_MASK != 0,
+        )
+    }
+
+    fn clear_rx_completion_observation(&self) {
+        let current = self.read_word(3);
+        self.write_word(3, current & !Self::RX_COMPLETION_OBSERVED_MASK);
+    }
+
+    #[cfg(test)]
+    fn model_controller_completion_observed(&self) {
+        let current = self.read_word(3);
+        self.write_word(3, current | Self::RX_COMPLETION_OBSERVED_MASK);
+    }
+
+    fn set_rx_software_terminal(&self, terminal: bool) {
+        let current = self.read_word(4);
+        let value = if terminal {
+            current | Self::RX_SOFTWARE_TERMINAL_MASK
+        } else {
+            current & !Self::RX_SOFTWARE_TERMINAL_MASK
+        };
+        self.write_word(4, value);
+    }
+
+    fn rx_backlink(&self) -> Option<BluetoothDtmRxHeaderBacklink> {
+        BluetoothDtmRxHeaderBacklink::from_address(self.read_word(5))
+    }
+
+    fn set_rx_backlink(&self, backlink: Option<BluetoothDtmRxHeaderBacklink>) {
+        self.write_word(5, backlink.map_or(0, BluetoothDtmRxHeaderBacklink::address));
+    }
+
+    fn copy_complete_rx_image_from(&self, source: &Self) {
+        self.install(source.snapshot_words());
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothDtmRxHeaderSuccessorLink(u32);
+
+impl BluetoothDtmRxHeaderSuccessorLink {
+    fn from_image(image: u32) -> Option<Self> {
+        (image != 0).then_some(Self(image))
+    }
+
+    const fn from_bound(address: BluetoothDtmBoundSramLinkAddress) -> Self {
+        Self(address.compressed_image())
+    }
+
+    const fn image(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothDtmRxPacketLink(u32);
+
+impl BluetoothDtmRxPacketLink {
+    fn from_image(image: u32) -> Option<Self> {
+        (image != 0).then_some(Self(image))
+    }
+
+    const fn from_bound(packet: BluetoothDtmRxPacketAddress) -> Self {
+        Self(packet.compressed_image())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothDtmRxHeaderBacklink(u32);
+
+impl BluetoothDtmRxHeaderBacklink {
+    fn from_address(address: u32) -> Option<Self> {
+        (address != 0).then_some(Self(address))
+    }
+
+    const fn bound(address: BluetoothControllerSramAddress) -> Self {
+        Self(address.address())
+    }
+
+    const fn address(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothDtmRxHeaderCompletionObservation(bool);
+
+impl BluetoothDtmRxHeaderCompletionObservation {
+    const fn is_completed(self) -> bool {
+        self.0
     }
 }
 
@@ -547,15 +667,22 @@ pub struct BluetoothDtmRxPacketStorage {
 }
 
 impl BluetoothDtmRxPacketStorage {
+    const CAPACITY_WORD: usize = 1;
+    const RESULT_WORD: usize = 3;
+    const AUXILIARY_REARM_WORD: usize = 6;
+    const RESULT_REARM_SENTINEL: u32 = 0x00ff_ffff;
+    const AUXILIARY_REARM_SENTINEL: u32 = 0x0000_ffff;
+
     /// Create one zero-based slot and apply the reviewed maximum-capacity
     /// allocation and re-arm images.
     pub const fn new() -> Self {
         let mut storage = Self {
             words: [const { VolatileCell::new(0) }; RX_PACKET_WORDS],
         };
-        storage.words[RX_PACKET_CAPACITY_WORD] = VolatileCell::new(0x0001_0100);
-        storage.words[RX_PACKET_RESULT_WORD] = VolatileCell::new(0x00ff_ffff);
-        storage.words[RX_PACKET_METADATA_WORD] = VolatileCell::new(0x0000_ffff);
+        storage.words[Self::CAPACITY_WORD] = VolatileCell::new(0x0001_0100);
+        storage.words[Self::RESULT_WORD] = VolatileCell::new(Self::RESULT_REARM_SENTINEL);
+        storage.words[Self::AUXILIARY_REARM_WORD] =
+            VolatileCell::new(Self::AUXILIARY_REARM_SENTINEL);
         storage
     }
 
@@ -587,18 +714,70 @@ impl BluetoothDtmRxPacketStorage {
     /// deliberately retained. Halfword `+0x18` becomes `0xffff`.
     fn rearm_reviewed_packet_fields(&self) {
         self.write_word(
-            RX_PACKET_RESULT_WORD,
-            self.read_word(RX_PACKET_RESULT_WORD) | 0x00ff_ffff,
+            Self::RESULT_WORD,
+            self.read_word(Self::RESULT_WORD) | Self::RESULT_REARM_SENTINEL,
         );
         self.write_word(
-            RX_PACKET_METADATA_WORD,
-            self.read_word(RX_PACKET_METADATA_WORD) | 0x0000_ffff,
+            Self::AUXILIARY_REARM_WORD,
+            self.read_word(Self::AUXILIARY_REARM_WORD) | Self::AUXILIARY_REARM_SENTINEL,
         );
     }
 
-    fn result_word(&self) -> u32 {
-        self.read_word(RX_PACKET_RESULT_WORD)
+    fn initialize_reviewed_allocation_fields(&self) {
+        self.write_word(Self::CAPACITY_WORD, 0x0001_0100);
+        self.rearm_reviewed_packet_fields();
     }
+
+    /// Observe controller-written packet fields only through the retained
+    /// post-report owner. `BluetoothDtmMemoryGraphRecyclePrepared` contains the
+    /// exact running graph after its finished-list report fence and the later
+    /// software-list removal proof, so no CPU-owned or merely published graph
+    /// can construct this observation.
+    fn observe_after_fenced_completion(
+        &self,
+        _fenced: &BluetoothDtmMemoryGraphRecyclePrepared,
+    ) -> Result<
+        BluetoothDtmRxPacketCompletionObservation,
+        BluetoothDtmRxPacketCompletionObservationError,
+    > {
+        let result_word = self.read_word(Self::RESULT_WORD);
+        if result_word & Self::RESULT_REARM_SENTINEL == Self::RESULT_REARM_SENTINEL {
+            return Err(BluetoothDtmRxPacketCompletionObservationError::ResultNotProduced);
+        }
+        if self.read_word(Self::AUXILIARY_REARM_WORD) & Self::AUXILIARY_REARM_SENTINEL
+            == Self::AUXILIARY_REARM_SENTINEL
+        {
+            return Err(BluetoothDtmRxPacketCompletionObservationError::AuxiliaryNotProduced);
+        }
+        Ok(BluetoothDtmRxPacketCompletionObservation {
+            projection: BluetoothDtmRxResultProjection::from_word(result_word),
+        })
+    }
+
+    #[cfg(test)]
+    fn model_controller_completion(&self, result_word: u32, auxiliary: u16) {
+        self.write_word(Self::RESULT_WORD, result_word);
+        self.write_word(Self::AUXILIARY_REARM_WORD, u32::from(auxiliary));
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BluetoothDtmRxPacketCompletionObservation {
+    projection: Result<BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError>,
+}
+
+impl BluetoothDtmRxPacketCompletionObservation {
+    const fn projection(
+        self,
+    ) -> Result<BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError> {
+        self.projection
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BluetoothDtmRxPacketCompletionObservationError {
+    ResultNotProduced,
+    AuxiliaryNotProduced,
 }
 
 impl Default for BluetoothDtmRxPacketStorage {
@@ -1523,7 +1702,7 @@ enum BluetoothDtmRxRotationPlan {
         returned: BluetoothDtmRxHeaderSlot,
         copy_target: BluetoothDtmRxHeaderSlot,
         steady: bool,
-        result_word: u32,
+        packet: BluetoothDtmRxPacketCompletionObservation,
     },
 }
 
@@ -1559,9 +1738,21 @@ impl BluetoothDtmRxRotationPlan {
             BluetoothDtmRxHeaderSlot::Primary => &storage.rx_header,
             BluetoothDtmRxHeaderSlot::Swap => &storage.rx_swap_reserve,
         };
-        let compressed = |slot| match slot {
-            BluetoothDtmRxHeaderSlot::Primary => binding.rx_header.compressed_image(),
-            BluetoothDtmRxHeaderSlot::Swap => binding.rx_swap_reserve.compressed_image(),
+        let successor = |slot| match slot {
+            BluetoothDtmRxHeaderSlot::Primary => {
+                BluetoothDtmRxHeaderSuccessorLink::from_bound(binding.rx_header)
+            }
+            BluetoothDtmRxHeaderSlot::Swap => {
+                BluetoothDtmRxHeaderSuccessorLink::from_bound(binding.rx_swap_reserve)
+            }
+        };
+        let backlink = |slot| match slot {
+            BluetoothDtmRxHeaderSlot::Primary => {
+                BluetoothDtmRxHeaderBacklink::bound(binding.rx_header.controller_address())
+            }
+            BluetoothDtmRxHeaderSlot::Swap => {
+                BluetoothDtmRxHeaderBacklink::bound(binding.rx_swap_reserve.controller_address())
+            }
         };
 
         let (returned, copy_target, steady) = if head == tail {
@@ -1574,12 +1765,10 @@ impl BluetoothDtmRxRotationPlan {
                 return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::RxSwapIdentityMismatch);
             }
             let reserve = header(copy_target);
-            if reserve.read_word(0) & LOW_TWENTY_MASK != 0
-                || reserve.read_word(1) & LOW_TWENTY_MASK != 0
-            {
+            if reserve.rx_successor_link().is_some() || reserve.rx_packet_link().is_some() {
                 return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::ReserveNotDetached);
             }
-            if header(tail).read_word(5) != 0 {
+            if header(tail).rx_backlink().is_some() {
                 return Err(
                     BluetoothDtmMemoryGraphRxSuccessRecycleError::InitialBacklinkUnexpected,
                 );
@@ -1590,24 +1779,23 @@ impl BluetoothDtmRxRotationPlan {
                 return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::SwapReserveUnexpected);
             }
             let predecessor = header(head);
-            if predecessor.read_word(1) & LOW_TWENTY_MASK != 0 {
+            if predecessor.rx_packet_link().is_some() {
                 return Err(
                     BluetoothDtmMemoryGraphRxSuccessRecycleError::PredecessorPacketStillBound,
                 );
             }
-            if predecessor.read_word(0) & LOW_TWENTY_MASK != compressed(tail) {
+            if predecessor.rx_successor_link() != Some(successor(tail)) {
                 return Err(
                     BluetoothDtmMemoryGraphRxSuccessRecycleError::PredecessorSuccessorMismatch,
                 );
             }
-            if predecessor.read_word(3) & 0x8000_0000 == 0 {
+            if !predecessor
+                .observe_rx_completion_after_fence(recycle)
+                .is_completed()
+            {
                 return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::PredecessorNotCompleted);
             }
-            let predecessor_address = match head {
-                BluetoothDtmRxHeaderSlot::Primary => primary_address,
-                BluetoothDtmRxHeaderSlot::Swap => swap_address,
-            };
-            if header(tail).read_word(5) != predecessor_address {
+            if header(tail).rx_backlink() != Some(backlink(head)) {
                 return Err(
                     BluetoothDtmMemoryGraphRxSuccessRecycleError::SuccessorBacklinkMismatch,
                 );
@@ -1616,32 +1804,39 @@ impl BluetoothDtmRxRotationPlan {
         };
 
         let returned_header = header(returned);
-        if returned_header.read_word(0) & LOW_TWENTY_MASK != 0 {
+        if returned_header.rx_successor_link().is_some() {
             return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedHasSuccessor);
         }
-        if returned_header.read_word(1) & LOW_TWENTY_MASK
-            != binding.rx_packet.base.compressed_image()
+        if returned_header.rx_packet_link()
+            != Some(BluetoothDtmRxPacketLink::from_bound(binding.rx_packet))
         {
             return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedPacketMismatch);
         }
-        if returned_header.read_word(3) & 0x8000_0000 == 0 {
+        if !returned_header
+            .observe_rx_completion_after_fence(recycle)
+            .is_completed()
+        {
             return Ok(Self::NoReturnedPacket {
                 predecessor: steady.then_some(copy_target),
             });
         }
 
-        let result_word = storage.rx_packet.result_word();
-        if result_word & 0x00ff_ffff == 0x00ff_ffff {
-            return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedResultNotProduced);
-        }
-        if storage.rx_packet.read_word(RX_PACKET_METADATA_WORD) & 0x0000_ffff == 0x0000_ffff {
-            return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedMetadataNotProduced);
-        }
+        let packet = storage
+            .rx_packet
+            .observe_after_fenced_completion(recycle)
+            .map_err(|error| match error {
+                BluetoothDtmRxPacketCompletionObservationError::ResultNotProduced => {
+                    BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedResultNotProduced
+                }
+                BluetoothDtmRxPacketCompletionObservationError::AuxiliaryNotProduced => {
+                    BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedAuxiliaryNotProduced
+                }
+            })?;
         Ok(Self::Rotate {
             returned,
             copy_target,
             steady,
-            result_word,
+            packet,
         })
     }
 }
@@ -1683,7 +1878,7 @@ impl BluetoothDtmMemoryGraphRxSuccessRecyclePrepared {
                 returned,
                 copy_target,
                 steady,
-                result_word,
+                packet,
             } => BluetoothDtmMemoryGraphRxSuccessObserved {
                 kind: BluetoothDtmMemoryGraphRxSuccessObservedKind::ReturnedPacket(
                     BluetoothDtmMemoryGraphRxReturnedPacketObserved {
@@ -1691,7 +1886,7 @@ impl BluetoothDtmMemoryGraphRxSuccessRecyclePrepared {
                         returned,
                         copy_target,
                         steady,
-                        projection: BluetoothDtmRxResultProjection::from_word(result_word),
+                        projection: packet.projection(),
                     },
                 ),
             },
@@ -1750,7 +1945,7 @@ impl BluetoothDtmMemoryGraphRxNoReturnedPacketObserved {
                 BluetoothDtmRxHeaderSlot::Primary => storage.rx_header,
                 BluetoothDtmRxHeaderSlot::Swap => storage.rx_swap_reserve,
             };
-            header.write_word(4, header.read_word(4) | 1);
+            header.set_rx_software_terminal(true);
         }
         self.memory
     }
@@ -1807,8 +2002,20 @@ impl BluetoothDtmMemoryGraphRxReturnedPacketObserved {
                 .address(),
         };
         let copy_link = match self.copy_target {
-            BluetoothDtmRxHeaderSlot::Primary => memory.binding.rx_header.compressed_image(),
-            BluetoothDtmRxHeaderSlot::Swap => memory.binding.rx_swap_reserve.compressed_image(),
+            BluetoothDtmRxHeaderSlot::Primary => {
+                BluetoothDtmRxHeaderSuccessorLink::from_bound(memory.binding.rx_header)
+            }
+            BluetoothDtmRxHeaderSlot::Swap => {
+                BluetoothDtmRxHeaderSuccessorLink::from_bound(memory.binding.rx_swap_reserve)
+            }
+        };
+        let returned_backlink = match self.returned {
+            BluetoothDtmRxHeaderSlot::Primary => {
+                BluetoothDtmRxHeaderBacklink::bound(memory.binding.rx_header.controller_address())
+            }
+            BluetoothDtmRxHeaderSlot::Swap => BluetoothDtmRxHeaderBacklink::bound(
+                memory.binding.rx_swap_reserve.controller_address(),
+            ),
         };
 
         if self.steady {
@@ -1818,29 +2025,25 @@ impl BluetoothDtmMemoryGraphRxReturnedPacketObserved {
             storage
                 .link_state
                 .write_word(LINK_STATE_RX_HEAD_OFFSET, returned_address);
-            returned_header.write_word(5, 0);
+            returned_header.set_rx_backlink(None);
         }
-        returned_header.write_word(4, returned_header.read_word(4) & !1);
-        let returned_image = returned_header.snapshot_words();
-        copy_header.install(returned_image);
-        returned_header.write_word(1, returned_header.read_word(1) & !LOW_TWENTY_MASK);
+        returned_header.set_rx_software_terminal(false);
+        copy_header.copy_complete_rx_image_from(returned_header);
+        returned_header.clear_rx_packet_link();
         storage
             .link_state
             .write_word(LINK_STATE_RX_SWAP_RESERVE_OFFSET, 0);
-        copy_header.write_word(5, 0);
+        copy_header.set_rx_backlink(None);
         storage.rx_packet.rearm_reviewed_packet_fields();
-        copy_header.write_word(3, copy_header.read_word(3) & !0x8000_0000);
-        copy_header.write_word(0, copy_header.read_word(0) & !LOW_TWENTY_MASK);
-        copy_header.write_word(5, 0);
-        returned_header.write_word(
-            0,
-            (returned_header.read_word(0) & !LOW_TWENTY_MASK) | copy_link,
-        );
+        copy_header.clear_rx_completion_observation();
+        copy_header.set_rx_successor_link(None);
+        copy_header.set_rx_backlink(None);
+        returned_header.set_rx_successor_link(Some(copy_link));
         storage
             .link_state
             .write_word(LINK_STATE_RX_TAIL_OFFSET, copy_address);
-        returned_header.write_word(4, returned_header.read_word(4) | 1);
-        copy_header.write_word(5, returned_address);
+        returned_header.set_rx_software_terminal(true);
+        copy_header.set_rx_backlink(Some(returned_backlink));
         self.memory
     }
 }
@@ -1876,8 +2079,8 @@ pub enum BluetoothDtmMemoryGraphRxSuccessRecycleError {
     ReturnedPacketMismatch,
     /// Hardware left the packet result in its re-arm sentinel state.
     ReturnedResultNotProduced,
-    /// Hardware left the packet metadata in its re-arm sentinel state.
-    ReturnedMetadataNotProduced,
+    /// Hardware left the positional auxiliary halfword in its re-arm sentinel state.
+    ReturnedAuxiliaryNotProduced,
 }
 
 /// Lossless RX-success preflight rejection.
@@ -2319,10 +2522,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         storage.tx_header.install(tx_header);
         storage.tx_packet.bytes.fill(0);
         storage.rx_packet.clear();
-        storage
-            .rx_packet
-            .write_word(RX_PACKET_CAPACITY_WORD, 0x0001_0100);
-        storage.rx_packet.rearm_reviewed_packet_fields();
+        storage.rx_packet.initialize_reviewed_allocation_fields();
 
         storage
             .link_state
@@ -2500,7 +2700,7 @@ mod tests {
         BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
         BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerItemCompletionStatus,
         BluetoothDtmSchedulerItemReviewedWords, LINK_STATE_RX_TAIL_OFFSET, LOW_TWENTY_MASK,
-        RX_PACKET_METADATA_WORD, RX_PACKET_RESULT_WORD, SCHEDULER_ITEM_STATUS_OFFSET,
+        SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2566,7 +2766,7 @@ mod tests {
     fn script_current_rx_tail_returned(
         owner: &BluetoothDtmMemoryGraphRunning,
         result_word: u32,
-        metadata: u16,
+        auxiliary: u16,
     ) {
         let storage = owner.storage.as_ref().get_ref();
         let tail = storage.link_state.read_word(LINK_STATE_RX_TAIL_OFFSET);
@@ -2577,13 +2777,10 @@ mod tests {
         } else {
             panic!("the semantic fixture requires one bound RX tail");
         };
-        header.write_word(3, header.read_word(3) | 0x8000_0000);
+        header.model_controller_completion_observed();
         storage
             .rx_packet
-            .write_word(RX_PACKET_RESULT_WORD, result_word);
-        storage
-            .rx_packet
-            .write_word(RX_PACKET_METADATA_WORD, u32::from(metadata));
+            .model_controller_completion(result_word, auxiliary);
     }
 
     fn commit_rx_observed(
@@ -2918,6 +3115,27 @@ mod tests {
         assert_eq!(
             failure.error(),
             BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedResultNotProduced
+        );
+        let prepared = failure.into_recycle_prepared();
+        assert_eq!(
+            snapshot(prepared.completed.owner.storage.as_ref().get_ref()),
+            before
+        );
+    }
+
+    #[test]
+    fn rx_success_auxiliary_rearm_rejection_is_lossless() {
+        let owner = running_owner_with_status(0x2f00_3900, 0);
+        script_current_rx_tail_returned(&owner, 0, u16::MAX);
+        let prepared = rx_success_recycle_prepared(owner);
+        let before = snapshot(prepared.completed.owner.storage.as_ref().get_ref());
+        let failure = match prepared.prepare_receiver_success() {
+            Ok(_) => panic!("a returned packet cannot retain the auxiliary re-arm state"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothDtmMemoryGraphRxSuccessRecycleError::ReturnedAuxiliaryNotProduced
         );
         let prepared = failure.into_recycle_prepared();
         assert_eq!(

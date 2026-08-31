@@ -1,5 +1,7 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
+#[cfg(feature = "tx-egress-scheduling")]
+use core::num::NonZeroU8;
 use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -12,7 +14,7 @@ use embassy_net_driver::{
     Capabilities, Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
 };
 #[cfg(feature = "tx-egress-scheduling")]
-use embassy_net_driver::{EgressMeta, EgressQueuePolicy, KeyedTxToken};
+use embassy_net_driver::{EgressAdmission, EgressKey, EgressSchedule};
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
@@ -1010,7 +1012,7 @@ pub struct SplitPinnedDevice<
     #[cfg(feature = "tx-staging-copy-probe")]
     staged_tx_selected: bool,
     #[cfg(feature = "tx-egress-scheduling")]
-    keyed_egress: Option<EgressMeta>,
+    keyed_egress: Option<EgressKey>,
     #[cfg(feature = "tx-egress-scheduling")]
     keyed_run_length: u8,
     checksum: ChecksumCapabilities,
@@ -2035,8 +2037,8 @@ impl<
     fn transmit_for(
         &mut self,
         cx: &mut Context<'_>,
-        egress: EgressMeta,
-    ) -> KeyedTxToken<Self::TxToken<'_>> {
+        egress: EgressKey,
+    ) -> EgressAdmission<Self::TxToken<'_>> {
         if self.keyed_egress != Some(egress) {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_egress_run(self.keyed_run_length);
@@ -2049,7 +2051,7 @@ impl<
         if !self.poll_reserve_application_tx(cx) {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
-            return KeyedTxToken::GlobalExhausted;
+            return EgressAdmission::GlobalExhausted;
         }
         let index = self
             .application_tx
@@ -2060,7 +2062,7 @@ impl<
         self.keyed_run_length = self.keyed_run_length.saturating_add(1);
         #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), true);
-        KeyedTxToken::Granted(self.take_tx_token(index))
+        EgressAdmission::Granted(self.take_tx_token(index))
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
@@ -2076,19 +2078,19 @@ impl<
     }
 
     #[cfg(feature = "tx-egress-scheduling")]
-    fn egress_queue_policy(&mut self) -> EgressQueuePolicy {
-        if self.link.is_up() && crate::resolved_egress_burst_enabled() {
-            EgressQueuePolicy::ResolvedEgressBurst {
-                max_packets: 32,
-                dispatch_quantum: crate::resolved_egress_dispatch_quantum(),
-                epoch: self.link.egress_epoch(),
-            }
+    fn egress_schedule(&mut self) -> Option<EgressSchedule> {
+        if self.link.is_up() && crate::keyed_egress_scheduling_enabled() {
+            Some(EgressSchedule::new(
+                NonZeroU8::new(32).unwrap(),
+                NonZeroU8::new(crate::keyed_egress_dispatch_quantum()).unwrap(),
+                self.link.egress_epoch(),
+            ))
         } else {
             // A permanent network stack survives radio role epochs. Returning
             // FIFO while down resets stack-side burst cursors before the next
             // peer generation becomes active; no down-state publication can
             // reach the radio because inactive-VIF owners are reclaimed.
-            EgressQueuePolicy::Fifo
+            None
         }
     }
 
@@ -2182,8 +2184,8 @@ impl<
     fn transmit_for(
         &mut self,
         cx: &mut Context<'_>,
-        egress: EgressMeta,
-    ) -> KeyedTxToken<Self::TxToken<'_>> {
+        egress: EgressKey,
+    ) -> EgressAdmission<Self::TxToken<'_>> {
         self.inner.transmit_for(cx, egress)
     }
 
@@ -2202,8 +2204,8 @@ impl<
     }
 
     #[cfg(feature = "tx-egress-scheduling")]
-    fn egress_queue_policy(&mut self) -> EgressQueuePolicy {
-        self.inner.egress_queue_policy()
+    fn egress_schedule(&mut self) -> Option<EgressSchedule> {
+        self.inner.egress_schedule()
     }
 
     fn hardware_address(&self) -> HardwareAddress {

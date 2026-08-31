@@ -2423,12 +2423,12 @@ pub async fn run(
         1
     });
     #[cfg(feature = "core0-rx-coarse-telemetry")]
-    open_esp_radio_embassy_net::configure_resolved_egress_burst_for_diagnostics(!matches!(
+    open_esp_radio_embassy_net::configure_keyed_egress_schedule_for_diagnostics(!matches!(
         tx_buffer,
         open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaFifoDiagnostic
     ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
-    open_esp_radio_embassy_net::configure_resolved_egress_multi_dispatch_for_diagnostics(
+    open_esp_radio_embassy_net::configure_keyed_egress_multi_dispatch_for_diagnostics(
         !matches!(
             tx_buffer,
             open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic

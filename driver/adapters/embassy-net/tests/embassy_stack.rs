@@ -103,7 +103,7 @@ fn permanent_access_point_retains_the_full_softap_neighbor_set() {
 
 #[cfg(feature = "tx-egress-scheduling")]
 #[test]
-fn resolved_egress_burst_is_contiguous_across_udp_sockets() {
+fn keyed_egress_schedule_is_contiguous_across_udp_sockets() {
     let done = Box::leak(Box::new(AtomicBool::new(false)));
     let executor = Box::leak(Box::new(embassy_executor::Executor::new()));
     executor.run_until(

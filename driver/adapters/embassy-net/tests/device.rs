@@ -7,7 +7,7 @@ use core::{
 use std::{sync::Arc, task::Wake};
 
 #[cfg(feature = "tx-egress-scheduling")]
-use embassy_net_driver::EgressQueuePolicy;
+use embassy_net_driver::EgressSchedule;
 use embassy_net_driver::{
     Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _,
 };
@@ -261,7 +261,7 @@ fn shared_staging_slot_reaches_device_without_a_second_pool_copy() {
 
 #[cfg(feature = "tx-egress-scheduling")]
 #[test]
-fn shared_rx_wrapper_delegates_the_inner_egress_policy() {
+fn shared_rx_wrapper_delegates_the_inner_egress_schedule() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     let resources = Box::leak(Box::new(TestResources::new()));
@@ -277,26 +277,23 @@ fn shared_rx_wrapper_delegates_the_inner_egress_policy() {
     );
     let mut device = device.with_ingress_tx_reserve().with_shared_rx(consumer);
 
-    assert_eq!(device.egress_queue_policy(), EgressQueuePolicy::Fifo);
+    assert_eq!(device.egress_schedule(), None);
     radio.set_link_state(LinkState::Up);
-    assert_eq!(
-        device.egress_queue_policy(),
-        EgressQueuePolicy::ResolvedEgressBurst {
-            max_packets: 32,
-            dispatch_quantum: 4,
-            epoch: 1,
-        }
-    );
+    let schedule = device.egress_schedule().unwrap();
+    assert_eq!(schedule.max_packets_per_key().get(), 32);
+    assert_eq!(schedule.dispatch_quantum().get(), 4);
+    assert_eq!(schedule.epoch(), 1);
     radio.set_link_state(LinkState::Down);
-    assert_eq!(device.egress_queue_policy(), EgressQueuePolicy::Fifo);
+    assert_eq!(device.egress_schedule(), None);
     radio.set_link_state(LinkState::Up);
+    let schedule = device.egress_schedule().unwrap();
     assert_eq!(
-        device.egress_queue_policy(),
-        EgressQueuePolicy::ResolvedEgressBurst {
-            max_packets: 32,
-            dispatch_quantum: 4,
-            epoch: 2,
-        }
+        schedule,
+        EgressSchedule::new(
+            core::num::NonZeroU8::new(32).unwrap(),
+            core::num::NonZeroU8::new(4).unwrap(),
+            2,
+        )
     );
 }
 

@@ -212,9 +212,9 @@ SRAM would only hide this ownership defect.
 ### Production cutover
 
 The former runtime `DirectDmaStackEgressQueueDiagnostic` switch has been
-removed. The S31 Wi-Fi product composition now enables the maintained Embassy
-egress-metadata API and the pinned adapter returns a 32-packet
-`ResolvedEgressBurst` policy unconditionally. All HIL Wi-Fi images use an
+removed. The S31 Wi-Fi product composition now enables the maintained keyed
+egress API and the pinned adapter returns an `EgressSchedule` with a
+32-packet run limit while the link is up. All HIL Wi-Fi images use an
 indexed 128-packet CPU-owned UDP backlog in PSRAM; the physical DMA-visible
 SRAM pool remains 67 slots. At the start of a burst Xarxa resolves queued IP
 destinations and groups distinct IP queues when their generic link destination
@@ -1126,7 +1126,7 @@ correct bounded scheduling cleanup, not the main Core1 cost.
 Third, Xarxa previously returned from UDP dispatch after every successful
 packet. A saturated BA32 run therefore repeated interface/socket selection
 roughly once per datagram even though the current resolved queue remained
-eligible. `ResolvedEgressBurst` now carries a separate `dispatch_quantum`.
+eligible. `EgressSchedule` carries a separate socket dispatch quantum.
 Production uses four packets per socket dispatch, while the longer 32-packet
 run remains the independent fairness/aggregation limit. The network runner's
 total per-turn egress budget is still 32; this change neither waits for BA32
@@ -1345,9 +1345,10 @@ cost control.
 
 ### Production pull boundary after the successful A/B
 
-The diagnostic `DestinationBurst` is intentionally stack-selected by IP
-address. Production must replace it with a link-resolved, generation-safe
-contract while preserving the measured code-shape isolation.
+The historical `DestinationBurst` diagnostic selected queues by IP address.
+It has now been removed. Production uses one link-resolved `EgressKey` and
+typed `EgressSchedule`; peer-generation safety remains owned by the Wi-Fi
+admission layer rather than the generic stack.
 
 The cross-core control plane consists of two bounded SPSC streams, not a
 shared per-packet allocator:

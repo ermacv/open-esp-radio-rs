@@ -70,31 +70,31 @@ pub use tx_performance::{
 pub const ETHERNET_HEADER_LEN: usize = 14;
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-static RESOLVED_EGRESS_BURST_ENABLED: AtomicBool = AtomicBool::new(true);
+static KEYED_EGRESS_SCHEDULING_ENABLED: AtomicBool = AtomicBool::new(true);
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-static RESOLVED_EGRESS_MULTI_DISPATCH_ENABLED: AtomicBool = AtomicBool::new(true);
+static KEYED_EGRESS_MULTI_DISPATCH_ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// Select ordinary FIFO egress only for a same-image TX scheduler diagnostic.
 ///
-/// Production builds do not expose this switch and always use resolved-egress
-/// bursts while the link is up.
+/// Production builds do not expose this switch and always use keyed egress
+/// scheduling while the link is up.
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-pub fn configure_resolved_egress_burst_for_diagnostics(enabled: bool) {
-    RESOLVED_EGRESS_BURST_ENABLED.store(enabled, Ordering::Release);
+pub fn configure_keyed_egress_schedule_for_diagnostics(enabled: bool) {
+    KEYED_EGRESS_SCHEDULING_ENABLED.store(enabled, Ordering::Release);
 }
 
 /// Select one-packet socket dispatch only for a same-image Xarxa batching
 /// control. Production emits a bounded four-packet quantum per socket pass.
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-pub fn configure_resolved_egress_multi_dispatch_for_diagnostics(enabled: bool) {
-    RESOLVED_EGRESS_MULTI_DISPATCH_ENABLED.store(enabled, Ordering::Release);
+pub fn configure_keyed_egress_multi_dispatch_for_diagnostics(enabled: bool) {
+    KEYED_EGRESS_MULTI_DISPATCH_ENABLED.store(enabled, Ordering::Release);
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
-pub(crate) fn resolved_egress_burst_enabled() -> bool {
+pub(crate) fn keyed_egress_scheduling_enabled() -> bool {
     #[cfg(feature = "tx-phase-telemetry")]
     {
-        RESOLVED_EGRESS_BURST_ENABLED.load(Ordering::Acquire)
+        KEYED_EGRESS_SCHEDULING_ENABLED.load(Ordering::Acquire)
     }
     #[cfg(not(feature = "tx-phase-telemetry"))]
     {
@@ -103,10 +103,10 @@ pub(crate) fn resolved_egress_burst_enabled() -> bool {
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
-pub(crate) fn resolved_egress_dispatch_quantum() -> u8 {
+pub(crate) fn keyed_egress_dispatch_quantum() -> u8 {
     #[cfg(feature = "tx-phase-telemetry")]
     {
-        if RESOLVED_EGRESS_MULTI_DISPATCH_ENABLED.load(Ordering::Acquire) {
+        if KEYED_EGRESS_MULTI_DISPATCH_ENABLED.load(Ordering::Acquire) {
             4
         } else {
             1

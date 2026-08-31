@@ -1,7 +1,91 @@
 # Wi-Fi TX network-driver API change audit
 
-Status: design audit, 2026-08-30. No third-party API change is accepted by
-this document. It defines the evidence required before implementation.
+Status: first breaking interface-wide egress cutover complete, 2026-08-31.
+
+## Current implementation status
+
+The earlier lazy-`TxToken` hook proposal below is superseded. The first
+vertical refactor instead moves the scheduling boundary before final TX-token
+allocation and deliberately removes the compatibility enum and its parallel
+UDP dispatch implementations.
+
+The maintained cross-repository contract is now:
+
+```text
+Xarxa resolves route + neighbour
+    -> EgressKey { link destination, traffic class }
+    -> interface-wide EgressSchedule
+       { non-zero max run, non-zero socket quantum, lifecycle epoch }
+    -> Driver::transmit_for(EgressKey)
+    -> EgressAdmission::{Granted, GlobalExhausted, KeyDeferred}
+    -> final SRAM TxToken::consume()
+```
+
+Ownership remains deliberately split:
+
+- Xarxa owns socket packet storage, per-IP intrusive queues, link-key
+  resolution and the interface-wide scan. It may combine distinct routed IP
+  queues which resolve to one link destination.
+- The network driver owns final backing and admission. `KeyDeferred` is a
+  per-key scheduling decision; `GlobalExhausted` is physical/global pressure.
+- Wi-Fi still owns VIF/peer generation, TID/AC, BA, retries, rate state and
+  future airtime grants. None of those identities is accepted from Xarxa.
+
+The removed surface is intentional: `EgressQueuePolicy`, `DestinationBurst`,
+`ResolvedEgressBurst`, zero-valued quanta, `EgressMeta`, `KeyedTxToken`, and the
+two old UDP dispatch entry points no longer exist. Ordinary drivers return no
+schedule and retain FIFO behavior through the single production dispatch
+path. Scheduling-aware configurations must construct non-zero quanta.
+
+The cutover is implemented and published at:
+
+- Xarxa `87cb5de79ea676d7835ba8676f94a3010a4295b8`;
+- Embassy `e2eb9055f5ec0e236a3f1b2a86b42e2392c38cec`;
+- the Wi-Fi branch pins both revisions atomically in every standalone
+  lockfile.
+
+One concrete defect was found during the refactor. Xarxa's tracer, pcap,
+fault-injection and fuzz wrappers forwarded keyed token requests but did not
+forward the device scheduling configuration. Wrapping a device could
+therefore silently change it back to FIFO. All four wrappers now forward the
+schedule explicitly. This is a plausible cause of prior trace/non-trace code
+path differences; it is not yet claimed as the cause of any historical HIL
+throughput delta without a same-image measurement.
+
+At this checkpoint the ESP32-S31 pinned adapter requests a BA32-sized keyed
+run and a four-packet socket quantum while the link is up. Link-down returns
+no schedule, which discards stack-side cursors before a new egress epoch. The
+adapter's current `transmit_for` still grants from the same global direct-SRAM
+pool and does not yet return `KeyDeferred`; therefore this refactor cleans and
+stabilizes the ownership boundary but does not yet implement airtime fairness
+or PSRAM spill.
+
+No payload-memory architecture changed in this step. Frames are still built
+directly in SRAM slots and transferred to Core0 without a complete-frame
+copy. The rejected serial PSRAM promotion, GDMA single-frame path and owned
+packet API remain rejected until new measurements justify them.
+
+Validated so far:
+
+- Xarxa: 697 production-feature tests plus the default workspace suite;
+- Embassy: driver and adapter suites with scheduling enabled and disabled;
+- main repository: workspace `check`, `test`, `clippy`, `fmt`, focused adapter
+  suites with scheduling enabled and disabled, and the complete source-only
+  audit (including the HIL performance-image and Blobray target audits);
+- standalone manifests resolve with the updated revisions and lockfiles.
+
+Hardware throughput and both-core residence are deliberately still pending.
+API cleanup is not performance evidence. The next production step is a
+same-ELF shadow admission experiment which records whether a Core0-owned
+peer/TID grant would accept or defer each resolved key without changing the
+current SRAM path. Only after owner conservation, sparse-peer latency and
+single-peer throughput remain unchanged should `KeyDeferred` become active.
+
+## Historical design audit (superseded where it conflicts above)
+
+The remainder records alternatives and measurements considered before the
+breaking cutover. It is retained as engineering evidence, not as the current
+implementation plan.
 
 ## Decision summary
 

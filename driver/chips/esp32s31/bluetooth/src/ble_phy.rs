@@ -269,7 +269,7 @@ where
                 self.initialized
                     .controller
                     .task_mut()
-                    .initialize_ble_phy_registers(inputs);
+                    .enable_ble_base_stack_hardware(inputs);
             }
         });
 

@@ -468,8 +468,8 @@ impl BluetoothTaskResources {
         }
     }
 
-    /// Publish the complete BLE PHY register-init transaction for a lifecycle
-    /// that retains both address-bound storage objects.
+    /// Execute the complete BLE base-stack task-enable hardware transaction
+    /// for a lifecycle that retains both address-bound storage objects.
     ///
     /// # Safety
     ///
@@ -481,12 +481,12 @@ impl BluetoothTaskResources {
         unsafe_code,
         reason = "the upper typestate retains the complete PAC lifecycle and storage prerequisites"
     )]
-    pub(crate) unsafe fn initialize_ble_phy_registers(
+    pub(crate) unsafe fn enable_ble_base_stack_hardware(
         &mut self,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
         unsafe {
-            self.registers.initialize_ble_phy_registers(inputs);
+            self.registers.enable_ble_base_stack_hardware(inputs);
         }
     }
 

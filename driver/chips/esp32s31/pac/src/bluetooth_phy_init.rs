@@ -38,9 +38,16 @@ impl BleBaseStackOnTaskEnableHardwareTransaction
         );
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "the composed transaction retains the exact PHY leaf prerequisites"
+    )]
     fn initialize_ble_phy_registers(&mut self) {
-        self.registers
-            .initialize_ble_phy_registers_leaf(self.inputs);
+        // SAFETY: the enclosing composed transaction carries the same
+        // lifecycle and pointed-storage prerequisites as the exact PHY leaf.
+        unsafe {
+            self.registers.initialize_ble_phy_registers(self.inputs);
+        }
     }
 }
 
@@ -151,7 +158,10 @@ impl BluetoothTaskRegisters {
         dead_code,
         reason = "the unsafe signature retains unmodeled lifecycle and pointed-storage prerequisites"
     )]
-    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+    pub unsafe fn enable_ble_base_stack_hardware(
+        &mut self,
+        inputs: BluetoothPhyRegisterInitInputs,
+    ) {
         let mut transaction = HardwareBleBaseStackOnTaskEnableTransaction {
             registers: self,
             inputs,
@@ -159,7 +169,26 @@ impl BluetoothTaskRegisters {
         execute_base_stack_on_task_enable_hardware(&mut transaction);
     }
 
-    fn initialize_ble_phy_registers_leaf(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+    /// Execute the exact bounded BLE PHY register-initialization body.
+    ///
+    /// This leaf starts with the ordered positional-word publications. It does
+    /// not perform the preceding base-stack access-address correlation update;
+    /// [`Self::enable_ble_base_stack_hardware`] owns that composition.
+    ///
+    /// # Safety
+    ///
+    /// The caller must prove completed common PHY and Bluetooth baseband
+    /// initialization, the registered external-baseband table used by this
+    /// body, inactive IRQ ownership, and live exclusive ownership of both
+    /// pointed-to SRAM objects for every hardware consumer. After the first
+    /// MMIO write, failure must be treated as fail-stop until a complete
+    /// controller teardown is independently recovered and verified.
+    #[allow(
+        unsafe_code,
+        dead_code,
+        reason = "the unsafe signature retains the exact PHY leaf lifecycle and storage prerequisites"
+    )]
+    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
         let timing_byte = inputs.private_timing_source_byte.wrapping_sub(1);
         let environment = inputs.environment.address();
         let environment_member = inputs.environment.compressed_member(0x2c);

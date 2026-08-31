@@ -139,6 +139,18 @@ include-reachable = false
 entry-contract = "none"
 output = "generated/findings/ble-coex-register-diagnostic.ir"
 
+# The public DTM RSSI getter and its current internal target are dead-stripped
+# from the operational controller image. Keep their exact archive call chain
+# as generated evidence; the reviewed pack separately owns the signed load.
+[[analysis.ir]]
+id = "ble-dtm-rssi"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "esp_ble_get_dtm_rx_rssi"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ble-dtm-rssi.ir"
+
 [[analysis.ir]]
 id = "btdm-scheduler-diagnostic"
 sources = ["btdm-diagnostics"]
@@ -405,6 +417,7 @@ profiles = [
     "ble-controller-all",
     "ble-phy-state-diagnostic",
     "ble-coex-register-diagnostic",
+    "ble-dtm-rssi",
     "btdm-scheduler-diagnostic",
 ]
 
@@ -826,7 +839,7 @@ include-reachable = true
 [[review.scopes]]
 id = "ble-direct-test-mode"
 protocols = ["ble"]
-profiles = ["ble-controller-all"]
+profiles = ["ble-controller-all", "ble-dtm-rssi"]
 roots = [
     # Complete transmitter and receiver command bodies reach allocation,
     # packet construction, event preparation and common scheduler insertion.
@@ -837,6 +850,9 @@ roots = [
     # so an ordinary direct-call traversal cannot prove that edge.
     "ble-controller:r_sym_ble_9DFKLYZzjaztWMiPU4NR",
     "ble-controller:r_sym_ble_kdHGLPeGDJlAvxmbjQ6e",
+    # Archive-only public getter closes packet-result high byte -> signed RSSI
+    # without retaining diagnostic/application glue in the controller image.
+    "ble-diagnostics:esp_ble_get_dtm_rx_rssi",
     # The common worker publishes the finished-list mask through the broker,
     # and the BLE scheduler consumes it through another stored callback. Both
     # asynchronous ingress edges must be explicit or the scope loses the

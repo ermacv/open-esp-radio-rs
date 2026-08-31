@@ -98,7 +98,8 @@ following useful map:
 | `r_sym_ble_ssKOV2juzhIVJk3r8x6R` | 112 | Validate and start a receiver test, including channel `0..=39` and the accepted PHY selector domain. A nonzero active image at environment offset `+0x08` returns standardized `Controller Busy` (`0x3a`) before parameter validation or allocation. |
 | `r_sym_ble_eTAd...` | 502 | Pop one completed RX buffer from the private link-state chain. Its complete control flow agrees with named `r_ble_lll_get_rxed_buffer` (496 bytes): it follows the full RX-head pointer, checks the volatile completion flag, validates that the packet result and positional auxiliary halfword no longer retain their re-arm sentinels and advances a packetless predecessor only when its successor is complete. |
 | `r_sym_ble_9Hls...` | 456 | Append one returned RX buffer. Its complete control flow agrees with named `r_ble_lll_append_rx_buffer` (452 bytes): a terminal tail is copied into the detached reserve, its original header becomes the packetless predecessor, the copied header becomes the armed tail and the two fixed slots alternate on later completions. |
-| `r_sym_ble_PptSRbXfefQwMVyO5jxP` | 52 | Dead-stripped raw-archive corroboration only, not a linked effect authority. From third argument offset `+0x04` its complete raw body reconstructs a `0x2f00_0000 | (low20 << 2)` address. A zero compressed pointer takes the vendor fail-stop edge. It returns `-1` when any low-24 bit of the word at returned-buffer offset `+0x0c` is nonzero; otherwise it copies the high byte at `+0x0f` into DTM environment byte `+0x24` and returns zero. The byte meaning remains positional. |
+| `r_sym_ble_PptSRbXfefQwMVyO5jxP` | 52 | Dead-stripped raw-archive corroboration only, not a linked effect authority. From third argument offset `+0x04` its complete raw body reconstructs a `0x2f00_0000 | (low20 << 2)` address. A zero compressed pointer takes the vendor fail-stop edge. It returns `-1` when any low-24 bit of the word at returned-buffer offset `+0x0c` is nonzero; otherwise it copies the high byte at `+0x0f` into DTM environment byte `+0x24` and returns zero. |
+| `esp_ble_get_dtm_rx_rssi` / `r_sym_ble_CLEB51J8jgSOcX50XteR` | 8 / 20 | The public getter is a direct tail call. Its complete current target loads the active DTM environment and returns byte `+0x24` with signed `lb`, proving that the accepted packet-result high byte copied there is the DTM RSSI value. The signed controller value is exact; its physical unit and calibration are not inferred. |
 | `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` | 312 | Current linked effect authority for recycling one completed DTM scheduler item. Its complete linked instruction extent contains the exact local RX-result edge; whole-function symbolic semantics remain incomplete. Its control-flow shape agrees with same-chip named `r_ble_lll_dtm_recycle_sch_item` (324 bytes). The callback returns the item to the private chain first. Status zero enables role accounting: TX role one increments the DTM result count, while RX role two drains returned buffers; it directly rejects a result word whose low 24 bits are nonzero, otherwise updates the positional high byte and increments the wrapping 16-bit receive count. When the environment remains active, both zero and nonzero item status may continue into the next-event reschedule path; nonzero status skips accounting rather than suppressing rescheduling. With DTM capacity one, the first returned tail is terminal and necessarily takes the two-header swap rotation; the detached original remains inside the fixed graph as the packetless predecessor and becomes the next reserve. An unexpected role takes the vendor fail-stop edge. |
 | `r_sym_ble_9DFKLYZzjaztWMiPU4NR` | 168 | End the test and return success. The body first serializes the shared 16-bit DTM count as the two-byte Test End result; a zero active image at environment offset `+0x08` then returns zero without entering teardown. When a test is active, it removes queued kind-five items, synchronously stops the common scheduler, clears DTM active/count state, frees the private graph, restores the default length state and also returns zero. Because the recycle callback increments this same count for successful TX events, the current vendor path can expose a nonzero transmitter result. Bluetooth Core requires the packet count ending a transmitter test to be zero, so the open HCI policy deliberately does not copy that vendor behavior. |
 
@@ -429,9 +430,11 @@ vendor memory manager. Complete S31 allocation and RX bodies, plus the named
 C61 role comparison, establish that the callback's third argument is a buffer
 header carrying a compressed returned-buffer pointer. The callback consumes
 only the result word at `+0x0c`: low 24 bits form a fail-closed condition and
-the byte at `+0x0f` is the only value copied into DTM state. This exact split is
+the byte at `+0x0f` is the only value copied into DTM state. Current public
+`esp_ble_get_dtm_rx_rssi` tail-calls a complete target that returns that same
+state byte with a signed load. This closes the high-byte role as DTM RSSI and is
 published above the PAC boundary as `BluetoothDtmRxResultProjection`; no
-semantic name is assigned to the high byte. The complete recycle body proves
+physical unit or calibration is claimed. The complete recycle body proves
 the next layer: an accepted word updates that byte and increments the DTM
 environment's 16-bit counter with wrapping arithmetic, while a rejected word
 changes neither value. Test End serializes that same counter. Every result
@@ -1056,7 +1059,8 @@ now-classified scan-resume path.
   feature configuration, including their mapping to finished-list indices;
 - whether any command-ready transition in the post-unlink return predicate
   raises source 124 or another hardware wake at all;
-- meaning of the validated RX result high byte, plus length/CRC/RSSI extraction;
+- physical unit/calibration of the signed RX RSSI, plus length/CRC and low-24
+  result-status extraction;
 - bounded abort plus powered quiescence when an event is scheduled or running.
 
 The operational blockers are the physical controller-time width/unit contract,

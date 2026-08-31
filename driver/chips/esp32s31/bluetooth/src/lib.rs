@@ -265,10 +265,7 @@ pub use dtm_runner::{
     BluetoothDtmFirstWarmTimeDrain, BluetoothDtmFirstWarmTimeDrainStep,
     BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute,
 };
-pub use dtm_rx_completion::{
-    BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,
-    BluetoothDtmRxCompletionOutcome,
-};
+pub use dtm_rx_completion::{BluetoothDtmReceiverSession, BluetoothDtmRxCompletionOutcome};
 pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
     BluetoothDtmSchedulerItemReviewedWords,
@@ -342,7 +339,7 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmBoundSramLinkAddressError, BluetoothDtmMemoryGraphCpuOwned,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
     BluetoothDtmMemoryGraphReclaimed, BluetoothDtmPositionalEventWords,
-    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
+    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi,
     BluetoothRxMemoryListClass,
 };
 #[cfg(target_arch = "riscv32")]

@@ -63,9 +63,34 @@ source = "ble-diagnostics"
 artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
 
 [[inputs]]
+profile = "ble-dtm-rssi"
+source = "ble-diagnostics"
+artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[inputs]]
 profile = "btdm-scheduler-diagnostic"
 source = "btdm-diagnostics"
 artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099"
+
+[[functions]]
+profile = "ble-dtm-rssi"
+source = "ble-diagnostics"
+identity = "ble-diagnostics::94.o:esp_ble_get_dtm_rx_rssi"
+status = "reviewed"
+name = "esp_ble_get_dtm_rx_rssi"
+role = "ble.dtm.rx-rssi-get"
+summary = "Public archive entry that tail-calls the current internal DTM RSSI getter."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-dtm-rssi"
+source = "ble-diagnostics"
+identity = "ble-diagnostics::55.o:r_sym_ble_CLEB51J8jgSOcX50XteR"
+status = "reviewed"
+name = "read_dtm_rx_rssi"
+role = "ble.dtm.rx-rssi-read"
+summary = "Loads DTM environment byte +0x24 with signed lb; the RX recycle path independently supplies that byte from an accepted packet result."
+accept-incomplete = true
 
 # Sparse review overlay: add only reviewed or ignored functions, contexts, fields, and logical types.
 # All omitted generated observations remain part of the computed unreviewed backlog.

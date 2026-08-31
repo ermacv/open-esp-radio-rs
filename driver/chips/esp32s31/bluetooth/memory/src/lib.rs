@@ -41,7 +41,9 @@ pub use dtm_event_image::{
     BluetoothDtmSchedulerItemEventType, BluetoothDtmSchedulerItemReviewedWords,
     BluetoothDtmTxHeaderHeadProjection,
 };
-pub use dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError};
+pub use dtm_rx_result::{
+    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi,
+};
 #[cfg(not(target_arch = "riscv32"))]
 pub use dtm_storage::BluetoothDtmMemoryGraphModelAddress;
 pub use dtm_storage::{

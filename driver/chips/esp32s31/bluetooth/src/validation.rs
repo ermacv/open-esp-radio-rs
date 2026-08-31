@@ -27,10 +27,10 @@ pub fn clear_scheduler_hardware_list_heads() {
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
-    task.clear_scheduler_hardware_list_heads();
+    let cleared_lists = task.clear_scheduler_hardware_list_heads();
     // The comparison image deliberately retains the mutated partitions; it
     // must not reconstruct cold ownership without the missing rollback.
-    let _powered_owners = (task, interrupts);
+    let _powered_owners = (task, interrupts, cleared_lists);
 }
 
 /// Execute the production PHY-I2C host selection through the standalone

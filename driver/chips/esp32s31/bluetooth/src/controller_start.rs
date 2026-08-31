@@ -22,7 +22,8 @@ use crate::controller_time::{
 #[cfg(target_arch = "riscv32")]
 use crate::dtm_post_unlink::{
     BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkMailbox, BluetoothDtmPostUnlinkRearm,
-    BluetoothDtmPostUnlinkTake,
+    BluetoothDtmPostUnlinkTake, BluetoothLegacyAdvertisingPostUnlinkRearm,
+    BluetoothLegacyAdvertisingPostUnlinkTake,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::modem_lp_timer_queue::{
@@ -348,6 +349,66 @@ pub enum BluetoothDtmPostUnlinkArmStep<Role> {
     SchedulerIdentityMismatch(crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>),
     MailboxCommitMismatch(crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
     Armed(crate::BluetoothDtmPostUnlinkAwaiting<Role>),
+}
+
+/// Result of atomically unlinking advertising and arming the return mailbox.
+#[must_use = "retain the empty-head graph or armed advertising owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingPostUnlinkArmStep<'a> {
+    MailboxBusy(crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>),
+    MailboxIdentityExhausted(
+        crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>,
+    ),
+    GenerationExhausted(crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>),
+    SchedulerIdentityMismatch(
+        crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>,
+    ),
+    MailboxCommitMismatch(crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
+    Armed(crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+}
+
+/// Controller result of consuming one advertising post-unlink event pair.
+#[must_use = "every outcome retains the advertising graph"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep<'a> {
+    MailboxAffinityMismatch(crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+    Fault {
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+        fault: crate::BluetoothPrimaryControllerFault,
+    },
+    NoSchedulerWork {
+        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PublishedPending {
+        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    },
+    DirectPending {
+        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    },
+    RecheckUnavailable {
+        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    },
+    NoSchedulerWorkRearmMismatch {
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PendingRearmMismatch {
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    },
+    RecheckRearmMismatch {
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    },
+    SchedulerIdentityMismatch {
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    },
+    DirectSchedulerIdentityMismatch {
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    },
+    Ready {
+        ready: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
+    },
 }
 
 /// Stable state retained inside the disjoint source-127 task endpoint.
@@ -3309,6 +3370,149 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     ) -> crate::BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'a> {
         self.runtime
             .continue_legacy_advertising_completed_finished_list_drain(pending)
+    }
+
+    /// Observe the post-picker hardware-head retirement barrier for advertising.
+    pub fn observe_legacy_advertising_hardware_head_retirement<'a>(
+        &mut self,
+        completed: crate::BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
+    ) -> crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep<'a> {
+        self.runtime
+            .observe_legacy_advertising_hardware_head_retirement(completed)
+    }
+
+    /// Atomically unlink advertising and arm the shared post-unlink mailbox.
+    pub fn unlink_and_arm_legacy_advertising_software_list_removal<'a>(
+        &mut self,
+        observed: crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>,
+    ) -> BluetoothLegacyAdvertisingPostUnlinkArmStep<'a> {
+        let runtime = &mut self.runtime;
+        let mailbox = self.mailbox;
+        critical_section::with(|critical_section| {
+            let key = match mailbox.prepare_arm(critical_section) {
+                Ok(key) => key,
+                Err(BluetoothDtmPostUnlinkArmError::Busy) => {
+                    return BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxBusy(observed);
+                }
+                Err(BluetoothDtmPostUnlinkArmError::IdentityExhausted) => {
+                    return BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxIdentityExhausted(
+                        observed,
+                    );
+                }
+                Err(BluetoothDtmPostUnlinkArmError::GenerationExhausted) => {
+                    return BluetoothLegacyAdvertisingPostUnlinkArmStep::GenerationExhausted(
+                        observed,
+                    );
+                }
+            };
+            match runtime.unlink_legacy_advertising_software_list(observed) {
+                crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
+                    observed,
+                ) => BluetoothLegacyAdvertisingPostUnlinkArmStep::SchedulerIdentityMismatch(
+                    observed,
+                ),
+                crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep::Unlinked(
+                    unlinked,
+                ) => {
+                    if mailbox.commit_arm(critical_section, key) {
+                        BluetoothLegacyAdvertisingPostUnlinkArmStep::Armed(
+                            crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting::new(unlinked, key),
+                        )
+                    } else {
+                        BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxCommitMismatch(unlinked)
+                    }
+                }
+            }
+        })
+    }
+
+    /// Consume or directly recheck one armed advertising removal gate.
+    pub fn consume_published_legacy_advertising_software_list_removal<'a>(
+        &mut self,
+        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    ) -> BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep<'a>
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let runtime = &mut self.runtime;
+        let storage = self.storage;
+        let mailbox = self.mailbox;
+        critical_section::with(|critical_section| {
+            let (key, pending) = match mailbox.take_legacy_advertising(critical_section, awaiting) {
+                BluetoothLegacyAdvertisingPostUnlinkTake::Recheck { key, unlinked } => {
+                    return match runtime
+                        .recheck_legacy_advertising_software_list_removal(storage, unlinked)
+                    {
+                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked) => {
+                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch { unlinked }
+                        }
+                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::StorageUnavailable(unlinked) => {
+                            match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
+                                BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting },
+                                BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
+                            }
+                        }
+                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::Pending(unlinked) => {
+                            match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
+                                BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::DirectPending { awaiting },
+                                BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
+                            }
+                        }
+                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::Ready(ready) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Ready { ready },
+                    };
+                }
+                BluetoothLegacyAdvertisingPostUnlinkTake::AffinityMismatch(awaiting) => {
+                    return BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(awaiting);
+                }
+                BluetoothLegacyAdvertisingPostUnlinkTake::Ready { key, event } => (key, event),
+            };
+            let (unlinked, published) = pending.into_parts();
+            match published {
+                BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
+                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Fault {
+                        unlinked,
+                        fault,
+                    }
+                }
+                BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
+                    match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
+                        BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::NoSchedulerWork { awaiting, epoch },
+                        BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch { unlinked, epoch },
+                    }
+                }
+                BluetoothPrimaryPublishedInterruptStep::Scheduler { event, .. } => {
+                    match runtime.join_legacy_advertising_software_list_removal(unlinked, event) {
+                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch { unlinked, event } => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch { unlinked, event },
+                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::Pending(unlinked) => {
+                            match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
+                                BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::PublishedPending { awaiting },
+                                BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::PendingRearmMismatch { unlinked },
+                            }
+                        }
+                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::Ready(ready) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Ready { ready },
+                    }
+                }
+            }
+        })
+    }
+
+    /// Cancel an advertising post-unlink wait without discarding a ready event.
+    pub fn cancel_legacy_advertising_software_list_removal<'a>(
+        &mut self,
+        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    ) -> crate::BluetoothLegacyAdvertisingPostUnlinkCancelStep<'a> {
+        critical_section::with(|critical_section| {
+            self.mailbox
+                .cancel_legacy_advertising(critical_section, awaiting)
+        })
+    }
+
+    /// Return released advertising SRAM while retaining unresolved TX status.
+    pub fn recycle_legacy_advertising_completed<'a>(
+        &mut self,
+        ready: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
+    ) -> crate::BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
+        self.runtime.recycle_legacy_advertising_completed(ready)
     }
 
     /// Perform one fresh fenced completion-list transfer and immediately join

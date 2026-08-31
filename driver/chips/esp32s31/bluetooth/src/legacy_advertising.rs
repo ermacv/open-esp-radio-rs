@@ -31,7 +31,9 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphCompletionObservation,
     BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
     BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
-    BluetoothLegacyAdvertisingMemoryGraphRunning,
+    BluetoothLegacyAdvertisingMemoryGraphRecycleError,
+    BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared,
+    BluetoothLegacyAdvertisingMemoryGraphRecycled, BluetoothLegacyAdvertisingMemoryGraphRunning,
     BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -47,7 +49,7 @@ use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerSoftwareListRemovalReady,
 };
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -537,6 +539,132 @@ impl BluetoothLegacyAdvertisingCompletionObservedEvent<'_> {
 
     pub(crate) const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
         self.memory.status()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingCompletionObservedEvent<'a> {
+    pub(crate) fn prepare_recycle(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<
+        BluetoothLegacyAdvertisingCompletionRecyclePrepared<'a>,
+        BluetoothLegacyAdvertisingCompletionRecycleFailure<'a>,
+    > {
+        let Self {
+            _in_flight: in_flight,
+            memory,
+            _scheduler_window: scheduler_window,
+        } = self;
+        match memory.prepare_recycle_after_software_list_removal(removal) {
+            Ok(memory) => Ok(BluetoothLegacyAdvertisingCompletionRecyclePrepared {
+                in_flight,
+                memory,
+                scheduler_window,
+            }),
+            Err(failure) => {
+                let error = failure.error();
+                let (memory, removal) = failure.into_parts();
+                Err(BluetoothLegacyAdvertisingCompletionRecycleFailure {
+                    error,
+                    item: Self {
+                        _in_flight: in_flight,
+                        memory,
+                        _scheduler_window: scheduler_window,
+                    },
+                    removal,
+                })
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingCompletionRecyclePrepared<'a> {
+    in_flight: LegacyAdvertiserTxInFlight<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingCompletionRecyclePrepared<'a> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        let (memory, removal) = self.memory.into_parts();
+        (
+            BluetoothLegacyAdvertisingCompletionObservedEvent {
+                _in_flight: self.in_flight,
+                memory,
+                _scheduler_window: self.scheduler_window,
+            },
+            removal,
+        )
+    }
+
+    pub(crate) fn commit(self) -> BluetoothLegacyAdvertisingRecycledEvent<'a> {
+        let memory = self.memory.commit();
+        BluetoothLegacyAdvertisingRecycledEvent::new(self.in_flight, memory, self.scheduler_window)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingCompletionRecycleFailure<'a> {
+    error: BluetoothLegacyAdvertisingMemoryGraphRecycleError,
+    item: BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingCompletionRecycleFailure<'a> {
+    pub(crate) const fn error(&self) -> BluetoothLegacyAdvertisingMemoryGraphRecycleError {
+        self.error
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.item, self.removal)
+    }
+}
+
+/// CPU-owned graph whose advertising completion meaning is not yet projected.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingRecycledEvent<'a> {
+    in_flight: LegacyAdvertiserTxInFlight<'a>,
+    _memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    status: BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+    _scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRecycledEvent<'a> {
+    fn new(
+        in_flight: LegacyAdvertiserTxInFlight<'a>,
+        memory: BluetoothLegacyAdvertisingMemoryGraphRecycled,
+        scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+    ) -> Self {
+        let (memory, status) = memory.into_parts();
+        Self {
+            in_flight,
+            _memory: memory,
+            status,
+            _scheduler_window: scheduler_window,
+        }
+    }
+
+    pub(crate) const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+        self.in_flight.identity()
+    }
+
+    pub(crate) const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
+        self.status
     }
 }
 

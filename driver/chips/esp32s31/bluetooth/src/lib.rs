@@ -179,7 +179,9 @@ pub use controller_start::{
     BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmPostUnlinkArmStep,
     BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedStep,
-    BluetoothInterruptOwnerStorage, BluetoothLegacyAdvertisingSchedulerStartFailure,
+    BluetoothInterruptOwnerStorage, BluetoothLegacyAdvertisingPostUnlinkArmStep,
+    BluetoothLegacyAdvertisingSchedulerStartFailure,
+    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
@@ -236,7 +238,10 @@ pub use dtm_payload::{
     BluetoothDtmPayloadPreparationError, BluetoothDtmPreparedPayload,
 };
 #[cfg(target_arch = "riscv32")]
-pub use dtm_post_unlink::{BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep};
+pub use dtm_post_unlink::{
+    BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep,
+    BluetoothLegacyAdvertisingPostUnlinkAwaiting, BluetoothLegacyAdvertisingPostUnlinkCancelStep,
+};
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
     BluetoothPrimaryOrdinaryPublication, BluetoothPrimarySerializedServiceStep,
@@ -397,8 +402,17 @@ pub use scheduler::{
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerRecycleStep,
     BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
     BluetoothDtmSchedulerSoftwareListUnlinked,
+    BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved,
+    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep,
     BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure,
-    BluetoothLegacyAdvertisingSchedulerHeadPublished, BluetoothLegacyAdvertisingSchedulerRunning,
+    BluetoothLegacyAdvertisingSchedulerHeadPublished,
+    BluetoothLegacyAdvertisingSchedulerRecycleStep, BluetoothLegacyAdvertisingSchedulerRecycled,
+    BluetoothLegacyAdvertisingSchedulerRunning,
+    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin,
+    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady,
+    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck,
+    BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep,
+    BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{

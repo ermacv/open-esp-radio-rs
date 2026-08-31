@@ -489,6 +489,77 @@ impl BluetoothDtmPostUnlinkMailbox {
             }
         }
     }
+
+    pub(crate) fn take_legacy_advertising<'a>(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    ) -> BluetoothLegacyAdvertisingPostUnlinkTake<'a> {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .take(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key } => {
+                BluetoothLegacyAdvertisingPostUnlinkTake::Recheck {
+                    key,
+                    unlinked: awaiting.unlinked,
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::Ready { key, event } => {
+                let _ = self.wake.close();
+                BluetoothLegacyAdvertisingPostUnlinkTake::Ready {
+                    key,
+                    event: BluetoothLegacyAdvertisingPostUnlinkPublishedEvent {
+                        unlinked: awaiting.unlinked,
+                        published: event,
+                    },
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::AffinityMismatch => {
+                BluetoothLegacyAdvertisingPostUnlinkTake::AffinityMismatch(awaiting)
+            }
+        }
+    }
+
+    pub(crate) fn rearm_legacy_advertising<'a>(
+        &self,
+        critical_section: CriticalSection<'_>,
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    ) -> BluetoothLegacyAdvertisingPostUnlinkRearm<'a> {
+        if self.state.borrow(critical_section).borrow_mut().rearm(key) {
+            BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(
+                BluetoothLegacyAdvertisingPostUnlinkAwaiting { unlinked, key },
+            )
+        } else {
+            BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked)
+        }
+    }
+
+    pub(crate) fn cancel_legacy_advertising<'a>(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    ) -> BluetoothLegacyAdvertisingPostUnlinkCancelStep<'a> {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .cancel(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxCancel::Cancelled => {
+                BluetoothLegacyAdvertisingPostUnlinkCancelStep::Cancelled(awaiting.unlinked)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::EventReady => {
+                BluetoothLegacyAdvertisingPostUnlinkCancelStep::EventReady(awaiting)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::AffinityMismatch => {
+                BluetoothLegacyAdvertisingPostUnlinkCancelStep::AffinityMismatch(awaiting)
+            }
+        }
+    }
 }
 
 /// Already-unlinked DTM owner tied to one exact mailbox identity and arm generation.
@@ -565,6 +636,74 @@ pub enum BluetoothDtmPostUnlinkCancelStep<Role> {
     Cancelled(crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
     EventReady(BluetoothDtmPostUnlinkAwaiting<Role>),
     AffinityMismatch(BluetoothDtmPostUnlinkAwaiting<Role>),
+}
+
+/// Advertising owner tied to one exact protocol-neutral mailbox arm.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the armed advertising owner must consume an event or cancel"]
+pub struct BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a> {
+    unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    key: BluetoothDtmPostUnlinkArmKey,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a> {
+    pub(crate) const fn new(
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+        key: BluetoothDtmPostUnlinkArmKey,
+    ) -> Self {
+        Self { unlinked, key }
+    }
+
+    pub const fn generation(&self) -> u32 {
+        self.key.generation
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingPostUnlinkPublishedEvent<'a> {
+    unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    published: BluetoothPrimaryPublishedInterruptStep,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingPostUnlinkPublishedEvent<'a> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+        BluetoothPrimaryPublishedInterruptStep,
+    ) {
+        (self.unlinked, self.published)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingPostUnlinkTake<'a> {
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    },
+    Ready {
+        key: BluetoothDtmPostUnlinkArmKey,
+        event: BluetoothLegacyAdvertisingPostUnlinkPublishedEvent<'a>,
+    },
+    AffinityMismatch(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingPostUnlinkRearm<'a> {
+    Armed(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+    AffinityMismatch(crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
+}
+
+/// Lossless cancellation result for an advertising post-unlink wait.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retain the unlinked owner or consume the ready event"]
+pub enum BluetoothLegacyAdvertisingPostUnlinkCancelStep<'a> {
+    Cancelled(crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
+    EventReady(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+    AffinityMismatch(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
 }
 
 #[cfg(test)]

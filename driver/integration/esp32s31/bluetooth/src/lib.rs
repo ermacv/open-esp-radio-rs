@@ -279,7 +279,7 @@ mod tests {
 
     const fn runtime_config() -> BluetoothDtmRuntimeConfig {
         BluetoothDtmRuntimeConfig::new(
-            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4),
+            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 4),
             BluetoothDtmDefaultTxPowerDbm::new(6),
         )
     }

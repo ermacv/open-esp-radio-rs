@@ -198,7 +198,7 @@ mod tests {
         let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(
             storage,
             base,
-            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4),
+            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 4),
         )
         .expect("test graph fits physical controller SRAM");
 

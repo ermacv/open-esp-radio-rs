@@ -289,7 +289,7 @@ mod tests {
 
     const fn runtime_config() -> BluetoothDtmRuntimeConfig {
         BluetoothDtmRuntimeConfig::new(
-            BluetoothDtmSchedulerAllocationConfig::new(1, 2, 5, 1),
+            BluetoothDtmSchedulerAllocationConfig::new(1, 2, 1),
             BluetoothDtmDefaultTxPowerDbm::new(7),
         )
     }
@@ -299,7 +299,7 @@ mod tests {
             std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
         let base = BluetoothDtmMemoryGraphModelAddress::new(address)
             .expect("model address uses the controller SRAM syntax");
-        let config = BluetoothDtmSchedulerAllocationConfig::new(1, 2, 5, 1);
+        let config = BluetoothDtmSchedulerAllocationConfig::new(1, 2, 1);
         BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, config)
             .expect("model graph fits in controller SRAM")
     }

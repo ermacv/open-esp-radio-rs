@@ -448,10 +448,10 @@ private_options_halfword_14 + 4 + ble_ll_sync_cnt) & 0x0fff`. The three named
 inputs and their exact structure positions are public in the pinned ESP-IDF
 `esp_bt_controller_config_t::ble`; the current private `0x2e`-byte table
 independently confirms halfword `+0x14` as `5`, but its semantic name is still
-unproven. Static binding therefore requires all four source-owned values,
-retains the private value as an explicit positional fact and has no implicit
-vendor-build default. The resulting allocation image is installed before the
-CPU owner is returned.
+unproven. Static binding therefore accepts only the three product-owned limits
+and retains `5` as a private S31 source fact. Applications cannot override or
+silently copy that vendor-build detail. The resulting allocation image is
+installed before the CPU owner is returned.
 The vendor software kind and callback pointer are not copied into the graph;
 the open scheduler must replace them with typed dispatch and affine ownership.
 

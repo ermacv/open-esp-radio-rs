@@ -1778,7 +1778,7 @@ mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 
     fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
-        BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4)
+        BluetoothDtmSchedulerAllocationConfig::new(2, 3, 4)
     }
 
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {

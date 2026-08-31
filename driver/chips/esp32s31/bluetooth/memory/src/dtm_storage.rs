@@ -94,19 +94,18 @@ const RX_PACKET_CAPACITY_WORD: usize = 1;
 const RX_PACKET_RESULT_WORD: usize = 3;
 const RX_PACKET_METADATA_WORD: usize = 6;
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
+const PRIVATE_SCHEDULER_ALLOCATION_ADDITION: u32 = 5;
 
-/// Source-owned inputs to the DTM scheduler allocation field.
+/// Product-owned limits contributing to the DTM scheduler allocation field.
 ///
 /// The current allocator forms scheduler-item `+0x20[11:0]` from three public
-/// ESP-IDF controller limits, two fixed additions and one private-options
-/// halfword. The private field remains positional because its semantic name is
-/// not yet proven. Requiring it here prevents a target from silently inheriting
-/// a value from one reviewed vendor build.
+/// ESP-IDF controller limits and target-private additions. The private
+/// halfword recovered at options offset `+0x14` is fixed by this S31
+/// implementation; it is not an application policy or part of this API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmSchedulerAllocationConfig {
     extended_advertising_instances: u16,
     connections: u16,
-    private_options_halfword_14: u16,
     periodic_syncs: u8,
 }
 
@@ -115,13 +114,11 @@ impl BluetoothDtmSchedulerAllocationConfig {
     pub const fn new(
         extended_advertising_instances: u16,
         connections: u16,
-        private_options_halfword_14: u16,
         periodic_syncs: u8,
     ) -> Self {
         Self {
             extended_advertising_instances,
             connections,
-            private_options_halfword_14,
             periodic_syncs,
         }
     }
@@ -130,7 +127,7 @@ impl BluetoothDtmSchedulerAllocationConfig {
         ((self.extended_advertising_instances as u32)
             .wrapping_add(1)
             .wrapping_add(self.connections as u32)
-            .wrapping_add(self.private_options_halfword_14 as u32)
+            .wrapping_add(PRIVATE_SCHEDULER_ALLOCATION_ADDITION)
             .wrapping_add(4)
             .wrapping_add(self.periodic_syncs as u32))
             & 0x0fff
@@ -2024,7 +2021,7 @@ pub enum BluetoothDtmMemoryGraphCompletionObservation {
 /// let storage = Box::leak(Box::new(BluetoothDtmMemoryGraphStorage::new()));
 /// let base = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0100).unwrap();
 /// let config = open_esp_radio_esp32s31_bluetooth_memory::
-///     BluetoothDtmSchedulerAllocationConfig::new(1, 1, 5, 1);
+///     BluetoothDtmSchedulerAllocationConfig::new(1, 1, 1);
 /// let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, config).unwrap();
 /// let moved = owner;
 /// let _binding = owner.binding();
@@ -2431,7 +2428,7 @@ impl BluetoothDtmMemoryGraphStorage {
     ///
     /// let storage = Box::leak(Box::new(BluetoothDtmMemoryGraphStorage::new()));
     /// let config = open_esp_radio_esp32s31_bluetooth_memory::
-    ///     BluetoothDtmSchedulerAllocationConfig::new(1, 1, 5, 1);
+    ///     BluetoothDtmSchedulerAllocationConfig::new(1, 1, 1);
     /// let _ = BluetoothDtmMemoryGraphStorage::pin_static_model(
     ///     storage,
     ///     0x2f00_0100,
@@ -2650,7 +2647,7 @@ mod tests {
     }
 
     const fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
-        BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4)
+        BluetoothDtmSchedulerAllocationConfig::new(2, 3, 4)
     }
 
     fn candidate_words(seed: BluetoothDtmPositionalEventSeed) -> BluetoothDtmPositionalEventWords {

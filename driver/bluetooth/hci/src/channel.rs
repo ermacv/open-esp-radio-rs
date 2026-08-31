@@ -1,19 +1,18 @@
 //! Bounded, packet-oriented, in-process HCI transport.
 
-use core::{cell::RefCell, fmt, future::poll_fn, task::Poll};
+use core::{cell::RefCell, convert::Infallible, fmt, future::poll_fn, task::Poll};
 
 use bt_hci::{
-    ControllerToHostPacket, FromHciBytes, FromHciBytesError,
-    HostToControllerPacket as HostToControllerPacketContract, PacketKind,
+    FromHciBytes, FromHciBytesError, PacketKind, ReadHciError,
     cmd::{Opcode, OpcodeGroup},
     data::{AclPacket, IsoPacket, SyncPacket},
-    transport::Transport,
+    transport::{PacketToController, PacketToHost, Transport},
 };
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     waitqueue::WakerRegistration,
 };
-use embedded_io::{ErrorKind, ErrorType, Write};
+use embedded_io::{ErrorKind, ErrorType, ReadExactError, Write};
 
 use crate::{
     ControllerToHostQueueError, LeControllerCommandClassification, PacketSlot,
@@ -140,7 +139,7 @@ pub enum HciChannelError {
     InvalidPacket(FromHciBytesError),
     /// Bytes exist after the payload length declared by the HCI header.
     TrailingBytes,
-    /// A `HostToControllerPacket` wrote beyond the selected storage profile.
+    /// A `PacketToController` wrote beyond the selected storage profile.
     SerializationOverflow {
         /// Maximum writable packet body length.
         capacity: usize,
@@ -163,6 +162,18 @@ impl fmt::Display for HciChannelError {
 }
 
 impl core::error::Error for HciChannelError {}
+
+impl From<ReadHciError<Infallible>> for HciChannelError {
+    fn from(error: ReadHciError<Infallible>) -> Self {
+        match error {
+            ReadHciError::BufferTooSmall | ReadHciError::Read(ReadExactError::UnexpectedEof) => {
+                Self::InvalidPacket(FromHciBytesError::InvalidSize)
+            }
+            ReadHciError::InvalidValue => Self::InvalidPacket(FromHciBytesError::InvalidValue),
+            ReadHciError::Read(ReadExactError::Other(never)) => match never {},
+        }
+    }
+}
 
 impl embedded_io::Error for HciChannelError {
     fn kind(&self) -> ErrorKind {
@@ -604,16 +615,16 @@ impl<
 where
     M: RawMutex,
 {
-    async fn read<'buffer>(
+    async fn read<'buffer, P: PacketToHost<'buffer>>(
         &self,
         buffer: &'buffer mut [u8],
-    ) -> Result<ControllerToHostPacket<'buffer>, Self::Error> {
+    ) -> Result<P, Self::Error> {
         require_profile_buffer::<PACKET_CAPACITY>(buffer.len())?;
         let slot = self.controller_to_host.receive().await;
         decode_controller_slot(slot, buffer)
     }
 
-    async fn write<T: HostToControllerPacketContract>(&self, value: &T) -> Result<(), Self::Error> {
+    async fn write<T: PacketToController>(&self, value: &T) -> Result<(), Self::Error> {
         let slot = encode_host_packet::<T, PACKET_CAPACITY>(value)?;
         self.host_to_controller.send(slot).await;
         Ok(())
@@ -893,14 +904,20 @@ fn controller_slot<const PACKET_CAPACITY: usize>(
     Ok(slot)
 }
 
-fn decode_controller_slot<'buffer, const PACKET_CAPACITY: usize>(
+fn decode_controller_slot<'buffer, P: PacketToHost<'buffer>, const PACKET_CAPACITY: usize>(
     mut slot: PacketSlot<PACKET_CAPACITY>,
     buffer: &'buffer mut [u8],
-) -> Result<ControllerToHostPacket<'buffer>, HciChannelError> {
-    buffer[..slot.length].copy_from_slice(&slot.bytes[..slot.length]);
+) -> Result<P, HciChannelError> {
+    let result = {
+        let mut reader = &slot.bytes[..slot.length];
+        match P::read_hci(slot.kind, &mut reader, buffer) {
+            Ok(packet) if reader.is_empty() => Ok(packet),
+            Ok(_) => Err(HciChannelError::TrailingBytes),
+            Err(error) => Err(HciChannelError::from(error)),
+        }
+    };
     slot.bytes[..slot.length].fill(0);
-    decode_complete_packet(slot.kind, &buffer[..slot.length])
-        .map_err(|_| HciChannelError::CorruptRetainedPacket)
+    result
 }
 
 fn map_controller_packet_error(error: ControllerToHostQueueError) -> HciChannelError {
@@ -926,7 +943,7 @@ fn map_controller_packet_error(error: ControllerToHostQueueError) -> HciChannelE
     }
 }
 
-fn encode_host_packet<T: HostToControllerPacketContract, const PACKET_CAPACITY: usize>(
+fn encode_host_packet<T: PacketToController, const PACKET_CAPACITY: usize>(
     value: &T,
 ) -> Result<PacketSlot<PACKET_CAPACITY>, HciChannelError> {
     if T::KIND == PacketKind::Event {
@@ -1265,7 +1282,7 @@ mod tests {
         let mut wait = pin!(controller.wait_publish_ready());
         assert_pending(wait.as_mut());
         let mut event_buffer = [0; 16];
-        block_on(host.read(&mut event_buffer)).unwrap();
+        block_on(host.read::<ControllerToHostPacket<'_>>(&mut event_buffer)).unwrap();
         let mut context = Context::from_waker(Waker::noop());
         assert!(matches!(wait.as_mut().poll(&mut context), Poll::Ready(())));
 
@@ -1396,7 +1413,7 @@ mod tests {
         }
 
         let mut event_buffer = [0; 16];
-        block_on(host.read(&mut event_buffer)).unwrap();
+        block_on(host.read::<ControllerToHostPacket<'_>>(&mut event_buffer)).unwrap();
         block_on(controller.wait_publish_ready());
         controller
             .try_publish(PacketKind::Event, &RESET_COMMAND_COMPLETE)
@@ -1442,7 +1459,7 @@ mod tests {
 
         block_on(async {
             let reset = Reset::new();
-            let mut event_buffer = [0; 16];
+            let mut event_buffer = external.alloc_buf().unwrap();
             let worker = async {
                 let mut command_buffer = [0; 16];
                 let HostToControllerFrame::Command(command) =
@@ -1538,11 +1555,19 @@ mod tests {
             }
 
             let mut event_buffer = [0; 16];
-            assert!(host.read(&mut event_buffer).await.is_ok());
+            assert!(
+                host.read::<ControllerToHostPacket<'_>>(&mut event_buffer)
+                    .await
+                    .is_ok()
+            );
             controller
                 .try_publish(PacketKind::Event, &RESET_COMMAND_COMPLETE)
                 .unwrap();
-            assert!(host.read(&mut event_buffer).await.is_ok());
+            assert!(
+                host.read::<ControllerToHostPacket<'_>>(&mut event_buffer)
+                    .await
+                    .is_ok()
+            );
         });
     }
 
@@ -1569,13 +1594,17 @@ mod tests {
                 .await
                 .unwrap();
             assert!(matches!(
-                host.read(&mut short).await,
+                host.read::<ControllerToHostPacket<'_>>(&mut short).await,
                 Err(HciChannelError::DestinationTooSmall {
                     required: 16,
                     available: 15,
                 })
             ));
-            assert!(host.read(&mut complete).await.is_ok());
+            assert!(
+                host.read::<ControllerToHostPacket<'_>>(&mut complete)
+                    .await
+                    .is_ok()
+            );
         });
     }
 

@@ -16,7 +16,7 @@ open-esp-radio-esp32s31-bluetooth = { path = "../../../chips/esp32s31/bluetooth"
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
 
 [dev-dependencies]
-bt-hci = "=0.9.0"
+bt-hci = "=0.10.1"
 
 [lints]
 workspace = true

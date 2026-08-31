@@ -662,7 +662,10 @@ fn require_parameter_length(
 mod tests {
     use bt_hci::{
         ControllerToHostPacket, FromHciBytes, PacketKind,
-        cmd::{Cmd, Opcode, le::LeTestEnd},
+        cmd::{
+            Cmd, Opcode,
+            le::{LeReadSupportedStates, LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2},
+        },
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
         param::{Error as HciError, Status},
         transport::Transport,
@@ -680,6 +683,12 @@ mod tests {
     };
 
     type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+    #[test]
+    fn legacy_transmitter_opcode_does_not_collide_with_read_supported_states() {
+        assert_eq!(LE_TRANSMITTER_TEST_V1_OPCODE.to_raw(), 0x201e);
+        assert_ne!(LE_TRANSMITTER_TEST_V1_OPCODE, LeReadSupportedStates::OPCODE);
+    }
 
     #[test]
     fn all_command_bodies_decode_semantically_and_typed_test_end_crosses_the_boundary() {
@@ -702,7 +711,7 @@ mod tests {
         );
 
         let LeDtmCommand::ReceiverTest(receiver) =
-            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V2_OPCODE, &[12, 3, 1]).unwrap()
+            cross_hci_boundary(&LeReceiverTestV2::new(12, 3, 1))
         else {
             panic!("enhanced receiver command changed semantic kind");
         };
@@ -711,7 +720,7 @@ mod tests {
         assert_eq!(receiver.modulation_index(), LeDtmModulationIndex::Stable);
 
         let LeDtmCommand::TransmitterTest(transmitter) =
-            LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V2_OPCODE, &[18, 255, 4, 4]).unwrap()
+            cross_hci_boundary(&LeTransmitterTestV2::new(18, 255, 4, 4))
         else {
             panic!("enhanced transmitter command changed semantic kind");
         };
@@ -1050,7 +1059,7 @@ mod tests {
         assert_eq!(observed.return_params::<LeTestEnd>().unwrap(), 0x3412);
     }
 
-    fn cross_hci_boundary<T: bt_hci::HostToControllerPacket>(command: &T) -> LeDtmCommand {
+    fn cross_hci_boundary<T: bt_hci::transport::PacketToController>(command: &T) -> LeDtmCommand {
         let mut channel = TestChannel::new();
         let (host, controller) = channel.split();
         block_on(async {

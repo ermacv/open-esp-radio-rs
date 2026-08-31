@@ -10,15 +10,27 @@ an application must own it:
 - a standard `bt-hci::Controller` read loop is polled concurrently with typed
   Host commands.
 
-The current smoke sequence issues typed HCI Reset and LE Test End while DTM is
-idle. A successful Test End returns zero received packets and proves the real
-Host-to-Controller-to-Host command path without a local HCI implementation.
+The board smoke sequence uses only the upstream `bt-hci` 0.10 typed command
+API. It performs:
 
-Typed LE Receiver Test and LE Transmitter Test are intentionally not emitted
-yet. The pinned `bt-hci` release does not define them, while its newer release
-currently assigns the legacy Transmitter Test the wrong command code. The
-example will add on-air start commands only after the upstream typed command is
-correct; it does not bypass `bt-hci` with raw opcodes.
+1. HCI Reset;
+2. LE Receiver Test v2 on test channel 0, LE 1M, standard modulation index;
+3. a bounded one-second receive dwell followed by LE Test End;
+4. LE Transmitter Test v2 on the same channel and PHY with a 37-byte PRBS9
+   payload;
+5. a bounded one-second transmit dwell followed by LE Test End.
+
+The receive Test End packet count is printed as an observation; it may be zero
+when no peer transmitter is present. The transmit Test End packet count is
+required to be zero, as defined by HCI, and any other value fails the smoke
+sequence. Command execution, the Host read pump and the hardware runner remain
+concurrently polled, so command responses can make progress. The example uses
+`Controller::alloc_buf` for the read side and does not encode raw HCI opcodes or
+implement a local HCI codec.
+
+This is a board smoke sequence, not recorded HIL evidence. Meaningful RF
+validation still requires a suitable peer or tester, controlled RF conditions
+and the repository's HIL evidence process.
 
 Build the target with:
 

@@ -592,7 +592,7 @@ pub(crate) fn invalid_parameters(opcode: Opcode) -> BootstrapCommandCompleteEven
 #[cfg(test)]
 mod tests {
     use bt_hci::{
-        ControllerToHostPacket, FromHciBytes, HostToControllerPacket,
+        ControllerToHostPacket, FromHciBytes,
         cmd::{
             Cmd, Opcode, OpcodeGroup, SyncCmd,
             controller_baseband::{
@@ -611,7 +611,7 @@ mod tests {
             BdAddr, ControllerToHostFlowControl, Error as HciError, EventMask, EventMaskPage2,
             LeEventMask, Status,
         },
-        transport::Transport,
+        transport::{PacketToController, Transport},
     };
     use embassy_futures::{
         block_on,
@@ -864,7 +864,7 @@ mod tests {
 
         block_on(async {
             let reset = Reset::new();
-            let mut event_buffer = [0; 32];
+            let mut event_buffer = external.alloc_buf().unwrap();
             let worker = async {
                 let mut command_buffer = [0; 32];
                 let HostToControllerFrame::Command(command) =
@@ -910,7 +910,7 @@ mod tests {
         let (host, controller) = channel.split();
         let mut bootstrap = LeControllerBootstrap::new(config);
         let external = ExternalController::<_, 2>::new(host);
-        let mut resources = HostResources::<_, TestPacketPool, 1, 1>::new();
+        let mut resources = HostResources::<TestPacketPool, 1, 1>::new();
         let stack = trouble_host::new(external, &mut resources).build();
         let mut runner = stack.runner();
         let mut peripheral = stack.peripheral();
@@ -1107,7 +1107,7 @@ mod tests {
         }
     }
 
-    async fn round_trip<T: HostToControllerPacket>(
+    async fn round_trip<T: PacketToController>(
         host: &TestHost<'_>,
         controller: &TestController<'_>,
         bootstrap: &mut LeControllerBootstrap,

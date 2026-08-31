@@ -8,9 +8,13 @@ graph reaches the physical Bluetooth boundary.
 
 The first controller target is Bluetooth Low Energy only. Bluetooth Classic
 BR/EDR, Mesh profiles and LE Audio profiles are separate programs and are not
-implied by progress on the LE Controller. The initial Host contract is the
-released `trouble-host` 0.7.0 / `bt-hci` 0.9.0 pair. Moving that boundary is an
-explicit compatibility change.
+implied by progress on the LE Controller. The Host contract is the released
+`trouble-host` 0.8.0 / `bt-hci` 0.10.1 pair. The in-process transport implements
+the standard `bt-hci` packet traits directly; the Controller does not maintain
+a second Host protocol. The upstream legacy Transmitter Test v1 type is not
+used because its 0.10.1 opcode collides with LE Read Supported States. The
+Controller still accepts the standard v1 opcode through its semantic decoder,
+while production smoke coverage uses the correct upstream v2 types.
 
 The status terms are:
 

@@ -14,7 +14,7 @@ open-esp-radio-esp32s31-bluetooth-memory = { path = "../../../chips/esp32s31/blu
 static_cell = "2.1.1"
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-bt-hci = "=0.9.0"
+bt-hci = "=0.10.1"
 embassy-futures = "0.1.2"
 embassy-time = "0.5.1"
 open-esp-radio-bluetooth-hci = { path = "../../../bluetooth/hci" }

@@ -867,15 +867,15 @@ pub enum LeControllerResponsePublication<'epoch, Owner> {
 #[cfg(test)]
 mod tests {
     use bt_hci::{
-        ControllerToHostPacket, FromHciBytes, HostToControllerPacket, PacketKind, WriteHci,
+        ControllerToHostPacket, FromHciBytes, PacketKind,
         cmd::{
             Cmd, Opcode, OpcodeGroup,
             controller_baseband::{Reset, SetEventMask},
-            le::LeTestEnd,
+            le::{LeReceiverTest, LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2},
         },
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
         param::{Error as HciError, Status},
-        transport::Transport,
+        transport::{PacketToController, Transport},
     };
     use embassy_futures::{
         block_on,
@@ -983,7 +983,9 @@ mod tests {
         }
     }
 
-    impl WriteHci for RawCommand<'_> {
+    impl PacketToController for RawCommand<'_> {
+        const KIND: PacketKind = PacketKind::Cmd;
+
         fn size(&self) -> usize {
             3 + self.parameters.len()
         }
@@ -1002,10 +1004,6 @@ mod tests {
         }
     }
 
-    impl HostToControllerPacket for RawCommand<'_> {
-        const KIND: PacketKind = PacketKind::Cmd;
-    }
-
     fn receiver_start_pending<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
         endpoints: &mut LeControllerHciEndpoints<
             'epoch,
@@ -1016,12 +1014,8 @@ mod tests {
         >,
         owner: Owner,
     ) -> LeControllerResponsePending<'epoch, Owner> {
-        block_on(
-            endpoints
-                .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[7])),
-        )
-        .expect("the receiver command enters the real Host queue");
+        block_on(endpoints.host.write(&LeReceiverTest::new(7)))
+            .expect("the receiver command enters the real Host queue");
         let mut command_buffer = [0; 16];
         let ready = claim_initial_ready(&mut endpoints.controller, owner);
         let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
@@ -1076,12 +1070,8 @@ mod tests {
         let mut resources = controller_resources();
         let mut endpoints = resources.split();
         let ready = publish_probe_response(&mut endpoints, 11_u8);
-        block_on(
-            endpoints
-                .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[7])),
-        )
-        .expect("the receiver command enters the Host queue");
+        block_on(endpoints.host.write(&LeReceiverTest::new(7)))
+            .expect("the receiver command enters the Host queue");
         let mut command_buffer = [0; 16];
         let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
         let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
@@ -1206,12 +1196,8 @@ mod tests {
         let mut resources = controller_resources_with_output_depth::<2>();
         let mut endpoints = resources.split();
         let ready = publish_probe_response(&mut endpoints, 43_u8);
-        block_on(
-            endpoints
-                .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[7])),
-        )
-        .expect("the receiver command enters the Host queue");
+        block_on(endpoints.host.write(&LeReceiverTest::new(7)))
+            .expect("the receiver command enters the Host queue");
         let mut command_buffer = [0; 16];
         let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
         let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
@@ -1279,12 +1265,8 @@ mod tests {
     fn idle_router_defers_both_start_kinds_until_explicit_started_response() {
         let mut receiver_resources = controller_resources();
         let mut receiver = receiver_resources.split();
-        block_on(
-            receiver
-                .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V2_OPCODE, &[13, 2, 1])),
-        )
-        .expect("the receiver command enters the real Host queue");
+        block_on(receiver.host.write(&LeReceiverTestV2::new(13, 2, 1)))
+            .expect("the receiver command enters the real Host queue");
         let mut receiver_buffer = [0; 16];
         let ready = claim_initial_ready(&mut receiver.controller, RadioOwner(71));
         let classified = intake_command(&receiver.controller, ready, &mut receiver_buffer);
@@ -1321,10 +1303,11 @@ mod tests {
 
         let mut transmitter_resources = controller_resources();
         let mut transmitter = transmitter_resources.split();
-        block_on(transmitter.host.write(&RawCommand::new(
-            LE_TRANSMITTER_TEST_V2_OPCODE,
-            &[17, 23, 2, 4],
-        )))
+        block_on(
+            transmitter
+                .host
+                .write(&LeTransmitterTestV2::new(17, 23, 2, 4)),
+        )
         .expect("the transmitter command enters the real Host queue");
         let mut transmitter_buffer = [0; 16];
         let ready = claim_initial_ready(&mut transmitter.controller, RadioOwner(73));
@@ -1361,12 +1344,7 @@ mod tests {
         let mut receiver_resources = controller_resources();
         let mut receiver = receiver_resources.split();
         let ready = publish_probe_response(&mut receiver, RadioOwner(91));
-        block_on(
-            receiver
-                .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V2_OPCODE, &[13, 3, 0])),
-        )
-        .unwrap();
+        block_on(receiver.host.write(&LeReceiverTestV2::new(13, 3, 0))).unwrap();
         let mut command_buffer = [0; 16];
         let command = intake_command(&receiver.controller, ready, &mut command_buffer);
         let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
@@ -1637,12 +1615,8 @@ mod tests {
             panic!("the empty queue must accept the start response");
         };
 
-        block_on(
-            endpoints
-                .host
-                .write(&RawCommand::new(LE_RECEIVER_TEST_V2_OPCODE, &[11, 2, 0])),
-        )
-        .expect("the receiver command enters the real Host queue");
+        block_on(endpoints.host.write(&LeReceiverTestV2::new(11, 2, 0)))
+            .expect("the receiver command enters the real Host queue");
         let mut command_buffer = [0; 16];
         let receiver = intake_command(&endpoints.controller, started, &mut command_buffer);
         let LeControllerClassifiedCommandRoute::Dtm(deferred) =
@@ -1674,10 +1648,11 @@ mod tests {
             HciError::CONTROLLER_BUSY.to_status(),
         );
 
-        block_on(endpoints.host.write(&RawCommand::new(
-            LE_TRANSMITTER_TEST_V2_OPCODE,
-            &[17, 23, 2, 3],
-        )))
+        block_on(
+            endpoints
+                .host
+                .write(&LeTransmitterTestV2::new(17, 23, 2, 3)),
+        )
         .expect("the transmitter command enters the real Host queue");
         let transmitter = intake_command(&endpoints.controller, ready, &mut command_buffer);
         let LeControllerClassifiedCommandRoute::Dtm(deferred) =

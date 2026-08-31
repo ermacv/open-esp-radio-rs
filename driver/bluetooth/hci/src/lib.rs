@@ -91,7 +91,7 @@ pub use response::{
 
 use bt_hci::{ControllerToHostPacket, FromHciBytesError, PacketKind};
 
-/// Maximum packet body accepted by the pinned `bt-hci` 0.9 Host contract.
+/// Maximum packet body accepted by the in-process HCI Host contract.
 ///
 /// The packet indicator used by UART/H4 is not retained because the direct
 /// in-process boundary carries [`PacketKind`] separately. Future ISO or larger
@@ -462,7 +462,7 @@ mod tests {
     fn requires_trouble_controller<C: trouble_host::Controller>() {}
 
     #[test]
-    fn pinned_bt_hci_release_matches_trouble_controller_contract() {
+    fn bt_hci_and_trouble_share_one_controller_contract() {
         type ContractTransport = InProcessHciHostTransport<'static, NoopRawMutex, 1, 1, 16>;
         requires_trouble_controller::<ExternalController<ContractTransport, 1>>();
     }

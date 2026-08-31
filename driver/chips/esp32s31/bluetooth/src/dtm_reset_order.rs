@@ -76,6 +76,7 @@ mod tests {
         LeControllerCommandReadyClaim, LeControllerHciResources,
         LeControllerIdleClassifiedCommandRoute, LeControllerResponsePublication,
         bt_hci::{
+            ControllerToHostPacket,
             cmd::{controller_baseband::Reset, le::LeTestEnd},
             transport::Transport,
         },
@@ -178,7 +179,12 @@ mod tests {
         assert_eq!(pending.owner(), &RestoredOwner(41));
 
         let mut response_buffer = [0; 16];
-        block_on(first.host.read(&mut response_buffer)).expect("Host drains the preceding event");
+        block_on(
+            first
+                .host
+                .read::<ControllerToHostPacket<'_>>(&mut response_buffer),
+        )
+        .expect("Host drains the preceding event");
         let LeControllerResponsePublication::Published(published) =
             pending.try_publish(&first.controller)
         else {
@@ -187,6 +193,11 @@ mod tests {
         let (owner, ready) = published.into_parts();
         assert_eq!(owner, RestoredOwner(41));
         assert!(ready.accepts_endpoint(&first.controller));
-        block_on(first.host.read(&mut response_buffer)).expect("Host receives Reset completion");
+        block_on(
+            first
+                .host
+                .read::<ControllerToHostPacket<'_>>(&mut response_buffer),
+        )
+        .expect("Host receives Reset completion");
     }
 }

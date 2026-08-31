@@ -130,8 +130,11 @@ finished-list, retirement, unlink, mailbox and role-specific recycle suffix.
 The reclaimed boundary enters a second finite runner which follows the exact
 role-specific recurring preparation order back to hardware RUN and supports
 lossless cancellation before HEAD. A long-lived affine session carries every
-completion and recurring phase beside a separately typed response-order
-proof, preserving radio progress during HCI backpressure. An endpoint-bound
+completion and recurring phase beside a separately typed response-order proof,
+preserving radio progress during HCI backpressure. The Embassy Controller actor
+also retains a rejected first-event HEAD or RUN transition in place and exposes
+a retry boundary; it no longer terminalizes the core's unchanged pre-RUN retry
+owner. An endpoint-bound
 Test End transition now suppresses recurrence, finishes at most one published
 event and retains its terminal response through graph restore. The remaining
 runtime work is general completion routing beyond DTM list zero, source-127

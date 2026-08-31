@@ -25,8 +25,8 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothDtmActiveSessionFault, BluetoothDtmFirstPreparationCleanup,
     BluetoothDtmFirstPreparationCleanupStep, BluetoothDtmFirstPreparationCompletion,
     BluetoothDtmFirstPreparationFailStop, BluetoothDtmFirstRunnerFailure,
-    BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute, BluetoothDtmOrderReady,
-    BluetoothDtmResetCompletionReady, BluetoothDtmResetCompletionStart,
+    BluetoothDtmFirstRunnerRetry, BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute,
+    BluetoothDtmOrderReady, BluetoothDtmResetCompletionReady, BluetoothDtmResetCompletionStart,
     BluetoothDtmResetResponsePending, BluetoothDtmResetResponsePublication,
     BluetoothDtmResetRestoreFailure, BluetoothDtmResetRestoreStep, BluetoothDtmResetStoppingFault,
     BluetoothDtmResetStoppingRunner, BluetoothDtmResetStoppingStep, BluetoothDtmResetStoppingWait,
@@ -189,6 +189,7 @@ where
         completion: EmbassyBluetoothControllerIdleCompletion,
     },
     FirstEvent(EmbassyBluetoothDtmFirstControllerTimeWait<'runtime, S, CAPACITY>),
+    FirstRetry(BluetoothDtmFirstRunnerRetry<'runtime, S, CAPACITY>),
     FirstCleanup {
         cleanup: BluetoothDtmFirstPreparationCleanup<'runtime, S, CAPACITY>,
         readiness: FirstCleanupReadiness,
@@ -211,7 +212,7 @@ where
             Self::Idle(_) => EmbassyBluetoothControllerCommandPhase::Idle,
             Self::IdleReset(_) => EmbassyBluetoothControllerCommandPhase::IdleReset,
             Self::IdleResponse { .. } => EmbassyBluetoothControllerCommandPhase::IdleResponse,
-            Self::FirstEvent(_) | Self::FirstCleanup { .. } => {
+            Self::FirstEvent(_) | Self::FirstRetry(_) | Self::FirstCleanup { .. } => {
                 EmbassyBluetoothControllerCommandPhase::FirstEvent
             }
             Self::Active(_) => EmbassyBluetoothControllerCommandPhase::Active,
@@ -238,6 +239,7 @@ pub enum EmbassyBluetoothControllerIdleCompletion {
 /// Recoverable retry boundary while the complete owner remains in the actor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmbassyBluetoothControllerRetry {
+    FirstEvent,
     Active(EmbassyBluetoothDtmSessionRetry),
     ResetStopping,
     ResetRestore,
@@ -269,10 +271,12 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     ControllerTimeExhausted,
     /// No installed role owns this scheduler list; its exact owner is quarantined in the actor.
     UnownedFinishedList(BluetoothSchedulerHardwareListIndex),
-    /// An unrecovered initial transition failed before scheduler `RUN`.
+    /// A non-retryable initial transition failed before scheduler `RUN`.
     ///
-    /// The only automatic failure response is the separate, typed CleanTask
-    /// edge after preparation cleanup has proved the graph idle again.
+    /// Safe lower retries remain stored in the actor and are reported through
+    /// [`EmbassyBluetoothControllerRetry::FirstEvent`]. The only automatic
+    /// failure response is the separate, typed CleanTask edge after preparation
+    /// cleanup has proved the graph idle again.
     FirstEventFailed(BluetoothDtmFirstRunnerFailure<'runtime, S, CAPACITY>),
     /// Preparation cleanup faulted before it could prove a clean idle task.
     FirstPreparationCleanupFault {
@@ -483,6 +487,19 @@ where
                     self.store_transition(from, ControllerCommandStimulus::FirstEvent, state);
                 }
                 None
+            }
+            BluetoothDtmFirstRunnerFailure::Retryable(retry) => {
+                let state = EmbassyBluetoothControllerCommandState::FirstRetry(retry);
+                if from == EmbassyBluetoothControllerCommandPhase::FirstEvent {
+                    self.store_retained_state(from, state);
+                } else {
+                    self.store_transition(from, ControllerCommandStimulus::FirstEvent, state);
+                }
+                Some(
+                    self.retain_boundary(EmbassyBluetoothControllerCommandBoundary::Retryable(
+                        EmbassyBluetoothControllerRetry::FirstEvent,
+                    )),
+                )
             }
             failure => Some(self.terminal_boundary(
                 from,
@@ -792,6 +809,23 @@ where
                     }
                 }
                 EmbassyBluetoothControllerCommandPhase::FirstEvent => {
+                    if matches!(
+                        self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::FirstRetry(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::FirstRetry(retry) =
+                            self.owner.take()
+                        else {
+                            unreachable!("the selected first-event retry did not change")
+                        };
+                        let (_, runner) = retry.into_parts();
+                        if let Some(boundary) =
+                            self.store_first_drive(drive_dtm_first_ready(runner))
+                        {
+                            return boundary;
+                        }
+                        continue;
+                    }
                     if matches!(
                         self.owner.current(),
                         EmbassyBluetoothControllerCommandState::FirstEvent(_)
@@ -1288,6 +1322,13 @@ mod tests {
         let slot = ControllerOwnerSlot::new(37_u8);
         assert_eq!(*slot.current(), 37);
         assert!(!slot.is_empty());
+        assert_eq!(
+            reduce_controller_command_transition(
+                EmbassyBluetoothControllerCommandPhase::FirstEvent,
+                ControllerCommandStimulus::Retain,
+            ),
+            ControllerCommandAction::Retain
+        );
         assert_eq!(
             reduce_controller_command_transition(
                 EmbassyBluetoothControllerCommandPhase::Active,

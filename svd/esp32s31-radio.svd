@@ -19750,11 +19750,10 @@ random-address use of slot one; slot two remains intentionally unnamed.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BLE_CONTROLLER_POINTER_PUBLICATION</name>
-      <description>Narrow positional owner for one controller word written by six ble_hw.c
-paths. The software source context is a useful ownership hint, while neither
-the destination's hardware action nor the dynamic value's inner meaning is
-claimed.
+      <name>BLE_HW_POSITIONAL_WORD_1874</name>
+      <description>Narrow positional owner for one word at 0x20101874 written by six complete
+ble_hw.c paths. Neither the destination's hardware action nor the dynamic
+value's inner meaning is claimed.
 </description>
       <baseAddress>0x20101874</baseAddress>
       <registers>
@@ -19766,8 +19765,8 @@ claimed.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE_LOW_20</name>
-              <description>Dynamic low-twenty-bit image; its pointer or index semantics are not established.</description>
+              <name>DYNAMIC_LOW_20_IMAGE</name>
+              <description>Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
             </field>

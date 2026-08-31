@@ -226,8 +226,8 @@ id = "BLOB_LIBBLE_CONTROLLER_TRANSACTION_WORDS"
 description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; direct instruction evidence from r_sym_ble_FtKLgw2CvtskaTYKEjHw, r_sym_ble_VliZtGKQHLuJN6iEJcxJ and r_sym_ble_cRMRj3P6QraQCjLZCJ9N proves the low-twenty-bit compressed SRAM-pointer reads at 0x20101080. Member 49.o ble_lll.c symbol r_sym_ble_beY9ajK3XnTlD7qU4ak9 proves the transaction at 0x201010c4; member 51.o ble_lll_conn.c symbol r_sym_ble_csMWMy8qH8yQ1PZ1HO3d and member 110.o sched_txn.c symbol r_sym_ble_veM5fsFGVyT0v4mGAXih prove the same positional transaction shape at 0x201010d8. The sequences publish bit 31 with a dynamic low-twenty-bit value while bits 20..29 are zero, poll bit 30, and republish while bit 31 is clear. Source identities are software-context hints and do not establish RX, TX or link-layer hardware meaning."
 
 [[sources]]
-id = "BLOB_LIBBLE_CONTROLLER_POINTER_PUBLICATION"
-description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; ble_hw.c member 10.o symbols r_sym_ble_52DuDTZGakdd8pNHYCm8, r_sym_ble_RV610iFt1NkeRlVmzMkQ, r_sym_ble_eq7bn6H1xP3Hf5SqkVxP, r_sym_ble_kiTzyuhqnTx7vwHCv16z, r_sym_ble_uhDTeBlUtjrD8IesgO3k and r_sym_ble_y9OEiJA3s0FmWDEDCd24. Six direct paths make sixteen complete writes to 0x20101874 with a dynamic low-twenty-bit image and zero in bits 20..31. The software source context does not establish pointer, queue or event semantics."
+id = "BLOB_LIBBLE_HW_POSITIONAL_WORD_1874"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; ble_hw.c member 10.o symbols r_sym_ble_52DuDTZGakdd8pNHYCm8, r_sym_ble_RV610iFt1NkeRlVmzMkQ, r_sym_ble_eq7bn6H1xP3Hf5SqkVxP, r_sym_ble_kiTzyuhqnTx7vwHCv16z, r_sym_ble_uhDTeBlUtjrD8IesgO3k and r_sym_ble_y9OEiJA3s0FmWDEDCd24. Six complete writes to 0x20101874 publish a dynamic low-twenty-bit image and zero in bits 20..31. No read is observed, and the software source context does not establish pointer, index, queue or event semantics."
 
 [[sources]]
 id = "BLOB_LIBBLE_SYNC_PUBLICATION"

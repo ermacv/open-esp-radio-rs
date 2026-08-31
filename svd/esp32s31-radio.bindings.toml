@@ -5119,16 +5119,16 @@ access = "read-write"
 address = 537925748
 width = 32
 access = "write-only"
-identity = "BLE_CONTROLLER_POINTER_PUBLICATION.VALUE"
-peripheral = "BLE_CONTROLLER_POINTER_PUBLICATION"
-peripheral-type = "BleControllerPointerPublication"
-peripheral-module = "ble_controller_pointer_publication"
+identity = "BLE_HW_POSITIONAL_WORD_1874.VALUE"
+peripheral = "BLE_HW_POSITIONAL_WORD_1874"
+peripheral-type = "BleHwPositionalWord1874"
+peripheral-module = "ble_hw_positional_word_1874"
 scope = []
 register-method = "value"
 
 [[registers.fields]]
-svd-name = "IMAGE_LOW_20"
-method = "image_low_20"
+svd-name = "DYNAMIC_LOW_20_IMAGE"
+method = "dynamic_low_20_image"
 bit-offset = 0
 bit-width = 20
 access = "write-only"

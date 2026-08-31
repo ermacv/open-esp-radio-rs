@@ -122,7 +122,7 @@ member = "bluetooth"
 description = "Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle."
 peripherals = [
     "BLE_CONTROLLER_ADDRESS_SLOTS",
-    "BLE_CONTROLLER_POINTER_PUBLICATION",
+    "BLE_HW_POSITIONAL_WORD_1874",
     "BLE_HW_ACCELERATOR",
     "BLE_HW_CTE_RING_CONTROL",
     "BLE_HW_RESOLVING_LIST",

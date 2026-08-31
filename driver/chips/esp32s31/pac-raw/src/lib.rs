@@ -46732,16 +46732,16 @@ pub mod ble_controller_address_slots {
         }
     }
 }
-#[doc = "Narrow positional owner for one controller word written by six ble_hw.c paths. The software source context is a useful ownership hint, while neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
-pub type BleControllerPointerPublication =
-    crate::Periph<ble_controller_pointer_publication::RegisterBlock, 0x2010_1874>;
-impl core::fmt::Debug for BleControllerPointerPublication {
+#[doc = "Narrow positional owner for one word at 0x20101874 written by six complete ble_hw.c paths. Neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
+pub type BleHwPositionalWord1874 =
+    crate::Periph<ble_hw_positional_word_1874::RegisterBlock, 0x2010_1874>;
+impl core::fmt::Debug for BleHwPositionalWord1874 {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BleControllerPointerPublication").finish()
+        f.debug_struct("BleHwPositionalWord1874").finish()
     }
 }
-#[doc = "Narrow positional owner for one controller word written by six ble_hw.c paths. The software source context is a useful ownership hint, while neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
-pub mod ble_controller_pointer_publication {
+#[doc = "Narrow positional owner for one word at 0x20101874 written by six complete ble_hw.c paths. Neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
+pub mod ble_hw_positional_word_1874 {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
@@ -46761,13 +46761,13 @@ pub mod ble_controller_pointer_publication {
     pub mod value {
         #[doc = "Register `VALUE` writer"]
         pub type W = crate::W<ValueSpec>;
-        #[doc = "Field `IMAGE_LOW_20` writer - Dynamic low-twenty-bit image; its pointer or index semantics are not established."]
-        pub type ImageLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `DYNAMIC_LOW_20_IMAGE` writer - Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established."]
+        pub type DynamicLow20ImageW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
         impl W {
-            #[doc = "Bits 0:19 - Dynamic low-twenty-bit image; its pointer or index semantics are not established."]
+            #[doc = "Bits 0:19 - Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established."]
             #[inline(always)]
-            pub fn image_low_20(&mut self) -> ImageLow20W<'_, ValueSpec> {
-                ImageLow20W::new(self, 0)
+            pub fn dynamic_low_20_image(&mut self) -> DynamicLow20ImageW<'_, ValueSpec> {
+                DynamicLow20ImageW::new(self, 0)
             }
         }
         #[doc = "Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -56948,8 +56948,8 @@ pub struct Peripherals {
     pub ble_phy_init_phase: BlePhyInitPhase,
     #[doc = "BLE_CONTROLLER_ADDRESS_SLOTS"]
     pub ble_controller_address_slots: BleControllerAddressSlots,
-    #[doc = "BLE_CONTROLLER_POINTER_PUBLICATION"]
-    pub ble_controller_pointer_publication: BleControllerPointerPublication,
+    #[doc = "BLE_HW_POSITIONAL_WORD_1874"]
+    pub ble_hw_positional_word_1874: BleHwPositionalWord1874,
     #[doc = "BLE_SYNC_PUBLICATION"]
     pub ble_sync_publication: BleSyncPublication,
     #[doc = "BLE_SCAN_CONTROL"]
@@ -57099,7 +57099,7 @@ impl Peripherals {
             ble_phy_init_toggle: unsafe { BlePhyInitToggle::steal() },
             ble_phy_init_phase: unsafe { BlePhyInitPhase::steal() },
             ble_controller_address_slots: unsafe { BleControllerAddressSlots::steal() },
-            ble_controller_pointer_publication: unsafe { BleControllerPointerPublication::steal() },
+            ble_hw_positional_word_1874: unsafe { BleHwPositionalWord1874::steal() },
             ble_sync_publication: unsafe { BleSyncPublication::steal() },
             ble_scan_control: unsafe { BleScanControl::steal() },
             ble_hw_accelerator: unsafe { BleHwAccelerator::steal() },
@@ -57735,7 +57735,7 @@ pub mod peripheral_ownership {
     /// Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle.
     pub struct BluetoothControllerPeripherals {
         pub ble_controller_address_slots: crate::BleControllerAddressSlots,
-        pub ble_controller_pointer_publication: crate::BleControllerPointerPublication,
+        pub ble_hw_positional_word_1874: crate::BleHwPositionalWord1874,
         pub ble_hw_accelerator: crate::BleHwAccelerator,
         pub ble_hw_cte_ring_control: crate::BleHwCteRingControl,
         pub ble_hw_resolving_list: crate::BleHwResolvingList,
@@ -57898,7 +57898,7 @@ pub mod peripheral_ownership {
             ble_phy_init_toggle,
             ble_phy_init_phase,
             ble_controller_address_slots,
-            ble_controller_pointer_publication,
+            ble_hw_positional_word_1874,
             ble_sync_publication,
             ble_scan_control,
             ble_hw_accelerator,
@@ -58010,7 +58010,7 @@ pub mod peripheral_ownership {
             },
             bluetooth: BluetoothControllerPeripherals {
                 ble_controller_address_slots,
-                ble_controller_pointer_publication,
+                ble_hw_positional_word_1874,
                 ble_hw_accelerator,
                 ble_hw_cte_ring_control,
                 ble_hw_resolving_list,

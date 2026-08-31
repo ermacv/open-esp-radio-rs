@@ -1,0 +1,45 @@
+schema = 2
+
+[[peripherals]]
+name = "BLE_HW_POSITIONAL_WORD_1874"
+description = """
+Narrow positional owner for one word at 0x20101874 written by six complete
+ble_hw.c paths. Neither the destination's hardware action nor the dynamic
+value's inner meaning is claimed.
+"""
+baseAddress = 0x20101874
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "VALUE"
+description = "Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31."
+addressOffset = 0x0
+size = 32
+access = "write-only"
+
+[[peripherals.registers.register.fields]]
+name = "DYNAMIC_LOW_20_IMAGE"
+description = "Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established."
+bitOffset = 0
+bitWidth = 20
+
+[[review]]
+entity = "BLE_HW_POSITIONAL_WORD_1874"
+sources = ["BLOB_LIBBLE_HW_POSITIONAL_WORD_1874"]
+provenance = "derived"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_POSITIONAL_WORD_1874.VALUE"
+sources = ["BLOB_LIBBLE_HW_POSITIONAL_WORD_1874"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_POSITIONAL_WORD_1874.VALUE.DYNAMIC_LOW_20_IMAGE"
+sources = ["BLOB_LIBBLE_HW_POSITIONAL_WORD_1874"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

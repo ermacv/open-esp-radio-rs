@@ -40,13 +40,16 @@ reset, start and recurrence research.
 The portable Link Layer validates address kind, advertising data, non-empty
 primary channel maps and interval bounds. It encodes an exact bounded
 `ADV_NONCONN_IND` and retains generation, event and channel identity through
-an affine lifecycle. The S31 pre-admission owner adds only the channel's
-frequency projection and supports exact cancellation. It cannot publish a
-scheduler head or claim that the PDU is in flight.
+an affine lifecycle. The S31 pre-admission owner installs that PDU in the
+common typed controller TX allocation used by DTM and advertising, adds the
+channel's frequency projection and supports exact cancellation. It cannot
+publish a scheduler head or claim that the PDU is in flight.
 
-This is the correct stopping point. DTM packet state cannot be reused merely
-because both roles eventually use the common scheduler. Advertising has a
-different private producer graph and recurrence policy.
+The public named archive proves that legacy primary allocation calls
+`r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr`; its allocation prefix and PDU
+placement are therefore shared with DTM. The DTM graph typestate itself is not
+reused: advertising still has a different private link-state/scheduler graph
+and recurrence policy.
 
 ## Minimum production admission contract
 
@@ -78,8 +81,10 @@ not required.
 
 ## Current blockers and non-blockers
 
-The remaining blocker is SRAM causality across producer, graph publication and
-completion. A hardware-frontier query currently asks for one project-local
+The encoded PDU now reaches role-neutral controller TX storage without raw
+SRAM fields escaping the memory codec. The remaining blocker is SRAM causality
+from its buffer header through the advertising link state, graph publication
+and completion. A hardware-frontier query currently asks for one project-local
 assertion at `0x2010199c/16`, but the reviewed chip model already identifies it
 as `BLE_HW_CTE_RING_CONTROL.RING_CONTROL`. It is reached through generic CTE
 support and is not used by the restricted no-CTE transmission, so it is not an

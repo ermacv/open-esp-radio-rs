@@ -31,6 +31,10 @@ use crate::{
         BluetoothDtmTxHeaderHeadProjection, BluetoothLeAccessAddress, BluetoothLeCrcInit,
     },
     dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError},
+    le_tx_packet::{
+        BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothLeTxPacketPreparedLength,
+        BluetoothLeTxPacketStorage,
+    },
     sram_link::BluetoothDtmBoundSramLinkAddress,
 };
 
@@ -42,15 +46,13 @@ pub const BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES: usize = 0x60;
 pub const BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES: usize = 0x48;
 /// Bytes in every common RX/TX buffer header.
 pub const BLUETOOTH_DTM_BUFFER_HEADER_BYTES: usize = 0x18;
-/// Bytes preceding the maximum DTM transmitter payload.
-pub const BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES: usize = 0x12;
 /// Bytes preceding the maximum DTM receiver capacity.
 pub const BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES: usize = 0x1e;
 /// Maximum packet capacity supplied by the complete DTM allocator.
 pub const BLUETOOTH_DTM_MAX_PACKET_CAPACITY: usize = u8::MAX as usize;
 /// Logical bytes in the complete DTM TX packet allocation.
 pub const BLUETOOTH_DTM_TX_PACKET_BYTES: usize =
-    BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES + BLUETOOTH_DTM_MAX_PACKET_CAPACITY;
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + BLUETOOTH_DTM_MAX_PACKET_CAPACITY;
 /// Logical bytes in the complete DTM RX packet allocation.
 pub const BLUETOOTH_DTM_RX_PACKET_BYTES: usize =
     BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES + BLUETOOTH_DTM_MAX_PACKET_CAPACITY;
@@ -644,16 +646,6 @@ impl BluetoothDtmRxHeaderCompletionObservation {
     }
 }
 
-/// CPU-owned TX packet slot reserved by the complete DTM link graph.
-///
-/// This is the sole backing-storage type used by both the memory graph and the
-/// LLL packet-pattern preparation. It exposes no raw address or publication
-/// operation.
-#[repr(C, align(4))]
-struct BluetoothDtmTxPacketStorage {
-    bytes: [u8; BLUETOOTH_DTM_TX_PACKET_BYTES],
-}
-
 /// Why a lower-layer selector cannot form a standard LE Test PDU header.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmTxPacketPrepareError {
@@ -670,8 +662,6 @@ pub enum BluetoothDtmTxPacketPrepareError {
 struct BluetoothLeTestPduHeader(u8);
 
 impl BluetoothLeTestPduHeader {
-    const PDU_HEADER_BYTE: usize = 0x10;
-
     const fn without_cte(payload_type: u8) -> Result<Self, BluetoothDtmTxPacketPrepareError> {
         if payload_type <= 7 {
             Ok(Self(payload_type))
@@ -683,61 +673,6 @@ impl BluetoothLeTestPduHeader {
     const fn controller_image(self) -> u8 {
         self.0
     }
-}
-
-impl BluetoothDtmTxPacketStorage {
-    const fn new() -> Self {
-        Self {
-            bytes: [0; BLUETOOTH_DTM_TX_PACKET_BYTES],
-        }
-    }
-
-    fn begin_prepare_with_header(
-        &mut self,
-        pdu_header: BluetoothLeTestPduHeader,
-        payload_length: u8,
-    ) -> BluetoothDtmTxPacketPreparation<'_> {
-        self.bytes[0x05] = 2;
-        self.bytes[0x06] = 0;
-        self.write_pdu_header(pdu_header);
-        self.bytes[0x11] = payload_length;
-
-        BluetoothDtmTxPacketPreparation {
-            _pdu_header: pdu_header,
-            payload_length: payload_length as usize,
-            storage: self,
-        }
-    }
-
-    fn write_pdu_header(&mut self, pdu_header: BluetoothLeTestPduHeader) {
-        self.bytes[BluetoothLeTestPduHeader::PDU_HEADER_BYTE] = pdu_header.controller_image();
-    }
-}
-
-impl Default for BluetoothDtmTxPacketStorage {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Exclusive CPU-owned TX packet preparation in progress.
-///
-/// The memory layer owns the standard no-CTE header encoding. Payload-pattern
-/// generation remains in the LLL/portable Controller above this type.
-struct BluetoothDtmTxPacketPreparation<'storage> {
-    _pdu_header: BluetoothLeTestPduHeader,
-    payload_length: usize,
-    storage: &'storage mut BluetoothDtmTxPacketStorage,
-}
-
-impl<'storage> BluetoothDtmTxPacketPreparation<'storage> {
-    /// Borrow exactly the declared payload bytes for bounded pattern filling.
-    fn payload_mut(&mut self) -> &mut [u8] {
-        &mut self.storage.bytes[BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES..][..self.payload_length]
-    }
-
-    /// Finish the CPU-only transform without publishing the packet.
-    fn finish(self) {}
 }
 
 /// CPU-owned RX packet allocation with only the reviewed DTM defaults exposed.
@@ -880,7 +815,7 @@ pub struct BluetoothDtmMemoryGraphStorage {
     rx_header: BluetoothDtmBufferHeaderStorage,
     rx_swap_reserve: BluetoothDtmBufferHeaderStorage,
     tx_header: BluetoothDtmBufferHeaderStorage,
-    tx_packet: BluetoothDtmTxPacketStorage,
+    tx_packet: BluetoothLeTxPacketStorage<BLUETOOTH_DTM_TX_PACKET_BYTES>,
     rx_packet: BluetoothDtmRxPacketStorage,
     #[pin]
     _pin: PhantomPinned,
@@ -2362,20 +2297,19 @@ pub struct BluetoothDtmMemoryGraphTxPacketPrepared {
     storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
     binding: BluetoothDtmMemoryGraphBinding,
     _pdu_header: BluetoothLeTestPduHeader,
-    payload_length: u8,
+    packet_length: BluetoothLeTxPacketPreparedLength<BLUETOOTH_DTM_TX_PACKET_BYTES>,
 }
 
 impl BluetoothDtmMemoryGraphTxPacketPrepared {
     /// Return the declared packet payload length.
     pub const fn payload_length(&self) -> u8 {
-        self.payload_length
+        self.packet_length.payload_bytes()
     }
 
     /// Borrow the complete reviewed prefix and declared payload.
     pub fn prepared_packet_bytes(&self) -> &[u8] {
         let storage = self.storage.as_ref().get_ref();
-        &storage.tx_packet.bytes
-            [..BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES + self.payload_length as usize]
+        storage.tx_packet.prepared_allocation(self.packet_length)
     }
 
     /// Build and commit one positional event image while consuming readiness.
@@ -2485,17 +2419,20 @@ impl BluetoothDtmMemoryGraphCpuOwned {
             }
         };
         let packet = self.storage.as_mut().project().tx_packet;
-        let mut preparation = packet.begin_prepare_with_header(pdu_header, payload_length);
-        preparation
-            .payload_mut()
-            .copy_from_slice(&payload[..payload_length as usize]);
-        preparation.finish();
+        let packet_length = packet
+            .prepare_pdu(
+                pdu_header.controller_image(),
+                &payload[..payload_length as usize],
+            )
+            .unwrap_or_else(|_| {
+                unreachable!("the full DTM allocation accepts every eight-bit payload length")
+            });
 
         Ok(BluetoothDtmMemoryGraphTxPacketPrepared {
             storage: self.storage,
             binding: self.binding,
             _pdu_header: pdu_header,
-            payload_length,
+            packet_length,
         })
     }
 
@@ -2670,7 +2607,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         storage
             .tx_header
             .initialize_bound_tx(self.binding.tx_packet);
-        storage.tx_packet.bytes.fill(0);
+        storage.tx_packet.clear();
         storage.rx_packet.clear();
         storage.rx_packet.initialize_reviewed_allocation_fields();
 
@@ -2740,7 +2677,7 @@ impl BluetoothDtmMemoryGraphStorage {
             tx_header: BluetoothDtmBufferHeaderStorage {
                 words: [const { VolatileCell::new(0) }; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
             },
-            tx_packet: BluetoothDtmTxPacketStorage::new(),
+            tx_packet: BluetoothLeTxPacketStorage::new(),
             rx_packet: BluetoothDtmRxPacketStorage::new(),
             _pin: PhantomPinned,
         }
@@ -2868,7 +2805,7 @@ mod tests {
             rx_header: storage.rx_header.snapshot_words(),
             rx_swap_reserve: storage.rx_swap_reserve.snapshot_words(),
             tx_header: storage.tx_header.snapshot_words(),
-            tx_packet: storage.tx_packet.bytes,
+            tx_packet: storage.tx_packet.snapshot(),
             rx_packet: storage.rx_packet.snapshot(),
         }
     }

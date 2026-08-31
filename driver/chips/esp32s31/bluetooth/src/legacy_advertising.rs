@@ -17,6 +17,14 @@ use open_esp_radio_bluetooth_ll::{
         LEGACY_ADVERTISING_PDU_CAPACITY, LegacyAdvertisingEncodeError, PrimaryAdvertisingChannel,
     },
 };
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothLeTxPacketPrepareError,
+    BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
+};
+
+const LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES: usize = LEGACY_ADVERTISING_PDU_CAPACITY - 2;
+const LEGACY_ADVERTISING_TX_ALLOCATION_BYTES: usize =
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES;
 
 /// S31 packet-frequency image for one primary advertising channel.
 ///
@@ -50,8 +58,8 @@ impl BluetoothLegacyAdvertisingFrequency {
 #[must_use = "admit through a reviewed hardware ticket, cancel, or retain the prepared owner"]
 pub struct BluetoothLegacyAdvertisingPrepared<'a> {
     prepared: LegacyAdvertiserTxPrepared<'a>,
-    pdu: [u8; LEGACY_ADVERTISING_PDU_CAPACITY],
-    pdu_len: u8,
+    packet: BluetoothLeTxPacketStorage<LEGACY_ADVERTISING_TX_ALLOCATION_BYTES>,
+    packet_length: BluetoothLeTxPacketPreparedLength<LEGACY_ADVERTISING_TX_ALLOCATION_BYTES>,
     frequency: BluetoothLegacyAdvertisingFrequency,
 }
 
@@ -61,13 +69,23 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         enabled: LegacyAdvertiserEnabled<'a>,
     ) -> Result<Self, BluetoothLegacyAdvertisingPreparationError<'a>> {
         let prepared = enabled.prepare_next();
-        let mut pdu = [0; LEGACY_ADVERTISING_PDU_CAPACITY];
-        let pdu_len = match prepared.encode(&mut pdu) {
+        let mut encoded = [0; LEGACY_ADVERTISING_PDU_CAPACITY];
+        let pdu_len = match prepared.encode(&mut encoded) {
             Ok(length) => length,
             Err(error) => {
                 return Err(BluetoothLegacyAdvertisingPreparationError {
                     enabled: prepared.cancel(),
-                    error,
+                    error: BluetoothLegacyAdvertisingPreparationErrorKind::PduEncoding(error),
+                });
+            }
+        };
+        let mut packet = BluetoothLeTxPacketStorage::new();
+        let packet_length = match packet.prepare_encoded_pdu(&encoded[..pdu_len]) {
+            Ok(length) => length,
+            Err(error) => {
+                return Err(BluetoothLegacyAdvertisingPreparationError {
+                    enabled: prepared.cancel(),
+                    error: BluetoothLegacyAdvertisingPreparationErrorKind::ControllerPacket(error),
                 });
             }
         };
@@ -76,8 +94,8 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         );
         Ok(Self {
             prepared,
-            pdu,
-            pdu_len: pdu_len as u8,
+            packet,
+            packet_length,
             frequency,
         })
     }
@@ -94,7 +112,7 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
 
     /// Complete encoded Link Layer PDU, excluding preamble, Access Address, CRC and whitening.
     pub fn pdu(&self) -> &[u8] {
-        &self.pdu[..usize::from(self.pdu_len)]
+        self.packet.prepared_pdu(self.packet_length)
     }
 
     /// Typed future descriptor input for the selected primary channel.
@@ -113,17 +131,26 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
 #[must_use = "the unchanged enabled advertiser remains recoverable"]
 pub struct BluetoothLegacyAdvertisingPreparationError<'a> {
     enabled: LegacyAdvertiserEnabled<'a>,
-    error: LegacyAdvertisingEncodeError,
+    error: BluetoothLegacyAdvertisingPreparationErrorKind,
 }
 
 impl<'a> BluetoothLegacyAdvertisingPreparationError<'a> {
-    pub const fn error(&self) -> LegacyAdvertisingEncodeError {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingPreparationErrorKind {
         self.error
     }
 
     pub fn into_enabled(self) -> LegacyAdvertiserEnabled<'a> {
         self.enabled
     }
+}
+
+/// Finite CPU-side reason why one advertising transmission was not prepared.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingPreparationErrorKind {
+    /// The portable Link Layer PDU producer rejected its bounded destination.
+    PduEncoding(LegacyAdvertisingEncodeError),
+    /// The complete PDU did not satisfy the common controller TX allocation.
+    ControllerPacket(BluetoothLeTxPacketPrepareError),
 }
 
 #[cfg(test)]
@@ -166,7 +193,7 @@ mod tests {
         .expect("bounded validated advertising data always fits the chip PDU");
         let identity = prepared.identity();
 
-        assert!(!prepared.pdu().is_empty());
+        assert_eq!(prepared.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
         assert_eq!(prepared.channel(), PrimaryAdvertisingChannel::Channel37);
         assert_eq!(prepared.cancel().prepare_next().identity(), identity);
     }

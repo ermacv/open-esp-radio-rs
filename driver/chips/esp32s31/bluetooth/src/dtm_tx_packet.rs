@@ -14,7 +14,7 @@
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BLUETOOTH_DTM_MAX_PACKET_CAPACITY as BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES,
     BLUETOOTH_DTM_TX_PACKET_BYTES as BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES,
-    BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES,
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphTxPacketPrepared,

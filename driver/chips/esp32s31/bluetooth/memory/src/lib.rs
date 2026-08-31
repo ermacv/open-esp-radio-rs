@@ -24,6 +24,7 @@ mod ble_phy_engine;
 mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
+mod le_tx_packet;
 mod rx_memory_list;
 mod sram_link;
 
@@ -53,25 +54,28 @@ pub use dtm_storage::{
     BLUETOOTH_DTM_MAX_PACKET_CAPACITY, BLUETOOTH_DTM_RX_PACKET_BYTES,
     BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES, BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES,
     BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
-    BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES, BluetoothDtmBufferHeaderStorage,
-    BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
-    BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
-    BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
-    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphEmptyListLinkPrepared,
-    BluetoothDtmMemoryGraphHeadPublished, BluetoothDtmMemoryGraphIdentity,
-    BluetoothDtmMemoryGraphPositionalEventPrepared, BluetoothDtmMemoryGraphPrepareError,
-    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmMemoryGraphReclaimed,
-    BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
-    BluetoothDtmMemoryGraphRecycleFailure, BluetoothDtmMemoryGraphRecyclePrepared,
-    BluetoothDtmMemoryGraphRecycled, BluetoothDtmMemoryGraphRunning,
-    BluetoothDtmMemoryGraphRxSuccessObserved, BluetoothDtmMemoryGraphRxSuccessRecycleError,
-    BluetoothDtmMemoryGraphRxSuccessRecycleFailure,
+    BluetoothDtmBufferHeaderStorage, BluetoothDtmLinkStateStorage,
+    BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphBindFailure,
+    BluetoothDtmMemoryGraphBinding, BluetoothDtmMemoryGraphCompletionObservation,
+    BluetoothDtmMemoryGraphCompletionObserved, BluetoothDtmMemoryGraphCpuOwned,
+    BluetoothDtmMemoryGraphEmptyListLinkPrepared, BluetoothDtmMemoryGraphHeadPublished,
+    BluetoothDtmMemoryGraphIdentity, BluetoothDtmMemoryGraphPositionalEventPrepared,
+    BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
+    BluetoothDtmMemoryGraphReclaimed, BluetoothDtmMemoryGraphRecycleCleaned,
+    BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecycleFailure,
+    BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRecycled,
+    BluetoothDtmMemoryGraphRunning, BluetoothDtmMemoryGraphRxSuccessObserved,
+    BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmMemoryGraphRxSuccessRecycleFailure,
     BluetoothDtmMemoryGraphRxSuccessRecyclePrepared,
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
     BluetoothDtmMemoryGraphTxPacketPrepareFailure, BluetoothDtmMemoryGraphTxPacketPrepared,
     BluetoothDtmPositionalEventSeed, BluetoothDtmSchedulerAllocationConfig,
     BluetoothDtmSchedulerContextStorage, BluetoothDtmSchedulerItemCompletionStatus,
     BluetoothDtmSchedulerItemStorage, BluetoothDtmTxPacketPrepareError,
+};
+pub use le_tx_packet::{
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothLeTxPacketPrepareError,
+    BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use sram_link::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};

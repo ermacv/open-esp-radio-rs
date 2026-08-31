@@ -10,7 +10,7 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    Driver as _, DualPinnedNetworkRunner, NetworkInterfaceId, NoopRawMutex,
+    Driver as _, DualPinnedNetworkRunner, NetworkEndpointConfig, NetworkInterfaceId, NoopRawMutex,
     PinnedEndpointResources, PinnedNetworkRunner, PinnedNetworkTxFrame, PinnedTxPool,
     PinnedTxResources, RxEnqueueError, SplitPinnedDevice, TxToken as _,
 };
@@ -48,8 +48,11 @@ macro_rules! split_network {
     ($resources:expr, $pool:expr) => {{
         let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
         let (provider, consumer) = tx_resources.split($pool);
-        let (device, rx) =
-            $resources.split(provider, NetworkInterfaceId::new(0), [2, 3, 4, 5, 6, 7]);
+        let endpoint = NetworkEndpointConfig::single_radio_peer(
+            NetworkInterfaceId::new(0),
+            [2, 3, 4, 5, 6, 7],
+        );
+        let (device, rx) = $resources.split(provider, endpoint);
         let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
         network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
         (device, network)
@@ -182,13 +185,17 @@ fn concurrent_owner_graph_contract_has_one_physical_tx_owner_and_two_vifs() {
     let (provider, consumer) = tx_resources.split(tx_pool);
     let (mut station_device, station_rx) = station_resources.split(
         provider,
-        crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
-        [2, 0, 0, 0, 0, 1],
+        NetworkEndpointConfig::single_radio_peer(
+            crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+            [2, 0, 0, 0, 0, 1],
+        ),
     );
     let (mut access_point_device, access_point_rx) = access_point_resources.split(
         provider,
-        crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
-        [2, 0, 0, 0, 0, 2],
+        NetworkEndpointConfig::per_link_destination(
+            crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+            [2, 0, 0, 0, 0, 2],
+        ),
     );
     let network = DualPinnedNetworkRunner::new(
         crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
@@ -277,13 +284,17 @@ fn paired_rx_generated_tx_is_driven_for_the_reported_ap_role() {
     let (provider, consumer) = tx_resources.split(tx_pool);
     let (_station_device, station_rx) = station_resources.split(
         provider,
-        crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
-        [2, 0, 0, 0, 0, 1],
+        NetworkEndpointConfig::single_radio_peer(
+            crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+            [2, 0, 0, 0, 0, 1],
+        ),
     );
     let (_access_point_device, access_point_rx) = access_point_resources.split(
         provider,
-        crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
-        [2, 0, 0, 0, 0, 2],
+        NetworkEndpointConfig::per_link_destination(
+            crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+            [2, 0, 0, 0, 0, 2],
+        ),
     );
     let network = DualPinnedNetworkRunner::new(
         crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,

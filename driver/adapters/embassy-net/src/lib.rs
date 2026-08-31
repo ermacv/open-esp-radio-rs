@@ -48,12 +48,12 @@ pub use pinned::PinnedTxOwnershipSnapshot;
 #[cfg(feature = "tx-staging-copy-probe")]
 pub use pinned::configure_tx_staging_copy_probe;
 pub use pinned::{
-    DualPinnedNetworkRunner, NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner,
-    PinnedNetworkTxFrame, PinnedReceiveToken, PinnedRxPublisher, PinnedTransmitToken,
-    PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider,
-    PinnedTxResources, SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher,
-    SharedPinnedRxQueue, SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice,
-    SplitPinnedRxRunner,
+    DualPinnedNetworkRunner, EgressQueueTopology, NetworkEndpointConfig, NetworkInterfaceId,
+    PinnedEndpointResources, PinnedNetworkRunner, PinnedNetworkTxFrame, PinnedReceiveToken,
+    PinnedRxPublisher, PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame,
+    PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider, PinnedTxResources,
+    SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher, SharedPinnedRxQueue,
+    SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice, SplitPinnedRxRunner,
 };
 #[cfg(feature = "tx-core1-materializer-probe")]
 pub use pinned::{

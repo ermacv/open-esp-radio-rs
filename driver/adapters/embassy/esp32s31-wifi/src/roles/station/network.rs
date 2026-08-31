@@ -407,8 +407,9 @@ mod tests {
 
     use open_esp_radio_dma::RxHandoffPool;
     use open_esp_radio_embassy_net::{
-        Driver as _, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources,
-        PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, SharedPinnedRxQueue,
+        Driver as _, NetworkEndpointConfig, NetworkInterfaceId, NoopRawMutex,
+        PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool, PinnedTxResources,
+        SharedPinnedRxQueue,
     };
     use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
@@ -455,8 +456,11 @@ mod tests {
         let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
         let (provider, consumer) = tx_resources.split(pool);
-        let (mut device, rx) =
-            resources.split(provider, NetworkInterfaceId::new(0), [2, 3, 4, 5, 6, 7]);
+        let endpoint = NetworkEndpointConfig::single_radio_peer(
+            NetworkInterfaceId::new(0),
+            [2, 3, 4, 5, 6, 7],
+        );
+        let (mut device, rx) = resources.split(provider, endpoint);
         let runner = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
         let pipeline_observer = PipelineObserver::default();
         let mut sink = EmbassyNetConnectedRxSink::<

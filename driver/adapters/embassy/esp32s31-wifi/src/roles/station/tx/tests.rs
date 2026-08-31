@@ -6,8 +6,8 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    Driver as _, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources, PinnedNetworkRunner,
-    PinnedTxPool, PinnedTxResources, SplitPinnedDevice, TxToken as _,
+    Driver as _, NetworkEndpointConfig, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources,
+    PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, SplitPinnedDevice, TxToken as _,
 };
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
@@ -353,7 +353,8 @@ fn make_network() -> (
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
     let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
+    let (device, rx) = resources.split(provider, endpoint);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     (device, network)
@@ -621,7 +622,8 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     ));
     let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
+    let (mut device, rx) = resources.split(provider, endpoint);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     for marker in 1..=2 {
@@ -1004,7 +1006,8 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     ));
     let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
+    let (mut device, rx) = resources.split(provider, endpoint);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     for marker in 1..=4 {
@@ -1136,7 +1139,8 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     )));
     let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
+    let (mut device, rx) = resources.split(provider, endpoint);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     for marker in 1..=3 {
@@ -1376,7 +1380,8 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
     let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
+    let (mut device, rx) = resources.split(provider, endpoint);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     send_frame(&mut device, 1);
@@ -1428,7 +1433,8 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
     let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
+    let (mut device, rx) = resources.split(provider, endpoint);
     let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     send_frame(&mut device, 1);

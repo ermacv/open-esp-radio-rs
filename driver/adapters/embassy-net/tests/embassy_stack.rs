@@ -11,8 +11,8 @@ use embassy_net::{
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_embassy_net::{
-    NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool,
-    PinnedTxResources,
+    NetworkEndpointConfig, NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner,
+    PinnedTxPool, PinnedTxResources,
 };
 
 const FRAME_CAPACITY: usize = 1_536;
@@ -43,7 +43,9 @@ async fn run_access_point_arp_test(done: &'static AtomicBool) {
     let access_point = [0x32, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
     let client = [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0];
     let (provider, consumer) = tx_resources.split(tx_pool);
-    let (device, rx) = resources.split(provider, NetworkInterfaceId::new(1), access_point);
+    let endpoint =
+        NetworkEndpointConfig::per_link_destination(NetworkInterfaceId::new(1), access_point);
+    let (device, rx) = resources.split(provider, endpoint);
     let radio = PinnedNetworkRunner::new(NetworkInterfaceId::new(1), rx, consumer);
     let stack_resources = Box::leak(Box::new(StackResources::<1>::new()));
     let (stack, mut runner) = embassy_net::new(
@@ -134,7 +136,9 @@ async fn run_cross_socket_resolved_burst_test(done: &'static AtomicBool) {
         ([0x02, 0, 0, 0, 0, 3], [10, 43, 0, 3]),
     ];
     let (provider, consumer) = tx_resources.split(tx_pool);
-    let (device, rx) = resources.split(provider, NetworkInterfaceId::new(1), access_point);
+    let endpoint =
+        NetworkEndpointConfig::per_link_destination(NetworkInterfaceId::new(1), access_point);
+    let (device, rx) = resources.split(provider, endpoint);
     let radio = PinnedNetworkRunner::new(NetworkInterfaceId::new(1), rx, consumer);
     let stack_resources = Box::leak(Box::new(StackResources::<2>::new()));
     let (stack, mut runner) = embassy_net::new(
@@ -281,7 +285,9 @@ async fn run_full_softap_neighbor_set_test(done: &'static AtomicBool) {
     let tx_pool = TxPool::pin_static(Box::leak(Box::new(TxPool::new())));
     let access_point = [0x32, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
     let (provider, consumer) = tx_resources.split(tx_pool);
-    let (device, rx) = resources.split(provider, NetworkInterfaceId::new(1), access_point);
+    let endpoint =
+        NetworkEndpointConfig::per_link_destination(NetworkInterfaceId::new(1), access_point);
+    let (device, rx) = resources.split(provider, endpoint);
     let radio = PinnedNetworkRunner::new(NetworkInterfaceId::new(1), rx, consumer);
     let stack_resources = Box::leak(Box::new(StackResources::<1>::new()));
     let (stack, mut runner) = embassy_net::new(

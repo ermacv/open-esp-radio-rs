@@ -14,7 +14,7 @@ use embassy_net_driver::{
     Capabilities, Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
 };
 #[cfg(feature = "tx-egress-scheduling")]
-use embassy_net_driver::{EgressAdmission, EgressKey, EgressSchedule};
+use embassy_net_driver::{EgressAdmission, EgressKey, EgressRoute, EgressSchedule};
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
@@ -43,6 +43,96 @@ impl NetworkInterfaceId {
 
     pub const fn value(self) -> u8 {
         self.0
+    }
+}
+
+/// How stack-resolved link routes map to the physical egress scheduler.
+///
+/// This describes queue geometry only. It neither authorizes a radio peer nor
+/// replaces the radio owner's association-generation and airtime checks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EgressQueueTopology {
+    /// Every link destination reaches one physical radio peer.
+    ///
+    /// Infrastructure STA is the canonical example: all Ethernet traffic is
+    /// transmitted to the associated BSSID even when the destination is a
+    /// different host behind that access point.
+    SingleRadioPeer,
+    /// Each Ethernet destination owns an independent scheduling domain.
+    ///
+    /// SoftAP uses this as its initial queue classifier. The radio owner still
+    /// validates that the destination belongs to a live peer generation.
+    PerLinkDestination,
+}
+
+/// Immutable network endpoint identity and egress queue topology.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NetworkEndpointConfig {
+    interface: NetworkInterfaceId,
+    hardware_address: [u8; 6],
+    egress_topology: EgressQueueTopology,
+}
+
+impl NetworkEndpointConfig {
+    /// Configure an endpoint whose routes all reach one physical radio peer.
+    pub const fn single_radio_peer(
+        interface: NetworkInterfaceId,
+        hardware_address: [u8; 6],
+    ) -> Self {
+        Self {
+            interface,
+            hardware_address,
+            egress_topology: EgressQueueTopology::SingleRadioPeer,
+        }
+    }
+
+    /// Configure an endpoint whose Ethernet destinations are independent
+    /// scheduling domains.
+    pub const fn per_link_destination(
+        interface: NetworkInterfaceId,
+        hardware_address: [u8; 6],
+    ) -> Self {
+        Self {
+            interface,
+            hardware_address,
+            egress_topology: EgressQueueTopology::PerLinkDestination,
+        }
+    }
+
+    pub const fn interface(self) -> NetworkInterfaceId {
+        self.interface
+    }
+
+    pub const fn hardware_address(self) -> [u8; 6] {
+        self.hardware_address
+    }
+
+    pub const fn egress_topology(self) -> EgressQueueTopology {
+        self.egress_topology
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn classify(self, epoch: u32, route: EgressRoute) -> EgressKey {
+        const KEY_FORMAT: u32 = 0x5700_0000;
+        const SINGLE_RADIO_PEER: u32 = 1 << 16;
+        const PER_LINK_DESTINATION: u32 = 2 << 16;
+
+        let header =
+            KEY_FORMAT | (u32::from(self.interface.value()) << 8) | u32::from(route.traffic_class);
+        match (self.egress_topology, route.destination) {
+            (EgressQueueTopology::SingleRadioPeer, HardwareAddress::Ethernet(_)) => {
+                EgressKey::from_words([header | SINGLE_RADIO_PEER, epoch, 0, 0])
+            }
+            (EgressQueueTopology::PerLinkDestination, HardwareAddress::Ethernet(address)) => {
+                EgressKey::from_words([
+                    header | PER_LINK_DESTINATION,
+                    epoch,
+                    u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
+                    u32::from(u16::from_le_bytes([address[4], address[5]])),
+                ])
+            }
+            _ => EgressKey::from_route(route),
+        }
     }
 }
 
@@ -783,8 +873,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
     >(
         &'resources mut self,
         tx: PinnedTxProvider<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        interface: NetworkInterfaceId,
-        hardware_address: [u8; 6],
+        endpoint: NetworkEndpointConfig,
     ) -> (
         SplitPinnedDevice<
             'resources,
@@ -806,6 +895,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
             !self.split.swap(true, Ordering::AcqRel),
             "pinned endpoint resources may only be split once"
         );
+        let interface = endpoint.interface();
         PinnedTxCreditWakers::<M>::validate(interface);
         for index in 0..RX_QUEUE_DEPTH {
             self.free_rx
@@ -854,7 +944,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 tx_tokens_in_flight: tx.tx_tokens_in_flight,
                 tx_pool: tx.tx_pool,
                 link: &resources.link,
-                hardware_address,
+                endpoint,
                 ingress_tx: None,
                 application_tx: None,
                 reserve_ingress_tx: false,
@@ -1002,7 +1092,7 @@ pub struct SplitPinnedDevice<
     tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
-    hardware_address: [u8; 6],
+    endpoint: NetworkEndpointConfig,
     /// One credit unavailable to ordinary egress and therefore available to
     /// satisfy the `Driver::receive` RX+TX-token contract under saturated TX.
     ingress_tx: Option<u8>,
@@ -2034,6 +2124,11 @@ impl<
     }
 
     #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_key(&mut self, route: EgressRoute) -> EgressKey {
+        self.endpoint.classify(self.link.egress_epoch(), route)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
     fn transmit_for(
         &mut self,
         cx: &mut Context<'_>,
@@ -2095,7 +2190,7 @@ impl<
     }
 
     fn hardware_address(&self) -> HardwareAddress {
-        HardwareAddress::Ethernet(self.hardware_address)
+        HardwareAddress::Ethernet(self.endpoint.hardware_address())
     }
 }
 
@@ -2178,6 +2273,11 @@ impl<
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
         self.inner.transmit(cx)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_key(&mut self, route: EgressRoute) -> EgressKey {
+        self.inner.egress_key(route)
     }
 
     #[cfg(feature = "tx-egress-scheduling")]

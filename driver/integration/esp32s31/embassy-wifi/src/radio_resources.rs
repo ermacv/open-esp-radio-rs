@@ -9,8 +9,9 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use open_esp_radio_embassy_net::{
-    DualPinnedNetworkRunner, PinnedEndpointResources, PinnedNetworkTxFrame, PinnedTxFrame,
-    PinnedTxPool, PinnedTxResources, SharedPinnedRxConsumer, SharedRxSplitPinnedDevice,
+    DualPinnedNetworkRunner, NetworkEndpointConfig, PinnedEndpointResources,
+    PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxPool, PinnedTxResources, SharedPinnedRxConsumer,
+    SharedRxSplitPinnedDevice,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
 use open_esp_radio_esp32s31_wifi_embassy::{
@@ -254,20 +255,25 @@ pub(super) fn initialize_network(
     #[cfg(not(feature = "tx-psram-dma-probe"))]
     let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
     let (tx_provider, tx_consumer) = network_tx_resources.split(tx_pool);
+    let station_interface =
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+    let access_point_interface =
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID;
     let (station_device, station_rx) = station_resources.split(
         tx_provider,
-        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
-        station_address,
+        NetworkEndpointConfig::single_radio_peer(station_interface, station_address),
     );
     let (access_point_device, access_point_rx) = access_point_resources.split(
         tx_provider,
-        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
-        access_point_address,
+        NetworkEndpointConfig::per_link_destination(
+            access_point_interface,
+            access_point_address,
+        ),
     );
     let runner = DualPinnedNetworkRunner::new(
-        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+        station_interface,
         station_rx,
-        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+        access_point_interface,
         access_point_rx,
         tx_consumer,
     )

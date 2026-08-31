@@ -1,6 +1,6 @@
 # Wi-Fi TX network-driver API change audit
 
-Status: first breaking interface-wide egress cutover complete, 2026-08-31.
+Status: route/key separation and endpoint-topology cutover complete, 2026-08-31.
 
 ## Current implementation status
 
@@ -13,7 +13,9 @@ The maintained cross-repository contract is now:
 
 ```text
 Xarxa resolves route + neighbour
-    -> EgressKey { link destination, traffic class }
+    -> EgressRoute { link destination, traffic class }
+    -> Driver::egress_key(EgressRoute)
+    -> opaque EgressKey
     -> interface-wide EgressSchedule
        { non-zero max run, non-zero socket quantum, lifecycle epoch }
     -> Driver::transmit_for(EgressKey)
@@ -23,11 +25,13 @@ Xarxa resolves route + neighbour
 
 Ownership remains deliberately split:
 
-- Xarxa owns socket packet storage, per-IP intrusive queues, link-key
-  resolution and the interface-wide scan. It may combine distinct routed IP
-  queues which resolve to one link destination.
-- The network driver owns final backing and admission. `KeyDeferred` is a
-  per-key scheduling decision; `GlobalExhausted` is physical/global pressure.
+- Xarxa owns socket packet storage, per-IP intrusive queues, route/neighbour
+  resolution and the interface-wide scan. It groups queues by the opaque key
+  returned by the device, while retaining the original route to emit the
+  Ethernet frame.
+- The network driver owns route-to-egress classification, final backing and
+  admission. `KeyDeferred` is a per-key scheduling decision;
+  `GlobalExhausted` is physical/global pressure.
 - Wi-Fi still owns VIF/peer generation, TID/AC, BA, retries, rate state and
   future airtime grants. None of those identities is accepted from Xarxa.
 
@@ -39,8 +43,8 @@ path. Scheduling-aware configurations must construct non-zero quanta.
 
 The cutover is implemented and published at:
 
-- Xarxa `87cb5de79ea676d7835ba8676f94a3010a4295b8`;
-- Embassy `e2eb9055f5ec0e236a3f1b2a86b42e2392c38cec`;
+- Xarxa `56840265711547e3ad8e24d602fc7a6e89258642`;
+- Embassy `3b91c62054669719af1cfc97110ae6ddb5498272`;
 - the Wi-Fi branch pins both revisions atomically in every standalone
   lockfile.
 
@@ -48,17 +52,27 @@ One concrete defect was found during the refactor. Xarxa's tracer, pcap,
 fault-injection and fuzz wrappers forwarded keyed token requests but did not
 forward the device scheduling configuration. Wrapping a device could
 therefore silently change it back to FIFO. All four wrappers now forward the
-schedule explicitly. This is a plausible cause of prior trace/non-trace code
-path differences; it is not yet claimed as the cause of any historical HIL
-throughput delta without a same-image measurement.
+schedule and route classifier explicitly. Focused tests cover classifier
+forwarding. The missing schedule is a plausible cause of prior
+trace/non-trace code path differences; it is not yet claimed as the cause of
+any historical HIL throughput delta without a same-image measurement.
 
-At this checkpoint the ESP32-S31 pinned adapter requests a BA32-sized keyed
-run and a four-packet socket quantum while the link is up. Link-down returns
-no schedule, which discards stack-side cursors before a new egress epoch. The
-adapter's current `transmit_for` still grants from the same global direct-SRAM
-pool and does not yet return `KeyDeferred`; therefore this refactor cleans and
-stabilizes the ownership boundary but does not yet implement airtime fairness
-or PSRAM spill.
+At this checkpoint the ESP32-S31 pinned adapter has an explicit immutable
+`NetworkEndpointConfig`. Infrastructure STA uses `SingleRadioPeer`, so
+distinct Ethernet destinations behind the same BSSID share one queue key.
+SoftAP uses `PerLinkDestination`, so one client cannot fragment another
+client's scheduling run. The link lifecycle epoch and network-interface ID
+are part of every supported Ethernet key; Down -> Up therefore invalidates
+the previous classification. The route itself is not changed and is still
+used to construct the correct Ethernet frame.
+
+This endpoint topology is queue geometry, not radio authorization. AP peer
+generation, TID/AC grants and airtime debt still belong to the Core0 radio
+owner. The adapter requests a BA32-sized keyed run and a four-packet socket
+quantum while the link is up, but its current `transmit_for` still grants from
+the same global direct-SRAM pool and does not yet return `KeyDeferred`.
+Therefore this refactor fixes the classification boundary but does not yet
+implement airtime fairness or PSRAM spill.
 
 No payload-memory architecture changed in this step. Frames are still built
 directly in SRAM slots and transferred to Core0 without a complete-frame
@@ -67,7 +81,8 @@ packet API remain rejected until new measurements justify them.
 
 Validated so far:
 
-- Xarxa: 697 production-feature tests plus the default workspace suite;
+- Xarxa: 698 production-feature tests plus the default workspace suite and a
+  focused driver-key encoding test;
 - Embassy: driver and adapter suites with scheduling enabled and disabled;
 - main repository: workspace `check`, `test`, `clippy`, `fmt`, focused adapter
   suites with scheduling enabled and disabled, and the complete source-only

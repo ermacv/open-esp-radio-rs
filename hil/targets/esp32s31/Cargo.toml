@@ -22,8 +22,8 @@ embassy-futures = "0.1.2"
 # Upstream Runner::run() drains ingress in one executor poll. The minimal
 # fork adds the bounded work-conserving runner required to keep socket tasks
 # schedulable under sustained packet-rate load.
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "e2eb9055f5ec0e236a3f1b2a86b42e2392c38cec", features = ["auto-icmp-echo-reply", "dhcpv4", "dns", "icmp", "medium-ethernet", "slaac", "tcp", "udp"] }
-embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "e2eb9055f5ec0e236a3f1b2a86b42e2392c38cec" }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272", features = ["auto-icmp-echo-reply", "dhcpv4", "dns", "icmp", "medium-ethernet", "slaac", "tcp", "udp"] }
+embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272" }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"] }

@@ -217,11 +217,13 @@ egress API and the pinned adapter returns an `EgressSchedule` with a
 32-packet run limit while the link is up. All HIL Wi-Fi images use an
 indexed 128-packet CPU-owned UDP backlog in PSRAM; the physical DMA-visible
 SRAM pool remains 67 slots. At the start of a burst Xarxa resolves queued IP
-destinations and groups distinct IP queues when their generic link destination
-and traffic class are equal. An unresolved destination retains its IP identity
-so neighbour discovery cannot be starved. Final Ethernet/IP/UDP bytes are
-still constructed directly in the SRAM slots, so the cutover introduces no
-complete-frame copy.
+destinations into routes and asks the device for their physical scheduling
+domain. STA coalesces all Ethernet routes into its single radio peer; AP keeps
+Ethernet destinations separate until the future generation-aware peer
+registry refines that mapping. An unresolved destination retains its IP
+identity so neighbour discovery cannot be starved. Final Ethernet/IP/UDP
+bytes are still constructed directly in the SRAM slots, so the cutover
+introduces no complete-frame copy.
 
 The observer-free pre-cutover control was
 `1788155370026-00390a0c`, runtime CRC-32 `95328358`. All three independent
@@ -1346,9 +1348,13 @@ cost control.
 ### Production pull boundary after the successful A/B
 
 The historical `DestinationBurst` diagnostic selected queues by IP address.
-It has now been removed. Production uses one link-resolved `EgressKey` and
-typed `EgressSchedule`; peer-generation safety remains owned by the Wi-Fi
-admission layer rather than the generic stack.
+It has now been removed. Production first resolves an `EgressRoute`, then the
+device canonicalizes it into an opaque `EgressKey`, and Xarxa applies the
+typed `EgressSchedule`. This distinction is required because an
+infrastructure STA can reach many Ethernet destinations through one BSSID,
+whereas a SoftAP normally maps unicast destinations to distinct radio peers.
+Peer-generation safety remains owned by the Wi-Fi admission layer rather than
+the generic stack.
 
 The cross-core control plane consists of two bounded SPSC streams, not a
 shared per-packet allocator:
@@ -1373,12 +1379,15 @@ VIF + peer slot + peer generation + TID/AC + traffic kind
 ```
 
 The stack resolves route/neighbour state before requesting final device
-backing. The driver maps the resolved link address to a current peer slot and
-generation. A grant names exactly one key and carries bounded frame credits
-plus an airtime quantum. Core1 spends those credits locally, so ordinary packet
-emission does not bounce a shared atomic cache line. An exhausted, cancelled or
-temporarily progressless grant is returned once as a value message. Core0 never
-waits for Core1 while holding a hardware TX obligation.
+backing. The implemented first classifier normalizes every infrastructure-STA
+route to one radio domain and keeps SoftAP Ethernet destinations distinct. The
+next peer-registry slice must refine the AP destination into a current peer
+slot and generation before active deferral is enabled. A grant then names
+exactly one key and carries bounded frame credits plus an airtime quantum.
+Core1 spends those credits locally, so ordinary packet emission does not
+bounce a shared atomic cache line. An exhausted, cancelled or temporarily
+progressless grant is returned once as a value message. Core0 never waits for
+Core1 while holding a hardware TX obligation.
 
 Packet payload remains in the bounded stack-owned PSRAM arena until selected.
 Its removable handle, not a copied complete Ethernet frame, sits in an

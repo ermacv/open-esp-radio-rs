@@ -6,19 +6,19 @@ use core::{
 };
 use std::{sync::Arc, task::Wake};
 
-#[cfg(feature = "tx-egress-scheduling")]
-use embassy_net_driver::EgressSchedule;
 use embassy_net_driver::{
     Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _,
 };
+#[cfg(feature = "tx-egress-scheduling")]
+use embassy_net_driver::{EgressRoute, EgressSchedule};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
 #[cfg(feature = "tx-staging-copy-probe")]
 use open_esp_radio_embassy_net::PinnedNetworkTxFrame;
 use open_esp_radio_embassy_net::{
-    DualPinnedNetworkRunner, ETHERNET_HEADER_LEN, FrameLengthError, NetworkInterfaceId,
-    PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, Resources,
-    RxEnqueueError, SharedPinnedRxQueue,
+    DualPinnedNetworkRunner, ETHERNET_HEADER_LEN, FrameLengthError, NetworkEndpointConfig,
+    NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool,
+    PinnedTxResources, Resources, RxEnqueueError, SharedPinnedRxQueue,
 };
 #[cfg(feature = "tx-core1-materializer-probe")]
 use open_esp_radio_embassy_net::{
@@ -57,7 +57,8 @@ macro_rules! split_pinned {
     ($resources:expr, $pool:expr, $interface:expr, $address:expr) => {{
         let tx_resources = Box::leak(Box::new(PinnedTxResources::new()));
         let (tx_provider, tx_consumer) = tx_resources.split($pool);
-        let (device, rx_runner) = $resources.split(tx_provider, $interface, $address);
+        let endpoint = NetworkEndpointConfig::per_link_destination($interface, $address);
+        let (device, rx_runner) = $resources.split(tx_provider, endpoint);
         (
             device,
             PinnedNetworkRunner::new($interface, rx_runner, tx_consumer),
@@ -277,6 +278,20 @@ fn shared_rx_wrapper_delegates_the_inner_egress_schedule() {
     );
     let mut device = device.with_ingress_tx_reserve().with_shared_rx(consumer);
 
+    let first_route = EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 3]),
+        traffic_class: 0,
+    };
+    let second_route = EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 4]),
+        traffic_class: 0,
+    };
+    assert_ne!(
+        device.egress_key(first_route),
+        device.egress_key(second_route),
+        "shared RX middleware must preserve per-destination classification"
+    );
+
     assert_eq!(device.egress_schedule(), None);
     radio.set_link_state(LinkState::Up);
     let schedule = device.egress_schedule().unwrap();
@@ -294,6 +309,60 @@ fn shared_rx_wrapper_delegates_the_inner_egress_schedule() {
             core::num::NonZeroU8::new(4).unwrap(),
             2,
         )
+    );
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn endpoint_topology_classifies_sta_and_ap_routes_before_admission() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let station_resources = Box::leak(Box::new(TestResources::new()));
+    let access_point_resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (provider, _consumer) = tx_resources.split(pool);
+    let station_interface = NetworkInterfaceId::new(0);
+    let access_point_interface = NetworkInterfaceId::new(1);
+    let (mut station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(station_interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let (mut access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(access_point_interface, [2, 0, 0, 0, 0, 2]),
+    );
+    station_rx.set_link_state(LinkState::Up);
+    access_point_rx.set_link_state(LinkState::Up);
+
+    let first_route = EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 3]),
+        traffic_class: 0,
+    };
+    let second_route = EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 4]),
+        traffic_class: 0,
+    };
+    assert_eq!(
+        station.egress_key(first_route),
+        station.egress_key(second_route),
+        "infrastructure STA routes share one physical radio peer"
+    );
+    assert_ne!(
+        access_point.egress_key(first_route),
+        access_point.egress_key(second_route),
+        "SoftAP destinations remain independent scheduling domains"
+    );
+
+    let before_reconnect = station.egress_key(first_route);
+    station_rx.set_link_state(LinkState::Down);
+    station_rx.set_link_state(LinkState::Up);
+    assert_ne!(
+        station.egress_key(first_route),
+        before_reconnect,
+        "a new link lifecycle must invalidate the previous device key"
     );
 }
 
@@ -447,10 +516,14 @@ fn scheduled_staged_tx_keeps_ownership_until_one_dma_promotion_copy() {
     let station_interface = NetworkInterfaceId::new(0);
     let access_point_interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station, station_rx) =
-        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
-    let (access_point, access_point_rx) =
-        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    let (mut station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(station_interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let (access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(access_point_interface, [2, 0, 0, 0, 0, 2]),
+    );
     let mut access_point = access_point.with_tx_staging_copy_selected(true);
     let station_tx = consumer.for_interface(station_interface);
     let access_point_tx = consumer.for_interface(access_point_interface);
@@ -513,7 +586,10 @@ fn scheduled_staged_tx_promotes_a_complete_batch_in_order() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, radio_state) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let (device, radio_state) = endpoint_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
+    );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
     radio_state.set_link_state(LinkState::Up);
@@ -555,7 +631,10 @@ fn selected_batch_materializes_in_the_network_driver_poll() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let (device, _rx) = endpoint_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
+    );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
 
@@ -610,7 +689,10 @@ fn pending_core1_materialization_cancellation_returns_both_credit_classes() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let (device, _rx) = endpoint_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
+    );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
 
@@ -665,7 +747,10 @@ fn published_core1_materialization_cancellation_reclaims_ready_dma_owners() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let (device, _rx) = endpoint_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
+    );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
 
@@ -720,7 +805,10 @@ fn materializer_rearms_core1_wake_before_returning_a_staged_credit() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(provider, interface, [2, 0, 0, 0, 0, 2]);
+    let (device, _rx) = endpoint_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
+    );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
 
@@ -773,10 +861,14 @@ fn scheduled_staged_tx_batch_reservation_is_all_or_nothing() {
     let station_interface = NetworkInterfaceId::new(0);
     let access_point_interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station, station_rx) =
-        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
-    let (access_point, access_point_rx) =
-        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    let (mut station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(station_interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let (access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(access_point_interface, [2, 0, 0, 0, 0, 2]),
+    );
     let mut access_point = access_point.with_tx_staging_copy_selected(true);
     let station_tx = consumer.for_interface(station_interface);
     let access_point_tx = consumer.for_interface(access_point_interface);
@@ -872,10 +964,14 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     let station_interface = NetworkInterfaceId::new(3);
     let access_point_interface = NetworkInterfaceId::new(7);
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station_device, station_rx) =
-        station_resources.split(provider, station_interface, station);
-    let (mut access_point_device, access_point_rx) =
-        access_point_resources.split(provider, access_point_interface, access_point);
+    let (mut station_device, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(station_interface, station),
+    );
+    let (mut access_point_device, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(access_point_interface, access_point),
+    );
     let radio = DualPinnedNetworkRunner::new(
         station_interface,
         station_rx,
@@ -993,10 +1089,14 @@ fn link_down_reclaims_unclaimed_vif_backlog_from_the_shared_pool() {
     let station_interface = NetworkInterfaceId::new(0);
     let access_point_interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station, station_rx) =
-        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
-    let (mut access_point, access_point_rx) =
-        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    let (mut station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(station_interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let (mut access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(access_point_interface, [2, 0, 0, 0, 0, 2]),
+    );
     let radio = DualPinnedNetworkRunner::new(
         station_interface,
         station_rx,
@@ -1056,10 +1156,14 @@ fn returned_shared_tx_credit_wakes_one_waiting_peer() {
     let tx_resources = Box::leak(Box::new(TxResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station, station_rx) =
-        station_resources.split(provider, NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]);
-    let (mut access_point, access_point_rx) =
-        access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
+    let (mut station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]),
+    );
+    let (mut access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]),
+    );
     station_rx.set_link_state(LinkState::Up);
     access_point_rx.set_link_state(LinkState::Up);
     station
@@ -1100,10 +1204,14 @@ fn aggregate_credit_return_publishes_one_readiness_edge() {
     let (provider, consumer) = tx_resources.split(pool);
     let station_interface = NetworkInterfaceId::new(0);
     let access_point_interface = NetworkInterfaceId::new(1);
-    let (mut station, station_rx) =
-        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
-    let (mut access_point, access_point_rx) =
-        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    let (mut station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(station_interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let (mut access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(access_point_interface, [2, 0, 0, 0, 0, 2]),
+    );
     station_rx.set_link_state(LinkState::Up);
     access_point_rx.set_link_state(LinkState::Up);
     for _ in 0..4 {
@@ -1187,10 +1295,14 @@ fn every_permanent_endpoint_keeps_its_own_ingress_credit() {
     let tx_resources = Box::leak(Box::new(TxResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let (provider, _consumer) = tx_resources.split(pool);
-    let (station, station_rx) =
-        station_resources.split(provider, NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]);
-    let (access_point, access_point_rx) =
-        access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
+    let (station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]),
+    );
+    let (access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]),
+    );
     let mut station = station.with_ingress_tx_reserve();
     let mut access_point = access_point.with_ingress_tx_reserve();
     station_rx.set_link_state(LinkState::Up);
@@ -1236,10 +1348,14 @@ fn direct_pool_snapshot_accounts_reserves_tokens_ready_and_radio_owners() {
     let tx_resources = Box::leak(Box::new(TxResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let (provider, consumer) = tx_resources.split(pool);
-    let (station, station_rx) =
-        station_resources.split(provider, NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]);
-    let (access_point, access_point_rx) =
-        access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
+    let (station, station_rx) = station_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]),
+    );
+    let (access_point, access_point_rx) = access_point_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]),
+    );
     station_rx.set_link_state(LinkState::Up);
     access_point_rx.set_link_state(LinkState::Up);
     let mut station = station.with_ingress_tx_reserve();

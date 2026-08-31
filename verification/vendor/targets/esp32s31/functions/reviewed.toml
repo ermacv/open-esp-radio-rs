@@ -1034,3 +1034,99 @@ status = "reviewed"
 name = "station_policy_variant"
 display-type = "u32"
 description = "Observed word used on paths that select receive-policy transactions. Direct evidence shows zero writes during ieee80211_ifattach and ieee80211_mesh_quick_deinit, but no nonzero writer; values zero and one therefore remain Mode1/Mode2 and are not identified as an AP+STA lifecycle state."
+
+# Current linked ESP32-S31 libble_app.a member 50.o has obfuscated symbol
+# names. The mappings below are limited to function roles established by
+# current-body control/data flow and structural comparison with the public
+# same-chip named archive at commit 31c30949541a5d3abd4043a1cb66d55aa55577dd.
+# Generated linked IR remains the authority for current behavior and layouts;
+# the older names do not import old implementation details.
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_MrW1ZaJZqsHzi3wwRhsn"
+status = "reviewed"
+name = "ble_lll_adv_legacy_primary_channel_pdu_make"
+role = "ble.advertising.legacy-primary-pdu-build"
+summary = "Builds the primary-channel legacy advertising PDU into caller-owned packet storage; generated current-artifact evidence owns its exact branches and memory effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_c9Zmr2aWmPOsZoITHDe9"
+status = "reviewed"
+name = "ble_lll_adv_legacy_pdu_make"
+role = "ble.advertising.legacy-pdu-build"
+summary = "Validates the supplied packet owner and delegates legacy PDU construction to the primary-channel builder with a fixed zero fourth argument; the argument's semantic name remains intentionally unclaimed."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_fxKAT8in6cXLv0gLB2W5"
+status = "reviewed"
+name = "ble_lll_adv_reset_link_state"
+role = "ble.advertising.link-state-reset"
+summary = "Resets the private advertising link-state graph; generated current-artifact evidence owns every positional SRAM effect."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_fiiv8hEPVagnOAVa7EM2"
+status = "reviewed"
+name = "ble_lll_adv_reset"
+role = "ble.advertising.role-reset"
+summary = "Resets one advertising role environment and its owned subordinate state; generated current-artifact evidence owns the finite branches and cleanup effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_cfILxLFIWftw22I0zQab"
+status = "reviewed"
+name = "ble_lll_adv_alloc_memory"
+role = "ble.advertising.memory-allocate"
+summary = "Allocates the private advertising graph and performs bounded rollback on failure; generated current-artifact evidence owns its exact allocation edges."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_8UzoZYkzYu9MXbM1vyWN"
+status = "reviewed"
+name = "ble_lll_adv_start"
+role = "ble.advertising.start"
+summary = "Starts one advertising role by allocating and resetting its graph before scheduling the first primary event; generated current-artifact evidence owns current ordering and failure paths."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_mqh4OXzoN59kvnkKFMA1"
+status = "reviewed"
+name = "ble_lll_adv_schedule_first_primary_event"
+role = "ble.advertising.schedule-first-primary"
+summary = "Constructs and admits the first primary advertising event from the role's private link-state and scheduler-item graph."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_77zgK6v8rbStzf0ReBjv"
+status = "reviewed"
+name = "ble_lll_adv_schedule_next_primary_event"
+role = "ble.advertising.schedule-next-primary"
+summary = "Rewrites and admits the next primary advertising event from the completed role graph; generated current-artifact evidence owns its exact recurrence policy."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_pfcv0QVYrNS6KoQetydw"
+status = "reviewed"
+name = "ble_lll_adv_recycle_scheduler_item"
+role = "ble.advertising.recycle-scheduler-item"
+summary = "Consumes one completed advertising scheduler item, processes role results and either recycles or reschedules its private graph."
+accept-incomplete = true

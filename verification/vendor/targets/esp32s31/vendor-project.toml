@@ -896,6 +896,28 @@ roots = [
 ]
 include-reachable = true
 
+# Minimum hardware-admission slice for the first open Link Layer role. Root the
+# actual packet producer, link-state producer and first-event producer instead
+# of the broad all-feature start routine. Recycling is callback-owned, and the
+# two common roots close the asynchronous hardware-finished edge, so all six
+# must remain explicit. Broad allocation/start/reset and next-event policy stay
+# in the larger investigation scope above; this slice answers only whether one
+# prepared ADV_NONCONN_IND can cross CPU -> hardware -> CPU ownership without
+# importing scan/connection policy.
+[[review.scopes]]
+id = "ble-legacy-nonconnectable-admission"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_MrW1ZaJZqsHzi3wwRhsn",
+    "ble-controller:r_sym_ble_fxKAT8in6cXLv0gLB2W5",
+    "ble-controller:r_sym_ble_mqh4OXzoN59kvnkKFMA1",
+    "ble-controller:r_sym_ble_pfcv0QVYrNS6KoQetydw",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
 [[review.scopes]]
 id = "ieee802154-baseband-leaves"
 protocols = ["ieee802154"]

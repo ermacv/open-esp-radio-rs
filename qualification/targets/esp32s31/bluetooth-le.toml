@@ -403,6 +403,7 @@ async = "incomplete"
 depends-on = ["packet-dataplane", "portable-legacy-advertising"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
+  "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",
 ]
 gaps = [
   { axis = "implementation", id = "legacy-advertising-hardware-ticket-scanning-connection-and-llcp-missing" },

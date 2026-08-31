@@ -6,7 +6,7 @@ use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
     InProcessHciChannel, InProcessHciControllerEndpoint, InProcessHciHostTransport,
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap, LeControllerBootstrapConfig,
-    OwnedBootstrapCommand,
+    LeControllerCommandReady, OwnedBootstrapCommand,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
@@ -32,12 +32,23 @@ pub enum LeControllerHciResourcesError {
     },
 }
 
+/// Result of claiming the sole initial next-command authority for an HCI epoch.
+#[must_use = "retain either the command-ready authority or the unchanged owner"]
+pub enum LeControllerCommandReadyClaim<'epoch, Owner> {
+    /// This owner now carries the epoch's sole affine next-command authority.
+    Ready(LeControllerCommandReady<'epoch, Owner>),
+    /// The authority was already claimed; the supplied owner is unchanged.
+    AlreadyClaimed(Owner),
+}
+
 /// Sole command-side authority for one HCI resource epoch.
 ///
 /// Transport and mutable bootstrap state are private and cannot be separated.
-/// A session runner may borrow the transport for lossless intake/publication
-/// and retain a classified command across radio transitions. Shared observation
-/// does not grant mutation of either underlying owner or bypass session policy.
+/// A session runner can only observe readiness by borrowing its affine command
+/// or response token, and can only consume a command through the combined
+/// endpoint. Successful intake keeps classification and next-command authority
+/// inseparable until one session router consumes both. Shared observation does
+/// not grant raw queue access or bypass session policy.
 #[must_use = "the command endpoint is the sole Controller-side epoch authority"]
 pub struct LeControllerCommandEndpoint<
     'resources,
@@ -56,6 +67,7 @@ pub struct LeControllerCommandEndpoint<
         PACKET_CAPACITY,
     >,
     bootstrap: &'resources mut LeControllerBootstrap,
+    initial_ready_available: &'resources mut bool,
 }
 
 impl<
@@ -75,8 +87,11 @@ impl<
 where
     M: RawMutex,
 {
-    /// Shared access to the sole transport endpoint for this Controller epoch.
-    pub const fn transport(
+    /// Crate-internal access to the raw transport behind this combined endpoint.
+    ///
+    /// Public command intake and response publication deliberately stay on the
+    /// combined endpoint so transport access cannot bypass affine command order.
+    pub(crate) const fn transport(
         &self,
     ) -> &InProcessHciControllerEndpoint<
         'resources,
@@ -96,6 +111,24 @@ where
     /// Current accepted bootstrap progression for this Controller epoch.
     pub const fn bootstrap_phase(&self) -> BootstrapPhase {
         self.bootstrap.phase()
+    }
+
+    /// Claim the sole initial next-command authority for this Controller epoch.
+    ///
+    /// Dropping the returned token does not recreate authority. Every later
+    /// token is returned only by durable publication of an ordered response.
+    pub fn claim_initial_command_ready<Owner>(
+        &mut self,
+        owner: Owner,
+    ) -> LeControllerCommandReadyClaim<'resources, Owner> {
+        if !*self.initial_ready_available {
+            return LeControllerCommandReadyClaim::AlreadyClaimed(owner);
+        }
+        *self.initial_ready_available = false;
+        LeControllerCommandReadyClaim::Ready(LeControllerCommandReady::initial(
+            owner,
+            self.transport.epoch_identity(),
+        ))
     }
 
     /// Dispatch after the combined classified router has validated epoch and Reset policy.
@@ -158,6 +191,7 @@ pub struct LeControllerHciResources<
     channel:
         InProcessHciChannel<M, HOST_TO_CONTROLLER_DEPTH, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
     bootstrap: LeControllerBootstrap,
+    initial_ready_available: bool,
 }
 
 impl<
@@ -195,6 +229,7 @@ where
         Ok(Self {
             channel: InProcessHciChannel::new(),
             bootstrap: LeControllerBootstrap::new(config),
+            initial_ready_available: true,
         })
     }
 
@@ -203,9 +238,10 @@ where
         self.bootstrap.config()
     }
 
-    /// Whether no packet or successful HCI command has entered this epoch.
+    /// Whether initial command authority remains unclaimed and no packet or
+    /// successful bootstrap command has entered this epoch.
     pub fn is_pristine(&self) -> bool {
-        self.channel.is_pristine() && self.bootstrap.is_pristine()
+        self.initial_ready_available && self.channel.is_pristine() && self.bootstrap.is_pristine()
     }
 
     /// Borrow the only Host transport and combined Controller command endpoint.
@@ -224,6 +260,7 @@ where
             controller: LeControllerCommandEndpoint {
                 transport,
                 bootstrap: &mut self.bootstrap,
+                initial_ready_available: &mut self.initial_ready_available,
             },
         }
     }
@@ -232,7 +269,7 @@ where
 #[cfg(test)]
 mod tests {
     use bt_hci::{
-        ControllerToHostPacket, FromHciBytes, PacketKind,
+        ControllerToHostPacket, FromHciBytes,
         cmd::{
             Cmd,
             controller_baseband::{Reset, SetEventMask},
@@ -244,15 +281,15 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-    use super::{LeControllerHciResources, LeControllerHciResourcesError};
-    use crate::{
-        BluetoothPublicDeviceAddress, BootstrapPhase, HostToControllerFrame,
-        LeControllerBootstrapConfig, LeControllerClassifiedCommandRoute,
-        LeControllerCommandClassification, LeControllerResponsePending,
-        LeControllerResponsePublication, OwnedBootstrapCommand, classify_le_controller_command,
+    use super::{
+        LeControllerCommandReadyClaim, LeControllerHciResources, LeControllerHciResourcesError,
     };
-
-    const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
+    use crate::{
+        BluetoothPublicDeviceAddress, BootstrapPhase, LeControllerBootstrapConfig,
+        LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
+        LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
+        LeControllerResponsePublication,
+    };
 
     fn config(payload: u16, credits: u8) -> LeControllerBootstrapConfig {
         LeControllerBootstrapConfig::new(
@@ -288,7 +325,7 @@ mod tests {
         assert!(resources.is_pristine());
 
         {
-            let endpoints = resources.split();
+            let mut endpoints = resources.split();
             assert_eq!(endpoints.controller.bootstrap_config(), config(27, 1));
             assert_eq!(
                 endpoints.controller.bootstrap_phase(),
@@ -301,31 +338,42 @@ mod tests {
                     .await
                     .expect("Reset enters the bounded queue");
                 let mut command_buffer = [0; 31];
-                let HostToControllerFrame::Command(command) = endpoints
+                let LeControllerCommandReadyClaim::Ready(ready) =
+                    endpoints.controller.claim_initial_command_ready(())
+                else {
+                    panic!("the fresh endpoint grants command authority once");
+                };
+                endpoints
                     .controller
-                    .transport()
-                    .receive(&mut command_buffer)
+                    .wait_command_available(&ready)
                     .await
-                    .expect("the combined command endpoint receives Reset")
+                    .expect("matching authority can observe command readiness");
+                let LeControllerCommandIntake::Command { command, .. } = endpoints
+                    .controller
+                    .try_receive_classified_command_with_buffer(ready, &mut command_buffer)
                 else {
-                    panic!("Reset changed HCI packet class");
+                    panic!("the combined endpoint consumes and classifies Reset");
                 };
-                let LeControllerCommandClassification::Bootstrap(command) =
-                    classify_le_controller_command(command)
+                let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
+                    endpoints.controller.route_idle_classified_command(command)
                 else {
-                    panic!("Reset did not become an owned bootstrap command");
+                    panic!("idle Reset becomes a lifecycle barrier");
                 };
-                let response = endpoints.controller.bootstrap.dispatch_owned(command);
+                let LeControllerResetCompletion::ResponsePending(pending) = endpoints
+                    .controller
+                    .complete_reset_after_quiescence(barrier)
+                else {
+                    panic!("the matching endpoint completes Reset after quiescence");
+                };
                 assert_eq!(
                     endpoints.controller.bootstrap_phase(),
                     BootstrapPhase::Configuring
                 );
-                endpoints
-                    .controller
-                    .transport()
-                    .publish(PacketKind::Event, response.as_bytes())
-                    .await
-                    .expect("the combined command endpoint publishes completion");
+                let LeControllerResponsePublication::Published(_) =
+                    pending.try_publish(&endpoints.controller)
+                else {
+                    panic!("the combined endpoint publishes the ordered completion");
+                };
 
                 let mut event_buffer = [0; 31];
                 let packet = endpoints
@@ -341,48 +389,57 @@ mod tests {
     }
 
     #[test]
+    fn initial_command_ready_can_be_claimed_only_once_across_resplits() {
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+            .expect("profile fits its source-owned storage");
+
+        {
+            let mut endpoints = resources.split();
+            let LeControllerCommandReadyClaim::Ready(ready) =
+                endpoints.controller.claim_initial_command_ready(41_u8)
+            else {
+                panic!("the pristine epoch exposes its sole initial authority");
+            };
+            assert_eq!(ready.owner(), &41);
+            let LeControllerCommandReadyClaim::AlreadyClaimed(owner) =
+                endpoints.controller.claim_initial_command_ready(42_u8)
+            else {
+                panic!("a second claim cannot mint another authority");
+            };
+            assert_eq!(owner, 42);
+            drop(ready);
+        }
+
+        assert!(!resources.is_pristine());
+        let mut endpoints = resources.split();
+        let LeControllerCommandReadyClaim::AlreadyClaimed(owner) =
+            endpoints.controller.claim_initial_command_ready(43_u8)
+        else {
+            panic!("dropping and resplitting cannot recreate authority");
+        };
+        assert_eq!(owner, 43);
+    }
+
+    #[test]
     fn draining_a_command_cannot_reclassify_the_epoch_as_pristine() {
         let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
 
         {
-            let endpoints = resources.split();
+            let mut endpoints = resources.split();
             block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the input queue");
             let mut command_buffer = [0; 31];
-            let HostToControllerFrame::Command(command) = endpoints
-                .controller
-                .transport()
-                .try_receive(&mut command_buffer)
-                .expect("combined command endpoint drains Reset without dispatching it")
+            let LeControllerCommandReadyClaim::Ready(ready) =
+                endpoints.controller.claim_initial_command_ready(())
             else {
-                panic!("Reset changed HCI packet class");
+                panic!("the fresh endpoint grants command authority once");
             };
-            assert_eq!(command.opcode(), Reset::OPCODE);
-        }
-
-        assert!(!resources.is_pristine());
-    }
-
-    #[test]
-    fn draining_a_controller_event_cannot_reclassify_the_epoch_as_pristine() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
-            .expect("profile fits its source-owned storage");
-
-        {
-            let endpoints = resources.split();
-            endpoints
+            let LeControllerCommandIntake::Command { .. } = endpoints
                 .controller
-                .transport()
-                .try_publish(PacketKind::Event, &HARDWARE_ERROR)
-                .expect("Controller event enters the output queue");
-            let mut event_buffer = [0; 31];
-            let ControllerToHostPacket::Event(hardware_error) =
-                block_on(endpoints.host.read(&mut event_buffer))
-                    .expect("Host drains the Controller event")
+                .try_receive_classified_command_with_buffer(ready, &mut command_buffer)
             else {
-                panic!("Hardware Error changed HCI packet class");
+                panic!("the combined endpoint drains Reset only with command authority");
             };
-            assert_eq!(hardware_error.data, &[0x42]);
         }
 
         assert!(!resources.is_pristine());
@@ -394,17 +451,33 @@ mod tests {
             .expect("profile fits its source-owned storage");
         let mut endpoints = resources.split();
 
-        let reset_response = endpoints
+        block_on(endpoints.host.write(&Reset::new()))
+            .expect("Reset enters the real Host transport");
+        let mut reset_buffer = [0; 31];
+        let LeControllerCommandReadyClaim::Ready(initial) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the fresh epoch exposes its sole initial authority");
+        };
+        let LeControllerCommandIntake::Command { command: reset, .. } = endpoints
             .controller
-            .bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset);
-        let prior = LeControllerResponsePending::new(
-            (),
-            reset_response,
-            endpoints.controller.transport().epoch_identity(),
-        );
+            .try_receive_classified_command_with_buffer(initial, &mut reset_buffer)
+        else {
+            panic!("the real endpoint classifies Reset under affine authority");
+        };
+        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
+            endpoints.controller.route_idle_classified_command(reset)
+        else {
+            panic!("idle Reset becomes a barrier before software dispatch");
+        };
+        let LeControllerResetCompletion::ResponsePending(prior) = endpoints
+            .controller
+            .complete_reset_after_quiescence(barrier)
+        else {
+            panic!("the matching endpoint completes the proven-idle Reset");
+        };
         let LeControllerResponsePublication::Published(published) =
-            prior.try_publish(endpoints.controller.transport())
+            prior.try_publish(&endpoints.controller)
         else {
             panic!("the empty response queue must accept the fixture Reset completion");
         };
@@ -417,24 +490,24 @@ mod tests {
         block_on(endpoints.host.write(&SetEventMask::new(requested_mask)))
             .expect("Set Event Mask enters the real Host transport");
         let mut command_buffer = [0; 31];
-        let classified = match endpoints
+        let LeControllerCommandIntake::Command {
+            command: classified,
+            ..
+        } = endpoints
             .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real endpoint must classify Set Event Mask"),
+            .try_receive_classified_command_with_buffer(published, &mut command_buffer)
+        else {
+            panic!("the real endpoint must classify Set Event Mask under authority");
         };
-        let LeControllerClassifiedCommandRoute::ResponsePending(pending) = endpoints
-            .controller
-            .route_classified_command(published, classified)
+        let LeControllerClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_classified_command(classified)
         else {
             panic!("non-Reset bootstrap must dispatch into the ordered response axis");
         };
         assert_eq!(endpoints.controller.bootstrap.event_mask(), requested_mask);
 
         let LeControllerResponsePublication::Pending(pending) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the queued Reset completion must backpressure Set Event Mask");
         };
@@ -449,11 +522,11 @@ mod tests {
         );
 
         let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the retained completion must publish after capacity returns");
         };
-        assert_eq!(published.into_owner(), ());
+        assert_eq!(published.owner(), &());
         assert_eq!(endpoints.controller.bootstrap.event_mask(), requested_mask);
         assert_command_complete(
             block_on(endpoints.host.read(&mut event_buffer))

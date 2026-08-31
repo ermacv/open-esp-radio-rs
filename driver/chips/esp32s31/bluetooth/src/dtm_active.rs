@@ -775,31 +775,18 @@ where
     pub(crate) fn from_first_running(
         parts: BluetoothDtmFirstRunningParts<'runtime, S, CAPACITY>,
     ) -> (
-        open_esp_radio_bluetooth_hci::LeDtmCommandCompleteEvent,
-        open_esp_radio_bluetooth_hci::HciEpochIdentity<'runtime>,
+        open_esp_radio_bluetooth_hci::LeControllerResponsePending<'runtime, ()>,
         Self,
     ) {
         match parts {
-            BluetoothDtmFirstRunningParts::Transmitter {
-                response,
-                hci_epoch,
-                task,
-                running,
-            } => (
-                response,
-                hci_epoch,
-                Self::from_transmitter_running(task, running),
-            ),
-            BluetoothDtmFirstRunningParts::Receiver {
-                response,
-                hci_epoch,
-                task,
-                running,
-            } => (
-                response,
-                hci_epoch,
-                Self::from_receiver_running(task, running),
-            ),
+            BluetoothDtmFirstRunningParts::Transmitter { response, running } => {
+                let (task, response) = response.into_parts();
+                (response, Self::from_transmitter_running(task, running))
+            }
+            BluetoothDtmFirstRunningParts::Receiver { response, running } => {
+                let (task, response) = response.into_parts();
+                (response, Self::from_receiver_running(task, running))
+            }
         }
     }
 

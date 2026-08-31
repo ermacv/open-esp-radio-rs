@@ -11,7 +11,7 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    InProcessHciControllerEndpoint,
+    LeControllerCommandEndpoint, LeControllerEndpointMismatch,
     LeControllerResponsePending as PortableControllerResponsePending,
 };
 
@@ -103,40 +103,42 @@ where
 }
 
 trait TestEndResponseWaitSource {
-    fn matches_endpoint<
+    fn wait_response_capacity<
+        'wait,
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
         const CONTROLLER_TO_HOST_DEPTH: usize,
         const PACKET_CAPACITY: usize,
     >(
-        &self,
-        controller: &InProcessHciControllerEndpoint<
+        &'wait self,
+        controller: &'wait LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-    ) -> bool;
+    ) -> impl Future<Output = Result<(), LeControllerEndpointMismatch>> + 'wait;
 }
 
 impl<Radio> TestEndResponseWaitSource for PortableControllerResponsePending<'_, Radio> {
-    fn matches_endpoint<
+    fn wait_response_capacity<
+        'wait,
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
         const CONTROLLER_TO_HOST_DEPTH: usize,
         const PACKET_CAPACITY: usize,
     >(
-        &self,
-        controller: &InProcessHciControllerEndpoint<
+        &'wait self,
+        controller: &'wait LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-    ) -> bool {
-        PortableControllerResponsePending::matches_endpoint(self, controller)
+    ) -> impl Future<Output = Result<(), LeControllerEndpointMismatch>> + 'wait {
+        controller.wait_response_capacity(self)
     }
 }
 
@@ -148,7 +150,7 @@ async fn wait_test_end_response_capacity<
     const PACKET_CAPACITY: usize,
 >(
     source: &Source,
-    controller: &InProcessHciControllerEndpoint<
+    controller: &LeControllerCommandEndpoint<
         '_,
         M,
         HOST_TO_CONTROLLER_DEPTH,
@@ -159,12 +161,11 @@ async fn wait_test_end_response_capacity<
 where
     Source: TestEndResponseWaitSource + ?Sized,
 {
-    if !source.matches_endpoint(controller) {
-        return Err(EmbassyBluetoothDtmTestEndResponseWaitError::EndpointMismatch);
-    }
-
-    controller.wait_publish_ready().await;
-    Ok(EmbassyBluetoothDtmTestEndResponseSignal::Capacity)
+    source
+        .wait_response_capacity(controller)
+        .await
+        .map(|()| EmbassyBluetoothDtmTestEndResponseSignal::Capacity)
+        .map_err(|_| EmbassyBluetoothDtmTestEndResponseWaitError::EndpointMismatch)
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -214,22 +215,23 @@ impl<S, const CAPACITY: usize> TestEndResponseWaitSource
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    fn matches_endpoint<
+    fn wait_response_capacity<
+        'wait,
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
         const CONTROLLER_TO_HOST_DEPTH: usize,
         const PACKET_CAPACITY: usize,
     >(
-        &self,
-        controller: &InProcessHciControllerEndpoint<
+        &'wait self,
+        controller: &'wait LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-    ) -> bool {
-        self.matches_hci_endpoint(controller)
+    ) -> impl Future<Output = Result<(), LeControllerEndpointMismatch>> + 'wait {
+        BluetoothDtmTestEndResponsePending::wait_response_capacity(self, controller)
     }
 }
 
@@ -314,7 +316,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -336,11 +338,14 @@ mod tests {
         task::{Context, Poll},
     };
 
+    use bt_hci::{cmd::le::LeTestEnd, transport::Transport};
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        InProcessHciChannel, LE_RECEIVER_TEST_V1_OPCODE, LeControllerResponsePending,
-        LeControllerResponsePublication, LeDtmCommand,
+        BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeControllerCommandIntake,
+        LeControllerCommandReady, LeControllerCommandReadyClaim, LeControllerHciEndpoints,
+        LeControllerHciResources, LeControllerIdleClassifiedCommandRoute,
+        LeControllerResponsePending, LeControllerResponsePublication,
     };
     use std::{boxed::Box, task::Waker};
 
@@ -448,26 +453,54 @@ mod tests {
         }
     }
 
-    fn pending_response<'epoch>(
-        controller: &open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint<
-            'epoch,
-            NoopRawMutex,
-            1,
-            1,
-            16,
-        >,
-    ) -> LeControllerResponsePending<'epoch, ()> {
-        let LeDtmCommand::ReceiverTestV1(command) =
-            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[7])
-                .expect("the reviewed receiver command is valid")
-        else {
-            panic!("receiver opcode changed semantic command kind");
-        };
-        LeControllerResponsePending::new(
-            (),
-            command.into_started_command_complete(),
-            controller.epoch_identity(),
+    type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 16>;
+
+    fn controller_resources() -> ControllerResources {
+        LeControllerHciResources::new(
+            LeControllerBootstrapConfig::new(
+                BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
+                12,
+                1,
+            )
+            .expect("the test HCI profile is nonzero"),
         )
+        .expect("the test profile fits its source-owned storage")
+    }
+
+    fn test_end_pending_with_ready<'epoch>(
+        endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 16>,
+        ready: LeControllerCommandReady<'epoch, ()>,
+    ) -> LeControllerResponsePending<'epoch, ()> {
+        block_on(endpoints.host.write(&LeTestEnd::new()))
+            .expect("Test End enters the real Host queue");
+        let mut command_buffer = [0; 16];
+        let LeControllerCommandIntake::Command {
+            command: classified,
+            ..
+        } = endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(ready, &mut command_buffer)
+        else {
+            panic!("Test End is classified with its affine command authority");
+        };
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) = endpoints
+            .controller
+            .route_idle_classified_command(classified)
+        else {
+            panic!("idle Test End becomes one ordered response");
+        };
+        pending
+    }
+
+    fn initial_test_end_pending<'epoch>(
+        endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 16>,
+    ) -> LeControllerResponsePending<'epoch, ()> {
+        let LeControllerCommandReadyClaim::Ready(ready) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the test epoch exposes its sole initial command authority");
+        };
+        test_end_pending_with_ready(endpoints, ready)
     }
 
     #[test]
@@ -525,44 +558,47 @@ mod tests {
 
     #[test]
     fn real_hci_affinity_rejects_foreign_endpoint_and_reports_capacity() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
-
-        let mut first_channel = Channel::new();
-        let (_first_host, first) = first_channel.split();
-        let mut second_channel = Channel::new();
-        let (_second_host, second) = second_channel.split();
-        let pending = pending_response(&first);
+        let mut first_resources = controller_resources();
+        let mut first = first_resources.split();
+        let mut second_resources = controller_resources();
+        let second = second_resources.split();
+        let pending = initial_test_end_pending(&mut first);
 
         assert_eq!(
-            block_on(wait_test_end_response_capacity(&pending, &second)),
+            block_on(wait_test_end_response_capacity(
+                &pending,
+                &second.controller,
+            )),
             Err(EmbassyBluetoothDtmTestEndResponseWaitError::EndpointMismatch)
         );
         assert_eq!(
-            block_on(wait_test_end_response_capacity(&pending, &first)),
+            block_on(wait_test_end_response_capacity(&pending, &first.controller,)),
             Ok(EmbassyBluetoothDtmTestEndResponseSignal::Capacity)
         );
     }
 
     #[test]
     fn cancelling_real_hci_capacity_wait_reserves_and_consumes_nothing() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
-
-        let mut channel = Channel::new();
-        let (_host, controller) = channel.split();
-        let pending = pending_response(&controller);
-        let LeControllerResponsePublication::Published(_published) =
-            pending_response(&controller).try_publish(&controller)
+        let mut resources = controller_resources();
+        let mut endpoints = resources.split();
+        let first = initial_test_end_pending(&mut endpoints);
+        let LeControllerResponsePublication::Published(ready) =
+            first.try_publish(&endpoints.controller)
         else {
             panic!("the empty real HCI queue must accept the first response");
         };
+        let pending = test_end_pending_with_ready(&mut endpoints, ready);
 
-        let mut wait = Box::pin(wait_test_end_response_capacity(&pending, &controller));
+        let mut wait = Box::pin(wait_test_end_response_capacity(
+            &pending,
+            &endpoints.controller,
+        ));
         let mut context = Context::from_waker(Waker::noop());
         assert!(wait.as_mut().poll(&mut context).is_pending());
         drop(wait);
 
         let LeControllerResponsePublication::Pending(_retained) =
-            pending_response(&controller).try_publish(&controller)
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("cancelling the capacity wait must leave the older packet queued");
         };

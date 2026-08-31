@@ -12,8 +12,8 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, InProcessHciControllerEndpoint, LeControllerResponsePending,
-    LeControllerResponsePublication, LeDtmCommandCompleteEvent, LeTestEndCommand,
+    HciChannelError, LeControllerCommandEndpoint, LeControllerCommandReady,
+    LeControllerDeferredTestEnd, LeControllerResponsePending, LeControllerResponsePublication,
 };
 
 use crate::dtm_active_session::BluetoothDtmActiveRadio;
@@ -24,11 +24,11 @@ use crate::dtm_quiescence::{
 };
 use crate::dtm_session::BluetoothDtmSessionStopping;
 use crate::{
-    BluetoothControllerPublishedTaskService, BluetoothDtmActiveCompletionFaultCause,
-    BluetoothDtmActiveCpuOwned, BluetoothDtmPostUnlinkWakeCell, BluetoothDtmRecurringFaultCause,
-    BluetoothDtmResponsePublished, BluetoothDtmSessionIdle, BluetoothDtmTestEndReport,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
-    BluetoothSchedulerWakeCell,
+    BluetoothControllerIdleCommandTask, BluetoothControllerPublishedTaskService,
+    BluetoothDtmActiveCompletionFaultCause, BluetoothDtmActiveCpuOwned,
+    BluetoothDtmPostUnlinkWakeCell, BluetoothDtmRecurringFaultCause, BluetoothDtmSessionIdle,
+    BluetoothDtmTestEndReport, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
@@ -40,8 +40,7 @@ pub struct BluetoothDtmStoppingRunner<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
+    deferred: LeControllerDeferredTestEnd<'runtime, ()>,
     quiescence: BluetoothDtmQuiescenceRunner<'runtime, S, CAPACITY>,
 }
 
@@ -99,8 +98,7 @@ pub struct BluetoothDtmTestEndReady<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    response: LeDtmCommandCompleteEvent,
-    order: BluetoothDtmResponsePublished<'runtime>,
+    deferred: LeControllerDeferredTestEnd<'runtime, ()>,
     task: Task<'runtime, S, CAPACITY>,
     stopping: BluetoothDtmSessionStopping,
 }
@@ -119,17 +117,6 @@ impl<'runtime, S, const CAPACITY: usize> BluetoothDtmTestEndReady<'runtime, S, C
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        LeDtmCommandCompleteEvent,
-        BluetoothDtmResponsePublished<'runtime>,
-        Task<'runtime, S, CAPACITY>,
-        BluetoothDtmSessionStopping,
-    ) {
-        (self.response, self.order, self.task, self.stopping)
-    }
-
     /// Bind the terminal response to the same HCI order epoch as the accepted
     /// Test End command.
     ///
@@ -139,10 +126,16 @@ where
     pub fn into_response_pending(
         self,
     ) -> BluetoothDtmTestEndResponsePending<'runtime, S, CAPACITY> {
-        let (response, order, task, stopping) = self.into_parts();
-        let recovery = BluetoothDtmTestEndRecovery { task, stopping };
+        let packet_count = self.report().reported_packet_count();
+        let recovery = BluetoothDtmTestEndRecovery {
+            task: self.task,
+            stopping: self.stopping,
+        };
         BluetoothDtmTestEndResponsePending {
-            transaction: order.begin_next_response(recovery, response),
+            transaction: self
+                .deferred
+                .map_owner(|()| recovery)
+                .into_ended_response(packet_count),
         }
     }
 }
@@ -192,15 +185,17 @@ pub struct BluetoothDtmTestEndComplete<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    task: Task<'runtime, S, CAPACITY>,
+    task: BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY>,
 }
 
 impl<'runtime, S, const CAPACITY: usize> BluetoothDtmTestEndComplete<'runtime, S, CAPACITY>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    /// Return the sole task service after the DTM runtime is idle again.
-    pub fn into_task_service(self) -> Task<'runtime, S, CAPACITY> {
+    /// Return the sole idle command task after the DTM runtime is idle again.
+    pub fn into_idle_command_task(
+        self,
+    ) -> BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY> {
         self.task
     }
 }
@@ -215,6 +210,7 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     task: Task<'runtime, S, CAPACITY>,
+    ready: LeControllerCommandReady<'runtime, ()>,
     idle: BluetoothDtmSessionIdle,
 }
 
@@ -238,7 +234,7 @@ where
     pub fn retry_restore(mut self) -> BluetoothDtmTestEndRestoreStep<'runtime, S, CAPACITY> {
         match self.task.restore_dtm_session_idle(self.idle) {
             Ok(()) => BluetoothDtmTestEndRestoreStep::Completed(BluetoothDtmTestEndComplete {
-                task: self.task,
+                task: BluetoothControllerIdleCommandTask::from_parts(self.task, self.ready),
             }),
             Err(idle) => {
                 self.idle = idle;
@@ -260,7 +256,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -271,6 +267,25 @@ where
         self.transaction.matches_endpoint(controller)
     }
 
+    /// Wait until the matching Controller-to-Host queue may accept Test End.
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
     /// Attempt exact-once Test End publication through the matching HCI epoch.
     pub fn try_publish<
         M: RawMutex,
@@ -279,7 +294,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -289,15 +304,17 @@ where
     ) -> BluetoothDtmTestEndResponsePublication<'runtime, S, CAPACITY> {
         match self.transaction.try_publish(controller) {
             LeControllerResponsePublication::Published(published) => {
-                let recovery = published.into_owner();
+                let (recovery, ready) = published.into_parts();
                 let idle = recovery.stopping.response_published();
                 let mut task = recovery.task;
                 match task.restore_dtm_session_idle(idle) {
                     Ok(()) => BluetoothDtmTestEndResponsePublication::Completed(
-                        BluetoothDtmTestEndComplete { task },
+                        BluetoothDtmTestEndComplete {
+                            task: BluetoothControllerIdleCommandTask::from_parts(task, ready),
+                        },
                     ),
                     Err(idle) => BluetoothDtmTestEndResponsePublication::RestoreFailed(
-                        BluetoothDtmTestEndRestoreFailure { task, idle },
+                        BluetoothDtmTestEndRestoreFailure { task, ready, idle },
                     ),
                 }
             }
@@ -336,8 +353,7 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     cause: BluetoothDtmStoppingFaultCause,
-    _command: LeTestEndCommand,
-    _order: BluetoothDtmResponsePublished<'runtime>,
+    _deferred: LeControllerDeferredTestEnd<'runtime, ()>,
     _quiescence: BluetoothDtmQuiescenceFault<'runtime, S, CAPACITY>,
 }
 
@@ -357,12 +373,10 @@ where
 {
     pub(crate) fn new(
         radio: BluetoothDtmActiveRadio<'runtime, S, CAPACITY>,
-        order: BluetoothDtmResponsePublished<'runtime>,
-        command: LeTestEndCommand,
+        deferred: LeControllerDeferredTestEnd<'runtime, ()>,
     ) -> Self {
         Self {
-            command,
-            order,
+            deferred,
             quiescence: BluetoothDtmQuiescenceRunner::new(radio),
         }
     }
@@ -399,22 +413,19 @@ where
     /// Execute exactly one cancellation, drain, start or completion transition.
     pub fn step(self) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY> {
         let Self {
-            command,
-            order,
+            deferred,
             quiescence,
         } = self;
         match quiescence.step() {
             BluetoothDtmQuiescenceStep::Continue(quiescence) => {
                 BluetoothDtmStoppingStep::Continue(Self {
-                    command,
-                    order,
+                    deferred,
                     quiescence,
                 })
             }
             BluetoothDtmQuiescenceStep::Waiting(quiescence) => {
                 BluetoothDtmStoppingStep::Waiting(Self {
-                    command,
-                    order,
+                    deferred,
                     quiescence,
                 })
             }
@@ -423,25 +434,22 @@ where
                 observed,
             } => BluetoothDtmStoppingStep::UnrelatedList {
                 runner: Self {
-                    command,
-                    order,
+                    deferred,
                     quiescence,
                 },
                 observed,
             },
             BluetoothDtmQuiescenceStep::Retryable(quiescence) => {
                 BluetoothDtmStoppingStep::Retryable(Self {
-                    command,
-                    order,
+                    deferred,
                     quiescence,
                 })
             }
-            BluetoothDtmQuiescenceStep::CpuOwned(owner) => response_ready(command, order, owner),
+            BluetoothDtmQuiescenceStep::CpuOwned(owner) => response_ready(deferred, owner),
             BluetoothDtmQuiescenceStep::Fault(quiescence) => {
                 BluetoothDtmStoppingStep::Fault(BluetoothDtmStoppingFault {
                     cause: stopping_fault_cause(quiescence.cause()),
-                    _command: command,
-                    _order: order,
+                    _deferred: deferred,
                     _quiescence: quiescence,
                 })
             }
@@ -466,8 +474,7 @@ const fn stopping_fault_cause(
 }
 
 fn response_ready<'runtime, S, const CAPACITY: usize>(
-    command: LeTestEndCommand,
-    order: BluetoothDtmResponsePublished<'runtime>,
+    deferred: LeControllerDeferredTestEnd<'runtime, ()>,
     owner: BluetoothDtmActiveCpuOwned<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
 where
@@ -483,10 +490,8 @@ where
             (task, owner.into_test_ended())
         }
     };
-    let response = command.into_ended_command_complete(ended.report().reported_packet_count());
     BluetoothDtmStoppingStep::ResponseReady(BluetoothDtmTestEndReady {
-        response,
-        order,
+        deferred,
         task,
         stopping: BluetoothDtmSessionStopping::new(ended),
     })

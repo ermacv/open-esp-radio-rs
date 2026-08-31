@@ -2,95 +2,297 @@
 //!
 //! Radio progress and Controller-to-Host capacity are deliberately independent:
 //! a chip-specific runner may transform the retained owner while the exact
-//! Command Complete remains pending. Only successful insertion into the matching
-//! HCI epoch advances the order state to [`LeControllerResponsePublished`].
+//! Command Complete remains pending. The resource-owned initial claim establishes
+//! [`LeControllerCommandReady`]; thereafter only successful insertion into the
+//! matching HCI epoch restores that authority.
 
 #![forbid(unsafe_code)]
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
-    HciChannelError, HciControllerResponse, HciEpochBound, HciEpochIdentity,
-    InProcessHciControllerEndpoint, LeControllerCommandClassification, LeControllerCommandComplete,
-    LeControllerCommandEndpoint, LeDtmCommand, LeDtmIdleSessionDisposition,
-    LeReceiverTestV1Command, LeTransmitterTestV1Command, OwnedBootstrapCommand,
+    HciChannelError, HciClassifiedCommandIntake, HciControllerResponse, HciEpochBound,
+    HciEpochIdentity, HostToControllerFrame, LeControllerCommandClassification,
+    LeControllerCommandComplete, LeControllerCommandEndpoint, LeDtmActiveSessionDisposition,
+    LeDtmCommand, LeDtmIdleSessionDisposition, LeReceiverTestV1Command, LeTestEndCommand,
+    LeTransmitterTestV1Command, OwnedBootstrapCommand,
 };
 
-/// Route one endpoint-bound command while no DTM test is active.
+/// A combined Controller endpoint does not match retained affine HCI authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeControllerEndpointMismatch;
+
+/// One consumed and classified Host command inseparable from next-command authority.
 ///
-/// `owner_epoch` binds the caller's idle owner to its live HCI resources. Both
-/// that affinity and the command's opaque origin must match `controller` before
-/// the semantic command can be released. Idle Test End immediately becomes an
-/// ordered zero-count response retaining `Owner` through backpressure.
-pub fn route_idle_dtm_command<
-    'epoch,
-    'command,
-    Owner,
-    M: RawMutex,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->(
-    owner: Owner,
-    owner_epoch: HciEpochIdentity<'epoch>,
-    controller: &InProcessHciControllerEndpoint<
-        '_,
-        M,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
-    command: HciEpochBound<'command, LeDtmCommand>,
-) -> LeDtmIdleCommandRoute<'epoch, 'command, Owner> {
-    if !owner_epoch.same_epoch(controller.epoch_identity()) {
-        return LeDtmIdleCommandRoute::EndpointMismatch { owner, command };
-    }
-    match command.try_into_for_endpoint(controller) {
-        Ok(command) => match command.into_idle_session_disposition() {
-            LeDtmIdleSessionDisposition::StartReceiver(command) => {
-                LeDtmIdleCommandRoute::StartReceiver { owner, command }
-            }
-            LeDtmIdleSessionDisposition::StartTransmitter(command) => {
-                LeDtmIdleCommandRoute::StartTransmitter { owner, command }
-            }
-            LeDtmIdleSessionDisposition::CompleteNoTest(response) => {
-                LeDtmIdleCommandRoute::ResponsePending(LeControllerResponsePending::new(
-                    owner,
-                    response,
-                    owner_epoch,
-                ))
-            }
-        },
-        Err(command) => LeDtmIdleCommandRoute::EndpointMismatch { owner, command },
+/// Only a matching [`LeControllerCommandEndpoint`] can construct this value.
+/// Its classification is intentionally not exposed: an idle or active router
+/// must consume the complete aggregate before another command can be accepted.
+#[must_use = "route the classified command without separating its affine authority"]
+pub struct LeControllerClassifiedCommand<'epoch, 'command, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: HciEpochBound<'command, LeControllerCommandClassification>,
+}
+
+impl<Owner> LeControllerClassifiedCommand<'_, '_, Owner> {
+    /// Borrow the independently progressing lifecycle owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
     }
 }
 
-/// Portable result of routing one endpoint-bound command while DTM is idle.
-#[must_use = "start hardware, publish idle Test End, or retain the epoch mismatch"]
-pub enum LeDtmIdleCommandRoute<'epoch, 'command, Owner> {
-    /// Begin one receiver test with the exact idle owner.
-    StartReceiver {
-        /// Unchanged idle owner whose epoch admitted the command.
-        owner: Owner,
-        /// Validated receiver command released after both epoch checks.
-        command: LeReceiverTestV1Command,
+/// One non-blocking command intake through the combined Controller endpoint.
+///
+/// A command result keeps its classification and affine authority opaque and
+/// inseparable. Every branch that consumes no command returns the exact
+/// authority for a lossless retry.
+#[must_use = "route the command or retain the returned command-ready authority"]
+pub enum LeControllerCommandIntake<'epoch, 'command, 'buffer, Owner> {
+    /// One complete classified command plus reusable scratch storage.
+    Command {
+        /// Opaque classification and sole next-command authority.
+        command: LeControllerClassifiedCommand<'epoch, 'command, Owner>,
+        /// Scratch storage no longer borrowed by the owned classification.
+        buffer: &'buffer mut [u8],
     },
-    /// Begin one transmitter test with the exact idle owner.
-    StartTransmitter {
-        /// Unchanged idle owner whose epoch admitted the command.
-        owner: Owner,
-        /// Validated transmitter command released after both epoch checks.
-        command: LeTransmitterTestV1Command,
+    /// A readiness hint became stale before intake.
+    Empty {
+        /// Unchanged next-command authority.
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        /// Scratch storage available for another wait.
+        buffer: &'buffer mut [u8],
     },
-    /// Idle Test End became the standard zero-count response.
-    ResponsePending(LeControllerResponsePending<'epoch, Owner>),
-    /// Either idle owner or command belongs to another live Controller epoch.
+    /// The authority belongs to another Controller epoch; no packet was consumed.
     EndpointMismatch {
-        /// Unchanged idle owner.
-        owner: Owner,
-        /// Unchanged semantic command retaining its source-epoch proof.
-        command: HciEpochBound<'command, LeDtmCommand>,
+        /// Unchanged next-command authority.
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        /// Scratch storage available to the matching endpoint.
+        buffer: &'buffer mut [u8],
     },
+    /// A packet-boundary failure consumed no command authority.
+    Channel {
+        /// Unchanged next-command authority.
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        /// Scratch storage available to the supervisor or a corrected retry.
+        buffer: &'buffer mut [u8],
+        /// Exact transport failure.
+        error: HciChannelError,
+    },
+    /// The oldest Host packet was data rather than a command.
+    NonCommand {
+        /// Unchanged next-command authority for later command intake.
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        /// Data frame retaining its source-epoch proof and buffer borrow.
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
+    },
+}
+
+/// One endpoint-validated receiver start retaining its response-order epoch.
+///
+/// The semantic command is available only as a borrowed projection. A chip
+/// runner may transform or temporarily split the lifecycle owner, but the
+/// command and response order remain together until hardware has actually
+/// entered the started state.
+#[must_use = "retain the deferred receiver start until hardware starts or rejects it"]
+pub struct LeControllerDeferredReceiverStart<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeReceiverTestV1Command,
+}
+
+impl<'epoch, Owner> LeControllerDeferredReceiverStart<'epoch, Owner> {
+    /// Borrow the idle lifecycle owner without releasing command or order.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Borrow the validated receiver command without releasing response order.
+    pub const fn command(&self) -> &LeReceiverTestV1Command {
+        &self.command
+    }
+
+    /// Transform only the independently progressing hardware owner.
+    pub fn map_owner<Next>(
+        self,
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerDeferredReceiverStart<'epoch, Next> {
+        LeControllerDeferredReceiverStart {
+            ready: self.ready.map_owner(map),
+            command: self.command,
+        }
+    }
+
+    /// Separate only the lifecycle owner while retaining command and order in
+    /// an opaque unit continuation suitable for a chip-owned state machine.
+    pub fn into_parts(self) -> (Owner, LeControllerDeferredReceiverStart<'epoch, ()>) {
+        let (owner, ready) = self.ready.into_parts();
+        (
+            owner,
+            LeControllerDeferredReceiverStart {
+                ready,
+                command: self.command,
+            },
+        )
+    }
+
+    /// Construct the exact receiver-start completion after hardware `RUN`.
+    pub fn into_started_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_started_command_complete())
+    }
+}
+
+/// One endpoint-validated transmitter start retaining its response-order epoch.
+#[must_use = "retain the deferred transmitter start until hardware starts or rejects it"]
+pub struct LeControllerDeferredTransmitterStart<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeTransmitterTestV1Command,
+}
+
+impl<'epoch, Owner> LeControllerDeferredTransmitterStart<'epoch, Owner> {
+    /// Borrow the idle lifecycle owner without releasing command or order.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Borrow the validated transmitter command without releasing response order.
+    pub const fn command(&self) -> &LeTransmitterTestV1Command {
+        &self.command
+    }
+
+    /// Transform only the independently progressing hardware owner.
+    pub fn map_owner<Next>(
+        self,
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerDeferredTransmitterStart<'epoch, Next> {
+        LeControllerDeferredTransmitterStart {
+            ready: self.ready.map_owner(map),
+            command: self.command,
+        }
+    }
+
+    /// Separate only the lifecycle owner while retaining command and order in
+    /// an opaque unit continuation suitable for a chip-owned state machine.
+    pub fn into_parts(self) -> (Owner, LeControllerDeferredTransmitterStart<'epoch, ()>) {
+        let (owner, ready) = self.ready.into_parts();
+        (
+            owner,
+            LeControllerDeferredTransmitterStart {
+                ready,
+                command: self.command,
+            },
+        )
+    }
+
+    /// Construct the exact transmitter-start completion after hardware `RUN`.
+    pub fn into_started_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_started_command_complete())
+    }
+}
+
+/// One endpoint-validated DTM command retaining next-command authority.
+///
+/// The command is intentionally not exposed separately. Active-session policy
+/// consumes this aggregate so a semantic command from one epoch cannot be
+/// paired with command-ready authority from another epoch.
+#[must_use = "route the retained DTM command under one session policy"]
+pub struct LeControllerDeferredDtmCommand<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeDtmCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredDtmCommand<'epoch, Owner> {
+    /// Borrow the independently progressing lifecycle owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Apply active-session DTM policy without separating command and order.
+    pub fn into_active_session_route(self) -> LeControllerActiveDtmCommandRoute<'epoch, Owner> {
+        match self.command.into_active_session_disposition() {
+            LeDtmActiveSessionDisposition::RejectControllerBusy(response) => {
+                LeControllerActiveDtmCommandRoute::ResponsePending(
+                    self.ready.begin_next_response(response),
+                )
+            }
+            LeDtmActiveSessionDisposition::End(command) => {
+                LeControllerActiveDtmCommandRoute::TestEnd(LeControllerDeferredTestEnd {
+                    ready: self.ready,
+                    command,
+                })
+            }
+        }
+    }
+}
+
+/// Portable active-session disposition of one endpoint-validated DTM command.
+#[must_use = "publish Controller Busy or retain Test End through hardware quiescence"]
+pub enum LeControllerActiveDtmCommandRoute<'epoch, Owner> {
+    /// A second RX/TX start became the fixed Controller Busy response.
+    ResponsePending(LeControllerResponsePending<'epoch, Owner>),
+    /// Test End retains command and order until the chip supplies its packet count.
+    TestEnd(LeControllerDeferredTestEnd<'epoch, Owner>),
+}
+
+/// Endpoint-bound Test End retained until active hardware has quiesced.
+#[must_use = "retain Test End until the exact terminal packet count is available"]
+pub struct LeControllerDeferredTestEnd<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeTestEndCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredTestEnd<'epoch, Owner> {
+    /// Borrow the independently progressing lifecycle owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Transform only the independently progressing hardware owner.
+    pub fn map_owner<Next>(
+        self,
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerDeferredTestEnd<'epoch, Next> {
+        LeControllerDeferredTestEnd {
+            ready: self.ready.map_owner(map),
+            command: self.command,
+        }
+    }
+
+    /// Separate only the lifecycle owner while retaining command and order.
+    pub fn into_parts(self) -> (Owner, LeControllerDeferredTestEnd<'epoch, ()>) {
+        let (owner, ready) = self.ready.into_parts();
+        (
+            owner,
+            LeControllerDeferredTestEnd {
+                ready,
+                command: self.command,
+            },
+        )
+    }
+
+    /// Construct the exact Test End completion after hardware quiescence.
+    pub fn into_ended_response(
+        self,
+        packet_count: u16,
+    ) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_ended_command_complete(packet_count))
+    }
+}
+
+/// Portable result of routing one complete Controller classification while the
+/// hardware session is idle.
+#[must_use = "start hardware, publish the response, or retain the exact mismatch"]
+pub enum LeControllerIdleClassifiedCommandRoute<'epoch, 'command, Owner> {
+    /// A receiver start retains its semantic command and response order.
+    StartReceiver(LeControllerDeferredReceiverStart<'epoch, Owner>),
+    /// A transmitter start retains its semantic command and response order.
+    StartTransmitter(LeControllerDeferredTransmitterStart<'epoch, Owner>),
+    /// The classification completed synchronously into one ordered response.
+    ResponsePending(LeControllerResponsePending<'epoch, Owner>),
+    /// Reset remains ordered but undispatched until lifecycle quiescence.
+    ResetBarrier(LeControllerResetBarrier<'epoch, Owner>),
+    /// The aggregate belongs to another endpoint and remains inseparable.
+    EndpointMismatch(LeControllerClassifiedCommand<'epoch, 'command, Owner>),
 }
 
 /// An owner paired with one exact not-yet-published Controller response.
@@ -107,22 +309,6 @@ pub struct LeControllerResponsePending<'epoch, Owner> {
 }
 
 impl<'epoch, Owner> LeControllerResponsePending<'epoch, Owner> {
-    /// Bind one owner to the response and HCI epoch which admitted it.
-    pub fn new<Response>(
-        owner: Owner,
-        response: Response,
-        hci_epoch: HciEpochIdentity<'epoch>,
-    ) -> Self
-    where
-        Response: Into<LeControllerCommandComplete>,
-    {
-        Self {
-            owner,
-            response: response.into(),
-            hci_epoch,
-        }
-    }
-
     /// Borrow the independently progressing owner axis.
     pub const fn owner(&self) -> &Owner {
         &self.owner
@@ -156,7 +342,7 @@ impl<'epoch, Owner> LeControllerResponsePending<'epoch, Owner> {
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -164,7 +350,8 @@ impl<'epoch, Owner> LeControllerResponsePending<'epoch, Owner> {
             PACKET_CAPACITY,
         >,
     ) -> bool {
-        self.hci_epoch.same_epoch(controller.epoch_identity())
+        self.hci_epoch
+            .same_epoch(controller.transport().epoch_identity())
     }
 
     /// Transform only the owner axis while retaining the exact response authority.
@@ -190,7 +377,7 @@ impl<'epoch, Owner> LeControllerResponsePending<'epoch, Owner> {
         const PACKET_CAPACITY: usize,
     >(
         self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -202,8 +389,11 @@ impl<'epoch, Owner> LeControllerResponsePending<'epoch, Owner> {
             return LeControllerResponsePublication::EndpointMismatch(self);
         }
 
-        match controller.try_publish(self.response.kind(), self.response.as_bytes()) {
-            Ok(()) => LeControllerResponsePublication::Published(LeControllerResponsePublished {
+        match controller
+            .transport()
+            .try_publish(self.response.kind(), self.response.as_bytes())
+        {
+            Ok(()) => LeControllerResponsePublication::Published(LeControllerCommandReady {
                 owner: self.owner,
                 hci_epoch: self.hci_epoch,
             }),
@@ -216,49 +406,45 @@ impl<'epoch, Owner> LeControllerResponsePending<'epoch, Owner> {
     }
 }
 
-/// An owner whose Controller response entered its matching HCI epoch.
+/// An owner carrying the sole authority to accept the next command in one HCI epoch.
 ///
-/// This state contains no response bytes and exposes no publication operation,
-/// making a duplicate insertion unrepresentable. The retained epoch marker
-/// authorizes later command intake and the next ordered response transaction.
+/// Resources mint the initial authority once, and each durable response
+/// publication returns its successor. This state contains no response bytes
+/// and exposes no publication operation, making duplicate insertion
+/// unrepresentable.
 #[must_use = "the owner and its HCI affinity must remain retained"]
-pub struct LeControllerResponsePublished<'epoch, Owner> {
+pub struct LeControllerCommandReady<'epoch, Owner> {
     owner: Owner,
     hci_epoch: HciEpochIdentity<'epoch>,
 }
 
-impl<'epoch, Owner> LeControllerResponsePublished<'epoch, Owner> {
+impl<'epoch, Owner> LeControllerCommandReady<'epoch, Owner> {
+    pub(crate) const fn initial(owner: Owner, hci_epoch: HciEpochIdentity<'epoch>) -> Self {
+        Self { owner, hci_epoch }
+    }
+
     /// Borrow the independently progressing owner axis.
     pub const fn owner(&self) -> &Owner {
         &self.owner
     }
 
-    /// Release the retained owner after the response was durably published.
-    ///
-    /// The response authority is absent from this typestate, so consuming the
-    /// owner cannot enable duplicate publication. Terminal session transitions
-    /// use this edge before restoring their hardware graph.
-    pub fn into_owner(self) -> Owner {
-        self.owner
-    }
-
-    /// Separate the owner from its published unit order proof for typed composition.
-    pub fn into_parts(self) -> (Owner, LeControllerResponsePublished<'epoch, ()>) {
+    /// Separate the owner from its unit next-command authority for typed composition.
+    pub fn into_parts(self) -> (Owner, LeControllerCommandReady<'epoch, ()>) {
         (
             self.owner,
-            LeControllerResponsePublished {
+            LeControllerCommandReady {
                 owner: (),
                 hci_epoch: self.hci_epoch,
             },
         )
     }
 
-    /// Transform only the owner axis while retaining the published order proof.
+    /// Transform only the owner axis while retaining next-command authority.
     pub fn map_owner<Next>(
         self,
         map: impl FnOnce(Owner) -> Next,
-    ) -> LeControllerResponsePublished<'epoch, Next> {
-        LeControllerResponsePublished {
+    ) -> LeControllerCommandReady<'epoch, Next> {
+        LeControllerCommandReady {
             owner: map(self.owner),
             hci_epoch: self.hci_epoch,
         }
@@ -270,7 +456,7 @@ impl<'epoch, Owner> LeControllerResponsePublished<'epoch, Owner> {
     /// publication. A higher session layer must retain the semantic command and
     /// owner needed to construct `response`; this transition supplies
     /// only ordering and endpoint affinity.
-    pub fn begin_next_response<Response>(
+    fn begin_next_response<Response>(
         self,
         response: Response,
     ) -> LeControllerResponsePending<'epoch, Owner>
@@ -284,9 +470,9 @@ impl<'epoch, Owner> LeControllerResponsePublished<'epoch, Owner> {
         }
     }
 
-    /// Whether an endpoint belongs to the HCI epoch which accepted the response.
+    /// Whether an endpoint belongs to the HCI epoch carrying this authority.
     ///
-    /// Only the published state exposes this authority, so command intake cannot
+    /// Only the command-ready state exposes this authority, so command intake cannot
     /// be enabled while the preceding response is still pending.
     pub fn accepts_endpoint<
         M: RawMutex,
@@ -295,7 +481,7 @@ impl<'epoch, Owner> LeControllerResponsePublished<'epoch, Owner> {
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -303,18 +489,20 @@ impl<'epoch, Owner> LeControllerResponsePublished<'epoch, Owner> {
             PACKET_CAPACITY,
         >,
     ) -> bool {
-        self.hci_epoch.same_epoch(controller.epoch_identity())
+        self.hci_epoch
+            .same_epoch(controller.transport().epoch_identity())
     }
 }
 
 impl<
+    'resources,
     M,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
 >
     LeControllerCommandEndpoint<
-        '_,
+        'resources,
         M,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
@@ -323,57 +511,204 @@ impl<
 where
     M: RawMutex,
 {
+    /// Wait until a Host packet is observed while borrowing command authority.
+    ///
+    /// The wait neither consumes nor reserves a packet and borrows `ready`, so
+    /// cancellation leaves the sole affine authority in the caller. A foreign
+    /// authority fails before observing this endpoint's queue.
+    pub async fn wait_command_available<'epoch, Owner>(
+        &self,
+        ready: &LeControllerCommandReady<'epoch, Owner>,
+    ) -> Result<(), LeControllerEndpointMismatch> {
+        if !ready.accepts_endpoint(self) {
+            return Err(LeControllerEndpointMismatch);
+        }
+        self.transport().wait_receive_ready().await;
+        Ok(())
+    }
+
+    /// Consume and classify at most one Host command under affine authority.
+    ///
+    /// On success classification and authority remain inseparable in one
+    /// opaque aggregate accepted only by this crate's session routers. Every
+    /// branch without a command returns the exact authority unchanged.
+    pub fn try_receive_classified_command_with_buffer<'epoch, 'buffer, Owner>(
+        &self,
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        buffer: &'buffer mut [u8],
+    ) -> LeControllerCommandIntake<'epoch, 'resources, 'buffer, Owner> {
+        if !ready.accepts_endpoint(self) {
+            return LeControllerCommandIntake::EndpointMismatch { ready, buffer };
+        }
+
+        match self
+            .transport()
+            .try_receive_classified_command_with_buffer(buffer)
+        {
+            HciClassifiedCommandIntake::Command { command, buffer } => {
+                LeControllerCommandIntake::Command {
+                    command: LeControllerClassifiedCommand { ready, command },
+                    buffer,
+                }
+            }
+            HciClassifiedCommandIntake::Empty { buffer } => {
+                LeControllerCommandIntake::Empty { ready, buffer }
+            }
+            HciClassifiedCommandIntake::Channel { error, buffer } => {
+                LeControllerCommandIntake::Channel {
+                    ready,
+                    buffer,
+                    error,
+                }
+            }
+            HciClassifiedCommandIntake::NonCommand(frame) => {
+                LeControllerCommandIntake::NonCommand { ready, frame }
+            }
+        }
+    }
+
+    /// Wait until response capacity is observed while borrowing the response.
+    ///
+    /// The wait reserves no slot and borrows `pending`, so cancellation leaves
+    /// exact response bytes and owner available for `try_publish`.
+    pub async fn wait_response_capacity<'epoch, Owner>(
+        &self,
+        pending: &LeControllerResponsePending<'epoch, Owner>,
+    ) -> Result<(), LeControllerEndpointMismatch> {
+        if !pending.matches_endpoint(self) {
+            return Err(LeControllerEndpointMismatch);
+        }
+        self.transport().wait_publish_ready().await;
+        Ok(())
+    }
+
+    /// Route one complete Controller classification while hardware is idle.
+    ///
+    /// The affine command-ready authority and consumed command must both belong to this
+    /// endpoint before any bootstrap mutation or semantic release occurs. RX/TX
+    /// starts retain an opaque response-order token until the chip runner proves
+    /// hardware start. Every synchronous branch becomes one exact pending
+    /// response, including idle Test End, non-Reset bootstrap commands,
+    /// malformed known commands and unsupported opcodes.
+    pub fn route_idle_classified_command<'epoch, 'command, Owner>(
+        &mut self,
+        command: LeControllerClassifiedCommand<'epoch, 'command, Owner>,
+    ) -> LeControllerIdleClassifiedCommandRoute<'epoch, 'command, Owner> {
+        if !command.ready.accepts_endpoint(self)
+            || !command.command.originates_from(self.transport())
+        {
+            return LeControllerIdleClassifiedCommandRoute::EndpointMismatch(command);
+        }
+
+        let LeControllerClassifiedCommand { ready, command } = command;
+        let classification = command
+            .try_into_for_endpoint(self.transport())
+            .unwrap_or_else(|_| unreachable!("aggregate affinity was checked above"));
+
+        match classification {
+            LeControllerCommandClassification::Dtm(command) => {
+                match command.into_idle_session_disposition() {
+                    LeDtmIdleSessionDisposition::StartReceiver(command) => {
+                        LeControllerIdleClassifiedCommandRoute::StartReceiver(
+                            LeControllerDeferredReceiverStart { ready, command },
+                        )
+                    }
+                    LeDtmIdleSessionDisposition::StartTransmitter(command) => {
+                        LeControllerIdleClassifiedCommandRoute::StartTransmitter(
+                            LeControllerDeferredTransmitterStart { ready, command },
+                        )
+                    }
+                    LeDtmIdleSessionDisposition::CompleteNoTest(response) => {
+                        LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                            ready.begin_next_response(response),
+                        )
+                    }
+                }
+            }
+            LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
+                LeControllerIdleClassifiedCommandRoute::ResetBarrier(LeControllerResetBarrier {
+                    ready,
+                    command,
+                })
+            }
+            LeControllerCommandClassification::Bootstrap(command) => {
+                let response = self.dispatch_bootstrap_command(command);
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::MalformedBootstrap(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::MalformedDtm(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::Unsupported(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+        }
+    }
+
     /// Route one fully classified command through its complete Controller epoch.
     ///
-    /// The published response order and command must both belong to this
+    /// The command-ready authority and command must both belong to this
     /// endpoint. Terminal classifications and non-Reset bootstrap commands
     /// immediately enter the ordered response axis. DTM remains semantic for
     /// radio-session policy, while Reset becomes an opaque barrier without
     /// changing bootstrap state.
     pub fn route_classified_command<'epoch, 'command, Owner>(
         &mut self,
-        published: LeControllerResponsePublished<'epoch, Owner>,
-        command: HciEpochBound<'command, LeControllerCommandClassification>,
+        command: LeControllerClassifiedCommand<'epoch, 'command, Owner>,
     ) -> LeControllerClassifiedCommandRoute<'epoch, 'command, Owner> {
-        if !published.accepts_endpoint(self.transport()) {
-            return LeControllerClassifiedCommandRoute::EndpointMismatch { published, command };
+        if !command.ready.accepts_endpoint(self)
+            || !command.command.originates_from(self.transport())
+        {
+            return LeControllerClassifiedCommandRoute::EndpointMismatch(command);
         }
+        let LeControllerClassifiedCommand { ready, command } = command;
         match command.try_into_for_endpoint(self.transport()) {
             Ok(classification) => match classification {
                 LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
                     LeControllerClassifiedCommandRoute::ResetBarrier(LeControllerResetBarrier {
-                        published,
+                        ready,
                         command,
                     })
                 }
                 LeControllerCommandClassification::Bootstrap(command) => {
                     let response = self.dispatch_bootstrap_command(command);
                     LeControllerClassifiedCommandRoute::ResponsePending(
-                        published.begin_next_response(response),
+                        ready.begin_next_response(response),
                     )
                 }
                 LeControllerCommandClassification::MalformedBootstrap(response) => {
                     LeControllerClassifiedCommandRoute::ResponsePending(
-                        published.begin_next_response(response),
+                        ready.begin_next_response(response),
                     )
                 }
                 LeControllerCommandClassification::Dtm(command) => {
-                    LeControllerClassifiedCommandRoute::Dtm { published, command }
+                    LeControllerClassifiedCommandRoute::Dtm(LeControllerDeferredDtmCommand {
+                        ready,
+                        command,
+                    })
                 }
                 LeControllerCommandClassification::MalformedDtm(response) => {
                     LeControllerClassifiedCommandRoute::ResponsePending(
-                        published.begin_next_response(response),
+                        ready.begin_next_response(response),
                     )
                 }
                 LeControllerCommandClassification::Unsupported(response) => {
                     LeControllerClassifiedCommandRoute::ResponsePending(
-                        published.begin_next_response(response),
+                        ready.begin_next_response(response),
                     )
                 }
             },
-            Err(command) => {
-                LeControllerClassifiedCommandRoute::EndpointMismatch { published, command }
-            }
+            Err(_) => unreachable!("aggregate affinity was checked above"),
         }
     }
 
@@ -387,32 +722,32 @@ where
         &mut self,
         barrier: LeControllerResetBarrier<'epoch, Owner>,
     ) -> LeControllerResetCompletion<'epoch, Owner> {
-        if !barrier.accepts_endpoint(self.transport()) {
+        if !barrier.accepts_endpoint(self) {
             return LeControllerResetCompletion::EndpointMismatch(barrier);
         }
 
-        let LeControllerResetBarrier { published, command } = barrier;
+        let LeControllerResetBarrier { ready, command } = barrier;
         let response = self.dispatch_bootstrap_command(command);
-        LeControllerResetCompletion::ResponsePending(published.begin_next_response(response))
+        LeControllerResetCompletion::ResponsePending(ready.begin_next_response(response))
     }
 }
 
 /// An accepted Reset waiting for the outer lifecycle to quiesce active work.
 ///
-/// The prior-response order proof and exact Reset token remain private.
+/// The next-command authority and exact Reset token remain private.
 /// Constructing this barrier never changes bootstrap state. Typed decomposition
 /// may release only the lifecycle owner while a unit barrier retains all HCI
 /// completion authority through external quiescence.
 #[must_use = "the Reset barrier must remain owned until lifecycle quiescence"]
 pub struct LeControllerResetBarrier<'epoch, Owner> {
-    published: LeControllerResponsePublished<'epoch, Owner>,
+    ready: LeControllerCommandReady<'epoch, Owner>,
     command: OwnedBootstrapCommand,
 }
 
 impl<'epoch, Owner> LeControllerResetBarrier<'epoch, Owner> {
     /// Borrow the independently progressing lifecycle owner.
     pub const fn owner(&self) -> &Owner {
-        self.published.owner()
+        self.ready.owner()
     }
 
     /// Whether this Reset barrier belongs to a Controller transport epoch.
@@ -423,7 +758,7 @@ impl<'epoch, Owner> LeControllerResetBarrier<'epoch, Owner> {
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -431,7 +766,7 @@ impl<'epoch, Owner> LeControllerResetBarrier<'epoch, Owner> {
             PACKET_CAPACITY,
         >,
     ) -> bool {
-        self.published.accepts_endpoint(controller)
+        self.ready.accepts_endpoint(controller)
     }
 
     /// Transform only the lifecycle owner while retaining Reset and order.
@@ -440,23 +775,23 @@ impl<'epoch, Owner> LeControllerResetBarrier<'epoch, Owner> {
         map: impl FnOnce(Owner) -> Next,
     ) -> LeControllerResetBarrier<'epoch, Next> {
         LeControllerResetBarrier {
-            published: self.published.map_owner(map),
+            ready: self.ready.map_owner(map),
             command: self.command,
         }
     }
 
     /// Separate the lifecycle owner from an opaque unit Reset continuation.
     ///
-    /// The Reset command and published order proof remain together in the unit
+    /// The Reset command and next-command authority remain together in the unit
     /// barrier. A hardware-specific runner retains that barrier while advancing
     /// `Owner`, then reunites its proven quiescent owner through
     /// [`Self::map_owner`] before completion.
     pub fn into_parts(self) -> (Owner, LeControllerResetBarrier<'epoch, ()>) {
-        let (owner, published) = self.published.into_parts();
+        let (owner, ready) = self.ready.into_parts();
         (
             owner,
             LeControllerResetBarrier {
-                published,
+                ready,
                 command: self.command,
             },
         )
@@ -478,28 +813,18 @@ pub enum LeControllerClassifiedCommandRoute<'epoch, 'command, Owner> {
     /// A terminal classification became an ordered response.
     ResponsePending(LeControllerResponsePending<'epoch, Owner>),
     /// A valid DTM command remains untouched for session-specific policy.
-    Dtm {
-        /// Published prior-response owner retaining the caller's session state.
-        published: LeControllerResponsePublished<'epoch, Owner>,
-        /// Complete semantic DTM command released only after epoch validation.
-        command: LeDtmCommand,
-    },
+    Dtm(LeControllerDeferredDtmCommand<'epoch, Owner>),
     /// Reset remains ordered but undispatched until lifecycle quiescence.
     ResetBarrier(LeControllerResetBarrier<'epoch, Owner>),
-    /// Either order or command belongs to another live Controller epoch.
-    EndpointMismatch {
-        /// Unchanged published owner.
-        published: LeControllerResponsePublished<'epoch, Owner>,
-        /// Original complete classification retaining its source-epoch proof.
-        command: HciEpochBound<'command, LeControllerCommandClassification>,
-    },
+    /// The aggregate belongs to another endpoint and remains inseparable.
+    EndpointMismatch(LeControllerClassifiedCommand<'epoch, 'command, Owner>),
 }
 
 /// Result of one consuming Controller response publication attempt.
-#[must_use = "retain the unchanged pending owner or the published order proof"]
+#[must_use = "retain the unchanged pending owner or the command-ready authority"]
 pub enum LeControllerResponsePublication<'epoch, Owner> {
     /// The response entered the matching queue exactly once.
-    Published(LeControllerResponsePublished<'epoch, Owner>),
+    Published(LeControllerCommandReady<'epoch, Owner>),
     /// The matching queue is full; the complete owner is unchanged.
     Pending(LeControllerResponsePending<'epoch, Owner>),
     /// The supplied endpoint belongs to another live HCI epoch.
@@ -526,22 +851,24 @@ mod tests {
         param::{Error as HciError, Status},
         transport::Transport,
     };
-    use embassy_futures::block_on;
+    use embassy_futures::{
+        block_on,
+        select::{Either, select},
+    };
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use super::{
-        LeControllerResetCompletion, LeControllerResponsePending, LeControllerResponsePublication,
-        LeControllerResponsePublished, LeDtmIdleCommandRoute, route_idle_dtm_command,
+        LeControllerActiveDtmCommandRoute, LeControllerClassifiedCommand,
+        LeControllerCommandIntake, LeControllerCommandReady,
+        LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
+        LeControllerResponsePending, LeControllerResponsePublication,
     };
     use crate::{
-        BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, InProcessHciChannel,
-        LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE,
-        LeControllerBootstrap, LeControllerBootstrapConfig, LeControllerClassifiedCommandRoute,
-        LeControllerCommandClassification, LeControllerHciResources, LeDtmCommand,
-        LeReceiverTestV1Command, LeTestEndCommand, OwnedBootstrapCommand,
+        BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, LE_RECEIVER_TEST_V1_OPCODE,
+        LE_TRANSMITTER_TEST_V1_OPCODE, LeControllerBootstrapConfig,
+        LeControllerClassifiedCommandRoute, LeControllerCommandEndpoint,
+        LeControllerCommandReadyClaim, LeControllerHciEndpoints, LeControllerHciResources,
     };
-
-    const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
 
     #[derive(Debug, Eq, PartialEq)]
     struct RadioOwner(u32);
@@ -552,7 +879,12 @@ mod tests {
     type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 16>;
 
     fn controller_resources() -> ControllerResources {
-        ControllerResources::new(
+        controller_resources_with_output_depth()
+    }
+
+    fn controller_resources_with_output_depth<const CONTROLLER_TO_HOST_DEPTH: usize>()
+    -> LeControllerHciResources<NoopRawMutex, 1, CONTROLLER_TO_HOST_DEPTH, 16> {
+        LeControllerHciResources::new(
             LeControllerBootstrapConfig::new(
                 BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
                 12,
@@ -561,6 +893,50 @@ mod tests {
             .expect("the test HCI profile is nonzero"),
         )
         .expect("the profile fits its source-owned storage")
+    }
+
+    fn claim_initial_ready<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
+        controller: &mut LeControllerCommandEndpoint<
+            'epoch,
+            NoopRawMutex,
+            1,
+            CONTROLLER_TO_HOST_DEPTH,
+            16,
+        >,
+        owner: Owner,
+    ) -> LeControllerCommandReady<'epoch, Owner> {
+        let LeControllerCommandReadyClaim::Ready(ready) =
+            controller.claim_initial_command_ready(owner)
+        else {
+            panic!("the test epoch exposes its sole initial command authority");
+        };
+        ready
+    }
+
+    fn intake_command<'epoch, 'resources, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
+        controller: &LeControllerCommandEndpoint<
+            'resources,
+            NoopRawMutex,
+            1,
+            CONTROLLER_TO_HOST_DEPTH,
+            16,
+        >,
+        ready: LeControllerCommandReady<'epoch, Owner>,
+        buffer: &mut [u8],
+    ) -> LeControllerClassifiedCommand<'epoch, 'resources, Owner> {
+        match controller.try_receive_classified_command_with_buffer(ready, buffer) {
+            LeControllerCommandIntake::Command { command, .. } => command,
+            LeControllerCommandIntake::Empty { .. } => panic!("the queued command disappeared"),
+            LeControllerCommandIntake::EndpointMismatch { .. } => {
+                panic!("the command-ready authority belongs to another endpoint")
+            }
+            LeControllerCommandIntake::Channel { error, .. } => {
+                panic!("command intake failed: {error:?}")
+            }
+            LeControllerCommandIntake::NonCommand { .. } => {
+                panic!("the queued command changed packet kind")
+            }
+        }
     }
 
     struct RawCommand<'parameters> {
@@ -603,415 +979,586 @@ mod tests {
         const KIND: PacketKind = PacketKind::Cmd;
     }
 
-    fn receiver_command() -> LeReceiverTestV1Command {
-        let LeDtmCommand::ReceiverTestV1(command) =
-            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[7])
-                .expect("the reviewed receiver command is valid")
+    fn receiver_start_pending<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
+        endpoints: &mut LeControllerHciEndpoints<
+            'epoch,
+            NoopRawMutex,
+            1,
+            CONTROLLER_TO_HOST_DEPTH,
+            16,
+        >,
+        owner: Owner,
+    ) -> LeControllerResponsePending<'epoch, Owner> {
+        block_on(
+            endpoints
+                .host
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[7])),
+        )
+        .expect("the receiver command enters the real Host queue");
+        let mut command_buffer = [0; 16];
+        let ready = claim_initial_ready(&mut endpoints.controller, owner);
+        let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) = endpoints
+            .controller
+            .route_idle_classified_command(classified)
         else {
-            panic!("receiver opcode changed semantic command kind");
+            panic!("the receiver command becomes one deferred start");
         };
-        command
+        start.into_started_response()
     }
 
-    fn test_end_command() -> LeTestEndCommand {
-        let LeDtmCommand::TestEnd(command) = LeDtmCommand::decode_body(LE_TEST_END_OPCODE, &[])
-            .expect("the reviewed Test End command is valid")
+    fn publish_probe_response<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
+        endpoints: &mut LeControllerHciEndpoints<
+            'epoch,
+            NoopRawMutex,
+            1,
+            CONTROLLER_TO_HOST_DEPTH,
+            16,
+        >,
+        owner: Owner,
+    ) -> LeControllerCommandReady<'epoch, Owner> {
+        let opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 0x1f);
+        block_on(endpoints.host.write(&RawCommand::new(opcode, &[])))
+            .expect("the probe command enters the Host queue");
+        let ready = claim_initial_ready(&mut endpoints.controller, owner);
+        let mut command_buffer = [0; 16];
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_idle_classified_command(command)
         else {
-            panic!("Test End opcode changed semantic command kind");
+            panic!("the unsupported probe becomes an ordered response");
         };
-        command
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the empty response queue accepts the probe");
+        };
+        ready
+    }
+
+    fn assert_probe_response(packet: ControllerToHostPacket<'_>) {
+        assert_command_status(
+            packet,
+            Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 0x1f),
+            HciError::UNKNOWN_CMD.to_status(),
+        );
     }
 
     #[test]
     fn full_queue_retains_the_transformed_radio_until_exact_publication() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
-
-        let mut channel = Channel::new();
-        let (host, controller) = channel.split();
-        controller
-            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
-            .expect("the output queue starts empty");
-
-        let pending = LeControllerResponsePending::new(
-            11_u8,
-            receiver_command().into_started_command_complete(),
-            controller.epoch_identity(),
+        let mut resources = controller_resources();
+        let mut endpoints = resources.split();
+        let ready = publish_probe_response(&mut endpoints, 11_u8);
+        block_on(
+            endpoints
+                .host
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[7])),
         )
-        .map_owner(|radio| u16::from(radio) + 20);
+        .expect("the receiver command enters the Host queue");
+        let mut command_buffer = [0; 16];
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("the receiver command becomes one deferred start");
+        };
+        let pending = start
+            .into_started_response()
+            .map_owner(|radio| u16::from(radio) + 20);
 
-        let LeControllerResponsePublication::Pending(pending) = pending.try_publish(&controller)
+        let cancelled = block_on(select(
+            async {},
+            endpoints.controller.wait_response_capacity(&pending),
+        ));
+        assert!(matches!(cancelled, Either::First(())));
+
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("a full matching queue must retain the pending owner");
         };
         assert_eq!(*pending.owner(), 31);
 
         let mut buffer = [0; 16];
-        let ControllerToHostPacket::Event(event) =
-            block_on(host.read(&mut buffer)).expect("the Host drains the older event")
-        else {
-            panic!("the retained older packet changed kind");
-        };
-        assert_eq!(event.kind, EventKind::HardwareError);
+        assert_probe_response(
+            block_on(endpoints.host.read(&mut buffer)).expect("the Host drains the older response"),
+        );
+        block_on(endpoints.controller.wait_response_capacity(&pending))
+            .expect("capacity wait accepts the retained matching response");
 
         let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(&controller)
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the retained response must publish after capacity returns");
         };
         assert_eq!(*published.owner(), 31);
-        assert!(published.accepts_endpoint(&controller));
-        assert_start_response(block_on(host.read(&mut buffer)).unwrap());
+        assert!(published.accepts_endpoint(&endpoints.controller));
+        assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
     }
 
     #[test]
-    fn wrong_endpoint_retains_both_axes_and_published_affinity() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+    fn combined_intake_wait_and_retry_preserve_authority_and_buffer() {
+        let mut resources = controller_resources();
+        let mut endpoints = resources.split();
+        let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(19));
 
-        let mut first_channel = Channel::new();
-        let (_first_host, first) = first_channel.split();
-        let mut second_channel = Channel::new();
-        let (_second_host, second) = second_channel.split();
-        let pending = LeControllerResponsePending::new(
-            37_u8,
-            receiver_command().into_started_command_complete(),
-            first.epoch_identity(),
-        );
+        let cancelled = block_on(select(
+            async {},
+            endpoints.controller.wait_command_available(&ready),
+        ));
+        assert!(matches!(cancelled, Either::First(())));
+
+        let mut buffer = [0; 16];
+        let LeControllerCommandIntake::Empty {
+            ready,
+            buffer: returned,
+        } = endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(ready, &mut buffer)
+        else {
+            panic!("an empty queue returns exact authority and scratch storage");
+        };
+        assert_eq!(returned.len(), 16);
+
+        block_on(endpoints.host.write(&LeTestEnd::new()))
+            .expect("Test End enters the Host queue after the cancelled wait");
+        block_on(endpoints.controller.wait_command_available(&ready))
+            .expect("the matching authority observes the queued command");
+        let mut short = [0; 15];
+        let LeControllerCommandIntake::Channel {
+            ready,
+            buffer: returned,
+            error:
+                HciChannelError::DestinationTooSmall {
+                    required: 16,
+                    available: 15,
+                },
+        } = endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(ready, &mut short)
+        else {
+            panic!("a short buffer retains command authority, storage and queued packet");
+        };
+        assert_eq!(returned.len(), 15);
+
+        let command = intake_command(&endpoints.controller, ready, &mut buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("the retained packet remains available to a corrected retry");
+        };
+        assert_eq!(pending.owner(), &RadioOwner(19));
+    }
+
+    #[test]
+    fn wrong_endpoint_retains_both_axes_and_command_ready_affinity() {
+        let mut first_resources = controller_resources();
+        let mut first = first_resources.split();
+        let mut second_resources = controller_resources();
+        let second = second_resources.split();
+        let pending = receiver_start_pending(&mut first, 37_u8);
 
         let LeControllerResponsePublication::EndpointMismatch(pending) =
-            pending.try_publish(&second)
+            pending.try_publish(&second.controller)
         else {
             panic!("a foreign endpoint must retain the complete pending owner");
         };
         assert_eq!(*pending.owner(), 37);
 
-        let LeControllerResponsePublication::Published(published) = pending.try_publish(&first)
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&first.controller)
         else {
             panic!("the original endpoint must accept the retained response");
         };
-        assert!(published.accepts_endpoint(&first));
-        assert!(!published.accepts_endpoint(&second));
-    }
-
-    #[test]
-    fn non_capacity_fault_retains_the_unchanged_radio_owner() {
-        type TinyChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 3>;
-
-        let mut channel = TinyChannel::new();
-        let (_host, controller) = channel.split();
-        let pending = LeControllerResponsePending::new(
-            41_u8,
-            receiver_command().into_started_command_complete(),
-            controller.epoch_identity(),
-        );
-
-        let LeControllerResponsePublication::Fault { pending, error } =
-            pending.try_publish(&controller)
-        else {
-            panic!("undersized packet storage must fail without releasing ownership");
-        };
-        assert_eq!(
-            error,
-            HciChannelError::PacketTooLong {
-                length: 6,
-                capacity: 3,
-            }
-        );
-        assert_eq!(*pending.owner(), 41);
+        assert!(ready.accepts_endpoint(&first.controller));
+        assert!(!ready.accepts_endpoint(&second.controller));
     }
 
     #[test]
     fn successful_publication_is_exact_once_and_preserves_existing_fifo_order() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 2, 16>;
-
-        let mut channel = Channel::new();
-        let (host, controller) = channel.split();
-        controller
-            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
-            .expect("the first FIFO slot starts empty");
-        let pending = LeControllerResponsePending::new(
-            43_u8,
-            receiver_command().into_started_command_complete(),
-            controller.epoch_identity(),
-        );
+        let mut resources = controller_resources_with_output_depth::<2>();
+        let mut endpoints = resources.split();
+        let ready = publish_probe_response(&mut endpoints, 43_u8);
+        block_on(
+            endpoints
+                .host
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[7])),
+        )
+        .expect("the receiver command enters the Host queue");
+        let mut command_buffer = [0; 16];
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("the receiver command becomes one deferred start");
+        };
+        let pending = start.into_started_response();
 
         let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(&controller)
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the second FIFO slot must accept the start response");
         };
         assert_eq!(*published.owner(), 43);
 
         let mut buffer = [0; 16];
-        let ControllerToHostPacket::Event(first) = block_on(host.read(&mut buffer)).unwrap() else {
-            panic!("the older event changed packet kind");
-        };
-        assert_eq!(first.kind, EventKind::HardwareError);
-        assert_start_response(block_on(host.read(&mut buffer)).unwrap());
+        assert_probe_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
+        assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
 
-        let published: LeControllerResponsePublished<'_, u16> =
+        let published: LeControllerCommandReady<'_, u16> =
             published.map_owner(|radio| u16::from(radio) + 1);
         assert_eq!(*published.owner(), 44);
-        assert!(published.accepts_endpoint(&controller));
-    }
-
-    #[test]
-    fn ordered_axis_retains_and_publishes_a_typed_bootstrap_completion() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
-
-        let mut channel = Channel::new();
-        let (host, controller) = channel.split();
-        controller
-            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
-            .expect("the output queue starts empty");
-        let config = LeControllerBootstrapConfig::new(
-            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
-            27,
-            1,
-        )
-        .expect("the test HCI profile is nonzero");
-        let mut bootstrap = LeControllerBootstrap::new(config);
-        let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::Reset);
-        let pending =
-            LeControllerResponsePending::new(RadioOwner(46), response, controller.epoch_identity());
-
-        let LeControllerResponsePublication::Pending(pending) = pending.try_publish(&controller)
-        else {
-            panic!("bootstrap response must retain its owner across backpressure");
-        };
-        assert_eq!(pending.owner(), &RadioOwner(46));
-
-        let mut buffer = [0; 16];
-        let ControllerToHostPacket::Event(older) = block_on(host.read(&mut buffer)).unwrap() else {
-            panic!("the older event changed packet kind");
-        };
-        assert_eq!(older.kind, EventKind::HardwareError);
-        let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(&controller)
-        else {
-            panic!("bootstrap response must publish after capacity returns");
-        };
-        assert_eq!(published.into_owner(), RadioOwner(46));
-
-        let ControllerToHostPacket::Event(event) = block_on(host.read(&mut buffer)).unwrap() else {
-            panic!("bootstrap completion changed packet kind");
-        };
-        let complete = CommandComplete::from_hci_bytes_complete(event.data)
-            .expect("bootstrap response is a complete bt-hci event");
-        let complete: CommandCompleteWithStatus<'_> = complete
-            .try_into()
-            .expect("Reset returns a standard status");
-        assert_eq!(complete.cmd_opcode, Reset::OPCODE);
-        assert_eq!(complete.status, Status::SUCCESS);
+        assert!(published.accepts_endpoint(&endpoints.controller));
     }
 
     #[test]
     fn published_response_orders_the_next_dtm_completion() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 2, 16>;
-
-        let mut channel = Channel::new();
-        let (host, controller) = channel.split();
-        let start = LeControllerResponsePending::new(
-            47_u8,
-            receiver_command().into_started_command_complete(),
-            controller.epoch_identity(),
-        );
-        let LeControllerResponsePublication::Published(started) = start.try_publish(&controller)
+        let mut resources = controller_resources_with_output_depth::<2>();
+        let mut endpoints = resources.split();
+        let start = receiver_start_pending(&mut endpoints, 47_u8);
+        let LeControllerResponsePublication::Published(started) =
+            start.try_publish(&endpoints.controller)
         else {
             panic!("the empty queue must accept the start response");
         };
-        let ending =
-            started.begin_next_response(test_end_command().into_ended_command_complete(0x3412));
-        let LeControllerResponsePublication::Published(ended) = ending.try_publish(&controller)
+        block_on(endpoints.host.write(&LeTestEnd::new()))
+            .expect("Test End enters the real Host queue");
+        let mut command_buffer = [0; 16];
+        let classified = intake_command(&endpoints.controller, started, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::Dtm(deferred) =
+            endpoints.controller.route_classified_command(classified)
+        else {
+            panic!("Test End remains in the portable DTM order aggregate");
+        };
+        let LeControllerActiveDtmCommandRoute::TestEnd(ending) =
+            deferred.into_active_session_route()
+        else {
+            panic!("active Test End remains deferred until its packet count exists");
+        };
+        let ending = ending.into_ended_response(0x3412);
+        let LeControllerResponsePublication::Published(ended) =
+            ending.try_publish(&endpoints.controller)
         else {
             panic!("the second slot must accept Test End after the start response");
         };
-        assert_eq!(ended.into_owner(), 47);
+        assert_eq!(ended.owner(), &47);
 
         let mut buffer = [0; 16];
-        assert_start_response(block_on(host.read(&mut buffer)).unwrap());
-        assert_test_end_response(block_on(host.read(&mut buffer)).unwrap());
+        assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
+        assert_test_end_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
     }
 
     #[test]
-    fn idle_route_retains_zero_count_response_and_owner_through_backpressure() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
-
-        let mut channel = Channel::new();
-        let (host, controller) = channel.split();
-        controller
-            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
-            .expect("the output queue starts empty");
-        block_on(host.write(&LeTestEnd::new())).expect("Test End enters the real Host queue");
-        let mut command_buffer = [0; 16];
-        let classified = match controller.try_receive_classified_command(&mut command_buffer) {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify Test End"),
-        };
-        let command = match classified.try_into_dtm() {
-            Ok(command) => command,
-            Err(_) => panic!("Test End must refine to DTM"),
-        };
-
-        let LeDtmIdleCommandRoute::ResponsePending(pending) = route_idle_dtm_command(
-            RadioOwner(67),
-            controller.epoch_identity(),
-            &controller,
-            command,
-        ) else {
-            panic!("idle Test End must produce the standard zero-count response");
-        };
-        let LeControllerResponsePublication::Pending(pending) = pending.try_publish(&controller)
-        else {
-            panic!("the full queue must retain the exact idle owner and response");
-        };
-        assert_eq!(pending.owner(), &RadioOwner(67));
-
-        let mut response_buffer = [0; 16];
-        let ControllerToHostPacket::Event(older) =
-            block_on(host.read(&mut response_buffer)).expect("the Host drains the older event")
-        else {
-            panic!("the retained older packet changed kind");
-        };
-        assert_eq!(older.kind, EventKind::HardwareError);
-        let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(&controller)
-        else {
-            panic!("idle Test End must publish once capacity returns");
-        };
-        assert_eq!(published.into_owner(), RadioOwner(67));
-        assert_test_end_packet_count(
-            block_on(host.read(&mut response_buffer)).expect("Test End response remains queued"),
-            0,
-        );
-    }
-
-    #[test]
-    fn idle_route_releases_both_validated_start_kinds_only_to_the_matching_endpoint() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
-
-        let mut receiver_channel = Channel::new();
-        let (receiver_host, receiver_controller) = receiver_channel.split();
-        block_on(receiver_host.write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[13])))
-            .expect("the receiver command enters the real Host queue");
+    fn idle_router_defers_both_start_kinds_until_explicit_started_response() {
+        let mut receiver_resources = controller_resources();
+        let mut receiver = receiver_resources.split();
+        block_on(
+            receiver
+                .host
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[13])),
+        )
+        .expect("the receiver command enters the real Host queue");
         let mut receiver_buffer = [0; 16];
-        let receiver =
-            match receiver_controller.try_receive_classified_command(&mut receiver_buffer) {
-                Ok(classified) => classified,
-                Err(_) => panic!("the receiver endpoint must classify its command"),
-            };
-        let receiver = match receiver.try_into_dtm() {
-            Ok(command) => command,
-            Err(_) => panic!("the receiver command must refine to DTM"),
+        let ready = claim_initial_ready(&mut receiver.controller, RadioOwner(71));
+        let classified = intake_command(&receiver.controller, ready, &mut receiver_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) = receiver
+            .controller
+            .route_idle_classified_command(classified)
+        else {
+            panic!("idle receiver start becomes one deferred transaction");
         };
-        let LeDtmIdleCommandRoute::StartReceiver { owner, command } = route_idle_dtm_command(
-            RadioOwner(71),
-            receiver_controller.epoch_identity(),
-            &receiver_controller,
-            receiver,
-        ) else {
-            panic!("the matching receiver command must be released for hardware start");
-        };
+        assert_eq!(start.owner(), &RadioOwner(71));
+        assert_eq!(start.command().channel().index(), 13);
+        let (owner, continuation) = start.into_parts();
         assert_eq!(owner, RadioOwner(71));
-        assert_eq!(command.channel().index(), 13);
+        let pending = continuation
+            .map_owner(|()| RadioOwner(72))
+            .into_started_response();
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&receiver.controller)
+        else {
+            panic!("explicit receiver start completion publishes once");
+        };
+        assert_eq!(published.owner(), &RadioOwner(72));
+        let mut response_buffer = [0; 16];
+        assert_command_status(
+            block_on(receiver.host.read(&mut response_buffer)).unwrap(),
+            LE_RECEIVER_TEST_V1_OPCODE,
+            Status::SUCCESS,
+        );
 
-        let mut transmitter_channel = Channel::new();
-        let (transmitter_host, transmitter_controller) = transmitter_channel.split();
-        block_on(transmitter_host.write(&RawCommand::new(
+        let mut transmitter_resources = controller_resources();
+        let mut transmitter = transmitter_resources.split();
+        block_on(transmitter.host.write(&RawCommand::new(
             LE_TRANSMITTER_TEST_V1_OPCODE,
             &[17, 23, 2],
         )))
         .expect("the transmitter command enters the real Host queue");
         let mut transmitter_buffer = [0; 16];
-        let transmitter =
-            match transmitter_controller.try_receive_classified_command(&mut transmitter_buffer) {
-                Ok(classified) => classified,
-                Err(_) => panic!("the transmitter endpoint must classify its command"),
-            };
-        let transmitter = match transmitter.try_into_dtm() {
-            Ok(command) => command,
-            Err(_) => panic!("the transmitter command must refine to DTM"),
+        let ready = claim_initial_ready(&mut transmitter.controller, RadioOwner(73));
+        let classified = intake_command(&transmitter.controller, ready, &mut transmitter_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartTransmitter(start) = transmitter
+            .controller
+            .route_idle_classified_command(classified)
+        else {
+            panic!("idle transmitter start becomes one deferred transaction");
         };
-        let LeDtmIdleCommandRoute::StartTransmitter { owner, command } = route_idle_dtm_command(
-            RadioOwner(73),
-            transmitter_controller.epoch_identity(),
-            &transmitter_controller,
-            transmitter,
-        ) else {
-            panic!("the matching transmitter command must be released for hardware start");
+        assert_eq!(start.owner(), &RadioOwner(73));
+        assert_eq!(start.command().channel().index(), 17);
+        assert_eq!(start.command().payload_length(), 23);
+        assert_eq!(start.command().payload_pattern().hci_parameter(), 2);
+        let pending = start
+            .map_owner(|RadioOwner(owner)| RadioOwner(owner + 1))
+            .into_started_response();
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&transmitter.controller)
+        else {
+            panic!("explicit transmitter start completion publishes once");
         };
-        assert_eq!(owner, RadioOwner(73));
-        assert_eq!(command.channel().index(), 17);
-        assert_eq!(command.payload_length(), 23);
-        assert_eq!(command.payload_pattern().hci_parameter(), 2);
+        assert_eq!(published.owner(), &RadioOwner(74));
+        assert_command_status(
+            block_on(transmitter.host.read(&mut response_buffer)).unwrap(),
+            LE_TRANSMITTER_TEST_V1_OPCODE,
+            Status::SUCCESS,
+        );
     }
 
     #[test]
-    fn idle_route_cross_epoch_rejections_retain_the_exact_owner_and_command() {
-        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
-
-        let mut first_channel = Channel::new();
-        let (_first_host, first_controller) = first_channel.split();
-        let mut second_channel = Channel::new();
-        let (second_host, second_controller) = second_channel.split();
-        block_on(second_host.write(&LeTestEnd::new()))
-            .expect("the foreign command enters its own Host queue");
-        let mut command_buffer = [0; 16];
-        let classified = match second_controller.try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the foreign endpoint must classify its command"),
-        };
-        let command = match classified.try_into_dtm() {
-            Ok(command) => command,
-            Err(_) => panic!("the foreign command must retain its endpoint proof"),
-        };
-
-        let LeDtmIdleCommandRoute::EndpointMismatch { owner, command } = route_idle_dtm_command(
-            RadioOwner(79),
-            first_controller.epoch_identity(),
-            &first_controller,
-            command,
-        ) else {
-            panic!("a foreign command must not consume the idle owner");
-        };
-        assert_eq!(owner, RadioOwner(79));
-        assert!(command.originates_from(&second_controller));
-        assert!(!command.originates_from(&first_controller));
-
-        block_on(second_host.write(&LeTestEnd::new()))
-            .expect("the second foreign command enters its own Host queue");
-        let classified = match second_controller.try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the foreign endpoint must classify its second command"),
-        };
-        let command = match classified.try_into_dtm() {
-            Ok(command) => command,
-            Err(_) => panic!("the second command must retain its endpoint proof"),
-        };
-        let LeDtmIdleCommandRoute::EndpointMismatch { owner, command } = route_idle_dtm_command(
-            RadioOwner(83),
-            first_controller.epoch_identity(),
-            &second_controller,
-            command,
-        ) else {
-            panic!("a foreign owner epoch must retain both axes");
-        };
-        assert_eq!(owner, RadioOwner(83));
-        assert!(command.originates_from(&second_controller));
-    }
-
-    #[test]
-    fn classified_router_hands_both_dtm_start_kinds_to_session_policy() {
+    fn idle_router_retains_zero_count_test_end_through_backpressure() {
         let mut resources = controller_resources();
         let mut endpoints = resources.split();
-        let start = LeControllerResponsePending::new(
-            RadioOwner(53),
-            receiver_command().into_started_command_complete(),
-            endpoints.controller.transport().epoch_identity(),
+        let ready = publish_probe_response(&mut endpoints, RadioOwner(67));
+        block_on(endpoints.host.write(&LeTestEnd::new())).expect("Test End enters the Host queue");
+        let mut command_buffer = [0; 16];
+        let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) = endpoints
+            .controller
+            .route_idle_classified_command(classified)
+        else {
+            panic!("idle Test End becomes a zero-count response");
+        };
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the full queue retains response and idle owner");
+        };
+        assert_eq!(pending.owner(), &RadioOwner(67));
+
+        let mut response_buffer = [0; 16];
+        assert_probe_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("Test End publishes after capacity returns");
+        };
+        assert_eq!(published.owner(), &RadioOwner(67));
+        assert_test_end_packet_count(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            0,
         );
+    }
+
+    #[test]
+    fn idle_router_barriers_reset_and_dispatches_non_reset_exactly_once() {
+        let mut resources = controller_resources();
+        let mut endpoints = resources.split();
+        let ready = publish_probe_response(&mut endpoints, RadioOwner(81));
+        block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the Host queue");
+        let mut command_buffer = [0; 16];
+        let reset = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
+            endpoints.controller.route_idle_classified_command(reset)
+        else {
+            panic!("idle Reset becomes an opaque lifecycle barrier");
+        };
+        assert_eq!(
+            endpoints.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+        let LeControllerResetCompletion::ResponsePending(pending) = endpoints
+            .controller
+            .complete_reset_after_quiescence(barrier)
+        else {
+            panic!("the matching endpoint completes Reset after external quiescence");
+        };
+        assert_eq!(
+            endpoints.controller.bootstrap_phase(),
+            BootstrapPhase::Configuring
+        );
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("Reset completion is backpressured");
+        };
+        assert_eq!(
+            endpoints.controller.bootstrap_phase(),
+            BootstrapPhase::Configuring
+        );
+        let mut response_buffer = [0; 16];
+        assert_probe_response(
+            block_on(endpoints.host.read(&mut response_buffer))
+                .expect("the older response is drained"),
+        );
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("Reset completion publishes once");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            Reset::OPCODE,
+            Status::SUCCESS,
+        );
+
+        let requested_mask = bt_hci::param::EventMask::new().enable_hardware_error(true);
+        block_on(endpoints.host.write(&SetEventMask::new(requested_mask)))
+            .expect("Set Event Mask enters the Host queue");
+        let command = intake_command(&endpoints.controller, published, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("non-Reset bootstrap dispatches into one response");
+        };
+        let LeControllerResponsePublication::Published(published) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("Set Event Mask completion publishes");
+        };
+        assert_eq!(published.owner(), &RadioOwner(81));
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            SetEventMask::OPCODE,
+            Status::SUCCESS,
+        );
+    }
+
+    #[test]
+    fn idle_router_orders_malformed_and_unsupported_classifications() {
+        let unsupported_opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 7);
+        for (owner, opcode, parameters, expected) in [
+            (
+                91,
+                SetEventMask::OPCODE,
+                &[0; 7][..],
+                HciError::INVALID_HCI_PARAMETERS.to_status(),
+            ),
+            (
+                92,
+                LE_RECEIVER_TEST_V1_OPCODE,
+                &[][..],
+                HciError::INVALID_HCI_PARAMETERS.to_status(),
+            ),
+            (
+                93,
+                unsupported_opcode,
+                &[][..],
+                HciError::UNKNOWN_CMD.to_status(),
+            ),
+        ] {
+            let mut resources = controller_resources();
+            let mut endpoints = resources.split();
+            let ready = publish_probe_response(&mut endpoints, RadioOwner(owner));
+            block_on(endpoints.host.write(&RawCommand::new(opcode, parameters)))
+                .expect("the command enters the real Host queue");
+            let mut command_buffer = [0; 16];
+            let classified = intake_command(&endpoints.controller, ready, &mut command_buffer);
+            let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) = endpoints
+                .controller
+                .route_idle_classified_command(classified)
+            else {
+                panic!("terminal idle classification becomes a response");
+            };
+            assert_eq!(
+                endpoints.controller.bootstrap_phase(),
+                BootstrapPhase::AwaitingReset
+            );
+            let LeControllerResponsePublication::Pending(pending) =
+                pending.try_publish(&endpoints.controller)
+            else {
+                panic!("the full queue retains the exact terminal response");
+            };
+            assert_eq!(pending.owner(), &RadioOwner(owner));
+            let mut response_buffer = [0; 16];
+            assert_probe_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
+            let LeControllerResponsePublication::Published(published) =
+                pending.try_publish(&endpoints.controller)
+            else {
+                panic!("the terminal response publishes after capacity returns");
+            };
+            assert_eq!(published.owner(), &RadioOwner(owner));
+            assert_command_status(
+                block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+                opcode,
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn idle_router_cross_epoch_mismatch_retains_owner_order_and_full_classification() {
+        let mut first_resources = controller_resources();
+        let mut first = first_resources.split();
+        let mut second_resources = controller_resources();
+        let mut second = second_resources.split();
+        block_on(second.host.write(&Reset::new())).expect("foreign Reset enters its Host queue");
+        let mut command_buffer = [0; 16];
+        let second_ready = claim_initial_ready(&mut second.controller, RadioOwner(97));
+        let command = intake_command(&second.controller, second_ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::EndpointMismatch(command) =
+            first.controller.route_idle_classified_command(command)
+        else {
+            panic!("foreign aggregate must remain inseparable and unchanged");
+        };
+        assert_eq!(command.owner(), &RadioOwner(97));
+        assert_eq!(
+            first.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+        assert_eq!(
+            second.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(_) =
+            second.controller.route_idle_classified_command(command)
+        else {
+            panic!("the source endpoint must still route the retained Reset aggregate");
+        };
+
+        block_on(first.host.write(&Reset::new())).expect("the first Reset enters its Host queue");
+        let first_ready = claim_initial_ready(&mut first.controller, RadioOwner(101));
+        let LeControllerCommandIntake::EndpointMismatch {
+            ready: first_ready,
+            buffer,
+        } = second
+            .controller
+            .try_receive_classified_command_with_buffer(first_ready, &mut command_buffer)
+        else {
+            panic!("foreign authority must fail before consuming any command");
+        };
+        assert_eq!(first_ready.owner(), &RadioOwner(101));
+        let command = intake_command(&first.controller, first_ready, buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(_) =
+            first.controller.route_idle_classified_command(command)
+        else {
+            panic!("mismatched intake must leave the source command available");
+        };
+        assert_eq!(
+            first.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+        assert_eq!(
+            second.controller.bootstrap_phase(),
+            BootstrapPhase::AwaitingReset
+        );
+    }
+
+    #[test]
+    fn classified_router_rejects_both_active_start_kinds_through_owned_order() {
+        let mut resources = controller_resources();
+        let mut endpoints = resources.split();
+        let start = receiver_start_pending(&mut endpoints, RadioOwner(53));
         let LeControllerResponsePublication::Published(started) =
-            start.try_publish(endpoints.controller.transport())
+            start.try_publish(&endpoints.controller)
         else {
             panic!("the empty queue must accept the start response");
         };
@@ -1023,109 +1570,117 @@ mod tests {
         )
         .expect("the receiver command enters the real Host queue");
         let mut command_buffer = [0; 16];
-        let receiver = match endpoints
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify the queued command"),
-        };
-        let LeControllerClassifiedCommandRoute::Dtm { published, command } = endpoints
-            .controller
-            .route_classified_command(started, receiver)
+        let receiver = intake_command(&endpoints.controller, started, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::Dtm(deferred) =
+            endpoints.controller.route_classified_command(receiver)
         else {
             panic!("the combined router must hand the receiver command to session policy");
         };
-        let LeDtmCommand::ReceiverTestV1(receiver) = command else {
-            panic!("the receiver command changed semantic DTM kind");
+        assert_eq!(deferred.owner(), &RadioOwner(53));
+        let LeControllerActiveDtmCommandRoute::ResponsePending(pending) =
+            deferred.into_active_session_route()
+        else {
+            panic!("a second receiver start must become Controller Busy");
         };
-        assert_eq!(receiver.channel().index(), 11);
-        assert_eq!(published.owner(), &RadioOwner(53));
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the queued start response must backpressure Controller Busy");
+        };
+        let mut buffer = [0; 16];
+        assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("Controller Busy publishes after capacity returns");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut buffer)).unwrap(),
+            LE_RECEIVER_TEST_V1_OPCODE,
+            HciError::CONTROLLER_BUSY.to_status(),
+        );
 
         block_on(endpoints.host.write(&RawCommand::new(
             LE_TRANSMITTER_TEST_V1_OPCODE,
             &[17, 23, 2],
         )))
         .expect("the transmitter command enters the real Host queue");
-        let transmitter = match endpoints
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify the transmitter command"),
-        };
-        let LeControllerClassifiedCommandRoute::Dtm { published, command } = endpoints
-            .controller
-            .route_classified_command(published, transmitter)
+        let transmitter = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::Dtm(deferred) =
+            endpoints.controller.route_classified_command(transmitter)
         else {
             panic!("the combined router must hand the transmitter command to session policy");
         };
-        let LeDtmCommand::TransmitterTestV1(transmitter) = command else {
-            panic!("the transmitter command changed semantic DTM kind");
+        let LeControllerActiveDtmCommandRoute::ResponsePending(pending) =
+            deferred.into_active_session_route()
+        else {
+            panic!("a second transmitter start must become Controller Busy");
         };
-        assert_eq!(transmitter.channel().index(), 17);
-        assert_eq!(transmitter.payload_length(), 23);
-        assert_eq!(transmitter.payload_pattern().hci_parameter(), 2);
-
-        let mut buffer = [0; 16];
-        assert_start_response(block_on(endpoints.host.read(&mut buffer)).unwrap());
-        assert_eq!(published.into_owner(), RadioOwner(53));
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the empty queue accepts transmitter Controller Busy");
+        };
+        assert_eq!(ready.owner(), &RadioOwner(53));
+        assert_command_status(
+            block_on(endpoints.host.read(&mut buffer)).unwrap(),
+            LE_TRANSMITTER_TEST_V1_OPCODE,
+            HciError::CONTROLLER_BUSY.to_status(),
+        );
     }
 
     #[test]
     fn classified_router_hands_test_end_to_session_policy_with_published_order() {
         let mut resources = controller_resources();
         let mut endpoints = resources.split();
-        let start = LeControllerResponsePending::new(
-            RadioOwner(59),
-            receiver_command().into_started_command_complete(),
-            endpoints.controller.transport().epoch_identity(),
-        );
+        let start = receiver_start_pending(&mut endpoints, RadioOwner(59));
         let LeControllerResponsePublication::Published(started) =
-            start.try_publish(endpoints.controller.transport())
+            start.try_publish(&endpoints.controller)
         else {
             panic!("the empty queue must accept the start response");
         };
         block_on(endpoints.host.write(&LeTestEnd::new()))
             .expect("Test End enters the real Host queue");
         let mut command_buffer = [0; 16];
-        let classified = match endpoints
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify Test End"),
-        };
-        let LeControllerClassifiedCommandRoute::Dtm { published, command } = endpoints
-            .controller
-            .route_classified_command(started, classified)
+        let classified = intake_command(&endpoints.controller, started, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::Dtm(deferred) =
+            endpoints.controller.route_classified_command(classified)
         else {
             panic!("Test End must remain semantic for the caller's session policy");
         };
-        assert_eq!(published.owner(), &RadioOwner(59));
-        assert!(published.accepts_endpoint(endpoints.controller.transport()));
-        let LeDtmCommand::TestEnd(command) = command else {
-            panic!("Test End changed semantic DTM kind");
+        let LeControllerActiveDtmCommandRoute::TestEnd(ending) =
+            deferred.into_active_session_route()
+        else {
+            panic!("Test End must remain deferred until quiescence");
         };
-        let response = command.into_ended_command_complete(0x1234);
-        let observed = parse_command_complete(response.as_bytes());
-        assert_eq!(observed.return_params::<LeTestEnd>().unwrap(), 0x1234);
+        assert_eq!(ending.owner(), &RadioOwner(59));
+        let pending = ending.into_ended_response(0x1234);
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the queued start response must backpressure Test End");
+        };
+        let mut response_buffer = [0; 16];
+        assert_start_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("Test End publishes after capacity returns");
+        };
+        assert_eq!(ready.owner(), &RadioOwner(59));
+        assert_test_end_packet_count(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            0x1234,
+        );
     }
 
     #[test]
     fn reset_completion_is_exact_once_and_retained_through_backpressure() {
         let mut resources = controller_resources();
         let mut endpoints = resources.split();
-        let start = LeControllerResponsePending::new(
-            RadioOwner(60),
-            receiver_command().into_started_command_complete(),
-            endpoints.controller.transport().epoch_identity(),
-        );
+        let start = receiver_start_pending(&mut endpoints, RadioOwner(60));
         let LeControllerResponsePublication::Published(started) =
-            start.try_publish(endpoints.controller.transport())
+            start.try_publish(&endpoints.controller)
         else {
             panic!("the empty queue must accept the start response");
         };
@@ -1136,36 +1691,20 @@ mod tests {
 
         block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the real Host queue");
         let mut command_buffer = [0; 16];
-        let classified = match endpoints
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify Reset"),
-        };
-        let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) = endpoints
-            .controller
-            .route_classified_command(started, classified)
+        let classified = intake_command(&endpoints.controller, started, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) =
+            endpoints.controller.route_classified_command(classified)
         else {
             panic!("Reset must become an opaque lifecycle barrier");
         };
         let (active, continuation) = barrier.into_parts();
         assert_eq!(active, RadioOwner(60));
         assert_eq!(continuation.owner(), &());
-        assert!(continuation.accepts_endpoint(endpoints.controller.transport()));
+        assert!(continuation.accepts_endpoint(&endpoints.controller));
         assert_eq!(
             endpoints.controller.bootstrap_phase(),
             BootstrapPhase::AwaitingReset
         );
-
-        let mut response_buffer = [0; 16];
-        assert_start_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
-        endpoints
-            .controller
-            .transport()
-            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
-            .expect("Reset produced no completion before lifecycle quiescence");
 
         let barrier = continuation.map_owner(|()| QuiescedOwner(61));
         let LeControllerResetCompletion::ResponsePending(pending) = endpoints
@@ -1180,25 +1719,21 @@ mod tests {
             BootstrapPhase::Configuring
         );
         let LeControllerResponsePublication::Pending(pending) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the probe event must backpressure the exact Reset completion");
         };
         assert_eq!(pending.owner(), &QuiescedOwner(61));
 
-        let ControllerToHostPacket::Event(event) =
-            block_on(endpoints.host.read(&mut response_buffer)).unwrap()
-        else {
-            panic!("the retained probe event changed kind");
-        };
-        assert_eq!(event.kind, EventKind::HardwareError);
+        let mut response_buffer = [0; 16];
+        assert_start_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
 
         let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the retained Reset completion must publish after capacity returns");
         };
-        assert_eq!(published.into_owner(), QuiescedOwner(61));
+        assert_eq!(published.owner(), &QuiescedOwner(61));
         assert_command_status(
             block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
             Reset::OPCODE,
@@ -1210,29 +1745,17 @@ mod tests {
     fn reset_completion_cross_epoch_rejection_retains_barrier_without_mutation() {
         let mut first_resources = controller_resources();
         let mut first = first_resources.split();
-        let start = LeControllerResponsePending::new(
-            RadioOwner(71),
-            receiver_command().into_started_command_complete(),
-            first.controller.transport().epoch_identity(),
-        );
+        let start = receiver_start_pending(&mut first, RadioOwner(71));
         let LeControllerResponsePublication::Published(started) =
-            start.try_publish(first.controller.transport())
+            start.try_publish(&first.controller)
         else {
             panic!("the first endpoint must publish its start response");
         };
         block_on(first.host.write(&Reset::new())).expect("Reset enters the first Host transport");
         let mut command_buffer = [0; 16];
-        let classified = match first
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the first endpoint must classify Reset"),
-        };
-        let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) = first
-            .controller
-            .route_classified_command(started, classified)
+        let classified = intake_command(&first.controller, started, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) =
+            first.controller.route_classified_command(classified)
         else {
             panic!("Reset must become a lifecycle barrier");
         };
@@ -1246,8 +1769,8 @@ mod tests {
             panic!("the foreign endpoint must retain the exact Reset barrier");
         };
         assert_eq!(barrier.owner(), &QuiescedOwner(72));
-        assert!(barrier.accepts_endpoint(first.controller.transport()));
-        assert!(!barrier.accepts_endpoint(second.controller.transport()));
+        assert!(barrier.accepts_endpoint(&first.controller));
+        assert!(!barrier.accepts_endpoint(&second.controller));
         assert_eq!(
             first.controller.bootstrap_phase(),
             BootstrapPhase::AwaitingReset
@@ -1272,7 +1795,7 @@ mod tests {
             BootstrapPhase::AwaitingReset
         );
         let LeControllerResponsePublication::Pending(pending) =
-            pending.try_publish(first.controller.transport())
+            pending.try_publish(&first.controller)
         else {
             panic!("the queued start response must retain Reset completion");
         };
@@ -1281,11 +1804,11 @@ mod tests {
         let mut response_buffer = [0; 16];
         assert_start_response(block_on(first.host.read(&mut response_buffer)).unwrap());
         let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(first.controller.transport())
+            pending.try_publish(&first.controller)
         else {
             panic!("the original endpoint must publish after capacity returns");
         };
-        assert_eq!(published.into_owner(), QuiescedOwner(72));
+        assert_eq!(published.owner(), &QuiescedOwner(72));
         assert_command_status(
             block_on(first.host.read(&mut response_buffer)).unwrap(),
             Reset::OPCODE,
@@ -1297,13 +1820,9 @@ mod tests {
     fn classified_router_orders_malformed_and_unsupported_responses_through_backpressure() {
         let mut resources = controller_resources();
         let mut endpoints = resources.split();
-        let start = LeControllerResponsePending::new(
-            RadioOwner(62),
-            receiver_command().into_started_command_complete(),
-            endpoints.controller.transport().epoch_identity(),
-        );
+        let start = receiver_start_pending(&mut endpoints, RadioOwner(62));
         let LeControllerResponsePublication::Published(active) =
-            start.try_publish(endpoints.controller.transport())
+            start.try_publish(&endpoints.controller)
         else {
             panic!("the empty queue must accept the start response");
         };
@@ -1316,32 +1835,22 @@ mod tests {
                 .write(&RawCommand::new(SetEventMask::OPCODE, &[0; 7])),
         )
         .expect("the malformed bootstrap command enters the real Host queue");
-        let malformed_bootstrap = match endpoints
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify malformed bootstrap"),
-        };
-        assert!(matches!(
-            malformed_bootstrap.value(),
-            LeControllerCommandClassification::MalformedBootstrap(_)
-        ));
+        let malformed_bootstrap =
+            intake_command(&endpoints.controller, active, &mut command_buffer);
         let LeControllerClassifiedCommandRoute::ResponsePending(pending) = endpoints
             .controller
-            .route_classified_command(active, malformed_bootstrap)
+            .route_classified_command(malformed_bootstrap)
         else {
             panic!("malformed bootstrap must immediately become an ordered response");
         };
         let LeControllerResponsePublication::Pending(pending) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the queued start response must backpressure malformed bootstrap");
         };
         assert_start_response(block_on(endpoints.host.read(&mut response_buffer)).unwrap());
         let LeControllerResponsePublication::Published(active) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("malformed bootstrap must publish after capacity returns");
         };
@@ -1352,26 +1861,14 @@ mod tests {
                 .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[])),
         )
         .expect("the malformed DTM command enters the real Host queue");
-        let malformed_dtm = match endpoints
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify malformed DTM"),
-        };
-        assert!(matches!(
-            malformed_dtm.value(),
-            LeControllerCommandClassification::MalformedDtm(_)
-        ));
-        let LeControllerClassifiedCommandRoute::ResponsePending(pending) = endpoints
-            .controller
-            .route_classified_command(active, malformed_dtm)
+        let malformed_dtm = intake_command(&endpoints.controller, active, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_classified_command(malformed_dtm)
         else {
             panic!("malformed DTM must immediately become an ordered response");
         };
         let LeControllerResponsePublication::Pending(pending) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the queued bootstrap error must backpressure malformed DTM");
         };
@@ -1381,7 +1878,7 @@ mod tests {
             HciError::INVALID_HCI_PARAMETERS.to_status(),
         );
         let LeControllerResponsePublication::Published(active) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("malformed DTM must publish after capacity returns");
         };
@@ -1393,26 +1890,14 @@ mod tests {
                 .write(&RawCommand::new(unsupported_opcode, &[])),
         )
         .expect("the unsupported command enters the real Host queue");
-        let unsupported = match endpoints
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the real Controller endpoint must classify unsupported command"),
-        };
-        assert!(matches!(
-            unsupported.value(),
-            LeControllerCommandClassification::Unsupported(_)
-        ));
-        let LeControllerClassifiedCommandRoute::ResponsePending(pending) = endpoints
-            .controller
-            .route_classified_command(active, unsupported)
+        let unsupported = intake_command(&endpoints.controller, active, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_classified_command(unsupported)
         else {
             panic!("unsupported command must immediately become an ordered response");
         };
         let LeControllerResponsePublication::Pending(pending) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("the queued DTM error must backpressure Unknown Command");
         };
@@ -1422,11 +1907,11 @@ mod tests {
             HciError::INVALID_HCI_PARAMETERS.to_status(),
         );
         let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(endpoints.controller.transport())
+            pending.try_publish(&endpoints.controller)
         else {
             panic!("Unknown Command must publish after capacity returns");
         };
-        assert_eq!(published.into_owner(), RadioOwner(62));
+        assert_eq!(published.owner(), &RadioOwner(62));
         assert_command_status(
             block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
             unsupported_opcode,
@@ -1438,76 +1923,38 @@ mod tests {
     fn classified_router_cross_epoch_rejection_retains_both_exact_owners() {
         let mut first_resources = controller_resources();
         let mut first = first_resources.split();
-        let start = LeControllerResponsePending::new(
-            RadioOwner(61),
-            receiver_command().into_started_command_complete(),
-            first.controller.transport().epoch_identity(),
-        );
+        let start = receiver_start_pending(&mut first, RadioOwner(61));
         let LeControllerResponsePublication::Published(started) =
-            start.try_publish(first.controller.transport())
+            start.try_publish(&first.controller)
         else {
             panic!("the first endpoint must publish its start response");
         };
 
         let mut second_resources = controller_resources();
-        let second = second_resources.split();
+        let mut second = second_resources.split();
         block_on(second.host.write(&LeTestEnd::new()))
             .expect("the foreign DTM command enters its own Host queue");
         let mut command_buffer = [0; 16];
-        let classified = match second
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the foreign endpoint must classify its own command"),
-        };
-        let LeControllerClassifiedCommandRoute::EndpointMismatch { published, command } = first
-            .controller
-            .route_classified_command(started, classified)
+        let second_ready = claim_initial_ready(&mut second.controller, RadioOwner(63));
+        let classified = intake_command(&second.controller, second_ready, &mut command_buffer);
+        let LeControllerClassifiedCommandRoute::EndpointMismatch(classified) =
+            first.controller.route_classified_command(classified)
         else {
-            panic!("a foreign command must not consume the first published owner");
+            panic!("a foreign aggregate must remain intact");
         };
-        assert_eq!(published.owner(), &RadioOwner(61));
-        assert!(published.accepts_endpoint(first.controller.transport()));
-        assert!(!published.accepts_endpoint(second.controller.transport()));
-        assert!(command.originates_from(second.controller.transport()));
-        assert!(!command.originates_from(first.controller.transport()));
-        assert!(matches!(
-            command.value(),
-            LeControllerCommandClassification::Dtm(LeDtmCommand::TestEnd(_))
-        ));
-
-        let second_start = LeControllerResponsePending::new(
-            RadioOwner(63),
-            receiver_command().into_started_command_complete(),
-            second.controller.transport().epoch_identity(),
-        );
-        let LeControllerResponsePublication::Published(second_started) =
-            second_start.try_publish(second.controller.transport())
+        assert_eq!(started.owner(), &RadioOwner(61));
+        assert_eq!(classified.owner(), &RadioOwner(63));
+        let LeControllerClassifiedCommandRoute::Dtm(deferred) =
+            second.controller.route_classified_command(classified)
         else {
-            panic!("the second endpoint must publish its own start response");
+            panic!("the source endpoint must retain the aggregate's DTM semantics");
         };
-        block_on(second.host.write(&LeTestEnd::new()))
-            .expect("the second endpoint accepts another command");
-        let second_classified = match second
-            .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-        {
-            Ok(classified) => classified,
-            Err(_) => panic!("the second endpoint must classify its next command"),
-        };
-        let LeControllerClassifiedCommandRoute::EndpointMismatch { published, command } = first
-            .controller
-            .route_classified_command(second_started, second_classified)
+        let LeControllerActiveDtmCommandRoute::TestEnd(test_end) =
+            deferred.into_active_session_route()
         else {
-            panic!("a foreign published order must retain both exact owners");
+            panic!("the retained Test End must remain semantic");
         };
-        assert_eq!(published.owner(), &RadioOwner(63));
-        assert!(published.accepts_endpoint(second.controller.transport()));
-        assert!(!published.accepts_endpoint(first.controller.transport()));
-        assert!(command.originates_from(second.controller.transport()));
+        assert_eq!(test_end.owner(), &RadioOwner(63));
     }
 
     fn assert_start_response(packet: ControllerToHostPacket<'_>) {
@@ -1552,16 +1999,5 @@ mod tests {
             .expect("response contains standard status");
         assert_eq!(complete.status, Status::SUCCESS);
         assert_eq!(complete.return_params::<LeTestEnd>().unwrap(), packet_count);
-    }
-
-    fn parse_command_complete(bytes: &[u8]) -> CommandCompleteWithStatus<'_> {
-        let (packet, remaining) =
-            ControllerToHostPacket::from_hci_bytes_with_kind(PacketKind::Event, bytes).unwrap();
-        assert!(remaining.is_empty());
-        let ControllerToHostPacket::Event(event) = packet else {
-            panic!("Command Complete changed packet kind");
-        };
-        let complete = CommandComplete::from_hci_bytes_complete(event.data).unwrap();
-        complete.try_into().unwrap()
     }
 }

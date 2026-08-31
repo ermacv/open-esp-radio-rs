@@ -13,11 +13,11 @@ use embassy_futures::select::{Either, select};
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint;
+use open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession, BluetoothDtmResponsePending,
-    BluetoothDtmResponsePublished, BluetoothSchedulerRunInterruptStorage,
+    BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession, BluetoothDtmOrderReady,
+    BluetoothDtmResponsePending, BluetoothSchedulerRunInterruptStorage,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -151,7 +151,7 @@ where
         R,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -170,12 +170,17 @@ where
         Ok(
             match select_radio_first(
                 self.wait_radio(controller_time_recheck),
-                controller.wait_publish_ready(),
+                self.session.wait_response_capacity(controller),
             )
             .await
             {
                 RadioFirst::Radio(signal) => EmbassyBluetoothDtmActivePendingSignal::Radio(signal),
-                RadioFirst::Other(()) => EmbassyBluetoothDtmActivePendingSignal::ResponseCapacity,
+                RadioFirst::Other(Ok(())) => {
+                    EmbassyBluetoothDtmActivePendingSignal::ResponseCapacity
+                }
+                RadioFirst::Other(Err(_)) => {
+                    return Err(EmbassyBluetoothDtmActiveWaitError::EndpointMismatch);
+                }
             },
         )
     }
@@ -188,7 +193,7 @@ impl<'borrow, 'runtime, S, const CAPACITY: usize, M>
         'runtime,
         S,
         CAPACITY,
-        BluetoothDtmResponsePublished<'runtime>,
+        BluetoothDtmOrderReady<'runtime>,
         M,
     >
 where
@@ -210,7 +215,7 @@ where
         R,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -229,12 +234,15 @@ where
         Ok(
             match select_radio_first(
                 self.wait_radio(controller_time_recheck),
-                controller.wait_receive_ready(),
+                self.session.wait_command_available(controller),
             )
             .await
             {
                 RadioFirst::Radio(signal) => EmbassyBluetoothDtmActiveCommandSignal::Radio(signal),
-                RadioFirst::Other(()) => EmbassyBluetoothDtmActiveCommandSignal::HostReady,
+                RadioFirst::Other(Ok(())) => EmbassyBluetoothDtmActiveCommandSignal::HostReady,
+                RadioFirst::Other(Err(_)) => {
+                    return Err(EmbassyBluetoothDtmActiveWaitError::EndpointMismatch);
+                }
             },
         )
     }

@@ -9,8 +9,8 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, InProcessHciControllerEndpoint, LeControllerCommandEndpoint,
-    LeControllerResetBarrier, LeControllerResponsePending, LeControllerResponsePublication,
+    HciChannelError, LeControllerCommandEndpoint, LeControllerResetBarrier,
+    LeControllerResponsePending, LeControllerResponsePublication,
 };
 
 use crate::dtm_active_session::BluetoothDtmActiveRadio;
@@ -21,10 +21,11 @@ use crate::dtm_quiescence::{
 };
 use crate::dtm_reset_order::{BluetoothDtmRestoredReset, BluetoothDtmRestoredResetCompletion};
 use crate::{
-    BluetoothControllerPublishedTaskService, BluetoothDtmActiveCompletionFaultCause,
-    BluetoothDtmActiveCpuOwned, BluetoothDtmPostUnlinkWakeCell, BluetoothDtmRecurringFaultCause,
-    BluetoothDtmSessionIdle, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
+    BluetoothControllerIdleCommandTask, BluetoothControllerPublishedTaskService,
+    BluetoothDtmActiveCompletionFaultCause, BluetoothDtmActiveCpuOwned,
+    BluetoothDtmPostUnlinkWakeCell, BluetoothDtmRecurringFaultCause, BluetoothDtmSessionIdle,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
+    BluetoothSchedulerWakeCell,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
@@ -172,14 +173,16 @@ pub struct BluetoothDtmResetComplete<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    task: Task<'runtime, S, CAPACITY>,
+    task: BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY>,
 }
 
 impl<'runtime, S, const CAPACITY: usize> BluetoothDtmResetComplete<'runtime, S, CAPACITY>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    pub fn into_task_service(self) -> Task<'runtime, S, CAPACITY> {
+    pub fn into_idle_command_task(
+        self,
+    ) -> BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY> {
         self.task
     }
 }
@@ -303,7 +306,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -354,7 +357,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -365,6 +368,25 @@ where
         self.transaction.matches_endpoint(controller)
     }
 
+    /// Wait until the matching Controller-to-Host queue may accept Reset completion.
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
     pub fn try_publish<
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
@@ -372,7 +394,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -383,7 +405,7 @@ where
         match self.transaction.try_publish(controller) {
             LeControllerResponsePublication::Published(published) => {
                 BluetoothDtmResetResponsePublication::Completed(BluetoothDtmResetComplete {
-                    task: published.into_owner(),
+                    task: BluetoothControllerIdleCommandTask::from_ready(published),
                 })
             }
             LeControllerResponsePublication::Pending(transaction) => {

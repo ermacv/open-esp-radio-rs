@@ -317,7 +317,7 @@ gaps = [
 [[capabilities]]
 id = "hci-controller-endpoints"
 title = "RTOS-free affine HCI Controller endpoints"
-scope = "One bounded HCI epoch split into a disjoint Host transport and sole combined Controller transport and mutable-bootstrap command owner for an operational session runner"
+scope = "One bounded HCI epoch split into a disjoint Host transport and sole combined Controller transport and mutable-bootstrap command owner with a one-shot initial CommandReady claim that survives endpoint drop and resource resplit without reminting full epoch-bound idle classification opaque deferred RX and TX starts response authority created only after RUN no public generic response construction and next-command authority returned only by successful response publication"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -376,7 +376,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "idle-command-intake-and-reset-runner-integration-missing" },
+  { axis = "implementation", id = "sole-outer-idle-driver-and-pre-run-failure-policy-missing" },
   { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
@@ -405,7 +405,7 @@ gaps = [
 [[capabilities]]
 id = "typed-hci-controller"
 title = "Typed bt-hci Controller implementation"
-scope = "HCI command event ACL credit and error semantics plus endpoint-bound idle DTM start exhaustive active-command classification ordered terminal busy and software-bootstrap responses chip-private active Reset quiescence and restoration plus Test End progression through the ESP32-S31 active-session task"
+scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle classification one-shot CommandReady ownership opaque deferred DTM RX and TX starts that create response authority only after hardware RUN fail-closed owner-retaining pre-RUN failures exhaustive active-command classification ordered terminal busy and bootstrap responses chip-private Reset quiescence and restoration and Test End progression whose successful response publication returns one opaque ESP32-S31 IdleCommandTask"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -414,11 +414,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "sole-idle-hci-command-loop-and-reset-runner-integration-missing" },
+  { axis = "implementation", id = "sole-outer-embassy-idle-command-driver-missing" },
   { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
-  { axis = "async", id = "outer-session-policy-and-acl-credit-selection-missing" },
+  { axis = "async", id = "pre-run-failure-session-policy-and-acl-credit-selection-missing" },
 ]
 
 [[capabilities]]

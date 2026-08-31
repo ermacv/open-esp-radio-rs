@@ -2,8 +2,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciEpochIdentity, InProcessHciControllerEndpoint, LeControllerBootstrapConfig,
-    LeControllerHciEndpoints, LeControllerHciResources,
+    LeControllerBootstrapConfig, LeControllerHciEndpoints, LeControllerHciResources,
 };
 
 use crate::{
@@ -15,28 +14,6 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
-
-/// Whether one opaque HCI epoch admits work from the supplied endpoint.
-///
-/// This stays below the public chip API so semantic owner types can check
-/// affinity without exposing or reconstructing their retained epoch token.
-pub(crate) fn hci_epoch_accepts_endpoint<
-    M: RawMutex,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->(
-    epoch: HciEpochIdentity<'_>,
-    controller: &InProcessHciControllerEndpoint<
-        '_,
-        M,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
-) -> bool {
-    epoch.same_epoch(controller.epoch_identity())
-}
 
 /// Why a scheduler epoch could not acquire an HCI resource epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -601,10 +578,9 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        BluetoothPublicDeviceAddress, HostToControllerFrame, LeControllerBootstrapConfig,
-        LeControllerCommandClassification, LeControllerHciEndpoints, LeControllerHciResources,
+        BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeControllerHciEndpoints,
+        LeControllerHciResources,
         bt_hci::{cmd::controller_baseband::Reset, transport::Transport},
-        classify_le_controller_command,
     };
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
@@ -613,8 +589,6 @@ mod tests {
         BluetoothControllerRuntimeEndpoints, BluetoothControllerRuntimeResources,
         BluetoothSchedulerInitialized, BluetoothStopped,
     };
-
-    use super::hci_epoch_accepts_endpoint;
 
     type TestHciResources = LeControllerHciResources<NoopRawMutex, 1, 1, 31>;
 
@@ -634,24 +608,6 @@ mod tests {
         )
         .expect("nonzero test profile");
         TestHciResources::new(config).expect("profile fits its bounded queues")
-    }
-
-    #[test]
-    fn opaque_hci_epoch_accepts_only_its_origin_endpoint() {
-        let mut matching_resources = hci();
-        let matching = matching_resources.split();
-        let epoch = matching.controller.transport().epoch_identity();
-        assert!(hci_epoch_accepts_endpoint(
-            epoch,
-            matching.controller.transport()
-        ));
-
-        let mut foreign_resources = hci();
-        let foreign = foreign_resources.split();
-        assert!(!hci_epoch_accepts_endpoint(
-            epoch,
-            foreign.controller.transport()
-        ));
     }
 
     #[test]
@@ -676,49 +632,26 @@ mod tests {
         block_on(async {
             host.write(&Reset::new())
                 .await
-                .expect("Reset enters the matching Host queue");
-            let mut command_buffer = [0; 31];
-            let HostToControllerFrame::Command(command) = controller
-                .transport()
-                .receive(&mut command_buffer)
-                .await
-                .expect("Controller transport receives the matching Reset")
-            else {
-                panic!("Reset changed HCI packet class");
-            };
-            let LeControllerCommandClassification::Bootstrap(command) =
-                classify_le_controller_command(command)
-            else {
-                panic!("Reset did not decode as a bootstrap command");
-            };
-            assert!(command.is_reset());
+                .expect("Reset enters the matching combined HCI epoch");
         });
+        assert_eq!(
+            controller.bootstrap_phase(),
+            open_esp_radio_bluetooth_hci::BootstrapPhase::AwaitingReset
+        );
     }
 
     #[test]
     fn used_hci_epoch_is_rejected_without_losing_either_owner() {
         let mut used_hci = hci();
         {
-            let LeControllerHciEndpoints { host, controller } = used_hci.split();
+            let LeControllerHciEndpoints {
+                host,
+                controller: _,
+            } = used_hci.split();
             block_on(async {
                 host.write(&Reset::new())
                     .await
                     .expect("Reset enters the test queue");
-                let mut command_buffer = [0; 31];
-                let HostToControllerFrame::Command(command) = controller
-                    .transport()
-                    .receive(&mut command_buffer)
-                    .await
-                    .expect("Controller transport receives Reset")
-                else {
-                    panic!("Reset changed HCI packet class");
-                };
-                let LeControllerCommandClassification::Bootstrap(command) =
-                    classify_le_controller_command(command)
-                else {
-                    panic!("Reset did not decode as a bootstrap command");
-                };
-                assert!(command.is_reset());
             });
         }
 

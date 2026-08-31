@@ -234,10 +234,11 @@ pub enum HciEpochBoundCommandReceiveError<'epoch, 'packet> {
 
 /// One non-blocking classified intake that preserves receive-buffer ownership.
 ///
-/// Command and stale-readiness branches return the caller's buffer so an event
-/// loop can immediately reuse it. Only a non-command frame borrows the buffer,
-/// transferring that exact packet to the outer data router. A malformed
-/// retained packet fails closed and ends the intake call.
+/// Command, stale-readiness and channel-failure branches return the caller's
+/// buffer so an event loop can immediately reuse or replace it. Only a
+/// non-command frame borrows the buffer, transferring that exact packet to the
+/// outer data router. A malformed retained packet fails closed without hiding
+/// the caller's storage.
 #[must_use = "route the packet or recover the receive buffer"]
 pub enum HciClassifiedCommandIntake<'epoch, 'packet> {
     /// An owned command classification plus the reusable receive buffer.
@@ -252,8 +253,13 @@ pub enum HciClassifiedCommandIntake<'epoch, 'packet> {
         /// Scratch storage remains available for the replacement wait.
         buffer: &'packet mut [u8],
     },
-    /// A non-retryable packet boundary failure.
-    Channel(HciChannelError),
+    /// A packet-boundary failure plus reusable scratch storage.
+    Channel {
+        /// Exact transport failure.
+        error: HciChannelError,
+        /// Scratch storage available to the supervisor or corrected retry.
+        buffer: &'packet mut [u8],
+    },
     /// The oldest Host packet is data and retains its buffer borrow.
     NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
 }
@@ -737,13 +743,13 @@ where
     /// This is the event-loop form of [`Self::try_receive_classified_command`].
     /// An owned command and a stale `Empty` hint return `buffer`; a data packet
     /// instead transfers its borrow to the outer packet router. Other channel
-    /// failures are returned to the supervisor and end this intake call.
+    /// failures return the scratch storage to the supervisor.
     pub fn try_receive_classified_command_with_buffer<'buffer>(
         &self,
         buffer: &'buffer mut [u8],
     ) -> HciClassifiedCommandIntake<'channel, 'buffer> {
         if let Err(error) = require_profile_buffer::<PACKET_CAPACITY>(buffer.len()) {
-            return HciClassifiedCommandIntake::Channel(error);
+            return HciClassifiedCommandIntake::Channel { error, buffer };
         }
         let mut slot = match self.host_to_controller.try_receive() {
             Ok(slot) => slot,
@@ -754,7 +760,10 @@ where
             let bytes = &slot.bytes[..slot.length];
             if validate_host_packet(slot.kind, bytes).is_err() {
                 slot.bytes[..slot.length].fill(0);
-                return HciClassifiedCommandIntake::Channel(HciChannelError::CorruptRetainedPacket);
+                return HciClassifiedCommandIntake::Channel {
+                    error: HciChannelError::CorruptRetainedPacket,
+                    buffer,
+                };
             }
             let command = command_from_validated_bytes(bytes);
             let command =
@@ -763,12 +772,38 @@ where
             return HciClassifiedCommandIntake::Command { command, buffer };
         }
 
-        match decode_host_slot(slot, buffer) {
-            Ok(frame) => {
-                HciClassifiedCommandIntake::NonCommand(HciEpochBound::bind(self.identity, frame))
-            }
-            Err(error) => HciClassifiedCommandIntake::Channel(error),
+        let bytes = &slot.bytes[..slot.length];
+        if validate_host_packet(slot.kind, bytes).is_err() {
+            slot.bytes[..slot.length].fill(0);
+            return HciClassifiedCommandIntake::Channel {
+                error: HciChannelError::CorruptRetainedPacket,
+                buffer,
+            };
         }
+        buffer[..slot.length].copy_from_slice(bytes);
+        slot.bytes[..slot.length].fill(0);
+        let bytes = &buffer[..slot.length];
+        let frame = match slot.kind {
+            PacketKind::AclData => {
+                let (packet, _) = AclPacket::from_hci_bytes(bytes)
+                    .unwrap_or_else(|_| unreachable!("validated retained ACL must decode"));
+                HostToControllerFrame::Acl(packet)
+            }
+            PacketKind::SyncData => {
+                let (packet, _) = SyncPacket::from_hci_bytes(bytes)
+                    .unwrap_or_else(|_| unreachable!("validated retained Sync must decode"));
+                HostToControllerFrame::Sync(packet)
+            }
+            PacketKind::IsoData => {
+                let (packet, _) = IsoPacket::from_hci_bytes(bytes)
+                    .unwrap_or_else(|_| unreachable!("validated retained ISO must decode"));
+                HostToControllerFrame::Iso(packet)
+            }
+            PacketKind::Cmd | PacketKind::Event => {
+                unreachable!("command and invalid-direction kinds returned above")
+            }
+        };
+        HciClassifiedCommandIntake::NonCommand(HciEpochBound::bind(self.identity, frame))
     }
 
     fn bind_classified_command<'buffer>(

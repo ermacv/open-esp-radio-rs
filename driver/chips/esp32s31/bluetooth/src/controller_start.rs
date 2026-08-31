@@ -498,8 +498,8 @@ pub struct BluetoothControllerPublishedRuntimeEndpoints<
 {
     /// Finite hard-handler service over the stable PAC/HAL owners.
     pub interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
-    /// Sole powered scheduler and DTM task service.
-    pub task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    /// Sole idle task carrying this epoch's affine next-command authority.
+    pub task: BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>,
     /// Disjoint Host transport and combined Controller command endpoint.
     pub hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<
         'runtime,
@@ -508,6 +508,522 @@ pub struct BluetoothControllerPublishedRuntimeEndpoints<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
+}
+
+/// Result of borrowing one final Controller runtime epoch.
+///
+/// A successful split claims the HCI epoch's initial command-ready authority
+/// exactly once. Every later split fails closed without releasing the powered
+/// task, interrupt service, or combined HCI endpoint as independently usable
+/// values.
+#[must_use = "retain the ready runtime or its opaque fail-stop owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothControllerPublishedRuntimeSplit<
+    'runtime,
+    M,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    /// The only idle command task for this Controller epoch was claimed.
+    Ready(
+        BluetoothControllerPublishedRuntimeEndpoints<
+            'runtime,
+            M,
+            S,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ),
+    /// The epoch's initial command authority had already been consumed.
+    CommandReadyUnavailable(
+        BluetoothControllerPublishedRuntimeSplitFailure<
+            'runtime,
+            M,
+            S,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ),
+}
+
+/// Opaque fail-stop owner for a final runtime whose command authority was gone.
+#[must_use = "the complete unavailable runtime remains intentionally fail-stopped"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerPublishedRuntimeSplitFailure<
+    'runtime,
+    M,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    _interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
+    _task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    _hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<
+        'runtime,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+}
+
+/// Idle powered task paired with the sole affine next-command authority.
+///
+/// The raw task service and unit order token are deliberately private. Only a
+/// validated full-classification route may consume this aggregate.
+#[must_use = "route the next command without separating task and HCI order"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerIdleCommandTask<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    ready: open_esp_radio_bluetooth_hci::LeControllerCommandReady<'runtime, ()>,
+}
+
+/// One non-blocking idle command intake through the combined HCI endpoint.
+///
+/// Every non-command branch returns the complete idle task, including its sole
+/// affine next-command authority. A consumed command is routed immediately;
+/// neither its classification nor its order token is exposed separately.
+#[must_use = "route the command or retain the returned idle task"]
+#[cfg(target_arch = "riscv32")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "no-alloc intake variants retain the complete affine Controller owner"
+)]
+pub enum BluetoothControllerIdleCommandIntake<
+    'runtime,
+    'command,
+    'buffer,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// One command was consumed and routed; scratch storage is reusable.
+    Routed {
+        route: crate::BluetoothDtmIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    /// A readiness hint became stale before intake.
+    Empty {
+        task: BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    /// The supplied combined endpoint belongs to another HCI epoch.
+    EndpointMismatch {
+        task: BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    /// Packet intake failed without consuming next-command authority.
+    Channel {
+        task: BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>,
+        buffer: &'buffer mut [u8],
+        error: open_esp_radio_bluetooth_hci::HciChannelError,
+    },
+    /// The oldest Host packet was data rather than a Controller command.
+    NonCommand {
+        task: BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>,
+        frame: open_esp_radio_bluetooth_hci::HciEpochBound<
+            'command,
+            open_esp_radio_bluetooth_hci::HostToControllerFrame<'buffer>,
+        >,
+    },
+}
+
+/// One idle Controller response retaining the powered task until publication.
+#[must_use = "publish the response or retain the unchanged idle transaction"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerIdleResponsePending<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    transaction: open_esp_radio_bluetooth_hci::LeControllerResponsePending<
+        'runtime,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    >,
+}
+
+/// Result of one idle response publication attempt.
+#[must_use = "retain backpressure, mismatch, fault, or the returned idle command task"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothControllerIdleResponsePublication<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    /// The response was durably inserted and next-command authority returned.
+    Published(BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>),
+    /// Controller-to-Host capacity was unavailable.
+    Pending(BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>),
+    /// The supplied endpoint belongs to another HCI epoch.
+    EndpointMismatch(BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>),
+    /// A non-capacity fault retained the exact response transaction.
+    Fault {
+        pending: BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>,
+        error: open_esp_radio_bluetooth_hci::HciChannelError,
+    },
+}
+
+/// Idle Reset retaining both the task and exact command/order authority.
+#[must_use = "complete Reset only through the matching combined endpoint"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerIdleResetBarrier<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    barrier: open_esp_radio_bluetooth_hci::LeControllerResetBarrier<
+        'runtime,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    >,
+}
+
+/// Result of applying one already-idle Reset.
+#[must_use = "publish the Reset response or retain the endpoint mismatch"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothControllerIdleResetCompletion<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    /// Reset was applied exactly once and its response awaits publication.
+    ResponsePending(BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>),
+    /// The endpoint belongs to another HCI epoch; Reset remains unapplied.
+    EndpointMismatch(BluetoothControllerIdleResetBarrier<'runtime, S, SCHEDULER_CAPACITY>),
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>
+{
+    pub(crate) const fn new(
+        transaction: open_esp_radio_bluetooth_hci::LeControllerResponsePending<
+            'runtime,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ) -> Self {
+        Self { transaction }
+    }
+
+    /// Whether the exact pending response belongs to this endpoint.
+    pub fn matches_hci_endpoint<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> bool {
+        self.transaction.matches_endpoint(controller)
+    }
+
+    /// Wait until the matching Controller-to-Host queue may accept this response.
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
+    /// Attempt exact-once publication through the matching endpoint.
+    pub fn try_publish<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothControllerIdleResponsePublication<'runtime, S, SCHEDULER_CAPACITY> {
+        match self.transaction.try_publish(controller) {
+            open_esp_radio_bluetooth_hci::LeControllerResponsePublication::Published(ready) => {
+                BluetoothControllerIdleResponsePublication::Published(
+                    BluetoothControllerIdleCommandTask::from_ready(ready),
+                )
+            }
+            open_esp_radio_bluetooth_hci::LeControllerResponsePublication::Pending(transaction) => {
+                BluetoothControllerIdleResponsePublication::Pending(Self { transaction })
+            }
+            open_esp_radio_bluetooth_hci::LeControllerResponsePublication::EndpointMismatch(
+                transaction,
+            ) => BluetoothControllerIdleResponsePublication::EndpointMismatch(Self { transaction }),
+            open_esp_radio_bluetooth_hci::LeControllerResponsePublication::Fault {
+                pending: transaction,
+                error,
+            } => BluetoothControllerIdleResponsePublication::Fault {
+                pending: Self { transaction },
+                error,
+            },
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerIdleResetBarrier<'runtime, S, SCHEDULER_CAPACITY>
+{
+    pub(crate) const fn new(
+        barrier: open_esp_radio_bluetooth_hci::LeControllerResetBarrier<
+            'runtime,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ) -> Self {
+        Self { barrier }
+    }
+
+    /// Apply Reset only after the chip's idle aggregate proves quiescence.
+    pub fn complete<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &mut open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothControllerIdleResetCompletion<'runtime, S, SCHEDULER_CAPACITY> {
+        match controller.complete_reset_after_quiescence(self.barrier) {
+            open_esp_radio_bluetooth_hci::LeControllerResetCompletion::ResponsePending(
+                transaction,
+            ) => BluetoothControllerIdleResetCompletion::ResponsePending(
+                BluetoothControllerIdleResponsePending::new(transaction),
+            ),
+            open_esp_radio_bluetooth_hci::LeControllerResetCompletion::EndpointMismatch(
+                barrier,
+            ) => BluetoothControllerIdleResetCompletion::EndpointMismatch(Self { barrier }),
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerIdleCommandTask<'runtime, S, SCHEDULER_CAPACITY>
+{
+    pub(crate) fn from_ready(
+        ready: open_esp_radio_bluetooth_hci::LeControllerCommandReady<
+            'runtime,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ) -> Self {
+        let (task, ready) = ready.into_parts();
+        Self { task, ready }
+    }
+
+    pub(crate) const fn from_parts(
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        ready: open_esp_radio_bluetooth_hci::LeControllerCommandReady<'runtime, ()>,
+    ) -> Self {
+        Self { task, ready }
+    }
+
+    pub(crate) fn into_ready(
+        self,
+    ) -> open_esp_radio_bluetooth_hci::LeControllerCommandReady<
+        'runtime,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    > {
+        self.ready.map_owner(|()| self.task)
+    }
+
+    /// Whether this idle task belongs to the supplied Controller endpoint.
+    pub fn accepts_hci_endpoint<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> bool {
+        self.ready.accepts_endpoint(controller)
+    }
+
+    /// Wait until the matching Host queue may contain a command.
+    ///
+    /// The wait only borrows the idle aggregate, so cancellation cannot lose
+    /// task ownership or affine next-command authority.
+    pub async fn wait_command_available<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_command_available(&self.ready).await
+    }
+
+    /// Consume, classify and route at most one Host command while idle.
+    ///
+    /// RX/TX starts retain their portable deferred response through the entire
+    /// first-event runner. Every other routed branch retains either the exact
+    /// pending response or Reset barrier. No classification can escape without
+    /// its affine command authority.
+    pub fn try_route_idle_controller_command_with_buffer<
+        'command,
+        'buffer,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &mut open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            'command,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        buffer: &'buffer mut [u8],
+    ) -> BluetoothControllerIdleCommandIntake<'runtime, 'command, 'buffer, S, SCHEDULER_CAPACITY>
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        match controller.try_receive_classified_command_with_buffer(self.into_ready(), buffer) {
+            open_esp_radio_bluetooth_hci::LeControllerCommandIntake::Command {
+                command,
+                buffer,
+            } => BluetoothControllerIdleCommandIntake::Routed {
+                route: Self::route_idle_classified_command(controller, command),
+                buffer,
+            },
+            open_esp_radio_bluetooth_hci::LeControllerCommandIntake::Empty { ready, buffer } => {
+                BluetoothControllerIdleCommandIntake::Empty {
+                    task: Self::from_ready(ready),
+                    buffer,
+                }
+            }
+            open_esp_radio_bluetooth_hci::LeControllerCommandIntake::EndpointMismatch {
+                ready,
+                buffer,
+            } => BluetoothControllerIdleCommandIntake::EndpointMismatch {
+                task: Self::from_ready(ready),
+                buffer,
+            },
+            open_esp_radio_bluetooth_hci::LeControllerCommandIntake::Channel {
+                ready,
+                buffer,
+                error,
+            } => BluetoothControllerIdleCommandIntake::Channel {
+                task: Self::from_ready(ready),
+                buffer,
+                error,
+            },
+            open_esp_radio_bluetooth_hci::LeControllerCommandIntake::NonCommand {
+                ready,
+                frame,
+            } => BluetoothControllerIdleCommandIntake::NonCommand {
+                task: Self::from_ready(ready),
+                frame,
+            },
+        }
+    }
+
+    fn route_idle_classified_command<
+        'command,
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        controller: &mut open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint<
+            'command,
+            M,
+            H2C,
+            C2H,
+            PACKET,
+        >,
+        command: open_esp_radio_bluetooth_hci::LeControllerClassifiedCommand<
+            'runtime,
+            'command,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ) -> crate::BluetoothDtmIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        match controller.route_idle_classified_command(command) {
+            open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartReceiver(
+                deferred,
+            ) => {
+                let (task, deferred) = deferred.into_parts();
+                match crate::BluetoothDtmFirstRunner::begin(
+                    task,
+                    crate::BluetoothDtmDeferredStart::receiver(deferred),
+                ) {
+                    Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
+                    Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
+                }
+            }
+            open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartTransmitter(
+                deferred,
+            ) => {
+                let (task, deferred) = deferred.into_parts();
+                match crate::BluetoothDtmFirstRunner::begin(
+                    task,
+                    crate::BluetoothDtmDeferredStart::transmitter(deferred),
+                ) {
+                    Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
+                    Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
+                }
+            }
+            open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                pending,
+            ) => crate::BluetoothDtmIdleCommandRoute::ResponsePending(
+                BluetoothControllerIdleResponsePending::new(pending),
+            ),
+            open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::ResetBarrier(
+                barrier,
+            ) => crate::BluetoothDtmIdleCommandRoute::ResetBarrier(
+                BluetoothControllerIdleResetBarrier::new(barrier),
+            ),
+            open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::EndpointMismatch(
+                command,
+            ) => crate::BluetoothDtmIdleCommandRoute::EndpointMismatch(
+                crate::BluetoothDtmIdleCommandMismatch::new(command),
+            ),
+        }
+    }
 }
 
 /// Stable interrupt service for a materialized final Controller epoch.
@@ -537,7 +1053,6 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     storage: &'runtime S,
     runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
-    hci_epoch: open_esp_radio_bluetooth_hci::HciEpochIdentity<'runtime>,
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
     rf_ready: crate::ble_phy::BluetoothDtmRfReadyAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
@@ -2165,7 +2680,7 @@ where
     /// runtime; no endpoint can cross-wire a graph from another composition.
     pub fn split_runtime<'runtime>(
         &'runtime mut self,
-    ) -> BluetoothControllerPublishedRuntimeEndpoints<
+    ) -> BluetoothControllerPublishedRuntimeSplit<
         'runtime,
         M,
         S,
@@ -2190,23 +2705,39 @@ where
             },
             rf_ready,
         ) = initialized.split_runtime();
-        let hci_epoch = hci.controller.transport().epoch_identity();
-        BluetoothControllerPublishedRuntimeEndpoints {
-            interrupt: BluetoothControllerPublishedInterruptService {
-                storage: _storage,
-                runtime: interrupt,
-                mailbox: post_unlink_mailbox,
-            },
-            task: BluetoothControllerPublishedTaskService {
-                storage: _storage,
-                runtime: task,
-                mailbox: post_unlink_mailbox,
-                hci_epoch,
-                dtm_resources,
-                rf_ready,
-                scheduler_epoch,
-            },
-            hci,
+        let interrupt = BluetoothControllerPublishedInterruptService {
+            storage: _storage,
+            runtime: interrupt,
+            mailbox: post_unlink_mailbox,
+        };
+        let task = BluetoothControllerPublishedTaskService {
+            storage: _storage,
+            runtime: task,
+            mailbox: post_unlink_mailbox,
+            dtm_resources,
+            rf_ready,
+            scheduler_epoch,
+        };
+        let mut hci = hci;
+        match hci.controller.claim_initial_command_ready(task) {
+            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::Ready(ready) => {
+                BluetoothControllerPublishedRuntimeSplit::Ready(
+                    BluetoothControllerPublishedRuntimeEndpoints {
+                        interrupt,
+                        task: BluetoothControllerIdleCommandTask::from_ready(ready),
+                        hci,
+                    },
+                )
+            }
+            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::AlreadyClaimed(task) => {
+                BluetoothControllerPublishedRuntimeSplit::CommandReadyUnavailable(
+                    BluetoothControllerPublishedRuntimeSplitFailure {
+                        _interrupt: interrupt,
+                        _task: task,
+                        _hci: hci,
+                    },
+                )
+            }
         }
     }
 
@@ -2463,98 +2994,6 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
-    /// Whether this idle Controller task accepts commands from the endpoint.
-    ///
-    /// The retained HCI epoch remains opaque. Callers can use this semantic
-    /// preflight before waiting on Host input, so a foreign empty endpoint is
-    /// rejected without consuming a command or parking indefinitely.
-    pub fn accepts_hci_endpoint<
-        M: RawMutex,
-        const HOST_TO_CONTROLLER_DEPTH: usize,
-        const CONTROLLER_TO_HOST_DEPTH: usize,
-        const PACKET_CAPACITY: usize,
-    >(
-        &self,
-        controller: &open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint<
-            '_,
-            M,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ) -> bool {
-        crate::hci::hci_epoch_accepts_endpoint(self.hci_epoch, controller)
-    }
-
-    /// Consume the sole idle task and one endpoint-bound DTM command.
-    ///
-    /// Both this task's composition-time HCI epoch and the command's opaque
-    /// source epoch must match `controller`. Only then can RX/TX enter the
-    /// first-event hardware runner. Idle Test End instead enters the portable
-    /// zero-count response transaction without touching radio state.
-    pub fn route_idle_dtm_command<
-        'command,
-        M: RawMutex,
-        const HOST_TO_CONTROLLER_DEPTH: usize,
-        const CONTROLLER_TO_HOST_DEPTH: usize,
-        const PACKET_CAPACITY: usize,
-    >(
-        self,
-        controller: &open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint<
-            '_,
-            M,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        command: open_esp_radio_bluetooth_hci::HciEpochBound<
-            'command,
-            open_esp_radio_bluetooth_hci::LeDtmCommand,
-        >,
-    ) -> crate::BluetoothDtmIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let hci_epoch = self.hci_epoch_identity();
-        match open_esp_radio_bluetooth_hci::route_idle_dtm_command(
-            self, hci_epoch, controller, command,
-        ) {
-            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::StartReceiver {
-                owner: task,
-                command,
-            } => match crate::BluetoothDtmFirstRunner::begin(
-                task,
-                crate::BluetoothDtmFirstCommand::Receiver(command),
-            ) {
-                Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
-                Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
-            },
-            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::StartTransmitter {
-                owner: task,
-                command,
-            } => match crate::BluetoothDtmFirstRunner::begin(
-                task,
-                crate::BluetoothDtmFirstCommand::Transmitter(command),
-            ) {
-                Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
-                Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
-            },
-            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::ResponsePending(pending) => {
-                crate::BluetoothDtmIdleCommandRoute::ResponsePending(pending)
-            }
-            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::EndpointMismatch {
-                owner: task,
-                command,
-            } => crate::BluetoothDtmIdleCommandRoute::EndpointMismatch { task, command },
-        }
-    }
-
-    pub(crate) const fn hci_epoch_identity(
-        &self,
-    ) -> open_esp_radio_bluetooth_hci::HciEpochIdentity<'runtime> {
-        self.hci_epoch
-    }
-
     /// Durable general scheduler handoff for this powered epoch.
     pub const fn scheduler_wake(&self) -> &crate::BluetoothSchedulerWakeCell {
         self.runtime.scheduler_wake()

@@ -8,23 +8,25 @@
 
 use core::future::Future;
 
-use open_esp_radio_bluetooth_hci::{
-    HciChannelError, HciClassifiedCommandIntake, HciEpochBound, HostToControllerFrame,
-    LeControllerCommandClassification,
-};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_bluetooth_hci::{HciChannelError, HciEpochBound, HostToControllerFrame};
+
+#[cfg(test)]
+use open_esp_radio_bluetooth_hci::{HciClassifiedCommandIntake, LeControllerCommandClassification};
 
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_bluetooth_hci::{InProcessHciControllerEndpoint, LeControllerCommandEndpoint};
+use open_esp_radio_bluetooth_hci::LeControllerCommandEndpoint;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothDtmActiveControllerCommandRoute, BluetoothDtmActiveResetBarrier,
-    BluetoothDtmActiveSessionFault, BluetoothDtmActiveSessionRadioStep,
-    BluetoothDtmCommandReadySession, BluetoothDtmResponsePending,
-    BluetoothDtmResponsePendingSession, BluetoothDtmResponsePublication,
-    BluetoothDtmResponsePublished, BluetoothDtmStoppingFault, BluetoothDtmStoppingRunner,
-    BluetoothDtmStoppingStep, BluetoothDtmTestEndComplete, BluetoothDtmTestEndResponsePending,
+    BluetoothControllerIdleCommandTask, BluetoothDtmActiveCommandIntake,
+    BluetoothDtmActiveCommandMismatch, BluetoothDtmActiveControllerCommandRoute,
+    BluetoothDtmActiveResetBarrier, BluetoothDtmActiveSessionFault,
+    BluetoothDtmActiveSessionRadioStep, BluetoothDtmCommandReadySession, BluetoothDtmOrderReady,
+    BluetoothDtmResponsePending, BluetoothDtmResponsePendingSession,
+    BluetoothDtmResponsePublication, BluetoothDtmStoppingFault, BluetoothDtmStoppingRunner,
+    BluetoothDtmStoppingStep, BluetoothDtmTestEndResponsePending,
     BluetoothDtmTestEndResponsePublication, BluetoothDtmTestEndRestoreFailure,
     BluetoothDtmTestEndRestoreStep, BluetoothSchedulerFinishedHardwareListObserved,
     BluetoothSchedulerRunInterruptStorage,
@@ -59,13 +61,7 @@ pub enum EmbassyBluetoothDtmSessionRetry {
     IdleRestore,
 }
 
-#[cfg_attr(
-    not(any(target_arch = "riscv32", test)),
-    expect(
-        dead_code,
-        reason = "production seam is executed only by the S31 target"
-    )
-)]
+#[cfg(test)]
 enum ClassifiedControllerHostIntake<'epoch, 'packet> {
     Command {
         command: HciEpochBound<'epoch, LeControllerCommandClassification>,
@@ -74,17 +70,14 @@ enum ClassifiedControllerHostIntake<'epoch, 'packet> {
     Empty {
         buffer: &'packet mut [u8],
     },
-    Channel(HciChannelError),
+    Channel {
+        error: HciChannelError,
+        buffer: &'packet mut [u8],
+    },
     NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
 }
 
-#[cfg_attr(
-    not(any(target_arch = "riscv32", test)),
-    expect(
-        dead_code,
-        reason = "production seam is executed only by the S31 target"
-    )
-)]
+#[cfg(test)]
 fn classify_controller_host_intake<'epoch, 'packet>(
     intake: HciClassifiedCommandIntake<'epoch, 'packet>,
 ) -> ClassifiedControllerHostIntake<'epoch, 'packet> {
@@ -95,8 +88,8 @@ fn classify_controller_host_intake<'epoch, 'packet>(
         HciClassifiedCommandIntake::Empty { buffer } => {
             ClassifiedControllerHostIntake::Empty { buffer }
         }
-        HciClassifiedCommandIntake::Channel(error) => {
-            ClassifiedControllerHostIntake::Channel(error)
+        HciClassifiedCommandIntake::Channel { error, buffer } => {
+            ClassifiedControllerHostIntake::Channel { error, buffer }
         }
         HciClassifiedCommandIntake::NonCommand(frame) => {
             ClassifiedControllerHostIntake::NonCommand(frame)
@@ -249,13 +242,10 @@ where
     ResetBarrier(BluetoothDtmActiveResetBarrier<'runtime, S, CAPACITY>),
     /// A non-command Host frame remains bound to its source HCI epoch and buffer.
     NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
-    /// A foreign Controller classification and unchanged active session transferred together.
-    ControllerCommandEndpointMismatch {
-        /// Active radio/order owner that rejected the foreign classification.
-        session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
-        /// Unchanged complete classification retaining its foreign HCI epoch.
-        command: HciEpochBound<'epoch, LeControllerCommandClassification>,
-    },
+    /// Defensive fail-stop owner for an impossible post-intake endpoint mismatch.
+    ControllerCommandEndpointMismatch(
+        BluetoothDtmActiveCommandMismatch<'runtime, 'epoch, S, CAPACITY>,
+    ),
     /// The supplied endpoint does not match the stored response/order epoch.
     EndpointMismatch,
     /// The HCI operation failed while the complete session stayed stored.
@@ -273,17 +263,12 @@ where
     ),
     /// Active radio progress failed closed after command-order publication.
     CommandReadyRadioFault(
-        BluetoothDtmActiveSessionFault<
-            'runtime,
-            S,
-            CAPACITY,
-            BluetoothDtmResponsePublished<'runtime>,
-        >,
+        BluetoothDtmActiveSessionFault<'runtime, S, CAPACITY, BluetoothDtmOrderReady<'runtime>>,
     ),
     /// Test End quiescence failed closed with its exact graph and command.
     StoppingFault(BluetoothDtmStoppingFault<'runtime, S, CAPACITY>),
-    /// Test End completed, published exactly once and restored the idle graph.
-    Complete(BluetoothDtmTestEndComplete<'runtime, S, CAPACITY>),
+    /// Test End completed and returned the sole opaque idle command task.
+    Complete(BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY>),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -559,28 +544,11 @@ where
         }
     }
 
-    fn route_controller_command<
-        'epoch,
-        'packet,
-        HciMutex: RawMutex,
-        const HOST_TO_CONTROLLER_DEPTH: usize,
-        const CONTROLLER_TO_HOST_DEPTH: usize,
-        const PACKET_CAPACITY: usize,
-    >(
+    fn route_controller_command<'epoch, 'packet>(
         &mut self,
-        controller: &mut LeControllerCommandEndpoint<
-            'epoch,
-            HciMutex,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        command: HciEpochBound<'epoch, LeControllerCommandClassification>,
+        route: BluetoothDtmActiveControllerCommandRoute<'runtime, 'epoch, S, CAPACITY>,
     ) -> Option<SessionBoundary<'runtime, 'epoch, 'packet, S, CAPACITY>> {
-        let EmbassyBluetoothDtmSessionState::CommandReady(session) = self.owner.take() else {
-            unreachable!("the awaited command-ready state did not change")
-        };
-        match session.route_active_controller_command(controller, command) {
+        match route {
             BluetoothDtmActiveControllerCommandRoute::ResponsePending(session) => self
                 .store_transition(
                     EmbassyBluetoothDtmSessionPhase::CommandReady,
@@ -599,14 +567,11 @@ where
                     EmbassyBluetoothDtmSessionBoundary::ResetBarrier(barrier),
                 ));
             }
-            BluetoothDtmActiveControllerCommandRoute::EndpointMismatch { session, command } => {
+            BluetoothDtmActiveControllerCommandRoute::EndpointMismatch(mismatch) => {
                 return Some(Self::transfer_transition(
                     EmbassyBluetoothDtmSessionPhase::CommandReady,
                     DtmSessionStimulus::TransferredControllerEndpointMismatch,
-                    EmbassyBluetoothDtmSessionBoundary::ControllerCommandEndpointMismatch {
-                        session,
-                        command,
-                    },
+                    EmbassyBluetoothDtmSessionBoundary::ControllerCommandEndpointMismatch(mismatch),
                 ));
             }
         }
@@ -622,7 +587,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &mut self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             'epoch,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -676,7 +641,7 @@ where
     >(
         &mut self,
         wakers: &EmbassyBluetoothRuntimeWakers<WakeMutex>,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             'epoch,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -742,10 +707,7 @@ where
                 continue;
             };
             match wait
-                .wait_next(
-                    controller.transport(),
-                    recheck.wait_until_absolute_recheck(),
-                )
+                .wait_next(controller, recheck.wait_until_absolute_recheck())
                 .await
             {
                 Ok(EmbassyBluetoothDtmActiveCommandSignal::Radio(_)) => {
@@ -754,44 +716,58 @@ where
                     }
                 }
                 Ok(EmbassyBluetoothDtmActiveCommandSignal::HostReady) => {
+                    let EmbassyBluetoothDtmSessionState::CommandReady(session) = self.owner.take()
+                    else {
+                        unreachable!("the awaited command-ready state did not change")
+                    };
                     let CommandPacketBuffer(buffer) = packet
                         .take()
                         .expect("the active task retains its sole HCI receive buffer");
-                    match classify_controller_host_intake(
-                        controller
-                            .transport()
-                            .try_receive_classified_command_with_buffer(buffer),
-                    ) {
-                        ClassifiedControllerHostIntake::Command { command, buffer } => {
+                    match session
+                        .try_route_active_controller_command_with_buffer(controller, buffer)
+                    {
+                        BluetoothDtmActiveCommandIntake::Routed { route, buffer } => {
                             packet.replace(CommandPacketBuffer(buffer));
-                            if let Some(boundary) =
-                                self.route_controller_command(controller, command)
-                            {
+                            if let Some(boundary) = self.route_controller_command(route) {
                                 return Some(boundary);
                             }
                             return None;
                         }
-                        ClassifiedControllerHostIntake::Empty { buffer } => {
+                        BluetoothDtmActiveCommandIntake::Empty { session, buffer } => {
                             packet.replace(CommandPacketBuffer(buffer));
-                            match reduce_dtm_session_transition(
+                            self.store_transition(
                                 EmbassyBluetoothDtmSessionPhase::CommandReady,
                                 DtmSessionStimulus::Continue,
-                            ) {
-                                DtmSessionAction::Advance(
-                                    EmbassyBluetoothDtmSessionPhase::CommandReady,
-                                ) => {}
-                                _ => unreachable!("the DTM reducer rejected stale HCI readiness"),
-                            }
+                                EmbassyBluetoothDtmSessionState::CommandReady(session),
+                            );
                         }
-                        ClassifiedControllerHostIntake::Channel(error) => {
-                            return Some(self.retain_existing_transition(
+                        BluetoothDtmActiveCommandIntake::EndpointMismatch { session, buffer } => {
+                            packet.replace(CommandPacketBuffer(buffer));
+                            return Some(self.retain_transition(
+                                EmbassyBluetoothDtmSessionPhase::CommandReady,
+                                DtmSessionStimulus::RetainedEndpointMismatch,
+                                EmbassyBluetoothDtmSessionState::CommandReady(session),
+                                EmbassyBluetoothDtmSessionBoundary::EndpointMismatch,
+                            ));
+                        }
+                        BluetoothDtmActiveCommandIntake::Channel {
+                            session,
+                            buffer,
+                            error,
+                        } => {
+                            packet.replace(CommandPacketBuffer(buffer));
+                            return Some(self.retain_transition(
+                                EmbassyBluetoothDtmSessionPhase::CommandReady,
                                 DtmSessionStimulus::RetainedFault,
+                                EmbassyBluetoothDtmSessionState::CommandReady(session),
                                 EmbassyBluetoothDtmSessionBoundary::HciFault(error),
                             ));
                         }
-                        ClassifiedControllerHostIntake::NonCommand(frame) => {
-                            return Some(self.retain_existing_transition(
+                        BluetoothDtmActiveCommandIntake::NonCommand { session, frame } => {
+                            return Some(self.retain_transition(
+                                EmbassyBluetoothDtmSessionPhase::CommandReady,
                                 DtmSessionStimulus::RetainedExternalFrame,
+                                EmbassyBluetoothDtmSessionState::CommandReady(session),
                                 EmbassyBluetoothDtmSessionBoundary::NonCommand(frame),
                             ));
                         }
@@ -835,7 +811,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &mut self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             'epoch,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
@@ -865,7 +841,7 @@ where
                 Some(Self::transfer_transition(
                     EmbassyBluetoothDtmSessionPhase::TestEndResponse,
                     DtmSessionStimulus::Completed,
-                    EmbassyBluetoothDtmSessionBoundary::Complete(complete),
+                    EmbassyBluetoothDtmSessionBoundary::Complete(complete.into_idle_command_task()),
                 ))
             }
             BluetoothDtmTestEndResponsePublication::Pending(pending) => {
@@ -913,7 +889,7 @@ where
             BluetoothDtmTestEndRestoreStep::Completed(complete) => Self::transfer_transition(
                 EmbassyBluetoothDtmSessionPhase::Restore,
                 DtmSessionStimulus::Completed,
-                EmbassyBluetoothDtmSessionBoundary::Complete(complete),
+                EmbassyBluetoothDtmSessionBoundary::Complete(complete.into_idle_command_task()),
             ),
             BluetoothDtmTestEndRestoreStep::Rejected(failure) => self.retain_transition(
                 EmbassyBluetoothDtmSessionPhase::Restore,
@@ -957,7 +933,7 @@ where
         loop {
             let boundary = match self.phase() {
                 EmbassyBluetoothDtmSessionPhase::PendingResponse => {
-                    self.drive_pending_response(wakers, controller.transport(), recheck)
+                    self.drive_pending_response(wakers, controller, recheck)
                         .await
                 }
                 EmbassyBluetoothDtmSessionPhase::CommandReady => {
@@ -968,7 +944,7 @@ where
                     self.drive_stopping(wakers, recheck).await
                 }
                 EmbassyBluetoothDtmSessionPhase::TestEndResponse => {
-                    self.drive_test_end_response(controller.transport()).await
+                    self.drive_test_end_response(controller).await
                 }
                 EmbassyBluetoothDtmSessionPhase::Restore => return self.retry_restore(),
             };
@@ -1168,7 +1144,10 @@ mod tests {
         let error = match classify_controller_host_intake(
             controller.try_receive_classified_command_with_buffer(&mut undersized),
         ) {
-            ClassifiedControllerHostIntake::Channel(error) => error,
+            ClassifiedControllerHostIntake::Channel { error, buffer } => {
+                assert_eq!(buffer.as_mut_ptr(), undersized.as_mut_ptr());
+                error
+            }
             _ => panic!("an undersized production buffer must remain a channel fault"),
         };
         assert_eq!(

@@ -28,9 +28,13 @@
 //! one affine Controller epoch. Its sole split exposes a Host transport and one
 //! combined Controller command endpoint: the raw Controller transport and
 //! mutable bootstrap state cannot be separated or mutated through public
-//! accessors. A hardware session runner can retain an accepted command across
-//! asynchronous radio transitions and output backpressure without a
-//! synchronous-dispatch compatibility layer. Resource construction rejects
+//! accessors. Command intake consumes the sole command-ready token and returns
+//! an opaque classification/order aggregate accepted only by idle or active
+//! session routing. Readiness waits borrow that token and reserve nothing, so
+//! cancellation cannot lose authority or consume a packet. A hardware session
+//! runner can retain an accepted command across asynchronous radio transitions
+//! and output backpressure without a synchronous-dispatch compatibility layer.
+//! Resource construction rejects
 //! profiles whose advertised ACL capacity exceeds that storage. This crate
 //! contains no Link Layer, radio, MMIO, interrupt, executor, allocator, or
 //! readiness substitute.
@@ -66,13 +70,16 @@ pub use dtm::{
     LeTransmitterTestV1Command,
 };
 pub use dtm_order::{
-    LeControllerClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
-    LeControllerResponsePending, LeControllerResponsePublication, LeControllerResponsePublished,
-    LeDtmIdleCommandRoute, route_idle_dtm_command,
+    LeControllerActiveDtmCommandRoute, LeControllerClassifiedCommand,
+    LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
+    LeControllerDeferredDtmCommand, LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
+    LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
+    LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
+    LeControllerResponsePending, LeControllerResponsePublication,
 };
 pub use resources::{
-    LeControllerCommandEndpoint, LeControllerHciEndpoints, LeControllerHciResources,
-    LeControllerHciResourcesError,
+    LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,
+    LeControllerHciResources, LeControllerHciResourcesError,
 };
 pub use response::{
     HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,

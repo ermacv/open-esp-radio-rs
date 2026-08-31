@@ -4,8 +4,8 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    InProcessHciControllerEndpoint, LeControllerCommandEndpoint, LeControllerResetBarrier,
-    LeControllerResetCompletion, LeControllerResponsePending,
+    LeControllerCommandEndpoint, LeControllerResetBarrier, LeControllerResetCompletion,
+    LeControllerResponsePending,
 };
 
 pub(crate) struct BluetoothDtmRestoredReset<'epoch, Owner> {
@@ -29,7 +29,7 @@ impl<'epoch, Owner> BluetoothDtmRestoredReset<'epoch, Owner> {
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -71,10 +71,14 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        BluetoothPublicDeviceAddress, BootstrapPhase, LE_RECEIVER_TEST_V1_OPCODE,
-        LeControllerBootstrapConfig, LeControllerClassifiedCommandRoute, LeControllerHciResources,
-        LeControllerResponsePending, LeControllerResponsePublication, LeDtmCommand,
-        bt_hci::{cmd::controller_baseband::Reset, transport::Transport},
+        BluetoothPublicDeviceAddress, BootstrapPhase, LeControllerBootstrapConfig,
+        LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
+        LeControllerCommandReadyClaim, LeControllerHciResources,
+        LeControllerIdleClassifiedCommandRoute, LeControllerResponsePublication,
+        bt_hci::{
+            cmd::{controller_baseband::Reset, le::LeTestEnd},
+            transport::Transport,
+        },
     };
 
     use super::{BluetoothDtmRestoredReset, BluetoothDtmRestoredResetCompletion};
@@ -96,40 +100,44 @@ mod tests {
         .expect("the test profile fits its queues")
     }
 
-    fn started_response() -> open_esp_radio_bluetooth_hci::LeDtmCommandCompleteEvent {
-        let LeDtmCommand::ReceiverTestV1(command) =
-            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[7])
-                .expect("the reviewed receiver command is valid")
-        else {
-            panic!("the receiver opcode changed command kind");
-        };
-        command.into_started_command_complete()
-    }
-
     #[test]
     fn restored_reset_retains_affinity_and_response_through_backpressure() {
         let mut first_resources = resources();
         let mut first = first_resources.split();
-        let start = LeControllerResponsePending::new(
-            (),
-            started_response(),
-            first.controller.transport().epoch_identity(),
-        );
-        let LeControllerResponsePublication::Published(published) =
-            start.try_publish(first.controller.transport())
+        let LeControllerCommandReadyClaim::Ready(ready) =
+            first.controller.claim_initial_command_ready(())
         else {
-            panic!("the empty response queue accepts start");
+            panic!("the epoch exposes its sole initial command authority");
         };
-        block_on(first.host.write(&Reset::new())).expect("Reset enters its origin queue");
+        block_on(first.host.write(&LeTestEnd::new()))
+            .expect("idle Test End enters its origin queue");
         let mut command_buffer = [0; 16];
-        let classified = first
+        let LeControllerCommandIntake::Command { command, .. } = first
             .controller
-            .transport()
-            .try_receive_classified_command(&mut command_buffer)
-            .unwrap_or_else(|_| panic!("the origin endpoint classifies Reset"));
-        let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) = first
+            .try_receive_classified_command_with_buffer(ready, &mut command_buffer)
+        else {
+            panic!("the origin endpoint consumes idle Test End");
+        };
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(filler) =
+            first.controller.route_idle_classified_command(command)
+        else {
+            panic!("idle Test End creates its zero-count response");
+        };
+        let LeControllerResponsePublication::Published(ready) =
+            filler.try_publish(&first.controller)
+        else {
+            panic!("the output queue starts empty");
+        };
+
+        block_on(first.host.write(&Reset::new())).expect("Reset enters its origin queue");
+        let LeControllerCommandIntake::Command { command, .. } = first
             .controller
-            .route_classified_command(published, classified)
+            .try_receive_classified_command_with_buffer(ready, &mut command_buffer)
+        else {
+            panic!("the origin endpoint consumes Reset");
+        };
+        let LeControllerClassifiedCommandRoute::ResetBarrier(barrier) =
+            first.controller.route_classified_command(command)
         else {
             panic!("active Reset becomes a lifecycle barrier");
         };
@@ -142,7 +150,7 @@ mod tests {
         else {
             panic!("a foreign endpoint retains the complete restored Reset");
         };
-        assert!(restored.matches_endpoint(first.controller.transport()));
+        assert!(restored.matches_endpoint(&first.controller));
         assert_eq!(
             first.controller.bootstrap_phase(),
             BootstrapPhase::AwaitingReset
@@ -163,20 +171,22 @@ mod tests {
             BootstrapPhase::Configuring
         );
         let LeControllerResponsePublication::Pending(pending) =
-            pending.try_publish(first.controller.transport())
+            pending.try_publish(&first.controller)
         else {
-            panic!("the queued start response backpressures Reset completion");
+            panic!("the occupied output queue backpressures Reset completion");
         };
         assert_eq!(pending.owner(), &RestoredOwner(41));
 
         let mut response_buffer = [0; 16];
-        block_on(first.host.read(&mut response_buffer)).expect("Host drains start response");
+        block_on(first.host.read(&mut response_buffer)).expect("Host drains the preceding event");
         let LeControllerResponsePublication::Published(published) =
-            pending.try_publish(first.controller.transport())
+            pending.try_publish(&first.controller)
         else {
             panic!("Reset completion publishes after capacity returns");
         };
-        assert_eq!(published.into_owner(), RestoredOwner(41));
+        let (owner, ready) = published.into_parts();
+        assert_eq!(owner, RestoredOwner(41));
+        assert!(ready.accepts_endpoint(&first.controller));
         block_on(first.host.read(&mut response_buffer)).expect("Host receives Reset completion");
     }
 }

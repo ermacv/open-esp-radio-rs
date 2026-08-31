@@ -9,8 +9,8 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_bluetooth_hci::{
-    HciEpochBound, HciEpochIdentity, LeControllerResponsePending, LeDtmCommand,
-    LeDtmCommandCompleteEvent, LeReceiverTestV1Command, LeTransmitterTestV1Command,
+    LeControllerClassifiedCommand, LeControllerDeferredReceiverStart,
+    LeControllerDeferredTransmitterStart, LeControllerResponsePending,
 };
 
 use crate::{
@@ -31,22 +31,197 @@ use crate::{
     BluetoothSchedulerRunInterruptStorage,
 };
 
-/// One validated legacy LE test command which may start a fresh DTM session.
-#[derive(Debug, Eq, PartialEq)]
-#[must_use = "the semantic HCI command must reach hardware or an owned failure"]
-pub enum BluetoothDtmFirstCommand {
-    /// Begin an LE 1M transmitter test.
-    Transmitter(LeTransmitterTestV1Command),
-    /// Begin an LE 1M receiver test.
-    Receiver(LeReceiverTestV1Command),
+enum BluetoothDtmDeferredStartKind<'runtime> {
+    Transmitter(LeControllerDeferredTransmitterStart<'runtime, ()>),
+    Receiver(LeControllerDeferredReceiverStart<'runtime, ()>),
+}
+
+/// Opaque accepted DTM start retaining its semantic command and HCI order.
+///
+/// The portable role-specific deferred start is never decomposed through this
+/// public API. Chip phases may move the hardware owner independently, while
+/// the exact start response remains constructible only after scheduler `RUN`.
+#[must_use = "retain the accepted start until hardware starts or is recovered"]
+pub struct BluetoothDtmDeferredStart<'runtime> {
+    kind: BluetoothDtmDeferredStartKind<'runtime>,
+}
+
+impl BluetoothDtmDeferredStart<'_> {
+    /// Hardware role selected by the accepted semantic command.
+    pub const fn role(&self) -> crate::BluetoothDtmRole {
+        match self.kind {
+            BluetoothDtmDeferredStartKind::Transmitter(_) => crate::BluetoothDtmRole::Transmitter,
+            BluetoothDtmDeferredStartKind::Receiver(_) => crate::BluetoothDtmRole::Receiver,
+        }
+    }
+}
+
+impl<'runtime> BluetoothDtmDeferredStart<'runtime> {
+    pub(crate) fn transmitter(start: LeControllerDeferredTransmitterStart<'runtime, ()>) -> Self {
+        Self {
+            kind: BluetoothDtmDeferredStartKind::Transmitter(start),
+        }
+    }
+
+    pub(crate) fn receiver(start: LeControllerDeferredReceiverStart<'runtime, ()>) -> Self {
+        Self {
+            kind: BluetoothDtmDeferredStartKind::Receiver(start),
+        }
+    }
+
+    fn into_started_response<Owner>(
+        self,
+        owner: Owner,
+    ) -> LeControllerResponsePending<'runtime, Owner> {
+        match self.kind {
+            BluetoothDtmDeferredStartKind::Transmitter(start) => {
+                start.map_owner(|()| owner).into_started_response()
+            }
+            BluetoothDtmDeferredStartKind::Receiver(start) => {
+                start.map_owner(|()| owner).into_started_response()
+            }
+        }
+    }
+}
+
+/// Opaque accepted start paired with its complete powered task owner.
+///
+/// This aggregate is used by every pre-`RUN` recovery boundary which has
+/// regained a task service. It deliberately exposes only the retained role;
+/// command order and task ownership cannot be separated by callers.
+#[must_use = "retain the accepted start and its task as one recovery owner"]
+pub struct BluetoothDtmFirstTaskOwner<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    deferred: BluetoothDtmDeferredStart<'runtime>,
+    _task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+}
+
+impl<S, const SCHEDULER_CAPACITY: usize> BluetoothDtmFirstTaskOwner<'_, S, SCHEDULER_CAPACITY> {
+    /// Hardware role retained by this exact recovery owner.
+    pub const fn role(&self) -> crate::BluetoothDtmRole {
+        self.deferred.role()
+    }
+}
+
+/// Opaque accepted start paired with a retained scheduler epoch.
+#[must_use = "retain the accepted start and scheduler epoch as one recovery owner"]
+pub struct BluetoothDtmFirstEpochOwner<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    deferred: BluetoothDtmDeferredStart<'runtime>,
+    _epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+}
+
+impl<S, const SCHEDULER_CAPACITY: usize> BluetoothDtmFirstEpochOwner<'_, S, SCHEDULER_CAPACITY> {
+    /// Hardware role retained by this exact recovery owner.
+    pub const fn role(&self) -> crate::BluetoothDtmRole {
+        self.deferred.role()
+    }
+}
+
+/// Opaque accepted start paired with one lower pre-`RUN` owner.
+///
+/// Private fields make it impossible to separate portable command order from
+/// the lower failure/current owner at a public recovery boundary.
+#[must_use = "retain the accepted start and lower owner as one transaction"]
+pub struct BluetoothDtmFirstAcceptedFailure<'runtime, Owner> {
+    deferred: BluetoothDtmDeferredStart<'runtime>,
+    owner: Owner,
+}
+
+impl<'runtime, Owner> BluetoothDtmFirstAcceptedFailure<'runtime, Owner> {
+    fn new(deferred: BluetoothDtmDeferredStart<'runtime>, owner: Owner) -> Self {
+        Self { deferred, owner }
+    }
+
+    /// Hardware role retained by this exact failed transition.
+    pub const fn role(&self) -> crate::BluetoothDtmRole {
+        self.deferred.role()
+    }
+}
+
+impl<S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmFirstAcceptedFailure<
+        '_,
+        BluetoothAlwaysAwakePostEnableTimeBeginFailure<'_, S, SCHEDULER_CAPACITY>,
+    >
+{
+    /// Exact cold-acquisition rejection retained by this owner.
+    pub const fn cold_begin_error(&self) -> crate::BluetoothAlwaysAwakePostEnableTimeBeginError {
+        self.owner.error()
+    }
+}
+
+impl<S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmFirstAcceptedFailure<
+        '_,
+        BluetoothAlwaysAwakePostEnableTimeFailure<'_, S, SCHEDULER_CAPACITY>,
+    >
+{
+    /// Exact cold-acquisition fail-stop observation retained by this owner.
+    pub const fn cold_recheck_error(&self) -> crate::BluetoothAlwaysAwakePostEnableTimeError {
+        self.owner.error()
+    }
+}
+
+impl<S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmFirstAcceptedFailure<
+        '_,
+        BluetoothControllerSchedulerCurrentBeginFailure<'_, S, SCHEDULER_CAPACITY>,
+    >
+{
+    /// Exact warm-acquisition rejection retained by this owner.
+    pub const fn warm_begin_error(&self) -> crate::BluetoothControllerSchedulerCurrentBeginError {
+        self.owner.error()
+    }
+}
+
+impl<S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmFirstAcceptedFailure<
+        '_,
+        BluetoothControllerSchedulerCurrentFailure<'_, S, SCHEDULER_CAPACITY>,
+    >
+{
+    /// Exact warm-acquisition fail-stop observation retained by this owner.
+    pub const fn warm_recheck_error(&self) -> crate::BluetoothControllerSchedulerCurrentError {
+        self.owner.error()
+    }
+}
+
+/// Opaque fail-stop owner for an impossible mismatch after combined intake.
+///
+/// Task ownership, classification and next-command authority cannot be
+/// decomposed through this chip API.
+#[must_use = "retain the complete post-intake mismatch owner"]
+pub struct BluetoothDtmIdleCommandMismatch<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _command: LeControllerClassifiedCommand<
+        'runtime,
+        'command,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    >,
+}
+
+impl<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmIdleCommandMismatch<'runtime, 'command, S, SCHEDULER_CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub(crate) const fn new(
+        command: LeControllerClassifiedCommand<
+            'runtime,
+            'command,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ) -> Self {
+        Self { _command: command }
+    }
 }
 
 /// Endpoint-checked disposition of one DTM command while the chip graph is idle.
 ///
 /// Every branch retains the sole task service: a start moves it into the first
-/// runner (or that runner's lossless begin failure), Test End moves it into the
-/// portable zero-count response transaction, and an endpoint mismatch returns
-/// it directly beside the unchanged bound command.
+/// runner (or that runner's lossless begin failure), while immediate responses
+/// and Reset retain their exact affine HCI order.
 #[must_use = "start the first event, publish idle Test End, or retain the mismatch"]
 pub enum BluetoothDtmIdleCommandRoute<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
 where
@@ -57,19 +232,13 @@ where
     /// Initial Controller-time acquisition failed without losing any owner.
     StartFailed(BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>),
     /// Idle Test End became an ordered standard zero-count response.
-    ResponsePending(
-        LeControllerResponsePending<
-            'runtime,
-            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        >,
-    ),
-    /// The task or command belongs to another live HCI endpoint.
-    EndpointMismatch {
-        /// Unchanged sole chip task service.
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        /// Unchanged semantic command retaining its source-epoch proof.
-        command: HciEpochBound<'command, LeDtmCommand>,
-    },
+    ResponsePending(crate::BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>),
+    /// Idle Reset retains its exact command/order until lifecycle completion.
+    ResetBarrier(crate::BluetoothControllerIdleResetBarrier<'runtime, S, SCHEDULER_CAPACITY>),
+    /// Defensive fail-stop owner for an impossible post-intake epoch mismatch.
+    ///
+    /// Classification, task ownership and command authority remain inseparable.
+    EndpointMismatch(BluetoothDtmIdleCommandMismatch<'runtime, 'command, S, SCHEDULER_CAPACITY>),
 }
 
 /// Bounded first-event Controller runner.
@@ -94,23 +263,23 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     ColdCurrent {
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         pending: BluetoothAlwaysAwakePostEnableTimePending<'runtime, S, SCHEDULER_CAPACITY>,
     },
     WarmCurrent {
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         pending: BluetoothControllerSchedulerCurrentPending<'runtime, S, SCHEDULER_CAPACITY>,
     },
     CurrentReady {
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
     },
     Preparation {
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         pending: BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
     },
     TransmitterPrepared {
-        command: LeTransmitterTestV1Command,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         merged: BluetoothDtmEmptySchedulerMergePrepared<
             BluetoothDtmTransmitterEvent,
@@ -118,7 +287,7 @@ where
         >,
     },
     ReceiverPrepared {
-        command: LeReceiverTestV1Command,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         merged: BluetoothDtmEmptySchedulerMergePrepared<
             BluetoothDtmReceiverEvent,
@@ -126,12 +295,12 @@ where
         >,
     },
     TransmitterHead {
-        command: LeTransmitterTestV1Command,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         head: BluetoothDtmSchedulerHeadPublished<BluetoothDtmTransmitterEvent>,
     },
     ReceiverHead {
-        command: LeReceiverTestV1Command,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         head: BluetoothDtmSchedulerHeadPublished<BluetoothDtmReceiverEvent>,
     },
@@ -171,12 +340,12 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     Transmitter {
-        command: LeTransmitterTestV1Command,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         running: BluetoothDtmSchedulerRunning<BluetoothDtmTransmitterEvent>,
     },
     Receiver {
-        command: LeReceiverTestV1Command,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         running: BluetoothDtmSchedulerRunning<BluetoothDtmReceiverEvent>,
     },
@@ -187,15 +356,17 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     Transmitter {
-        response: LeDtmCommandCompleteEvent,
-        hci_epoch: HciEpochIdentity<'runtime>,
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        response: LeControllerResponsePending<
+            'runtime,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
         running: BluetoothDtmSchedulerRunning<BluetoothDtmTransmitterEvent>,
     },
     Receiver {
-        response: LeDtmCommandCompleteEvent,
-        hci_epoch: HciEpochIdentity<'runtime>,
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        response: LeControllerResponsePending<
+            'runtime,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
         running: BluetoothDtmSchedulerRunning<BluetoothDtmReceiverEvent>,
     },
 }
@@ -214,9 +385,7 @@ where
                 task,
                 running,
             } => BluetoothDtmFirstRunningParts::Transmitter {
-                response: command.into_started_command_complete(),
-                hci_epoch: task.hci_epoch_identity(),
-                task,
+                response: command.into_started_response(task),
                 running,
             },
             BluetoothDtmFirstRunningPhase::Receiver {
@@ -224,9 +393,7 @@ where
                 task,
                 running,
             } => BluetoothDtmFirstRunningParts::Receiver {
-                response: command.into_started_command_complete(),
-                hci_epoch: task.hci_epoch_identity(),
-                task,
+                response: command.into_started_response(task),
                 running,
             },
         }
@@ -294,13 +461,13 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     Drain {
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
         idle: BluetoothDtmSessionIdle,
         error: BluetoothDtmControllerEventPreparationError,
     },
     Restore {
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         idle: BluetoothDtmSessionIdle,
         error: BluetoothDtmControllerEventPreparationError,
@@ -319,10 +486,8 @@ where
     Continue(BluetoothDtmFirstPreparationCleanup<'runtime, S, SCHEDULER_CAPACITY>),
     /// The exact graph is idle again beside the command which did not run.
     CleanTask {
-        /// Original semantic command retained for policy or retry.
-        command: BluetoothDtmFirstCommand,
-        /// Complete Controller with its sole DTM graph restored.
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        /// Accepted start and complete Controller with its graph restored.
+        owner: BluetoothDtmFirstTaskOwner<'runtime, S, SCHEDULER_CAPACITY>,
         /// Exact preparation rejection which required cleanup.
         error: BluetoothDtmControllerEventPreparationError,
     },
@@ -343,7 +508,7 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     fn drain(
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
         idle: BluetoothDtmSessionIdle,
         error: BluetoothDtmControllerEventPreparationError,
@@ -403,8 +568,10 @@ where
                 error,
             } => match task.restore_dtm_session_idle(idle) {
                 Ok(()) => BluetoothDtmFirstPreparationCleanupStep::CleanTask {
-                    command,
-                    task,
+                    owner: BluetoothDtmFirstTaskOwner {
+                        deferred: command,
+                        _task: task,
+                    },
                     error,
                 },
                 Err(idle) => BluetoothDtmFirstPreparationCleanupStep::RestoreRejected(Self {
@@ -431,7 +598,7 @@ where
 {
     expected: crate::BluetoothDtmRole,
     observed: crate::BluetoothDtmRole,
-    _command: BluetoothDtmFirstCommand,
+    _command: BluetoothDtmDeferredStart<'runtime>,
     _epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
     _outcome: BluetoothDtmControllerPreparationOutcome,
 }
@@ -457,7 +624,7 @@ pub struct BluetoothDtmFirstIdleRestore<'runtime, S, const SCHEDULER_CAPACITY: u
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    command: BluetoothDtmFirstCommand,
+    command: BluetoothDtmDeferredStart<'runtime>,
     task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     idle: BluetoothDtmSessionIdle,
 }
@@ -469,12 +636,7 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     /// The sole DTM graph is reusable by this exact Controller again.
-    CleanTask {
-        /// Original semantic command which never reached hardware.
-        command: BluetoothDtmFirstCommand,
-        /// Complete Controller with its DTM graph restored.
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    },
+    CleanTask(BluetoothDtmFirstTaskOwner<'runtime, S, SCHEDULER_CAPACITY>),
     /// The slot still rejected the unchanged task/graph pair.
     Rejected(BluetoothDtmFirstIdleRestore<'runtime, S, SCHEDULER_CAPACITY>),
 }
@@ -485,7 +647,7 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     fn new(
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         idle: BluetoothDtmSessionIdle,
     ) -> Self {
@@ -499,10 +661,10 @@ where
     /// Retry one finite restore operation on the same runtime identity.
     pub fn step(mut self) -> BluetoothDtmFirstIdleRestoreStep<'runtime, S, SCHEDULER_CAPACITY> {
         match self.task.restore_dtm_session_idle(self.idle) {
-            Ok(()) => BluetoothDtmFirstIdleRestoreStep::CleanTask {
-                command: self.command,
-                task: self.task,
-            },
+            Ok(()) => BluetoothDtmFirstIdleRestoreStep::CleanTask(BluetoothDtmFirstTaskOwner {
+                deferred: self.command,
+                _task: self.task,
+            }),
             Err(idle) => {
                 self.idle = idle;
                 BluetoothDtmFirstIdleRestoreStep::Rejected(self)
@@ -521,26 +683,36 @@ pub enum BluetoothDtmFirstRunnerFailure<'runtime, S, const SCHEDULER_CAPACITY: u
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    ColdBegin {
-        command: BluetoothDtmFirstCommand,
-        failure: BluetoothAlwaysAwakePostEnableTimeBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
-    },
-    ColdRecheck {
-        command: BluetoothDtmFirstCommand,
-        failure: BluetoothAlwaysAwakePostEnableTimeFailure<'runtime, S, SCHEDULER_CAPACITY>,
-    },
-    WarmBegin {
-        command: BluetoothDtmFirstCommand,
-        failure: BluetoothControllerSchedulerCurrentBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
-    },
-    WarmRecheck {
-        command: BluetoothDtmFirstCommand,
-        failure: BluetoothControllerSchedulerCurrentFailure<'runtime, S, SCHEDULER_CAPACITY>,
-    },
-    SessionActive {
-        command: BluetoothDtmFirstCommand,
-        current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
-    },
+    ColdBegin(
+        BluetoothDtmFirstAcceptedFailure<
+            'runtime,
+            BluetoothAlwaysAwakePostEnableTimeBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ),
+    ColdRecheck(
+        BluetoothDtmFirstAcceptedFailure<
+            'runtime,
+            BluetoothAlwaysAwakePostEnableTimeFailure<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ),
+    WarmBegin(
+        BluetoothDtmFirstAcceptedFailure<
+            'runtime,
+            BluetoothControllerSchedulerCurrentBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ),
+    WarmRecheck(
+        BluetoothDtmFirstAcceptedFailure<
+            'runtime,
+            BluetoothControllerSchedulerCurrentFailure<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ),
+    SessionActive(
+        BluetoothDtmFirstAcceptedFailure<
+            'runtime,
+            BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ),
     /// A failed initial preparation requires time drain and graph restoration.
     PreparationRejected(BluetoothDtmFirstPreparationCleanup<'runtime, S, SCHEDULER_CAPACITY>),
     InvariantFault(BluetoothDtmFirstInvariantFault<'runtime, S, SCHEDULER_CAPACITY>),
@@ -554,22 +726,10 @@ pub enum BluetoothDtmFirstRunnerCancel<'runtime, S, const SCHEDULER_CAPACITY: us
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    CleanTask {
-        command: BluetoothDtmFirstCommand,
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    },
-    CleanEpoch {
-        command: BluetoothDtmFirstCommand,
-        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
-    },
-    NeedsColdTimeDrain {
-        command: BluetoothDtmFirstCommand,
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    },
-    NeedsWarmTimeDrain {
-        command: BluetoothDtmFirstCommand,
-        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
-    },
+    CleanTask(BluetoothDtmFirstTaskOwner<'runtime, S, SCHEDULER_CAPACITY>),
+    CleanEpoch(BluetoothDtmFirstEpochOwner<'runtime, S, SCHEDULER_CAPACITY>),
+    NeedsColdTimeDrain(BluetoothDtmFirstTaskOwner<'runtime, S, SCHEDULER_CAPACITY>),
+    NeedsWarmTimeDrain(BluetoothDtmFirstEpochOwner<'runtime, S, SCHEDULER_CAPACITY>),
     NeedsPreparationCleanup(BluetoothDtmFirstPreparationCleanup<'runtime, S, SCHEDULER_CAPACITY>),
     RestoreRejected(BluetoothDtmFirstIdleRestore<'runtime, S, SCHEDULER_CAPACITY>),
     Failed(BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>),
@@ -593,14 +753,16 @@ where
     )]
     pub(crate) fn begin(
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
     ) -> Result<Self, BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>> {
         match task.retain_scheduler_epoch() {
             Ok(epoch) => match epoch.begin_fresh_scheduler_current() {
                 Ok(pending) => Ok(Self::from_phase(
                     BluetoothDtmFirstRunnerPhase::WarmCurrent { command, pending },
                 )),
-                Err(failure) => Err(BluetoothDtmFirstRunnerFailure::WarmBegin { command, failure }),
+                Err(failure) => Err(BluetoothDtmFirstRunnerFailure::WarmBegin(
+                    BluetoothDtmFirstAcceptedFailure::new(command, failure),
+                )),
             },
             Err(unavailable) => {
                 match unavailable
@@ -610,9 +772,9 @@ where
                     Ok(pending) => Ok(Self::from_phase(
                         BluetoothDtmFirstRunnerPhase::ColdCurrent { command, pending },
                     )),
-                    Err(failure) => {
-                        Err(BluetoothDtmFirstRunnerFailure::ColdBegin { command, failure })
-                    }
+                    Err(failure) => Err(BluetoothDtmFirstRunnerFailure::ColdBegin(
+                        BluetoothDtmFirstAcceptedFailure::new(command, failure),
+                    )),
                 }
             }
         }
@@ -637,7 +799,9 @@ where
                         ))
                     }
                     Err(failure) => BluetoothDtmFirstRunnerStep::Failed(
-                        BluetoothDtmFirstRunnerFailure::ColdRecheck { command, failure },
+                        BluetoothDtmFirstRunnerFailure::ColdRecheck(
+                            BluetoothDtmFirstAcceptedFailure::new(command, failure),
+                        ),
                     ),
                 }
             }
@@ -654,7 +818,9 @@ where
                         ))
                     }
                     Err(failure) => BluetoothDtmFirstRunnerStep::Failed(
-                        BluetoothDtmFirstRunnerFailure::WarmRecheck { command, failure },
+                        BluetoothDtmFirstRunnerFailure::WarmRecheck(
+                            BluetoothDtmFirstAcceptedFailure::new(command, failure),
+                        ),
                     ),
                 }
             }
@@ -792,12 +958,12 @@ where
     }
 
     fn begin_preparation(
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
     ) -> BluetoothDtmFirstRunnerStep<'runtime, S, SCHEDULER_CAPACITY> {
-        match command {
-            BluetoothDtmFirstCommand::Transmitter(command) => {
-                let program = crate::dtm_command::transmitter_program(&command);
+        match &command.kind {
+            BluetoothDtmDeferredStartKind::Transmitter(deferred) => {
+                let program = crate::dtm_command::transmitter_program(deferred.command());
                 let result = current.begin_dtm_transmitter_first_item(
                     program.pattern,
                     program.length,
@@ -805,7 +971,6 @@ where
                     program.phy,
                     program.requested_interval_micros,
                 );
-                let command = BluetoothDtmFirstCommand::Transmitter(command);
                 match result {
                     Ok(pending) => {
                         BluetoothDtmFirstRunnerStep::WaitControllerTime(Self::from_phase(
@@ -815,17 +980,18 @@ where
                     Err(BluetoothDtmControllerInitialPreparationFailure::SessionActive(
                         current,
                     )) => BluetoothDtmFirstRunnerStep::Failed(
-                        BluetoothDtmFirstRunnerFailure::SessionActive { command, current },
+                        BluetoothDtmFirstRunnerFailure::SessionActive(
+                            BluetoothDtmFirstAcceptedFailure::new(command, current),
+                        ),
                     ),
                     Err(BluetoothDtmControllerInitialPreparationFailure::PreparationTerminal(
                         terminal,
                     )) => Self::finish_preparation(command, terminal),
                 }
             }
-            BluetoothDtmFirstCommand::Receiver(command) => {
-                let program = crate::dtm_command::receiver_program(&command);
+            BluetoothDtmDeferredStartKind::Receiver(deferred) => {
+                let program = crate::dtm_command::receiver_program(deferred.command());
                 let result = current.begin_dtm_receiver_first_item(program.channel, program.phy);
-                let command = BluetoothDtmFirstCommand::Receiver(command);
                 match result {
                     Ok(pending) => {
                         BluetoothDtmFirstRunnerStep::WaitControllerTime(Self::from_phase(
@@ -835,7 +1001,9 @@ where
                     Err(BluetoothDtmControllerInitialPreparationFailure::SessionActive(
                         current,
                     )) => BluetoothDtmFirstRunnerStep::Failed(
-                        BluetoothDtmFirstRunnerFailure::SessionActive { command, current },
+                        BluetoothDtmFirstRunnerFailure::SessionActive(
+                            BluetoothDtmFirstAcceptedFailure::new(command, current),
+                        ),
                     ),
                     Err(BluetoothDtmControllerInitialPreparationFailure::PreparationTerminal(
                         terminal,
@@ -846,64 +1014,64 @@ where
     }
 
     fn finish_preparation(
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         terminal: BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     ) -> BluetoothDtmFirstRunnerStep<'runtime, S, SCHEDULER_CAPACITY> {
         let (epoch, outcome) = terminal.into_parts();
-        match (command, outcome) {
+        match (command.kind, outcome) {
             (
-                BluetoothDtmFirstCommand::Transmitter(command),
+                BluetoothDtmDeferredStartKind::Transmitter(deferred),
                 BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Ok(merged)),
             ) => BluetoothDtmFirstRunnerStep::Continue(Self::from_phase(
                 BluetoothDtmFirstRunnerPhase::TransmitterPrepared {
-                    command,
+                    command: BluetoothDtmDeferredStart::transmitter(deferred),
                     task: epoch.into_task_service(),
                     merged,
                 },
             )),
             (
-                BluetoothDtmFirstCommand::Receiver(command),
+                BluetoothDtmDeferredStartKind::Receiver(deferred),
                 BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Ok(merged)),
             ) => BluetoothDtmFirstRunnerStep::Continue(Self::from_phase(
                 BluetoothDtmFirstRunnerPhase::ReceiverPrepared {
-                    command,
+                    command: BluetoothDtmDeferredStart::receiver(deferred),
                     task: epoch.into_task_service(),
                     merged,
                 },
             )),
             (
-                BluetoothDtmFirstCommand::Transmitter(command),
+                BluetoothDtmDeferredStartKind::Transmitter(deferred),
                 BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Err(failure)),
             ) => BluetoothDtmFirstRunnerStep::Failed(
                 BluetoothDtmFirstRunnerFailure::PreparationRejected(
-                    Self::transmitter_preparation_cleanup(command, epoch, failure),
+                    Self::transmitter_preparation_cleanup(deferred, epoch, failure),
                 ),
             ),
             (
-                BluetoothDtmFirstCommand::Receiver(command),
+                BluetoothDtmDeferredStartKind::Receiver(deferred),
                 BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Err(failure)),
             ) => BluetoothDtmFirstRunnerStep::Failed(
                 BluetoothDtmFirstRunnerFailure::PreparationRejected(
-                    Self::receiver_preparation_cleanup(command, epoch, failure),
+                    Self::receiver_preparation_cleanup(deferred, epoch, failure),
                 ),
             ),
-            (command, outcome) => {
+            (kind, outcome) => {
                 BluetoothDtmFirstRunnerStep::Failed(BluetoothDtmFirstRunnerFailure::InvariantFault(
-                    Self::invariant_fault(command, epoch, outcome),
+                    Self::invariant_fault(BluetoothDtmDeferredStart { kind }, epoch, outcome),
                 ))
             }
         }
     }
 
     fn transmitter_preparation_cleanup(
-        command: LeTransmitterTestV1Command,
+        deferred: LeControllerDeferredTransmitterStart<'runtime, ()>,
         epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
         failure: BluetoothDtmControllerTxPreparationFailure,
     ) -> BluetoothDtmFirstPreparationCleanup<'runtime, S, SCHEDULER_CAPACITY> {
         let error = failure.error();
         let (graph, _, _) = failure.into_parts();
         BluetoothDtmFirstPreparationCleanup::drain(
-            BluetoothDtmFirstCommand::Transmitter(command),
+            BluetoothDtmDeferredStart::transmitter(deferred),
             epoch,
             BluetoothDtmSessionIdle::new(graph),
             error,
@@ -911,14 +1079,14 @@ where
     }
 
     fn receiver_preparation_cleanup(
-        command: LeReceiverTestV1Command,
+        deferred: LeControllerDeferredReceiverStart<'runtime, ()>,
         epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
         failure: BluetoothDtmControllerRxPreparationFailure,
     ) -> BluetoothDtmFirstPreparationCleanup<'runtime, S, SCHEDULER_CAPACITY> {
         let error = failure.error();
         let (graph, _) = failure.into_owner().into_memory_and_packet_count();
         BluetoothDtmFirstPreparationCleanup::drain(
-            BluetoothDtmFirstCommand::Receiver(command),
+            BluetoothDtmDeferredStart::receiver(deferred),
             epoch,
             BluetoothDtmSessionIdle::new(graph),
             error,
@@ -926,40 +1094,39 @@ where
     }
 
     fn cancelled_preparation(
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         terminal: BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     ) -> BluetoothDtmFirstRunnerCancel<'runtime, S, SCHEDULER_CAPACITY> {
         let (epoch, outcome) = terminal.into_parts();
-        match (command, outcome) {
+        match (command.kind, outcome) {
             (
-                BluetoothDtmFirstCommand::Transmitter(command),
+                BluetoothDtmDeferredStartKind::Transmitter(deferred),
                 BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Err(failure)),
             ) => BluetoothDtmFirstRunnerCancel::NeedsPreparationCleanup(
-                Self::transmitter_preparation_cleanup(command, epoch, failure),
+                Self::transmitter_preparation_cleanup(deferred, epoch, failure),
             ),
             (
-                BluetoothDtmFirstCommand::Receiver(command),
+                BluetoothDtmDeferredStartKind::Receiver(deferred),
                 BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Err(failure)),
             ) => BluetoothDtmFirstRunnerCancel::NeedsPreparationCleanup(
-                Self::receiver_preparation_cleanup(command, epoch, failure),
+                Self::receiver_preparation_cleanup(deferred, epoch, failure),
             ),
-            (command, outcome) => BluetoothDtmFirstRunnerCancel::Failed(
+            (kind, outcome) => BluetoothDtmFirstRunnerCancel::Failed(
                 BluetoothDtmFirstRunnerFailure::InvariantFault(Self::invariant_fault(
-                    command, epoch, outcome,
+                    BluetoothDtmDeferredStart { kind },
+                    epoch,
+                    outcome,
                 )),
             ),
         }
     }
 
     fn invariant_fault(
-        command: BluetoothDtmFirstCommand,
+        command: BluetoothDtmDeferredStart<'runtime>,
         epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
         outcome: BluetoothDtmControllerPreparationOutcome,
     ) -> BluetoothDtmFirstInvariantFault<'runtime, S, SCHEDULER_CAPACITY> {
-        let expected = match &command {
-            BluetoothDtmFirstCommand::Transmitter(_) => crate::BluetoothDtmRole::Transmitter,
-            BluetoothDtmFirstCommand::Receiver(_) => crate::BluetoothDtmRole::Receiver,
-        };
+        let expected = command.role();
         let observed = match &outcome {
             BluetoothDtmControllerPreparationOutcome::TransmitterFirst(_)
             | BluetoothDtmControllerPreparationOutcome::TransmitterRecurring(_) => {
@@ -984,27 +1151,39 @@ where
         match self.phase {
             BluetoothDtmFirstRunnerPhase::ColdCurrent { command, pending } => {
                 match pending.cancel() {
-                    Ok(task) => BluetoothDtmFirstRunnerCancel::NeedsColdTimeDrain { command, task },
+                    Ok(task) => BluetoothDtmFirstRunnerCancel::NeedsColdTimeDrain(
+                        BluetoothDtmFirstTaskOwner {
+                            deferred: command,
+                            _task: task,
+                        },
+                    ),
                     Err(failure) => BluetoothDtmFirstRunnerCancel::Failed(
-                        BluetoothDtmFirstRunnerFailure::ColdRecheck { command, failure },
+                        BluetoothDtmFirstRunnerFailure::ColdRecheck(
+                            BluetoothDtmFirstAcceptedFailure::new(command, failure),
+                        ),
                     ),
                 }
             }
             BluetoothDtmFirstRunnerPhase::WarmCurrent { command, pending } => {
                 match pending.cancel() {
-                    Ok(epoch) => {
-                        BluetoothDtmFirstRunnerCancel::NeedsWarmTimeDrain { command, epoch }
-                    }
+                    Ok(epoch) => BluetoothDtmFirstRunnerCancel::NeedsWarmTimeDrain(
+                        BluetoothDtmFirstEpochOwner {
+                            deferred: command,
+                            _epoch: epoch,
+                        },
+                    ),
                     Err(failure) => BluetoothDtmFirstRunnerCancel::Failed(
-                        BluetoothDtmFirstRunnerFailure::WarmRecheck { command, failure },
+                        BluetoothDtmFirstRunnerFailure::WarmRecheck(
+                            BluetoothDtmFirstAcceptedFailure::new(command, failure),
+                        ),
                     ),
                 }
             }
             BluetoothDtmFirstRunnerPhase::CurrentReady { command, current } => {
-                BluetoothDtmFirstRunnerCancel::CleanEpoch {
-                    command,
-                    epoch: current.into_retained_epoch(),
-                }
+                BluetoothDtmFirstRunnerCancel::CleanEpoch(BluetoothDtmFirstEpochOwner {
+                    deferred: command,
+                    _epoch: current.into_retained_epoch(),
+                })
             }
             BluetoothDtmFirstRunnerPhase::Preparation { command, pending } => {
                 Self::cancelled_preparation(command, pending.cancel())
@@ -1016,9 +1195,13 @@ where
             } => match task.cancel_dtm_transmitter_first_item(merged) {
                 Ok((graph, _, _)) => {
                     let idle = BluetoothDtmSessionIdle::new(graph);
-                    let command = BluetoothDtmFirstCommand::Transmitter(command);
                     match task.restore_dtm_session_idle(idle) {
-                        Ok(()) => BluetoothDtmFirstRunnerCancel::CleanTask { command, task },
+                        Ok(()) => {
+                            BluetoothDtmFirstRunnerCancel::CleanTask(BluetoothDtmFirstTaskOwner {
+                                deferred: command,
+                                _task: task,
+                            })
+                        }
                         Err(idle) => BluetoothDtmFirstRunnerCancel::RestoreRejected(
                             BluetoothDtmFirstIdleRestore::new(command, task, idle),
                         ),
@@ -1040,9 +1223,13 @@ where
                 Ok(owner) => {
                     let (graph, _) = owner.into_memory_and_packet_count();
                     let idle = BluetoothDtmSessionIdle::new(graph);
-                    let command = BluetoothDtmFirstCommand::Receiver(command);
                     match task.restore_dtm_session_idle(idle) {
-                        Ok(()) => BluetoothDtmFirstRunnerCancel::CleanTask { command, task },
+                        Ok(()) => {
+                            BluetoothDtmFirstRunnerCancel::CleanTask(BluetoothDtmFirstTaskOwner {
+                                deferred: command,
+                                _task: task,
+                            })
+                        }
                         Err(idle) => BluetoothDtmFirstRunnerCancel::RestoreRejected(
                             BluetoothDtmFirstIdleRestore::new(command, task, idle),
                         ),

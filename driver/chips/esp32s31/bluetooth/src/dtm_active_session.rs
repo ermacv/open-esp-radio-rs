@@ -9,13 +9,12 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, HciEpochBound, InProcessHciControllerEndpoint,
-    LeControllerClassifiedCommandRoute as HciClassifiedCommandRoute,
-    LeControllerCommandClassification, LeControllerCommandEndpoint,
+    HciChannelError, HciEpochBound, HostToControllerFrame,
+    LeControllerActiveDtmCommandRoute as HciActiveDtmCommandRoute, LeControllerClassifiedCommand,
+    LeControllerClassifiedCommandRoute as HciClassifiedCommandRoute, LeControllerCommandEndpoint,
+    LeControllerCommandIntake, LeControllerCommandReady as HciCommandReady,
     LeControllerResetBarrier as HciResetBarrier, LeControllerResponsePending as HciResponsePending,
     LeControllerResponsePublication as HciResponsePublication,
-    LeControllerResponsePublished as HciResponsePublished, LeDtmActiveSessionDisposition,
-    LeDtmCommandCompleteEvent,
 };
 
 use crate::{
@@ -47,31 +46,19 @@ pub struct BluetoothDtmResponsePending<'runtime> {
     transaction: HciResponsePending<'runtime, ()>,
 }
 
-/// HCI-order axis proving the previous command response was durably enqueued.
+/// HCI-order axis carrying the sole authority to accept the next command.
 ///
 /// Later HCI command intake is implemented only for sessions carrying this
 /// marker. The epoch remains available to bind that intake to the same channel.
-#[must_use = "retain the published order proof with the active radio session"]
-pub struct BluetoothDtmResponsePublished<'runtime> {
-    transaction: HciResponsePublished<'runtime, ()>,
-}
-
-impl<'runtime> BluetoothDtmResponsePublished<'runtime> {
-    pub(crate) fn begin_next_response<Owner>(
-        self,
-        owner: Owner,
-        response: LeDtmCommandCompleteEvent,
-    ) -> HciResponsePending<'runtime, Owner> {
-        self.transaction
-            .map_owner(|()| owner)
-            .begin_next_response(response)
-    }
+#[must_use = "retain command-ready authority with the active radio session"]
+pub struct BluetoothDtmOrderReady<'runtime> {
+    transaction: HciCommandReady<'runtime, ()>,
 }
 
 /// One affine DTM session with independent radio and HCI-order axes.
 ///
 /// `Order` is either [`BluetoothDtmResponsePending`] or
-/// [`BluetoothDtmResponsePublished`]. Radio progress consumes and returns
+/// [`BluetoothDtmOrderReady`]. Radio progress consumes and returns
 /// the same `Order`, so C2H backpressure cannot stop completion or recurrence.
 #[must_use = "advance both the active radio and HCI-order axes"]
 pub struct BluetoothDtmActiveSession<'runtime, S, const CAPACITY: usize, Order>
@@ -88,7 +75,7 @@ pub type BluetoothDtmResponsePendingSession<'runtime, S, const CAPACITY: usize> 
 
 /// Active session whose HCI order permits the next semantic command.
 pub type BluetoothDtmCommandReadySession<'runtime, S, const CAPACITY: usize> =
-    BluetoothDtmActiveSession<'runtime, S, CAPACITY, BluetoothDtmResponsePublished<'runtime>>;
+    BluetoothDtmActiveSession<'runtime, S, CAPACITY, BluetoothDtmOrderReady<'runtime>>;
 
 /// Result of attempting the sole durable current-response publication.
 #[must_use = "retain the unchanged pending session unless publication succeeds"]
@@ -112,7 +99,7 @@ where
 /// One accepted Reset paired opaquely with the exact active DTM radio/order owner.
 ///
 /// Construction does not mutate bootstrap state or claim that active radio
-/// work has quiesced. Neither the radio owner nor its published-order proof can
+/// work has quiesced. Neither the radio owner nor its command-ready authority can
 /// be separated from the Reset token through this API.
 #[must_use = "retain the Reset barrier until active radio work has quiesced"]
 pub struct BluetoothDtmActiveResetBarrier<'runtime, S, const CAPACITY: usize>
@@ -145,12 +132,49 @@ where
     TestEnd(crate::BluetoothDtmStoppingRunner<'runtime, S, CAPACITY>),
     /// Reset must wait behind lifecycle quiescence without exposing either axis.
     ResetBarrier(BluetoothDtmActiveResetBarrier<'runtime, S, CAPACITY>),
-    /// Either the session or complete classification belongs to another HCI epoch.
-    EndpointMismatch {
-        /// Unchanged command-ready active session.
+    /// Defensive fail-stop owner for an impossible post-intake epoch mismatch.
+    EndpointMismatch(BluetoothDtmActiveCommandMismatch<'runtime, 'command, S, CAPACITY>),
+}
+
+/// Opaque active command retaining radio state, classification and HCI order.
+#[must_use = "retain the complete post-intake mismatch owner"]
+pub struct BluetoothDtmActiveCommandMismatch<'runtime, 'command, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _command: LeControllerClassifiedCommand<
+        'runtime,
+        'command,
+        BluetoothDtmActiveRadio<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// One non-blocking active-session command intake through the combined endpoint.
+#[must_use = "route the command or retain the returned active session"]
+pub enum BluetoothDtmActiveCommandIntake<'runtime, 'command, 'buffer, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Routed {
+        route: BluetoothDtmActiveControllerCommandRoute<'runtime, 'command, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Empty {
         session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
-        /// Unchanged complete classification with its exact origin proof.
-        command: HciEpochBound<'command, LeControllerCommandClassification>,
+        buffer: &'buffer mut [u8],
+    },
+    EndpointMismatch {
+        session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Channel {
+        session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+        error: HciChannelError,
+    },
+    NonCommand {
+        session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
     },
 }
 
@@ -244,7 +268,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -255,6 +279,27 @@ where
         self.order.transaction.matches_endpoint(controller)
     }
 
+    /// Wait until the matching Controller-to-Host queue may accept this response.
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller
+            .wait_response_capacity(&self.order.transaction)
+            .await
+    }
+
     /// Attempt exact-once response publication without advancing radio state.
     pub fn try_publish_response<
         M: RawMutex,
@@ -263,7 +308,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -278,7 +323,7 @@ where
             HciResponsePublication::Published(transaction) => {
                 BluetoothDtmResponsePublication::Published(BluetoothDtmActiveSession {
                     radio: self.radio,
-                    order: BluetoothDtmResponsePublished { transaction },
+                    order: BluetoothDtmOrderReady { transaction },
                 })
             }
             HciResponsePublication::Pending(transaction) => {
@@ -308,7 +353,7 @@ where
 }
 
 impl<'runtime, S, const CAPACITY: usize>
-    BluetoothDtmActiveSession<'runtime, S, CAPACITY, BluetoothDtmResponsePublished<'runtime>>
+    BluetoothDtmActiveSession<'runtime, S, CAPACITY, BluetoothDtmOrderReady<'runtime>>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
@@ -320,7 +365,7 @@ where
         const PACKET_CAPACITY: usize,
     >(
         &self,
-        controller: &InProcessHciControllerEndpoint<
+        controller: &LeControllerCommandEndpoint<
             '_,
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -331,16 +376,34 @@ where
         self.order.transaction.accepts_endpoint(controller)
     }
 
-    /// Route one endpoint-bound Controller classification under active-session policy.
+    /// Wait until the matching Host queue may contain a command.
     ///
-    /// Both the published response marker and the command must match the
-    /// supplied endpoint. Terminal classifications and a second start enter the
-    /// same generic response axis; Test End enters the existing stopping runner.
-    /// Non-Reset bootstrap commands dispatch immediately into the same response
-    /// axis. Reset instead remains an opaque lifecycle barrier. Until a pending
-    /// response publishes, no value carrying command-ready authority exists.
-    pub fn route_active_controller_command<
+    /// Cancellation preserves the complete active session and its sole affine
+    /// next-command authority.
+    pub async fn wait_command_available<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller
+            .wait_command_available(&self.order.transaction)
+            .await
+    }
+
+    /// Consume, classify and route at most one active-session Host command.
+    pub fn try_route_active_controller_command_with_buffer<
         'command,
+        'buffer,
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
         const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -348,66 +411,122 @@ where
     >(
         self,
         controller: &mut LeControllerCommandEndpoint<
-            '_,
+            'command,
             M,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-        command: HciEpochBound<'command, LeControllerCommandClassification>,
-    ) -> BluetoothDtmActiveControllerCommandRoute<'runtime, 'command, S, CAPACITY> {
+        buffer: &'buffer mut [u8],
+    ) -> BluetoothDtmActiveCommandIntake<'runtime, 'command, 'buffer, S, CAPACITY> {
         let Self { radio, order } = self;
-        match controller.route_classified_command(order.transaction, command) {
+        let ready = order.transaction.map_owner(|()| radio);
+        match controller.try_receive_classified_command_with_buffer(ready, buffer) {
+            LeControllerCommandIntake::Command { command, buffer } => {
+                BluetoothDtmActiveCommandIntake::Routed {
+                    route: Self::route_active_classified_command(controller, command),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::Empty { ready, buffer } => {
+                BluetoothDtmActiveCommandIntake::Empty {
+                    session: Self::from_ready(ready),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::EndpointMismatch { ready, buffer } => {
+                BluetoothDtmActiveCommandIntake::EndpointMismatch {
+                    session: Self::from_ready(ready),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::Channel {
+                ready,
+                buffer,
+                error,
+            } => BluetoothDtmActiveCommandIntake::Channel {
+                session: Self::from_ready(ready),
+                buffer,
+                error,
+            },
+            LeControllerCommandIntake::NonCommand { ready, frame } => {
+                BluetoothDtmActiveCommandIntake::NonCommand {
+                    session: Self::from_ready(ready),
+                    frame,
+                }
+            }
+        }
+    }
+
+    fn from_ready(
+        ready: HciCommandReady<'runtime, BluetoothDtmActiveRadio<'runtime, S, CAPACITY>>,
+    ) -> Self {
+        let (radio, transaction) = ready.into_parts();
+        Self {
+            radio,
+            order: BluetoothDtmOrderReady { transaction },
+        }
+    }
+
+    fn route_active_classified_command<
+        'command,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        controller: &mut LeControllerCommandEndpoint<
+            'command,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        command: LeControllerClassifiedCommand<
+            'runtime,
+            'command,
+            BluetoothDtmActiveRadio<'runtime, S, CAPACITY>,
+        >,
+    ) -> BluetoothDtmActiveControllerCommandRoute<'runtime, 'command, S, CAPACITY> {
+        match controller.route_classified_command(command) {
             HciClassifiedCommandRoute::ResponsePending(pending) => {
+                let (radio, transaction) = pending.into_parts();
                 BluetoothDtmActiveControllerCommandRoute::ResponsePending(
                     BluetoothDtmActiveSession {
                         radio,
-                        order: BluetoothDtmResponsePending {
-                            transaction: pending,
-                        },
+                        order: BluetoothDtmResponsePending { transaction },
                     },
                 )
             }
-            HciClassifiedCommandRoute::Dtm { published, command } => {
-                match command.into_active_session_disposition() {
-                    LeDtmActiveSessionDisposition::RejectControllerBusy(response) => {
+            HciClassifiedCommandRoute::Dtm(deferred) => {
+                match deferred.into_active_session_route() {
+                    HciActiveDtmCommandRoute::ResponsePending(pending) => {
+                        let (radio, transaction) = pending.into_parts();
                         BluetoothDtmActiveControllerCommandRoute::ResponsePending(
                             BluetoothDtmActiveSession {
                                 radio,
-                                order: BluetoothDtmResponsePending {
-                                    transaction: published.begin_next_response(response),
-                                },
+                                order: BluetoothDtmResponsePending { transaction },
                             },
                         )
                     }
-                    LeDtmActiveSessionDisposition::End(command) => {
+                    HciActiveDtmCommandRoute::TestEnd(deferred) => {
+                        let (radio, deferred) = deferred.into_parts();
                         BluetoothDtmActiveControllerCommandRoute::TestEnd(
-                            crate::BluetoothDtmStoppingRunner::new(
-                                radio,
-                                BluetoothDtmResponsePublished {
-                                    transaction: published,
-                                },
-                                command,
-                            ),
+                            crate::BluetoothDtmStoppingRunner::new(radio, deferred),
                         )
                     }
                 }
             }
             HciClassifiedCommandRoute::ResetBarrier(barrier) => {
+                let (radio, barrier) = barrier.into_parts();
                 BluetoothDtmActiveControllerCommandRoute::ResetBarrier(
                     BluetoothDtmActiveResetBarrier { radio, barrier },
                 )
             }
-            HciClassifiedCommandRoute::EndpointMismatch { published, command } => {
-                BluetoothDtmActiveControllerCommandRoute::EndpointMismatch {
-                    session: BluetoothDtmActiveSession {
-                        radio,
-                        order: BluetoothDtmResponsePublished {
-                            transaction: published,
-                        },
-                    },
-                    command,
-                }
+            HciClassifiedCommandRoute::EndpointMismatch(command) => {
+                BluetoothDtmActiveControllerCommandRoute::EndpointMismatch(
+                    BluetoothDtmActiveCommandMismatch { _command: command },
+                )
             }
         }
     }
@@ -571,13 +690,11 @@ where
 {
     /// Split first `RUN` into independently progressing radio and HCI-order axes.
     pub fn into_active_session(self) -> BluetoothDtmResponsePendingSession<'runtime, S, CAPACITY> {
-        let (response, hci_epoch, completion) =
+        let (transaction, completion) =
             BluetoothDtmActiveCompletion::from_first_running(self.into_parts());
         BluetoothDtmActiveSession {
             radio: BluetoothDtmActiveRadio::Completion(completion),
-            order: BluetoothDtmResponsePending {
-                transaction: HciResponsePending::new((), response, hci_epoch),
-            },
+            order: BluetoothDtmResponsePending { transaction },
         }
     }
 }

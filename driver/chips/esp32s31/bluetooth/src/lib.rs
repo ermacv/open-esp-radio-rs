@@ -153,11 +153,15 @@ pub use controller_start::{
     BluetoothAlwaysAwakePostEnableTimeError, BluetoothAlwaysAwakePostEnableTimeFailure,
     BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep, BluetoothAlwaysAwakePostEnableTimePending,
     BluetoothAlwaysAwakePostEnableTimeStep, BluetoothAlwaysAwakeTimeObservedAfterEnable,
+    BluetoothControllerIdleCommandIntake, BluetoothControllerIdleCommandTask,
+    BluetoothControllerIdleResetBarrier, BluetoothControllerIdleResetCompletion,
+    BluetoothControllerIdleResponsePending, BluetoothControllerIdleResponsePublication,
     BluetoothControllerInterruptOwnerPublicationFailure,
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
     BluetoothControllerPublishedInterruptService, BluetoothControllerPublishedRuntimeEndpoints,
+    BluetoothControllerPublishedRuntimeSplit, BluetoothControllerPublishedRuntimeSplitFailure,
     BluetoothControllerPublishedTaskService, BluetoothControllerSchedulerCurrentBeginError,
     BluetoothControllerSchedulerCurrentBeginFailure, BluetoothControllerSchedulerCurrentError,
     BluetoothControllerSchedulerCurrentFailure, BluetoothControllerSchedulerCurrentPending,
@@ -189,12 +193,12 @@ pub use dtm_active::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_active_session::{
+    BluetoothDtmActiveCommandIntake, BluetoothDtmActiveCommandMismatch,
     BluetoothDtmActiveControllerCommandRoute, BluetoothDtmActiveRadioWait,
     BluetoothDtmActiveResetBarrier, BluetoothDtmActiveSession, BluetoothDtmActiveSessionFault,
     BluetoothDtmActiveSessionFaultCause, BluetoothDtmActiveSessionRadioStep,
-    BluetoothDtmCommandReadySession, BluetoothDtmResponsePending,
+    BluetoothDtmCommandReadySession, BluetoothDtmOrderReady, BluetoothDtmResponsePending,
     BluetoothDtmResponsePendingSession, BluetoothDtmResponsePublication,
-    BluetoothDtmResponsePublished,
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{
@@ -241,12 +245,13 @@ pub use dtm_reset::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_runner::{
-    BluetoothDtmFirstCommand, BluetoothDtmFirstIdleRestore, BluetoothDtmFirstIdleRestoreStep,
+    BluetoothDtmDeferredStart, BluetoothDtmFirstAcceptedFailure, BluetoothDtmFirstEpochOwner,
+    BluetoothDtmFirstIdleRestore, BluetoothDtmFirstIdleRestoreStep,
     BluetoothDtmFirstInvariantFault, BluetoothDtmFirstPreparationCleanup,
     BluetoothDtmFirstPreparationCleanupStep, BluetoothDtmFirstRunner,
     BluetoothDtmFirstRunnerCancel, BluetoothDtmFirstRunnerFailure, BluetoothDtmFirstRunnerRetry,
     BluetoothDtmFirstRunnerRetryCause, BluetoothDtmFirstRunnerStep, BluetoothDtmFirstRunning,
-    BluetoothDtmIdleCommandRoute,
+    BluetoothDtmFirstTaskOwner, BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute,
 };
 pub use dtm_rx_completion::{
     BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,

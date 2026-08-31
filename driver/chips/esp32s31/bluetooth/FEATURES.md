@@ -59,10 +59,11 @@ operations never expose the Timeline itself; HCI and interrupt endpoints cannot 
 slots, callers cannot build a raw epoch or event plan, and
 `BluetoothControllerTimeSample` is crate-private. A private authority minted
 only while splitting the terminal powered BLE-PHY owner lets that same task
-service complete standalone RF-ready requests; the resulting token is opaque,
-non-`Copy` and never accepted as a detached scheduler instant. Initial TX/RX
-consume current before RF-ready, recurring RX consumes RF-ready before current,
-and recurring TX consumes current only.
+service complete standalone post-enable timing requests; the resulting token
+is opaque, non-`Copy` and never accepted as a detached scheduler instant. It
+does not claim RF wake or analog readiness. Initial TX/RX consume current
+before post-enable timing, recurring RX consumes post-enable timing before
+current, and recurring TX consumes current only.
 Initial TX/RX admission and later sequence authorization are distinct affine
 latch requests separated by the actual overlap-resolving reservation.
 Recurring TX/RX has a distinct exact-window reservation phase and performs only
@@ -117,11 +118,11 @@ initial/recurring cancellation boundary. These transitions are now composed by
 the production command actor and finite event runners. The first post-enable controller sample
 initializes the persistent scheduler epoch, and each owning acquisition
 reanchors that epoch before one preparation consumes its private current. The
-same movable post-split task service now privately acquires RF-ready, admission and
+same movable post-split task service now privately acquires post-enable timing, admission and
 sequence in their exact source order, publishes the resulting head and owns the
 existing RUN-through-recycle suffix. The reviewed standalone margin is retained
 by the source-owned scheduler policy, while the completed powered BLE-PHY plus
-always-awake time request supplies a non-detachable RF-ready result. The first-event
+always-awake time request supplies a non-detachable timing result without an RF-readiness claim. The first-event
 runner sequences semantic HCI TX/RX v1 through this complete bounded prefix and
 retains the resulting active owner through later response backpressure. An
 executor-neutral active-completion runner now joins that owner to the complete

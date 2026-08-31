@@ -89,7 +89,7 @@ gaps = [
 [[capabilities]]
 id = "controller-timebase"
 title = "Event-driven controller scheduler timebase"
-scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone RF-ready projection exact initial current-before-RF recurring-RX RF-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
+scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone post-enable timing projection without an RF-readiness claim exact initial current-before-post-enable recurring-RX post-enable-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -272,7 +272,7 @@ gaps = [
 [[capabilities]]
 id = "dtm-tx-timing"
 title = "DTM transmitter interval and scheduler timing"
-scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone RF-ready projection initial-TX current-before-RF and recurring-TX current-only acquisition order"
+scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone post-enable timing projection initial-TX current-before-post-enable and recurring-TX current-only acquisition order"
 implementation = "incomplete"
 host = "covered"
 async = "not-applicable"

@@ -1197,7 +1197,7 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
-    rf_ready: crate::ble_phy::BluetoothDtmRfReadyAuthority,
+    always_awake_timing: crate::ble_phy::BluetoothDtmAlwaysAwakeTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
 
@@ -1653,7 +1653,7 @@ pub enum BluetoothDtmControllerPreparationOutcome {
 
 #[cfg(target_arch = "riscv32")]
 enum BluetoothDtmControllerPreparationPhase {
-    TransmitterFirstRfReady {
+    TransmitterFirstAlwaysAwakeTiming {
         owner: crate::BluetoothDtmPreparedTxGraph,
         link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
@@ -1661,21 +1661,21 @@ enum BluetoothDtmControllerPreparationPhase {
         requested_interval_micros: u16,
         now: crate::controller_time::BluetoothControllerSchedulerNow,
     },
-    ReceiverFirstRfReady {
+    ReceiverFirstAlwaysAwakeTiming {
         owner: crate::BluetoothDtmReceiverCpuOwned,
         link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
         now: crate::controller_time::BluetoothControllerSchedulerNow,
     },
-    ReceiverRecurringRfReady {
+    ReceiverRecurringAlwaysAwakeTiming {
         owner: crate::BluetoothDtmActiveReceiverCpuOwned,
         epoch: crate::BluetoothControllerSchedulerEpoch,
     },
     ReceiverRecurringCurrent {
         owner: crate::BluetoothDtmActiveReceiverCpuOwned,
         epoch: crate::BluetoothControllerSchedulerEpoch,
-        rf_ready: crate::BluetoothDtmRfReady,
+        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
     },
     TransmitterFirstAdmission(crate::scheduler::BluetoothDtmTransmitterFirstStaged),
     ReceiverFirstAdmission(crate::scheduler::BluetoothDtmReceiverFirstStaged),
@@ -1692,15 +1692,16 @@ struct BluetoothDtmControllerPreparationTimeOwner<'runtime, S, const SCHEDULER_C
     cancelled: Option<BluetoothDtmControllerPreparationOutcome>,
 }
 
-/// One exact RF-ready, current, admission or sequence-time request.
+/// One exact post-enable timing, current, admission or sequence-time request.
 ///
-/// Initial operations acquire RF-ready after their current, then admission
-/// before reservation and sequence only after reservation. Recurring RX
-/// acquires RF-ready before current; recurring TX starts after current without
-/// RF-ready. Explicit cancellation returns the task owner and releases any
-/// retained reservation. Dropping cancels the exact latch request but also
-/// drops the sole task owner as a deliberate fail-stop; the long-lived runner
-/// must therefore retain this state and use its explicit cancellation edge.
+/// Initial operations acquire post-enable timing after their current, then
+/// admission before reservation and sequence only after reservation. Recurring
+/// RX acquires post-enable timing before current; recurring TX starts after
+/// current without that phase. Explicit cancellation returns the task owner and
+/// releases any retained reservation. Dropping cancels the exact latch request
+/// but also drops the sole task owner as a deliberate fail-stop; the long-lived
+/// runner must therefore retain this state and use its explicit cancellation
+/// edge.
 #[must_use = "recheck, cancel, or drop the exact DTM time request"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothDtmControllerPreparationPending<'runtime, S, const SCHEDULER_CAPACITY: usize> {
@@ -1887,7 +1888,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .expect("completed DTM time request retains its exact phase");
         let mut controller = owner.controller;
         match phase {
-            BluetoothDtmControllerPreparationPhase::TransmitterFirstRfReady {
+            BluetoothDtmControllerPreparationPhase::TransmitterFirstAlwaysAwakeTiming {
                 owner,
                 link_state,
                 channel,
@@ -1895,7 +1896,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 requested_interval_micros,
                 now,
             } => {
-                let rf_ready = controller.rf_ready.complete(now.epoch(), sample);
+                let timing_ready = controller.always_awake_timing.complete(now.epoch(), sample);
                 let staged = match controller.runtime.stage_dtm_transmitter_first_item(
                     owner,
                     link_state,
@@ -1903,7 +1904,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     phy,
                     requested_interval_micros,
                     now,
-                    rf_ready,
+                    timing_ready,
                 ) {
                     Ok(staged) => staged,
                     Err(failure) => {
@@ -1922,18 +1923,22 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Err(terminal) => BluetoothDtmControllerPreparationStep::Terminal(terminal),
                 }
             }
-            BluetoothDtmControllerPreparationPhase::ReceiverFirstRfReady {
+            BluetoothDtmControllerPreparationPhase::ReceiverFirstAlwaysAwakeTiming {
                 owner,
                 link_state,
                 channel,
                 phy,
                 now,
             } => {
-                let rf_ready = controller.rf_ready.complete(now.epoch(), sample);
-                let staged = match controller
-                    .runtime
-                    .stage_dtm_receiver_first_item(owner, link_state, channel, phy, now, rf_ready)
-                {
+                let timing_ready = controller.always_awake_timing.complete(now.epoch(), sample);
+                let staged = match controller.runtime.stage_dtm_receiver_first_item(
+                    owner,
+                    link_state,
+                    channel,
+                    phy,
+                    now,
+                    timing_ready,
+                ) {
                     Ok(staged) => staged,
                     Err(failure) => {
                         return Self::terminal(
@@ -1949,13 +1954,16 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Err(terminal) => BluetoothDtmControllerPreparationStep::Terminal(terminal),
                 }
             }
-            BluetoothDtmControllerPreparationPhase::ReceiverRecurringRfReady { owner, epoch } => {
-                let rf_ready = controller.rf_ready.complete(epoch, sample);
+            BluetoothDtmControllerPreparationPhase::ReceiverRecurringAlwaysAwakeTiming {
+                owner,
+                epoch,
+            } => {
+                let timing_ready = controller.always_awake_timing.complete(epoch, sample);
                 match controller.begin_dtm_preparation_time(
                     BluetoothDtmControllerPreparationPhase::ReceiverRecurringCurrent {
                         owner,
                         epoch,
-                        rf_ready,
+                        timing_ready,
                     },
                 ) {
                     Ok(pending) => BluetoothDtmControllerPreparationStep::Pending(pending),
@@ -1965,7 +1973,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             BluetoothDtmControllerPreparationPhase::ReceiverRecurringCurrent {
                 owner,
                 epoch,
-                rf_ready,
+                timing_ready,
             } => {
                 let epoch = epoch.reanchor(&sample);
                 *controller.scheduler_epoch = Some(epoch);
@@ -1973,10 +1981,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     crate::controller_time::BluetoothControllerSchedulerNow::from_retained_epoch(
                         epoch, sample,
                     );
-                let staged = match controller
-                    .runtime
-                    .stage_dtm_receiver_recurring_item(owner, now, rf_ready)
-                {
+                let staged = match controller.runtime.stage_dtm_receiver_recurring_item(
+                    owner,
+                    now,
+                    timing_ready,
+                ) {
                     Ok(staged) => staged,
                     Err(failure) => {
                         return Self::terminal(
@@ -2246,17 +2255,22 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         error: crate::BluetoothDtmControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerPreparationOutcome {
         match phase {
-            BluetoothDtmControllerPreparationPhase::TransmitterFirstRfReady { owner, .. } => {
-                BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Err(self
-                    .runtime
-                    .reject_dtm_transmitter_first_before_stage(owner, error)))
+            BluetoothDtmControllerPreparationPhase::TransmitterFirstAlwaysAwakeTiming {
+                owner,
+                ..
+            } => BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Err(self
+                .runtime
+                .reject_dtm_transmitter_first_before_stage(owner, error))),
+            BluetoothDtmControllerPreparationPhase::ReceiverFirstAlwaysAwakeTiming {
+                owner,
+                ..
+            } => BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Err(self
+                .runtime
+                .reject_dtm_receiver_first_before_stage(owner, error))),
+            BluetoothDtmControllerPreparationPhase::ReceiverRecurringAlwaysAwakeTiming {
+                owner,
+                ..
             }
-            BluetoothDtmControllerPreparationPhase::ReceiverFirstRfReady { owner, .. } => {
-                BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Err(self
-                    .runtime
-                    .reject_dtm_receiver_first_before_stage(owner, error)))
-            }
-            BluetoothDtmControllerPreparationPhase::ReceiverRecurringRfReady { owner, .. }
             | BluetoothDtmControllerPreparationPhase::ReceiverRecurringCurrent { owner, .. } => {
                 BluetoothDtmControllerPreparationOutcome::ReceiverRecurring(Err(self
                     .runtime
@@ -2299,7 +2313,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete role retry owner"
     )]
-    fn begin_dtm_rf_ready_time(
+    fn begin_dtm_always_awake_timing(
         mut self,
         phase: BluetoothDtmControllerPreparationPhase,
     ) -> Result<
@@ -2482,11 +2496,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         })
     }
 
-    /// Begin recurring receiver preparation in vendor RF-before-current order.
+    /// Begin recurring receiver preparation in vendor
+    /// post-enable-before-current order.
     ///
     /// The retained always-awake BLE-PHY owner first publishes a private
-    /// RF-ready time request. Only its completed scheduler-domain result can
-    /// advance to a second fresh-current request and reanchor this epoch.
+    /// post-enable timing request. Only its completed scheduler-domain result
+    /// can advance to a second fresh-current request and reanchor this epoch.
     #[expect(
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete active RX owner"
@@ -2501,8 +2516,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         let controller = self.controller;
         let epoch = (*controller.scheduler_epoch)
             .expect("the retained scheduler epoch cannot lose its stored epoch");
-        controller.begin_dtm_rf_ready_time(
-            BluetoothDtmControllerPreparationPhase::ReceiverRecurringRfReady { owner, epoch },
+        controller.begin_dtm_always_awake_timing(
+            BluetoothDtmControllerPreparationPhase::ReceiverRecurringAlwaysAwakeTiming {
+                owner,
+                epoch,
+            },
         )
     }
 
@@ -2576,8 +2594,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Begin source-ordered initial transmitter preparation.
     ///
     /// The private current is retained while the always-awake BLE-PHY owner
-    /// obtains a later source-owned RF-ready instant. Only that ordered pair
-    /// can form the candidate before admission and sequence requests.
+    /// obtains a later source-ordered post-enable timing instant. Only that
+    /// ordered pair can form the candidate before admission and sequence
+    /// requests.
     #[expect(
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete TX retry owner"
@@ -2609,8 +2628,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .new_dtm_link_state_reset(crate::BluetoothDtmRole::Transmitter);
         let (controller, now) = self.into_parts();
         controller
-            .begin_dtm_rf_ready_time(
-                BluetoothDtmControllerPreparationPhase::TransmitterFirstRfReady {
+            .begin_dtm_always_awake_timing(
+                BluetoothDtmControllerPreparationPhase::TransmitterFirstAlwaysAwakeTiming {
                     owner,
                     link_state,
                     channel,
@@ -2625,7 +2644,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Begin source-ordered initial receiver preparation.
     ///
     /// The current retained by this state precedes a private source-owned
-    /// RF-ready request. Admission and sequence then remain private affine
+    /// post-enable timing request. Admission and sequence then remain private affine
     /// requests on the same Controller.
     #[expect(
         clippy::result_large_err,
@@ -2651,8 +2670,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .new_dtm_link_state_reset(crate::BluetoothDtmRole::Receiver);
         let (controller, now) = self.into_parts();
         controller
-            .begin_dtm_rf_ready_time(
-                BluetoothDtmControllerPreparationPhase::ReceiverFirstRfReady {
+            .begin_dtm_always_awake_timing(
+                BluetoothDtmControllerPreparationPhase::ReceiverFirstAlwaysAwakeTiming {
                     owner,
                     link_state,
                     channel,
@@ -2666,7 +2685,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Reserve and begin source-ordered recurring transmitter preparation.
     ///
     /// The recurring window is reserved before its private sequence request.
-    /// This path has no RF-ready phase in the reviewed vendor flow.
+    /// This path has no post-enable timing phase in the reviewed vendor flow.
     #[expect(
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete active TX owner"
@@ -2844,7 +2863,7 @@ where
                 modem_timer,
                 hci,
             },
-            rf_ready,
+            always_awake_timing,
         ) = initialized.split_runtime();
         let interrupt = BluetoothControllerPublishedInterruptService {
             storage: _storage,
@@ -2856,7 +2875,7 @@ where
             runtime: task,
             mailbox: post_unlink_mailbox,
             dtm_resources,
-            rf_ready,
+            always_awake_timing,
             scheduler_epoch,
         };
         let modem_timer = BluetoothControllerModemTimerTask::new(_storage, modem_timer);

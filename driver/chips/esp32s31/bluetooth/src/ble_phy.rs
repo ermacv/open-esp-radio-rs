@@ -54,19 +54,21 @@ impl BluetoothBlePhyInitializationProfile {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothBlePhyInitializationReport;
 
-/// One standalone RF-ready observation in the retained scheduler epoch.
+/// One post-enable timing observation in the retained always-awake epoch.
 ///
 /// Only a completed generation-keyed controller-time request owned by an
 /// initialized BLE PHY can create this affine token. It deliberately cannot be
-/// copied or manufactured from a detached scheduler image.
-#[must_use = "the RF-ready observation must be consumed by DTM scheduling"]
+/// copied or manufactured from a detached scheduler image. It proves no RF
+/// wake or analog readiness; the supported profile keeps those transitions
+/// outside the DTM event path.
+#[must_use = "the always-awake timing observation must be consumed by DTM scheduling"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothDtmRfReady {
+pub(crate) struct BluetoothDtmAlwaysAwakeTimingReady {
     scheduler_instant: crate::BluetoothDtmSchedulerInstant,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothDtmRfReady {
+impl BluetoothDtmAlwaysAwakeTimingReady {
     fn from_completed_sample(
         epoch: crate::BluetoothControllerSchedulerEpoch,
         sample: crate::BluetoothControllerTimeSample,
@@ -78,25 +80,26 @@ impl BluetoothDtmRfReady {
         }
     }
 
-    /// Consume the RF-ready proof into its scheduler-domain instant.
+    /// Consume the post-enable timing proof into its scheduler-domain instant.
     pub(crate) const fn into_scheduler_instant(self) -> crate::BluetoothDtmSchedulerInstant {
         self.scheduler_instant
     }
 }
 
-/// Exclusive BLE-PHY authority for completing standalone RF-ready samples.
+/// Exclusive BLE-PHY authority for completing always-awake timing samples.
 ///
 /// This capability is created only while splitting a fully initialized BLE-PHY
 /// owner. It remains private inside the published task service, so a scheduler
-/// or detached controller-time sample cannot manufacture RF readiness.
-#[must_use = "the RF-ready authority must remain owned by the BLE-PHY task service"]
+/// or detached controller-time sample cannot manufacture this ordered timing
+/// observation. The authority makes no RF-readiness claim.
+#[must_use = "the timing authority must remain owned by the BLE-PHY task service"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothDtmRfReadyAuthority {
+pub(crate) struct BluetoothDtmAlwaysAwakeTimingAuthority {
     _private: (),
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothDtmRfReadyAuthority {
+impl BluetoothDtmAlwaysAwakeTimingAuthority {
     const fn new() -> Self {
         Self { _private: () }
     }
@@ -105,8 +108,8 @@ impl BluetoothDtmRfReadyAuthority {
         &mut self,
         epoch: crate::BluetoothControllerSchedulerEpoch,
         sample: crate::BluetoothControllerTimeSample,
-    ) -> BluetoothDtmRfReady {
-        BluetoothDtmRfReady::from_completed_sample(epoch, sample)
+    ) -> BluetoothDtmAlwaysAwakeTimingReady {
+        BluetoothDtmAlwaysAwakeTimingReady::from_completed_sample(epoch, sample)
     }
 }
 
@@ -207,11 +210,11 @@ where
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-        BluetoothDtmRfReadyAuthority,
+        BluetoothDtmAlwaysAwakeTimingAuthority,
     ) {
         (
             self.initialized.initialized.controller.split_runtime(),
-            BluetoothDtmRfReadyAuthority::new(),
+            BluetoothDtmAlwaysAwakeTimingAuthority::new(),
         )
     }
 }

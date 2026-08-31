@@ -237,10 +237,10 @@ pub enum BluetoothDtmEmptySchedulerMergeError {
 
 /// Why one private DTM controller-time phase could not complete.
 ///
-/// RF-ready, recurring-RX current, admission and sequence samples are acquired
-/// by the Controller and never cross the public DTM preparation boundary. This
-/// finite error retains only the logical acquisition outcome; the role-specific
-/// preparation failure continues to own every retry resource.
+/// Post-enable timing, recurring-RX current, admission and sequence samples are
+/// acquired by the Controller and never cross the public DTM preparation
+/// boundary. This finite error retains only the logical acquisition outcome;
+/// the role-specific preparation failure continues to own every retry resource.
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmControllerTimeAcquisitionError {
@@ -282,7 +282,8 @@ pub enum BluetoothDtmControllerEventPreparationError {
     Reservation(BluetoothSchedulerReservationError),
     /// The phase-appropriate fresh Controller-time sample closed the sequence gate.
     SequenceAuthorization(BluetoothSchedulerSequenceAuthorizationError),
-    /// A private RF-ready, current, admission or sequence acquisition failed.
+    /// A private post-enable timing, current, admission or sequence acquisition
+    /// failed.
     ControllerTime(BluetoothDtmControllerTimeAcquisitionError),
     /// The bound SRAM graph rejected the positional event transaction.
     #[cfg(target_arch = "riscv32")]
@@ -1217,7 +1218,7 @@ pub struct BluetoothSchedulerInitialized<
     _interrupts: Option<BluetoothInterruptBankOwner>,
     _platform: BluetoothTeardownPendingPlatform<P>,
     time_scale: BluetoothControllerTimeScale,
-    _standalone_always_awake: crate::controller_hal::BluetoothStandaloneAlwaysAwake,
+    _standalone_dtm_profile: crate::controller_hal::BluetoothStandaloneAlwaysAwakeDtmProfile,
     config: BluetoothSchedulerSoftwareConfig,
     _scheduler_list: BluetoothSchedulerExclusiveListEpoch,
     runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
@@ -1291,7 +1292,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         crate::controller_time::BluetoothControllerTimeRequest,
         crate::controller_time::BluetoothControllerTimeRequestError,
     > {
-        self._standalone_always_awake.gate_controller_time_request();
+        self._standalone_dtm_profile.gate_controller_time_request();
         self.task.request_controller_time()
     }
 
@@ -1432,7 +1433,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         phy: BluetoothDtmPhy,
         requested_interval_micros: u16,
         now: BluetoothControllerSchedulerNow,
-        rf_ready: crate::BluetoothDtmRfReady,
+        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
     ) -> Result<BluetoothDtmTransmitterFirstStaged, BluetoothDtmControllerTxPreparationFailure>
     {
         if link_state.role() != BluetoothDtmRole::Transmitter {
@@ -1449,8 +1450,11 @@ impl<const SCHEDULER_CAPACITY: usize>
                 .scheduler_timing();
         let margin = self.config.dtm_scheduler_margin();
         let current = dtm_scheduler_current(&now);
-        let window =
-            timing.initial_event_window(self.config, current, rf_ready.into_scheduler_instant());
+        let window = timing.initial_event_window(
+            self.config,
+            current,
+            timing_ready.into_scheduler_instant(),
+        );
         let event = match BluetoothDtmSchedulerItemEvent::new_transmitter(channel, phy, window) {
             Ok(event) => event,
             Err(error) => {
@@ -1628,7 +1632,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
         now: BluetoothControllerSchedulerNow,
-        rf_ready: crate::BluetoothDtmRfReady,
+        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
     ) -> Result<BluetoothDtmReceiverFirstStaged, BluetoothDtmControllerRxPreparationFailure> {
         if link_state.role() != BluetoothDtmRole::Receiver {
             return Err(BluetoothDtmControllerRxPreparationFailure {
@@ -1644,7 +1648,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         let window = crate::BluetoothDtmRxInitialEventWindow::new(
             self.config,
             current,
-            rf_ready.into_scheduler_instant(),
+            timing_ready.into_scheduler_instant(),
         );
         let event = match BluetoothDtmSchedulerItemEvent::new_initial_receiver(channel, phy, window)
         {
@@ -1973,7 +1977,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &self,
         owner: BluetoothDtmActiveReceiverCpuOwned,
         now: BluetoothControllerSchedulerNow,
-        rf_ready: crate::BluetoothDtmRfReady,
+        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
     ) -> Result<
         BluetoothDtmReceiverRecurringStaged,
         BluetoothDtmControllerRxRecurringPreparationFailure,
@@ -1982,7 +1986,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         let next_window = BluetoothDtmRxRecurringEventWindow::new(
             self.config,
             current,
-            rf_ready.into_scheduler_instant(),
+            timing_ready.into_scheduler_instant(),
         );
         let event = match BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
             owner.channel(),
@@ -2831,7 +2835,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     ) {
         let task = &mut self.task;
         let time_scale = self.time_scale;
-        let standalone_always_awake = &self._standalone_always_awake;
+        let standalone_dtm_profile = &self._standalone_dtm_profile;
         let config = self.config;
         let scheduler_list = &mut self._scheduler_list;
         let (interrupt, software, modem_timer) = self.runtime.split();
@@ -2841,7 +2845,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 software,
                 task,
                 time_scale,
-                standalone_always_awake,
+                standalone_dtm_profile,
                 config,
                 scheduler_list,
             ),
@@ -2907,7 +2911,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
             interrupts,
             platform,
             time_scale,
-            standalone_always_awake,
+            standalone_dtm_profile,
         } = self;
         let hardware_lists_cleared = initialize_hardware(&mut task);
         BluetoothSchedulerInitialized {
@@ -2915,7 +2919,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
             _interrupts: Some(interrupts),
             _platform: platform,
             time_scale,
-            _standalone_always_awake: standalone_always_awake,
+            _standalone_dtm_profile: standalone_dtm_profile,
             config: BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             _scheduler_list: BluetoothSchedulerExclusiveListEpoch::new(hardware_lists_cleared),
             runtime,

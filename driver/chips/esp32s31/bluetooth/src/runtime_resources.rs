@@ -178,8 +178,8 @@ pub struct BluetoothControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPAC
     pub(crate) runtime: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     pub(crate) task: &'runtime mut BluetoothTaskResources,
     pub(crate) time_scale: open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale,
-    pub(crate) _standalone_always_awake:
-        &'runtime crate::controller_hal::BluetoothStandaloneAlwaysAwake,
+    pub(crate) _standalone_dtm_profile:
+        &'runtime crate::controller_hal::BluetoothStandaloneAlwaysAwakeDtmProfile,
     pub(crate) config: crate::BluetoothSchedulerSoftwareConfig,
     pub(crate) _scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
 }
@@ -192,7 +192,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         runtime: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
         task: &'runtime mut BluetoothTaskResources,
         time_scale: open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale,
-        standalone_always_awake: &'runtime crate::controller_hal::BluetoothStandaloneAlwaysAwake,
+        standalone_dtm_profile: &'runtime crate::controller_hal::BluetoothStandaloneAlwaysAwakeDtmProfile,
         config: crate::BluetoothSchedulerSoftwareConfig,
         scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
     ) -> BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY> {
@@ -200,7 +200,7 @@ impl<const SCHEDULER_CAPACITY: usize>
             runtime,
             task,
             time_scale,
-            _standalone_always_awake: standalone_always_awake,
+            _standalone_dtm_profile: standalone_dtm_profile,
             config,
             _scheduler_list: scheduler_list,
         }

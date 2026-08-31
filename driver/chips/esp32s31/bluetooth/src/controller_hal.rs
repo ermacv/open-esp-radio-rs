@@ -16,19 +16,19 @@ use crate::{
     },
 };
 
-/// Affine selection of the source-owned standalone always-awake profile.
+/// Affine selection of the supported standalone always-awake DTM profile.
 ///
 /// The marker records only that this Controller epoch was constructed without
 /// a modem-sleep/wake policy. It performs no MMIO and proves neither that RF
 /// is ready nor that a controller-time request has completed. Its private
 /// field keeps construction in the clocked-to-controller-HAL transition, and
 /// the absence of `Copy` or `Clone` keeps the selection bound to one epoch.
-#[must_use = "the standalone always-awake selection belongs to one Controller epoch"]
-pub(crate) struct BluetoothStandaloneAlwaysAwake {
+#[must_use = "the standalone always-awake DTM profile belongs to one Controller epoch"]
+pub(crate) struct BluetoothStandaloneAlwaysAwakeDtmProfile {
     _private: (),
 }
 
-impl BluetoothStandaloneAlwaysAwake {
+impl BluetoothStandaloneAlwaysAwakeDtmProfile {
     const fn mint() -> Self {
         Self { _private: () }
     }
@@ -52,7 +52,7 @@ pub struct BluetoothControllerHalInitialized<P> {
     pub(crate) interrupts: BluetoothInterruptBankOwner,
     pub(crate) platform: BluetoothTeardownPendingPlatform<P>,
     pub(crate) time_scale: BluetoothControllerTimeScale,
-    pub(crate) standalone_always_awake: BluetoothStandaloneAlwaysAwake,
+    pub(crate) standalone_dtm_profile: BluetoothStandaloneAlwaysAwakeDtmProfile,
 }
 
 impl<P> BluetoothControllerHalInitialized<P> {
@@ -98,7 +98,7 @@ impl<P> BluetoothClockedResources<P> {
         initialize: impl FnOnce(&mut BluetoothTaskResources, BluetoothControllerHalInitConfig),
     ) -> BluetoothControllerHalInitialized<P> {
         let config = BluetoothControllerHalInitConfig::reviewed_standalone();
-        let standalone_always_awake = BluetoothStandaloneAlwaysAwake::mint();
+        let standalone_dtm_profile = BluetoothStandaloneAlwaysAwakeDtmProfile::mint();
         let time_scale = config.controller_time_scale();
         let (registers, platform) = self.into_parts();
         // Arm fail-stop ownership before the first controller MMIO mutation.
@@ -110,7 +110,7 @@ impl<P> BluetoothClockedResources<P> {
             interrupts,
             platform,
             time_scale,
-            standalone_always_awake,
+            standalone_dtm_profile,
         }
     }
 }

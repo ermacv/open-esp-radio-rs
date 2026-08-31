@@ -138,7 +138,7 @@ pub use ble_phy::BluetoothBlePhyInitializationReport;
 #[cfg(target_arch = "riscv32")]
 pub use ble_phy::BluetoothControllerBlePhyEngineInitialized;
 #[cfg(target_arch = "riscv32")]
-pub(crate) use ble_phy::BluetoothDtmRfReady;
+pub(crate) use ble_phy::BluetoothDtmAlwaysAwakeTimingReady;
 pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockEnableFailure, BluetoothClockError,
     BluetoothClockState, BluetoothClockedResources,

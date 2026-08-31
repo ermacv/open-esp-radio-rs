@@ -51,8 +51,11 @@ scheduler context, binds the first scheduler item back to this link state and
 installs that item as the link-state scheduler head. Channel identity stays at
 the portable boundary; only the private memory codec lowers it to the S31
 frequency field. The owner supports lossless cancellation of both portable
-and SRAM owners. It cannot publish a hardware scheduler head or claim that the
-PDU is in flight.
+and SRAM owners. The complete first-attempt path now joins the descriptor graph
+to common scheduler bookkeeping, an independently proven empty list, typed
+`HEAD` publication, dynamic interrupt publication, the synchronous scheduler
+event and `RUN`. Publication is the sole transition that moves the portable
+owner to `InFlight`.
 
 The public named archive proves that legacy primary allocation calls
 `r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr`; its allocation prefix and PDU
@@ -118,10 +121,11 @@ evidence closes the following connected edges:
 4. **Terminal observation:** the interrupt/finished-list path identifies the
    same item, fences hardware writes, unlinks it from both hardware and
    software lists and returns CPU ownership exactly once.
-5. **Result and recurrence:** status has a finite success/failure disposition;
-   successful completion advances the exact portable channel/event identity,
-   while failure either returns a retryable pre-publication owner or a retained
-   fail-stop owner. The first slice needs no RX or scan-response handling.
+5. **Result and recurrence:** every non-sentinel completion consumes the exact
+   scheduled channel attempt and advances the matching portable identity once.
+   The raw completion status remains a diagnostic backend result rather than a
+   claim of successful on-air transmission. The first slice needs no RX or
+   scan-response handling.
 
 Unknown private fields do not block the first driver merely because they lack
 vendor names. They do block admission when their value participates in packet
@@ -131,26 +135,33 @@ not required.
 
 ## Current blockers and non-blockers
 
-The encoded PDU now reaches a fully address-bound, CPU-owned controller graph
-without raw SRAM fields escaping the memory codec. Allocation-time packet,
-header, link-state, scheduler-context and scheduler-item links, restricted
-link-state reset, first-event timing, common timeline admission and the
-first-primary-event descriptor transform are closed. The remaining critical
-path is affine hardware-list publication followed by exact finished-list,
-unlink and portable completion ownership. A hardware-frontier query currently
-asks for one project-local assertion at `0x2010199c/16`, but the reviewed chip
-model already identifies it as `BLE_HW_CTE_RING_CONTROL.RING_CONTROL`. It is
-reached through generic CTE
-support and is not used by the restricted no-CTE transmission, so it is not an
-admission blocker. Broad register discovery is therefore not the critical
-path. Diagnostic logging, extended advertising, periodic advertising, scan
-responses, RX buffers, sleep-enabled wake and coexistence are also not
-blockers for the restricted first transmission.
+The encoded PDU now completes one full hardware attempt without raw SRAM fields
+escaping the memory codec. Allocation, restricted reset, first-event timing,
+timeline admission, descriptor transform, empty-list merge, typed
+`HEAD`/interrupt/event/`RUN` publication, finished-list observation, fresh
+head-empty proof, software unlink, post-unlink interrupt join and CPU recycle
+are closed. The exact `InFlight` portable owner advances only after that final
+recycle.
 
-The next implementation should therefore reuse the existing affine empty-list
-publication and completion lifecycle. It should not reproduce vendor callback
-containers or attempt to make every reachable advertising function
-semantically complete.
+Current and named recycle bodies both load scheduler item `+0x38`. The all-ones
+value remains the in-flight sentinel. For every other value, both zero and
+nonzero paths consume the current primary-channel attempt: the nonzero branch
+adds diagnostic/exception handling, while the channel/event counters and later
+recurrence path still advance. Consequently `status == 0` is not modeled as
+the only protocol success and `status != 0` is not a retryable pre-publication
+failure. Rust retains `Zero | NonZero(NonZeroU32)` as diagnostic evidence next
+to the advanced LL owner and makes no stronger RF-success claim.
+
+The first-attempt admission contract is therefore closed. The next real driver
+blocker is the second primary-channel producer: derive the reviewed
+next-channel timing and descriptor delta from current
+`r_sym_ble_77zgK6v8rbStzf0ReBjv` plus named
+`r_ble_lll_adv_sched_next_pri_event`, then feed the returned `Event` and
+CPU-owned graph back into the same publication/completion lifecycle. After
+channel-map exhaustion, add fresh-delay recurrence for the next advertising
+event. Broad register discovery, diagnostic logging, extended/periodic
+advertising, scan responses, RX buffers, sleep wake and coexistence remain
+outside this restricted nonconnectable slice.
 
 ```console
 tools/blobray/scripts/run-limited \
@@ -163,7 +174,7 @@ tools/blobray/scripts/run-limited \
 tools/blobray/scripts/run-limited \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec verification/vendor/targets/esp32s31/local.toml \
-  inspect function ble-controller:r_sym_ble_mqh4OXzoN59kvnkKFMA1 \
+  inspect function ble-controller:r_sym_ble_77zgK6v8rbStzf0ReBjv \
   --full --details
 
 tools/blobray/scripts/run-limited \
@@ -173,7 +184,8 @@ tools/blobray/scripts/run-limited \
   --full --details
 ```
 
-The admission gate is closed when a Rust-owned static graph can implement all
+The first-attempt gate is closed: the Rust-owned static graph implements all
 five edges without exposing raw SRAM images above the private memory codec.
-At that point work should return immediately to the controller/LL actor; full
-vendor-scope completion is neither required nor desirable.
+Research now returns to the controller/LL path and should inspect only the
+next-channel producer when that implementation reaches its descriptor/timing
+boundary; full vendor-scope completion is neither required nor desirable.

@@ -249,29 +249,36 @@ impl<'a> LegacyAdvertiserTxInFlight<'a> {
             };
         }
 
+        LegacyAdvertiserTxCompletion::Advanced(self.complete_exact())
+    }
+
+    /// Advance after an affine backend owner proves this exact attempt completed.
+    ///
+    /// This transition records consumption of the scheduled channel attempt,
+    /// not an assertion that RF energy reached the air. A chip backend must keep
+    /// its completion status alongside the returned protocol continuation.
+    pub fn complete_exact(self) -> LegacyAdvertiserAdvance<'a> {
         let LegacyAdvertiserTxPrepared {
             standby,
             identity,
             prepared,
         } = self.prepared;
-        match prepared.into_transmitted() {
-            LegacyAdvertisingEventProgress::More(event) => LegacyAdvertiserTxCompletion::Advanced(
+        match prepared.into_attempt_completed() {
+            LegacyAdvertisingEventProgress::More(event) => {
                 LegacyAdvertiserAdvance::Event(LegacyAdvertiserEnabled {
                     standby,
                     generation: identity.generation,
                     event_sequence: identity.event,
                     event,
-                }),
-            ),
+                })
+            }
             LegacyAdvertisingEventProgress::Complete(complete) => {
-                LegacyAdvertiserTxCompletion::Advanced(LegacyAdvertiserAdvance::EventComplete(
-                    LegacyAdvertiserEventComplete {
-                        standby,
-                        generation: identity.generation,
-                        event_sequence: identity.event,
-                        complete,
-                    },
-                ))
+                LegacyAdvertiserAdvance::EventComplete(LegacyAdvertiserEventComplete {
+                    standby,
+                    generation: identity.generation,
+                    event_sequence: identity.event,
+                    complete,
+                })
             }
         }
     }
@@ -293,7 +300,7 @@ pub enum LegacyAdvertiserTxCompletion<'a> {
     },
 }
 
-/// Progress after a successful channel transmission.
+/// Progress after one scheduled channel attempt completed.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "continue the event or provide its next fresh delay"]
 pub enum LegacyAdvertiserAdvance<'a> {
@@ -427,7 +434,7 @@ impl<'a> LegacyAdvertiserStopping<'a> {
         let LegacyAdvertiserTxPrepared {
             standby, prepared, ..
         } = self.in_flight.prepared;
-        let set = match prepared.into_transmitted() {
+        let set = match prepared.into_attempt_completed() {
             LegacyAdvertisingEventProgress::More(event) => event.into_set(),
             LegacyAdvertisingEventProgress::Complete(complete) => complete.into_set(),
         };
@@ -505,9 +512,7 @@ mod tests {
         assert_eq!(error.expected, expected);
         assert_eq!(error.observed, stale);
 
-        let LegacyAdvertiserTxCompletion::Advanced(LegacyAdvertiserAdvance::Event(enabled)) =
-            in_flight.complete(expected)
-        else {
+        let LegacyAdvertiserAdvance::Event(enabled) = in_flight.complete_exact() else {
             panic!("channel 38 must remain after channel 37");
         };
         assert_eq!(

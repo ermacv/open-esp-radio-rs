@@ -300,13 +300,13 @@ impl BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'_> {
 }
 
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the unresolved hardware status must be classified before LL advancement"]
+#[must_use = "the completed attempt must advance the LL owner exactly once"]
 pub struct BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
     item: crate::legacy_advertising::BluetoothLegacyAdvertisingRecycledEvent<'a>,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothLegacyAdvertisingSchedulerRecycled<'_> {
+impl<'a> BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
     pub const fn identity(
         &self,
     ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingTxIdentity {
@@ -318,6 +318,13 @@ impl BluetoothLegacyAdvertisingSchedulerRecycled<'_> {
     ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingSchedulerItemCompletionStatus
     {
         self.item.status()
+    }
+
+    /// Advance the exact LL attempt while retaining S31 diagnostic status.
+    pub fn complete_attempt(
+        self,
+    ) -> crate::legacy_advertising::BluetoothLegacyAdvertisingAttemptCompleted<'a> {
+        self.item.complete_attempt()
     }
 }
 

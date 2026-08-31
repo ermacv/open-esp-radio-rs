@@ -4,7 +4,7 @@
 //! advertising. It needs no receive window or response policy and therefore
 //! exposes the smallest honest Link Layer/backend contract. The state machine
 //! prepares at most one `ADV_NONCONN_IND` per selected primary channel; only a
-//! successful backend publication may advance the affine event.
+//! completed backend attempt may advance the affine event.
 
 use crate::{LeDeviceAddress, LeDeviceAddressKind};
 
@@ -387,7 +387,7 @@ impl<'a> LegacyNonconnectableAdvertisingEvent<'a> {
     }
 }
 
-/// One prepared PDU plus the exact event which may advance only on success.
+/// One prepared PDU plus the exact event which advances only after completion.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "publish the PDU or cancel back to the unchanged event"]
 pub struct LegacyPreparedAdvertisingTransmission<'a> {
@@ -411,8 +411,12 @@ impl<'a> LegacyPreparedAdvertisingTransmission<'a> {
         self.event
     }
 
-    /// Record one successful backend transmission and advance exactly once.
-    pub fn into_transmitted(self) -> LegacyAdvertisingEventProgress<'a> {
+    /// Record one completed backend attempt and advance exactly once.
+    ///
+    /// Completion means that the backend has consumed the scheduled channel
+    /// attempt. It does not by itself claim that the packet reached the air;
+    /// chip-specific diagnostic status remains below this protocol boundary.
+    pub fn into_attempt_completed(self) -> LegacyAdvertisingEventProgress<'a> {
         match self.event.remaining.without(self.channel) {
             Some(remaining) => {
                 LegacyAdvertisingEventProgress::More(LegacyNonconnectableAdvertisingEvent {
@@ -427,7 +431,7 @@ impl<'a> LegacyPreparedAdvertisingTransmission<'a> {
     }
 }
 
-/// State after one prepared transmission successfully reached hardware.
+/// State after one prepared channel attempt completed in the backend.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "continue the event or schedule its next occurrence"]
 pub enum LegacyAdvertisingEventProgress<'a> {
@@ -575,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn event_advances_only_after_success_and_repeats_after_a_fresh_delay() {
+    fn event_advances_only_after_attempt_completion_and_repeats_after_a_fresh_delay() {
         let set = LegacyNonconnectableAdvertisingSet::new(
             sample_advertisement(&[1, 2, 3]),
             PrimaryAdvertisingChannelMap::new(true, false, true).unwrap(),
@@ -587,12 +591,14 @@ mod tests {
         let prepared_37 = prepared_37.cancel().prepare_next();
         assert_eq!(prepared_37.channel(), PrimaryAdvertisingChannel::Channel37);
 
-        let LegacyAdvertisingEventProgress::More(event) = prepared_37.into_transmitted() else {
+        let LegacyAdvertisingEventProgress::More(event) = prepared_37.into_attempt_completed()
+        else {
             panic!("channel 39 remains in the event");
         };
         let prepared_39 = event.prepare_next();
         assert_eq!(prepared_39.channel(), PrimaryAdvertisingChannel::Channel39);
-        let LegacyAdvertisingEventProgress::Complete(complete) = prepared_39.into_transmitted()
+        let LegacyAdvertisingEventProgress::Complete(complete) =
+            prepared_39.into_attempt_completed()
         else {
             panic!("the configured channel set must now be exhausted");
         };

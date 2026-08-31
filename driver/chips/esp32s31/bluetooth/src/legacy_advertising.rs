@@ -1,18 +1,19 @@
-//! ESP32-S31 pre-admission ownership for legacy advertising.
+//! ESP32-S31 hardware ownership for restricted legacy advertising.
 //!
 //! This boundary lowers one portable `ADV_NONCONN_IND` transmission into a
-//! bounded PDU and a reviewed S31 descriptor graph. It deliberately
-//! stops before hardware publication: the SRAM allocation, reviewed restricted
-//! link-state reset, first-event timing, common timeline admission and final
-//! CPU-owned descriptor image are bound, but no hardware-list role or
-//! completion contract exists yet.
-//! Consequently this module cannot turn protocol work into `InFlight` or
-//! publish scheduler `HEAD`/`RUN`.
+//! bounded PDU and a reviewed S31 descriptor graph. The first primary-channel
+//! attempt advances through scheduler bookkeeping, `HEAD`/interrupt/event/`RUN`
+//! publication, fenced completion, hardware-head retirement, software unlink
+//! and CPU recycle. Only that complete lower proof may advance the portable LL
+//! owner. The returned status remains diagnostic and makes no claim about
+//! observability on air.
 
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertiserTxInFlight;
+use open_esp_radio_bluetooth_ll::advertiser::{
+    LegacyAdvertiserAdvance, LegacyAdvertiserTxInFlight,
+};
 use open_esp_radio_bluetooth_ll::{
     advertiser::{
         LegacyAdvertiserEnabled, LegacyAdvertiserTxPrepared, LegacyAdvertisingTxIdentity,
@@ -607,7 +608,7 @@ impl<'a> BluetoothLegacyAdvertisingCompletionRecyclePrepared<'a> {
 
     pub(crate) fn commit(self) -> BluetoothLegacyAdvertisingRecycledEvent<'a> {
         let memory = self.memory.commit();
-        BluetoothLegacyAdvertisingRecycledEvent::new(self.in_flight, memory, self.scheduler_window)
+        BluetoothLegacyAdvertisingRecycledEvent::new(self.in_flight, memory)
     }
 }
 
@@ -634,13 +635,12 @@ impl<'a> BluetoothLegacyAdvertisingCompletionRecycleFailure<'a> {
     }
 }
 
-/// CPU-owned graph whose advertising completion meaning is not yet projected.
+/// CPU-owned graph after one scheduler-completed advertising attempt.
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingRecycledEvent<'a> {
     in_flight: LegacyAdvertiserTxInFlight<'a>,
-    _memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     status: BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
-    _scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -648,14 +648,12 @@ impl<'a> BluetoothLegacyAdvertisingRecycledEvent<'a> {
     fn new(
         in_flight: LegacyAdvertiserTxInFlight<'a>,
         memory: BluetoothLegacyAdvertisingMemoryGraphRecycled,
-        scheduler_window: BluetoothLegacyAdvertisingEventWindow,
     ) -> Self {
         let (memory, status) = memory.into_parts();
         Self {
             in_flight,
-            _memory: memory,
+            memory,
             status,
-            _scheduler_window: scheduler_window,
         }
     }
 
@@ -665,6 +663,52 @@ impl<'a> BluetoothLegacyAdvertisingRecycledEvent<'a> {
 
     pub(crate) const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
         self.status
+    }
+
+    /// Consume the exact completed-attempt proof and advance portable LL state.
+    pub(crate) fn complete_attempt(self) -> BluetoothLegacyAdvertisingAttemptCompleted<'a> {
+        let Self {
+            in_flight,
+            memory,
+            status,
+        } = self;
+        BluetoothLegacyAdvertisingAttemptCompleted {
+            advance: in_flight.complete_exact(),
+            memory,
+            status,
+        }
+    }
+}
+
+/// Portable LL continuation paired with the released S31 SRAM graph.
+///
+/// The status is diagnostic: reviewed vendor recycling consumes the scheduled
+/// primary-channel attempt for both zero and nonzero non-sentinel values. This
+/// type therefore makes no claim that the packet was observable on air.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "continue the advertising event or retain all returned owners"]
+pub struct BluetoothLegacyAdvertisingAttemptCompleted<'a> {
+    advance: LegacyAdvertiserAdvance<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    status: BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingAttemptCompleted<'a> {
+    /// Scheduler completion value retained for diagnostics and future research.
+    pub const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
+        self.status
+    }
+
+    /// Recover the protocol continuation, CPU graph and diagnostic status.
+    pub fn into_parts(
+        self,
+    ) -> (
+        LegacyAdvertiserAdvance<'a>,
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+    ) {
+        (self.advance, self.memory, self.status)
     }
 }
 

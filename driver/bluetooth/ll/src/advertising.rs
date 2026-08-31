@@ -380,6 +380,11 @@ impl<'a> LegacyNonconnectableAdvertisingEvent<'a> {
             channel,
         }
     }
+
+    /// Cancel an event which has no in-flight transmission and retain its set.
+    pub fn into_set(self) -> LegacyNonconnectableAdvertisingSet<'a> {
+        self.set
+    }
 }
 
 /// One prepared PDU plus the exact event which may advance only on success.
@@ -438,6 +443,11 @@ pub struct LegacyAdvertisingEventComplete<'a> {
 }
 
 impl<'a> LegacyAdvertisingEventComplete<'a> {
+    /// Retain the configured set without scheduling another event.
+    pub fn into_set(self) -> LegacyNonconnectableAdvertisingSet<'a> {
+        self.set
+    }
+
     /// Schedule the next event from the previous event's start.
     ///
     /// Random generation is deliberately not hidden here: the LL runtime must
@@ -470,6 +480,11 @@ impl<'a> ScheduledLegacyAdvertisingEvent<'a> {
     /// Consume the schedule after its deadline and recover the next event.
     pub fn into_event(self) -> LegacyNonconnectableAdvertisingEvent<'a> {
         self.event
+    }
+
+    /// Cancel the not-yet-due event and retain its configured set.
+    pub fn cancel(self) -> LegacyNonconnectableAdvertisingSet<'a> {
+        self.event.into_set()
     }
 }
 

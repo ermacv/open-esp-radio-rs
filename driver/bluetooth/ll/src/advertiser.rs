@@ -1,0 +1,615 @@
+//! Affine lifecycle for the first portable LE advertising role.
+//!
+//! This layer owns protocol state, not an executor or hardware ticket. A chip
+//! backend must retain [`LegacyAdvertiserTxInFlight`] together with its sealed
+//! transmit owner and may report completion only after that exact hardware
+//! transaction returns. The identity check prevents a stale event/channel
+//! completion from advancing newer protocol state.
+
+use crate::advertising::{
+    AdvertisingDelay, LegacyAdvertisingEncodeError, LegacyAdvertisingEventComplete,
+    LegacyAdvertisingEventProgress, LegacyNonconnectableAdvertisingEvent,
+    LegacyNonconnectableAdvertisingSet, LegacyPreparedAdvertisingTransmission,
+    PrimaryAdvertisingChannel, ScheduledLegacyAdvertisingEvent,
+};
+
+/// Monotonic identity of one enable epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyAdvertisingGeneration(u32);
+
+impl LegacyAdvertisingGeneration {
+    /// Numeric identity for diagnostics and lower-layer affinity checks.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Monotonic event sequence within one enable epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyAdvertisingEventSequence(u32);
+
+impl LegacyAdvertisingEventSequence {
+    /// Numeric event sequence for diagnostics and deadline affinity checks.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Exact protocol identity expected from one backend TX completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyAdvertisingTxIdentity {
+    generation: LegacyAdvertisingGeneration,
+    event: LegacyAdvertisingEventSequence,
+    channel: PrimaryAdvertisingChannel,
+}
+
+impl LegacyAdvertisingTxIdentity {
+    pub const fn generation(self) -> LegacyAdvertisingGeneration {
+        self.generation
+    }
+
+    pub const fn event(self) -> LegacyAdvertisingEventSequence {
+        self.event
+    }
+
+    pub const fn channel(self) -> PrimaryAdvertisingChannel {
+        self.channel
+    }
+}
+
+/// Disabled portable advertiser retaining the next unique enable generation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct LegacyAdvertiserStandby {
+    next_generation: Option<u32>,
+}
+
+impl LegacyAdvertiserStandby {
+    /// Construct a fresh advertiser lifecycle.
+    pub const fn new() -> Self {
+        Self {
+            next_generation: Some(1),
+        }
+    }
+
+    /// Install a complete immutable configuration snapshot.
+    pub const fn configure<'a>(
+        self,
+        set: LegacyNonconnectableAdvertisingSet<'a>,
+    ) -> LegacyAdvertiserConfigured<'a> {
+        LegacyAdvertiserConfigured { standby: self, set }
+    }
+}
+
+impl Default for LegacyAdvertiserStandby {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Disabled advertiser with a validated configuration available for enable.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "enable, reconfigure, or retain the advertiser"]
+pub struct LegacyAdvertiserConfigured<'a> {
+    standby: LegacyAdvertiserStandby,
+    set: LegacyNonconnectableAdvertisingSet<'a>,
+}
+
+impl<'a> LegacyAdvertiserConfigured<'a> {
+    /// Replace the disabled configuration without minting a new generation.
+    pub const fn reconfigure(self, set: LegacyNonconnectableAdvertisingSet<'a>) -> Self {
+        Self {
+            standby: self.standby,
+            set,
+        }
+    }
+
+    /// Begin a fresh enable epoch and its first advertising event.
+    pub fn enable(self) -> Result<LegacyAdvertiserEnabled<'a>, LegacyAdvertiserEnableError<'a>> {
+        let Some(generation) = self.standby.next_generation else {
+            return Err(LegacyAdvertiserEnableError { configured: self });
+        };
+        let set = self.set;
+        Ok(LegacyAdvertiserEnabled {
+            standby: LegacyAdvertiserStandby {
+                next_generation: generation.checked_add(1),
+            },
+            generation: LegacyAdvertisingGeneration(generation),
+            event_sequence: LegacyAdvertisingEventSequence(0),
+            event: set.begin_event(),
+        })
+    }
+
+    /// Remove the configuration and return to standby.
+    pub fn into_standby(self) -> LegacyAdvertiserStandby {
+        self.standby
+    }
+}
+
+/// Generation space was exhausted before an enable epoch could begin.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the configured advertiser remains recoverable"]
+pub struct LegacyAdvertiserEnableError<'a> {
+    configured: LegacyAdvertiserConfigured<'a>,
+}
+
+impl<'a> LegacyAdvertiserEnableError<'a> {
+    pub fn into_configured(self) -> LegacyAdvertiserConfigured<'a> {
+        self.configured
+    }
+}
+
+/// Enabled advertiser with no backend transmission in flight.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "prepare work, disable, or retain the enabled advertiser"]
+pub struct LegacyAdvertiserEnabled<'a> {
+    standby: LegacyAdvertiserStandby,
+    generation: LegacyAdvertisingGeneration,
+    event_sequence: LegacyAdvertisingEventSequence,
+    event: LegacyNonconnectableAdvertisingEvent<'a>,
+}
+
+impl<'a> LegacyAdvertiserEnabled<'a> {
+    pub const fn generation(&self) -> LegacyAdvertisingGeneration {
+        self.generation
+    }
+
+    pub const fn event_sequence(&self) -> LegacyAdvertisingEventSequence {
+        self.event_sequence
+    }
+
+    /// Prepare one channel while retaining the exact continuation.
+    pub fn prepare_next(self) -> LegacyAdvertiserTxPrepared<'a> {
+        let prepared = self.event.prepare_next();
+        let identity = LegacyAdvertisingTxIdentity {
+            generation: self.generation,
+            event: self.event_sequence,
+            channel: prepared.channel(),
+        };
+        LegacyAdvertiserTxPrepared {
+            standby: self.standby,
+            identity,
+            prepared,
+        }
+    }
+
+    /// Disable immediately because no hardware transmission is in flight.
+    pub fn disable(self) -> LegacyAdvertiserConfigured<'a> {
+        LegacyAdvertiserConfigured {
+            standby: self.standby,
+            set: self.event.into_set(),
+        }
+    }
+}
+
+/// Prepared protocol work which has not yet been accepted by a backend.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "submit, cancel, disable, or retain the prepared transmission"]
+pub struct LegacyAdvertiserTxPrepared<'a> {
+    standby: LegacyAdvertiserStandby,
+    identity: LegacyAdvertisingTxIdentity,
+    prepared: LegacyPreparedAdvertisingTransmission<'a>,
+}
+
+impl<'a> LegacyAdvertiserTxPrepared<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+        self.identity
+    }
+
+    /// Encode the PDU without changing protocol state.
+    pub fn encode(&self, destination: &mut [u8]) -> Result<usize, LegacyAdvertisingEncodeError> {
+        self.prepared.encode(destination)
+    }
+
+    /// Return to the exact enabled event after lower admission was rejected.
+    pub fn cancel(self) -> LegacyAdvertiserEnabled<'a> {
+        LegacyAdvertiserEnabled {
+            standby: self.standby,
+            generation: self.identity.generation,
+            event_sequence: self.identity.event,
+            event: self.prepared.cancel(),
+        }
+    }
+
+    /// Disable before hardware accepted the transmission.
+    pub fn disable(self) -> LegacyAdvertiserConfigured<'a> {
+        self.cancel().disable()
+    }
+
+    /// Mark the point where a lower backend accepted this exact work.
+    ///
+    /// Production chip code must keep this value private and pair it with its
+    /// non-forgeable hardware ticket.
+    pub fn into_submitted(self) -> LegacyAdvertiserTxInFlight<'a> {
+        LegacyAdvertiserTxInFlight { prepared: self }
+    }
+}
+
+/// Protocol continuation waiting for one exact backend TX completion.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "complete, request stop, or retain the in-flight transmission"]
+pub struct LegacyAdvertiserTxInFlight<'a> {
+    prepared: LegacyAdvertiserTxPrepared<'a>,
+}
+
+impl<'a> LegacyAdvertiserTxInFlight<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+        self.prepared.identity
+    }
+
+    /// Advance only if the backend returned the exact generation/event/channel.
+    pub fn complete(
+        self,
+        observed: LegacyAdvertisingTxIdentity,
+    ) -> LegacyAdvertiserTxCompletion<'a> {
+        let expected = self.identity();
+        if observed != expected {
+            return LegacyAdvertiserTxCompletion::Mismatch {
+                error: LegacyAdvertisingTxCompletionMismatch { expected, observed },
+                in_flight: self,
+            };
+        }
+
+        let LegacyAdvertiserTxPrepared {
+            standby,
+            identity,
+            prepared,
+        } = self.prepared;
+        match prepared.into_transmitted() {
+            LegacyAdvertisingEventProgress::More(event) => LegacyAdvertiserTxCompletion::Advanced(
+                LegacyAdvertiserAdvance::Event(LegacyAdvertiserEnabled {
+                    standby,
+                    generation: identity.generation,
+                    event_sequence: identity.event,
+                    event,
+                }),
+            ),
+            LegacyAdvertisingEventProgress::Complete(complete) => {
+                LegacyAdvertiserTxCompletion::Advanced(LegacyAdvertiserAdvance::EventComplete(
+                    LegacyAdvertiserEventComplete {
+                        standby,
+                        generation: identity.generation,
+                        event_sequence: identity.event,
+                        complete,
+                    },
+                ))
+            }
+        }
+    }
+
+    /// Request disable while hardware still owns the submitted transaction.
+    pub fn request_disable(self) -> LegacyAdvertiserStopping<'a> {
+        LegacyAdvertiserStopping { in_flight: self }
+    }
+}
+
+/// Result of matching one TX-completion observation.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "retain a mismatch or continue the exact advertiser state"]
+pub enum LegacyAdvertiserTxCompletion<'a> {
+    Advanced(LegacyAdvertiserAdvance<'a>),
+    Mismatch {
+        error: LegacyAdvertisingTxCompletionMismatch,
+        in_flight: LegacyAdvertiserTxInFlight<'a>,
+    },
+}
+
+/// Progress after a successful channel transmission.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "continue the event or provide its next fresh delay"]
+pub enum LegacyAdvertiserAdvance<'a> {
+    Event(LegacyAdvertiserEnabled<'a>),
+    EventComplete(LegacyAdvertiserEventComplete<'a>),
+}
+
+/// Expected and observed identities for a stale or cross-wired completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyAdvertisingTxCompletionMismatch {
+    pub expected: LegacyAdvertisingTxIdentity,
+    pub observed: LegacyAdvertisingTxIdentity,
+}
+
+/// Closed event awaiting a fresh random delay before its successor is armed.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "schedule the next event, disable, or retain the completed event"]
+pub struct LegacyAdvertiserEventComplete<'a> {
+    standby: LegacyAdvertiserStandby,
+    generation: LegacyAdvertisingGeneration,
+    event_sequence: LegacyAdvertisingEventSequence,
+    complete: LegacyAdvertisingEventComplete<'a>,
+}
+
+impl<'a> LegacyAdvertiserEventComplete<'a> {
+    /// Pair a fresh delay with the next event without waiting in this crate.
+    pub fn schedule_next(
+        self,
+        delay: AdvertisingDelay,
+    ) -> Result<LegacyAdvertiserScheduled<'a>, LegacyAdvertisingEventSequenceExhausted<'a>> {
+        let Some(next_event) = self.event_sequence.0.checked_add(1) else {
+            return Err(LegacyAdvertisingEventSequenceExhausted { complete: self });
+        };
+        Ok(LegacyAdvertiserScheduled {
+            standby: self.standby,
+            generation: self.generation,
+            event_sequence: LegacyAdvertisingEventSequence(next_event),
+            scheduled: self.complete.schedule_next(delay),
+        })
+    }
+
+    /// Disable between events while no timer or TX is owned by a backend.
+    pub fn disable(self) -> LegacyAdvertiserConfigured<'a> {
+        LegacyAdvertiserConfigured {
+            standby: self.standby,
+            set: self.complete.into_set(),
+        }
+    }
+}
+
+/// Event-sequence space was exhausted without losing the completed owner.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the completed advertiser owner remains recoverable"]
+pub struct LegacyAdvertisingEventSequenceExhausted<'a> {
+    complete: LegacyAdvertiserEventComplete<'a>,
+}
+
+impl<'a> LegacyAdvertisingEventSequenceExhausted<'a> {
+    pub fn into_complete(self) -> LegacyAdvertiserEventComplete<'a> {
+        self.complete
+    }
+}
+
+/// Next event with a relative deadline which has not yet elapsed.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "wait, disable, or retain the scheduled event"]
+pub struct LegacyAdvertiserScheduled<'a> {
+    standby: LegacyAdvertiserStandby,
+    generation: LegacyAdvertisingGeneration,
+    event_sequence: LegacyAdvertisingEventSequence,
+    scheduled: ScheduledLegacyAdvertisingEvent<'a>,
+}
+
+impl<'a> LegacyAdvertiserScheduled<'a> {
+    pub const fn generation(&self) -> LegacyAdvertisingGeneration {
+        self.generation
+    }
+
+    pub const fn event_sequence(&self) -> LegacyAdvertisingEventSequence {
+        self.event_sequence
+    }
+
+    pub const fn start_offset_micros(&self) -> u64 {
+        self.scheduled.start_offset_micros()
+    }
+
+    /// Enter the next event after the external deadline owner fires.
+    pub fn into_due(self) -> LegacyAdvertiserEnabled<'a> {
+        LegacyAdvertiserEnabled {
+            standby: self.standby,
+            generation: self.generation,
+            event_sequence: self.event_sequence,
+            event: self.scheduled.into_event(),
+        }
+    }
+
+    /// Disable while the deadline has not been published to a backend.
+    pub fn disable(self) -> LegacyAdvertiserConfigured<'a> {
+        LegacyAdvertiserConfigured {
+            standby: self.standby,
+            set: self.scheduled.cancel(),
+        }
+    }
+}
+
+/// Disable requested after a backend already accepted the exact TX.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "join the exact TX completion before returning to configured"]
+pub struct LegacyAdvertiserStopping<'a> {
+    in_flight: LegacyAdvertiserTxInFlight<'a>,
+}
+
+impl<'a> LegacyAdvertiserStopping<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+        self.in_flight.identity()
+    }
+
+    /// Join the accepted TX without starting any remaining channel or event.
+    pub fn complete(
+        self,
+        observed: LegacyAdvertisingTxIdentity,
+    ) -> LegacyAdvertiserStopCompletion<'a> {
+        let expected = self.identity();
+        if observed != expected {
+            return LegacyAdvertiserStopCompletion::Mismatch {
+                error: LegacyAdvertisingTxCompletionMismatch { expected, observed },
+                stopping: self,
+            };
+        }
+
+        let LegacyAdvertiserTxPrepared {
+            standby, prepared, ..
+        } = self.in_flight.prepared;
+        let set = match prepared.into_transmitted() {
+            LegacyAdvertisingEventProgress::More(event) => event.into_set(),
+            LegacyAdvertisingEventProgress::Complete(complete) => complete.into_set(),
+        };
+        LegacyAdvertiserStopCompletion::Configured(LegacyAdvertiserConfigured { standby, set })
+    }
+}
+
+/// Result of joining an in-flight TX during disable.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "retain a mismatch or the recovered configured advertiser"]
+pub enum LegacyAdvertiserStopCompletion<'a> {
+    Configured(LegacyAdvertiserConfigured<'a>),
+    Mismatch {
+        error: LegacyAdvertisingTxCompletionMismatch,
+        stopping: LegacyAdvertiserStopping<'a>,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{LeDeviceAddress, LeDeviceAddressKind};
+
+    use super::*;
+    use crate::advertising::{
+        AdvertisingInterval, LegacyAdvertisingData, LegacyNonconnectableAdvertisement,
+        PrimaryAdvertisingChannelMap,
+    };
+
+    fn set<'a>(
+        data: &'a [u8],
+        channels: PrimaryAdvertisingChannelMap,
+    ) -> LegacyNonconnectableAdvertisingSet<'a> {
+        LegacyNonconnectableAdvertisingSet::new(
+            LegacyNonconnectableAdvertisement::new(
+                LeDeviceAddress::from_wire_bytes([6, 5, 4, 3, 2, 1], LeDeviceAddressKind::Public),
+                LegacyAdvertisingData::new(data).unwrap(),
+            ),
+            channels,
+            AdvertisingInterval::new(AdvertisingInterval::MIN_UNITS).unwrap(),
+        )
+    }
+
+    #[test]
+    fn rejected_admission_returns_the_same_generation_event_and_channel() {
+        let enabled = LegacyAdvertiserStandby::new()
+            .configure(set(&[1], PrimaryAdvertisingChannelMap::all()))
+            .enable()
+            .unwrap();
+        let prepared = enabled.prepare_next();
+        let identity = prepared.identity();
+
+        assert_eq!(identity.generation().get(), 1);
+        assert_eq!(identity.event().get(), 0);
+        assert_eq!(identity.channel(), PrimaryAdvertisingChannel::Channel37);
+        assert_eq!(prepared.cancel().prepare_next().identity(), identity);
+    }
+
+    #[test]
+    fn stale_completion_retains_in_flight_owner_and_exact_progress() {
+        let in_flight = LegacyAdvertiserStandby::new()
+            .configure(set(&[1], PrimaryAdvertisingChannelMap::all()))
+            .enable()
+            .unwrap()
+            .prepare_next()
+            .into_submitted();
+        let expected = in_flight.identity();
+        let stale = LegacyAdvertisingTxIdentity {
+            event: LegacyAdvertisingEventSequence(1),
+            ..expected
+        };
+        let LegacyAdvertiserTxCompletion::Mismatch { error, in_flight } = in_flight.complete(stale)
+        else {
+            panic!("stale completion must retain the in-flight owner");
+        };
+        assert_eq!(error.expected, expected);
+        assert_eq!(error.observed, stale);
+
+        let LegacyAdvertiserTxCompletion::Advanced(LegacyAdvertiserAdvance::Event(enabled)) =
+            in_flight.complete(expected)
+        else {
+            panic!("channel 38 must remain after channel 37");
+        };
+        assert_eq!(
+            enabled.prepare_next().identity().channel(),
+            PrimaryAdvertisingChannel::Channel38
+        );
+    }
+
+    #[test]
+    fn completed_event_requires_fresh_delay_and_advances_event_identity() {
+        let in_flight = LegacyAdvertiserStandby::new()
+            .configure(set(
+                &[1, 2],
+                PrimaryAdvertisingChannelMap::new(false, false, true).unwrap(),
+            ))
+            .enable()
+            .unwrap()
+            .prepare_next()
+            .into_submitted();
+        let identity = in_flight.identity();
+        let LegacyAdvertiserTxCompletion::Advanced(LegacyAdvertiserAdvance::EventComplete(
+            complete,
+        )) = in_flight.complete(identity)
+        else {
+            panic!("the sole selected channel must close the event");
+        };
+
+        let scheduled = complete
+            .schedule_next(AdvertisingDelay::from_micros(7_500).unwrap())
+            .unwrap();
+        assert_eq!(scheduled.generation().get(), 1);
+        assert_eq!(scheduled.event_sequence().get(), 1);
+        assert_eq!(scheduled.start_offset_micros(), 27_500);
+        let next = scheduled.into_due().prepare_next();
+        assert_eq!(next.identity().event().get(), 1);
+        assert_eq!(
+            next.identity().channel(),
+            PrimaryAdvertisingChannel::Channel39
+        );
+    }
+
+    #[test]
+    fn disable_during_in_flight_joins_exact_tx_and_mints_next_generation() {
+        let stopping = LegacyAdvertiserStandby::new()
+            .configure(set(&[1], PrimaryAdvertisingChannelMap::all()))
+            .enable()
+            .unwrap()
+            .prepare_next()
+            .into_submitted()
+            .request_disable();
+        let expected = stopping.identity();
+        let stale = LegacyAdvertisingTxIdentity {
+            generation: LegacyAdvertisingGeneration(2),
+            ..expected
+        };
+        let LegacyAdvertiserStopCompletion::Mismatch { error, stopping } = stopping.complete(stale)
+        else {
+            panic!("cross-generation completion must retain stopping");
+        };
+        assert_eq!(error.expected, expected);
+
+        let LegacyAdvertiserStopCompletion::Configured(configured) = stopping.complete(expected)
+        else {
+            panic!("exact completion must close stopping");
+        };
+        assert_eq!(configured.enable().unwrap().generation().get(), 2);
+    }
+
+    #[test]
+    fn generation_and_event_sequence_exhaustion_retain_their_owners() {
+        let standby = LegacyAdvertiserStandby {
+            next_generation: Some(u32::MAX),
+        };
+        let enabled = standby
+            .configure(set(&[], PrimaryAdvertisingChannelMap::all()))
+            .enable()
+            .unwrap();
+        assert_eq!(enabled.generation().get(), u32::MAX);
+        let configured = enabled.disable();
+        assert!(configured.enable().is_err());
+
+        let in_flight = LegacyAdvertiserStandby::new()
+            .configure(set(
+                &[],
+                PrimaryAdvertisingChannelMap::new(true, false, false).unwrap(),
+            ))
+            .enable()
+            .unwrap()
+            .prepare_next()
+            .into_submitted();
+        let identity = in_flight.identity();
+        let LegacyAdvertiserTxCompletion::Advanced(LegacyAdvertiserAdvance::EventComplete(
+            mut complete,
+        )) = in_flight.complete(identity)
+        else {
+            panic!("single channel must close the event");
+        };
+        complete.event_sequence = LegacyAdvertisingEventSequence(u32::MAX);
+        let exhausted = complete
+            .schedule_next(AdvertisingDelay::from_micros(0).unwrap())
+            .unwrap_err();
+        let configured = exhausted.into_complete().disable();
+        assert_eq!(configured.enable().unwrap().generation().get(), 2);
+    }
+}

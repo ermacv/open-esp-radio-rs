@@ -10,6 +10,7 @@
 //! configure roles only after those lower ownership boundaries exist.
 
 mod address;
+pub mod advertiser;
 pub mod advertising;
 
 pub use address::{LeDeviceAddress, LeDeviceAddressKind};

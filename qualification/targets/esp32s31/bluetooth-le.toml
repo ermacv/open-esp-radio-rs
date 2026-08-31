@@ -385,7 +385,7 @@ gaps = [
 [[capabilities]]
 id = "portable-legacy-advertising"
 title = "Portable legacy non-connectable advertising"
-scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty primary channel selection affine per-channel event progression and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
+scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty primary channel selection affine enable generation event and channel identity stale-completion retention in-flight disable join and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
 implementation = "complete"
 host = "covered"
 async = "not-applicable"

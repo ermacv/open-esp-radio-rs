@@ -1229,6 +1229,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-bluetooth-ll"
+version = "0.1.0"
+
+[[package]]
 name = "open-esp-radio-dma"
 version = "0.1.0"
 
@@ -1239,6 +1243,7 @@ dependencies = [
  "critical-section",
  "embassy-sync 0.8.0",
  "open-esp-radio-bluetooth-hci",
+ "open-esp-radio-bluetooth-ll",
  "open-esp-radio-esp32s31-bluetooth-memory",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",

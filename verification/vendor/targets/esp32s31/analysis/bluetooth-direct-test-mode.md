@@ -67,13 +67,18 @@ registry, allocator or RTOS event model into the Rust architecture.
   `78fd88e769ee48bf290bae3684df9ec8ea5c2f939396e4e50eb8a69f134ea6aa`.
 
 All current-revision S31 behavioral claims below come from complete current
-S31 bodies. The initial public S31 archive retains descriptive scheduler and
-DTM symbols; its role names are accepted only where control flow, call order
-and instruction extent agree with the current body. The C61 archive is used
-under the same stricter role-only rule for BLE functions whose S31 history is
-obfuscated. Neither older S31 code nor C61 supplies current register behavior
-or ABI evidence. Object files and disassembly products remain temporary review
-inputs and are not repository artifacts.
+linked S31 instruction extents and are limited to the locally recovered
+effects; a complete extent does not imply complete symbolic semantics. One
+explicitly labelled dead-stripped raw-archive body is
+retained only as corroboration of a positional transform already present in
+the linked DTM recycle callback. The initial public S31 archive retains
+descriptive scheduler and DTM symbols; its role names are accepted only where
+control flow, call order and instruction extent agree with the current body.
+The C61 archive is used under the same stricter role-only rule for BLE
+functions whose S31 history is obfuscated. Neither older S31 code nor C61
+supplies current register behavior or ABI evidence. Object files and
+disassembly products remain temporary review inputs and are not repository
+artifacts.
 
 ## Recovered DTM component
 
@@ -93,8 +98,8 @@ following useful map:
 | `r_sym_ble_ssKOV2juzhIVJk3r8x6R` | 112 | Validate and start a receiver test, including channel `0..=39` and the accepted PHY selector domain. A nonzero active-graph pointer at environment offset `+0x08` returns standardized `Controller Busy` (`0x3a`) before parameter validation or allocation. |
 | `r_sym_ble_eTAd...` | 502 | Pop one completed RX buffer from the private link-state chain. Its complete control flow agrees with named `r_ble_lll_get_rxed_buffer` (496 bytes): it follows the full RX-head pointer, checks the volatile completion flag, validates that packet result and metadata no longer retain their re-arm sentinels and advances a packetless predecessor only when its successor is complete. |
 | `r_sym_ble_9Hls...` | 456 | Append one returned RX buffer. Its complete control flow agrees with named `r_ble_lll_append_rx_buffer` (452 bytes): a terminal tail is copied into the detached reserve, its original header becomes the packetless predecessor, the copied header becomes the armed tail and the two fixed slots alternate on later completions. |
-| `r_sym_ble_PptSRbXfefQwMVyO5jxP` | 52 | Process one received DTM buffer. From third argument offset `+0x04` it reconstructs a `0x2f00_0000 | (low20 << 2)` address. A zero compressed pointer takes the vendor fail-stop edge. The body returns `-1` when any low-24 bit of the word at returned-buffer offset `+0x0c` is nonzero; otherwise it copies the high byte at `+0x0f` into DTM link-state byte `+0x24` and returns zero. The byte meaning remains positional. |
-| `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` | 336 | Recycle one completed DTM scheduler item. Complete control flow agrees with same-chip named `r_ble_lll_dtm_recycle_sch_item` (324 bytes). The callback returns the item to the private chain first. Status zero enables role accounting: TX role one increments the DTM result count, while RX role two drains returned buffers; a result word with zero low 24 bits additionally updates the positional high byte and increments the wrapping 16-bit receive count. When the environment remains active, both zero and nonzero item status may continue into the next-event reschedule path; nonzero status skips accounting rather than suppressing rescheduling. With DTM capacity one, the first returned tail is terminal and necessarily takes the two-header swap rotation; the detached original remains inside the fixed graph as the packetless predecessor and becomes the next reserve. An unexpected role takes the vendor fail-stop edge. |
+| `r_sym_ble_PptSRbXfefQwMVyO5jxP` | 52 | Dead-stripped raw-archive corroboration only, not a linked effect authority. From third argument offset `+0x04` its complete raw body reconstructs a `0x2f00_0000 | (low20 << 2)` address. A zero compressed pointer takes the vendor fail-stop edge. It returns `-1` when any low-24 bit of the word at returned-buffer offset `+0x0c` is nonzero; otherwise it copies the high byte at `+0x0f` into DTM link-state byte `+0x24` and returns zero. The byte meaning remains positional. |
+| `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` | 312 | Current linked effect authority for recycling one completed DTM scheduler item. Its complete linked instruction extent contains the exact local RX-result edge; whole-function symbolic semantics remain incomplete. Its control-flow shape agrees with same-chip named `r_ble_lll_dtm_recycle_sch_item` (324 bytes). The callback returns the item to the private chain first. Status zero enables role accounting: TX role one increments the DTM result count, while RX role two drains returned buffers; it directly rejects a result word whose low 24 bits are nonzero, otherwise updates the positional high byte and increments the wrapping 16-bit receive count. When the environment remains active, both zero and nonzero item status may continue into the next-event reschedule path; nonzero status skips accounting rather than suppressing rescheduling. With DTM capacity one, the first returned tail is terminal and necessarily takes the two-header swap rotation; the detached original remains inside the fixed graph as the packetless predecessor and becomes the next reserve. An unexpected role takes the vendor fail-stop edge. |
 | `r_sym_ble_9DFKLYZzjaztWMiPU4NR` | 168 | End the test and return success. The body first serializes the shared 16-bit DTM count as the two-byte Test End result; a zero active-graph pointer then returns zero without entering teardown. When a test is active, it removes queued kind-five items, synchronously stops the common scheduler, clears DTM active/count state, frees the private graph, restores the default length state and also returns zero. Because the recycle callback increments this same count for successful TX events, the current vendor path can expose a nonzero transmitter result. Bluetooth Core requires the packet count ending a transmitter test to be zero, so the open HCI policy deliberately does not copy that vendor behavior. |
 
 The fixed `0x71764129` word agrees with the standardized DTM access address,

@@ -4,11 +4,15 @@
 
 /// Validated result word consumed by the reviewed ESP32-S31 DTM RX callback.
 ///
-/// Complete current body `r_sym_ble_PptSRbXfefQwMVyO5jxP` reads this word at
-/// returned packet-buffer offset `+0x0c`. It accepts the word only when its
-/// low 24 bits are zero and copies the high byte from offset `+0x0f` into DTM
-/// state. This controller-memory projection intentionally does not name that
-/// byte as RSSI, length, CRC or status.
+/// Complete current linked body
+/// `ble-controller:r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` reads this word at returned
+/// packet-buffer offset `+0x0c`. It accepts the word only when its low 24 bits
+/// are zero and copies the high byte from offset `+0x0f` into DTM state.
+/// Dead-stripped raw-archive body
+/// `r_sym_ble_PptSRbXfefQwMVyO5jxP` independently corroborates that positional
+/// transform but is not its linked effect authority. This controller-memory
+/// projection intentionally does not name the byte as RSSI, length, CRC or
+/// status.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmRxResultProjection(u32);
 

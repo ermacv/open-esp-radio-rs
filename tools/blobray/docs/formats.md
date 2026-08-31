@@ -189,11 +189,14 @@ state and capture a fresh baseline from the live typed vendor bindings.
   reviewed-record IDs. `@live` is a read-only operand for validating and
   comparing current analyzed bindings before publishing a new immutable
   snapshot;
-- research-next reports (`schema_version = 17`) contain one deterministic,
+- research-next reports (`schema_version = 18`) contain one deterministic,
   SHA-256-identified full inventory of findings, actions and prerequisites.
   Actions refer to the single typed finding catalog by ID and prerequisites
   carry no rank; the bounded `selection.steps` list contains only ordered typed
-  IDs. The explicit `focus` changes selection eligibility, while strategy,
+  IDs. Exact artifact-authenticated reviewed memory classifications distinguish
+  hardware-shared SRAM from software-only or unclassified RAM for selection;
+  they are ranking evidence and never resolve the analysis finding. The
+  explicit `focus` changes selection eligibility, while strategy,
   focus, limit and budget do not change the inventory digest.
   The always-present exact-finding query distinguishes `all`, `open`,
   `condition-satisfied`, `input-not-observed`, `filtered-out`, and

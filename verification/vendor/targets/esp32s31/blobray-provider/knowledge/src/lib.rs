@@ -5,14 +5,17 @@
 //! they are not hardware truth and cannot make qualification decisions.
 
 pub use open_radio_vendor_backend_riscv::{
-    ReferenceResolver, ReviewedMemoryValueDomain, RiscvHarnessSpec, RiscvSummaryHooks,
-    Rv32CallArguments, StructuralPointerContext, artifact, codegen, execution,
+    ReferenceResolver, ReviewedMemoryAccessClassification, ReviewedMemoryAccessOccurrence,
+    ReviewedMemoryAccessOperation, ReviewedMemoryAccessRole, ReviewedMemoryValueDomain,
+    RiscvHarnessSpec, RiscvSummaryHooks, Rv32CallArguments, StructuralPointerContext, artifact,
+    codegen, execution,
 };
 pub use open_radio_vendor_execution_model as execution_model;
 pub use open_radio_vendor_harness_esp32s31::{CONTRACTS, entry_contract, external_abi};
 pub use open_radio_vendor_semantics::*;
 
 mod reviewed_inputs;
+mod reviewed_memory_accesses;
 mod reviewed_summaries;
 
 const CHIP_SUMMARIES: &RiscvSummaryHooks =
@@ -49,6 +52,7 @@ pub static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
     summaries: &RISCV_SUMMARIES,
     compressed_pointer_encodings: open_radio_vendor_chip_knowledge_esp32s31_rev0::RISCV_HARNESS
         .compressed_pointer_encodings,
+    reviewed_memory_accesses: reviewed_memory_accesses::CLASSIFICATIONS,
 };
 
 pub const REVIEWED_SUMMARY_EVIDENCE_SOURCE: EvidenceSource = EvidenceSource {

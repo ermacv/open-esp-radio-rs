@@ -79,6 +79,7 @@ pub(super) static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
     contracts: &CONTRACTS,
     summaries: &SUMMARIES,
     compressed_pointer_encodings: &[],
+    reviewed_memory_accesses: &[],
 };
 
 pub(super) fn entry_contract(id: &str) -> crate::Result<EntryContractRef> {

@@ -61,12 +61,15 @@ use memory_map::MemoryMap;
 use open_radio_vendor_analysis_model::*;
 #[cfg(test)]
 use open_radio_vendor_analysis_model::{MmioRegion, Register};
-pub use open_radio_vendor_backend_riscv::RiscvHarnessSpec;
 pub use open_radio_vendor_backend_riscv::artifact::{
     FunctionBasicBlock, FunctionBody, FunctionControlFlow, FunctionControlFlowKind,
     FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
 };
 pub use open_radio_vendor_backend_riscv::execution::Scenario as ExecutionScenario;
+pub use open_radio_vendor_backend_riscv::{
+    ReviewedMemoryAccessClassification, ReviewedMemoryAccessOccurrence,
+    ReviewedMemoryAccessOperation, ReviewedMemoryAccessRole, RiscvHarnessSpec,
+};
 pub(crate) use open_radio_vendor_backend_riscv::{
     Rv32CallArguments, Rv32IntrinsicResult, artifact, codegen, direct_target_audit, execution,
     interface_discovery,

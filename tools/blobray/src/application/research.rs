@@ -22,7 +22,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 17;
+pub(crate) const RESEARCH_SCHEMA: u32 = 18;
 const MAX_RESEARCH_EVENT_ROUTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -375,6 +375,8 @@ pub(crate) struct ResearchFinding {
     pub(crate) kind: String,
     pub(crate) severity: String,
     pub(crate) subject: ResearchSubject,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reviewed_memory_access: Option<crate::ReviewedMemoryAccessClassification>,
     pub(crate) consumers: Vec<ResearchConsumer>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) blocker_resolution_route: Option<crate::BlockerResolutionRoute>,
@@ -559,6 +561,7 @@ struct Accumulator {
     severity: String,
     message: String,
     subject: ResearchSubject,
+    reviewed_memory_access: Option<crate::ReviewedMemoryAccessClassification>,
     consumers: Vec<ResearchConsumer>,
     blocker_resolution_route: Option<crate::BlockerResolutionRoute>,
     evidence_sites: BTreeSet<u32>,
@@ -580,6 +583,7 @@ struct Seed {
     severity: String,
     message: String,
     subject: ResearchSubject,
+    reviewed_memory_access: Option<crate::ReviewedMemoryAccessClassification>,
     consumers: Vec<ResearchConsumer>,
     blocker_resolution_route: Option<crate::BlockerResolutionRoute>,
     evidence_sites: BTreeSet<u32>,
@@ -630,6 +634,8 @@ pub(crate) fn next(
     };
     let (direct_diagnostic_owners, graphs) = load_research_graphs(session, &graph_scopes)?;
     let (interface_context, capability_diagnostic) = interface_research_context(session);
+    let reviewed_memory_accesses =
+        crate::harnesses::reviewed_memory_accesses(session.project.analysis_provider.as_deref())?;
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
         add_blockers(
@@ -637,6 +643,8 @@ pub(crate) fn next(
             scope,
             &graphs[&scope.id],
             &direct_diagnostic_owners,
+            reviewed_memory_accesses,
+            &session.project.review_context,
             &mut candidates,
         )?;
     }
@@ -2180,10 +2188,11 @@ fn finding_matches_focus(finding: &ResearchFinding, focus: ResearchFocus) -> boo
         ResearchFocus::All => true,
         ResearchFocus::HardwareAccess => {
             matches!(&finding.subject, ResearchSubject::MmioRegister { .. })
-                || matches!(
-                    finding.kind.as_str(),
-                    "register-model" | "register-write-semantics" | "memory-load" | "memory-store"
-                )
+                || finding
+                    .reviewed_memory_access
+                    .is_some_and(|classification| {
+                        classification.role == crate::ReviewedMemoryAccessRole::HardwareShared
+                    })
         }
     }
 }
@@ -2573,6 +2582,8 @@ fn add_blockers(
     scope: &ReviewScopeReport,
     graph: &ScopeGraph,
     direct_diagnostic_owners: &DirectDiagnosticOwners,
+    reviewed_memory_accesses: &[crate::ReviewedMemoryAccessClassification],
+    review_context: &open_radio_vendor_contracts::ApplicabilityContext,
     candidates: &mut BTreeMap<String, Accumulator>,
 ) -> Result<()> {
     let mut by_function = BTreeMap::<String, BTreeSet<String>>::new();
@@ -2585,6 +2596,8 @@ fn add_blockers(
         }
     }
     for item in &scope.review_queue {
+        let reviewed_memory_access =
+            classify_reviewed_memory_access(item, reviewed_memory_accesses, review_context);
         let blocker_resolution_route = crate::blocker_resolution::blocker_resolution_route(
             project,
             &item.id,
@@ -2625,6 +2638,7 @@ fn add_blockers(
                 subject: ResearchSubject::AnalysisRoot {
                     root_id: item.id.clone(),
                 },
+                reviewed_memory_access,
                 consumers: Vec::new(),
                 blocker_resolution_route: Some(blocker_resolution_route),
                 evidence_sites: item.sites.iter().copied().collect(),
@@ -2641,6 +2655,33 @@ fn add_blockers(
         )?;
     }
     Ok(())
+}
+
+fn classify_reviewed_memory_access(
+    item: &crate::review_scopes::ReviewQueueItem,
+    facts: &[crate::ReviewedMemoryAccessClassification],
+    review_context: &open_radio_vendor_contracts::ApplicabilityContext,
+) -> Option<crate::ReviewedMemoryAccessClassification> {
+    let operation = match item.kind.as_str() {
+        "memory-load" => crate::ReviewedMemoryAccessOperation::Load,
+        "memory-store" => crate::ReviewedMemoryAccessOperation::Store,
+        _ => return None,
+    };
+    let [function] = item.functions.as_slice() else {
+        return None;
+    };
+    let [site] = item.sites.as_slice() else {
+        return None;
+    };
+    facts.iter().copied().find(|fact| {
+        fact.occurrence.function == function
+            && fact.occurrence.site == *site
+            && fact.occurrence.operation == operation
+            && review_context.artifacts.iter().any(|artifact| {
+                artifact.source() == fact.occurrence.artifact_source
+                    && artifact.sha256() == fact.occurrence.artifact_sha256
+            })
+    })
 }
 
 fn add_incomplete_event_route_blockers(
@@ -2721,6 +2762,7 @@ fn add_incomplete_event_route_report(
                         route_id: route_id.to_owned(),
                         blocker_kind: blocker.kind.clone(),
                     },
+                    reviewed_memory_access: None,
                     consumers: Vec::new(),
                     blocker_resolution_route: Some(
                         crate::blocker_resolution::event_route_blocker_resolution_route(
@@ -2966,6 +3008,7 @@ fn add_required_analysis_surface_findings(
                     severity: "error".to_owned(),
                     message: diagnostic,
                     subject,
+                    reviewed_memory_access: None,
                     consumers: vec![consumer],
                     blocker_resolution_route: None,
                     evidence_sites: BTreeSet::new(),
@@ -3001,6 +3044,7 @@ fn merge(
         && (existing.kind != seed.kind
             || existing.severity != seed.severity
             || existing.subject != seed.subject
+            || existing.reviewed_memory_access != seed.reviewed_memory_access
             || existing.consumers != seed.consumers
             || existing.blocker_resolution_route != seed.blocker_resolution_route)
     {
@@ -3018,6 +3062,7 @@ fn merge(
             severity: seed.severity,
             message: seed.message,
             subject: seed.subject,
+            reviewed_memory_access: seed.reviewed_memory_access,
             consumers: seed.consumers,
             blocker_resolution_route: seed.blocker_resolution_route,
             evidence_sites: BTreeSet::new(),
@@ -3179,6 +3224,7 @@ fn add_register_seed(
                 severity: template.severity.clone(),
                 message: template.message.clone(),
                 subject: template.subject.clone(),
+                reviewed_memory_access: None,
                 consumers: template.consumers.clone(),
                 blocker_resolution_route: None,
                 evidence_sites: fact
@@ -3347,6 +3393,7 @@ fn add_interfaces(
                         selector: observation.selector.clone(),
                         call_sites: observation.call_sites.clone(),
                     },
+                    reviewed_memory_access: None,
                     consumers: vec![interface_consumer(session, observation)],
                     blocker_resolution_route: None,
                     evidence_sites: observation.call_sites.iter().copied().collect(),
@@ -4595,6 +4642,7 @@ fn finalize(
         kind: kind.clone(),
         severity: candidate.severity,
         subject: candidate.subject,
+        reviewed_memory_access: candidate.reviewed_memory_access,
         consumers: candidate.consumers,
         blocker_resolution_route: candidate.blocker_resolution_route,
         resolution_owner,
@@ -4679,12 +4727,16 @@ fn finalize(
 struct ActionResolutionKey {
     owner: crate::BlockerResolutionOwner,
     required_model: String,
+    memory_access_role: Option<crate::ReviewedMemoryAccessRole>,
 }
 
 fn finding_action_resolution_key(finding: &ResearchFinding) -> ActionResolutionKey {
     ActionResolutionKey {
         owner: finding.resolution_owner,
         required_model: finding.knowledge_required.clone(),
+        memory_access_role: finding
+            .reviewed_memory_access
+            .map(|classification| classification.role),
     }
 }
 
@@ -4708,10 +4760,14 @@ fn action_canonical_identity(
     resolution: &ActionResolutionKey,
 ) -> String {
     format!(
-        "{}\0{}\0{}",
+        "{}\0{}\0{}\0{}",
         action.canonical_execution_key(),
         resolution.owner.label(),
-        resolution.required_model
+        resolution.required_model,
+        resolution.memory_access_role.map_or(
+            "not-reviewed-memory",
+            crate::ReviewedMemoryAccessRole::label
+        )
     )
 }
 
@@ -5074,6 +5130,7 @@ mod tests {
             subject: ResearchSubject::AnalysisRoot {
                 root_id: id.to_owned(),
             },
+            reviewed_memory_access: None,
             consumers: Vec::new(),
             blocker_resolution_route: Some(crate::BlockerResolutionRoute {
                 owner: crate::BlockerResolutionOwner::Unsupported,
@@ -5103,6 +5160,28 @@ mod tests {
             scopes: ["radio".to_owned()].into(),
             publication_scopes: BTreeSet::new(),
         }
+    }
+
+    fn reviewed_memory_access(
+        id: &'static str,
+        function: &'static str,
+        site: u32,
+        operation: crate::ReviewedMemoryAccessOperation,
+        role: crate::ReviewedMemoryAccessRole,
+    ) -> crate::ReviewedMemoryAccessClassification {
+        crate::ReviewedMemoryAccessClassification::new(
+            id,
+            crate::ReviewedMemoryAccessOccurrence::new(
+                "fixture-artifact",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                function,
+                site,
+                operation,
+            ),
+            role,
+            "fixture-memory-object",
+            "fixture reviewed evidence",
+        )
     }
 
     fn analysis_surface_accumulator(
@@ -5851,7 +5930,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 17);
+        assert_eq!(report.schema_version, 18);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -5903,6 +5982,13 @@ mod tests {
 
         let mut memory = accumulator("sram-load", "memory-load");
         memory.direct.insert("controller::packet".to_owned());
+        memory.reviewed_memory_access = Some(reviewed_memory_access(
+            "hardware-load",
+            "controller::packet",
+            0x2000,
+            crate::ReviewedMemoryAccessOperation::Load,
+            crate::ReviewedMemoryAccessRole::HardwareShared,
+        ));
         let mut memory = finalize_test(
             memory,
             &BTreeMap::new(),
@@ -5911,7 +5997,42 @@ mod tests {
         );
         memory.score = 1;
         let memory_action_id = memory.id.clone();
-        let actions = vec![interface, generic, memory];
+
+        let mut software_memory = accumulator("allocator-load", "memory-load");
+        software_memory.reviewed_memory_access = Some(reviewed_memory_access(
+            "software-load",
+            "controller::allocator",
+            0x3000,
+            crate::ReviewedMemoryAccessOperation::Load,
+            crate::ReviewedMemoryAccessRole::SoftwareOnly,
+        ));
+        let mut software_memory = finalize_test(
+            software_memory,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect function controller::allocator --project project.toml",
+        );
+        software_memory.score = 20_000;
+
+        let mut unclassified_memory = accumulator("unknown-load", "memory-load");
+        unclassified_memory
+            .direct
+            .insert("controller::unknown".to_owned());
+        let mut unclassified_memory = finalize_test(
+            unclassified_memory,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect function controller::unknown --project project.toml",
+        );
+        unclassified_memory.score = 30_000;
+
+        let actions = vec![
+            interface,
+            generic,
+            memory,
+            software_memory,
+            unclassified_memory,
+        ];
 
         let all = report_from_actions_with_focus(
             actions.clone(),
@@ -5930,8 +6051,8 @@ mod tests {
 
         assert_eq!(hardware.focus, ResearchFocus::HardwareAccess);
         assert_eq!(hardware.inventory, all.inventory);
-        assert_eq!(hardware.inventory.findings.len(), 3);
-        assert_eq!(hardware.inventory.actions.len(), 3);
+        assert_eq!(hardware.inventory.findings.len(), 5);
+        assert_eq!(hardware.inventory.actions.len(), 5);
         assert_eq!(hardware.inventory.prerequisites.len(), 1);
         assert_eq!(hardware.selection.eligible_prerequisites, 0);
         assert_eq!(hardware.selection.eligible_actions, 1);
@@ -5940,6 +6061,112 @@ mod tests {
             [ResearchStepRef {
                 kind: ResearchStepKind::Action,
                 id: memory_action_id,
+            }]
+        );
+    }
+
+    #[test]
+    fn reviewed_memory_ranking_requires_the_exact_active_artifact() {
+        let item = crate::review_scopes::ReviewQueueItem {
+            id: "memory-finding".to_owned(),
+            kind: "memory-store".to_owned(),
+            priority: 50,
+            severity: "warning".to_owned(),
+            occurrences: 1,
+            functions: vec!["controller::packet".to_owned()],
+            affected_scope_roots: Vec::new(),
+            potentially_unblocked_functions: 1,
+            sites: vec![0x2000],
+            channels: vec!["reference".to_owned()],
+            message: "unmodeled memory store".to_owned(),
+        };
+        let fact = reviewed_memory_access(
+            "hardware-store",
+            "controller::packet",
+            0x2000,
+            crate::ReviewedMemoryAccessOperation::Store,
+            crate::ReviewedMemoryAccessRole::HardwareShared,
+        );
+        let exact = open_radio_vendor_contracts::ApplicabilityContext {
+            artifacts: vec![
+                open_radio_vendor_contracts::ArtifactIdentity::new(
+                    fact.occurrence.artifact_source,
+                    fact.occurrence.artifact_sha256,
+                )
+                .unwrap(),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            classify_reviewed_memory_access(&item, &[fact], &exact),
+            Some(fact)
+        );
+
+        let changed = open_radio_vendor_contracts::ApplicabilityContext {
+            artifacts: vec![
+                open_radio_vendor_contracts::ArtifactIdentity::new(
+                    fact.occurrence.artifact_source,
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                )
+                .unwrap(),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            classify_reviewed_memory_access(&item, &[fact], &changed),
+            None
+        );
+    }
+
+    #[test]
+    fn hardware_and_software_memory_findings_do_not_share_one_ranked_action() {
+        let mut hardware = accumulator("hardware-store", "memory-store");
+        hardware.reviewed_memory_access = Some(reviewed_memory_access(
+            "hardware-store",
+            "controller::packet",
+            0x2000,
+            crate::ReviewedMemoryAccessOperation::Store,
+            crate::ReviewedMemoryAccessRole::HardwareShared,
+        ));
+        let hardware = finalize_test(
+            hardware,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect scope radio --project project.toml",
+        );
+        let hardware_action_id = hardware.id.clone();
+
+        let mut software = accumulator("software-store", "memory-store");
+        software.reviewed_memory_access = Some(reviewed_memory_access(
+            "software-store",
+            "controller::allocator",
+            0x3000,
+            crate::ReviewedMemoryAccessOperation::Store,
+            crate::ReviewedMemoryAccessRole::SoftwareOnly,
+        ));
+        let software = finalize_test(
+            software,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect scope radio --project project.toml",
+        );
+
+        let actions = coalesce_actions(vec![hardware, software]);
+        assert_eq!(actions.len(), 2);
+        let report = report_from_actions_with_focus(
+            actions,
+            ResearchRankingStrategy::Impact,
+            ResearchFocus::HardwareAccess,
+            10,
+            None,
+        );
+        assert_eq!(report.inventory.findings.len(), 2);
+        assert_eq!(report.selection.eligible_actions, 1);
+        assert_eq!(
+            report.selection.steps,
+            [ResearchStepRef {
+                kind: ResearchStepKind::Action,
+                id: hardware_action_id,
             }]
         );
     }
@@ -7372,7 +7599,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_seventeen_serializes_focus_routes_query_and_executable_actions() {
+    fn schema_eighteen_serializes_focus_routes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -7397,7 +7624,7 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 17);
+        assert_eq!(value["schema_version"], 18);
         assert_eq!(value["focus"], "all");
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);

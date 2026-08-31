@@ -1026,6 +1026,7 @@ mod tests {
             subject: research::ResearchSubject::AnalysisRoot {
                 root_id: id.to_owned(),
             },
+            reviewed_memory_access: None,
             consumers: Vec::new(),
             blocker_resolution_route: None,
             resolution_owner: crate::BlockerResolutionOwner::Unsupported,

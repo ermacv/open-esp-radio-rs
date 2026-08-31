@@ -391,6 +391,7 @@ static TEST_RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
     contracts: &TEST_CONTRACTS,
     summaries: &TEST_SUMMARIES,
     compressed_pointer_encodings: &[],
+    reviewed_memory_accesses: &[],
 };
 
 fn synthetic_delay_pointer_context() -> StructuralPointerContext {

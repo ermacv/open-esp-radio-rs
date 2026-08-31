@@ -184,7 +184,10 @@ impl ProjectSession {
                     .map_err(|error| {
                         crate::Error::invalid(format!("cannot load reviewed knowledge: {error}"))
                     })?;
-            let sources = knowledge.constrained_artifact_sources();
+            let mut sources = knowledge.constrained_artifact_sources();
+            sources.extend(crate::harnesses::reviewed_memory_access_artifact_sources(
+                target.knowledge_provider.as_deref(),
+            )?);
             if !sources.is_empty() {
                 let run_spec = run_spec.as_ref().ok_or_else(|| {
                     crate::Error::invalid(
@@ -281,7 +284,10 @@ impl ProjectSession {
                 .map_err(|error| {
                 crate::Error::invalid(format!("cannot reload reviewed knowledge: {error}"))
             })?;
-        let sources = knowledge.constrained_artifact_sources();
+        let mut sources = knowledge.constrained_artifact_sources();
+        sources.extend(crate::harnesses::reviewed_memory_access_artifact_sources(
+            self.target.knowledge_provider.as_deref(),
+        )?);
         if sources.is_empty() {
             return Ok(());
         }

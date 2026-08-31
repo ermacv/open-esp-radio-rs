@@ -125,6 +125,9 @@ fn validate_registry(registry: &ProviderRegistry) -> std::result::Result<(), Str
                 descriptor.id
             ));
         }
+        if let Some(harness) = descriptor.riscv {
+            validate_reviewed_memory_accesses(descriptor.id, harness.reviewed_memory_accesses)?;
+        }
     }
     for descriptor in registry.knowledge {
         let Some(base_id) = descriptor.extends else {
@@ -213,6 +216,46 @@ fn validate_contract_superset(
             "knowledge provider {:?} is not a contract superset of base {:?}",
             overlay.id, base.id
         ));
+    }
+    if let (Some(base), Some(overlay)) = (base.riscv, overlay.riscv)
+        && !base
+            .reviewed_memory_accesses
+            .iter()
+            .all(|fact| overlay.reviewed_memory_accesses.contains(fact))
+    {
+        return Err(format!(
+            "knowledge provider {:?} drops reviewed memory-access facts from base {:?}",
+            overlay.semantic_cache_domain, base.semantic_cache_domain
+        ));
+    }
+    Ok(())
+}
+
+fn validate_reviewed_memory_accesses(
+    provider: &str,
+    facts: &[crate::ReviewedMemoryAccessClassification],
+) -> std::result::Result<(), String> {
+    let mut ids = BTreeSet::new();
+    let mut occurrences = BTreeSet::new();
+    for fact in facts {
+        fact.validate()
+            .map_err(|reason| format!("knowledge provider {provider:?}: {reason}"))?;
+        if !ids.insert(fact.id) {
+            return Err(format!(
+                "knowledge provider {provider:?} repeats reviewed memory-access ID {:?}",
+                fact.id
+            ));
+        }
+        if !occurrences.insert((
+            fact.occurrence.function,
+            fact.occurrence.site,
+            fact.occurrence.operation,
+        )) {
+            return Err(format!(
+                "knowledge provider {provider:?} classifies memory access {} at {:#x} more than once",
+                fact.occurrence.function, fact.occurrence.site
+            ));
+        }
     }
     Ok(())
 }
@@ -310,6 +353,21 @@ pub(crate) fn riscv_or_neutral(
     provider: Option<&str>,
 ) -> crate::Result<&'static crate::RiscvHarnessSpec> {
     provider.map_or(Ok(&neutral::RISCV_HARNESS), riscv)
+}
+
+pub(crate) fn reviewed_memory_accesses(
+    provider: Option<&str>,
+) -> crate::Result<&'static [crate::ReviewedMemoryAccessClassification]> {
+    Ok(riscv_or_neutral(provider)?.reviewed_memory_accesses)
+}
+
+pub(crate) fn reviewed_memory_access_artifact_sources(
+    provider: Option<&str>,
+) -> crate::Result<BTreeSet<String>> {
+    Ok(reviewed_memory_accesses(provider)?
+        .iter()
+        .map(|fact| fact.occurrence.artifact_source.to_owned())
+        .collect())
 }
 
 pub(crate) fn entry_contract(provider: &str, id: &str) -> crate::Result<crate::EntryContractRef> {

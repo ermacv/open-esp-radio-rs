@@ -83,6 +83,7 @@ pub static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
         20,
         2,
     )],
+    reviewed_memory_accesses: &[],
 };
 
 #[cfg(test)]

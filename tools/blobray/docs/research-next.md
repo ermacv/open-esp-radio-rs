@@ -44,8 +44,10 @@ bounded recommendation and exposes reviewed labels for referenced functions:
 - `selection.steps` is the only ranked list. Its typed prerequisite/action
   references are bounded by `--limit` and `--budget`.
 - `focus` is always explicit. `all` keeps the complete ranking, while
-  `hardware-access` makes only MMIO subjects, register-model/write-semantics
-  findings, and direct `memory-load`/`memory-store` blockers eligible.
+  `hardware-access` makes only typed MMIO/register subjects and explicitly
+  reviewed hardware-shared memory accesses eligible. A memory classification
+  is bound to an exact source artifact SHA-256 plus function and instruction
+  site; unclassified RAM and reviewed software-only state remain inventory.
 - `finding_query` is always present. It distinguishes `all`, `open`,
   `condition-satisfied`, `input-not-observed`, `filtered-out`, and
   `not-present`. Correlated register states include typed current observation,
@@ -166,6 +168,10 @@ control-flow blockers are not admitted merely because they transitively reach
 hardware work. A prerequisite is eligible only when it directly satisfies an
 eligible finding; an unrelated interface anchor therefore cannot displace an
 SRAM or MMIO action. The default is `--focus all`.
+
+Reviewed memory classification is ranking evidence only. It does not resolve
+the underlying analysis blocker or claim that the object's address, lifetime,
+layout, ownership, or hardware behavior has been modeled.
 
 `--scope ID` selects one exact configured review scope. `--protocol NAME`
 selects scopes by their mandatory, explicit `protocols` membership in

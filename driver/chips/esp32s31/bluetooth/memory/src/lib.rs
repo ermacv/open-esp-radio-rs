@@ -88,6 +88,7 @@ pub use legacy_advertising_storage::BluetoothLegacyAdvertisingMemoryGraphModelAd
 pub use legacy_advertising_storage::{
     BLUETOOTH_LEGACY_ADVERTISING_LINK_STATE_BYTES, BLUETOOTH_LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES,
     BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES,
+    BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY,
     BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES, BluetoothLegacyAdvertisingMemoryGraphBindError,
     BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphBinding,
     BluetoothLegacyAdvertisingMemoryGraphCompletionObservation,

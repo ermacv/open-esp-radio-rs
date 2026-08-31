@@ -40,6 +40,8 @@ use crate::{
 pub const BLUETOOTH_LEGACY_ADVERTISING_LINK_STATE_BYTES: usize = 0x84;
 /// Bytes reserved for one advertising scheduler item.
 pub const BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES: usize = 0x60;
+/// Maximum primary-channel items in one legacy advertising event.
+pub const BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY: usize = 3;
 /// Maximum payload after the two-byte legacy advertising PDU header.
 pub const BLUETOOTH_LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES: usize = 37;
 /// Complete controller TX allocation for the maximum legacy advertising PDU.
@@ -289,7 +291,8 @@ impl BluetoothLegacyAdvertisingSchedulerItemStorage {
 pub struct BluetoothLegacyAdvertisingMemoryGraphStorage {
     link_state: BluetoothLegacyAdvertisingLinkStateStorage,
     scheduler_context: BluetoothSchedulerContextStorage,
-    scheduler_item: BluetoothLegacyAdvertisingSchedulerItemStorage,
+    scheduler_items: [BluetoothLegacyAdvertisingSchedulerItemStorage;
+        BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY],
     tx_header: BluetoothLeTxBufferHeaderStorage,
     tx_packet: BluetoothLeTxPacketStorage<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>,
     #[pin]
@@ -300,8 +303,10 @@ const GRAPH_BYTES: u32 =
     core::mem::size_of::<BluetoothLegacyAdvertisingMemoryGraphStorage>() as u32;
 const LINK_STATE_OFFSET: u32 =
     core::mem::offset_of!(BluetoothLegacyAdvertisingMemoryGraphStorage, link_state) as u32;
-const SCHEDULER_ITEM_OFFSET: u32 =
-    core::mem::offset_of!(BluetoothLegacyAdvertisingMemoryGraphStorage, scheduler_item) as u32;
+const SCHEDULER_ITEMS_OFFSET: u32 = core::mem::offset_of!(
+    BluetoothLegacyAdvertisingMemoryGraphStorage,
+    scheduler_items
+) as u32;
 const SCHEDULER_CONTEXT_OFFSET: u32 = core::mem::offset_of!(
     BluetoothLegacyAdvertisingMemoryGraphStorage,
     scheduler_context
@@ -403,7 +408,8 @@ pub struct BluetoothLegacyAdvertisingMemoryGraphBinding {
     end_exclusive: u32,
     link_state: BluetoothControllerSramLinkAddress,
     scheduler_context: BluetoothControllerSramLinkAddress,
-    scheduler_item: BluetoothControllerSramLinkAddress,
+    scheduler_items:
+        [BluetoothControllerSramLinkAddress; BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY],
     tx_header: BluetoothControllerSramLinkAddress,
     tx_packet: AdvertisingTxPacketAddress,
 }
@@ -434,7 +440,21 @@ impl BluetoothLegacyAdvertisingMemoryGraphBinding {
 
         let link_state = link(LINK_STATE_OFFSET)?;
         let scheduler_context = link(SCHEDULER_CONTEXT_OFFSET)?;
-        let scheduler_item = link(SCHEDULER_ITEM_OFFSET)?;
+        let scheduler_item_offset = |index: usize| {
+            let item_offset = u32::try_from(index)
+                .ok()
+                .and_then(|index| {
+                    index.checked_mul(BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES as u32)
+                })
+                .and_then(|offset| SCHEDULER_ITEMS_OFFSET.checked_add(offset))
+                .ok_or(BluetoothLegacyAdvertisingMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
+            link(item_offset)
+        };
+        let scheduler_items = [
+            scheduler_item_offset(0)?,
+            scheduler_item_offset(1)?,
+            scheduler_item_offset(2)?,
+        ];
         let tx_header = link(TX_HEADER_OFFSET)?;
         let tx_packet = AdvertisingTxPacketAddress::new(address(TX_PACKET_OFFSET)?)
             .map_err(|_| BluetoothLegacyAdvertisingMemoryGraphBindError::InvalidPacketExtent)?;
@@ -446,7 +466,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphBinding {
             end_exclusive: base + GRAPH_BYTES,
             link_state,
             scheduler_context,
-            scheduler_item,
+            scheduler_items,
             tx_header,
             tx_packet,
         })
@@ -472,7 +492,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphBinding {
     }
 
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramLinkAddress {
-        self.scheduler_item
+        self.scheduler_items[0]
     }
 
     pub const fn scheduler_context_address(&self) -> BluetoothControllerSramAddress {
@@ -501,14 +521,14 @@ impl BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
         let storage = self.storage.as_ref().get_ref();
         storage
             .link_state
-            .retains_graph(self.binding.scheduler_item, self.binding.tx_header)
-            && storage
-                .scheduler_item
-                .retains_graph(self.binding.scheduler_context, self.binding.link_state)
+            .retains_graph(self.binding.scheduler_items[0], self.binding.tx_header)
+            && storage.scheduler_items.iter().all(|item| {
+                item.retains_graph(self.binding.scheduler_context, self.binding.link_state)
+            })
     }
 
     fn reinitialize_graph(&mut self) {
-        let scheduler_item = self.binding.scheduler_item;
+        let scheduler_item = self.binding.scheduler_items[0];
         let scheduler_context = self.binding.scheduler_context;
         let link_state = self.binding.link_state;
         let tx_header = self.binding.tx_header;
@@ -516,9 +536,9 @@ impl BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
         let graph = self.storage.as_mut().project();
         graph.scheduler_context.clear();
         graph.link_state.initialize_graph(scheduler_item, tx_header);
-        graph
-            .scheduler_item
-            .initialize_graph(scheduler_context, link_state);
+        for item in graph.scheduler_items.iter() {
+            item.initialize_graph(scheduler_context, link_state);
+        }
         graph.tx_header.initialize_bound_tx(tx_packet);
         graph.tx_packet.clear();
     }
@@ -647,7 +667,9 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
         BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure,
     > {
         if self.storage.as_ref().get_ref().link_state.scheduler_head()
-            != self.binding.scheduler_item.controller_address().address()
+            != self.binding.scheduler_items[0]
+                .controller_address()
+                .address()
         {
             return Err(
                 BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
@@ -657,7 +679,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
                 },
             );
         }
-        if !self.storage.as_ref().get_ref().scheduler_item.is_terminal() {
+        if !self.storage.as_ref().get_ref().scheduler_items[0].is_terminal() {
             return Err(
                 BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
                     owner: self,
@@ -668,14 +690,16 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
         }
 
         let graph = self.storage.as_mut().project();
-        let words = graph.scheduler_item.reviewed_words().prepare_first_event(
-            graph.link_state.reviewed_words(),
-            channel,
-            raw_start,
-            raw_end,
-        );
+        let words = graph.scheduler_items[0]
+            .reviewed_words()
+            .prepare_first_event(
+                graph.link_state.reviewed_words(),
+                channel,
+                raw_start,
+                raw_end,
+            );
         graph.link_state.detach_first_scheduler_item();
-        graph.scheduler_item.write_reviewed_words(words);
+        graph.scheduler_items[0].write_reviewed_words(words);
 
         Ok(BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
             storage: self.storage,
@@ -718,14 +742,14 @@ impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
 
     /// Exact CPU-owned scheduler-item identity selected by this graph.
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.binding.scheduler_item.controller_address()
+        self.binding.scheduler_items[0].controller_address()
     }
 
     /// Install the common pre-publication scheduler bookkeeping.
     pub fn prepare_scheduler_bookkeeping(
         mut self,
     ) -> BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
-        let item = self.storage.as_mut().project().scheduler_item;
+        let item = &self.storage.as_mut().project().scheduler_items[0];
         let previous_control = item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].get();
         let previous_status = item.words[SCHEDULER_ITEM_WORD_38_OFFSET].get();
         let previous_completed_link = item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET].get();
@@ -767,14 +791,14 @@ pub struct BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
 
 impl BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.binding.scheduler_item.controller_address()
+        self.binding.scheduler_items[0].controller_address()
     }
 
     /// Prepare the sole-item links for an independently proven empty list.
     pub fn prepare_empty_list_link(
         mut self,
     ) -> BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
-        let item = self.storage.as_mut().project().scheduler_item;
+        let item = &self.storage.as_mut().project().scheduler_items[0];
         let previous_hardware_chain = item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get();
         let previous_software_next = item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].get();
         item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET]
@@ -794,7 +818,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
     }
 
     pub fn cancel(mut self) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
-        let item = self.storage.as_mut().project().scheduler_item;
+        let item = &self.storage.as_mut().project().scheduler_items[0];
         item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(self.previous_control);
         item.words[SCHEDULER_ITEM_WORD_38_OFFSET].set(self.previous_status);
         item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET].set(self.previous_completed_link);
@@ -821,7 +845,7 @@ pub struct BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
 
 impl BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.binding.scheduler_item.controller_address()
+        self.binding.scheduler_items[0].controller_address()
     }
 
     /// Consume rollback authority after the exact list-zero head publication.
@@ -847,7 +871,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared {
     }
 
     pub fn cancel(mut self) -> BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
-        let item = self.storage.as_mut().project().scheduler_item;
+        let item = &self.storage.as_mut().project().scheduler_items[0];
         item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].set(self.previous_hardware_chain);
         item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET].set(self.previous_software_next);
         BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
@@ -871,7 +895,7 @@ pub struct BluetoothLegacyAdvertisingMemoryGraphHeadPublished {
 
 impl BluetoothLegacyAdvertisingMemoryGraphHeadPublished {
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.binding.scheduler_item.controller_address()
+        self.binding.scheduler_items[0].controller_address()
     }
 
     pub fn into_running(
@@ -906,7 +930,7 @@ pub struct BluetoothLegacyAdvertisingMemoryGraphRunning {
 
 impl BluetoothLegacyAdvertisingMemoryGraphRunning {
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.binding.scheduler_item.controller_address()
+        self.binding.scheduler_items[0].controller_address()
     }
 
     pub fn observe_completion(
@@ -919,7 +943,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphRunning {
                 observed,
             };
         }
-        let status = self.storage.as_ref().get_ref().scheduler_item.words
+        let status = self.storage.as_ref().get_ref().scheduler_items[0].words
             [SCHEDULER_ITEM_WORD_38_OFFSET]
             .get();
         if status == u32::MAX {
@@ -1187,7 +1211,8 @@ impl BluetoothLegacyAdvertisingMemoryGraphStorage {
         Self {
             link_state: BluetoothLegacyAdvertisingLinkStateStorage::new(),
             scheduler_context: BluetoothSchedulerContextStorage::new(),
-            scheduler_item: BluetoothLegacyAdvertisingSchedulerItemStorage::new(),
+            scheduler_items: [const { BluetoothLegacyAdvertisingSchedulerItemStorage::new() };
+                BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY],
             tx_header: BluetoothLeTxBufferHeaderStorage::new(),
             tx_packet: BluetoothLeTxPacketStorage::new(),
             _pin: PhantomPinned,
@@ -1375,7 +1400,7 @@ mod tests {
     #[test]
     fn fenced_list_zero_observation_classifies_a_completed_event_once() {
         let prepared = first_event().prepare_scheduler_bookkeeping();
-        prepared.storage.as_ref().get_ref().scheduler_item.words
+        prepared.storage.as_ref().get_ref().scheduler_items[0].words
             [super::SCHEDULER_ITEM_WORD_38_OFFSET]
             .set(0);
         let running = super::BluetoothLegacyAdvertisingMemoryGraphRunning {

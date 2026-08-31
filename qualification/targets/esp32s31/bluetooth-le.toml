@@ -71,20 +71,18 @@ gaps = [
 [[capabilities]]
 id = "controller-initialization"
 title = "Complete LE Controller initialization"
-scope = "Powered controller initialization through BLE PHY controller-output preparation runtime-timer start and stable interrupt-owner publication while retaining a private affine standalone always-awake selection whose terminal powered BLE-PHY owner can compose a later completed Controller-bound time request into opaque RF-ready authority"
-implementation = "incomplete"
+scope = "Non-cancellable production cold start from an owned radio root through BLE PHY controller-output preparation runtime-timer start stable interrupt-owner publication final placement standard HCI facade and sole hardware runner while retaining a private affine standalone always-awake selection"
+implementation = "complete"
 host = "covered"
-async = "incomplete"
+async = "bounded"
 depends-on = ["clock-reset-prerequisite"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
   "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
-  { axis = "implementation", id = "production-cold-start-composition-missing" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
-  { axis = "async", id = "cold-start-runner-spawn-missing" },
 ]
 
 [[capabilities]]
@@ -433,11 +431,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "production-cold-start-and-link-layer-runtime-missing" },
+  { axis = "implementation", id = "link-layer-runtime-missing" },
   { axis = "host", id = "controller-endpoint-tests-have-no-virtual-time-link-layer-runtime" },
   { axis = "vendor", id = "controller-task-order-and-event-contracts-missing" },
   { axis = "hil", id = "controller-runtime-latency-and-soak-cells-missing" },
-  { axis = "async", id = "cold-start-spawn-unrelated-list-timer-expiration-and-powered-shutdown-missing" },
+  { axis = "async", id = "unrelated-list-timer-expiration-and-powered-shutdown-missing" },
 ]
 
 [[capabilities]]

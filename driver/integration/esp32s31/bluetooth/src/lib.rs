@@ -10,6 +10,8 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+#[cfg(target_arch = "riscv32")]
+mod cold_start;
 #[cfg(any(test, target_arch = "riscv32"))]
 mod interrupt_fault;
 #[cfg(target_arch = "riscv32")]
@@ -23,6 +25,14 @@ mod system;
 #[cfg(target_arch = "riscv32")]
 mod system_storage;
 
+#[cfg(target_arch = "riscv32")]
+pub use cold_start::{
+    Esp32s31BluetoothBlePhyMemoryFailure, Esp32s31BluetoothClaimedMemory,
+    Esp32s31BluetoothColdStartConfig, Esp32s31BluetoothColdStartError,
+    Esp32s31BluetoothColdStartOutput, Esp32s31BluetoothDtmMemoryFailure,
+    Esp32s31BluetoothPoweredFailure, Esp32s31BluetoothRecheckStartFailure,
+    Esp32s31BluetoothReservedFailure, Esp32s31BluetoothUnpoweredOwners, start_esp32s31_bluetooth,
+};
 #[cfg(target_arch = "riscv32")]
 pub use interrupt_runtime::{
     Esp32s31BluetoothInterruptBindError, Esp32s31BluetoothInterruptDisableFailure,

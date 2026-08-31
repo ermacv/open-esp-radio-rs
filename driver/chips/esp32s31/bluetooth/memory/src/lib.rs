@@ -25,6 +25,7 @@ mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
 mod le_tx_packet;
+mod legacy_advertising_storage;
 mod rx_memory_list;
 mod sram_link;
 
@@ -49,7 +50,6 @@ pub use dtm_rx_result::{
 #[cfg(not(target_arch = "riscv32"))]
 pub use dtm_storage::BluetoothDtmMemoryGraphModelAddress;
 pub use dtm_storage::{
-    BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
     BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
     BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES,
     BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES, BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES,
@@ -76,5 +76,20 @@ pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
     BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
 };
+#[cfg(not(target_arch = "riscv32"))]
+pub use legacy_advertising_storage::BluetoothLegacyAdvertisingMemoryGraphModelAddress;
+pub use legacy_advertising_storage::{
+    BLUETOOTH_LEGACY_ADVERTISING_LINK_STATE_BYTES, BLUETOOTH_LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES,
+    BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES,
+    BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES, BluetoothLegacyAdvertisingMemoryGraphBindError,
+    BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphBinding,
+    BluetoothLegacyAdvertisingMemoryGraphCpuOwned, BluetoothLegacyAdvertisingMemoryGraphIdentity,
+    BluetoothLegacyAdvertisingMemoryGraphPacketPrepareFailure,
+    BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphStorage,
+};
 pub use rx_memory_list::BluetoothRxMemoryListClass;
-pub use sram_link::{BluetoothControllerSramLinkAddress, BluetoothControllerSramLinkAddressError};
+pub use sram_link::{
+    BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
+    BluetoothControllerSramLinkAddress, BluetoothControllerSramLinkAddressError,
+};

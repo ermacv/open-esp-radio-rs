@@ -314,8 +314,9 @@ pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
 };
 pub use legacy_advertising::{
-    BluetoothLegacyAdvertisingFrequency, BluetoothLegacyAdvertisingPreparationError,
-    BluetoothLegacyAdvertisingPreparationErrorKind, BluetoothLegacyAdvertisingPrepared,
+    BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingFrequency,
+    BluetoothLegacyAdvertisingPreparationError, BluetoothLegacyAdvertisingPreparationErrorKind,
+    BluetoothLegacyAdvertisingPrepared,
 };
 pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
@@ -330,6 +331,8 @@ pub use modem_lp_timer_queue::{
 pub use nrt_interrupt::{BluetoothNrtDefaultInterruptEpoch, step_nrt_default_interrupt};
 #[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
+#[cfg(not(target_arch = "riscv32"))]
+pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphModelAddress;
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure,
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
@@ -337,7 +340,11 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
     BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmMemoryGraphReclaimed,
     BluetoothDtmPositionalEventWords, BluetoothDtmRxResultProjection,
-    BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi, BluetoothRxMemoryListClass,
+    BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi,
+    BluetoothLegacyAdvertisingMemoryGraphBindError,
+    BluetoothLegacyAdvertisingMemoryGraphBindFailure,
+    BluetoothLegacyAdvertisingMemoryGraphCpuOwned, BluetoothLegacyAdvertisingMemoryGraphStorage,
+    BluetoothRxMemoryListClass,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{

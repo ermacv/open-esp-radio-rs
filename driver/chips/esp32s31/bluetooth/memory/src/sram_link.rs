@@ -6,6 +6,15 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
 };
 
+/// First byte in the physical ESP32-S31 internal SRAM window.
+pub const BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW: u32 = 0x2f00_0000;
+/// First byte after the physical ESP32-S31 internal SRAM window.
+///
+/// This is deliberately narrower than the controller's 20-bit compressed
+/// pointer encoding domain. Linker policy may reserve an additional suffix
+/// below this architectural boundary.
+pub const BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH: u32 = 0x2f08_0000;
+
 /// Why an address cannot represent a reviewed bound controller-SRAM link.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothControllerSramLinkAddressError {

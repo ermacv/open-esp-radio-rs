@@ -2,8 +2,9 @@
 //!
 //! This boundary lowers one portable `ADV_NONCONN_IND` transmission into a
 //! bounded PDU and an S31 primary-channel frequency choice. It deliberately
-//! stops before scheduler admission: no reviewed advertising SRAM graph,
-//! timeline policy, hardware-list role or completion contract exists yet.
+//! stops before scheduler admission: the SRAM allocation is now bound, but no
+//! reviewed advertising link-state image, timeline policy, hardware-list role
+//! or completion contract exists yet.
 //! Consequently this module cannot turn protocol work into `InFlight` or
 //! publish scheduler `HEAD`/`RUN`.
 
@@ -18,13 +19,9 @@ use open_esp_radio_bluetooth_ll::{
     },
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothLeTxPacketPrepareError,
-    BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
+    BluetoothLeTxPacketPrepareError, BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
 };
-
-const LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES: usize = LEGACY_ADVERTISING_PDU_CAPACITY - 2;
-const LEGACY_ADVERTISING_TX_ALLOCATION_BYTES: usize =
-    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES;
 
 /// S31 packet-frequency image for one primary advertising channel.
 ///
@@ -54,19 +51,22 @@ impl BluetoothLegacyAdvertisingFrequency {
 /// The portable continuation remains private, so code cannot claim that the
 /// transmission is in flight without first adding the missing sealed S31
 /// hardware ticket at this boundary.
-#[derive(Debug, Eq, PartialEq)]
 #[must_use = "admit through a reviewed hardware ticket, cancel, or retain the prepared owner"]
 pub struct BluetoothLegacyAdvertisingPrepared<'a> {
     prepared: LegacyAdvertiserTxPrepared<'a>,
-    packet: BluetoothLeTxPacketStorage<LEGACY_ADVERTISING_TX_ALLOCATION_BYTES>,
-    packet_length: BluetoothLeTxPacketPreparedLength<LEGACY_ADVERTISING_TX_ALLOCATION_BYTES>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
     frequency: BluetoothLegacyAdvertisingFrequency,
 }
 
 impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
     /// Encode the next portable channel transmission into bounded chip-owned storage.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure must return both exact affine owners"
+    )]
     pub fn prepare(
         enabled: LegacyAdvertiserEnabled<'a>,
+        memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     ) -> Result<Self, BluetoothLegacyAdvertisingPreparationError<'a>> {
         let prepared = enabled.prepare_next();
         let mut encoded = [0; LEGACY_ADVERTISING_PDU_CAPACITY];
@@ -75,16 +75,18 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
             Err(error) => {
                 return Err(BluetoothLegacyAdvertisingPreparationError {
                     enabled: prepared.cancel(),
+                    memory,
                     error: BluetoothLegacyAdvertisingPreparationErrorKind::PduEncoding(error),
                 });
             }
         };
-        let mut packet = BluetoothLeTxPacketStorage::new();
-        let packet_length = match packet.prepare_encoded_pdu(&encoded[..pdu_len]) {
-            Ok(length) => length,
-            Err(error) => {
+        let memory = match memory.prepare_packet(&encoded[..pdu_len]) {
+            Ok(memory) => memory,
+            Err(failure) => {
+                let (memory, error) = failure.into_parts();
                 return Err(BluetoothLegacyAdvertisingPreparationError {
                     enabled: prepared.cancel(),
+                    memory,
                     error: BluetoothLegacyAdvertisingPreparationErrorKind::ControllerPacket(error),
                 });
             }
@@ -94,8 +96,7 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         );
         Ok(Self {
             prepared,
-            packet,
-            packet_length,
+            memory,
             frequency,
         })
     }
@@ -112,7 +113,7 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
 
     /// Complete encoded Link Layer PDU, excluding preamble, Access Address, CRC and whitening.
     pub fn pdu(&self) -> &[u8] {
-        self.packet.prepared_pdu(self.packet_length)
+        self.memory.pdu()
     }
 
     /// Typed future descriptor input for the selected primary channel.
@@ -120,17 +121,38 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         self.frequency
     }
 
-    /// Cancel before hardware admission and recover the exact enabled event.
-    pub fn cancel(self) -> LegacyAdvertiserEnabled<'a> {
-        self.prepared.cancel()
+    /// Cancel before hardware admission and recover both affine owners.
+    pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
+        BluetoothLegacyAdvertisingCancelled {
+            enabled: self.prepared.cancel(),
+            memory: self.memory.cancel(),
+        }
+    }
+}
+
+/// Lossless cancellation before any advertising descriptor is publishable.
+#[must_use = "both the portable advertiser and bound SRAM graph must be retained"]
+pub struct BluetoothLegacyAdvertisingCancelled<'a> {
+    enabled: LegacyAdvertiserEnabled<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+}
+
+impl<'a> BluetoothLegacyAdvertisingCancelled<'a> {
+    pub fn into_parts(
+        self,
+    ) -> (
+        LegacyAdvertiserEnabled<'a>,
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    ) {
+        (self.enabled, self.memory)
     }
 }
 
 /// Bounded PDU encoding failed before any S31 hardware ownership changed.
-#[derive(Debug, Eq, PartialEq)]
-#[must_use = "the unchanged enabled advertiser remains recoverable"]
+#[must_use = "the unchanged advertiser and SRAM graph remain recoverable"]
 pub struct BluetoothLegacyAdvertisingPreparationError<'a> {
     enabled: LegacyAdvertiserEnabled<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     error: BluetoothLegacyAdvertisingPreparationErrorKind,
 }
 
@@ -139,8 +161,23 @@ impl<'a> BluetoothLegacyAdvertisingPreparationError<'a> {
         self.error
     }
 
-    pub fn into_enabled(self) -> LegacyAdvertiserEnabled<'a> {
-        self.enabled
+    pub fn into_parts(
+        self,
+    ) -> (
+        LegacyAdvertiserEnabled<'a>,
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothLegacyAdvertisingPreparationErrorKind,
+    ) {
+        (self.enabled, self.memory, self.error)
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyAdvertisingPreparationError<'_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyAdvertisingPreparationError")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
     }
 }
 
@@ -164,6 +201,11 @@ mod tests {
             PrimaryAdvertisingChannelMap,
         },
     };
+    use open_esp_radio_esp32s31_bluetooth_memory::{
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothLegacyAdvertisingMemoryGraphModelAddress,
+        BluetoothLegacyAdvertisingMemoryGraphStorage,
+    };
 
     use super::BluetoothLegacyAdvertisingPrepared;
 
@@ -185,17 +227,29 @@ mod tests {
             .expect("the first generation is available")
     }
 
+    fn memory() -> BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
+        let storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothLegacyAdvertisingMemoryGraphStorage::new(),
+        ));
+        let base = BluetoothLegacyAdvertisingMemoryGraphModelAddress::new(0x2f00_0100)
+            .expect("the model base uses controller SRAM syntax");
+        BluetoothLegacyAdvertisingMemoryGraphStorage::pin_static_model(storage, base)
+            .expect("the advertising graph fits physical controller SRAM")
+    }
+
     #[test]
     fn preparation_retains_identity_and_cancel_restores_the_same_channel() {
-        let prepared = BluetoothLegacyAdvertisingPrepared::prepare(enabled(
-            PrimaryAdvertisingChannelMap::all(),
-        ))
+        let prepared = BluetoothLegacyAdvertisingPrepared::prepare(
+            enabled(PrimaryAdvertisingChannelMap::all()),
+            memory(),
+        )
         .expect("bounded validated advertising data always fits the chip PDU");
         let identity = prepared.identity();
 
         assert_eq!(prepared.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
         assert_eq!(prepared.channel(), PrimaryAdvertisingChannel::Channel37);
-        assert_eq!(prepared.cancel().prepare_next().identity(), identity);
+        let (enabled, _memory) = prepared.cancel().into_parts();
+        assert_eq!(enabled.prepare_next().identity(), identity);
     }
 
     #[test]
@@ -217,7 +271,7 @@ mod tests {
                 78,
             ),
         ] {
-            let prepared = BluetoothLegacyAdvertisingPrepared::prepare(enabled(channels))
+            let prepared = BluetoothLegacyAdvertisingPrepared::prepare(enabled(channels), memory())
                 .expect("bounded validated advertising data always fits the chip PDU");
             assert_eq!(prepared.channel(), channel);
             assert_eq!(prepared.frequency().get(), frequency);

@@ -36,7 +36,10 @@ use crate::{
         BluetoothLeTxBufferHeaderStorage, BluetoothLeTxPacketAddress,
         BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
     },
-    sram_link::BluetoothControllerSramLinkAddress,
+    sram_link::{
+        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
+        BluetoothControllerSramLinkAddress,
+    },
 };
 
 /// Bytes allocated for one DTM link-state object.
@@ -57,16 +60,6 @@ pub const BLUETOOTH_DTM_RX_PACKET_BYTES: usize =
     BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES + BLUETOOTH_DTM_MAX_PACKET_CAPACITY;
 
 type BluetoothDtmTxPacketAddress = BluetoothLeTxPacketAddress<BLUETOOTH_DTM_TX_PACKET_BYTES>;
-
-/// First byte in the physical ESP32-S31 internal SRAM window.
-pub const BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW: u32 = 0x2f00_0000;
-/// First byte after the physical ESP32-S31 internal SRAM window.
-///
-/// This is deliberately narrower than the controller's 20-bit compressed
-/// pointer encoding domain. Linker policy may reserve an additional suffix
-/// below this architectural boundary and must place the static allocation in
-/// its available `.dma.bss` range.
-pub const BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH: u32 = 0x2f08_0000;
 
 const RX_PACKET_LAST_ALIGNED_OFFSET: u32 = 0x11c;
 const LINK_STATE_RX_HEAD_OFFSET: usize = 0x68 / 4;

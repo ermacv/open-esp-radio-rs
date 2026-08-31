@@ -71,7 +71,7 @@ impl<'epoch, T> HciEpochBound<'epoch, T> {
     }
 
     /// Whether this value originated from the supplied live Controller endpoint.
-    pub fn originates_from<
+    pub(crate) fn originates_from<
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
         const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -90,7 +90,7 @@ impl<'epoch, T> HciEpochBound<'epoch, T> {
     }
 
     /// Release the semantic owner only to its matching live Controller endpoint.
-    pub fn try_into_for_endpoint<
+    pub(crate) fn try_into_for_endpoint<
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
         const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -224,8 +224,13 @@ pub enum HostToControllerFrame<'packet> {
 }
 
 /// Failure to consume one Host packet as an epoch-bound classified command.
+#[cfg(test)]
+#[expect(
+    dead_code,
+    reason = "the crate-private raw test harness retains its lossless data branch"
+)]
 #[must_use = "a non-command frame retains its origin proof and borrowed packet"]
-pub enum HciEpochBoundCommandReceiveError<'epoch, 'packet> {
+pub(crate) enum HciEpochBoundCommandReceiveError<'epoch, 'packet> {
     /// The queue or packet boundary failed before an epoch token was created.
     Channel(HciChannelError),
     /// The oldest packet was data rather than a command and remains bound to its epoch.
@@ -240,7 +245,7 @@ pub enum HciEpochBoundCommandReceiveError<'epoch, 'packet> {
 /// outer data router. A malformed retained packet fails closed without hiding
 /// the caller's storage.
 #[must_use = "route the packet or recover the receive buffer"]
-pub enum HciClassifiedCommandIntake<'epoch, 'packet> {
+pub(crate) enum HciClassifiedCommandIntake<'epoch, 'packet> {
     /// An owned command classification plus the reusable receive buffer.
     Command {
         /// Semantic command bound to the source Controller epoch.
@@ -357,10 +362,6 @@ where
             .lock(|state| state.borrow_mut().try_receive().ok_or(()))
     }
 
-    fn is_empty(&self) -> bool {
-        self.state.lock(|state| state.borrow().length == 0)
-    }
-
     fn is_pristine(&self) -> bool {
         self.state.lock(|state| {
             let state = state.borrow();
@@ -449,7 +450,7 @@ impl HostToControllerFrame<'_> {
 /// first pair is alive. `M` selects the synchronization domain; a platform may
 /// use a critical-section mutex for IRQ/task handoff without introducing an
 /// RTOS.
-pub struct InProcessHciChannel<
+pub(crate) struct InProcessHciChannel<
     M,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -472,7 +473,7 @@ where
     M: RawMutex,
 {
     /// Construct an empty channel without allocator or runtime registration.
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         assert!(
             HOST_TO_CONTROLLER_DEPTH > 0,
             "the Host-to-Controller channel needs a packet slot"
@@ -492,8 +493,8 @@ where
         }
     }
 
-    /// Split into the Host transport and sole raw Controller endpoint.
-    pub fn split(
+    /// Split into the Host transport and crate-private raw Controller endpoint.
+    pub(crate) fn split(
         &mut self,
     ) -> (
         InProcessHciHostTransport<
@@ -526,20 +527,12 @@ where
         )
     }
 
-    /// Whether neither direction retains a packet.
-    ///
-    /// This observation is intended for an owning lifecycle before endpoints
-    /// are published. It does not reserve the channel against concurrent use.
-    pub fn is_empty(&self) -> bool {
-        self.host_to_controller.is_empty() && self.controller_to_host.is_empty()
-    }
-
     /// Whether no packet has ever entered either direction of this channel.
     ///
-    /// Unlike [`Self::is_empty`], draining a packet cannot make the channel
-    /// pristine again. Lifecycle owners use this monotonic observation before
-    /// binding the channel to a powered Controller epoch.
-    pub fn is_pristine(&self) -> bool {
+    /// Draining a packet cannot make the channel pristine again. Lifecycle
+    /// owners use this monotonic observation before binding the channel to a
+    /// powered Controller epoch.
+    pub(crate) fn is_pristine(&self) -> bool {
         self.host_to_controller.is_pristine() && self.controller_to_host.is_pristine()
     }
 }
@@ -632,7 +625,7 @@ where
 /// The future hardware/Link-Layer owner receives Host commands and data here,
 /// then publishes only complete validated events or data. The endpoint does
 /// not implement radio, Link Layer or HCI command semantics by itself.
-pub struct InProcessHciControllerEndpoint<
+pub(crate) struct InProcessHciControllerEndpoint<
     'channel,
     M,
     const HOST_TO_CONTROLLER_DEPTH: usize,
@@ -664,12 +657,13 @@ where
     M: RawMutex,
 {
     /// Identity shared only by endpoints split from this exact channel epoch.
-    pub const fn epoch_identity(&self) -> HciEpochIdentity<'channel> {
+    pub(crate) const fn epoch_identity(&self) -> HciEpochIdentity<'channel> {
         self.identity
     }
 
     /// Await and consume the oldest complete Host packet.
-    pub async fn receive<'buffer>(
+    #[cfg(test)]
+    pub(crate) async fn receive<'buffer>(
         &self,
         buffer: &'buffer mut [u8],
     ) -> Result<HostToControllerFrame<'buffer>, HciChannelError> {
@@ -679,7 +673,8 @@ where
     }
 
     /// Consume a Host packet immediately or return [`HciChannelError::Empty`].
-    pub fn try_receive<'buffer>(
+    #[cfg(test)]
+    pub(crate) fn try_receive<'buffer>(
         &self,
         buffer: &'buffer mut [u8],
     ) -> Result<HostToControllerFrame<'buffer>, HciChannelError> {
@@ -695,11 +690,11 @@ where
     ///
     /// This operation neither borrows a packet buffer nor consumes or reserves
     /// the oldest packet. It is a cancellation-safe readiness hint: callers
-    /// finish with [`Self::try_receive`] or
-    /// [`Self::try_receive_classified_command`] and handle `Empty` losslessly.
+    /// finish with [`Self::try_receive_classified_command_with_buffer`] and
+    /// handle `Empty` losslessly.
     /// The affine Controller endpoint is designed for one logical intake waiter
     /// at a time.
-    pub async fn wait_receive_ready(&self) {
+    pub(crate) async fn wait_receive_ready(&self) {
         self.host_to_controller.wait_receive_ready().await;
     }
 
@@ -708,7 +703,8 @@ where
     /// Classification is synchronous after queue consumption, so cancellation
     /// while awaiting data cannot create a token or consume a packet. A data
     /// packet is returned with the same epoch proof rather than being discarded.
-    pub async fn receive_classified_command<'buffer>(
+    #[cfg(test)]
+    pub(crate) async fn receive_classified_command<'buffer>(
         &self,
         buffer: &'buffer mut [u8],
     ) -> Result<
@@ -725,7 +721,8 @@ where
     /// Consume and production-classify the oldest Host command immediately.
     ///
     /// `Empty` and every pre-consumption boundary error create no epoch token.
-    pub fn try_receive_classified_command<'buffer>(
+    #[cfg(test)]
+    pub(crate) fn try_receive_classified_command<'buffer>(
         &self,
         buffer: &'buffer mut [u8],
     ) -> Result<
@@ -744,7 +741,7 @@ where
     /// An owned command and a stale `Empty` hint return `buffer`; a data packet
     /// instead transfers its borrow to the outer packet router. Other channel
     /// failures return the scratch storage to the supervisor.
-    pub fn try_receive_classified_command_with_buffer<'buffer>(
+    pub(crate) fn try_receive_classified_command_with_buffer<'buffer>(
         &self,
         buffer: &'buffer mut [u8],
     ) -> HciClassifiedCommandIntake<'channel, 'buffer> {
@@ -806,6 +803,7 @@ where
         HciClassifiedCommandIntake::NonCommand(HciEpochBound::bind(self.identity, frame))
     }
 
+    #[cfg(test)]
     fn bind_classified_command<'buffer>(
         &self,
         frame: HostToControllerFrame<'buffer>,
@@ -825,7 +823,12 @@ where
     }
 
     /// Validate and asynchronously publish one Controller packet.
-    pub async fn publish(&self, kind: PacketKind, bytes: &[u8]) -> Result<(), HciChannelError> {
+    #[cfg(test)]
+    pub(crate) async fn publish(
+        &self,
+        kind: PacketKind,
+        bytes: &[u8],
+    ) -> Result<(), HciChannelError> {
         let slot = controller_slot::<PACKET_CAPACITY>(kind, bytes)?;
         self.controller_to_host.send(slot).await;
         Ok(())
@@ -838,12 +841,16 @@ where
     /// may still win the slot, so callers must finish with [`Self::try_publish`]
     /// and handle `Full` losslessly. The affine Controller endpoint is designed
     /// for one logical publication waiter at a time.
-    pub async fn wait_publish_ready(&self) {
+    pub(crate) async fn wait_publish_ready(&self) {
         self.controller_to_host.wait_send_ready().await;
     }
 
     /// Publish immediately or return [`HciChannelError::Full`] without overwrite.
-    pub fn try_publish(&self, kind: PacketKind, bytes: &[u8]) -> Result<(), HciChannelError> {
+    pub(crate) fn try_publish(
+        &self,
+        kind: PacketKind,
+        bytes: &[u8],
+    ) -> Result<(), HciChannelError> {
         let slot = controller_slot::<PACKET_CAPACITY>(kind, bytes)?;
         self.controller_to_host
             .try_send(slot)
@@ -1023,6 +1030,7 @@ fn require_no_remaining(remaining: &[u8]) -> Result<(), HciChannelError> {
     }
 }
 
+#[cfg(test)]
 fn decode_host_slot<'buffer, const PACKET_CAPACITY: usize>(
     mut slot: PacketSlot<PACKET_CAPACITY>,
     buffer: &'buffer mut [u8],

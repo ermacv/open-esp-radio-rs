@@ -8,11 +8,8 @@
 
 use core::future::Future;
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(target_arch = "riscv32")]
 use open_esp_radio_bluetooth_hci::{HciChannelError, HciEpochBound, HostToControllerFrame};
-
-#[cfg(test)]
-use open_esp_radio_bluetooth_hci::{HciClassifiedCommandIntake, LeControllerCommandClassification};
 
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -59,42 +56,6 @@ pub enum EmbassyBluetoothDtmSessionRetry {
     ActiveRadio,
     Stopping,
     IdleRestore,
-}
-
-#[cfg(test)]
-enum ClassifiedControllerHostIntake<'epoch, 'packet> {
-    Command {
-        command: HciEpochBound<'epoch, LeControllerCommandClassification>,
-        buffer: &'packet mut [u8],
-    },
-    Empty {
-        buffer: &'packet mut [u8],
-    },
-    Channel {
-        error: HciChannelError,
-        buffer: &'packet mut [u8],
-    },
-    NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
-}
-
-#[cfg(test)]
-fn classify_controller_host_intake<'epoch, 'packet>(
-    intake: HciClassifiedCommandIntake<'epoch, 'packet>,
-) -> ClassifiedControllerHostIntake<'epoch, 'packet> {
-    match intake {
-        HciClassifiedCommandIntake::Command { command, buffer } => {
-            ClassifiedControllerHostIntake::Command { command, buffer }
-        }
-        HciClassifiedCommandIntake::Empty { buffer } => {
-            ClassifiedControllerHostIntake::Empty { buffer }
-        }
-        HciClassifiedCommandIntake::Channel { error, buffer } => {
-            ClassifiedControllerHostIntake::Channel { error, buffer }
-        }
-        HciClassifiedCommandIntake::NonCommand(frame) => {
-            ClassifiedControllerHostIntake::NonCommand(frame)
-        }
-    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -964,7 +925,7 @@ mod tests {
     };
 
     use bt_hci::{
-        cmd::{Cmd, controller_baseband::Reset, le::LeTestEnd},
+        cmd::{controller_baseband::Reset, le::LeTestEnd},
         data::{AclBroadcastFlag, AclPacket, AclPacketBoundary},
         param::ConnHandle,
         transport::Transport,
@@ -972,18 +933,29 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        HciChannelError, HostToControllerFrame, InProcessHciChannel,
-        LeControllerCommandClassification, LeDtmCommand,
+        BluetoothPublicDeviceAddress, HciChannelError, HostToControllerFrame,
+        LeControllerBootstrapConfig, LeControllerCommandIntake, LeControllerCommandReadyClaim,
+        LeControllerHciResources, LeControllerIdleClassifiedCommandRoute,
+        LeControllerResponsePublication,
     };
     use std::{boxed::Box, rc::Rc, task::Waker};
 
     use super::{
-        ClassifiedControllerHostIntake, DtmSessionAction, DtmSessionStimulus,
-        EmbassyBluetoothDtmSessionPhase, SessionOwnerSlot, classify_controller_host_intake,
+        DtmSessionAction, DtmSessionStimulus, EmbassyBluetoothDtmSessionPhase, SessionOwnerSlot,
         reduce_dtm_session_transition,
     };
 
-    type TestChannel = InProcessHciChannel<NoopRawMutex, 2, 1, 16>;
+    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 16>;
+
+    fn test_resources() -> TestResources {
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
+            12,
+            1,
+        )
+        .expect("the test profile has one nonzero ACL credit");
+        TestResources::new(config).expect("the test profile fits its owned transport")
+    }
 
     #[derive(Debug, Eq, PartialEq)]
     struct FakeOwner {
@@ -1057,75 +1029,89 @@ mod tests {
 
     #[test]
     fn production_controller_intake_preserves_fifo_buffer_and_epoch() {
-        let mut channel = TestChannel::new();
-        let (host, controller) = channel.split();
-        let mut foreign_channel = TestChannel::new();
-        let (_foreign_host, foreign_controller) = foreign_channel.split();
+        let mut resources = test_resources();
+        let mut endpoints = resources.split();
+        let mut foreign_resources = test_resources();
+        let foreign = foreign_resources.split();
         block_on(async {
-            host.write(&LeTestEnd::new()).await.unwrap();
-            host.write(&Reset::new()).await.unwrap();
+            endpoints.host.write(&LeTestEnd::new()).await.unwrap();
+            endpoints.host.write(&Reset::new()).await.unwrap();
         });
+        let LeControllerCommandReadyClaim::Ready(command_ready) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the fresh test epoch exposes initial command authority")
+        };
 
         let mut storage = [0; 16];
         let storage_address = storage.as_mut_ptr();
-        let (test_end, buffer) = match classify_controller_host_intake(
-            controller.try_receive_classified_command_with_buffer(&mut storage),
-        ) {
-            ClassifiedControllerHostIntake::Command { command, buffer } => (command, buffer),
-            _ => panic!("the oldest real Host command must classify as DTM Test End"),
+        let (command_ready, buffer) = match foreign
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, &mut storage)
+        {
+            LeControllerCommandIntake::EndpointMismatch { ready, buffer } => (ready, buffer),
+            _ => panic!("a foreign combined endpoint must retain authority and scratch storage"),
         };
-        assert!(matches!(
-            test_end.value(),
-            LeControllerCommandClassification::Dtm(LeDtmCommand::TestEnd(_))
-        ));
-        assert!(test_end.originates_from(&controller));
-        assert!(!test_end.originates_from(&foreign_controller));
         assert_eq!(buffer.as_mut_ptr(), storage_address);
 
-        let (reset, buffer) = match classify_controller_host_intake(
-            controller.try_receive_classified_command_with_buffer(buffer),
-        ) {
-            ClassifiedControllerHostIntake::Command { command, buffer } => (command, buffer),
-            _ => panic!("the second real Host command must remain classified Reset"),
+        let (test_end, buffer) = match endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, buffer)
+        {
+            LeControllerCommandIntake::Command { command, buffer } => (command, buffer),
+            _ => panic!("the oldest real Host command must remain routable as Test End"),
         };
-        assert_eq!(reset.value().opcode(), Reset::OPCODE);
-        assert!(matches!(
-            reset.value(),
-            LeControllerCommandClassification::Bootstrap(_)
-        ));
-        assert!(reset.originates_from(&controller));
-        assert!(!reset.originates_from(&foreign_controller));
         assert_eq!(buffer.as_mut_ptr(), storage_address);
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_idle_classified_command(test_end)
+        else {
+            panic!("the oldest typed command must route as idle Test End")
+        };
+        let LeControllerResponsePublication::Published(command_ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the empty response queue must return next-command authority")
+        };
 
-        let buffer = match classify_controller_host_intake(
-            controller.try_receive_classified_command_with_buffer(buffer),
-        ) {
-            ClassifiedControllerHostIntake::Empty { buffer } => buffer,
-            _ => panic!("the drained real FIFO must return its reusable buffer"),
+        let (reset, buffer) = match endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, buffer)
+        {
+            LeControllerCommandIntake::Command { command, buffer } => (command, buffer),
+            _ => panic!("the second real Host command must remain routable as Reset"),
         };
         assert_eq!(buffer.as_mut_ptr(), storage_address);
+        assert!(matches!(
+            endpoints.controller.route_idle_classified_command(reset),
+            LeControllerIdleClassifiedCommandRoute::ResetBarrier(_)
+        ));
     }
 
     #[test]
-    fn production_classifier_transfers_exact_acl_and_retains_epoch() {
-        let mut channel = TestChannel::new();
-        let (host, controller) = channel.split();
+    fn production_combined_intake_transfers_exact_acl() {
+        let mut resources = test_resources();
+        let mut endpoints = resources.split();
+        let LeControllerCommandReadyClaim::Ready(command_ready) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the fresh test epoch exposes initial command authority")
+        };
         let acl = AclPacket::new(
             ConnHandle::new(5),
             AclPacketBoundary::Complete,
             AclBroadcastFlag::PointToPoint,
             &[11, 17],
         );
-        block_on(host.write(&acl)).unwrap();
+        block_on(endpoints.host.write(&acl)).unwrap();
 
         let mut storage = [0; 16];
-        let frame = match classify_controller_host_intake(
-            controller.try_receive_classified_command_with_buffer(&mut storage),
-        ) {
-            ClassifiedControllerHostIntake::NonCommand(frame) => frame,
+        let frame = match endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, &mut storage)
+        {
+            LeControllerCommandIntake::NonCommand { frame, .. } => frame,
             _ => panic!("the real ACL packet must remain an external data frame"),
         };
-        assert!(frame.originates_from(&controller));
         let HostToControllerFrame::Acl(received) = frame.value() else {
             panic!("the production classifier changed the exact ACL packet kind");
         };
@@ -1136,15 +1122,21 @@ mod tests {
     }
 
     #[test]
-    fn production_classifier_preserves_the_real_channel_fault() {
-        let mut channel = TestChannel::new();
-        let (_host, controller) = channel.split();
+    fn production_combined_intake_preserves_the_real_channel_fault() {
+        let mut resources = test_resources();
+        let mut endpoints = resources.split();
+        let LeControllerCommandReadyClaim::Ready(command_ready) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the fresh test epoch exposes initial command authority")
+        };
         let mut undersized = [];
 
-        let error = match classify_controller_host_intake(
-            controller.try_receive_classified_command_with_buffer(&mut undersized),
-        ) {
-            ClassifiedControllerHostIntake::Channel { error, buffer } => {
+        let error = match endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, &mut undersized)
+        {
+            LeControllerCommandIntake::Channel { error, buffer, .. } => {
                 assert_eq!(buffer.as_mut_ptr(), undersized.as_mut_ptr());
                 error
             }

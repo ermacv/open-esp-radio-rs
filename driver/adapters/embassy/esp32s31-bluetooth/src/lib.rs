@@ -11,6 +11,7 @@
 #[cfg(test)]
 extern crate std;
 
+mod controller_command_task;
 #[cfg(any(target_arch = "riscv32", test))]
 mod dtm_active;
 #[cfg(target_arch = "riscv32")]
@@ -38,6 +39,15 @@ pub use dtm_session_task::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_session_task::{EmbassyBluetoothDtmSessionBoundary, EmbassyBluetoothDtmSessionTask};
+
+#[cfg(target_arch = "riscv32")]
+pub use controller_command_task::{
+    EmbassyBluetoothControllerCommandBoundary, EmbassyBluetoothControllerCommandTask,
+};
+pub use controller_command_task::{
+    EmbassyBluetoothControllerCommandPhase, EmbassyBluetoothControllerIdleCompletion,
+    EmbassyBluetoothControllerRetry,
+};
 
 #[cfg(any(target_arch = "riscv32", test))]
 pub use dtm_stopping::{

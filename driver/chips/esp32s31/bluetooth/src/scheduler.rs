@@ -291,6 +291,60 @@ pub enum BluetoothDtmControllerEventPreparationError {
     EmptyList(BluetoothDtmEmptySchedulerMergeError),
 }
 
+/// Closed first-start completion class after the exact idle graph is restored.
+///
+/// This classification is chip policy rather than an Embassy decision. It
+/// deliberately distinguishes finite timing/resource rejection from poisoned
+/// ownership, identity and graph invariants before HCI command authority can
+/// be reopened.
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BluetoothDtmFirstPreparationCompletionClass {
+    HardwareFailure,
+    FailStop,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) const fn classify_dtm_first_preparation_completion(
+    error: BluetoothDtmControllerEventPreparationError,
+) -> BluetoothDtmFirstPreparationCompletionClass {
+    match error {
+        BluetoothDtmControllerEventPreparationError::Reservation(
+            BluetoothSchedulerReservationError::InitialDeadlineExpired
+            | BluetoothSchedulerReservationError::TimelineFull,
+        )
+        | BluetoothDtmControllerEventPreparationError::SequenceAuthorization(
+            BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
+        )
+        | BluetoothDtmControllerEventPreparationError::ControllerTime(
+            BluetoothDtmControllerTimeAcquisitionError::Busy,
+        ) => BluetoothDtmFirstPreparationCompletionClass::HardwareFailure,
+        BluetoothDtmControllerEventPreparationError::LinkStateRoleMismatch { .. }
+        | BluetoothDtmControllerEventPreparationError::Reservation(
+            BluetoothSchedulerReservationError::WindowOutsideForwardHalfRange
+            | BluetoothSchedulerReservationError::OverlapResolutionOutsideForwardHalfRange
+            | BluetoothSchedulerReservationError::RecurringOverlapUnsupported
+            | BluetoothSchedulerReservationError::GenerationExhausted,
+        )
+        | BluetoothDtmControllerEventPreparationError::ControllerTime(
+            BluetoothDtmControllerTimeAcquisitionError::OwnershipCollision
+            | BluetoothDtmControllerTimeAcquisitionError::GenerationExhausted
+            | BluetoothDtmControllerTimeAcquisitionError::RequestMismatch
+            | BluetoothDtmControllerTimeAcquisitionError::OwnershipLost
+            | BluetoothDtmControllerTimeAcquisitionError::Faulted
+            | BluetoothDtmControllerTimeAcquisitionError::Cancelled,
+        )
+        | BluetoothDtmControllerEventPreparationError::EmptyList(_) => {
+            BluetoothDtmFirstPreparationCompletionClass::FailStop
+        }
+        #[cfg(target_arch = "riscv32")]
+        BluetoothDtmControllerEventPreparationError::SchedulerItem(_)
+        | BluetoothDtmControllerEventPreparationError::Graph(_) => {
+            BluetoothDtmFirstPreparationCompletionClass::FailStop
+        }
+    }
+}
+
 /// Lossless terminal-Controller TX preparation rejection.
 ///
 /// Packet readiness is deliberately reduced to ordinary CPU ownership on a
@@ -2825,6 +2879,55 @@ mod tests {
         BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothStopped,
         controller_time::BluetoothControllerSchedulerNow,
     };
+
+    #[test]
+    fn first_preparation_completion_classifies_every_portable_error_branch() {
+        use super::{
+            BluetoothDtmControllerEventPreparationError as PreparationError,
+            BluetoothDtmControllerTimeAcquisitionError as TimeError,
+            BluetoothDtmEmptySchedulerMergeError, BluetoothDtmFirstPreparationCompletionClass,
+            BluetoothSchedulerReservationError as ReservationError,
+            BluetoothSchedulerSequenceAuthorizationError as SequenceError,
+            classify_dtm_first_preparation_completion,
+        };
+
+        for error in [
+            PreparationError::Reservation(ReservationError::InitialDeadlineExpired),
+            PreparationError::Reservation(ReservationError::TimelineFull),
+            PreparationError::SequenceAuthorization(SequenceError::DeadlineExpired),
+            PreparationError::ControllerTime(TimeError::Busy),
+        ] {
+            assert_eq!(
+                classify_dtm_first_preparation_completion(error),
+                BluetoothDtmFirstPreparationCompletionClass::HardwareFailure,
+            );
+        }
+
+        for error in [
+            PreparationError::LinkStateRoleMismatch {
+                expected: crate::BluetoothDtmRole::Receiver,
+                observed: crate::BluetoothDtmRole::Transmitter,
+            },
+            PreparationError::Reservation(ReservationError::WindowOutsideForwardHalfRange),
+            PreparationError::Reservation(
+                ReservationError::OverlapResolutionOutsideForwardHalfRange,
+            ),
+            PreparationError::Reservation(ReservationError::RecurringOverlapUnsupported),
+            PreparationError::Reservation(ReservationError::GenerationExhausted),
+            PreparationError::ControllerTime(TimeError::OwnershipCollision),
+            PreparationError::ControllerTime(TimeError::GenerationExhausted),
+            PreparationError::ControllerTime(TimeError::RequestMismatch),
+            PreparationError::ControllerTime(TimeError::OwnershipLost),
+            PreparationError::ControllerTime(TimeError::Faulted),
+            PreparationError::ControllerTime(TimeError::Cancelled),
+            PreparationError::EmptyList(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty),
+        ] {
+            assert_eq!(
+                classify_dtm_first_preparation_completion(error),
+                BluetoothDtmFirstPreparationCompletionClass::FailStop,
+            );
+        }
+    }
 
     use super::{
         BluetoothDtmControllerEventPreparationError, BluetoothDtmEmptySchedulerMergeError,

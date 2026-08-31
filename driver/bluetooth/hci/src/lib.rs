@@ -4,11 +4,12 @@
 //! Executor-neutral transport and storage at the Bluetooth Host Controller
 //! Interface.
 //!
-//! [`InProcessHciChannel`] splits into a Host transport accepted by
-//! `bt_hci::ExternalController` and one affine raw Controller endpoint. It
-//! carries HCI packet bodies with a separate typed packet kind, so no UART/H4
-//! framing exists inside the process. Both directions have statically bounded
-//! storage, wake-driven backpressure and cancellation-safe waits.
+//! [`LeControllerHciResources`] exposes a Host transport accepted by
+//! `bt_hci::ExternalController` and one affine combined Controller endpoint.
+//! Its crate-private channel carries HCI packet bodies with a separate typed
+//! packet kind, so no UART/H4 framing exists inside the process. Both
+//! directions have statically bounded storage, wake-driven backpressure and
+//! cancellation-safe waits.
 //! [`LeControllerBootstrap`] implements a closed software-only HCI command
 //! subset for Host initialization; Link-Layer commands remain owned by an
 //! outer router.
@@ -57,9 +58,11 @@ pub use bootstrap::{
 };
 pub use bt_hci;
 pub use channel::{
-    HciChannelError, HciClassifiedCommandIntake, HciCommandPacket, HciEpochBound,
-    HciEpochBoundCommandReceiveError, HciEpochIdentity, HostToControllerFrame, InProcessHciChannel,
-    InProcessHciControllerEndpoint, InProcessHciHostTransport,
+    HciChannelError, HciCommandPacket, HciEpochBound, HciEpochIdentity, HostToControllerFrame,
+    InProcessHciHostTransport,
+};
+pub(crate) use channel::{
+    HciClassifiedCommandIntake, InProcessHciChannel, InProcessHciControllerEndpoint,
 };
 pub use classification::{LeControllerCommandClassification, classify_le_controller_command};
 pub use dtm::{

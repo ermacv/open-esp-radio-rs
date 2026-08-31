@@ -322,6 +322,13 @@ impl LeReceiverTestV1Command {
             Status::SUCCESS,
         )
     }
+
+    pub(crate) fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
+        LeDtmCommandCompleteEvent::without_return_parameters(
+            LE_RECEIVER_TEST_V1_OPCODE,
+            HciError::HARDWARE_FAILURE.to_status(),
+        )
+    }
 }
 
 /// Validated LE Transmitter Test v1 command awaiting controller execution.
@@ -353,6 +360,13 @@ impl LeTransmitterTestV1Command {
         LeDtmCommandCompleteEvent::without_return_parameters(
             LE_TRANSMITTER_TEST_V1_OPCODE,
             Status::SUCCESS,
+        )
+    }
+
+    pub(crate) fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
+        LeDtmCommandCompleteEvent::without_return_parameters(
+            LE_TRANSMITTER_TEST_V1_OPCODE,
+            HciError::HARDWARE_FAILURE.to_status(),
         )
     }
 }

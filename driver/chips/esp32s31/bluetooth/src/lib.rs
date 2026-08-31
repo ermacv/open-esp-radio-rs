@@ -49,12 +49,12 @@
 //! feature-specific NRT classification and live-route
 //! prerequisites. Recurring event preparation retains exact active role
 //! ownership, and bounded first-event, active, recurring and terminal-neutral
-//! quiescence runners preserve it. The sole outer command/wake loop and live
-//! route composition remain absent. Stable two-owner ISR publication is
-//! connected, but no
-//! current finite state
-//! claims that the complete controller lifecycle, HCI transport, task or live
-//! interrupt epoch has completed.
+//! quiescence runners preserve it. A target-only sole Embassy actor composes
+//! idle command intake, first-event cleanup, active progression, Test End and
+//! Reset, but production final-split/spawn and live route/waker composition
+//! remain absent. Stable two-owner ISR publication is connected, but no
+//! current finite state claims that the complete controller lifecycle, HCI
+//! transport, task or live interrupt epoch has completed.
 //! The public lifecycle begins with one [`BluetoothStopped`] aggregate; the
 //! platform lease and neutral radio root cannot be split across clock enable,
 //! rollback, or clean reversible shutdown.
@@ -245,13 +245,20 @@ pub use dtm_reset::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_runner::{
-    BluetoothDtmDeferredStart, BluetoothDtmFirstAcceptedFailure, BluetoothDtmFirstEpochOwner,
-    BluetoothDtmFirstIdleRestore, BluetoothDtmFirstIdleRestoreStep,
-    BluetoothDtmFirstInvariantFault, BluetoothDtmFirstPreparationCleanup,
-    BluetoothDtmFirstPreparationCleanupStep, BluetoothDtmFirstRunner,
-    BluetoothDtmFirstRunnerCancel, BluetoothDtmFirstRunnerFailure, BluetoothDtmFirstRunnerRetry,
+    BluetoothDtmDeferredStart, BluetoothDtmFirstAcceptedFailure,
+    BluetoothDtmFirstCancellationCleanTask, BluetoothDtmFirstCancellationEpoch,
+    BluetoothDtmFirstCancellationFailStop, BluetoothDtmFirstCancellationFailStopReason,
+    BluetoothDtmFirstCancellationPreparationCleanup,
+    BluetoothDtmFirstCancellationPreparationCleanupStep, BluetoothDtmFirstColdTimeDrain,
+    BluetoothDtmFirstColdTimeDrainStep, BluetoothDtmFirstIdleRestore,
+    BluetoothDtmFirstIdleRestoreStep, BluetoothDtmFirstInvariantFault,
+    BluetoothDtmFirstPreparationCleanTask, BluetoothDtmFirstPreparationCleanup,
+    BluetoothDtmFirstPreparationCleanupStep, BluetoothDtmFirstPreparationCompletion,
+    BluetoothDtmFirstPreparationFailStop, BluetoothDtmFirstRunner, BluetoothDtmFirstRunnerCancel,
+    BluetoothDtmFirstRunnerFailure, BluetoothDtmFirstRunnerRetry,
     BluetoothDtmFirstRunnerRetryCause, BluetoothDtmFirstRunnerStep, BluetoothDtmFirstRunning,
-    BluetoothDtmFirstTaskOwner, BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute,
+    BluetoothDtmFirstWarmTimeDrain, BluetoothDtmFirstWarmTimeDrainStep,
+    BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute,
 };
 pub use dtm_rx_completion::{
     BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,

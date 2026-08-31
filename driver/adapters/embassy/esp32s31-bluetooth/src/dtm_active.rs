@@ -280,13 +280,25 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        HostToControllerFrame, InProcessHciChannel, LeControllerCommandClassification, LeDtmCommand,
+        BluetoothPublicDeviceAddress, HostToControllerFrame, LeControllerBootstrapConfig,
+        LeControllerCommandIntake, LeControllerCommandReadyClaim, LeControllerHciResources,
+        LeControllerIdleClassifiedCommandRoute,
     };
     use std::{boxed::Box, task::Waker};
 
     use super::{EmbassyBluetoothDtmActiveRadioSignal, RadioFirst, select_radio_first};
 
-    type TestChannel = InProcessHciChannel<NoopRawMutex, 2, 1, 16>;
+    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 16>;
+
+    fn test_resources() -> TestResources {
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
+            12,
+            1,
+        )
+        .expect("the test profile has one nonzero ACL credit");
+        TestResources::new(config).expect("the test profile fits its owned transport")
+    }
 
     #[test]
     fn radio_wins_a_simultaneous_ready_tie() {
@@ -305,14 +317,19 @@ mod tests {
     }
 
     #[test]
-    fn production_readiness_keeps_command_on_radio_tie_then_sync_classifies_it() {
-        let mut channel = TestChannel::new();
-        let (host, controller) = channel.split();
-        block_on(host.write(&LeTestEnd::new())).unwrap();
+    fn production_readiness_keeps_command_on_radio_tie_then_sync_routes_it() {
+        let mut resources = test_resources();
+        let mut endpoints = resources.split();
+        let LeControllerCommandReadyClaim::Ready(command_ready) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the fresh test epoch exposes initial command authority")
+        };
+        block_on(endpoints.host.write(&LeTestEnd::new())).unwrap();
 
         let first = block_on(select_radio_first(
             ready(EmbassyBluetoothDtmActiveRadioSignal::Scheduler),
-            controller.wait_receive_ready(),
+            endpoints.controller.wait_command_available(&command_ready),
         ));
         assert!(matches!(
             first,
@@ -321,46 +338,56 @@ mod tests {
 
         let second = block_on(select_radio_first(
             pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
-            controller.wait_receive_ready(),
+            endpoints.controller.wait_command_available(&command_ready),
         ));
-        assert!(matches!(second, RadioFirst::Other(())));
+        assert!(matches!(second, RadioFirst::Other(Ok(()))));
 
         let mut packet = [0; 16];
-        let command = match controller.try_receive_classified_command(&mut packet) {
-            Ok(command) => command,
-            Err(_) => panic!("Host readiness must leave Test End for synchronous classification"),
+        let command = match endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, &mut packet)
+        {
+            LeControllerCommandIntake::Command { command, .. } => command,
+            _ => panic!("Host readiness must leave Test End for synchronous classification"),
         };
         assert!(matches!(
-            command.value(),
-            LeControllerCommandClassification::Dtm(LeDtmCommand::TestEnd(_))
+            endpoints.controller.route_idle_classified_command(command),
+            LeControllerIdleClassifiedCommandRoute::ResponsePending(_)
         ));
-        assert!(command.originates_from(&controller));
     }
 
     #[test]
     fn production_readiness_leaves_exact_acl_for_synchronous_receive() {
-        let mut channel = TestChannel::new();
-        let (host, controller) = channel.split();
+        let mut resources = test_resources();
+        let mut endpoints = resources.split();
+        let LeControllerCommandReadyClaim::Ready(command_ready) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the fresh test epoch exposes initial command authority")
+        };
         let acl = AclPacket::new(
             ConnHandle::new(1),
             AclPacketBoundary::Complete,
             AclBroadcastFlag::PointToPoint,
             &[7, 8],
         );
-        block_on(host.write(&acl)).unwrap();
+        block_on(endpoints.host.write(&acl)).unwrap();
 
         let selected = block_on(select_radio_first(
             pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
-            controller.wait_receive_ready(),
+            endpoints.controller.wait_command_available(&command_ready),
         ));
-        assert!(matches!(selected, RadioFirst::Other(())));
+        assert!(matches!(selected, RadioFirst::Other(Ok(()))));
 
         let mut packet = [0; 16];
-        let HostToControllerFrame::Acl(received) = controller
-            .try_receive(&mut packet)
-            .expect("Host readiness must leave ACL for the synchronous router")
+        let LeControllerCommandIntake::NonCommand { frame, .. } = endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, &mut packet)
         else {
-            panic!("the exact Host ACL packet changed kind");
+            panic!("Host readiness must leave ACL for the synchronous router");
+        };
+        let HostToControllerFrame::Acl(received) = frame.value() else {
+            panic!("the exact Host ACL packet changed kind")
         };
         assert_eq!(received.handle(), ConnHandle::new(1));
         assert_eq!(received.boundary_flag(), AclPacketBoundary::Complete);
@@ -370,11 +397,16 @@ mod tests {
 
     #[test]
     fn cancelling_notified_production_readiness_leaves_exact_command() {
-        let mut channel = TestChannel::new();
-        let (host, controller) = channel.split();
+        let mut resources = test_resources();
+        let mut endpoints = resources.split();
+        let LeControllerCommandReadyClaim::Ready(command_ready) =
+            endpoints.controller.claim_initial_command_ready(())
+        else {
+            panic!("the fresh test epoch exposes initial command authority")
+        };
         let mut selected = Box::pin(select_radio_first(
             pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
-            controller.wait_receive_ready(),
+            endpoints.controller.wait_command_available(&command_ready),
         ));
         let mut context = Context::from_waker(Waker::noop());
         assert!(matches!(
@@ -382,25 +414,27 @@ mod tests {
             Poll::Pending
         ));
 
-        block_on(host.write(&LeTestEnd::new())).unwrap();
+        block_on(endpoints.host.write(&LeTestEnd::new())).unwrap();
         drop(selected);
 
         assert!(matches!(
             block_on(select_radio_first(
                 pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
-                controller.wait_receive_ready(),
+                endpoints.controller.wait_command_available(&command_ready),
             )),
-            RadioFirst::Other(())
+            RadioFirst::Other(Ok(()))
         ));
         let mut packet = [0; 16];
-        let command = match controller.try_receive_classified_command(&mut packet) {
-            Ok(command) => command,
-            Err(_) => panic!("cancelling readiness must retain the exact queued command"),
+        let command = match endpoints
+            .controller
+            .try_receive_classified_command_with_buffer(command_ready, &mut packet)
+        {
+            LeControllerCommandIntake::Command { command, .. } => command,
+            _ => panic!("cancelling readiness must retain the exact queued command"),
         };
         assert!(matches!(
-            command.value(),
-            LeControllerCommandClassification::Dtm(LeDtmCommand::TestEnd(_))
+            endpoints.controller.route_idle_classified_command(command),
+            LeControllerIdleClassifiedCommandRoute::ResponsePending(_)
         ));
-        assert!(command.originates_from(&controller));
     }
 }

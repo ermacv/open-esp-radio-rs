@@ -133,10 +133,23 @@ impl<'epoch, Owner> LeControllerDeferredReceiverStart<'epoch, Owner> {
         )
     }
 
-    /// Construct the exact receiver-start completion after hardware `RUN`.
+    /// Construct the exact receiver-start success selected by a hardware composition.
+    ///
+    /// This portable layer preserves semantics and order but cannot observe
+    /// hardware `RUN`; the chip-owned state machine must enforce that proof.
     pub fn into_started_response(self) -> LeControllerResponsePending<'epoch, Owner> {
         self.ready
             .begin_next_response(self.command.into_started_command_complete())
+    }
+
+    /// Construct the receiver-start Hardware Failure selected by a hardware composition.
+    ///
+    /// This portable layer consumes the semantic command and command-order
+    /// authority without accepting a caller-selected status. Proving that
+    /// hardware is recovered remains the chip-owned state machine's job.
+    pub fn into_hardware_failure_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_hardware_failure_command_complete())
     }
 }
 
@@ -182,10 +195,23 @@ impl<'epoch, Owner> LeControllerDeferredTransmitterStart<'epoch, Owner> {
         )
     }
 
-    /// Construct the exact transmitter-start completion after hardware `RUN`.
+    /// Construct the exact transmitter-start success selected by a hardware composition.
+    ///
+    /// This portable layer preserves semantics and order but cannot observe
+    /// hardware `RUN`; the chip-owned state machine must enforce that proof.
     pub fn into_started_response(self) -> LeControllerResponsePending<'epoch, Owner> {
         self.ready
             .begin_next_response(self.command.into_started_command_complete())
+    }
+
+    /// Construct the transmitter-start Hardware Failure selected by a hardware composition.
+    ///
+    /// This portable layer consumes the semantic command and command-order
+    /// authority without accepting a caller-selected status. Proving that
+    /// hardware is recovered remains the chip-owned state machine's job.
+    pub fn into_hardware_failure_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_hardware_failure_command_complete())
     }
 }
 
@@ -1320,6 +1346,47 @@ mod tests {
             block_on(transmitter.host.read(&mut response_buffer)).unwrap(),
             LE_TRANSMITTER_TEST_V1_OPCODE,
             Status::SUCCESS,
+        );
+    }
+
+    #[test]
+    fn hardware_failure_status_preserves_backpressure_and_order() {
+        let mut receiver_resources = controller_resources();
+        let mut receiver = receiver_resources.split();
+        let ready = publish_probe_response(&mut receiver, RadioOwner(91));
+        block_on(
+            receiver
+                .host
+                .write(&RawCommand::new(LE_RECEIVER_TEST_V1_OPCODE, &[13])),
+        )
+        .unwrap();
+        let mut command_buffer = [0; 16];
+        let command = intake_command(&receiver.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartReceiver(start) =
+            receiver.controller.route_idle_classified_command(command)
+        else {
+            panic!("receiver start must remain deferred");
+        };
+        let pending = start
+            .map_owner(|RadioOwner(owner)| RadioOwner(owner + 1))
+            .into_hardware_failure_response();
+        let LeControllerResponsePublication::Pending(pending) =
+            pending.try_publish(&receiver.controller)
+        else {
+            panic!("the older response must backpressure the portable failure");
+        };
+        let mut response_buffer = [0; 16];
+        assert_probe_response(block_on(receiver.host.read(&mut response_buffer)).unwrap());
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&receiver.controller)
+        else {
+            panic!("the retained receiver failure publishes after capacity returns");
+        };
+        assert_eq!(ready.owner(), &RadioOwner(92));
+        assert_command_status(
+            block_on(receiver.host.read(&mut response_buffer)).unwrap(),
+            LE_RECEIVER_TEST_V1_OPCODE,
+            HciError::HARDWARE_FAILURE.to_status(),
         );
     }
 

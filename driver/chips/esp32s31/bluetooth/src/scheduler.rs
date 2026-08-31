@@ -38,7 +38,7 @@ use crate::{
     BluetoothDtmReceiverEvent, BluetoothDtmRxInitialEventWindow,
     BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerItemEventError,
     BluetoothDtmSchedulerMargin, BluetoothDtmTransmitterEvent, BluetoothDtmTxEventWindow,
-    BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros,
+    BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros, BluetoothSchedulerWakeBatch,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -2351,6 +2351,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn observe_dtm_completion<Role>(
         &mut self,
         running: BluetoothDtmSchedulerRunning<Role>,
+        wake: BluetoothSchedulerWakeBatch,
     ) -> BluetoothDtmSchedulerCompletionStep<Role> {
         let address = running.scheduler_item_address();
         if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
@@ -2364,7 +2365,7 @@ impl<const SCHEDULER_CAPACITY: usize>
 
         let capture = self
             .task
-            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut());
+            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake);
         if capture.is_err() {
             return BluetoothDtmSchedulerCompletionStep::DrainAlreadyActive(running);
         }

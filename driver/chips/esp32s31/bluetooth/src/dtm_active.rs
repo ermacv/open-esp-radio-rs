@@ -31,15 +31,21 @@ use crate::{
     BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
     BluetoothDtmSoftwareListRemovalPublishedStep, BluetoothDtmTransmitterEvent,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
+    BluetoothSchedulerWakeBatch,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
     BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>;
 
 enum BluetoothDtmRoleCompletionPhase<'runtime, S, const CAPACITY: usize, Role> {
-    Running {
+    RunningAwaitingWake {
         task: Task<'runtime, S, CAPACITY>,
         running: BluetoothDtmSchedulerRunning<Role>,
+    },
+    RunningReady {
+        task: Task<'runtime, S, CAPACITY>,
+        running: BluetoothDtmSchedulerRunning<Role>,
+        wake: BluetoothSchedulerWakeBatch,
     },
     RunningDrain {
         task: Task<'runtime, S, CAPACITY>,
@@ -125,18 +131,43 @@ where
     pub fn wake(&self) -> &crate::BluetoothSchedulerWakeCell {
         match &self.completion.phase {
             BluetoothDtmActiveCompletionPhase::Transmitter(
-                BluetoothDtmRoleCompletionPhase::Running { task, .. },
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, .. },
             )
             | BluetoothDtmActiveCompletionPhase::Receiver(
-                BluetoothDtmRoleCompletionPhase::Running { task, .. },
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, .. },
             ) => task.scheduler_wake(),
             _ => unreachable!("scheduler wait retains a running graph"),
         }
     }
 
-    /// Consume the parked wait before performing one later bounded recheck.
-    pub fn resume(self) -> BluetoothDtmActiveCompletion<'runtime, S, CAPACITY> {
-        self.completion
+    /// Consume the parked wait and the exact dequeued scheduler batch before
+    /// performing one fresh finished-list transfer.
+    pub fn resume(
+        self,
+        wake: BluetoothSchedulerWakeBatch,
+    ) -> BluetoothDtmActiveCompletion<'runtime, S, CAPACITY> {
+        let phase = match self.completion.phase {
+            BluetoothDtmActiveCompletionPhase::Transmitter(
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
+            ) => BluetoothDtmActiveCompletionPhase::Transmitter(
+                BluetoothDtmRoleCompletionPhase::RunningReady {
+                    task,
+                    running,
+                    wake,
+                },
+            ),
+            BluetoothDtmActiveCompletionPhase::Receiver(
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
+            ) => BluetoothDtmActiveCompletionPhase::Receiver(
+                BluetoothDtmRoleCompletionPhase::RunningReady {
+                    task,
+                    running,
+                    wake,
+                },
+            ),
+            _ => unreachable!("scheduler wait retains a wake-gated running graph"),
+        };
+        BluetoothDtmActiveCompletion { phase }
     }
 }
 
@@ -389,16 +420,12 @@ enum BluetoothDtmRoleCompletionAdvance<'runtime, S, const CAPACITY: usize, Role>
 fn drained_or_pending_running<'runtime, S, const CAPACITY: usize, Role>(
     task: Task<'runtime, S, CAPACITY>,
     drain: BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
-    wait_when_drained: bool,
 ) -> BluetoothDtmRoleCompletionAdvance<'runtime, S, CAPACITY, Role> {
     match drain {
         BluetoothDtmSchedulerFinishedListDrainState::Drained(running) => {
-            let phase = BluetoothDtmRoleCompletionPhase::Running { task, running };
-            if wait_when_drained {
-                BluetoothDtmRoleCompletionAdvance::WaitScheduler(phase)
-            } else {
-                BluetoothDtmRoleCompletionAdvance::Continue(phase)
-            }
+            BluetoothDtmRoleCompletionAdvance::WaitScheduler(
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
+            )
         }
         BluetoothDtmSchedulerFinishedListDrainState::Pending(pending) => {
             BluetoothDtmRoleCompletionAdvance::Continue(
@@ -431,8 +458,17 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     match phase {
-        BluetoothDtmRoleCompletionPhase::Running { mut task, running } => {
-            let step = task.observe_dtm_completion(running);
+        BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running } => {
+            BluetoothDtmRoleCompletionAdvance::WaitScheduler(
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
+            )
+        }
+        BluetoothDtmRoleCompletionPhase::RunningReady {
+            mut task,
+            running,
+            wake,
+        } => {
+            let step = task.observe_dtm_completion(running, wake);
             match step {
                 BluetoothDtmSchedulerCompletionStep::DrainAlreadyActive(running) => {
                     let step = BluetoothDtmSchedulerCompletionStep::DrainAlreadyActive(running);
@@ -452,19 +488,20 @@ where
                 }
                 BluetoothDtmSchedulerCompletionStep::NoFinishedList(running) => {
                     BluetoothDtmRoleCompletionAdvance::WaitScheduler(
-                        BluetoothDtmRoleCompletionPhase::Running { task, running },
+                        BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
                     )
                 }
                 BluetoothDtmSchedulerCompletionStep::UnrelatedList { drain, observed } => {
-                    let advance = drained_or_pending_running(task, drain, false);
+                    let advance = drained_or_pending_running(task, drain);
                     let phase = match advance {
-                        BluetoothDtmRoleCompletionAdvance::Continue(phase) => phase,
+                        BluetoothDtmRoleCompletionAdvance::Continue(phase)
+                        | BluetoothDtmRoleCompletionAdvance::WaitScheduler(phase) => phase,
                         _ => unreachable!(),
                     };
                     BluetoothDtmRoleCompletionAdvance::UnrelatedList { phase, observed }
                 }
                 BluetoothDtmSchedulerCompletionStep::StillInFlight(drain) => {
-                    drained_or_pending_running(task, drain, true)
+                    drained_or_pending_running(task, drain)
                 }
                 BluetoothDtmSchedulerCompletionStep::CompletionObserved(drain) => {
                     BluetoothDtmRoleCompletionAdvance::Continue(drained_or_pending_completed(
@@ -492,15 +529,16 @@ where
                     }
                 }
                 BluetoothDtmSchedulerRunningDrainStep::UnrelatedList { drain, observed } => {
-                    let advance = drained_or_pending_running(task, drain, false);
+                    let advance = drained_or_pending_running(task, drain);
                     let phase = match advance {
-                        BluetoothDtmRoleCompletionAdvance::Continue(phase) => phase,
+                        BluetoothDtmRoleCompletionAdvance::Continue(phase)
+                        | BluetoothDtmRoleCompletionAdvance::WaitScheduler(phase) => phase,
                         _ => unreachable!(),
                     };
                     BluetoothDtmRoleCompletionAdvance::UnrelatedList { phase, observed }
                 }
                 BluetoothDtmSchedulerRunningDrainStep::StillInFlight(drain) => {
-                    drained_or_pending_running(task, drain, true)
+                    drained_or_pending_running(task, drain)
                 }
                 BluetoothDtmSchedulerRunningDrainStep::CompletionObserved(drain) => {
                     BluetoothDtmRoleCompletionAdvance::Continue(drained_or_pending_completed(
@@ -837,7 +875,7 @@ where
     ) -> Self {
         Self {
             phase: BluetoothDtmActiveCompletionPhase::Transmitter(
-                BluetoothDtmRoleCompletionPhase::Running { task, running },
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
             ),
         }
     }
@@ -848,7 +886,7 @@ where
     ) -> Self {
         Self {
             phase: BluetoothDtmActiveCompletionPhase::Receiver(
-                BluetoothDtmRoleCompletionPhase::Running { task, running },
+                BluetoothDtmRoleCompletionPhase::RunningAwaitingWake { task, running },
             ),
         }
     }

@@ -203,10 +203,12 @@ where
     pub(crate) fn step(self) -> BluetoothDtmQuiescenceStep<'runtime, S, CAPACITY> {
         match self.phase {
             BluetoothDtmQuiescencePhase::Completion(completion) => step_completion(completion),
-            BluetoothDtmQuiescencePhase::SchedulerWait(wait) => {
-                let _observed = wait.wake().take();
-                step_completion(wait.resume())
-            }
+            BluetoothDtmQuiescencePhase::SchedulerWait(wait) => match wait.wake().take() {
+                Some(wake) => step_completion(wait.resume(wake)),
+                None => BluetoothDtmQuiescenceStep::Waiting(runner(
+                    BluetoothDtmQuiescencePhase::SchedulerWait(wait),
+                )),
+            },
             BluetoothDtmQuiescencePhase::PostUnlinkWait(wait) => step_completion(wait.resume()),
             BluetoothDtmQuiescencePhase::CancelRecurring(recurring)
             | BluetoothDtmQuiescencePhase::CancelRejected(recurring) => {

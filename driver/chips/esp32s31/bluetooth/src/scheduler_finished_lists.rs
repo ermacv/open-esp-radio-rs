@@ -10,6 +10,8 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothControllerHal, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop,
 };
+
+use crate::BluetoothSchedulerWakeBatch;
 pub use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
 };
@@ -66,13 +68,15 @@ impl BluetoothSchedulerFinishedListWorker {
     pub fn capture(
         &mut self,
         controller: &mut BluetoothControllerHal<'_>,
+        wake: BluetoothSchedulerWakeBatch,
     ) -> Result<(), BluetoothSchedulerFinishedListCaptureError> {
-        self.capture_with(controller)
+        self.capture_with(controller, wake)
     }
 
     fn capture_with(
         &mut self,
         backend: &mut impl BluetoothSchedulerFinishedListBackend,
+        _wake: BluetoothSchedulerWakeBatch,
     ) -> Result<(), BluetoothSchedulerFinishedListCaptureError> {
         if self.observation.is_some() {
             return Err(BluetoothSchedulerFinishedListCaptureError::DrainAlreadyActive);
@@ -128,6 +132,7 @@ mod tests {
         BluetoothSchedulerFinishedListBackend, BluetoothSchedulerFinishedListCaptureError,
         BluetoothSchedulerFinishedListWorker, BluetoothSchedulerFinishedListWorkerStep,
     };
+    use crate::{BluetoothSchedulerWakeCell, BluetoothSchedulerWorkerWakeClass};
 
     struct Backend {
         observation: Option<BluetoothSchedulerFinishedListObservation>,
@@ -150,6 +155,12 @@ mod tests {
         }
     }
 
+    fn wake(class: BluetoothSchedulerWorkerWakeClass) -> crate::BluetoothSchedulerWakeBatch {
+        let cell = BluetoothSchedulerWakeCell::new();
+        let _publication = cell.publish_from_interrupt(class);
+        cell.take().expect("one scheduler batch must be pending")
+    }
+
     fn assert_list(
         step: BluetoothSchedulerFinishedListWorkerStep,
         expected_index: u8,
@@ -170,10 +181,16 @@ mod tests {
         let mut worker = BluetoothSchedulerFinishedListWorker::new();
 
         worker
-            .capture_with(&mut backend)
+            .capture_with(
+                &mut backend,
+                wake(BluetoothSchedulerWorkerWakeClass::Ordinary),
+            )
             .expect("idle worker accepts one transfer");
         assert_eq!(
-            worker.capture_with(&mut backend),
+            worker.capture_with(
+                &mut backend,
+                wake(BluetoothSchedulerWorkerWakeClass::Marked),
+            ),
             Err(BluetoothSchedulerFinishedListCaptureError::DrainAlreadyActive)
         );
         assert_list(worker.step(), 3, true);
@@ -191,7 +208,12 @@ mod tests {
         let mut backend = backend(&[3]);
         let mut worker = BluetoothSchedulerFinishedListWorker::new();
 
-        worker.capture_with(&mut backend).unwrap();
+        worker
+            .capture_with(
+                &mut backend,
+                wake(BluetoothSchedulerWorkerWakeClass::Ordinary),
+            )
+            .unwrap();
         assert_list(worker.step(), 3, false);
         assert!(!worker.is_active());
         assert_eq!(
@@ -205,7 +227,12 @@ mod tests {
         let mut backend = backend(&[0, 3]);
         let mut worker = BluetoothSchedulerFinishedListWorker::new();
 
-        worker.capture_with(&mut backend).unwrap();
+        worker
+            .capture_with(
+                &mut backend,
+                wake(BluetoothSchedulerWorkerWakeClass::Marked),
+            )
+            .unwrap();
         assert_list(worker.step(), 0, true);
         assert!(worker.is_active());
         assert_list(worker.step(), 3, false);
@@ -217,7 +244,12 @@ mod tests {
         let mut backend = backend(&[0]);
         let mut worker = BluetoothSchedulerFinishedListWorker::new();
 
-        worker.capture_with(&mut backend).unwrap();
+        worker
+            .capture_with(
+                &mut backend,
+                wake(BluetoothSchedulerWorkerWakeClass::Ordinary),
+            )
+            .unwrap();
         assert_list(worker.step(), 0, false);
         assert!(!worker.is_active());
         assert_eq!(

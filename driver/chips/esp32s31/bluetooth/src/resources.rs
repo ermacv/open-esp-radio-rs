@@ -379,9 +379,10 @@ impl BluetoothTaskResources {
     pub(crate) fn capture_scheduler_finished_lists(
         &mut self,
         worker: &mut crate::BluetoothSchedulerFinishedListWorker,
+        wake: crate::BluetoothSchedulerWakeBatch,
     ) -> Result<(), crate::BluetoothSchedulerFinishedListCaptureError> {
         let mut controller = self.registers.borrow_bluetooth_controller();
-        worker.capture(&mut controller)
+        worker.capture(&mut controller, wake)
     }
 
     /// Perform one fresh fenced hardware-head retirement observation.

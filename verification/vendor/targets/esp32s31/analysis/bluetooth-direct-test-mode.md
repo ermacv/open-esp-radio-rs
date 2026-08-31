@@ -852,13 +852,12 @@ and then conditional command-one reads. `NoSchedulerWork` and command-pending
 outcomes re-arm the same mailbox identity and generation before leaving the
 critical section; a foreign Controller mailbox cannot take, cancel or re-arm
 the owner even when its numeric generation matches. Ready advances the same
-identity without returning descriptor ownership. This closes
-temporal pairing and owner retention, not retry liveness. A later command-ready
-edge can be returned by a full mailbox while the first retained event is still
-pending, then precede the re-arm and fail to become the next DTM event. Selector-6
-recovery still blocks this path fail-closed, and neither vendor evidence nor the
-current open runtime proves command-ready-to-source-124 causality or a
-guaranteed retry wake.
+identity without returning descriptor ownership. The current open runtime also
+performs one finite direct read-only recheck immediately after arming, after an
+event-derived pending result and at a caller-owned absolute deadline. A pending
+direct result re-arms the same mailbox identity and generation. This closes
+retry progress without claiming command-ready-to-source-124 causality or
+speculatively replaying primary acknowledgement.
 
 The reviewed register model consequently promotes `0x2010_125c` to
 `SCHEDULER_FINISHED_LIST_STATUS.FINISHED_LIST_MASK` and retains `0x2010_1260`
@@ -870,9 +869,18 @@ token instead of a freely constructible positional index. The Bluetooth layer
 drains one lowest-numbered list per finite step, allowing the future async
 bottom half to yield between lists without a loop or RTOS. The generic token
 proves only one selection from that captured transfer. The DTM Controller
-supplies the next layer for list zero and can continue any retained mask one
-affine observation per call without recapturing hardware; other-role mapping
-and dispatch remain outside this closure.
+supplies the next layer for list zero. A fresh transfer consumes exactly one
+non-copyable scheduler batch dequeued from the source-124 handoff. Both an
+ordinary and a marked batch are valid: named same-chip
+`r_btdm_recycle_in_task` always invokes the scheduler drain, while the marker
+only adds buffer recycle work. A retained multi-list mask continues one affine
+observation per call without a second batch or another MMIO transfer; once it
+is exhausted, the running owner returns to the wake-gated state. A missing
+batch preserves the complete DTM owner and performs no STATUS or REPORT access.
+Individual source 27/28 roles and the REPORT clear/ack rule are still
+unresolved, so the write-bearing transfer is deliberately not used as a
+timer-driven polling primitive. Other-role mapping and dispatch remain outside
+this closure.
 
 The always-awake time-read prefix is now exact. Complete
 `r_sym_bt_KrvfcwDw4eZoaTPVdFj5` sets `SLEEP_TIMER_CONTROL.LATCH_REQUEST` at

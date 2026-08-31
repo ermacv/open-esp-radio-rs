@@ -3188,8 +3188,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub fn observe_dtm_completion<Role>(
         &mut self,
         running: crate::BluetoothDtmSchedulerRunning<Role>,
+        wake: crate::BluetoothSchedulerWakeBatch,
     ) -> crate::BluetoothDtmSchedulerCompletionStep<Role> {
-        self.runtime.observe_dtm_completion(running)
+        self.runtime.observe_dtm_completion(running, wake)
     }
 
     /// Continue an already captured finished-list drain while the DTM graph

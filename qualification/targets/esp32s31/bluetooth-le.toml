@@ -346,7 +346,7 @@ gaps = [
 [[capabilities]]
 id = "scheduler-finished-list-drain"
 title = "Bounded scheduler finished-list event drain"
-scope = "Typed sixteen-list hardware mask transfer, one-list-per-step source-owned continuation retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, and finite removal-ready observation"
+scope = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch, one-list-per-step source-owned continuation without repeated MMIO retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, direct read-only removal rechecks, and finite removal-ready observation"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"

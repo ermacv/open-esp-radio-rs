@@ -29,14 +29,28 @@ pub enum BluetoothSchedulerWakePublication {
 }
 
 /// One coalesced scheduler-work batch consumed by the sole worker.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+///
+/// The batch is affine because one dequeued hardware-work notification may
+/// authorize at most one fresh finished-list transfer:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_bluetooth::BluetoothSchedulerWakeBatch;
+///
+/// fn replay(batch: BluetoothSchedulerWakeBatch) {
+///     consume(batch);
+///     consume(batch);
+/// }
+///
+/// fn consume(_batch: BluetoothSchedulerWakeBatch) {}
+/// ```
+#[derive(Debug, Eq, PartialEq)]
 pub struct BluetoothSchedulerWakeBatch {
     marked: bool,
 }
 
 impl BluetoothSchedulerWakeBatch {
     /// Whether any publication in this coalesced batch carried the marker.
-    pub const fn is_marked(self) -> bool {
+    pub const fn is_marked(&self) -> bool {
         self.marked
     }
 }

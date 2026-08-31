@@ -423,7 +423,7 @@ pub enum EmbassyBluetoothPrimaryInterruptStep {
 }
 
 /// Reason for resuming the sole Bluetooth controller worker.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 #[must_use]
 pub enum EmbassyBluetoothWake {
     /// One or more classified scheduler publications are pending.

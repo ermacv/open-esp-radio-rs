@@ -1,6 +1,7 @@
 # Wi-Fi TX network-driver API change audit
 
-Status: route/key separation and endpoint-topology cutover complete, 2026-08-31.
+Status: route/key separation and generation-bound AP peer publication complete,
+2026-08-31.
 
 ## Current implementation status
 
@@ -60,19 +61,33 @@ any historical HIL throughput delta without a same-image measurement.
 At this checkpoint the ESP32-S31 pinned adapter has an explicit immutable
 `NetworkEndpointConfig`. Infrastructure STA uses `SingleRadioPeer`, so
 distinct Ethernet destinations behind the same BSSID share one queue key.
-SoftAP uses `PerLinkDestination`, so one client cannot fragment another
-client's scheduling run. The link lifecycle epoch and network-interface ID
-are part of every supported Ethernet key; Down -> Up therefore invalidates
-the previous classification. The route itself is not changed and is still
-used to construct the correct Ethernet frame.
+SoftAP uses `AssociatedPeer`: Core0 publishes the current authorized peer
+slot, MAC address and non-zero association epoch into a fixed 15-entry atomic
+directory. Core1 resolves that snapshot only at Xarxa's burst/key boundary.
+Known peers use slot+association epoch; unknown and group destinations retain
+their complete Ethernet identity. The link lifecycle epoch,
+peer-directory revision and network-interface ID jointly advance the local
+scheduling epoch, so reconnect, association and removal invalidate Xarxa's
+burst cursor. The route itself is not changed and is still used to construct
+the correct Ethernet frame.
 
-This endpoint topology is queue geometry, not radio authorization. AP peer
-generation, TID/AC grants and airtime debt still belong to the Core0 radio
-owner. The adapter requests a BA32-sized keyed run and a four-packet socket
-quantum while the link is up, but its current `transmit_for` still grants from
-the same global direct-SRAM pool and does not yet return `KeyDeferred`.
-Therefore this refactor fixes the classification boundary but does not yet
-implement airtime fairness or PSRAM spill.
+The peer directory is not a cross-core lock. Its complete snapshot uses an
+atomic publication sequence; a Core1 read concurrent with mutation returns
+unknown rather than waiting. Re-publishing an identity-equivalent status does
+no writes, so buffered-frame counters and other unrelated AP status changes
+do not bounce the directory. The table is cleared at the terminal AP service
+edge.
+
+This endpoint topology is queue geometry, not radio authorization. The
+published association epoch prevents unrelated peer generations from sharing
+a queue identity, but it does not make queued payload valid for a later
+association. Final peer validation, backlog purge, TID/AC grants and airtime
+debt still belong to the Core0 radio owner. The adapter requests a BA32-sized
+keyed run and a four-packet socket quantum while the link is up, but its
+current `transmit_for` still grants from the same global direct-SRAM pool and
+does not yet return `KeyDeferred`. Therefore this refactor fixes the
+classification boundary but does not yet implement airtime fairness, stale
+backlog revocation or PSRAM spill.
 
 No payload-memory architecture changed in this step. Frames are still built
 directly in SRAM slots and transferred to Core0 without a complete-frame

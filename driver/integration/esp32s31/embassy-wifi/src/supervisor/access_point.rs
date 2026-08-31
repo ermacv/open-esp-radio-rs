@@ -1551,7 +1551,10 @@ impl ProductionWifiEpochRunner {
                     },
                     publish_access_point_shared_network_rx,
                     wait_for_active_wifi_role_stop(endpoint),
-                    |status| crate::status::publish_access_point_status(generation, status),
+                    |status| {
+                        crate::radio_resources::publish_access_point_egress_peers(&status);
+                        crate::status::publish_access_point_status(generation, status);
+                    },
                     || {
                         let mut nonce = [0_u8; 32];
                         for word in nonce.chunks_exact_mut(4) {
@@ -1564,6 +1567,7 @@ impl ProductionWifiEpochRunner {
                 )
             )
         };
+        crate::radio_resources::clear_access_point_egress_peers();
         crate::status::publish_access_point_stopped();
         #[cfg(feature = "diagnostics")]
         if let Err(error) = &result {

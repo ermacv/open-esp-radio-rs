@@ -27,7 +27,9 @@ use open_esp_radio_dma::{
     RxNetworkLease, RxRadioLease, TaggedStableDmaBacking,
 };
 
-use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
+use crate::{
+    ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
+};
 
 /// Opaque identity of one logical network endpoint sharing a physical radio.
 ///
@@ -60,20 +62,28 @@ pub enum EgressQueueTopology {
     SingleRadioPeer,
     /// Each Ethernet destination owns an independent scheduling domain.
     ///
-    /// SoftAP uses this as its initial queue classifier. The radio owner still
-    /// validates that the destination belongs to a live peer generation.
+    /// This is the fail-closed fallback for a multi-peer endpoint without a
+    /// published association identity. The radio owner still validates that
+    /// the destination belongs to a live peer generation.
     PerLinkDestination,
+    /// Unicast routes resolve through a generation-bound radio peer table.
+    ///
+    /// SoftAP uses this topology. The lookup controls queue grouping only;
+    /// final radio admission validates the same generation independently.
+    AssociatedPeer,
 }
 
 /// Immutable network endpoint identity and egress queue topology.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NetworkEndpointConfig {
+#[derive(Clone, Copy)]
+pub struct NetworkEndpointConfig<'registry> {
     interface: NetworkInterfaceId,
     hardware_address: [u8; 6],
     egress_topology: EgressQueueTopology,
+    #[cfg_attr(not(feature = "tx-egress-scheduling"), allow(dead_code))]
+    peer_resolver: Option<&'registry dyn EgressPeerResolver>,
 }
 
-impl NetworkEndpointConfig {
+impl NetworkEndpointConfig<'_> {
     /// Configure an endpoint whose routes all reach one physical radio peer.
     pub const fn single_radio_peer(
         interface: NetworkInterfaceId,
@@ -83,6 +93,7 @@ impl NetworkEndpointConfig {
             interface,
             hardware_address,
             egress_topology: EgressQueueTopology::SingleRadioPeer,
+            peer_resolver: None,
         }
     }
 
@@ -96,6 +107,21 @@ impl NetworkEndpointConfig {
             interface,
             hardware_address,
             egress_topology: EgressQueueTopology::PerLinkDestination,
+            peer_resolver: None,
+        }
+    }
+
+    /// Configure a multi-peer endpoint from a radio-owned peer snapshot.
+    pub const fn associated_peers<'registry>(
+        interface: NetworkInterfaceId,
+        hardware_address: [u8; 6],
+        peer_resolver: &'registry dyn EgressPeerResolver,
+    ) -> NetworkEndpointConfig<'registry> {
+        NetworkEndpointConfig {
+            interface,
+            hardware_address,
+            egress_topology: EgressQueueTopology::AssociatedPeer,
+            peer_resolver: Some(peer_resolver),
         }
     }
 
@@ -116,6 +142,7 @@ impl NetworkEndpointConfig {
         const KEY_FORMAT: u32 = 0x5700_0000;
         const SINGLE_RADIO_PEER: u32 = 1 << 16;
         const PER_LINK_DESTINATION: u32 = 2 << 16;
+        const ASSOCIATED_PEER: u32 = 3 << 16;
 
         let header =
             KEY_FORMAT | (u32::from(self.interface.value()) << 8) | u32::from(route.traffic_class);
@@ -131,8 +158,34 @@ impl NetworkEndpointConfig {
                     u32::from(u16::from_le_bytes([address[4], address[5]])),
                 ])
             }
+            (EgressQueueTopology::AssociatedPeer, HardwareAddress::Ethernet(address)) => self
+                .peer_resolver
+                .and_then(|resolver| resolver.resolve(address))
+                .map_or_else(
+                    || {
+                        EgressKey::from_words([
+                            header | PER_LINK_DESTINATION,
+                            epoch,
+                            u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
+                            u32::from(u16::from_le_bytes([address[4], address[5]])),
+                        ])
+                    },
+                    |peer| {
+                        EgressKey::from_words([
+                            header | ASSOCIATED_PEER,
+                            epoch,
+                            peer.generation().get(),
+                            u32::from(peer.slot().get()),
+                        ])
+                    },
+                ),
             _ => EgressKey::from_route(route),
         }
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn peer_revision(self) -> u32 {
+        self.peer_resolver.map_or(0, EgressPeerResolver::revision)
     }
 }
 
@@ -873,7 +926,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
     >(
         &'resources mut self,
         tx: PinnedTxProvider<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        endpoint: NetworkEndpointConfig,
+        endpoint: NetworkEndpointConfig<'resources>,
     ) -> (
         SplitPinnedDevice<
             'resources,
@@ -955,6 +1008,12 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 keyed_egress: None,
                 #[cfg(feature = "tx-egress-scheduling")]
                 keyed_run_length: 0,
+                #[cfg(feature = "tx-egress-scheduling")]
+                observed_link_epoch: 0,
+                #[cfg(feature = "tx-egress-scheduling")]
+                observed_peer_revision: 0,
+                #[cfg(feature = "tx-egress-scheduling")]
+                scheduling_epoch: 0,
                 checksum: ChecksumCapabilities::default(),
                 tx_reservation: (),
             },
@@ -1092,7 +1151,7 @@ pub struct SplitPinnedDevice<
     tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
-    endpoint: NetworkEndpointConfig,
+    endpoint: NetworkEndpointConfig<'resources>,
     /// One credit unavailable to ordinary egress and therefore available to
     /// satisfy the `Driver::receive` RX+TX-token contract under saturated TX.
     ingress_tx: Option<u8>,
@@ -1105,6 +1164,12 @@ pub struct SplitPinnedDevice<
     keyed_egress: Option<EgressKey>,
     #[cfg(feature = "tx-egress-scheduling")]
     keyed_run_length: u8,
+    #[cfg(feature = "tx-egress-scheduling")]
+    observed_link_epoch: u32,
+    #[cfg(feature = "tx-egress-scheduling")]
+    observed_peer_revision: u32,
+    #[cfg(feature = "tx-egress-scheduling")]
+    scheduling_epoch: u32,
     checksum: ChecksumCapabilities,
     tx_reservation: (),
 }
@@ -1287,6 +1352,23 @@ impl<
             lease: Some(lease),
             _reservation: &mut self.tx_reservation,
         }
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn refresh_scheduling_epoch(&mut self) -> u32 {
+        let link_epoch = self.link.egress_epoch();
+        let peer_revision = self.endpoint.peer_revision();
+        if link_epoch != self.observed_link_epoch || peer_revision != self.observed_peer_revision {
+            self.observed_link_epoch = link_epoch;
+            self.observed_peer_revision = peer_revision;
+            self.scheduling_epoch = self
+                .scheduling_epoch
+                .checked_add(1)
+                .expect("network scheduling epoch is not reusable");
+            self.keyed_egress = None;
+            self.keyed_run_length = 0;
+        }
+        self.scheduling_epoch
     }
 
     /// Execute at most one scheduler-selected copy batch in the network
@@ -2125,7 +2207,8 @@ impl<
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_key(&mut self, route: EgressRoute) -> EgressKey {
-        self.endpoint.classify(self.link.egress_epoch(), route)
+        let epoch = self.refresh_scheduling_epoch();
+        self.endpoint.classify(epoch, route)
     }
 
     #[cfg(feature = "tx-egress-scheduling")]
@@ -2175,10 +2258,11 @@ impl<
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_schedule(&mut self) -> Option<EgressSchedule> {
         if self.link.is_up() && crate::keyed_egress_scheduling_enabled() {
+            let epoch = self.refresh_scheduling_epoch();
             Some(EgressSchedule::new(
                 NonZeroU8::new(32).unwrap(),
                 NonZeroU8::new(crate::keyed_egress_dispatch_quantum()).unwrap(),
-                self.link.egress_epoch(),
+                epoch,
             ))
         } else {
             // A permanent network stack survives radio role epochs. Returning

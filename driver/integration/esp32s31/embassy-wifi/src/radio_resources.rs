@@ -9,9 +9,9 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use open_esp_radio_embassy_net::{
-    DualPinnedNetworkRunner, NetworkEndpointConfig, PinnedEndpointResources,
-    PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxPool, PinnedTxResources, SharedPinnedRxConsumer,
-    SharedRxSplitPinnedDevice,
+    DualPinnedNetworkRunner, EgressPeerDirectory, EgressPeerIdentity, NetworkEndpointConfig,
+    PinnedEndpointResources, PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxPool, PinnedTxResources,
+    SharedPinnedRxConsumer, SharedRxSplitPinnedDevice,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
 use open_esp_radio_esp32s31_wifi_embassy::{
@@ -32,6 +32,9 @@ use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{
 };
 use open_esp_radio_wifi_embassy::station_network::{
     RunningStationNetwork, StationNetworkResources,
+};
+use open_esp_radio_wifi_ap::{
+    AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerPhase,
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
@@ -120,6 +123,7 @@ static ACCESS_POINT_NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
 static NETWORK_TX_RESOURCES: ConstStaticCell<NetworkTxResources> =
     ConstStaticCell::new(NetworkTxResources::new());
 static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
+static AP_EGRESS_PEERS: EgressPeerDirectory<AP_MAX_CLIENTS> = EgressPeerDirectory::new();
 #[allow(
     unsafe_code,
     reason = "the linker must retain production network TX backing in DMA-visible SRAM"
@@ -265,9 +269,10 @@ pub(super) fn initialize_network(
     );
     let (access_point_device, access_point_rx) = access_point_resources.split(
         tx_provider,
-        NetworkEndpointConfig::per_link_destination(
+        NetworkEndpointConfig::associated_peers(
             access_point_interface,
             access_point_address,
+            &AP_EGRESS_PEERS,
         ),
     );
     let runner = DualPinnedNetworkRunner::new(
@@ -292,6 +297,38 @@ pub(super) fn initialize_network(
         },
         WifiNetworkResources::Unstarted { device: (), runner },
     )
+}
+
+pub(crate) fn publish_access_point_egress_peers(status: &AccessPointServiceStatus) {
+    let mut peers = [None; AP_MAX_CLIENTS];
+    for peer in status
+        .peers
+        .iter()
+        .flatten()
+        .filter(|peer| peer.phase == ApPeerPhase::Authorized)
+    {
+        let identity = EgressPeerIdentity::try_new(
+            peer.address,
+            peer.association_id,
+            peer.association_epoch,
+        )
+        .expect("an authorized AP peer has a non-zero bounded identity");
+        let index = usize::from(identity.slot().get()) - 1;
+        let destination = peers
+            .get_mut(index)
+            .expect("an AP association ID fits the published peer directory");
+        assert!(destination.is_none(), "an AP slot has one current peer");
+        *destination = Some(identity);
+    }
+    AP_EGRESS_PEERS
+        .replace(&peers)
+        .expect("AP egress peer publication generation is not reusable");
+}
+
+pub(crate) fn clear_access_point_egress_peers() {
+    AP_EGRESS_PEERS
+        .clear()
+        .expect("AP egress peer publication generation is not reusable");
 }
 
 pub(super) fn initialize_ampdu() -> Result<RadioAmpduStorage, HtAmpduTxError> {

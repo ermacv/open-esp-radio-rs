@@ -39,10 +39,14 @@ use embassy_sync::{
     waitqueue::GenericAtomicWaker,
 };
 
+mod egress_peer;
 mod pinned;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
+pub use egress_peer::{
+    EgressPeerDirectory, EgressPeerDirectoryError, EgressPeerIdentity, EgressPeerResolver,
+};
 #[cfg(feature = "tx-phase-telemetry")]
 pub use pinned::PinnedTxOwnershipSnapshot;
 #[cfg(feature = "tx-staging-copy-probe")]

@@ -20,6 +20,8 @@ use open_esp_radio_embassy_net::{
     NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool,
     PinnedTxResources, Resources, RxEnqueueError, SharedPinnedRxQueue,
 };
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::{EgressPeerDirectory, EgressPeerIdentity};
 #[cfg(feature = "tx-core1-materializer-probe")]
 use open_esp_radio_embassy_net::{
     PinnedTxCore1MaterializationPoll, configure_tx_core1_materializer_probe,
@@ -363,6 +365,63 @@ fn endpoint_topology_classifies_sta_and_ap_routes_before_admission() {
         station.egress_key(first_route),
         before_reconnect,
         "a new link lifecycle must invalidate the previous device key"
+    );
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn associated_peer_directory_advances_queue_identity_on_reassociation() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let peers = EgressPeerDirectory::<2>::new();
+    let (provider, _consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(1);
+    let (mut device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::associated_peers(interface, [2, 0, 0, 0, 0, 2], &peers),
+    );
+    radio.set_link_state(LinkState::Up);
+
+    let first_address = [2, 0, 0, 0, 0, 3];
+    let second_address = [2, 0, 0, 0, 0, 4];
+    let first_route = EgressRoute {
+        destination: HardwareAddress::Ethernet(first_address),
+        traffic_class: 0,
+    };
+    let second_route = EgressRoute {
+        destination: HardwareAddress::Ethernet(second_address),
+        traffic_class: 0,
+    };
+
+    let unresolved = device.egress_key(first_route);
+    assert_eq!(device.egress_schedule().unwrap().epoch(), 1);
+
+    let first_generation = [
+        EgressPeerIdentity::try_new(first_address, 1, 7),
+        EgressPeerIdentity::try_new(second_address, 2, 9),
+    ];
+    assert_eq!(peers.replace(&first_generation), Ok(true));
+    assert_eq!(device.egress_schedule().unwrap().epoch(), 2);
+    let associated = device.egress_key(first_route);
+    assert_ne!(associated, unresolved);
+    assert_ne!(associated, device.egress_key(second_route));
+
+    assert_eq!(peers.replace(&first_generation), Ok(false));
+    assert_eq!(device.egress_schedule().unwrap().epoch(), 2);
+
+    let replacement = [EgressPeerIdentity::try_new(first_address, 1, 10), None];
+    assert_eq!(peers.replace(&replacement), Ok(true));
+    assert_eq!(device.egress_schedule().unwrap().epoch(), 3);
+    assert_ne!(device.egress_key(first_route), associated);
+    assert_ne!(
+        device.egress_key(first_route),
+        device.egress_key(second_route),
+        "an unknown route keeps its link identity instead of inheriting a peer grant"
     );
 }
 

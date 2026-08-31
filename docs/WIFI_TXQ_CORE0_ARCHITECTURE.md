@@ -218,12 +218,13 @@ egress API and the pinned adapter returns an `EgressSchedule` with a
 indexed 128-packet CPU-owned UDP backlog in PSRAM; the physical DMA-visible
 SRAM pool remains 67 slots. At the start of a burst Xarxa resolves queued IP
 destinations into routes and asks the device for their physical scheduling
-domain. STA coalesces all Ethernet routes into its single radio peer; AP keeps
-Ethernet destinations separate until the future generation-aware peer
-registry refines that mapping. An unresolved destination retains its IP
-identity so neighbour discovery cannot be starved. Final Ethernet/IP/UDP
-bytes are still constructed directly in the SRAM slots, so the cutover
-introduces no complete-frame copy.
+domain. STA coalesces all Ethernet routes into its single radio peer. AP
+resolves authorized unicast destinations through a Core0-published 15-entry
+peer directory and keys them by slot plus association epoch; unknown and
+group destinations retain their complete Ethernet identity. An unresolved IP
+destination retains its IP identity so neighbour discovery cannot be
+starved. Final Ethernet/IP/UDP bytes are still constructed directly in the
+SRAM slots, so the cutover introduces no complete-frame copy.
 
 The observer-free pre-cutover control was
 `1788155370026-00390a0c`, runtime CRC-32 `95328358`. All three independent
@@ -1379,15 +1380,18 @@ VIF + peer slot + peer generation + TID/AC + traffic kind
 ```
 
 The stack resolves route/neighbour state before requesting final device
-backing. The implemented first classifier normalizes every infrastructure-STA
-route to one radio domain and keeps SoftAP Ethernet destinations distinct. The
-next peer-registry slice must refine the AP destination into a current peer
-slot and generation before active deferral is enabled. A grant then names
-exactly one key and carries bounded frame credits plus an airtime quantum.
-Core1 spends those credits locally, so ordinary packet emission does not
-bounce a shared atomic cache line. An exhausted, cancelled or temporarily
-progressless grant is returned once as a value message. Core0 never waits for
-Core1 while holding a hardware TX obligation.
+backing. The implemented classifier normalizes every infrastructure-STA route
+to one radio domain. For AP it resolves a destination into the current
+authorized peer slot and non-reusable association epoch through a bounded
+atomic snapshot. The snapshot changes queue identity and invalidates Xarxa's
+burst cursor, but does not authorize transmission. The next shadow-grant
+slice must compare Core0's airtime decision with that classified identity
+before active deferral is enabled. A grant then names exactly one key and
+carries bounded frame credits plus an airtime quantum. Core1 spends those
+credits locally, so ordinary packet emission does not bounce a shared atomic
+cache line. An exhausted, cancelled or temporarily progressless grant is
+returned once as a value message. Core0 never waits for Core1 while holding a
+hardware TX obligation.
 
 Packet payload remains in the bounded stack-owned PSRAM arena until selected.
 Its removable handle, not a copied complete Ethernet frame, sits in an

@@ -1,9 +1,9 @@
 //! CPU-owned positional words covered by the reviewed DTM event transforms.
 //!
 //! These value types describe offsets inside the bound link-state and
-//! scheduler-item allocations. Their public fields intentionally remain
-//! forgeable so pure upper-layer transforms can construct and test them. Only
-//! the memory-graph transition validates allocation-binding anchors; none of
+//! scheduler-item allocations. Raw words remain private to this memory crate;
+//! upper layers can apply only the semantic transforms published below. The
+//! memory-graph transition validates allocation-binding anchors, and none of
 //! these values grants publication or controller ownership.
 
 #![forbid(unsafe_code)]
@@ -124,23 +124,23 @@ impl BluetoothDtmSchedulerItemEventType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmLinkStateReviewedWords {
     /// Complete word at byte offset `+0x00`; low 20 bits carry the TX head.
-    pub word_00: u32,
+    pub(crate) word_00: u32,
     /// Complete word at byte offset `+0x04`.
-    pub word_04: u32,
+    pub(crate) word_04: u32,
     /// Complete word at byte offset `+0x08`; low 20 bits carry the RX tail.
-    pub word_08: u32,
+    pub(crate) word_08: u32,
     /// Complete word at byte offset `+0x14`.
-    pub word_14: u32,
+    pub(crate) word_14: u32,
     /// Protocol-level CRC initialization value encoded in the low 24 bits by
     /// the private SRAM codec. The high byte remains opaque and preserved.
     pub(super) crc_init: BluetoothLeCrcInit,
     /// Complete word at byte offset `+0x34`.
-    pub word_34: u32,
+    pub(crate) word_34: u32,
     /// Protocol-level synchronization value encoded by the private SRAM
     /// codec. This does not grant hardware-consumer authority.
     pub(super) access_address: BluetoothLeAccessAddress,
     /// Complete word at byte offset `+0x50`.
-    pub word_50: u32,
+    pub(crate) word_50: u32,
 }
 
 impl BluetoothDtmLinkStateReviewedWords {
@@ -192,18 +192,8 @@ impl BluetoothDtmLinkStateReviewedWords {
     }
 
     /// Return the five-bit rounded-power value consumed by scheduler insert.
-    pub const fn rounded_power(self) -> u8 {
+    const fn rounded_power(self) -> u8 {
         ((self.word_04 & LINK_STATE_POWER_MASK) >> 23) as u8
-    }
-
-    /// Return the compressed private TX-head link image.
-    pub const fn tx_head_link_image(self) -> u32 {
-        self.word_00 & LOW_TWENTY_MASK
-    }
-
-    /// Return the compressed private RX-tail link image.
-    pub const fn rx_tail_link_image(self) -> u32 {
-        self.word_08 & LOW_TWENTY_MASK
     }
 
     pub(super) const fn access_address(self) -> BluetoothLeAccessAddress {
@@ -232,27 +222,27 @@ impl BluetoothDtmLinkStateReviewedWords {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmSchedulerItemReviewedWords {
     /// Complete word at byte offset `+0x00`; only byte `+0x02` is transformed.
-    pub word_00: u32,
+    pub(crate) word_00: u32,
     /// Complete word at byte offset `+0x04`.
-    pub word_04: u32,
+    pub(crate) word_04: u32,
     /// Complete word at byte offset `+0x08`; low 20 bits retain link-state.
-    pub word_08: u32,
+    pub(crate) word_08: u32,
     /// Complete sequence-start word at byte offset `+0x0c`.
-    pub word_0c: u32,
+    pub(crate) word_0c: u32,
     /// Complete sequence-duration word at byte offset `+0x10`.
-    pub word_10: u32,
+    pub(crate) word_10: u32,
     /// Complete word at byte offset `+0x14`.
-    pub word_14: u32,
+    pub(crate) word_14: u32,
     /// Complete word at byte offset `+0x18`.
-    pub word_18: u32,
+    pub(crate) word_18: u32,
     /// Complete word at byte offset `+0x2c`.
-    pub word_2c: u32,
+    pub(crate) word_2c: u32,
     /// Complete raw-time word at byte offset `+0x44`.
-    pub word_44: u32,
+    pub(crate) word_44: u32,
     /// Complete raw-time word at byte offset `+0x48`.
-    pub word_48: u32,
+    pub(crate) word_48: u32,
     /// Complete word at byte offset `+0x4c`; only its low byte is cleared.
-    pub word_4c: u32,
+    pub(crate) word_4c: u32,
 }
 
 impl BluetoothDtmSchedulerItemReviewedWords {
@@ -325,11 +315,6 @@ impl BluetoothDtmSchedulerItemReviewedWords {
         self.word_14 =
             (self.word_14 & !SCHEDULER_ROUNDED_POWER_REGION_MASK) | (rounded_power << 20);
         self
-    }
-
-    /// Return the compressed link-state link image retained by this item.
-    pub const fn link_state_link_image(self) -> u32 {
-        self.word_08 & LOW_TWENTY_MASK
     }
 }
 

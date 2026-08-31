@@ -2,8 +2,8 @@
 //!
 //! This module closes allocation and the stable links between the common TX
 //! packet/header, advertising link state, scheduler context and first
-//! scheduler item. No event-time descriptor image is synthesized and no
-//! hardware list can be published from these states.
+//! scheduler item. A later CPU-owned transition can synthesize the first event
+//! image, but no hardware list can be published from these states.
 
 #![forbid(unsafe_code)]
 
@@ -23,7 +23,8 @@ use crate::{
     },
     legacy_advertising_event_image::{
         BluetoothLegacyAdvertisingLinkStateWords, BluetoothLegacyAdvertisingOwnAddress,
-        BluetoothLegacyAdvertisingPduError,
+        BluetoothLegacyAdvertisingPduError, BluetoothLegacyAdvertisingPrimaryChannel,
+        BluetoothLegacyAdvertisingSchedulerItemWords,
     },
     scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
@@ -73,10 +74,15 @@ const LINK_STATE_WORD_60_OFFSET: usize = 0x60 / 4;
 const SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET: usize = 0;
 const SCHEDULER_ITEM_CONTEXT_OFFSET: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
-#[cfg(test)]
 const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE: u32 = 0x0010_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE: u32 = 0x0060_0000;
+const SCHEDULER_ITEM_WORD_14_OFFSET: usize = 0x14 / 4;
+const SCHEDULER_ITEM_WORD_18_OFFSET: usize = 0x18 / 4;
+const SCHEDULER_ITEM_WORD_38_OFFSET: usize = 0x38 / 4;
+const SCHEDULER_ITEM_WORD_44_OFFSET: usize = 0x44 / 4;
+const SCHEDULER_ITEM_WORD_48_OFFSET: usize = 0x48 / 4;
+const SCHEDULER_ITEM_WORD_4C_OFFSET: usize = 0x4c / 4;
 
 type AdvertisingTxPacketAddress =
     BluetoothLeTxPacketAddress<BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES>;
@@ -169,6 +175,14 @@ impl BluetoothLegacyAdvertisingLinkStateStorage {
         ));
     }
 
+    fn scheduler_head(&self) -> u32 {
+        self.words[LINK_STATE_SCHEDULER_HEAD_OFFSET].get()
+    }
+
+    fn detach_first_scheduler_item(&self) {
+        self.words[LINK_STATE_SCHEDULER_HEAD_OFFSET].set(0);
+    }
+
     #[cfg(test)]
     fn retains_graph(
         &self,
@@ -218,6 +232,35 @@ impl BluetoothLegacyAdvertisingSchedulerItemStorage {
         self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].set(scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE_OFFSET]
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX_IMAGE | link_state.compressed_image());
+    }
+
+    fn is_terminal(&self) -> bool {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get() & SCHEDULER_ITEM_HARDWARE_NEXT_MASK
+            == 0
+    }
+
+    fn reviewed_words(&self) -> BluetoothLegacyAdvertisingSchedulerItemWords {
+        BluetoothLegacyAdvertisingSchedulerItemWords {
+            word_00: self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].get(),
+            word_04: self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].get(),
+            word_14: self.words[SCHEDULER_ITEM_WORD_14_OFFSET].get(),
+            word_18: self.words[SCHEDULER_ITEM_WORD_18_OFFSET].get(),
+            word_38: self.words[SCHEDULER_ITEM_WORD_38_OFFSET].get(),
+            raw_start_word_44: self.words[SCHEDULER_ITEM_WORD_44_OFFSET].get(),
+            raw_end_word_48: self.words[SCHEDULER_ITEM_WORD_48_OFFSET].get(),
+            word_4c: self.words[SCHEDULER_ITEM_WORD_4C_OFFSET].get(),
+        }
+    }
+
+    fn write_reviewed_words(&self, words: BluetoothLegacyAdvertisingSchedulerItemWords) {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET].set(words.word_00);
+        self.words[SCHEDULER_ITEM_CONTEXT_OFFSET].set(words.word_04);
+        self.words[SCHEDULER_ITEM_WORD_14_OFFSET].set(words.word_14);
+        self.words[SCHEDULER_ITEM_WORD_18_OFFSET].set(words.word_18);
+        self.words[SCHEDULER_ITEM_WORD_38_OFFSET].set(words.word_38);
+        self.words[SCHEDULER_ITEM_WORD_44_OFFSET].set(words.raw_start_word_44);
+        self.words[SCHEDULER_ITEM_WORD_48_OFFSET].set(words.raw_end_word_48);
+        self.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(words.word_4c);
     }
 
     #[cfg(test)]
@@ -583,6 +626,59 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
             .prepared_pdu(self.packet_length)
     }
 
+    /// Number of Link Layer payload bytes retained by this advertising event.
+    pub const fn payload_length(&self) -> u8 {
+        self.packet_length.payload_bytes()
+    }
+
+    /// Lower one accepted raw-time window into the private first-event image.
+    pub fn prepare_first_event(
+        mut self,
+        channel: BluetoothLegacyAdvertisingPrimaryChannel,
+        raw_start: u32,
+        raw_end: u32,
+    ) -> Result<
+        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure,
+    > {
+        if self.storage.as_ref().get_ref().link_state.scheduler_head()
+            != self.binding.scheduler_item.controller_address().address()
+        {
+            return Err(
+                BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
+                    owner: self,
+                    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError::
+                        SchedulerHeadMismatch,
+                },
+            );
+        }
+        if !self.storage.as_ref().get_ref().scheduler_item.is_terminal() {
+            return Err(
+                BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
+                    owner: self,
+                    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError::
+                        NonTerminalSchedulerItem,
+                },
+            );
+        }
+
+        let graph = self.storage.as_mut().project();
+        let words = graph.scheduler_item.reviewed_words().prepare_first_event(
+            graph.link_state.reviewed_words(),
+            channel,
+            raw_start,
+            raw_end,
+        );
+        graph.link_state.detach_first_scheduler_item();
+        graph.scheduler_item.write_reviewed_words(words);
+
+        Ok(BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            packet_length: self.packet_length,
+        })
+    }
+
     /// Roll back every reset word and return an ordinary reusable graph.
     pub fn cancel(self) -> BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
         let mut owner = BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
@@ -591,6 +687,77 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
         };
         owner.reinitialize_graph();
         owner
+    }
+}
+
+/// Advertising graph carrying one complete first scheduler event image.
+#[must_use = "the prepared event must enter admission, be cancelled, or retained"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+    storage: Pin<&'static mut BluetoothLegacyAdvertisingMemoryGraphStorage>,
+    binding: BluetoothLegacyAdvertisingMemoryGraphBinding,
+    packet_length: AdvertisingTxPacketLength,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+    pub const fn binding(&self) -> &BluetoothLegacyAdvertisingMemoryGraphBinding {
+        &self.binding
+    }
+
+    pub fn pdu(&self) -> &[u8] {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .tx_packet
+            .prepared_pdu(self.packet_length)
+    }
+
+    /// Roll back the private event image and recover a reusable graph.
+    pub fn cancel(self) -> BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
+        let mut owner = BluetoothLegacyAdvertisingMemoryGraphCpuOwned {
+            storage: self.storage,
+            binding: self.binding,
+        };
+        owner.reinitialize_graph();
+        owner
+    }
+}
+
+/// Why the reset graph could not become a first-event graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+    /// The link state did not retain the bound first scheduler item.
+    SchedulerHeadMismatch,
+    /// The bounded single-item allocation unexpectedly contained a successor.
+    NonTerminalSchedulerItem,
+}
+
+/// Failed first-event preparation retaining the exact reset graph.
+pub struct BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
+    owner: BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
+    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+        self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
+        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    ) {
+        (self.owner, self.error)
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
     }
 }
 
@@ -803,5 +970,23 @@ mod tests {
             .expect("TxAdd selects the reviewed static-random reset branch");
         assert_eq!(reset.pdu(), &[0x42, 6, 1, 2, 3, 4, 5, 0xc6]);
         assert!(reset.cancel().retains_reviewed_graph());
+    }
+
+    #[test]
+    fn first_event_preparation_is_affine_and_cancellation_restores_the_graph() {
+        let prepared = owner()
+            .prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6])
+            .expect("the encoded advertising PDU fits")
+            .reset_link_state(0)
+            .expect("the PDU selects the restricted reset")
+            .prepare_first_event(
+                crate::BluetoothLegacyAdvertisingPrimaryChannel::Channel37,
+                1_000,
+                1_128,
+            )
+            .expect("the bound single-item graph is intact");
+
+        assert_eq!(prepared.pdu(), &[0x02, 6, 1, 2, 3, 4, 5, 6]);
+        assert!(prepared.cancel().retains_reviewed_graph());
     }
 }

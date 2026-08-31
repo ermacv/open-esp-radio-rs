@@ -23,6 +23,31 @@ const RATE_LANES_MASK: u32 = 0xf000_0000;
 const OPTIONS_IMAGE_MASK: u32 = 0x3f00_0000;
 const REVIEWED_STANDALONE_OPTIONS: u32 = 3 << 24;
 
+const SCHEDULER_ITEM_LINK_MASK: u32 = 0x003f_ffff;
+const SCHEDULER_ITEM_FREQUENCY_MASK: u32 = 0x0000_7f00;
+const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
+
+/// Semantic primary channel selected by one legacy advertising event.
+///
+/// The private descriptor codec, rather than the portable Link Layer or chip
+/// orchestration layer, owns the ESP32-S31 frequency image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingPrimaryChannel {
+    Channel37,
+    Channel38,
+    Channel39,
+}
+
+impl BluetoothLegacyAdvertisingPrimaryChannel {
+    const fn frequency_image(self) -> u8 {
+        match self {
+            Self::Channel37 => 0,
+            Self::Channel38 => 24,
+            Self::Channel39 => 78,
+        }
+    }
+}
+
 /// Address behavior selected by the TxAdd bit of the prepared PDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum BluetoothLegacyAdvertisingOwnAddress {
@@ -123,6 +148,47 @@ impl BluetoothLegacyAdvertisingLinkStateWords {
             BluetoothLeAccessAddress::PRIMARY_ADVERTISING.controller_image();
         self.word_50 = (self.word_50 & !OPTIONS_IMAGE_MASK) | REVIEWED_STANDALONE_OPTIONS;
         self.word_60 = (self.word_60 & 0xffff_ff00) | 1;
+        self
+    }
+
+    const fn rounded_power(self) -> u32 {
+        (self.word_04 & ROUNDED_POWER_MASK) >> 23
+    }
+}
+
+/// Complete scheduler-item subset changed before first-event admission.
+#[derive(Clone, Copy)]
+pub(super) struct BluetoothLegacyAdvertisingSchedulerItemWords {
+    pub(super) word_00: u32,
+    pub(super) word_04: u32,
+    pub(super) word_14: u32,
+    pub(super) word_18: u32,
+    pub(super) word_38: u32,
+    pub(super) raw_start_word_44: u32,
+    pub(super) raw_end_word_48: u32,
+    pub(super) word_4c: u32,
+}
+
+impl BluetoothLegacyAdvertisingSchedulerItemWords {
+    /// Lower one accepted LE 1M event into the private scheduler-item layout.
+    pub(super) const fn prepare_first_event(
+        mut self,
+        link_state: BluetoothLegacyAdvertisingLinkStateWords,
+        channel: BluetoothLegacyAdvertisingPrimaryChannel,
+        raw_start: u32,
+        raw_end: u32,
+    ) -> Self {
+        self.word_00 &= !SCHEDULER_ITEM_LINK_MASK;
+        self.word_04 |= 0x8000_0000;
+        self.word_14 = (self.word_14 & !SCHEDULER_ITEM_RATE_AND_POWER_MASK)
+            | (link_state.rounded_power() << 20);
+        self.word_18 = (self.word_18 & !(SCHEDULER_ITEM_FREQUENCY_MASK | 0xff))
+            | ((channel.frequency_image() as u32) << 8)
+            | 0x11;
+        self.word_38 = 0;
+        self.raw_start_word_44 = raw_start;
+        self.raw_end_word_48 = raw_end;
+        self.word_4c &= !0xff;
         self
     }
 }

@@ -78,6 +78,11 @@ impl BluetoothSchedulerRawWindow {
         }
     }
 
+    /// Bind a projected scheduler window before timeline admission.
+    pub(crate) const fn from_projected_scheduler_window(start: u32, end: u32) -> Option<Self> {
+        Self::new(start, end)
+    }
+
     pub const fn start(self) -> u32 {
         self.start
     }

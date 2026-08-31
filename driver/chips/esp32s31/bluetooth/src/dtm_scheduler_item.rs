@@ -159,7 +159,7 @@ mod tests {
     use super::{BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError};
     use crate::{
         BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmRxInitialEventWindow,
-        BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
+        BluetoothDtmRxRecurringEventWindow, BluetoothSchedulerInstant,
         BluetoothSchedulerSoftwareConfig,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -170,8 +170,8 @@ mod tests {
     fn receiver_window() -> BluetoothDtmRxRecurringEventWindow {
         BluetoothDtmRxRecurringEventWindow::new(
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-            BluetoothDtmSchedulerInstant::from_image(900),
-            BluetoothDtmSchedulerInstant::from_image(1_020),
+            BluetoothSchedulerInstant::from_image(900),
+            BluetoothSchedulerInstant::from_image(1_020),
         )
     }
 
@@ -201,8 +201,8 @@ mod tests {
             BluetoothDtmPhy::LeCoded,
             BluetoothDtmRxInitialEventWindow::new(
                 BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-                BluetoothDtmSchedulerInstant::from_image(64),
-                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothSchedulerInstant::from_image(64),
+                BluetoothSchedulerInstant::from_image(1_020),
             ),
         )
         .expect("coded RX is accepted");

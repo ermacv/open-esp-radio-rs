@@ -80,7 +80,9 @@ pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
     BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
 };
-pub use legacy_advertising_event_image::BluetoothLegacyAdvertisingPduError;
+pub use legacy_advertising_event_image::{
+    BluetoothLegacyAdvertisingPduError, BluetoothLegacyAdvertisingPrimaryChannel,
+};
 #[cfg(not(target_arch = "riscv32"))]
 pub use legacy_advertising_storage::BluetoothLegacyAdvertisingMemoryGraphModelAddress;
 pub use legacy_advertising_storage::{
@@ -88,7 +90,11 @@ pub use legacy_advertising_storage::{
     BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES, BluetoothLegacyAdvertisingMemoryGraphBindError,
     BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphBinding,
-    BluetoothLegacyAdvertisingMemoryGraphCpuOwned, BluetoothLegacyAdvertisingMemoryGraphIdentity,
+    BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure,
+    BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphIdentity,
     BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
     BluetoothLegacyAdvertisingMemoryGraphLinkStateResetFailure,
     BluetoothLegacyAdvertisingMemoryGraphPacketPrepareFailure,

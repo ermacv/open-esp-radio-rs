@@ -113,6 +113,8 @@ mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
 mod legacy_advertising;
+#[cfg(any(target_arch = "riscv32", test))]
+mod legacy_advertising_timing;
 mod modem_lp_timer_queue;
 mod nrt_interrupt;
 #[cfg(target_arch = "riscv32")]
@@ -126,6 +128,7 @@ mod scheduler_config;
 mod scheduler_finished_lists;
 mod scheduler_insertion;
 mod scheduler_lock_modify;
+mod scheduler_time;
 #[cfg(any(target_arch = "riscv32", test))]
 mod scheduler_timeline;
 #[cfg(feature = "validation-probes")]
@@ -134,11 +137,11 @@ pub mod validation;
 
 #[cfg(target_arch = "riscv32")]
 pub use baseband::{BluetoothBasebandInitializationReport, BluetoothControllerBasebandInitialized};
+#[cfg(target_arch = "riscv32")]
+pub(crate) use ble_phy::BluetoothAlwaysAwakeTimingReady;
 pub use ble_phy::BluetoothBlePhyInitializationReport;
 #[cfg(target_arch = "riscv32")]
 pub use ble_phy::BluetoothControllerBlePhyEngineInitialized;
-#[cfg(target_arch = "riscv32")]
-pub(crate) use ble_phy::BluetoothDtmAlwaysAwakeTimingReady;
 pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockEnableFailure, BluetoothClockError,
     BluetoothClockState, BluetoothClockedResources,
@@ -219,8 +222,6 @@ pub use dtm_event_prepare::{
 pub(crate) use dtm_event_timing::{
     BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow, BluetoothDtmTxEventWindow,
 };
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use dtm_event_timing::{BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin};
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use dtm_link_state::BluetoothDtmLinkStateReset;
 pub use dtm_link_state::{
@@ -315,10 +316,19 @@ pub use interrupt_wake::{
 };
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
-    BluetoothLegacyAdvertisingFrequency, BluetoothLegacyAdvertisingLinkStateReset,
-    BluetoothLegacyAdvertisingLinkStateResetError, BluetoothLegacyAdvertisingPreparationError,
-    BluetoothLegacyAdvertisingPreparationErrorKind, BluetoothLegacyAdvertisingPrepared,
+    BluetoothLegacyAdvertisingLinkStateReset, BluetoothLegacyAdvertisingLinkStateResetError,
+    BluetoothLegacyAdvertisingPreparationError, BluetoothLegacyAdvertisingPreparationErrorKind,
+    BluetoothLegacyAdvertisingPrepared,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+pub use legacy_advertising::{
+    BluetoothLegacyAdvertisingFirstEventCandidate,
+    BluetoothLegacyAdvertisingFirstEventTimingFailure,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingEventWindow;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use legacy_advertising_timing::BluetoothLegacyAdvertisingTimingObservation;
 pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
     BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
@@ -410,6 +420,7 @@ pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyPublicationResult, BluetoothSchedulerLockModifyWorker,
     BluetoothSchedulerLockModifyWorkerStep,
 };
+pub(crate) use scheduler_time::BluetoothSchedulerInstant;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler_timeline::{
     BluetoothSchedulerRawWindow, BluetoothSchedulerReservationError,

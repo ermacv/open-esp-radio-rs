@@ -63,25 +63,25 @@ pub struct BluetoothBlePhyInitializationReport;
 /// outside the DTM event path.
 #[must_use = "the always-awake timing observation must be consumed by DTM scheduling"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothDtmAlwaysAwakeTimingReady {
-    scheduler_instant: crate::BluetoothDtmSchedulerInstant,
+pub(crate) struct BluetoothAlwaysAwakeTimingReady {
+    scheduler_instant: crate::BluetoothSchedulerInstant,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothDtmAlwaysAwakeTimingReady {
+impl BluetoothAlwaysAwakeTimingReady {
     fn from_completed_sample(
         epoch: crate::BluetoothControllerSchedulerEpoch,
         sample: crate::BluetoothControllerTimeSample,
     ) -> Self {
         Self {
-            scheduler_instant: crate::BluetoothDtmSchedulerInstant::from_image(
+            scheduler_instant: crate::BluetoothSchedulerInstant::from_image(
                 epoch.project_without_reanchor(&sample),
             ),
         }
     }
 
     /// Consume the post-enable timing proof into its scheduler-domain instant.
-    pub(crate) const fn into_scheduler_instant(self) -> crate::BluetoothDtmSchedulerInstant {
+    pub(crate) const fn into_scheduler_instant(self) -> crate::BluetoothSchedulerInstant {
         self.scheduler_instant
     }
 }
@@ -94,12 +94,12 @@ impl BluetoothDtmAlwaysAwakeTimingReady {
 /// observation. The authority makes no RF-readiness claim.
 #[must_use = "the timing authority must remain owned by the BLE-PHY task service"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothDtmAlwaysAwakeTimingAuthority {
+pub(crate) struct BluetoothAlwaysAwakeTimingAuthority {
     _private: (),
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothDtmAlwaysAwakeTimingAuthority {
+impl BluetoothAlwaysAwakeTimingAuthority {
     const fn new() -> Self {
         Self { _private: () }
     }
@@ -108,8 +108,8 @@ impl BluetoothDtmAlwaysAwakeTimingAuthority {
         &mut self,
         epoch: crate::BluetoothControllerSchedulerEpoch,
         sample: crate::BluetoothControllerTimeSample,
-    ) -> BluetoothDtmAlwaysAwakeTimingReady {
-        BluetoothDtmAlwaysAwakeTimingReady::from_completed_sample(epoch, sample)
+    ) -> BluetoothAlwaysAwakeTimingReady {
+        BluetoothAlwaysAwakeTimingReady::from_completed_sample(epoch, sample)
     }
 }
 
@@ -210,11 +210,11 @@ where
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-        BluetoothDtmAlwaysAwakeTimingAuthority,
+        BluetoothAlwaysAwakeTimingAuthority,
     ) {
         (
             self.initialized.initialized.controller.split_runtime(),
-            BluetoothDtmAlwaysAwakeTimingAuthority::new(),
+            BluetoothAlwaysAwakeTimingAuthority::new(),
         )
     }
 }

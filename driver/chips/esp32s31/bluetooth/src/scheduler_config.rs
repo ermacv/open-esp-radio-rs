@@ -14,8 +14,7 @@
 pub struct BluetoothSchedulerSoftwareConfig {
     late_start_guard_scheduler_delta: u32,
     sequence_lead_scheduler_delta: u32,
-    #[cfg(any(target_arch = "riscv32", test))]
-    dtm_scheduler_margin: crate::dtm_event_timing::BluetoothDtmSchedulerMargin,
+    preparation_lead_scheduler_delta: u32,
 }
 
 impl BluetoothSchedulerSoftwareConfig {
@@ -24,18 +23,18 @@ impl BluetoothSchedulerSoftwareConfig {
         Self {
             late_start_guard_scheduler_delta: 40,
             sequence_lead_scheduler_delta: 46,
-            #[cfg(any(target_arch = "riscv32", test))]
-            dtm_scheduler_margin:
-                crate::dtm_event_timing::BluetoothDtmSchedulerMargin::reviewed_standalone(),
+            preparation_lead_scheduler_delta: 107,
         }
     }
 
-    /// Return the source-owned standalone DTM scheduler margin.
+    /// Common scheduler-domain lead between item start and its phase anchor.
+    ///
+    /// The standalone scheduler initializes this one-byte policy to 107. DTM
+    /// and advertising consume the same scheduler policy; it is not part of a
+    /// role-specific command or descriptor ABI.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn dtm_scheduler_margin(
-        self,
-    ) -> crate::dtm_event_timing::BluetoothDtmSchedulerMargin {
-        self.dtm_scheduler_margin
+    pub(crate) const fn preparation_lead_scheduler_delta(self) -> u32 {
+        self.preparation_lead_scheduler_delta
     }
 
     /// Scheduler-domain guard used by both insertion deadline checks.

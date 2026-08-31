@@ -173,7 +173,7 @@ mod tests {
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmRxInitialEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent,
+        BluetoothDtmSchedulerItemEvent, BluetoothSchedulerInstant,
         BluetoothSchedulerSoftwareConfig,
         scheduler_timeline::{BluetoothSchedulerTimeline, BluetoothSchedulerTimingPolicy},
     };
@@ -191,8 +191,8 @@ mod tests {
             BluetoothDtmPhy::Le1M,
             BluetoothDtmRxInitialEventWindow::new(
                 BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-                BluetoothDtmSchedulerInstant::from_image(900),
-                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothSchedulerInstant::from_image(900),
+                BluetoothSchedulerInstant::from_image(1_020),
             ),
         )
         .expect("initial receiver event is valid");

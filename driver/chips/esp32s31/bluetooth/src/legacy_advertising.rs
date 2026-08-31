@@ -1,10 +1,10 @@
 //! ESP32-S31 pre-admission ownership for legacy advertising.
 //!
 //! This boundary lowers one portable `ADV_NONCONN_IND` transmission into a
-//! bounded PDU and an S31 primary-channel frequency choice. It deliberately
-//! stops before scheduler admission: the SRAM allocation is now bound, but no
-//! reviewed advertising link-state image, timeline policy, hardware-list role
-//! or completion contract exists yet.
+//! bounded PDU and a reviewed S31 descriptor graph. It deliberately
+//! stops before scheduler admission: the SRAM allocation, reviewed restricted
+//! link-state reset and first-event timing candidate are bound, but no common
+//! timeline reservation, hardware-list role or completion contract exists yet.
 //! Consequently this module cannot turn protocol work into `InFlight` or
 //! publish scheduler `HEAD`/`RUN`.
 
@@ -24,6 +24,12 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphPacketPrepared, BluetoothLegacyAdvertisingPduError,
 };
 
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::{
+    BluetoothLegacyAdvertisingEventWindow, BluetoothLegacyAdvertisingTimingObservation,
+    BluetoothSchedulerRawWindow, BluetoothSchedulerSoftwareConfig,
+};
+
 /// Requested default transmit power for legacy advertising.
 ///
 /// The physical dBm request remains semantic at this boundary. Its private S31
@@ -41,29 +47,6 @@ impl BluetoothLegacyAdvertisingDefaultTxPowerDbm {
     }
 }
 
-/// S31 packet-frequency image for one primary advertising channel.
-///
-/// The reviewed DTM frequency table uses the offset from 2402 MHz. Bluetooth
-/// primary channels 37, 38 and 39 occupy 2402, 2426 and 2480 MHz respectively.
-/// This is a future descriptor input, not an MMIO register image.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothLegacyAdvertisingFrequency(u8);
-
-impl BluetoothLegacyAdvertisingFrequency {
-    const fn from_primary_channel(channel: PrimaryAdvertisingChannel) -> Self {
-        match channel {
-            PrimaryAdvertisingChannel::Channel37 => Self(0),
-            PrimaryAdvertisingChannel::Channel38 => Self(24),
-            PrimaryAdvertisingChannel::Channel39 => Self(78),
-        }
-    }
-
-    /// Return the reviewed packet-frequency image for a future S31 descriptor owner.
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-
 /// One fully encoded S31 legacy-advertising transmission before hardware admission.
 ///
 /// The portable continuation remains private, so code cannot claim that the
@@ -73,14 +56,16 @@ impl BluetoothLegacyAdvertisingFrequency {
 pub struct BluetoothLegacyAdvertisingPrepared<'a> {
     prepared: LegacyAdvertiserTxPrepared<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
-    frequency: BluetoothLegacyAdvertisingFrequency,
 }
 
 impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
     /// Encode the next portable channel transmission into bounded chip-owned storage.
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc failure must return both exact affine owners"
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure must return both exact affine owners"
+        )
     )]
     pub fn prepare(
         enabled: LegacyAdvertiserEnabled<'a>,
@@ -109,14 +94,7 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
                 });
             }
         };
-        let frequency = BluetoothLegacyAdvertisingFrequency::from_primary_channel(
-            prepared.identity().channel(),
-        );
-        Ok(Self {
-            prepared,
-            memory,
-            frequency,
-        })
+        Ok(Self { prepared, memory })
     }
 
     /// Exact portable generation/event/channel identity retained by this owner.
@@ -134,15 +112,13 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         self.memory.pdu()
     }
 
-    /// Typed future descriptor input for the selected primary channel.
-    pub const fn frequency(&self) -> BluetoothLegacyAdvertisingFrequency {
-        self.frequency
-    }
-
     /// Apply the reviewed no-RX/no-CTE/no-privacy LE 1M link-state reset.
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc failure must return the exact affine prepared owner"
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure must return the exact affine prepared owner"
+        )
     )]
     pub fn reset_link_state(
         self,
@@ -151,25 +127,13 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         BluetoothLegacyAdvertisingLinkStateReset<'a>,
         BluetoothLegacyAdvertisingLinkStateResetError<'a>,
     > {
-        let Self {
-            prepared,
-            memory,
-            frequency,
-        } = self;
+        let Self { prepared, memory } = self;
         match memory.reset_link_state(default_tx_power.dbm()) {
-            Ok(memory) => Ok(BluetoothLegacyAdvertisingLinkStateReset {
-                prepared,
-                memory,
-                frequency,
-            }),
+            Ok(memory) => Ok(BluetoothLegacyAdvertisingLinkStateReset { prepared, memory }),
             Err(failure) => {
                 let (memory, error) = failure.into_parts();
                 Err(BluetoothLegacyAdvertisingLinkStateResetError {
-                    prepared: Self {
-                        prepared,
-                        memory,
-                        frequency,
-                    },
+                    prepared: Self { prepared, memory },
                     error,
                 })
             }
@@ -190,7 +154,6 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
 pub struct BluetoothLegacyAdvertisingLinkStateReset<'a> {
     prepared: LegacyAdvertiserTxPrepared<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
-    frequency: BluetoothLegacyAdvertisingFrequency,
 }
 
 impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
@@ -198,12 +161,42 @@ impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
         self.prepared.identity()
     }
 
-    pub const fn frequency(&self) -> BluetoothLegacyAdvertisingFrequency {
-        self.frequency
-    }
-
     pub fn pdu(&self) -> &[u8] {
         self.memory.pdu()
+    }
+
+    /// Form the first scheduler candidate from one ordered live timing proof.
+    ///
+    /// No SRAM event field or timeline slot changes here. The projected raw
+    /// window remains inseparable from the reset graph until the common
+    /// scheduler accepts or cancels it.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure returns the exact affine reset graph and protocol owner"
+        )
+    )]
+    pub fn form_first_event_candidate(
+        self,
+        timing: BluetoothLegacyAdvertisingTimingObservation,
+        config: BluetoothSchedulerSoftwareConfig,
+    ) -> Result<
+        BluetoothLegacyAdvertisingFirstEventCandidate<'a>,
+        BluetoothLegacyAdvertisingFirstEventTimingFailure<'a>,
+    > {
+        let payload_length = self.memory.payload_length();
+        let Some((scheduler_window, raw_window)) =
+            timing.first_le_1m_window(config, payload_length)
+        else {
+            return Err(BluetoothLegacyAdvertisingFirstEventTimingFailure { reset: self });
+        };
+        Ok(BluetoothLegacyAdvertisingFirstEventCandidate {
+            reset: self,
+            scheduler_window,
+            raw_window,
+        })
     }
 
     pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
@@ -211,6 +204,71 @@ impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
             enabled: self.prepared.cancel(),
             memory: self.memory.cancel(),
         }
+    }
+}
+
+/// First advertising event with live timing but no timeline reservation.
+#[must_use = "the candidate must enter common scheduling, be cancelled, or retained"]
+#[cfg(any(target_arch = "riscv32", test))]
+pub struct BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
+    reset: BluetoothLegacyAdvertisingLinkStateReset<'a>,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+    raw_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+        self.reset.identity()
+    }
+
+    pub fn pdu(&self) -> &[u8] {
+        self.reset.pdu()
+    }
+
+    /// Duration of the projected scheduler reservation including preparation.
+    pub const fn projected_window_duration(&self) -> u32 {
+        self.raw_window.duration()
+    }
+
+    /// Cancel before timeline admission and recover both ordinary owners.
+    pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
+        self.reset.cancel()
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl core::fmt::Debug for BluetoothLegacyAdvertisingFirstEventCandidate<'_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyAdvertisingFirstEventCandidate")
+            .field("identity", &self.identity())
+            .field("scheduler_window", &self.scheduler_window)
+            .field("raw_window", &self.raw_window)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A live scheduler window could not be represented in one forward raw epoch.
+#[must_use = "the reset advertising owner remains recoverable"]
+#[cfg(any(target_arch = "riscv32", test))]
+pub struct BluetoothLegacyAdvertisingFirstEventTimingFailure<'a> {
+    reset: BluetoothLegacyAdvertisingLinkStateReset<'a>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<'a> BluetoothLegacyAdvertisingFirstEventTimingFailure<'a> {
+    pub fn into_reset(self) -> BluetoothLegacyAdvertisingLinkStateReset<'a> {
+        self.reset
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl core::fmt::Debug for BluetoothLegacyAdvertisingFirstEventTimingFailure<'_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyAdvertisingFirstEventTimingFailure")
+            .finish_non_exhaustive()
     }
 }
 
@@ -317,8 +375,14 @@ mod tests {
         BluetoothLegacyAdvertisingMemoryGraphModelAddress,
         BluetoothLegacyAdvertisingMemoryGraphStorage,
     };
+    use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothLegacyAdvertisingPrepared};
+    use crate::{
+        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
+        BluetoothLegacyAdvertisingTimingObservation, BluetoothSchedulerInstant,
+        BluetoothSchedulerSoftwareConfig,
+    };
 
     fn enabled(
         channels: PrimaryAdvertisingChannelMap,
@@ -364,28 +428,24 @@ mod tests {
     }
 
     #[test]
-    fn primary_channels_lower_to_the_reviewed_s31_frequency_domain() {
-        for (channels, channel, frequency) in [
+    fn portable_primary_channel_identity_survives_chip_preparation() {
+        for (channels, channel) in [
             (
                 PrimaryAdvertisingChannelMap::new(true, false, false).unwrap(),
                 PrimaryAdvertisingChannel::Channel37,
-                0,
             ),
             (
                 PrimaryAdvertisingChannelMap::new(false, true, false).unwrap(),
                 PrimaryAdvertisingChannel::Channel38,
-                24,
             ),
             (
                 PrimaryAdvertisingChannelMap::new(false, false, true).unwrap(),
                 PrimaryAdvertisingChannel::Channel39,
-                78,
             ),
         ] {
             let prepared = BluetoothLegacyAdvertisingPrepared::prepare(enabled(channels), memory())
                 .expect("bounded validated advertising data always fits the chip PDU");
             assert_eq!(prepared.channel(), channel);
-            assert_eq!(prepared.frequency().get(), frequency);
         }
     }
 
@@ -406,5 +466,40 @@ mod tests {
         let (enabled, memory) = reset.cancel().into_parts();
         assert_eq!(enabled.prepare_next().identity(), identity);
         assert!(memory.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
+    }
+
+    #[test]
+    fn sealed_live_timing_forms_a_cancellable_first_event_candidate() {
+        let reset = BluetoothLegacyAdvertisingPrepared::prepare(
+            enabled(PrimaryAdvertisingChannelMap::all()),
+            memory(),
+        )
+        .expect("bounded validated advertising data always fits the chip PDU")
+        .reset_link_state(BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(0))
+        .expect("the portable producer emits the restricted PDU form");
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let timing = BluetoothLegacyAdvertisingTimingObservation {
+            current: BluetoothSchedulerInstant::from_image(10_000),
+            radio_ready: BluetoothSchedulerInstant::from_image(11_999),
+            epoch: BluetoothControllerSchedulerEpoch::new(
+                BluetoothControllerTimeSample::for_validation(100),
+                1_000,
+                scale,
+            ),
+        };
+        let candidate = reset
+            .form_first_event_candidate(
+                timing,
+                BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            )
+            .expect("the reviewed timing window projects into one raw epoch");
+
+        assert_eq!(candidate.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
+        assert_eq!(candidate.projected_window_duration(), 64);
+        let (enabled, _) = candidate.cancel().into_parts();
+        assert_eq!(
+            enabled.prepare_next().identity().channel(),
+            PrimaryAdvertisingChannel::Channel37
+        );
     }
 }

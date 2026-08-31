@@ -24,11 +24,11 @@ use crate::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::{
-    BluetoothControllerTimeSample, BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent,
+    BluetoothControllerTimeSample, BluetoothDtmSchedulerItemEvent,
     BluetoothDtmSchedulerReservation, BluetoothDtmSchedulerSequenceAuthorizationFailure,
-    BluetoothSchedulerReservationError, BluetoothSchedulerSequenceAuthorizationError,
-    BluetoothSchedulerSequenceReady, BluetoothSchedulerTimingPolicy,
-    controller_time::BluetoothControllerSchedulerNow,
+    BluetoothSchedulerInstant, BluetoothSchedulerReservationError,
+    BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
+    BluetoothSchedulerTimingPolicy, controller_time::BluetoothControllerSchedulerNow,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
@@ -37,8 +37,8 @@ use crate::{
     BluetoothDtmPhy, BluetoothDtmPreparedTxGraph, BluetoothDtmReceiverCpuOwned,
     BluetoothDtmReceiverEvent, BluetoothDtmRxInitialEventWindow,
     BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerItemEventError,
-    BluetoothDtmSchedulerMargin, BluetoothDtmTransmitterEvent, BluetoothDtmTxEventWindow,
-    BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros, BluetoothSchedulerWakeBatch,
+    BluetoothDtmTransmitterEvent, BluetoothDtmTxEventWindow, BluetoothDtmTxSchedulerTiming,
+    BluetoothDtmTxTimingMicros, BluetoothSchedulerWakeBatch,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -510,7 +510,7 @@ pub(crate) struct BluetoothDtmTransmitterFirstStaged {
     channel: BluetoothDtmChannel,
     phy: BluetoothDtmPhy,
     timing: BluetoothDtmTxSchedulerTiming,
-    margin: BluetoothDtmSchedulerMargin,
+    margin: u32,
     window: BluetoothDtmTxEventWindow,
     event: BluetoothDtmSchedulerItemEvent,
     now: BluetoothControllerSchedulerNow,
@@ -524,7 +524,7 @@ pub(crate) struct BluetoothDtmReceiverFirstStaged {
     link_state: BluetoothDtmLinkStateReset,
     channel: BluetoothDtmChannel,
     phy: BluetoothDtmPhy,
-    margin: BluetoothDtmSchedulerMargin,
+    margin: u32,
     window: BluetoothDtmRxInitialEventWindow,
     event: BluetoothDtmSchedulerItemEvent,
     now: BluetoothControllerSchedulerNow,
@@ -1433,7 +1433,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         phy: BluetoothDtmPhy,
         requested_interval_micros: u16,
         now: BluetoothControllerSchedulerNow,
-        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
+        timing_ready: crate::BluetoothAlwaysAwakeTimingReady,
     ) -> Result<BluetoothDtmTransmitterFirstStaged, BluetoothDtmControllerTxPreparationFailure>
     {
         if link_state.role() != BluetoothDtmRole::Transmitter {
@@ -1448,7 +1448,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         let timing =
             BluetoothDtmTxTimingMicros::new(owner.length(), phy, requested_interval_micros)
                 .scheduler_timing();
-        let margin = self.config.dtm_scheduler_margin();
+        let margin = self.config.preparation_lead_scheduler_delta();
         let current = dtm_scheduler_current(&now);
         let window = timing.initial_event_window(
             self.config,
@@ -1632,7 +1632,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
         now: BluetoothControllerSchedulerNow,
-        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
+        timing_ready: crate::BluetoothAlwaysAwakeTimingReady,
     ) -> Result<BluetoothDtmReceiverFirstStaged, BluetoothDtmControllerRxPreparationFailure> {
         if link_state.role() != BluetoothDtmRole::Receiver {
             return Err(BluetoothDtmControllerRxPreparationFailure {
@@ -1643,7 +1643,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 owner,
             });
         }
-        let margin = self.config.dtm_scheduler_margin();
+        let margin = self.config.preparation_lead_scheduler_delta();
         let current = dtm_scheduler_current(&now);
         let window = crate::BluetoothDtmRxInitialEventWindow::new(
             self.config,
@@ -1977,7 +1977,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &self,
         owner: BluetoothDtmActiveReceiverCpuOwned,
         now: BluetoothControllerSchedulerNow,
-        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
+        timing_ready: crate::BluetoothAlwaysAwakeTimingReady,
     ) -> Result<
         BluetoothDtmReceiverRecurringStaged,
         BluetoothDtmControllerRxRecurringPreparationFailure,
@@ -2855,10 +2855,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-const fn dtm_scheduler_current(
-    now: &BluetoothControllerSchedulerNow,
-) -> BluetoothDtmSchedulerInstant {
-    BluetoothDtmSchedulerInstant::from_image(now.scheduler_image())
+const fn dtm_scheduler_current(now: &BluetoothControllerSchedulerNow) -> BluetoothSchedulerInstant {
+    BluetoothSchedulerInstant::from_image(now.scheduler_image())
 }
 
 impl<P> BluetoothControllerHalInitialized<P> {
@@ -2937,7 +2935,7 @@ mod tests {
         BluetoothClockedResources, BluetoothControllerRuntimeResources,
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmPhy, BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothRadioHardware,
+        BluetoothDtmSchedulerItemEvent, BluetoothRadioHardware, BluetoothSchedulerInstant,
         BluetoothStopped, controller_time::BluetoothControllerSchedulerNow,
     };
 
@@ -3206,8 +3204,8 @@ mod tests {
             BluetoothDtmPhy::Le1M,
             BluetoothDtmRxInitialEventWindow::new(
                 crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-                BluetoothDtmSchedulerInstant::from_image(900),
-                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothSchedulerInstant::from_image(900),
+                BluetoothSchedulerInstant::from_image(1_020),
             ),
         )
         .expect("initial receiver event is role-valid");
@@ -3222,7 +3220,7 @@ mod tests {
         );
         assert_eq!(
             super::dtm_scheduler_current(&now),
-            BluetoothDtmSchedulerInstant::from_image(1_000)
+            BluetoothSchedulerInstant::from_image(1_000)
         );
 
         let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
@@ -3268,8 +3266,8 @@ mod tests {
             BluetoothDtmPhy::Le1M,
             BluetoothDtmRxRecurringEventWindow::new(
                 crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-                BluetoothDtmSchedulerInstant::from_image(900),
-                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothSchedulerInstant::from_image(900),
+                BluetoothSchedulerInstant::from_image(1_020),
             ),
         )
         .expect("receiver event is role-valid");
@@ -3284,7 +3282,7 @@ mod tests {
         );
         assert_eq!(
             super::dtm_scheduler_current(&now),
-            BluetoothDtmSchedulerInstant::from_image(1_000)
+            BluetoothSchedulerInstant::from_image(1_000)
         );
 
         let (interrupt, mut task, modem_timer) = scheduler.split_runtime();

@@ -41,9 +41,8 @@ use crate::{
     BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPhy,
     BluetoothDtmPreparedTxGraph, BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole,
     BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-    BluetoothDtmSchedulerMargin, BluetoothDtmSchedulerReservation, BluetoothDtmTxEventWindow,
-    BluetoothDtmTxSchedulerTiming, BluetoothSchedulerSequenceReady,
-    dtm_rx_completion::BluetoothDtmReceiverSession,
+    BluetoothDtmSchedulerReservation, BluetoothDtmTxEventWindow, BluetoothDtmTxSchedulerTiming,
+    BluetoothSchedulerSequenceReady, dtm_rx_completion::BluetoothDtmReceiverSession,
     dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
@@ -62,7 +61,7 @@ pub(crate) struct BluetoothDtmTransmitterCommandFacts {
     channel: BluetoothDtmChannel,
     phy: BluetoothDtmPhy,
     timing: BluetoothDtmTxSchedulerTiming,
-    margin: BluetoothDtmSchedulerMargin,
+    margin: u32,
     pattern: BluetoothDtmPayloadPattern,
     length: BluetoothDtmPayloadLength,
 }
@@ -73,7 +72,7 @@ pub(crate) struct BluetoothDtmReceiverCommandFacts {
     link_state: BluetoothDtmLinkStateReset,
     channel: BluetoothDtmChannel,
     phy: BluetoothDtmPhy,
-    margin: BluetoothDtmSchedulerMargin,
+    margin: u32,
 }
 
 /// Exact receiver window most recently committed by the scheduler lifecycle.
@@ -337,7 +336,7 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
         timing: BluetoothDtmTxSchedulerTiming,
-        margin: BluetoothDtmSchedulerMargin,
+        margin: u32,
         window: BluetoothDtmTxEventWindow,
     ) -> Result<
         BluetoothDtmReviewedEventWordsPrepared<
@@ -455,7 +454,7 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
         owner: BluetoothDtmReceiverCpuOwned,
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
-        margin: BluetoothDtmSchedulerMargin,
+        margin: u32,
         window: BluetoothDtmRxInitialEventWindow,
     ) -> Result<
         BluetoothDtmReviewedEventWordsPrepared<
@@ -592,7 +591,7 @@ impl BluetoothDtmActiveReceiverCpuOwned {
     }
 
     #[cfg(test)]
-    pub(crate) const fn margin(&self) -> BluetoothDtmSchedulerMargin {
+    pub(crate) const fn margin(&self) -> u32 {
         self.facts.margin
     }
 
@@ -1635,7 +1634,7 @@ impl BluetoothDtmActiveTransmitterCpuOwned {
     }
 
     #[cfg(test)]
-    pub(crate) const fn margin(&self) -> BluetoothDtmSchedulerMargin {
+    pub(crate) const fn margin(&self) -> u32 {
         self.facts.margin
     }
 
@@ -1775,11 +1774,10 @@ mod tests {
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmDefaultTxPowerDbm, BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength,
         BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmRole,
-        BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
-        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
+        BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerItemEvent,
         BluetoothDtmSchedulerReservation, BluetoothDtmTxGraphPrepare, BluetoothDtmTxTimingMicros,
-        BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
-        BluetoothSchedulerTimingPolicy,
+        BluetoothSchedulerInstant, BluetoothSchedulerSequenceAuthorizationError,
+        BluetoothSchedulerSequenceReady, BluetoothSchedulerTimingPolicy,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 
@@ -1812,8 +1810,9 @@ mod tests {
         BluetoothDtmChannel::new(5).expect("channel five is valid")
     }
 
-    fn margin() -> BluetoothDtmSchedulerMargin {
-        crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone().dtm_scheduler_margin()
+    fn margin() -> u32 {
+        crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone()
+            .preparation_lead_scheduler_delta()
     }
 
     fn tx_timing() -> crate::BluetoothDtmTxSchedulerTiming {
@@ -1828,16 +1827,16 @@ mod tests {
     fn tx_window() -> crate::BluetoothDtmTxEventWindow {
         tx_timing().initial_event_window(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-            BluetoothDtmSchedulerInstant::from_image(64),
-            BluetoothDtmSchedulerInstant::from_image(1_119),
+            BluetoothSchedulerInstant::from_image(64),
+            BluetoothSchedulerInstant::from_image(1_119),
         )
     }
 
     fn rx_initial_window() -> crate::BluetoothDtmRxInitialEventWindow {
         crate::BluetoothDtmRxInitialEventWindow::new(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-            BluetoothDtmSchedulerInstant::from_image(64),
-            BluetoothDtmSchedulerInstant::from_image(1_119),
+            BluetoothSchedulerInstant::from_image(64),
+            BluetoothSchedulerInstant::from_image(1_119),
         )
     }
 
@@ -1998,7 +1997,7 @@ mod tests {
             .advance_event_window(
                 crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 committed_window,
-                BluetoothDtmSchedulerInstant::from_image(1_100),
+                BluetoothSchedulerInstant::from_image(1_100),
             )
             .window();
         let facts = BluetoothDtmTransmitterCommandFacts {
@@ -2058,8 +2057,8 @@ mod tests {
         let committed_window = BluetoothDtmRxCommittedWindow::Initial(rx_initial_window());
         let candidate_window = BluetoothDtmRxRecurringEventWindow::new(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-            BluetoothDtmSchedulerInstant::from_image(1_100),
-            BluetoothDtmSchedulerInstant::from_image(1_120),
+            BluetoothSchedulerInstant::from_image(1_100),
+            BluetoothSchedulerInstant::from_image(1_120),
         );
         let facts = BluetoothDtmReceiverCommandFacts {
             link_state: reset,
@@ -2111,7 +2110,7 @@ mod tests {
             .advance_event_window(
                 crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 tx_window(),
-                BluetoothDtmSchedulerInstant::from_image(1_100),
+                BluetoothSchedulerInstant::from_image(1_100),
             )
             .window();
         let tx_facts = BluetoothDtmTransmitterCommandFacts {
@@ -2143,8 +2142,8 @@ mod tests {
         let reset_rx = link_state(BluetoothDtmRole::Receiver);
         let rx_candidate = BluetoothDtmRxRecurringEventWindow::new(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-            BluetoothDtmSchedulerInstant::from_image(1_100),
-            BluetoothDtmSchedulerInstant::from_image(1_120),
+            BluetoothSchedulerInstant::from_image(1_100),
+            BluetoothSchedulerInstant::from_image(1_120),
         );
         let recycled_rx = BluetoothDtmRecycledEvent::<BluetoothDtmReceiverEvent> {
             memory: owner(0x2f03_0000),

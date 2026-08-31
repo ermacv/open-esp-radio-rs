@@ -1197,7 +1197,7 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
-    always_awake_timing: crate::ble_phy::BluetoothDtmAlwaysAwakeTimingAuthority,
+    always_awake_timing: crate::ble_phy::BluetoothAlwaysAwakeTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
 
@@ -1675,7 +1675,7 @@ enum BluetoothDtmControllerPreparationPhase {
     ReceiverRecurringCurrent {
         owner: crate::BluetoothDtmActiveReceiverCpuOwned,
         epoch: crate::BluetoothControllerSchedulerEpoch,
-        timing_ready: crate::BluetoothDtmAlwaysAwakeTimingReady,
+        timing_ready: crate::BluetoothAlwaysAwakeTimingReady,
     },
     TransmitterFirstAdmission(crate::scheduler::BluetoothDtmTransmitterFirstStaged),
     ReceiverFirstAdmission(crate::scheduler::BluetoothDtmReceiverFirstStaged),

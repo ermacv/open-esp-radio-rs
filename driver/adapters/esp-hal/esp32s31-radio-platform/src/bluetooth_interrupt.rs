@@ -26,9 +26,11 @@ use open_esp_radio_esp32s31_bluetooth::{
     step_nrt_default_interrupt, step_primary_interrupt,
 };
 use open_esp_radio_esp32s31_hal::{
-    BluetoothInterruptRegistersOwner, BluetoothModemLpTimerHandlerRegisterStep,
-    BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerInterruptStep,
-    BluetoothModemLpTimerSoftwarePendingOwner, BluetoothSchedulerRunInterruptsPrepared,
+    BluetoothControllerHal, BluetoothInterruptRegistersOwner,
+    BluetoothModemLpTimerHandlerRegisterStep, BluetoothModemLpTimerInterruptReadyOwner,
+    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerSoftwarePendingOwner,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerRunInterruptsPrepared,
+    BluetoothSchedulerSoftwareListRemovalJoin,
 };
 
 use crate::bluetooth_route_policy::{
@@ -250,6 +252,25 @@ impl PublishedEspHalBluetoothInterruptOwners {
         })
     }
 
+    /// Execute one direct post-unlink recheck while retaining the stable
+    /// interrupt owner in process-wide storage.
+    pub fn recheck_scheduler_software_list_removal(
+        &self,
+        controller: &mut BluetoothControllerHal<'_>,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        critical_section::with(|critical_section| {
+            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+            let Some(interrupts) = slot.as_mut() else {
+                return Err(head);
+            };
+            Ok(controller.recheck_scheduler_software_list_removal(interrupts, head))
+        })
+    }
+
     /// Capture, acknowledge and classify one primary source-124 epoch.
     ///
     /// The unique shared register owner remains in its process-wide slot for
@@ -435,6 +456,19 @@ impl BluetoothSchedulerRunInterruptStorage for PublishedEspHalBluetoothInterrupt
         &self,
     ) -> Result<BluetoothSchedulerRunInterruptsPrepared, Self::Error> {
         PublishedEspHalBluetoothInterruptOwners::prepare_scheduler_run_interrupts(self)
+    }
+
+    fn recheck_scheduler_software_list_removal(
+        &self,
+        controller: &mut BluetoothControllerHal<'_>,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        PublishedEspHalBluetoothInterruptOwners::recheck_scheduler_software_list_removal(
+            self, controller, head,
+        )
     }
 }
 
@@ -630,6 +664,19 @@ impl<'published> BoundEspHalBluetoothInterruptEpoch<'published> {
         self.published.prepare_scheduler_run_interrupts()
     }
 
+    /// Execute one direct post-unlink recheck through the published owner.
+    pub fn recheck_scheduler_software_list_removal(
+        &self,
+        controller: &mut BluetoothControllerHal<'_>,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        self.published
+            .recheck_scheduler_software_list_removal(controller, head)
+    }
+
     /// Move source-127 software-pending ownership into task context.
     pub fn take_modem_lp_timer_software_pending(
         &self,
@@ -687,6 +734,19 @@ impl BluetoothSchedulerRunInterruptStorage for BoundEspHalBluetoothInterruptEpoc
         &self,
     ) -> Result<BluetoothSchedulerRunInterruptsPrepared, Self::Error> {
         BoundEspHalBluetoothInterruptEpoch::prepare_scheduler_run_interrupts(self)
+    }
+
+    fn recheck_scheduler_software_list_removal(
+        &self,
+        controller: &mut BluetoothControllerHal<'_>,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        BoundEspHalBluetoothInterruptEpoch::recheck_scheduler_software_list_removal(
+            self, controller, head,
+        )
     }
 }
 

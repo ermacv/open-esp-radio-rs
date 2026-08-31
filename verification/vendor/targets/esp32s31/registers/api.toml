@@ -3523,6 +3523,13 @@ register = "SCHEDULER_STATE"
 fields = ["BUSY", "STATE_29", "CURRENT_LINK_INDEX"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
+[[field-reads]]
+name = "observe_bluetooth_scheduler_software_list_busy"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "SCHEDULER_STATE"
+field = "BUSY"
+sources = ["BLOB_LIBBTDM_SCHEDULER_SOFTWARE_LIST_REMOVAL"]
+
 [[zero-based-field-writes]]
 name = "publish_bluetooth_scheduler_execution_lock_request"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"

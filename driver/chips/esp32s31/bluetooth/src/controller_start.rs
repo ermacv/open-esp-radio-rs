@@ -4,10 +4,11 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothInterruptOutputPreparedOwner, BluetoothInterruptRegistersOwner,
-    BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCounterStartedOwner,
-    BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerSoftwarePendingOwner,
-    BluetoothSchedulerRunInterruptsPrepared,
+    BluetoothControllerHal, BluetoothInterruptOutputPreparedOwner,
+    BluetoothInterruptRegistersOwner, BluetoothLowPowerRuntimeControlObservation,
+    BluetoothModemLpTimerCounterStartedOwner, BluetoothModemLpTimerInterruptReadyOwner,
+    BluetoothModemLpTimerSoftwarePendingOwner, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalJoin,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -206,6 +207,19 @@ pub trait BluetoothSchedulerRunInterruptStorage {
     fn prepare_scheduler_run_interrupts(
         &self,
     ) -> Result<BluetoothSchedulerRunInterruptsPrepared, Self::Error>;
+
+    /// Recheck the complete scheduler software-list removal predicate while
+    /// the stable interrupt-register owner remains in platform storage.
+    ///
+    /// Failure returns the unchanged affine empty-head proof.
+    fn recheck_scheduler_software_list_removal(
+        &self,
+        controller: &mut BluetoothControllerHal<'_>,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    >;
 }
 
 /// Failed DTM scheduler start before the synchronous run suffix began.
@@ -237,8 +251,6 @@ impl<Role, E> BluetoothDtmSchedulerStartFailure<Role, E> {
 #[must_use = "every outcome retains the exact unlinked or removal-ready graph"]
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
-    /// No eligible primary event is stored yet.
-    Waiting(crate::BluetoothDtmPostUnlinkAwaiting<Role>),
     /// The supplied owner belongs to another mailbox identity or generation.
     MailboxAffinityMismatch(crate::BluetoothDtmPostUnlinkAwaiting<Role>),
     /// The primary epoch reported a baseline or unclassified fault.
@@ -255,8 +267,18 @@ pub enum BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
         /// Exact acknowledged empty primary epoch.
         epoch: crate::BluetoothPrimaryNoSchedulerWork,
     },
-    /// The fresh scheduler sample or task command statuses were not ready.
-    Pending {
+    /// An interrupt-derived scheduler observation was not ready.
+    PublishedPending {
+        /// Already-unlinked graph re-armed before leaving the serialization boundary.
+        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
+    },
+    /// A direct task-side scheduler observation was not ready.
+    DirectPending {
+        /// Already-unlinked graph re-armed before leaving the serialization boundary.
+        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
+    },
+    /// The stable interrupt-register owner was unavailable for direct recheck.
+    RecheckUnavailable {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
         awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
     },
@@ -269,12 +291,20 @@ pub enum BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
     PendingRearmMismatch {
         unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
     },
+    /// An internal mailbox invariant rejected re-arm after direct recheck.
+    RecheckRearmMismatch {
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+    },
     /// The graph belongs to another Controller scheduler epoch.
     SchedulerIdentityMismatch {
         /// Unchanged already-unlinked graph.
         unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
         /// Exact classified event which was not consumed by the mismatched graph.
         event: crate::BluetoothPrimarySchedulerEvent,
+    },
+    /// The graph does not belong to the scheduler epoch performing a direct recheck.
+    DirectSchedulerIdentityMismatch {
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
     },
     /// The complete post-unlink return predicate became ready.
     Ready {
@@ -3257,13 +3287,54 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub fn consume_published_dtm_software_list_removal<Role>(
         &mut self,
         awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
-    ) -> BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
+    ) -> BluetoothDtmSoftwareListRemovalPublishedStep<Role>
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
         let runtime = &mut self.runtime;
+        let storage = self.storage;
         let mailbox = self.mailbox;
         critical_section::with(|critical_section| {
             let (key, pending) = match mailbox.take(critical_section, awaiting) {
-                BluetoothDtmPostUnlinkTake::Waiting(awaiting) => {
-                    return BluetoothDtmSoftwareListRemovalPublishedStep::Waiting(awaiting);
+                BluetoothDtmPostUnlinkTake::Recheck { key, unlinked } => {
+                    return match runtime.recheck_dtm_software_list_removal(storage, unlinked) {
+                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(
+                            unlinked,
+                        ) => BluetoothDtmSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch {
+                            unlinked,
+                        },
+                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
+                            unlinked,
+                        ) => match mailbox.rearm(critical_section, key, unlinked) {
+                            BluetoothDtmPostUnlinkRearm::Armed(awaiting) => {
+                                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckUnavailable {
+                                    awaiting,
+                                }
+                            }
+                            BluetoothDtmPostUnlinkRearm::AffinityMismatch(unlinked) => {
+                                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckRearmMismatch {
+                                    unlinked,
+                                }
+                            }
+                        },
+                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::Pending(
+                            unlinked,
+                        ) => match mailbox.rearm(critical_section, key, unlinked) {
+                            BluetoothDtmPostUnlinkRearm::Armed(awaiting) => {
+                                BluetoothDtmSoftwareListRemovalPublishedStep::DirectPending {
+                                    awaiting,
+                                }
+                            }
+                            BluetoothDtmPostUnlinkRearm::AffinityMismatch(unlinked) => {
+                                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckRearmMismatch {
+                                    unlinked,
+                                }
+                            }
+                        },
+                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::Ready(
+                            ready,
+                        ) => BluetoothDtmSoftwareListRemovalPublishedStep::Ready { ready },
+                    };
                 }
                 BluetoothDtmPostUnlinkTake::AffinityMismatch(awaiting) => {
                     return BluetoothDtmSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(
@@ -3306,7 +3377,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                             unlinked,
                         ) => match mailbox.rearm(critical_section, key, unlinked) {
                             BluetoothDtmPostUnlinkRearm::Armed(awaiting) => {
-                                BluetoothDtmSoftwareListRemovalPublishedStep::Pending { awaiting }
+                                BluetoothDtmSoftwareListRemovalPublishedStep::PublishedPending {
+                                    awaiting,
+                                }
                             }
                             BluetoothDtmPostUnlinkRearm::AffinityMismatch(unlinked) => {
                                 BluetoothDtmSoftwareListRemovalPublishedStep::PendingRearmMismatch {

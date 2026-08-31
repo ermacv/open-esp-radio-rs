@@ -186,7 +186,8 @@ impl BluetoothSchedulerSoftwareListRemovalReady {
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "pending requires a new scheduler event; ready must advance ownership"]
 pub enum BluetoothSchedulerSoftwareListRemovalJoin {
-    /// At least one task-owned command status was not ready.
+    /// The scheduler was busy or at least one task-owned command status was
+    /// not ready.
     Pending {
         /// Unchanged empty-head proof for a later fresh scheduler event.
         head: BluetoothSchedulerHardwareListHeadEmptyObserved,
@@ -346,6 +347,12 @@ trait BluetoothSchedulerSoftwareListRemovalControl {
     fn read_command_1_status_18(&mut self) -> bool;
 }
 
+trait BluetoothSchedulerSoftwareListRemovalRecheckControl {
+    fn read_scheduler_busy(&mut self) -> bool;
+    fn read_command_0_status_26(&mut self) -> bool;
+    fn read_command_1_status_18(&mut self) -> bool;
+}
+
 struct HardwareSchedulerSoftwareListRemovalControl<'a> {
     registers: &'a super::svd::BluetoothControllerCore,
 }
@@ -362,6 +369,31 @@ impl BluetoothSchedulerSoftwareListRemovalControl
     fn read_command_1_status_18(&mut self) -> bool {
         super::svd::field_read::observe_bluetooth_scheduler_software_list_command_1_status_18(
             self.registers,
+        )
+    }
+}
+
+struct HardwareSchedulerSoftwareListRemovalRecheckControl<'a> {
+    scheduler: &'a super::svd::BluetoothSchedulerInterruptRuntime,
+    controller: &'a super::svd::BluetoothControllerCore,
+}
+
+impl BluetoothSchedulerSoftwareListRemovalRecheckControl
+    for HardwareSchedulerSoftwareListRemovalRecheckControl<'_>
+{
+    fn read_scheduler_busy(&mut self) -> bool {
+        super::svd::field_read::observe_bluetooth_scheduler_software_list_busy(self.scheduler)
+    }
+
+    fn read_command_0_status_26(&mut self) -> bool {
+        super::svd::field_read::observe_bluetooth_scheduler_software_list_command_0_status_26(
+            self.controller,
+        )
+    }
+
+    fn read_command_1_status_18(&mut self) -> bool {
+        super::svd::field_read::observe_bluetooth_scheduler_software_list_command_1_status_18(
+            self.controller,
         )
     }
 }
@@ -423,6 +455,37 @@ fn execute_software_list_removal_finish(
     }
 }
 
+fn execute_software_list_removal_recheck(
+    control: &mut impl BluetoothSchedulerSoftwareListRemovalRecheckControl,
+) -> BluetoothSchedulerSoftwareListRemovalDisposition {
+    if control.read_scheduler_busy() {
+        return BluetoothSchedulerSoftwareListRemovalDisposition::Pending;
+    }
+    if !control.read_command_0_status_26() {
+        return BluetoothSchedulerSoftwareListRemovalDisposition::Pending;
+    }
+    if !control.read_command_1_status_18() {
+        return BluetoothSchedulerSoftwareListRemovalDisposition::Pending;
+    }
+    BluetoothSchedulerSoftwareListRemovalDisposition::Ready
+}
+
+fn join_software_list_removal(
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    disposition: BluetoothSchedulerSoftwareListRemovalDisposition,
+) -> BluetoothSchedulerSoftwareListRemovalJoin {
+    match disposition {
+        BluetoothSchedulerSoftwareListRemovalDisposition::Pending => {
+            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head }
+        }
+        BluetoothSchedulerSoftwareListRemovalDisposition::Ready => {
+            BluetoothSchedulerSoftwareListRemovalJoin::Ready(
+                BluetoothSchedulerSoftwareListRemovalReady { head },
+            )
+        }
+    }
+}
+
 impl BluetoothInterruptRegisters {
     /// Read the first scheduler-state image required only by bank-one source 3.
     ///
@@ -478,16 +541,31 @@ impl BluetoothTaskRegisters {
         let mut control = HardwareSchedulerSoftwareListRemovalControl {
             registers: &self.bluetooth.bluetooth_controller_core,
         };
-        match execute_software_list_removal_finish(&mut control) {
-            BluetoothSchedulerSoftwareListRemovalDisposition::Pending => {
-                BluetoothSchedulerSoftwareListRemovalJoin::Pending { head }
-            }
-            BluetoothSchedulerSoftwareListRemovalDisposition::Ready => {
-                BluetoothSchedulerSoftwareListRemovalJoin::Ready(
-                    BluetoothSchedulerSoftwareListRemovalReady { head },
-                )
-            }
-        }
+        join_software_list_removal(head, execute_software_list_removal_finish(&mut control))
+    }
+
+    /// Recheck the complete post-unlink scheduler return predicate directly.
+    ///
+    /// This is one finite, ordered transaction matching complete
+    /// `r_sym_bt_FCfM3hAXphsk1qERleGZ`: a fresh `SCHEDULER_STATE.BUSY`
+    /// observation short-circuits both command reads, an idle observation
+    /// admits `SCHEDULER_COMMAND_0.STATUS_26`, and only a set status 26 admits
+    /// `SCHEDULER_COMMAND_1.STATUS_18`. No interrupt capture or acknowledgement
+    /// is implied by this direct task-side recheck.
+    ///
+    /// `Pending` returns the unchanged affine empty-head proof so a separately
+    /// authorized event or deadline can retry. `Ready` consumes that proof
+    /// into the exact software-list-removal result.
+    pub fn recheck_scheduler_software_list_removal(
+        &mut self,
+        interrupts: &mut BluetoothInterruptRegisters,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> BluetoothSchedulerSoftwareListRemovalJoin {
+        let mut control = HardwareSchedulerSoftwareListRemovalRecheckControl {
+            scheduler: &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
+            controller: &self.bluetooth.bluetooth_controller_core,
+        };
+        join_software_list_removal(head, execute_software_list_removal_recheck(&mut control))
     }
 }
 
@@ -520,10 +598,11 @@ mod tests {
         BluetoothSchedulerFinishedListControl, BluetoothSchedulerHardwareListIndex,
         BluetoothSchedulerInterruptControl, BluetoothSchedulerSoftwareListRemovalControl,
         BluetoothSchedulerSoftwareListRemovalDisposition,
-        BluetoothSchedulerSoftwareListRemovalInterruptStep, SchedulerStateObservation,
+        BluetoothSchedulerSoftwareListRemovalInterruptStep,
+        BluetoothSchedulerSoftwareListRemovalRecheckControl, SchedulerStateObservation,
         execute_clear_scheduler_reference, execute_finished_list_transfer,
         execute_reference_gate_observation, execute_software_list_removal_finish,
-        execute_work_observation,
+        execute_software_list_removal_recheck, execute_work_observation,
     };
 
     #[test]
@@ -581,6 +660,37 @@ mod tests {
         command_zero: bool,
         command_one: bool,
         operations: Vec<RemovalOperation>,
+    }
+
+    struct RemovalRecheckRecorder {
+        scheduler_busy: bool,
+        command_zero: bool,
+        command_one: bool,
+        operations: Vec<RemovalRecheckOperation>,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RemovalRecheckOperation {
+        SchedulerBusy,
+        CommandZero,
+        CommandOne,
+    }
+
+    impl BluetoothSchedulerSoftwareListRemovalRecheckControl for RemovalRecheckRecorder {
+        fn read_scheduler_busy(&mut self) -> bool {
+            self.operations.push(RemovalRecheckOperation::SchedulerBusy);
+            self.scheduler_busy
+        }
+
+        fn read_command_0_status_26(&mut self) -> bool {
+            self.operations.push(RemovalRecheckOperation::CommandZero);
+            self.command_zero
+        }
+
+        fn read_command_1_status_18(&mut self) -> bool {
+            self.operations.push(RemovalRecheckOperation::CommandOne);
+            self.command_one
+        }
     }
 
     impl BluetoothSchedulerSoftwareListRemovalControl for RemovalRecorder {
@@ -713,6 +823,64 @@ mod tests {
             ready_observation,
             BluetoothSchedulerSoftwareListRemovalDisposition::Ready
         );
+    }
+
+    #[test]
+    fn direct_software_list_removal_recheck_preserves_all_short_circuit_edges() {
+        for (scheduler_busy, command_zero, command_one, expected, operations) in [
+            (
+                true,
+                true,
+                true,
+                BluetoothSchedulerSoftwareListRemovalDisposition::Pending,
+                &[RemovalRecheckOperation::SchedulerBusy][..],
+            ),
+            (
+                false,
+                false,
+                true,
+                BluetoothSchedulerSoftwareListRemovalDisposition::Pending,
+                &[
+                    RemovalRecheckOperation::SchedulerBusy,
+                    RemovalRecheckOperation::CommandZero,
+                ][..],
+            ),
+            (
+                false,
+                true,
+                false,
+                BluetoothSchedulerSoftwareListRemovalDisposition::Pending,
+                &[
+                    RemovalRecheckOperation::SchedulerBusy,
+                    RemovalRecheckOperation::CommandZero,
+                    RemovalRecheckOperation::CommandOne,
+                ][..],
+            ),
+            (
+                false,
+                true,
+                true,
+                BluetoothSchedulerSoftwareListRemovalDisposition::Ready,
+                &[
+                    RemovalRecheckOperation::SchedulerBusy,
+                    RemovalRecheckOperation::CommandZero,
+                    RemovalRecheckOperation::CommandOne,
+                ][..],
+            ),
+        ] {
+            let mut recorder = RemovalRecheckRecorder {
+                scheduler_busy,
+                command_zero,
+                command_one,
+                operations: Vec::new(),
+            };
+
+            assert_eq!(
+                execute_software_list_removal_recheck(&mut recorder),
+                expected
+            );
+            assert_eq!(recorder.operations, operations);
+        }
     }
 
     #[test]

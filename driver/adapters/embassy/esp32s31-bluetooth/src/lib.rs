@@ -107,6 +107,25 @@ fn poll_borrowed_ready<M: RawMutex>(
     }
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EmbassyBluetoothPostUnlinkSignal {
+    Mailbox,
+    Recheck,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+async fn select_post_unlink_first<M, R>(mailbox: M, recheck: R) -> EmbassyBluetoothPostUnlinkSignal
+where
+    M: Future<Output = ()>,
+    R: Future<Output = ()>,
+{
+    match select(mailbox, recheck).await {
+        Either::First(()) => EmbassyBluetoothPostUnlinkSignal::Mailbox,
+        Either::Second(()) => EmbassyBluetoothPostUnlinkSignal::Recheck,
+    }
+}
+
 /// Embassy wakers for one borrowed Bluetooth Controller runtime epoch.
 ///
 /// This adapter owns no pending state or Controller worker. [`split`](Self::split)
@@ -224,6 +243,24 @@ impl<M: RawMutex> EmbassyBluetoothRuntimeWakers<M> {
             poll_borrowed_ready(&self.post_unlink_waker, context, || wake.is_pending())
         })
         .await
+    }
+
+    /// Wait for either a durable post-unlink publication or the caller's
+    /// already-anchored absolute recheck deadline.
+    ///
+    /// Mailbox readiness is the first select operand and therefore wins a
+    /// simultaneous-ready tie. Cancelling this borrowed wait consumes neither
+    /// source.
+    #[cfg(target_arch = "riscv32")]
+    async fn wait_post_unlink_or_recheck<R>(
+        &self,
+        wake: &BluetoothDtmPostUnlinkWakeCell,
+        recheck: R,
+    ) -> EmbassyBluetoothPostUnlinkSignal
+    where
+        R: Future<Output = ()>,
+    {
+        select_post_unlink_first(self.wait_post_unlink_ready(wake), recheck).await
     }
 
     /// Whether the post-unlink consumer has durable ready work.
@@ -482,7 +519,7 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
 #[cfg(test)]
 mod tests {
     use core::{
-        future::{Future, ready},
+        future::{Future, pending, ready},
         pin::Pin,
         sync::atomic::{AtomicBool, AtomicUsize, Ordering},
         task::{Context, Poll, Waker},
@@ -788,6 +825,22 @@ mod tests {
                 ready.load(Ordering::Acquire)
             })
         }));
+    }
+
+    #[test]
+    fn post_unlink_mailbox_wins_a_simultaneous_recheck_tie() {
+        assert_eq!(
+            block_on(select_post_unlink_first(ready(()), ready(()))),
+            EmbassyBluetoothPostUnlinkSignal::Mailbox
+        );
+    }
+
+    #[test]
+    fn absolute_recheck_advances_post_unlink_without_an_interrupt_edge() {
+        assert_eq!(
+            block_on(select_post_unlink_first(pending::<()>(), ready(()))),
+            EmbassyBluetoothPostUnlinkSignal::Recheck
+        );
     }
 
     #[test]

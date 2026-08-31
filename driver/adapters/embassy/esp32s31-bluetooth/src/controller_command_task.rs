@@ -536,7 +536,9 @@ where
                 wakers.wait_scheduler_ready(wake).await;
             }
             Some(BluetoothDtmResetStoppingWait::PostUnlink(wake)) => {
-                wakers.wait_post_unlink_ready(wake).await;
+                let _ = wakers
+                    .wait_post_unlink_or_recheck(wake, recheck.wait_until_absolute_recheck())
+                    .await;
             }
             Some(BluetoothDtmResetStoppingWait::ControllerTime) => {
                 recheck.wait_until_absolute_recheck().await;

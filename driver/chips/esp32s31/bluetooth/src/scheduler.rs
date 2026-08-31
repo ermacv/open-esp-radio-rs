@@ -1155,6 +1155,16 @@ pub(crate) enum BluetoothDtmSchedulerSoftwareListRemovalJoin<Role> {
     Ready(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
 }
 
+/// Internal result of one direct task-side post-unlink hardware recheck.
+#[must_use = "the unlinked or removal-ready graph must remain owned"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothDtmSchedulerSoftwareListRemovalRecheck<Role> {
+    SchedulerIdentityMismatch(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
+    StorageUnavailable(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
+    Pending(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
+    Ready(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
+}
+
 /// One bounded post-completion hardware-head retirement attempt.
 #[must_use = "the completion owner must enter fail-stop handling or advance"]
 #[cfg(target_arch = "riscv32")]
@@ -2625,6 +2635,55 @@ impl<const SCHEDULER_CAPACITY: usize>
                 self._scheduler_list
                     .retain_software_list_removal_ready_first_item(address);
                 BluetoothDtmSchedulerSoftwareListRemovalJoin::Ready(
+                    BluetoothDtmSchedulerSoftwareListRemovalReady {
+                        item,
+                        _removal: removal,
+                    },
+                )
+            }
+        }
+    }
+
+    /// Recheck one already-unlinked DTM graph without requiring another
+    /// primary interrupt edge.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_dtm_software_list_removal<Role>(
+        &mut self,
+        storage: &impl crate::BluetoothSchedulerRunInterruptStorage,
+        unlinked: BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+    ) -> BluetoothDtmSchedulerSoftwareListRemovalRecheck<Role> {
+        let address = unlinked.scheduler_item_address();
+        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self._scheduler_list.retains_unlinked_first_item(address)
+        {
+            return BluetoothDtmSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(
+                unlinked,
+            );
+        }
+
+        let BluetoothDtmSchedulerSoftwareListUnlinked { item, head } = unlinked;
+        let join = match self
+            .task
+            .recheck_scheduler_software_list_removal(storage, head)
+        {
+            Ok(join) => join,
+            Err(head) => {
+                return BluetoothDtmSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
+                    BluetoothDtmSchedulerSoftwareListUnlinked { item, head },
+                );
+            }
+        };
+        match join {
+            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
+                BluetoothDtmSchedulerSoftwareListRemovalRecheck::Pending(
+                    BluetoothDtmSchedulerSoftwareListUnlinked { item, head },
+                )
+            }
+            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
+                self._scheduler_list
+                    .retain_software_list_removal_ready_first_item(address);
+                BluetoothDtmSchedulerSoftwareListRemovalRecheck::Ready(
                     BluetoothDtmSchedulerSoftwareListRemovalReady {
                         item,
                         _removal: removal,

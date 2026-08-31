@@ -1094,6 +1094,22 @@ impl BluetoothControllerHal<'_> {
             .finish_scheduler_software_list_removal(idle, head)
     }
 
+    /// Perform one finite direct recheck of the complete post-unlink return
+    /// predicate through both disjoint register owners.
+    ///
+    /// The PAC preserves the reviewed fresh-read order and short-circuiting:
+    /// scheduler BUSY, command-zero status 26, then command-one status 18.
+    /// `Pending` retains the affine empty-head proof for a later authorized
+    /// recheck; `Ready` consumes it into the removal-complete proof.
+    pub fn recheck_scheduler_software_list_removal(
+        &mut self,
+        interrupts: &mut BluetoothInterruptRegistersOwner,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> BluetoothSchedulerSoftwareListRemovalJoin {
+        self.registers
+            .recheck_scheduler_software_list_removal(&mut interrupts.registers, head)
+    }
+
     /// Transfer one fresh hardware finished-list observation to its reviewed
     /// report register and return the typed sixteen-list projection.
     ///

@@ -127,7 +127,13 @@ impl<Event> BluetoothDtmPostUnlinkMailboxState<Event> {
         expected: BluetoothDtmPostUnlinkArmKey,
     ) -> BluetoothDtmPostUnlinkMailboxTake<Event> {
         match self {
-            Self::Armed { key } if *key == expected => BluetoothDtmPostUnlinkMailboxTake::Waiting,
+            Self::Armed { key } if *key == expected => {
+                *self = Self::Idle {
+                    identity: expected.identity,
+                    generation: expected.generation,
+                };
+                BluetoothDtmPostUnlinkMailboxTake::Recheck { key: expected }
+            }
             Self::Ready { key, .. } if *key == expected => {
                 let Self::Ready { key, event } = core::mem::replace(
                     self,
@@ -201,7 +207,9 @@ enum BluetoothDtmPostUnlinkMailboxPublish<Event> {
 
 #[cfg(any(target_arch = "riscv32", test))]
 enum BluetoothDtmPostUnlinkMailboxTake<Event> {
-    Waiting,
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+    },
     Ready {
         key: BluetoothDtmPostUnlinkArmKey,
         event: Event,
@@ -422,8 +430,11 @@ impl BluetoothDtmPostUnlinkMailbox {
             .borrow_mut()
             .take(awaiting.key)
         {
-            BluetoothDtmPostUnlinkMailboxTake::Waiting => {
-                BluetoothDtmPostUnlinkTake::Waiting(awaiting)
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key } => {
+                BluetoothDtmPostUnlinkTake::Recheck {
+                    key,
+                    unlinked: awaiting.unlinked,
+                }
             }
             BluetoothDtmPostUnlinkMailboxTake::Ready { key, event } => {
                 let _ = self.wake.close();
@@ -530,7 +541,10 @@ impl<Role> BluetoothDtmSoftwareListRemovalPublishedEvent<Role> {
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) enum BluetoothDtmPostUnlinkTake<Role> {
-    Waiting(BluetoothDtmPostUnlinkAwaiting<Role>),
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+    },
     Ready {
         key: BluetoothDtmPostUnlinkArmKey,
         event: BluetoothDtmSoftwareListRemovalPublishedEvent<Role>,
@@ -617,15 +631,16 @@ mod tests {
     }
 
     #[test]
-    fn waiting_recheck_and_same_identity_generation_rearm_close_the_wake_epoch() {
+    fn direct_recheck_and_same_identity_generation_rearm_preserve_publication() {
         let mut mailbox = BluetoothDtmPostUnlinkMailboxState::<Event>::new();
         let next_identity = Cell::new(0);
         let key = prepare(&mut mailbox, &next_identity);
         assert!(mailbox.commit_arm(key));
         assert!(matches!(
             mailbox.take(key),
-            BluetoothDtmPostUnlinkMailboxTake::Waiting
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key: observed } if observed == key
         ));
+        assert!(mailbox.rearm(key));
         assert!(matches!(
             mailbox.publish(Event(9)),
             BluetoothDtmPostUnlinkMailboxPublish::Stored
@@ -637,7 +652,7 @@ mod tests {
         assert!(mailbox.rearm(key));
         assert!(matches!(
             mailbox.take(key),
-            BluetoothDtmPostUnlinkMailboxTake::Waiting
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key: observed } if observed == key
         ));
     }
 

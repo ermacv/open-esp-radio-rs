@@ -21,7 +21,7 @@ use open_esp_radio_esp32s31_bluetooth::{
 };
 
 #[cfg(target_arch = "riscv32")]
-use crate::EmbassyBluetoothRuntimeWakers;
+use crate::{EmbassyBluetoothPostUnlinkSignal, EmbassyBluetoothRuntimeWakers};
 
 /// Exact radio-side reason an active-session wait completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,8 +112,18 @@ where
                 EmbassyBluetoothDtmActiveRadioSignal::Scheduler
             }
             BluetoothDtmActiveRadioWait::PostUnlink(wake) => {
-                self.wakers.wait_post_unlink_ready(wake).await;
-                EmbassyBluetoothDtmActiveRadioSignal::PostUnlink
+                match self
+                    .wakers
+                    .wait_post_unlink_or_recheck(wake, controller_time_recheck)
+                    .await
+                {
+                    EmbassyBluetoothPostUnlinkSignal::Mailbox => {
+                        EmbassyBluetoothDtmActiveRadioSignal::PostUnlink
+                    }
+                    EmbassyBluetoothPostUnlinkSignal::Recheck => {
+                        EmbassyBluetoothDtmActiveRadioSignal::ControllerTime
+                    }
+                }
             }
             BluetoothDtmActiveRadioWait::ControllerTime => {
                 controller_time_recheck.await;

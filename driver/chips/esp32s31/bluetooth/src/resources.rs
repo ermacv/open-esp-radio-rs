@@ -14,10 +14,11 @@ use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
     BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
-    BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
-    BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalJoin,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerRunEventPublished,
+    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalIdle,
+    BluetoothSchedulerSoftwareListRemovalJoin,
 };
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
@@ -405,6 +406,21 @@ impl BluetoothTaskResources {
         self.registers
             .borrow_bluetooth_controller()
             .finish_scheduler_software_list_removal(idle, head)
+    }
+
+    /// Recheck the complete post-unlink predicate through the task and stable
+    /// interrupt register owners without exporting either owner.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_scheduler_software_list_removal(
+        &mut self,
+        storage: &impl crate::BluetoothSchedulerRunInterruptStorage,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        storage.recheck_scheduler_software_list_removal(&mut controller, head)
     }
 
     /// Execute the complete reviewed controller HAL-init component.

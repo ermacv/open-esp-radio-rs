@@ -58418,6 +58418,14 @@ pub mod field_read {
         registers.sleep_timer_latched_time_0().read().image().bits()
     }
 
+    /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_software_list_busy(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) -> bool {
+        registers.scheduler_state().read().busy().bit()
+    }
+
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`STATUS_24` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_execution_lock_ready(

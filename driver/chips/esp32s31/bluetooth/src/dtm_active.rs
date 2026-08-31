@@ -284,6 +284,8 @@ pub enum BluetoothDtmActiveCompletionFaultCause {
     PrimaryInterruptFault,
     PostUnlinkNoSchedulerWorkRearmMismatch,
     PostUnlinkPendingRearmMismatch,
+    PostUnlinkRecheckUnavailable,
+    PostUnlinkRecheckRearmMismatch,
     MemoryIdentityMismatch,
     ReservationIdentityMismatch,
     ReceiverCompletionStatusMismatch,
@@ -635,7 +637,7 @@ where
             let step = task.unlink_and_arm_dtm_software_list_removal(observed);
             match step {
                 BluetoothDtmPostUnlinkArmStep::Armed(awaiting) => {
-                    BluetoothDtmRoleCompletionAdvance::WaitPostUnlink(
+                    BluetoothDtmRoleCompletionAdvance::Continue(
                         BluetoothDtmRoleCompletionPhase::PostUnlinkAwaiting { task, awaiting },
                     )
                 }
@@ -680,16 +682,16 @@ where
         BluetoothDtmRoleCompletionPhase::PostUnlinkAwaiting { mut task, awaiting } => {
             let step = task.consume_published_dtm_software_list_removal(awaiting);
             match step {
-                BluetoothDtmSoftwareListRemovalPublishedStep::Waiting(awaiting) => {
-                    BluetoothDtmRoleCompletionAdvance::WaitPostUnlink(
-                        BluetoothDtmRoleCompletionPhase::PostUnlinkAwaiting { task, awaiting },
-                    )
-                }
                 BluetoothDtmSoftwareListRemovalPublishedStep::NoSchedulerWork {
                     awaiting,
                     epoch: _,
                 }
-                | BluetoothDtmSoftwareListRemovalPublishedStep::Pending { awaiting } => {
+                | BluetoothDtmSoftwareListRemovalPublishedStep::PublishedPending { awaiting } => {
+                    BluetoothDtmRoleCompletionAdvance::Continue(
+                        BluetoothDtmRoleCompletionPhase::PostUnlinkAwaiting { task, awaiting },
+                    )
+                }
+                BluetoothDtmSoftwareListRemovalPublishedStep::DirectPending { awaiting } => {
                     BluetoothDtmRoleCompletionAdvance::WaitPostUnlink(
                         BluetoothDtmRoleCompletionPhase::PostUnlinkAwaiting { task, awaiting },
                     )
@@ -743,6 +745,31 @@ where
                         },
                     }
                 }
+                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting } => {
+                    let step = BluetoothDtmSoftwareListRemovalPublishedStep::RecheckUnavailable {
+                        awaiting,
+                    };
+                    BluetoothDtmRoleCompletionAdvance::Fault {
+                        cause: BluetoothDtmActiveCompletionFaultCause::PostUnlinkRecheckUnavailable,
+                        owner: BluetoothDtmRoleCompletionFault::PostUnlinkPublished {
+                            task,
+                            _step: step,
+                        },
+                    }
+                }
+                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked } => {
+                    let step = BluetoothDtmSoftwareListRemovalPublishedStep::RecheckRearmMismatch {
+                        unlinked,
+                    };
+                    BluetoothDtmRoleCompletionAdvance::Fault {
+                        cause:
+                            BluetoothDtmActiveCompletionFaultCause::PostUnlinkRecheckRearmMismatch,
+                        owner: BluetoothDtmRoleCompletionFault::PostUnlinkPublished {
+                            task,
+                            _step: step,
+                        },
+                    }
+                }
                 BluetoothDtmSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch {
                     unlinked,
                     event,
@@ -752,6 +779,20 @@ where
                             unlinked,
                             event,
                         };
+                    BluetoothDtmRoleCompletionAdvance::Fault {
+                        cause: BluetoothDtmActiveCompletionFaultCause::SchedulerIdentityMismatch,
+                        owner: BluetoothDtmRoleCompletionFault::PostUnlinkPublished {
+                            task,
+                            _step: step,
+                        },
+                    }
+                }
+                BluetoothDtmSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch {
+                    unlinked,
+                } => {
+                    let step = BluetoothDtmSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch {
+                        unlinked,
+                    };
                     BluetoothDtmRoleCompletionAdvance::Fault {
                         cause: BluetoothDtmActiveCompletionFaultCause::SchedulerIdentityMismatch,
                         owner: BluetoothDtmRoleCompletionFault::PostUnlinkPublished {

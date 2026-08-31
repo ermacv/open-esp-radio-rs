@@ -91,10 +91,21 @@ where
             backend.wait_scheduler(wake).await;
             Some(EmbassyBluetoothDtmStoppingSignal::Scheduler)
         }
-        StoppingWaitRef::PostUnlink(wake) => {
-            backend.wait_post_unlink(wake).await;
-            Some(EmbassyBluetoothDtmStoppingSignal::PostUnlink)
-        }
+        StoppingWaitRef::PostUnlink(wake) => Some(
+            match crate::select_post_unlink_first(
+                backend.wait_post_unlink(wake),
+                controller_time_recheck,
+            )
+            .await
+            {
+                crate::EmbassyBluetoothPostUnlinkSignal::Mailbox => {
+                    EmbassyBluetoothDtmStoppingSignal::PostUnlink
+                }
+                crate::EmbassyBluetoothPostUnlinkSignal::Recheck => {
+                    EmbassyBluetoothDtmStoppingSignal::ControllerTime
+                }
+            },
+        ),
         StoppingWaitRef::ControllerTime => {
             controller_time_recheck.await;
             Some(EmbassyBluetoothDtmStoppingSignal::ControllerTime)

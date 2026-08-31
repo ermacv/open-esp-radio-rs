@@ -781,7 +781,7 @@ pub struct BluetoothInterruptOutputAfterRoutesOwner {
 /// [`Self::step`] consumes the state and performs exactly one status
 /// observation, which makes cancellation fail-stop and leaves no hidden
 /// spin-loop or RTOS dependency.
-#[must_use = "the disable command admits one bounded status observation"]
+#[must_use = "the disable transaction admits one bounded status observation"]
 pub struct BluetoothControllerSchedulerDisabling {
     request: PacSchedulerDisableRequest,
 }
@@ -847,10 +847,10 @@ impl core::fmt::Debug for BluetoothControllerSchedulerDisableBeginFailure {
 }
 
 impl BluetoothControllerSchedulerDisabling {
-    /// Begin the reviewed scheduler-disable command while the caller retains
-    /// the separate interrupt route epoch for later quiescence.
+    /// Begin the reviewed scheduler-disable transaction while the caller
+    /// retains the separate interrupt route epoch for later quiescence.
     ///
-    /// A controller-time latch still in flight is rejected before the command
+    /// A controller-time latch still in flight is rejected before the request
     /// write and returns the task owner unchanged. Powered task-stopping
     /// lifecycle ownership remains an upper controller-layer requirement.
     ///

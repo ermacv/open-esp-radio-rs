@@ -15,10 +15,10 @@ mod bluetooth_memory_lists;
 mod bluetooth_modem_lp_timer;
 mod bluetooth_phy_init;
 mod bluetooth_scheduler;
+mod bluetooth_scheduler_disable;
 mod bluetooth_scheduler_insertion;
 mod bluetooth_scheduler_lock_modify;
 mod bluetooth_scheduler_runtime;
-mod bluetooth_scheduler_stop;
 mod cfr;
 pub mod clock;
 mod coex;
@@ -126,6 +126,11 @@ pub use bluetooth_scheduler::{
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerRunEventPublished,
 };
+pub use bluetooth_scheduler_disable::{
+    BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisableBeginFailure,
+    BluetoothSchedulerDisableBusyObserved, BluetoothSchedulerDisableIdleObserved,
+    BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableStep,
+};
 pub use bluetooth_scheduler_insertion::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
     BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
@@ -143,11 +148,6 @@ pub use bluetooth_scheduler_runtime::{
     BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalInterruptStep,
     BluetoothSchedulerSoftwareListRemovalJoin, BluetoothSchedulerSoftwareListRemovalReady,
     BluetoothSchedulerWorkObservation,
-};
-pub use bluetooth_scheduler_stop::{
-    BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisableBeginFailure,
-    BluetoothSchedulerDisableBusyObserved, BluetoothSchedulerDisableIdleObserved,
-    BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableStep,
 };
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};

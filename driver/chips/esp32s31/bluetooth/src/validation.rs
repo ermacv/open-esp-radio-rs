@@ -134,8 +134,8 @@ pub unsafe fn prepare_modem_lp_timer_registers() {
     let _terminal_owners = (task, prepared, interrupts);
 }
 
-/// Publish the scheduler-disable command and perform one bounded BUSY sample
-/// through the exact production PAC transaction.
+/// Publish the scheduler lifecycle request for disable and perform one bounded
+/// BUSY sample through the exact production PAC transaction.
 ///
 /// # Safety
 ///

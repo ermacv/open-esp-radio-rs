@@ -121,8 +121,8 @@ pub unsafe fn initialize_bluetooth_controller_hal(config: BluetoothControllerHal
     let _powered_owners = (task, interrupts);
 }
 
-/// Publish the exact scheduler-disable command and perform one bounded status
-/// observation inside an isolated comparison image.
+/// Publish the scheduler lifecycle request for disable and perform one bounded
+/// status observation inside an isolated comparison image.
 ///
 /// `true` means the single fresh read observed the positional BUSY bit set.
 /// Both terminal ownership states and the post-route interrupt bank remain

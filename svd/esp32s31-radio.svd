@@ -17352,28 +17352,17 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SCHEDULER_DISABLE_COMMAND</name>
-          <description>The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown.</description>
+          <name>SCHEDULER_LIFECYCLE_REQUEST</name>
+          <description>The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>COMMAND</name>
-              <description>Complete scheduler-stop command image.</description>
+              <name>IMAGE</name>
+              <description>Complete lifecycle-request image.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
-              <writeConstraint>
-                <useEnumeratedValues>true</useEnumeratedValues>
-              </writeConstraint>
-              <enumeratedValues>
-                <usage>write</usage>
-                <enumeratedValue>
-                  <name>STOP</name>
-                  <description>Request scheduler stop before observing the scheduler busy state.</description>
-                  <value>1</value>
-                </enumeratedValue>
-              </enumeratedValues>
             </field>
           </fields>
         </register>

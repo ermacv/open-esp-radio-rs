@@ -2354,16 +2354,16 @@ access = "write-only"
 address = 537923588
 width = 32
 access = "write-only"
-identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DISABLE_COMMAND"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIFECYCLE_REQUEST"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "scheduler_disable_command"
+register-method = "scheduler_lifecycle_request"
 
 [[registers.fields]]
-svd-name = "COMMAND"
-method = "command"
+svd-name = "IMAGE"
+method = "image"
 bit-offset = 0
 bit-width = 32
 access = "write-only"

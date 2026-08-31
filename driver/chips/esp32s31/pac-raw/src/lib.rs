@@ -40784,7 +40784,7 @@ pub mod bluetooth_controller_core {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         scheduler_control: SchedulerControl,
-        scheduler_disable_command: SchedulerDisableCommand,
+        scheduler_lifecycle_request: SchedulerLifecycleRequest,
         _reserved2: [u8; 0x6c],
         scheduler_sram_pointer_prefix: SchedulerSramPointerPrefix,
         _reserved3: [u8; 0x08],
@@ -40860,10 +40860,10 @@ pub mod bluetooth_controller_core {
         pub const fn scheduler_control(&self) -> &SchedulerControl {
             &self.scheduler_control
         }
-        #[doc = "0x04 - The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown."]
+        #[doc = "0x04 - The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown."]
         #[inline(always)]
-        pub const fn scheduler_disable_command(&self) -> &SchedulerDisableCommand {
-            &self.scheduler_disable_command
+        pub const fn scheduler_lifecycle_request(&self) -> &SchedulerLifecycleRequest {
+            &self.scheduler_lifecycle_request
         }
         #[doc = "0x74 - Hardware initialization publishes bits 22..31 from an SRAM configuration address; scheduler list users OR this prefix with compressed 20-bit pointer values shifted left by two."]
         #[inline(always)]
@@ -41186,58 +41186,30 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_DISABLE_COMMAND (w) register accessor: The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_disable_command::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_disable_command`] module"]
-    #[doc(alias = "SCHEDULER_DISABLE_COMMAND")]
-    pub type SchedulerDisableCommand =
-        crate::Reg<scheduler_disable_command::SchedulerDisableCommandSpec>;
-    #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown."]
-    pub mod scheduler_disable_command {
-        #[doc = "Register `SCHEDULER_DISABLE_COMMAND` writer"]
-        pub type W = crate::W<SchedulerDisableCommandSpec>;
-        #[doc = "Complete scheduler-stop command image."]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #[repr(u32)]
-        pub enum Command {
-            #[doc = "1: Request scheduler stop before observing the scheduler busy state."]
-            Stop = 1,
-        }
-        impl From<Command> for u32 {
-            #[inline(always)]
-            fn from(variant: Command) -> Self {
-                variant as _
-            }
-        }
-        impl crate::FieldSpec for Command {
-            type Ux = u32;
-        }
-        impl crate::IsEnum for Command {}
-        #[doc = "Field `COMMAND` writer - Complete scheduler-stop command image."]
-        pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, Command>;
-        impl<'a, REG> CommandW<'a, REG>
-        where
-            REG: crate::Writable + crate::RegisterSpec,
-            REG::Ux: From<u32>,
-        {
-            #[doc = "Request scheduler stop before observing the scheduler busy state."]
-            #[inline(always)]
-            pub fn stop(self) -> &'a mut crate::W<REG> {
-                self.variant(Command::Stop)
-            }
-        }
+    #[doc = "SCHEDULER_LIFECYCLE_REQUEST (w) register accessor: The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_lifecycle_request`] module"]
+    #[doc(alias = "SCHEDULER_LIFECYCLE_REQUEST")]
+    pub type SchedulerLifecycleRequest =
+        crate::Reg<scheduler_lifecycle_request::SchedulerLifecycleRequestSpec>;
+    #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown."]
+    pub mod scheduler_lifecycle_request {
+        #[doc = "Register `SCHEDULER_LIFECYCLE_REQUEST` writer"]
+        pub type W = crate::W<SchedulerLifecycleRequestSpec>;
+        #[doc = "Field `IMAGE` writer - Complete lifecycle-request image."]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Complete scheduler-stop command image."]
+            #[doc = "Bits 0:31 - Complete lifecycle-request image."]
             #[inline(always)]
-            pub fn command(&mut self) -> CommandW<'_, SchedulerDisableCommandSpec> {
-                CommandW::new(self, 0)
+            pub fn image(&mut self) -> ImageW<'_, SchedulerLifecycleRequestSpec> {
+                ImageW::new(self, 0)
             }
         }
-        #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_disable_command::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerDisableCommandSpec;
-        impl crate::RegisterSpec for SchedulerDisableCommandSpec {
+        #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerLifecycleRequestSpec;
+        impl crate::RegisterSpec for SchedulerLifecycleRequestSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`scheduler_disable_command::W`](W) writer structure"]
-        impl crate::Writable for SchedulerDisableCommandSpec {
+        #[doc = "`write(|w| ..)` method takes [`scheduler_lifecycle_request::W`](W) writer structure"]
+        impl crate::Writable for SchedulerLifecycleRequestSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -59421,18 +59393,6 @@ pub mod fixed_register_write {
         }
     }
 
-    /// Write the `STOP` variant to every bit of `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_DISABLE_COMMAND`.
-    #[inline]
-    pub fn publish_bluetooth_scheduler_stop_command(registers: &crate::BluetoothControllerCore) {
-        // SAFETY: generator validation proves that the sole field covers
-        // all 32 bits and the named writable variant exists in the SVD.
-        unsafe {
-            registers
-                .scheduler_disable_command()
-                .write_with_zero(|writer| writer.command().stop());
-        }
-    }
-
     /// Write the `START` variant to every bit of `BTDM_RUNTIME_CONTROL`.`RUNTIME_TIMER_START_COMMAND`.
     #[inline]
     pub fn start_bluetooth_runtime_timer(registers: &crate::BtdmRuntimeControl) {
@@ -59485,6 +59445,21 @@ pub mod fixed_register_image {
             registers
                 .irq_clear_1()
                 .write_with_zero(|writer| writer.bits(0x00001300));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LIFECYCLE_REQUEST`.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_lifecycle_request_image_1(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .scheduler_lifecycle_request()
+                .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
 

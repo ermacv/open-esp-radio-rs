@@ -4,23 +4,25 @@
 
 use super::{BluetoothInterruptOutputPrepared, BluetoothTaskRegisters, device_fence};
 
-trait BluetoothSchedulerStopCommand {
-    fn publish_stop(&mut self);
+trait BluetoothSchedulerLifecycleRequest {
+    fn publish_image_1(&mut self);
     fn fence(&mut self);
 }
 
-trait BluetoothSchedulerStopStatus {
+trait BluetoothSchedulerDisableStatus {
     fn scheduler_busy(&mut self) -> bool;
     fn fence(&mut self);
 }
 
-struct HardwareStopCommand<'a> {
+struct HardwareLifecycleRequest<'a> {
     controller: &'a super::svd::BluetoothControllerCore,
 }
 
-impl BluetoothSchedulerStopCommand for HardwareStopCommand<'_> {
-    fn publish_stop(&mut self) {
-        super::svd::fixed_register_write::publish_bluetooth_scheduler_stop_command(self.controller);
+impl BluetoothSchedulerLifecycleRequest for HardwareLifecycleRequest<'_> {
+    fn publish_image_1(&mut self) {
+        super::svd::fixed_register_image::publish_bluetooth_scheduler_lifecycle_request_image_1(
+            self.controller,
+        );
     }
 
     fn fence(&mut self) {
@@ -28,11 +30,11 @@ impl BluetoothSchedulerStopCommand for HardwareStopCommand<'_> {
     }
 }
 
-struct HardwareStopStatus<'a> {
+struct HardwareDisableStatus<'a> {
     interrupts: &'a BluetoothInterruptOutputPrepared,
 }
 
-impl BluetoothSchedulerStopStatus for HardwareStopStatus<'_> {
+impl BluetoothSchedulerDisableStatus for HardwareDisableStatus<'_> {
     fn scheduler_busy(&mut self) -> bool {
         self.interrupts.scheduler_busy_after_routes()
     }
@@ -42,19 +44,19 @@ impl BluetoothSchedulerStopStatus for HardwareStopStatus<'_> {
     }
 }
 
-fn execute_stop_begin(
+fn execute_disable_begin(
     controller_time_latch_in_flight: bool,
-    command: &mut impl BluetoothSchedulerStopCommand,
+    request: &mut impl BluetoothSchedulerLifecycleRequest,
 ) -> Result<(), BluetoothSchedulerDisableBeginError> {
     if controller_time_latch_in_flight {
         return Err(BluetoothSchedulerDisableBeginError::ControllerTimeLatchInFlight);
     }
-    command.publish_stop();
-    command.fence();
+    request.publish_image_1();
+    request.fence();
     Ok(())
 }
 
-fn execute_stop_step(status: &mut impl BluetoothSchedulerStopStatus) -> bool {
+fn execute_disable_step(status: &mut impl BluetoothSchedulerDisableStatus) -> bool {
     let busy = status.scheduler_busy();
     if !busy {
         status.fence();
@@ -62,7 +64,7 @@ fn execute_stop_step(status: &mut impl BluetoothSchedulerStopStatus) -> bool {
     busy
 }
 
-/// Why a scheduler stop command could not be published.
+/// Why the scheduler lifecycle request could not be published.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothSchedulerDisableBeginError {
     /// A controller-time latch request still belongs to the task owner.
@@ -100,7 +102,7 @@ impl core::fmt::Debug for BluetoothSchedulerDisableBeginFailure {
     }
 }
 
-/// Scheduler-disable command published while the task owner remains affine.
+/// Scheduler-disable request published while the task owner remains affine.
 ///
 /// This value is intentionally not a `Future`. Each [`Self::step`] performs
 /// exactly one volatile status read and returns immediately. Current evidence
@@ -122,7 +124,7 @@ impl core::fmt::Debug for BluetoothSchedulerDisableBeginFailure {
 ///     let _second = request.step_after_cpu_routes_disabled(interrupts);
 /// }
 /// ```
-#[must_use = "the disable command admits exactly one bounded status observation"]
+#[must_use = "the disable request admits exactly one bounded status observation"]
 pub struct BluetoothSchedulerDisableRequest {
     task: BluetoothTaskRegisters,
 }
@@ -150,8 +152,8 @@ pub struct BluetoothSchedulerDisableBusyObserved {
 
 /// Task ownership after a fresh clear observation of `SCHEDULER_STATE.BUSY`.
 ///
-/// This proves only the reviewed command/read edge. The hardware meaning of
-/// the command remains unknown; CPU routes, packets, PHY, BTBB and clocks are
+/// This proves only the reviewed request/read edge. The hardware meaning of
+/// the request remains unknown; CPU routes, packets, PHY, BTBB and clocks are
 /// not proven quiescent by this value.
 ///
 /// The retained task owner is intentionally not recoverable yet:
@@ -169,8 +171,9 @@ pub struct BluetoothSchedulerDisableIdleObserved {
 }
 
 impl BluetoothTaskRegisters {
-    /// Publish the scheduler disable command while the complete IRQ route epoch
-    /// remains retained by the same lifecycle.
+    /// Publish the scheduler lifecycle request for the disable transaction
+    /// while the complete IRQ route epoch remains retained by the same
+    /// lifecycle.
     ///
     /// SOURCE: complete ESP32-S31 `libbtdm_common.a` `btdm_sched.c` symbol
     /// `r_sym_bt_74l62ZLsZuXg67pPHSd7`, reached from both `r_btdm_task_disable`
@@ -184,24 +187,24 @@ impl BluetoothTaskRegisters {
     pub fn begin_scheduler_disable(
         self,
     ) -> Result<BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableBeginFailure> {
-        begin_scheduler_stop(self)
+        begin_scheduler_disable(self)
     }
 }
 
-fn begin_scheduler_stop(
+fn begin_scheduler_disable(
     task: BluetoothTaskRegisters,
 ) -> Result<BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableBeginFailure> {
     let controller_time_latch_in_flight = task.controller_time_latch.in_flight();
-    let mut command = HardwareStopCommand {
+    let mut request = HardwareLifecycleRequest {
         controller: &task.bluetooth.bluetooth_controller_core,
     };
-    if let Err(error) = execute_stop_begin(controller_time_latch_in_flight, &mut command) {
+    if let Err(error) = execute_disable_begin(controller_time_latch_in_flight, &mut request) {
         return Err(BluetoothSchedulerDisableBeginFailure { task, error });
     }
     Ok(BluetoothSchedulerDisableRequest { task })
 }
 
-fn step_scheduler_stop(
+fn step_scheduler_disable(
     request: BluetoothSchedulerDisableRequest,
     busy: bool,
 ) -> BluetoothSchedulerDisableStep {
@@ -225,10 +228,10 @@ impl BluetoothSchedulerDisableRequest {
         interrupts: &mut BluetoothInterruptOutputPrepared,
     ) -> BluetoothSchedulerDisableStep {
         let busy = {
-            let mut status = HardwareStopStatus { interrupts };
-            execute_stop_step(&mut status)
+            let mut status = HardwareDisableStatus { interrupts };
+            execute_disable_step(&mut status)
         };
-        step_scheduler_stop(self, busy)
+        step_scheduler_disable(self, busy)
     }
 }
 
@@ -239,14 +242,14 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        BluetoothSchedulerDisableBeginError, BluetoothSchedulerStopCommand,
-        BluetoothSchedulerStopStatus, execute_stop_begin, execute_stop_step,
+        BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisableStatus,
+        BluetoothSchedulerLifecycleRequest, execute_disable_begin, execute_disable_step,
     };
     use crate::RadioHardware;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
-        PublishStop,
+        PublishLifecycleRequestImage1,
         ReadBusy(bool),
         Fence,
     }
@@ -257,9 +260,10 @@ mod tests {
         operations: Vec<Operation>,
     }
 
-    impl BluetoothSchedulerStopCommand for Recorder {
-        fn publish_stop(&mut self) {
-            self.operations.push(Operation::PublishStop);
+    impl BluetoothSchedulerLifecycleRequest for Recorder {
+        fn publish_image_1(&mut self) {
+            self.operations
+                .push(Operation::PublishLifecycleRequestImage1);
         }
 
         fn fence(&mut self) {
@@ -267,7 +271,7 @@ mod tests {
         }
     }
 
-    impl BluetoothSchedulerStopStatus for Recorder {
+    impl BluetoothSchedulerDisableStatus for Recorder {
         fn scheduler_busy(&mut self) -> bool {
             let busy = self.states[self.next_state];
             self.next_state += 1;
@@ -281,20 +285,20 @@ mod tests {
     }
 
     #[test]
-    fn stop_publication_precedes_one_idle_observation() {
+    fn lifecycle_request_publication_precedes_one_idle_observation() {
         let mut recorder = Recorder {
             states: [false],
             next_state: 0,
             operations: Vec::new(),
         };
 
-        execute_stop_begin(false, &mut recorder).expect("idle preflight admits command");
-        assert!(!execute_stop_step(&mut recorder));
+        execute_disable_begin(false, &mut recorder).expect("idle preflight admits request");
+        assert!(!execute_disable_step(&mut recorder));
 
         assert_eq!(
             recorder.operations,
             [
-                Operation::PublishStop,
+                Operation::PublishLifecycleRequestImage1,
                 Operation::Fence,
                 Operation::ReadBusy(false),
                 Operation::Fence,
@@ -310,13 +314,13 @@ mod tests {
             operations: Vec::new(),
         };
 
-        execute_stop_begin(false, &mut recorder).expect("idle preflight admits command");
-        assert!(execute_stop_step(&mut recorder));
+        execute_disable_begin(false, &mut recorder).expect("idle preflight admits request");
+        assert!(execute_disable_step(&mut recorder));
 
         assert_eq!(
             recorder.operations,
             [
-                Operation::PublishStop,
+                Operation::PublishLifecycleRequestImage1,
                 Operation::Fence,
                 Operation::ReadBusy(true),
             ]
@@ -324,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn in_flight_time_latch_rejects_before_command_or_fence() {
+    fn in_flight_time_latch_rejects_before_request_or_fence() {
         let mut recorder = Recorder {
             states: [false],
             next_state: 0,
@@ -332,7 +336,7 @@ mod tests {
         };
 
         assert_eq!(
-            execute_stop_begin(true, &mut recorder),
+            execute_disable_begin(true, &mut recorder),
             Err(BluetoothSchedulerDisableBeginError::ControllerTimeLatchInFlight)
         );
         assert!(recorder.operations.is_empty());

@@ -1732,12 +1732,11 @@ value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
-[[fixed-register-writes]]
-name = "publish_bluetooth_scheduler_stop_command"
+[[fixed-register-images]]
+name = "publish_bluetooth_scheduler_lifecycle_request_image_1"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SCHEDULER_DISABLE_COMMAND"
-field = "COMMAND"
-variant = "STOP"
+register = "SCHEDULER_LIFECYCLE_REQUEST"
+value = 0x00000001
 sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
 
 [[fixed-register-writes]]

@@ -6245,8 +6245,8 @@ scope = []
 register-method = "rx_setup_control_0"
 
 [[registers.fields]]
-svd-name = "ENABLE"
-method = "enable"
+svd-name = "SET_BY_RX_SETUP_BIT_0"
+method = "set_by_rx_setup_bit_0"
 bit-offset = 0
 bit-width = 1
 access = "read-write"
@@ -6367,8 +6367,8 @@ scope = []
 register-method = "rx_setup_control_1"
 
 [[registers.fields]]
-svd-name = "ENABLE"
-method = "enable"
+svd-name = "SET_BY_RX_SETUP_BIT_2"
+method = "set_by_rx_setup_bit_2"
 bit-offset = 2
 bit-width = 1
 access = "read-write"

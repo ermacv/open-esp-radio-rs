@@ -20438,13 +20438,14 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
       <registers>
         <register>
           <name>RX_SETUP_CONTROL_0</name>
-          <description>bt_bb_rx_set sets one independently observed control bit.</description>
+          <description>Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ENABLE</name>
+              <name>SET_BY_RX_SETUP_BIT_0</name>
+              <description>Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -20547,13 +20548,14 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
         </register>
         <register>
           <name>RX_SETUP_CONTROL_1</name>
-          <description>bt_bb_rx_set sets one independently observed control bit.</description>
+          <description>Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown.</description>
           <addressOffset>0x4C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ENABLE</name>
+              <name>SET_BY_RX_SETUP_BIT_2</name>
+              <description>Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>

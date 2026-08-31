@@ -5353,10 +5353,10 @@ exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 
 [[field-replace-modifies]]
-name = "initialize_bluetooth_receive_setup_control_1"
+name = "set_bluetooth_receive_setup_control_1_bit_2"
 peripheral = "BT_V3_2_BASEBAND"
 register = "RX_SETUP_CONTROL_1"
-fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+fields = [{ field = "SET_BY_RX_SETUP_BIT_2", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -5479,10 +5479,10 @@ exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 
 [[field-replace-modifies]]
-name = "initialize_bluetooth_receive_setup_control_0"
+name = "set_bluetooth_receive_setup_control_0_bit_0"
 peripheral = "BT_V3_2_BASEBAND"
 register = "RX_SETUP_CONTROL_0"
-fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+fields = [{ field = "SET_BY_RX_SETUP_BIT_0", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]

@@ -48315,7 +48315,7 @@ pub mod bt_v3_2_baseband {
         rx_dpo_control: RxDpoControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - bt_bb_rx_set sets one independently observed control bit."]
+        #[doc = "0x00 - Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
         #[inline(always)]
         pub const fn rx_setup_control_0(&self) -> &RxSetupControl0 {
             &self.rx_setup_control_0
@@ -48340,7 +48340,7 @@ pub mod bt_v3_2_baseband {
         pub const fn tx_config_check_value(&self) -> &TxConfigCheckValue {
             &self.tx_config_check_value
         }
-        #[doc = "0x4c - bt_bb_rx_set sets one independently observed control bit."]
+        #[doc = "0x4c - Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
         #[inline(always)]
         pub const fn rx_setup_control_1(&self) -> &RxSetupControl1 {
             &self.rx_setup_control_1
@@ -48468,34 +48468,34 @@ pub mod bt_v3_2_baseband {
             &self.rx_dpo_control
         }
     }
-    #[doc = "RX_SETUP_CONTROL_0 (rw) register accessor: bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_0`] module"]
+    #[doc = "RX_SETUP_CONTROL_0 (rw) register accessor: Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_0`] module"]
     #[doc(alias = "RX_SETUP_CONTROL_0")]
     pub type RxSetupControl0 = crate::Reg<rx_setup_control_0::RxSetupControl0Spec>;
-    #[doc = "bt_bb_rx_set sets one independently observed control bit."]
+    #[doc = "Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
     pub mod rx_setup_control_0 {
         #[doc = "Register `RX_SETUP_CONTROL_0` reader"]
         pub type R = crate::R<RxSetupControl0Spec>;
         #[doc = "Register `RX_SETUP_CONTROL_0` writer"]
         pub type W = crate::W<RxSetupControl0Spec>;
-        #[doc = "Field `ENABLE` reader - "]
-        pub type EnableR = crate::BitReader;
-        #[doc = "Field `ENABLE` writer - "]
-        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_0` reader - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit0R = crate::BitReader;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_0` writer - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit0W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&self) -> EnableR {
-                EnableR::new((self.bits & 1) != 0)
+            pub fn set_by_rx_setup_bit_0(&self) -> SetByRxSetupBit0R {
+                SetByRxSetupBit0R::new((self.bits & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&mut self) -> EnableW<'_, RxSetupControl0Spec> {
-                EnableW::new(self, 0)
+            pub fn set_by_rx_setup_bit_0(&mut self) -> SetByRxSetupBit0W<'_, RxSetupControl0Spec> {
+                SetByRxSetupBit0W::new(self, 0)
             }
         }
-        #[doc = "bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSetupControl0Spec;
         impl crate::RegisterSpec for RxSetupControl0Spec {
             type Ux = u32;
@@ -48678,34 +48678,34 @@ pub mod bt_v3_2_baseband {
         #[doc = "`read()` method returns [`tx_config_check_value::R`](R) reader structure"]
         impl crate::Readable for TxConfigCheckValueSpec {}
     }
-    #[doc = "RX_SETUP_CONTROL_1 (rw) register accessor: bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_1`] module"]
+    #[doc = "RX_SETUP_CONTROL_1 (rw) register accessor: Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_1`] module"]
     #[doc(alias = "RX_SETUP_CONTROL_1")]
     pub type RxSetupControl1 = crate::Reg<rx_setup_control_1::RxSetupControl1Spec>;
-    #[doc = "bt_bb_rx_set sets one independently observed control bit."]
+    #[doc = "Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
     pub mod rx_setup_control_1 {
         #[doc = "Register `RX_SETUP_CONTROL_1` reader"]
         pub type R = crate::R<RxSetupControl1Spec>;
         #[doc = "Register `RX_SETUP_CONTROL_1` writer"]
         pub type W = crate::W<RxSetupControl1Spec>;
-        #[doc = "Field `ENABLE` reader - "]
-        pub type EnableR = crate::BitReader;
-        #[doc = "Field `ENABLE` writer - "]
-        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_2` reader - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit2R = crate::BitReader;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_2` writer - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit2W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&self) -> EnableR {
-                EnableR::new(((self.bits >> 2) & 1) != 0)
+            pub fn set_by_rx_setup_bit_2(&self) -> SetByRxSetupBit2R {
+                SetByRxSetupBit2R::new(((self.bits >> 2) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&mut self) -> EnableW<'_, RxSetupControl1Spec> {
-                EnableW::new(self, 2)
+            pub fn set_by_rx_setup_bit_2(&mut self) -> SetByRxSetupBit2W<'_, RxSetupControl1Spec> {
+                SetByRxSetupBit2W::new(self, 2)
             }
         }
-        #[doc = "bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSetupControl1Spec;
         impl crate::RegisterSpec for RxSetupControl1Spec {
             type Ux = u32;
@@ -65768,14 +65768,16 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields [SET_BY_RX_SETUP_BIT_2] from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn initialize_bluetooth_receive_setup_control_1(registers: &crate::BtV3_2Baseband) {
+    pub fn set_bluetooth_receive_setup_control_1_bit_2(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_1().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.enable().bit((input & 0x00000001) != 0)
+            writer
+                .set_by_rx_setup_bit_2()
+                .bit((input & 0x00000001) != 0)
         });
     }
 
@@ -65926,14 +65928,16 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields [SET_BY_RX_SETUP_BIT_0] from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn initialize_bluetooth_receive_setup_control_0(registers: &crate::BtV3_2Baseband) {
+    pub fn set_bluetooth_receive_setup_control_0_bit_0(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_0().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.enable().bit((input & 0x00000001) != 0)
+            writer
+                .set_by_rx_setup_bit_0()
+                .bit((input & 0x00000001) != 0)
         });
     }
 

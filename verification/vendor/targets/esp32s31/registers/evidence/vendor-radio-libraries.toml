@@ -71,7 +71,7 @@ description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add
 
 [[sources]]
 id = "BLOB_LIBBTBB_BT_RX_SETUP"
-description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete named bt_bb_rx_set body and its complete bt_agc_v2_set leaf. Their fresh-read RMW operations prove the recorded BTAGC field geometry and finite images. The parent body also performs a fresh-read RMW that clears 0x20104C24 bit 31 while preserving bits 30:0; that physical word is independently used by Wi-Fi MAC initialization and therefore has a shared-radio owner. Neutral CONFIG names deliberately avoid assigning undocumented receive/AGC semantics beyond the function boundary."
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete named bt_bb_rx_set body and its complete bt_agc_v2_set leaf. Their fresh-read RMW operations prove the recorded BTAGC field geometry and finite images. The complete parent also sets 0x20102000 bit 0 and 0x2010204c bit 2 through separate fresh-read RMW operations; this proves only their positional set-by-RX-setup behavior, not an independent hardware enable semantic. The parent body also performs a fresh-read RMW that clears 0x20104C24 bit 31 while preserving bits 30:0; that physical word is independently used by Wi-Fi MAC initialization and therefore has a shared-radio owner. Neutral CONFIG names deliberately avoid assigning undocumented receive/AGC semantics beyond the function boundary."
 
 [[sources]]
 id = "BLOB_LIBBTBB_SHARED_RX_INIT"

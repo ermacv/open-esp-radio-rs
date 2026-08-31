@@ -353,6 +353,35 @@ privacy, central role, extended PHY/advertising, ISO, low power and concurrent
 coexistence. Each step adds HCI support only after its Link Layer owner is
 live.
 
+Legacy non-connectable advertising now has an independent Blobray review scope,
+`ble-legacy-nonconnectable-advertising`. Its frontier deliberately does not
+inherit DTM packet state: the DTM access address, channel image, timing policy
+and descriptor field meanings are role-specific observations. The advertising
+scope follows current linked PDU builders, role reset/start, first/next primary
+event scheduling, recycling and asynchronous finished-list delivery.
+
+The public `esp_ble_adv_aa_setting` entry is present only in raw
+`libble_app.a(94.o)` for the pinned input. It combines its two 16-bit arguments
+and stores the result at offset `0x30` of a software environment. This proves a
+setter boundary only. It does not prove byte order at the packet engine, the
+link-state/descriptor publication edge, or the hardware consumer. Keep those
+as blockers and inspect the setter explicitly with:
+
+```console
+tools/blobray/scripts/run-limited \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml \
+  inspect function ble:esp_ble_adv_aa_setting \
+  --artifact _oracles/libble_app.a --member 94.o --full --details
+```
+
+The next production admission gate requires current-artifact evidence for all
+of the following connected edges: advertising access address and CRC init into
+the hardware-consumed packet state; primary channel into both RF frequency and
+whitening seed; PDU header, buffer and length publication; event timing/list
+role; and completion status plus recycling. Until then the S31 implementation
+may prepare and cancel a bounded PDU but must not publish it to hardware.
+
 ## 6. Blocking unknowns
 
 The decisive gaps are not HCI packet syntax. They are:

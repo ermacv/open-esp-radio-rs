@@ -783,6 +783,40 @@ roots = [
 ]
 include-reachable = true
 
+# Legacy advertising has a different packet-engine and SRAM contract from
+# Direct Test Mode.  Keep its builders, event scheduler and completion path in
+# one independent research frontier so DTM's access address, channel lowering,
+# timing and descriptor interpretations cannot leak into the advertising
+# driver.  Same-chip public source establishes the role of these current
+# symbols through object-section correspondence; the linked current artifact,
+# not the old source, remains the authority for their behavior.
+#
+# esp_ble_adv_aa_setting is intentionally absent: the canonical linked image
+# dead-strips that public setter.  Inspect it directly in libble_app.a member
+# 94.o as inventory evidence; its environment write is not yet evidence of the
+# hardware-consumed access-address layout or byte order.
+[[review.scopes]]
+id = "ble-legacy-nonconnectable-advertising"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    # Primary-channel PDU construction and role reset/start lifecycle.
+    "ble-controller:r_sym_ble_MrW1ZaJZqsHzi3wwRhsn",
+    "ble-controller:r_sym_ble_c9Zmr2aWmPOsZoITHDe9",
+    "ble-controller:r_sym_ble_fxKAT8in6cXLv0gLB2W5",
+    "ble-controller:r_sym_ble_fiiv8hEPVagnOAVa7EM2",
+    "ble-controller:r_sym_ble_cfILxLFIWftw22I0zQab",
+    "ble-controller:r_sym_ble_8UzoZYkzYu9MXbM1vyWN",
+    # First/next primary event scheduling plus callback-owned recycling.
+    "ble-controller:r_sym_ble_mqh4OXzoN59kvnkKFMA1",
+    "ble-controller:r_sym_ble_77zgK6v8rbStzf0ReBjv",
+    "ble-controller:r_sym_ble_pfcv0QVYrNS6KoQetydw",
+    # Asynchronous hardware-finished ingress and BLE scheduler consumption.
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
 [[review.scopes]]
 id = "ieee802154-baseband-leaves"
 protocols = ["ieee802154"]

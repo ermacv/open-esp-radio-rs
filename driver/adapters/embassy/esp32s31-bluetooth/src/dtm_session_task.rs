@@ -47,7 +47,19 @@ pub trait EmbassyBluetoothDtmControllerTimeRecheck {
     where
         Self: 'borrow;
 
+    /// Whether another finite absolute recheck can still be constructed.
+    fn status(&self) -> EmbassyBluetoothDtmControllerTimeRecheckStatus;
+
     fn wait_until_absolute_recheck(&mut self) -> Self::Recheck<'_>;
+}
+
+/// Availability of the next absolute Controller-time recheck.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EmbassyBluetoothDtmControllerTimeRecheckStatus {
+    /// One representable absolute deadline remains available.
+    Scheduled,
+    /// Advancing the absolute schedule exceeded the monotonic timeline.
+    TimelineExhausted,
 }
 
 /// Phase retained after a recoverable transition asks the supervisor to retry.
@@ -123,6 +135,7 @@ enum DtmSessionStimulus {
     RetainedEndpointMismatch,
     RetainedFault,
     RetainedExternalFrame,
+    ControllerTimeExhausted,
     ResetBarrier,
     TransferredControllerEndpointMismatch,
     TerminalFault,
@@ -156,8 +169,8 @@ const fn reduce_dtm_session_transition(
 ) -> DtmSessionAction {
     use DtmSessionAction::{Advance, RetainBoundary, TerminalBoundary, TransferBoundary};
     use DtmSessionStimulus::{
-        Completed, Continue, ControllerResponsePending, ResetBarrier, RestoreRequired,
-        RetainedEndpointMismatch, RetainedExternalFrame, RetainedFault, Retry,
+        Completed, Continue, ControllerResponsePending, ControllerTimeExhausted, ResetBarrier,
+        RestoreRequired, RetainedEndpointMismatch, RetainedExternalFrame, RetainedFault, Retry,
         StoppingResponseReady, TerminalFault, TestEnd, TransferredControllerEndpointMismatch,
         Unrelated,
     };
@@ -175,6 +188,7 @@ const fn reduce_dtm_session_transition(
         (PendingResponse | CommandReady | Stopping | TestEndResponse, Continue) => Advance(phase),
         (PendingResponse | CommandReady | Stopping | Restore, Retry) => RetainBoundary,
         (PendingResponse | CommandReady | Stopping, Unrelated) => RetainBoundary,
+        (PendingResponse | CommandReady | Stopping, ControllerTimeExhausted) => RetainBoundary,
         (PendingResponse | CommandReady | TestEndResponse, RetainedEndpointMismatch) => {
             RetainBoundary
         }
@@ -213,6 +227,8 @@ where
     HciFault(HciChannelError),
     /// A finite lower transition retained its owner for an explicit retry.
     Retryable(EmbassyBluetoothDtmSessionRetry),
+    /// The absolute Controller-time schedule is exhausted; the complete session stays stored.
+    ControllerTimeExhausted,
     /// Active radio progress failed closed with both axes retained in the fault.
     PendingRadioFault(
         BluetoothDtmActiveSessionFault<
@@ -617,6 +633,12 @@ where
         let Some(wait) = EmbassyBluetoothDtmActiveWait::from_waiting(session, wakers) else {
             return self.step_pending_radio();
         };
+        if recheck.status() == EmbassyBluetoothDtmControllerTimeRecheckStatus::TimelineExhausted {
+            return Some(self.retain_existing_transition(
+                DtmSessionStimulus::ControllerTimeExhausted,
+                EmbassyBluetoothDtmSessionBoundary::ControllerTimeExhausted,
+            ));
+        }
         match wait
             .wait_next(controller, recheck.wait_until_absolute_recheck())
             .await
@@ -667,6 +689,13 @@ where
                 }
                 continue;
             };
+            if recheck.status() == EmbassyBluetoothDtmControllerTimeRecheckStatus::TimelineExhausted
+            {
+                return Some(self.retain_existing_transition(
+                    DtmSessionStimulus::ControllerTimeExhausted,
+                    EmbassyBluetoothDtmSessionBoundary::ControllerTimeExhausted,
+                ));
+            }
             match wait
                 .wait_next(controller, recheck.wait_until_absolute_recheck())
                 .await
@@ -758,6 +787,13 @@ where
             unreachable!("the selected stopping phase did not change")
         };
         if let Some(wait) = EmbassyBluetoothDtmStoppingWait::from_waiting(runner, wakers) {
+            if recheck.status() == EmbassyBluetoothDtmControllerTimeRecheckStatus::TimelineExhausted
+            {
+                return Some(self.retain_existing_transition(
+                    DtmSessionStimulus::ControllerTimeExhausted,
+                    EmbassyBluetoothDtmSessionBoundary::ControllerTimeExhausted,
+                ));
+            }
             wait.wait_next(recheck.wait_until_absolute_recheck()).await;
         }
         self.step_stopping()
@@ -1155,10 +1191,10 @@ mod tests {
     fn production_reducer_covers_each_task_phase_and_action() {
         use DtmSessionAction::{Advance, RetainBoundary, TerminalBoundary, TransferBoundary};
         use DtmSessionStimulus::{
-            Completed, Continue, ControllerResponsePending, ResetBarrier, ResponsePublished,
-            RestoreRequired, RetainedEndpointMismatch, RetainedExternalFrame, RetainedFault, Retry,
-            StoppingResponseReady, TerminalFault, TestEnd, TransferredControllerEndpointMismatch,
-            Unrelated,
+            Completed, Continue, ControllerResponsePending, ControllerTimeExhausted, ResetBarrier,
+            ResponsePublished, RestoreRequired, RetainedEndpointMismatch, RetainedExternalFrame,
+            RetainedFault, Retry, StoppingResponseReady, TerminalFault, TestEnd,
+            TransferredControllerEndpointMismatch, Unrelated,
         };
         use EmbassyBluetoothDtmSessionPhase::{
             CommandReady, PendingResponse, Restore, Stopping, TestEndResponse,
@@ -1182,6 +1218,9 @@ mod tests {
             (Stopping, Unrelated, RetainBoundary),
             (PendingResponse, RetainedEndpointMismatch, RetainBoundary),
             (CommandReady, RetainedFault, RetainBoundary),
+            (PendingResponse, ControllerTimeExhausted, RetainBoundary),
+            (CommandReady, ControllerTimeExhausted, RetainBoundary),
+            (Stopping, ControllerTimeExhausted, RetainBoundary),
             (PendingResponse, TerminalFault, TerminalBoundary),
             (CommandReady, ResetBarrier, TransferBoundary),
             (

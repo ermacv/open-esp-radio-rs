@@ -23,6 +23,7 @@ use embassy_time::{Instant, Timer};
 
 #[cfg(target_arch = "riscv32")]
 use crate::EmbassyBluetoothDtmControllerTimeRecheck;
+use crate::EmbassyBluetoothDtmControllerTimeRecheckStatus;
 
 /// Nonzero spacing between successive absolute Controller-time rechecks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -119,6 +120,17 @@ impl AbsoluteRecheckSchedule {
 
     const fn state(&self) -> EmbassyBluetoothDtmRecheckScheduleState {
         self.state
+    }
+
+    const fn status(&self) -> EmbassyBluetoothDtmControllerTimeRecheckStatus {
+        match self.state {
+            EmbassyBluetoothDtmRecheckScheduleState::Scheduled(_) => {
+                EmbassyBluetoothDtmControllerTimeRecheckStatus::Scheduled
+            }
+            EmbassyBluetoothDtmRecheckScheduleState::TimelineExhausted => {
+                EmbassyBluetoothDtmControllerTimeRecheckStatus::TimelineExhausted
+            }
+        }
     }
 
     fn begin_wait(&mut self) -> Option<AbsoluteRecheckWaitLease<'_>> {
@@ -235,6 +247,10 @@ impl EmbassyBluetoothDtmControllerTimeRecheck for EmbassyBluetoothDtmAbsoluteRec
     where
         Self: 'borrow;
 
+    fn status(&self) -> EmbassyBluetoothDtmControllerTimeRecheckStatus {
+        self.schedule.status()
+    }
+
     fn wait_until_absolute_recheck(&mut self) -> Self::Recheck<'_> {
         let lease = self.schedule.begin_wait();
         let timer = lease
@@ -253,6 +269,7 @@ mod tests {
         EmbassyBluetoothDtmRecheckPeriod, EmbassyBluetoothDtmRecheckPeriodError,
         EmbassyBluetoothDtmRecheckScheduleState,
     };
+    use crate::EmbassyBluetoothDtmControllerTimeRecheckStatus;
 
     #[test]
     fn period_is_nonzero_and_keeps_executor_tick_units() {
@@ -317,6 +334,10 @@ mod tests {
             EmbassyBluetoothDtmRecheckDeadline::from_ticks(u64::MAX - 1),
             period,
         );
+        assert_eq!(
+            schedule.status(),
+            EmbassyBluetoothDtmControllerTimeRecheckStatus::Scheduled
+        );
         schedule
             .begin_wait()
             .expect("the final representable deadline is armed")
@@ -325,6 +346,10 @@ mod tests {
         assert_eq!(
             schedule.state(),
             EmbassyBluetoothDtmRecheckScheduleState::TimelineExhausted
+        );
+        assert_eq!(
+            schedule.status(),
+            EmbassyBluetoothDtmControllerTimeRecheckStatus::TimelineExhausted
         );
         assert!(schedule.begin_wait().is_none());
     }

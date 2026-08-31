@@ -36,10 +36,10 @@ use open_esp_radio_esp32s31_bluetooth::{
 
 #[cfg(target_arch = "riscv32")]
 use crate::{
-    EmbassyBluetoothDtmControllerTimeRecheck, EmbassyBluetoothDtmFirstControllerTimeWait,
-    EmbassyBluetoothDtmFirstDrive, EmbassyBluetoothDtmFirstResume,
-    EmbassyBluetoothDtmSessionBoundary, EmbassyBluetoothDtmSessionTask,
-    EmbassyBluetoothRuntimeWakers, drive_dtm_first_ready,
+    EmbassyBluetoothDtmControllerTimeRecheck, EmbassyBluetoothDtmControllerTimeRecheckStatus,
+    EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
+    EmbassyBluetoothDtmFirstResume, EmbassyBluetoothDtmSessionBoundary,
+    EmbassyBluetoothDtmSessionTask, EmbassyBluetoothRuntimeWakers, drive_dtm_first_ready,
 };
 
 /// Observable phase of the sole Controller command actor.
@@ -227,6 +227,8 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     HciFault(HciChannelError),
     /// A lower owner remained intact and requires an explicit retry.
     Retryable(EmbassyBluetoothControllerRetry),
+    /// The absolute Controller-time schedule is exhausted; the actor retains its owner.
+    ControllerTimeExhausted,
     /// A scheduler list unrelated to the current DTM transaction remains observable.
     UnrelatedList(BluetoothSchedulerFinishedHardwareListObserved),
     /// An unrecovered initial transition failed before scheduler `RUN`.
@@ -503,6 +505,12 @@ where
     ) -> EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY> {
         let mut packet = Some(packet);
         loop {
+            if recheck.status() == EmbassyBluetoothDtmControllerTimeRecheckStatus::TimelineExhausted
+            {
+                return self.retain_boundary(
+                    EmbassyBluetoothControllerCommandBoundary::ControllerTimeExhausted,
+                );
+            }
             match self.phase() {
                 EmbassyBluetoothControllerCommandPhase::Idle => {
                     let EmbassyBluetoothControllerCommandState::Idle(idle) = self.owner.current()
@@ -875,6 +883,11 @@ where
                                 EmbassyBluetoothControllerCommandBoundary::Retryable(
                                     EmbassyBluetoothControllerRetry::Active(retry),
                                 ),
+                            );
+                        }
+                        EmbassyBluetoothDtmSessionBoundary::ControllerTimeExhausted => {
+                            return self.retain_boundary(
+                                EmbassyBluetoothControllerCommandBoundary::ControllerTimeExhausted,
                             );
                         }
                         EmbassyBluetoothDtmSessionBoundary::PendingRadioFault(fault) => {

@@ -81,10 +81,10 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
-  { axis = "implementation", id = "live-route-and-idle-to-active-session-composition-missing" },
+  { axis = "implementation", id = "production-cold-start-config-and-final-owner-placement-missing" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
-  { axis = "async", id = "stable-route-ready-but-controller-task-runner-composition-missing" },
+  { axis = "async", id = "cold-start-phy-tracking-policy-and-runner-spawn-missing" },
 ]
 
 [[capabilities]]
@@ -99,10 +99,10 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "absolute-deadline-provider-not-yet-composed-into-powered-runner" },
+  { axis = "implementation", id = "source-127-expiration-consumer-and-periodic-phy-tracking-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
-  { axis = "async", id = "live-controller-task-and-recheck-deadline-policy-missing" },
+  { axis = "async", id = "physical-counter-wake-causality-and-timeline-exhaustion-recovery-missing" },
 ]
 
 [[capabilities]]
@@ -136,7 +136,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/verification-policy.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "ble-environment-word-semantics-stable-routes-and-packet-engine-missing" },
+  { axis = "implementation", id = "ble-environment-word-semantics-and-packet-engine-missing" },
   { axis = "hil", id = "ble-phy-register-init-and-storage-publication-cell-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },
 ]
@@ -156,10 +156,10 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "scanner-resume-action-deferred-until-scan-ull" },
-  { axis = "implementation", id = "source-127-task-not-yet-composed-into-outer-runner-and-feature-specific-nrt-policy-missing" },
+  { axis = "implementation", id = "feature-specific-nrt-policy-missing" },
   { axis = "vendor", id = "complete-interrupt-production-trace-missing" },
   { axis = "hil", id = "bluetooth-interrupt-epoch-hil-missing" },
-  { axis = "async", id = "source-127-wake-ready-but-outer-runner-and-bounded-finished-list-role-dispatch-missing" },
+  { axis = "async", id = "bounded-finished-list-role-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -193,7 +193,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "idle-to-active-session-owner-integration-missing" },
+  { axis = "implementation", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -211,7 +211,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "idle-to-active-powered-session-composition-missing" },
+  { axis = "implementation", id = "rx-result-crc-rssi-and-live-packet-engine-semantics-missing" },
   { axis = "vendor", id = "rx-result-high-byte-length-crc-and-rssi-semantics-missing" },
   { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
 ]
@@ -265,7 +265,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "idle-to-active-powered-session-composition-missing" },
+  { axis = "implementation", id = "live-packet-engine-header-consumer-missing" },
   { axis = "vendor", id = "packet-engine-header-consumer-and-publication-order-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
 ]
@@ -283,7 +283,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "powered-deadline-recheck-provider-and-idle-session-composition-missing" },
+  { axis = "implementation", id = "physical-counter-contract-and-on-air-timing-validation-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]
@@ -339,7 +339,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "idle-to-active-powered-controller-composition-missing" },
+  { axis = "implementation", id = "nonempty-list-lock-modify-admission-missing" },
   { axis = "vendor", id = "source-3-current-revision-trigger-proof-missing" },
   { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
 ]
@@ -357,11 +357,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-idle-session-entry-missing" },
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
-  { axis = "async", id = "outer-finished-list-dispatch-and-powered-task-composition-missing" },
+  { axis = "async", id = "outer-finished-list-role-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -376,11 +376,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "production-command-actor-spawn-live-wake-and-unrelated-list-composition-missing" },
+  { axis = "implementation", id = "unrelated-list-dispatch-and-live-radio-role-composition-missing" },
   { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
-  { axis = "async", id = "source-127-and-deadline-adapters-ready-but-outer-runner-and-unrelated-list-dispatch-missing" },
+  { axis = "async", id = "unrelated-list-and-modem-expiration-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -414,11 +414,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "production-final-split-command-actor-spawn-and-link-layer-router-missing" },
+  { axis = "implementation", id = "link-layer-and-acl-router-missing" },
   { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
-  { axis = "async", id = "live-isr-source-127-deadline-unrelated-dispatch-and-acl-credit-selection-missing" },
+  { axis = "async", id = "unrelated-dispatch-and-acl-credit-selection-missing" },
 ]
 
 [[capabilities]]
@@ -433,11 +433,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "link-layer-runtime-and-powered-embassy-hardware-owner-missing" },
+  { axis = "implementation", id = "production-cold-start-and-link-layer-runtime-missing" },
   { axis = "host", id = "controller-endpoint-tests-have-no-virtual-time-link-layer-runtime" },
   { axis = "vendor", id = "controller-task-order-and-event-contracts-missing" },
   { axis = "hil", id = "controller-runtime-latency-and-soak-cells-missing" },
-  { axis = "async", id = "powered-runtime-owner-and-controller-event-loop-missing" },
+  { axis = "async", id = "cold-start-spawn-unrelated-list-timer-expiration-and-powered-shutdown-missing" },
 ]
 
 [[capabilities]]

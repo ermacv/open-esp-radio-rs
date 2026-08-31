@@ -158,10 +158,7 @@ impl Esp32s31BluetoothInterruptRuntimeStorage {
             .bind_routes(dispatch_bluetooth_interrupt)
             .map_err(Esp32s31BluetoothInterruptBindError::Route)?;
 
-        Ok(Esp32s31BluetoothInterruptRuntime {
-            _routes: routes,
-            dispatch,
-        })
+        Ok(Esp32s31BluetoothInterruptRuntime { routes, dispatch })
     }
 }
 
@@ -187,8 +184,32 @@ pub enum Esp32s31BluetoothInterruptBindError {
 /// the sole outer Controller runner.
 #[must_use = "the live Bluetooth interrupt epoch must remain owned by its Controller runner"]
 pub struct Esp32s31BluetoothInterruptRuntime {
-    _routes: BoundEspHalBluetoothInterruptEpoch<'static>,
+    routes: BoundEspHalBluetoothInterruptEpoch<'static>,
     dispatch: &'static Esp32s31BluetoothInterruptDispatch,
+}
+
+/// Failed full-route shutdown retaining the unchanged live interrupt runtime.
+#[must_use = "a rejected shutdown still owns all three live Bluetooth routes"]
+pub struct Esp32s31BluetoothInterruptDisableFailure {
+    error: EspHalBluetoothInterruptRouteError,
+    runtime: Esp32s31BluetoothInterruptRuntime,
+}
+
+impl Esp32s31BluetoothInterruptDisableFailure {
+    /// Exact all-route shutdown rejection.
+    pub const fn error(&self) -> EspHalBluetoothInterruptRouteError {
+        self.error
+    }
+
+    /// Recover the rejection and unchanged live runtime for a later retry.
+    pub fn into_parts(
+        self,
+    ) -> (
+        EspHalBluetoothInterruptRouteError,
+        Esp32s31BluetoothInterruptRuntime,
+    ) {
+        (self.error, self.runtime)
+    }
 }
 
 impl Esp32s31BluetoothInterruptRuntime {
@@ -203,6 +224,25 @@ impl Esp32s31BluetoothInterruptRuntime {
     /// polling it from a replacement outer-runner wait cannot lose the cause.
     pub async fn wait_fault(&self) -> Esp32s31BluetoothInterruptFault {
         self.dispatch.fault.wait().await
+    }
+
+    /// Disable the complete source-124/source-127/source-133 route set.
+    ///
+    /// A rejected ESP-HAL transition reconstructs this exact runtime, so a
+    /// terminal quarantine can retain or retry shutdown without reminting any
+    /// handler owner.
+    pub fn disable(self) -> Result<(), Esp32s31BluetoothInterruptDisableFailure> {
+        let Self { routes, dispatch } = self;
+        match routes.disable() {
+            Ok(()) => Ok(()),
+            Err(failure) => {
+                let (error, routes) = failure.into_parts();
+                Err(Esp32s31BluetoothInterruptDisableFailure {
+                    error,
+                    runtime: Self { routes, dispatch },
+                })
+            }
+        }
     }
 }
 

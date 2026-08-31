@@ -14,11 +14,22 @@
 mod interrupt_fault;
 #[cfg(target_arch = "riscv32")]
 mod interrupt_runtime;
+#[cfg(any(test, target_arch = "riscv32"))]
+mod runner_policy;
+#[cfg(target_arch = "riscv32")]
+mod system;
 
 #[cfg(target_arch = "riscv32")]
 pub use interrupt_runtime::{
-    Esp32s31BluetoothInterruptBindError, Esp32s31BluetoothInterruptFault,
-    Esp32s31BluetoothInterruptRuntime, bind_production_bluetooth_interrupt_runtime,
+    Esp32s31BluetoothInterruptBindError, Esp32s31BluetoothInterruptDisableFailure,
+    Esp32s31BluetoothInterruptFault, Esp32s31BluetoothInterruptRuntime,
+    bind_production_bluetooth_interrupt_runtime,
+};
+#[cfg(target_arch = "riscv32")]
+pub use system::{
+    Esp32s31BluetoothHardwareRunner, Esp32s31BluetoothHostController,
+    Esp32s31BluetoothInterruptCompositionFailure, Esp32s31BluetoothRunners,
+    Esp32s31BluetoothSystem, Esp32s31BluetoothSystemBuildError, compose_esp32s31_bluetooth_system,
 };
 
 use core::sync::atomic::{AtomicBool, Ordering};

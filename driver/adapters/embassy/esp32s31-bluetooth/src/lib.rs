@@ -38,7 +38,8 @@ pub use dtm_first::{
 };
 
 pub use dtm_session_task::{
-    EmbassyBluetoothDtmControllerTimeRecheck, EmbassyBluetoothDtmSessionRetry,
+    EmbassyBluetoothDtmControllerTimeRecheck, EmbassyBluetoothDtmControllerTimeRecheckStatus,
+    EmbassyBluetoothDtmSessionRetry,
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_session_task::{EmbassyBluetoothDtmSessionBoundary, EmbassyBluetoothDtmSessionTask};

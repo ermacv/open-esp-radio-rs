@@ -13,6 +13,7 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerSoftwareListRemovalReady,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -972,6 +973,114 @@ impl BluetoothLegacyAdvertisingMemoryGraphCompletionObserved {
     pub const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
         self.status
     }
+
+    /// Bind the exact post-unlink removal proof before any SRAM cleanup.
+    pub fn prepare_recycle_after_software_list_removal(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<
+        BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared,
+        BluetoothLegacyAdvertisingMemoryGraphRecycleFailure,
+    > {
+        let error = if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(BluetoothLegacyAdvertisingMemoryGraphRecycleError::HardwareListMismatch)
+        } else if removal.completed_head().address() != Some(self.scheduler_item_address()) {
+            Some(BluetoothLegacyAdvertisingMemoryGraphRecycleError::SchedulerItemMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(BluetoothLegacyAdvertisingMemoryGraphRecycleFailure {
+                error,
+                completed: self,
+                removal,
+            });
+        }
+        Ok(BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared {
+            completed: self,
+            removal,
+        })
+    }
+}
+
+/// Completed advertising graph validated for the CPU-owned recycle suffix.
+#[must_use = "the recycle transaction must be committed or returned unchanged"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared {
+    completed: BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared {
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+
+    /// Return the released graph to its pristine CPU-owned allocation state.
+    pub fn commit(self) -> BluetoothLegacyAdvertisingMemoryGraphRecycled {
+        let BluetoothLegacyAdvertisingMemoryGraphCompletionObserved { owner, status } =
+            self.completed;
+        let BluetoothLegacyAdvertisingMemoryGraphRunning {
+            storage,
+            binding,
+            _packet_length: _,
+        } = owner;
+        let mut owner = BluetoothLegacyAdvertisingMemoryGraphCpuOwned { storage, binding };
+        owner.reinitialize_graph();
+        BluetoothLegacyAdvertisingMemoryGraphRecycled { owner, status }
+    }
+}
+
+/// Why a completed advertising graph rejected recycle authorization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingMemoryGraphRecycleError {
+    HardwareListMismatch,
+    SchedulerItemMismatch,
+}
+
+/// Lossless lower recycle rejection retaining both affine owners.
+#[must_use = "the completed graph and removal proof remain owned"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphRecycleFailure {
+    error: BluetoothLegacyAdvertisingMemoryGraphRecycleError,
+    completed: BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphRecycleFailure {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingMemoryGraphRecycleError {
+        self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+}
+
+/// CPU-owned advertising graph plus the unresolved hardware completion status.
+#[must_use = "the memory owner and completion status must reach the role owner"]
+pub struct BluetoothLegacyAdvertisingMemoryGraphRecycled {
+    owner: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    status: BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+}
+
+impl BluetoothLegacyAdvertisingMemoryGraphRecycled {
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+    ) {
+        (self.owner, self.status)
+    }
 }
 
 /// Why the reset graph could not become a first-event graph.
@@ -1150,6 +1259,8 @@ impl Default for BluetoothLegacyAdvertisingMemoryGraphStorage {
 mod tests {
     use open_esp_radio_esp32s31_hal::{
         BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+        BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+        BluetoothSchedulerHardwareListIndex, BluetoothSchedulerSoftwareListRemovalReady,
     };
 
     use super::{
@@ -1272,6 +1383,7 @@ mod tests {
             binding: prepared.binding,
             _packet_length: prepared.packet_length,
         };
+        let scheduler_item_address = running.scheduler_item_address();
         let observation =
             BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0])
                 .expect("list zero is representable");
@@ -1290,5 +1402,22 @@ mod tests {
             completed.status(),
             super::BluetoothLegacyAdvertisingSchedulerItemCompletionStatus::Zero
         );
+        let head = BluetoothSchedulerHardwareListHead::from_address(scheduler_item_address)
+            .expect("the retained graph has a nonempty scheduler-head identity");
+        let empty = BluetoothSchedulerHardwareListHeadEmptyObserved::from_identity_for_validation(
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            head,
+        );
+        let removal = BluetoothSchedulerSoftwareListRemovalReady::from_head_for_validation(empty);
+        let recycled = match completed.prepare_recycle_after_software_list_removal(removal) {
+            Ok(prepared) => prepared.commit(),
+            Err(_) => panic!("the matching removal proof must release the advertising graph"),
+        };
+        let (owner, status) = recycled.into_parts();
+        assert_eq!(
+            status,
+            super::BluetoothLegacyAdvertisingSchedulerItemCompletionStatus::Zero
+        );
+        assert!(owner.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
     }
 }

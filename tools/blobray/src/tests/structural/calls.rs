@@ -717,6 +717,158 @@ fn reviewed_allocator_result_accepts_memcpy_destination() {
 }
 
 #[test]
+fn internal_allocator_result_accepts_memcpy_destination_after_composition() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "copy_allocated_controller_state".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x93, 0x84, 0x05, 0x00, // mv s1, a1
+            0xef, 0x10, 0x00, 0x00, // jal ra, 0x2004
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0x13, 0x05, 0x04, 0x00, // mv a0, s0
+            0x93, 0x85, 0x04, 0x00, // mv a1, s1
+            0x13, 0x06, 0x40, 0x00, // li a2, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let allocator = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "allocate_controller_state".to_owned(),
+        address: 0x2004,
+        bytes: vec![
+            0x13, 0x05, 0x40, 0x00, // li a0, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let symbols = BTreeMap::from([(allocator.address as u32, allocator.clone())]);
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&allocator, 0x2008),
+            ("test_malloc".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x1018),
+            ("memcpy".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &symbols,
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert!(matches!(
+        trace.reference_events.first(),
+        Some(DraftReferenceEvent::ModeledDirectCall { function, .. })
+            if function.return_model == ExternalReturnModel::Allocated { size_argument: 0 }
+    ));
+    let writes = trace
+        .reference_events
+        .iter()
+        .filter_map(|event| match event {
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                address,
+                ..
+            } => Some(address),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(writes.len(), 4, "{trace:#?}");
+    assert!(writes.iter().all(|address| matches!(
+        address
+            .memory_object_location_with_reads(&BTreeMap::new())
+            .map(|location| location.root),
+        Some(MemoryObjectRoot::Allocation { call_token: 0 })
+    )));
+}
+
+#[test]
+fn internal_non_allocator_result_cannot_authorize_memcpy_destination() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "copy_opaque_controller_state".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x93, 0x84, 0x05, 0x00, // mv s1, a1
+            0xef, 0x10, 0x00, 0x00, // jal ra, 0x2004
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0x13, 0x05, 0x04, 0x00, // mv a0, s0
+            0x93, 0x85, 0x04, 0x00, // mv a1, s1
+            0x13, 0x06, 0x40, 0x00, // li a2, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let opaque_wrapper = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "opaque_controller_state".to_owned(),
+        address: 0x2004,
+        bytes: vec![
+            0x13, 0x05, 0x40, 0x00, // li a0, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let symbols = BTreeMap::from([(opaque_wrapper.address as u32, opaque_wrapper.clone())]);
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&opaque_wrapper, 0x2008),
+            ("test_opaque_result".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x1018),
+            ("memcpy".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &symbols,
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible(), "{trace:#?}");
+    assert!(trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("deferred call-result memory address")
+            && blocker.contains("no exact object provenance")
+    }));
+}
+
+#[test]
 fn allocation_pointer_round_trips_through_exact_global_cell() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: Some("controller.o".to_owned()),

@@ -33,7 +33,7 @@ const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 // The project-stage cache fingerprints this domain as well as the per-function
 // store, so a semantic cut cannot leave a previously generated linked-IR
 // bundle looking current.
-pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v21\0";
+pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v22\0";
 
 mod model;
 

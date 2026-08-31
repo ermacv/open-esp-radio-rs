@@ -2,6 +2,19 @@
 
 use super::*;
 
+fn remap_external_result_token(
+    call_token: u32,
+    external_tokens: &[u32],
+    scope: &str,
+) -> std::result::Result<u32, String> {
+    let source_token = external_result_call_token(call_token);
+    let provenance_flags = call_token ^ source_token;
+    external_tokens
+        .get(source_token as usize)
+        .map(|mapped_token| *mapped_token | provenance_flags)
+        .ok_or_else(|| format!("{scope} external-call token {source_token} has no caller mapping"))
+}
+
 impl SymbolicValue {
     pub fn substitute(
         &self,
@@ -24,6 +37,13 @@ impl SymbolicValue {
         }
         if matches!(self, Self::FunctionTable(_) | Self::FunctionPointer { .. }) {
             return Ok(self.clone());
+        }
+        if let Self::ExternalResult(call_token) = self {
+            return Ok(Self::ExternalResult(remap_external_result_token(
+                *call_token,
+                external_tokens,
+                "callee",
+            )?));
         }
         if let Self::Expression {
             operation,
@@ -180,9 +200,7 @@ impl SymbolicValue {
                     bit,
                     inverted,
                 } => BitSource::ExternalResult {
-                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
-                        format!("callee external-call token {call_token} has no caller mapping")
-                    })?,
+                    call_token: remap_external_result_token(call_token, external_tokens, "callee")?,
                     bit,
                     inverted,
                 },
@@ -242,6 +260,13 @@ impl SymbolicValue {
         }
         if matches!(self, Self::FunctionTable(_) | Self::FunctionPointer { .. }) {
             return Ok(self.clone());
+        }
+        if let Self::ExternalResult(call_token) = self {
+            return Ok(Self::ExternalResult(remap_external_result_token(
+                *call_token,
+                external_tokens,
+                "caller",
+            )?));
         }
         if let Self::Expression {
             operation,
@@ -414,9 +439,7 @@ impl SymbolicValue {
                     bit,
                     inverted,
                 } => BitSource::ExternalResult {
-                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
-                        format!("caller external-call token {call_token} has no flattened mapping")
-                    })?,
+                    call_token: remap_external_result_token(call_token, external_tokens, "caller")?,
                     bit,
                     inverted,
                 },

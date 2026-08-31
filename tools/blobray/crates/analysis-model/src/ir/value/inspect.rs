@@ -1045,7 +1045,7 @@ mod tests {
             SymbolicValue::ExternalResult(ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG | 3).bits(),
         );
         let rendered = bits.canonical();
-        assert!(rendered.contains("external3."), "{rendered}");
+        assert_eq!(rendered, "zeroed-allocation:3");
         assert!(!rendered.contains("107374"), "{rendered}");
     }
 

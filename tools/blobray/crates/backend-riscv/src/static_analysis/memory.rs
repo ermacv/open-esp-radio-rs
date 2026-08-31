@@ -117,6 +117,18 @@ pub(super) fn memory_intrinsic_load_byte(
     reference_events: &mut Vec<DraftReferenceEvent>,
     next_memory_read_token: &mut u32,
 ) -> std::result::Result<SymbolicValue, String> {
+    if address.is_resolved() && address.depends_on_call_result() {
+        let read_token = *next_memory_read_token;
+        *next_memory_read_token += 1;
+        reference_events.push(DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            width: 8,
+            address,
+            region: DEFERRED_CALL_RESULT_MEMORY_REGION.to_owned(),
+            value: None,
+        });
+        return Ok(SymbolicValue::memory_read(read_token, 8, false));
+    }
     match structural_value_address(&address) {
         Some(StructuralAddress::PrivateStack(offset)) => stack
             .load(offset, 8, false)
@@ -219,6 +231,16 @@ pub(super) fn memory_intrinsic_store_byte(
             "destination byte at {} has an unresolved value",
             address.canonical()
         ));
+    }
+    if address.is_resolved() && address.depends_on_call_result() {
+        reference_events.push(DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width: 8,
+            address,
+            region: DEFERRED_CALL_RESULT_MEMORY_REGION.to_owned(),
+            value: Some(value),
+        });
+        return Ok(());
     }
     match structural_value_address(&address) {
         Some(StructuralAddress::PrivateStack(offset)) => {

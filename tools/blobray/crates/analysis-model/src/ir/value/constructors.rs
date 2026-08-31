@@ -351,6 +351,86 @@ impl SymbolicValue {
                 };
             }
         }
+
+        if let BitSource::CallResult {
+            call_token,
+            bit: 0,
+            inverted: false,
+        } = bits[0]
+            && bits.iter().enumerate().all(|(bit, source)| {
+                matches!(
+                    source,
+                    BitSource::CallResult {
+                        call_token: source_token,
+                        bit: source_bit,
+                        inverted: false,
+                    } if *source_token == call_token && usize::from(*source_bit) == bit
+                )
+            })
+        {
+            return Self::CallResult(call_token);
+        }
+        if let BitSource::ExternalResult {
+            call_token,
+            bit: 0,
+            inverted: false,
+        } = bits[0]
+            && bits.iter().enumerate().all(|(bit, source)| {
+                matches!(
+                    source,
+                    BitSource::ExternalResult {
+                        call_token: source_token,
+                        bit: source_bit,
+                        inverted: false,
+                    } if *source_token == call_token && usize::from(*source_bit) == bit
+                )
+            })
+        {
+            return Self::ExternalResult(call_token);
+        }
+        if let BitSource::ExternalResultHigh {
+            call_token,
+            bit: 0,
+            inverted: false,
+        } = bits[0]
+            && bits.iter().enumerate().all(|(bit, source)| {
+                matches!(
+                    source,
+                    BitSource::ExternalResultHigh {
+                        call_token: source_token,
+                        bit: source_bit,
+                        inverted: false,
+                    } if *source_token == call_token && usize::from(*source_bit) == bit
+                )
+            })
+        {
+            return Self::ExternalResultHigh(call_token);
+        }
+        if let BitSource::ExternalOutput {
+            call_token,
+            output_index,
+            bit: 0,
+            inverted: false,
+        } = bits[0]
+            && bits.iter().enumerate().all(|(bit, source)| {
+                matches!(
+                    source,
+                    BitSource::ExternalOutput {
+                        call_token: source_token,
+                        output_index: source_output,
+                        bit: source_bit,
+                        inverted: false,
+                    } if *source_token == call_token
+                        && *source_output == output_index
+                        && usize::from(*source_bit) == bit
+                )
+            })
+        {
+            return Self::ExternalOutput {
+                call_token,
+                output_index,
+            };
+        }
         let value = Self::Bits(Box::new(bits));
         if let Some(index) = value.direct_input_index() {
             return Self::Input { index };

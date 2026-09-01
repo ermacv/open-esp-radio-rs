@@ -493,6 +493,13 @@ impl LeReceiverTestCommand {
             HciError::HARDWARE_FAILURE.to_status(),
         )
     }
+
+    pub(crate) fn into_radio_unavailable_command_complete(self) -> LeDtmCommandCompleteEvent {
+        LeDtmCommandCompleteEvent::without_return_parameters(
+            self.kind.opcode(),
+            HciError::CMD_DISALLOWED.to_status(),
+        )
+    }
 }
 
 /// Normalized validated LE Transmitter Test command awaiting controller execution.
@@ -544,6 +551,13 @@ impl LeTransmitterTestCommand {
         LeDtmCommandCompleteEvent::without_return_parameters(
             self.kind.opcode(),
             HciError::HARDWARE_FAILURE.to_status(),
+        )
+    }
+
+    pub(crate) fn into_radio_unavailable_command_complete(self) -> LeDtmCommandCompleteEvent {
+        LeDtmCommandCompleteEvent::without_return_parameters(
+            self.kind.opcode(),
+            HciError::CMD_DISALLOWED.to_status(),
         )
     }
 }

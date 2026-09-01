@@ -214,6 +214,34 @@ impl LeLegacyAdvertisingEnableCommand {
             HciError::HARDWARE_FAILURE.to_status(),
         )
     }
+
+    pub(crate) fn into_active_session_disposition(
+        self,
+    ) -> LeLegacyAdvertisingActiveEnableDisposition {
+        if self.enable {
+            LeLegacyAdvertisingActiveEnableDisposition::Complete(
+                LeLegacyAdvertisingCommandCompleteEvent::new(
+                    LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+                    HciError::CMD_DISALLOWED.to_status(),
+                ),
+            )
+        } else {
+            LeLegacyAdvertisingActiveEnableDisposition::Disable(self)
+        }
+    }
+
+    pub(crate) fn into_stopped_command_complete(self) -> LeLegacyAdvertisingCommandCompleteEvent {
+        debug_assert!(!self.enable);
+        LeLegacyAdvertisingCommandCompleteEvent::new(
+            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+            Status::SUCCESS,
+        )
+    }
+}
+
+pub(crate) enum LeLegacyAdvertisingActiveEnableDisposition {
+    Disable(LeLegacyAdvertisingEnableCommand),
+    Complete(LeLegacyAdvertisingCommandCompleteEvent),
 }
 
 /// Resolved advertiser address retained by an accepted Enable transaction.
@@ -288,6 +316,15 @@ impl LeLegacyAdvertisingConfigurationCommand {
             Self::SetParameters(_) => LeLegacyAdvertisingCommandKind::SetParameters,
             Self::SetData(_) => LeLegacyAdvertisingCommandKind::SetData,
         }
+    }
+
+    pub(crate) fn into_active_session_command_complete(
+        self,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        LeLegacyAdvertisingCommandCompleteEvent::new(
+            self.kind().opcode(),
+            HciError::CMD_DISALLOWED.to_status(),
+        )
     }
 }
 

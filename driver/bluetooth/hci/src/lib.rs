@@ -82,9 +82,10 @@ pub use dtm::{
     LeTransmitterTestCommand,
 };
 pub use dtm_order::{
-    LeControllerActiveDtmCommandRoute, LeControllerClassifiedCommand,
-    LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
-    LeControllerDeferredDtmCommand, LeControllerDeferredLegacyAdvertisingStart,
+    LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
+    LeControllerClassifiedCommand, LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
+    LeControllerCommandReady, LeControllerDeferredDtmCommand,
+    LeControllerDeferredLegacyAdvertisingDisable, LeControllerDeferredLegacyAdvertisingStart,
     LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
     LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
     LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,

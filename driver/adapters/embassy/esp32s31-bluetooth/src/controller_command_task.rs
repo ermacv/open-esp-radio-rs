@@ -62,14 +62,19 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothLegacyAdvertisingResetRestoreStep, BluetoothLegacyAdvertisingResponsePendingSession,
     BluetoothLegacyAdvertisingResponsePublication, BluetoothLegacyAdvertisingStopping,
     BluetoothLegacyAdvertisingStoppingFault, BluetoothLegacyAdvertisingStoppingStep,
-    BluetoothPassiveScanHciActiveFault, BluetoothPassiveScanHciActiveSession,
-    BluetoothPassiveScanHciCommandIntake, BluetoothPassiveScanHciCommandMismatch,
-    BluetoothPassiveScanHciCommandRoute, BluetoothPassiveScanHciCpuResponsePending,
-    BluetoothPassiveScanHciCpuResponsePublication, BluetoothPassiveScanHciFirstRunnerFailure,
-    BluetoothPassiveScanHciRecurringFailure, BluetoothPassiveScanHciRecurringRunner,
-    BluetoothPassiveScanHciReportStep, BluetoothPassiveScanHciReportsComplete,
-    BluetoothPassiveScanHciReportsPending, BluetoothPassiveScanHciResponsePendingSession,
-    BluetoothPassiveScanHciResponsePublication, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothPassiveScanHciActiveCommandIntake, BluetoothPassiveScanHciActiveCommandMismatch,
+    BluetoothPassiveScanHciActiveCommandRoute, BluetoothPassiveScanHciActiveFault,
+    BluetoothPassiveScanHciActivePendingFault, BluetoothPassiveScanHciActivePendingRadioStep,
+    BluetoothPassiveScanHciActiveResponsePending, BluetoothPassiveScanHciActiveResponsePublication,
+    BluetoothPassiveScanHciActiveSession, BluetoothPassiveScanHciCommandIntake,
+    BluetoothPassiveScanHciCommandMismatch, BluetoothPassiveScanHciCommandRoute,
+    BluetoothPassiveScanHciCpuResponsePending, BluetoothPassiveScanHciCpuResponsePublication,
+    BluetoothPassiveScanHciFirstRunnerFailure, BluetoothPassiveScanHciRecurringFailure,
+    BluetoothPassiveScanHciRecurringRunner, BluetoothPassiveScanHciReportStep,
+    BluetoothPassiveScanHciReportsComplete, BluetoothPassiveScanHciReportsPending,
+    BluetoothPassiveScanHciResponsePendingSession, BluetoothPassiveScanHciResponsePublication,
+    BluetoothPassiveScanHciStopping, BluetoothPassiveScanHciStoppingFault,
+    BluetoothPassiveScanHciStoppingStep, BluetoothSchedulerFinishedHardwareListObserved,
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerRunInterruptStorage,
 };
 
@@ -261,6 +266,14 @@ where
         _session: BluetoothPassiveScanHciActiveSession<'runtime, S, CAPACITY>,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
+    PassiveScanPending {
+        _pending: BluetoothPassiveScanHciActiveResponsePending<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    PassiveScanStopping {
+        _stopping: BluetoothPassiveScanHciStopping<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
     Active {
         _task: EmbassyBluetoothDtmSessionTask<'runtime, S, CAPACITY>,
         index: BluetoothSchedulerHardwareListIndex,
@@ -281,7 +294,9 @@ where
             Self::LegacyAdvertising { observed, .. }
             | Self::LegacyAdvertisingPending { observed, .. }
             | Self::LegacyAdvertisingStopping { observed, .. }
-            | Self::PassiveScan { observed, .. } => observed.index(),
+            | Self::PassiveScan { observed, .. }
+            | Self::PassiveScanPending { observed, .. }
+            | Self::PassiveScanStopping { observed, .. } => observed.index(),
             Self::Active { index, .. } => *index,
             Self::ResetStopping { observed, .. } => observed.index(),
         }
@@ -352,6 +367,8 @@ where
     PassiveScanRetry(BluetoothPassiveScanHciFirstRunnerFailure<'runtime, S, CAPACITY>),
     PassiveScanResponse(BluetoothPassiveScanHciResponsePendingSession<'runtime, S, CAPACITY>),
     PassiveScanActive(BluetoothPassiveScanHciActiveSession<'runtime, S, CAPACITY>),
+    PassiveScanActiveResponse(BluetoothPassiveScanHciActiveResponsePending<'runtime, S, CAPACITY>),
+    PassiveScanStopping(BluetoothPassiveScanHciStopping<'runtime, S, CAPACITY>),
     PassiveScanReports(BluetoothPassiveScanHciReportsPending<'runtime, S, CAPACITY>),
     PassiveScanComplete(BluetoothPassiveScanHciReportsComplete<'runtime, S, CAPACITY>),
     PassiveScanCpuResponse(BluetoothPassiveScanHciCpuResponsePending<'runtime, S, CAPACITY>),
@@ -406,6 +423,8 @@ where
                 EmbassyBluetoothControllerCommandPhase::PassiveScanResponse
             }
             Self::PassiveScanActive(_)
+            | Self::PassiveScanActiveResponse(_)
+            | Self::PassiveScanStopping(_)
             | Self::PassiveScanReports(_)
             | Self::PassiveScanComplete(_)
             | Self::PassiveScanCpuResponse(_)
@@ -494,6 +513,10 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     PassiveScanCommandEndpointMismatch(
         BluetoothPassiveScanHciCommandMismatch<'runtime, 'epoch, S, CAPACITY>,
     ),
+    /// Classified in-flight scanner command unexpectedly belonged to another endpoint.
+    PassiveScanActiveCommandEndpointMismatch(
+        BluetoothPassiveScanHciActiveCommandMismatch<'runtime, 'epoch, S, CAPACITY>,
+    ),
     /// No installed role owns this scheduler list; its exact owner is quarantined in the actor.
     UnownedFinishedList(BluetoothSchedulerHardwareListIndex),
     /// A non-retryable initial transition failed before scheduler `RUN`.
@@ -567,6 +590,10 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     ),
     /// The passive scanner hardware graph failed closed with every owner retained.
     PassiveScanFault(BluetoothPassiveScanHciActiveFault<'runtime, S, CAPACITY>),
+    /// The scanner faulted while an ordered command response remained pending.
+    PassiveScanPendingFault(BluetoothPassiveScanHciActivePendingFault<'runtime, S, CAPACITY>),
+    /// The scanner faulted while Disable or Reset waited for quiescence.
+    PassiveScanStoppingFault(BluetoothPassiveScanHciStoppingFault<'runtime, S, CAPACITY>),
     /// Recurring passive-scan preparation failed closed with every owner retained.
     PassiveScanRecurringFault(BluetoothPassiveScanHciRecurringFailure<'runtime, S, CAPACITY>),
     /// The non-repeating advertising event identity space was exhausted.
@@ -1639,6 +1666,233 @@ where
 
                     if matches!(
                         self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(
+                            pending,
+                        ) = self.owner.current()
+                        else {
+                            unreachable!("the selected active scanner response did not change")
+                        };
+                        let radio_ready = match pending.radio_wait() {
+                            Some(
+                                open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::Scheduler(
+                                    wake,
+                                ),
+                            ) => match select(
+                                wakers.wait_scheduler_ready(wake),
+                                pending.wait_response_capacity(controller),
+                            )
+                            .await
+                            {
+                                Either::First(()) => true,
+                                Either::Second(Ok(())) => false,
+                                Either::Second(Err(_)) => {
+                                    return self.retain_boundary(
+                                        EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                    );
+                                }
+                            },
+                            Some(
+                                open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::PostUnlink(
+                                    wake,
+                                ),
+                            ) => match select(
+                                wakers.wait_post_unlink_or_recheck(
+                                    wake,
+                                    recheck.wait_until_absolute_recheck(),
+                                ),
+                                pending.wait_response_capacity(controller),
+                            )
+                            .await
+                            {
+                                Either::First(_) => true,
+                                Either::Second(Ok(())) => false,
+                                Either::Second(Err(_)) => {
+                                    return self.retain_boundary(
+                                        EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                    );
+                                }
+                            },
+                            None => true,
+                        };
+                        let EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(
+                            pending,
+                        ) = self.owner.take()
+                        else {
+                            unreachable!("the awaited active scanner response did not change")
+                        };
+                        if radio_ready {
+                            match pending.step_radio() {
+                                BluetoothPassiveScanHciActivePendingRadioStep::Continue(pending)
+                                | BluetoothPassiveScanHciActivePendingRadioStep::Waiting(
+                                    pending,
+                                ) => self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(
+                                        pending,
+                                    ),
+                                ),
+                                BluetoothPassiveScanHciActivePendingRadioStep::UnrelatedList {
+                                    pending,
+                                    observed,
+                                } => {
+                                    return self.store_unowned_finished_list(
+                                        EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
+                                        EmbassyBluetoothUnownedFinishedListOwner::PassiveScanPending {
+                                            _pending: pending,
+                                            observed,
+                                        },
+                                    );
+                                }
+                                BluetoothPassiveScanHciActivePendingRadioStep::CpuOwned(pending) => {
+                                    self.owner.store(
+                                        EmbassyBluetoothControllerCommandState::PassiveScanCpuResponse(
+                                            pending,
+                                        ),
+                                    )
+                                }
+                                BluetoothPassiveScanHciActivePendingRadioStep::Fault(fault) => {
+                                    return self.terminal_boundary(
+                                        EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
+                                        EmbassyBluetoothControllerCommandBoundary::PassiveScanPendingFault(
+                                            fault,
+                                        ),
+                                    );
+                                }
+                            }
+                        } else {
+                            match pending.try_publish(controller) {
+                                BluetoothPassiveScanHciActiveResponsePublication::Published(
+                                    active,
+                                ) => self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanActive(
+                                        active,
+                                    ),
+                                ),
+                                BluetoothPassiveScanHciActiveResponsePublication::Pending(
+                                    pending,
+                                ) => self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(
+                                        pending,
+                                    ),
+                                ),
+                                BluetoothPassiveScanHciActiveResponsePublication::EndpointMismatch(
+                                    pending,
+                                ) => {
+                                    self.owner.store(
+                                        EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(
+                                            pending,
+                                        ),
+                                    );
+                                    return self.retain_boundary(
+                                        EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                    );
+                                }
+                                BluetoothPassiveScanHciActiveResponsePublication::Fault {
+                                    pending,
+                                    error,
+                                } => {
+                                    self.owner.store(
+                                        EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(
+                                            pending,
+                                        ),
+                                    );
+                                    return self.retain_boundary(
+                                        EmbassyBluetoothControllerCommandBoundary::HciFault(error),
+                                    );
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    if matches!(
+                        self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::PassiveScanStopping(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::PassiveScanStopping(stopping) =
+                            self.owner.current()
+                        else {
+                            unreachable!("the selected scanner stopping owner did not change")
+                        };
+                        match stopping.radio_wait() {
+                            Some(
+                                open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::Scheduler(
+                                    wake,
+                                ),
+                            ) => wakers.wait_scheduler_ready(wake).await,
+                            Some(
+                                open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::PostUnlink(
+                                    wake,
+                                ),
+                            ) => {
+                                let _ = wakers
+                                    .wait_post_unlink_or_recheck(
+                                        wake,
+                                        recheck.wait_until_absolute_recheck(),
+                                    )
+                                    .await;
+                            }
+                            None => {}
+                        }
+                        let EmbassyBluetoothControllerCommandState::PassiveScanStopping(stopping) =
+                            self.owner.take()
+                        else {
+                            unreachable!("the awaited scanner stopping owner did not change")
+                        };
+                        match stopping.step() {
+                            BluetoothPassiveScanHciStoppingStep::Continue(stopping)
+                            | BluetoothPassiveScanHciStoppingStep::Waiting(stopping) => {
+                                self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanStopping(
+                                        stopping,
+                                    ),
+                                )
+                            }
+                            BluetoothPassiveScanHciStoppingStep::UnrelatedList {
+                                stopping,
+                                observed,
+                            } => {
+                                return self.store_unowned_finished_list(
+                                    EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
+                                    EmbassyBluetoothUnownedFinishedListOwner::PassiveScanStopping {
+                                        _stopping: stopping,
+                                        observed,
+                                    },
+                                );
+                            }
+                            BluetoothPassiveScanHciStoppingStep::Disable(pending) => {
+                                self.store_transition(
+                                    EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
+                                    ControllerCommandStimulus::IdleResponse,
+                                    EmbassyBluetoothControllerCommandState::IdleResponse {
+                                        pending,
+                                        completion:
+                                            EmbassyBluetoothControllerIdleCompletion::PassiveScanDisable,
+                                    },
+                                )
+                            }
+                            BluetoothPassiveScanHciStoppingStep::Reset(barrier) => {
+                                self.store_transition(
+                                    EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
+                                    ControllerCommandStimulus::IdleReset,
+                                    EmbassyBluetoothControllerCommandState::IdleReset(barrier),
+                                )
+                            }
+                            BluetoothPassiveScanHciStoppingStep::Fault(fault) => {
+                                return self.terminal_boundary(
+                                    EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
+                                    EmbassyBluetoothControllerCommandBoundary::PassiveScanStoppingFault(
+                                        fault,
+                                    ),
+                                );
+                            }
+                        }
+                        continue;
+                    }
+
+                    if matches!(
+                        self.owner.current(),
                         EmbassyBluetoothControllerCommandState::PassiveScanComplete(_)
                     ) {
                         let EmbassyBluetoothControllerCommandState::PassiveScanComplete(completed) =
@@ -1929,25 +2183,144 @@ where
                     else {
                         unreachable!("the selected active scanner did not change")
                     };
-                    match active.radio_wait() {
-                        Some(open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::Scheduler(wake)) => {
-                            wakers.wait_scheduler_ready(wake).await;
-                        }
-                        Some(open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::PostUnlink(wake)) => {
-                            let _ = wakers
-                                .wait_post_unlink_or_recheck(
-                                    wake,
-                                    recheck.wait_until_absolute_recheck(),
-                                )
-                                .await;
-                        }
-                        None => {}
-                    }
+                    let radio_ready = match active.radio_wait() {
+                        Some(
+                            open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::Scheduler(
+                                wake,
+                            ),
+                        ) => match select(
+                            wakers.wait_scheduler_ready(wake),
+                            active.wait_command_available(controller),
+                        )
+                        .await
+                        {
+                            Either::First(()) => true,
+                            Either::Second(Ok(())) => false,
+                            Either::Second(Err(_)) => {
+                                return self.retain_boundary(
+                                    EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                );
+                            }
+                        },
+                        Some(
+                            open_esp_radio_esp32s31_bluetooth::BluetoothPassiveScanActiveWait::PostUnlink(
+                                wake,
+                            ),
+                        ) => match select(
+                            wakers.wait_post_unlink_or_recheck(
+                                wake,
+                                recheck.wait_until_absolute_recheck(),
+                            ),
+                            active.wait_command_available(controller),
+                        )
+                        .await
+                        {
+                            Either::First(_) => true,
+                            Either::Second(Ok(())) => false,
+                            Either::Second(Err(_)) => {
+                                return self.retain_boundary(
+                                    EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                );
+                            }
+                        },
+                        None => true,
+                    };
                     let EmbassyBluetoothControllerCommandState::PassiveScanActive(active) =
                         self.owner.take()
                     else {
                         unreachable!("the awaited active scanner did not change")
                     };
+                    if !radio_ready {
+                        let buffer = packet
+                            .take()
+                            .expect("active scanner intake retains its sole scratch buffer");
+                        match active.try_route_controller_command_with_buffer(controller, buffer) {
+                            BluetoothPassiveScanHciActiveCommandIntake::Routed {
+                                route,
+                                buffer,
+                            } => {
+                                packet = Some(buffer);
+                                match route {
+                                    BluetoothPassiveScanHciActiveCommandRoute::ResponsePending(
+                                        pending,
+                                    ) => self.owner.store(
+                                        EmbassyBluetoothControllerCommandState::PassiveScanActiveResponse(
+                                            pending,
+                                        ),
+                                    ),
+                                    BluetoothPassiveScanHciActiveCommandRoute::Stopping(
+                                        stopping,
+                                    ) => self.owner.store(
+                                        EmbassyBluetoothControllerCommandState::PassiveScanStopping(
+                                            stopping,
+                                        ),
+                                    ),
+                                    BluetoothPassiveScanHciActiveCommandRoute::EndpointMismatch(
+                                        mismatch,
+                                    ) => {
+                                        return self.terminal_boundary(
+                                            EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
+                                            EmbassyBluetoothControllerCommandBoundary::PassiveScanActiveCommandEndpointMismatch(
+                                                mismatch,
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                            BluetoothPassiveScanHciActiveCommandIntake::Empty {
+                                active,
+                                buffer,
+                            } => {
+                                packet = Some(buffer);
+                                self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanActive(
+                                        active,
+                                    ),
+                                );
+                            }
+                            BluetoothPassiveScanHciActiveCommandIntake::EndpointMismatch {
+                                active,
+                                buffer: _,
+                            } => {
+                                self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanActive(
+                                        active,
+                                    ),
+                                );
+                                return self.retain_boundary(
+                                    EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                );
+                            }
+                            BluetoothPassiveScanHciActiveCommandIntake::Channel {
+                                active,
+                                buffer: _,
+                                error,
+                            } => {
+                                self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanActive(
+                                        active,
+                                    ),
+                                );
+                                return self.retain_boundary(
+                                    EmbassyBluetoothControllerCommandBoundary::HciFault(error),
+                                );
+                            }
+                            BluetoothPassiveScanHciActiveCommandIntake::NonCommand {
+                                active,
+                                frame,
+                            } => {
+                                self.owner.store(
+                                    EmbassyBluetoothControllerCommandState::PassiveScanActive(
+                                        active,
+                                    ),
+                                );
+                                return self.retain_boundary(
+                                    EmbassyBluetoothControllerCommandBoundary::NonCommand(frame),
+                                );
+                            }
+                        }
+                        continue;
+                    }
                     match drive_passive_scan_active_ready(active) {
                         EmbassyBluetoothPassiveScanActiveDrive::Waiting(active) => {
                             self.owner.store(

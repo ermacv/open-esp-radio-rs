@@ -267,6 +267,7 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActiveCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::PassiveScanCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::PassiveScanActiveCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingFault(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingPendingFault(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingStoppingFault(_)
@@ -274,6 +275,8 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringFault(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingSequenceExhausted(_)
         | EmbassyBluetoothControllerCommandBoundary::PassiveScanFault(_)
+        | EmbassyBluetoothControllerCommandBoundary::PassiveScanPendingFault(_)
+        | EmbassyBluetoothControllerCommandBoundary::PassiveScanStoppingFault(_)
         | EmbassyBluetoothControllerCommandBoundary::PassiveScanRecurringFault(_) => {
             CommandBoundaryClass::Terminal
         }

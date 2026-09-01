@@ -25,6 +25,7 @@ mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
 mod le_phy_packet;
+mod le_rx_packet;
 mod le_tx_packet;
 mod le_tx_power;
 mod legacy_advertising_event_image;
@@ -80,6 +81,7 @@ pub use dtm_storage::{
     BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
     BluetoothDtmTxPacketPrepareError,
 };
+pub use le_rx_packet::{BluetoothLePacketCapturedTime, BluetoothLeReceivedPdu};
 pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
     BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
@@ -129,9 +131,8 @@ pub use passive_scanning_memory::BluetoothPassiveScanMemoryGraphModelAddress;
 pub use passive_scanning_memory::{
     BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT, BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES,
     BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
-    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, BluetoothLePacketCapturedTime,
-    BluetoothPassiveScanMemoryGraphBindError, BluetoothPassiveScanMemoryGraphBindFailure,
-    BluetoothPassiveScanMemoryGraphCommandPublished,
+    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, BluetoothPassiveScanMemoryGraphBindError,
+    BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphCommandPublished,
     BluetoothPassiveScanMemoryGraphCompletionObservation,
     BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphCpuOwned,
     BluetoothPassiveScanMemoryGraphEventPrepared, BluetoothPassiveScanMemoryGraphPublicationError,
@@ -143,8 +144,7 @@ pub use passive_scanning_memory::{
     BluetoothPassiveScanMemoryGraphRxExtractionFailure,
     BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
     BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanReceivedBatch,
-    BluetoothPassiveScanReceivedPdu, BluetoothPassiveScanRxError,
-    BluetoothPassiveScanSchedulerAllocationConfig,
+    BluetoothPassiveScanRxError, BluetoothPassiveScanSchedulerAllocationConfig,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 #[cfg(not(target_arch = "riscv32"))]

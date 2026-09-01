@@ -19,6 +19,11 @@ use pin_project::pin_project;
 use vcell::VolatileCell;
 
 use crate::{
+    le_rx_packet::{
+        BLUETOOTH_LE_RX_PACKET_BYTES, BLUETOOTH_LE_RX_PACKET_PREFIX_BYTES,
+        BLUETOOTH_LE_RX_PAYLOAD_CAPACITY, BluetoothLeReceivedPdu, BluetoothLeRxNodeStorage,
+        BluetoothLeRxPacketAddress, BluetoothLeRxPacketError,
+    },
     passive_scanning_event_image::{
         BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, BluetoothPassiveScanLinkStateImage,
         BluetoothPassiveScanPrimaryChannel, BluetoothPassiveScanResetConfig,
@@ -38,18 +43,13 @@ pub const BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT: usize = 2;
 /// Number of scheduler-item allocations retained by the scanner graph.
 pub const BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT: usize = 3;
 /// Bytes preceding a received Link Layer payload in one controller allocation.
-pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES: usize = 0x1e;
+pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES: usize =
+    BLUETOOTH_LE_RX_PACKET_PREFIX_BYTES;
 /// Maximum Link Layer payload admitted by the first scanner graph.
-pub const BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY: usize = u8::MAX as usize;
+pub const BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY: usize = BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
 /// Complete logical receive-packet allocation size.
-pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES: usize =
-    BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES + BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY;
+pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES: usize = BLUETOOTH_LE_RX_PACKET_BYTES;
 
-const BUFFER_HEADER_BYTES: usize = 0x18;
-const BUFFER_HEADER_WORDS: usize = BUFFER_HEADER_BYTES / 4;
-const RX_PACKET_WORDS: usize = BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES.div_ceil(4);
-const RX_PACKET_LAST_ALIGNED_OFFSET: u32 =
-    ((BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES as u32 - 1) / 4) * 4;
 const LINK_STATE_RX_HEAD_WORD: usize = 0x68 / 4;
 const LINK_STATE_RX_TAIL_WORD: usize = 0x70 / 4;
 const LINK_STATE_RX_SWAP_RESERVE_WORD: usize = 0x78 / 4;
@@ -112,72 +112,10 @@ impl BluetoothPassiveScanSchedulerAllocationConfig {
     }
 }
 
-/// One bounded Link Layer PDU copied from a completed scanner packet.
-///
-/// The vendor packet prefix, producer sentinel and receive epoch remain
-/// private. Callers receive only the on-air advertising-channel PDU, its
-/// signed receive-strength sample and a typed controller-time observation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothPassiveScanReceivedPdu {
-    bytes: [u8; BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2],
-    length: u16,
-    rssi_dbm: i8,
-    captured_time: BluetoothLePacketCapturedTime,
-}
-
-impl BluetoothPassiveScanReceivedPdu {
-    /// Complete two-byte advertising header and declared payload.
-    pub const fn as_bytes(&self) -> &[u8] {
-        self.bytes.split_at(self.length as usize).0
-    }
-
-    /// Number of copied Link Layer PDU octets.
-    pub const fn len(&self) -> usize {
-        self.length as usize
-    }
-
-    /// Whether the copied PDU is empty. A valid hardware result is never empty.
-    pub const fn is_empty(&self) -> bool {
-        self.length == 0
-    }
-
-    /// Signed receive-strength byte supplied by the controller packet prefix.
-    pub const fn rssi_dbm(&self) -> i8 {
-        self.rssi_dbm
-    }
-
-    /// Controller-time observation captured by hardware for this exact PDU.
-    pub const fn captured_time(&self) -> BluetoothLePacketCapturedTime {
-        self.captured_time
-    }
-}
-
-/// Opaque raw-controller-time observation attached to one received LE packet.
-///
-/// The value is not scheduler time and is not yet the on-air packet start. It
-/// can enter only the chip-private epoch and PHY-calibration operation before
-/// protocol timing consumes it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothLePacketCapturedTime(u32);
-
-impl BluetoothLePacketCapturedTime {
-    /// Construct the typed value at the private SRAM descriptor boundary.
-    #[doc(hidden)]
-    pub const fn from_controller_sram_word(word: u32) -> Self {
-        Self(word)
-    }
-
-    /// Borrow the wrapping tick position for the chip-private epoch projector.
-    #[doc(hidden)]
-    pub const fn wrapping_controller_ticks(self) -> u32 {
-        self.0
-    }
-}
-
 /// Up to two completed packets owned by one restricted scanner event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPassiveScanReceivedBatch {
-    packets: [Option<BluetoothPassiveScanReceivedPdu>; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
+    packets: [Option<BluetoothLeReceivedPdu>; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
     len: u8,
 }
 
@@ -189,7 +127,7 @@ impl BluetoothPassiveScanReceivedBatch {
         }
     }
 
-    fn push(&mut self, packet: BluetoothPassiveScanReceivedPdu) {
+    fn push(&mut self, packet: BluetoothLeReceivedPdu) {
         self.packets[self.len as usize] = Some(packet);
         self.len += 1;
     }
@@ -205,7 +143,7 @@ impl BluetoothPassiveScanReceivedBatch {
     }
 
     /// Borrow one packet in hardware list order.
-    pub const fn packet(&self, index: usize) -> Option<&BluetoothPassiveScanReceivedPdu> {
+    pub const fn packet(&self, index: usize) -> Option<&BluetoothLeReceivedPdu> {
         if index < self.len as usize {
             self.packets[index].as_ref()
         } else {
@@ -225,232 +163,20 @@ pub enum BluetoothPassiveScanRxError {
     CompletionChainGap,
 }
 
+impl From<BluetoothLeRxPacketError> for BluetoothPassiveScanRxError {
+    fn from(error: BluetoothLeRxPacketError) -> Self {
+        match error {
+            BluetoothLeRxPacketError::ProducerSentinelRetained => Self::ProducerSentinelRetained,
+            BluetoothLeRxPacketError::EpochSentinelRetained => Self::EpochSentinelRetained,
+        }
+    }
+}
+
 /// Semantic non-sentinel status written to the scanner scheduler item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothPassiveScanSchedulerItemCompletionStatus {
     Zero,
     NonZero(core::num::NonZeroU32),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BluetoothPassiveScanRxPacketAddress(BluetoothControllerSramAddress);
-
-impl BluetoothPassiveScanRxPacketAddress {
-    fn new(address: u32) -> Result<Self, BluetoothPassiveScanMemoryGraphBindError> {
-        let address = BluetoothControllerSramAddress::new(address)
-            .map_err(BluetoothPassiveScanMemoryGraphBindError::InvalidAddress)?;
-        if address.compressed_image() == 0 {
-            return Err(BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink);
-        }
-        let tail = address
-            .address()
-            .checked_add(RX_PACKET_LAST_ALIGNED_OFFSET)
-            .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
-        BluetoothControllerSramAddress::new(tail)
-            .map_err(BluetoothPassiveScanMemoryGraphBindError::InvalidAddress)?;
-        Ok(Self(address))
-    }
-
-    const fn compressed_image(self) -> u32 {
-        self.0.compressed_image()
-    }
-}
-
-/// Private controller-shared receive-buffer header.
-#[repr(C, align(4))]
-struct BluetoothPassiveScanRxBufferHeaderStorage {
-    words: [VolatileCell<u32>; BUFFER_HEADER_WORDS],
-}
-
-impl BluetoothPassiveScanRxBufferHeaderStorage {
-    #[cfg(test)]
-    const LINK_MASK: u32 = 0x000f_ffff;
-    const ROTATION_MARKER: u32 = 1;
-    const COMPLETION_GATE: u32 = 1 << 31;
-
-    const fn new() -> Self {
-        Self {
-            words: [const { VolatileCell::new(0) }; BUFFER_HEADER_WORDS],
-        }
-    }
-
-    fn install(
-        &self,
-        packet: BluetoothPassiveScanRxPacketAddress,
-        successor: Option<BluetoothControllerSramLinkAddress>,
-        predecessor: Option<BluetoothControllerSramAddress>,
-        rotates_into_successor: bool,
-    ) {
-        let successor = successor.map_or(0, BluetoothControllerSramLinkAddress::compressed_image);
-        let predecessor = predecessor.map_or(0, BluetoothControllerSramAddress::address);
-        let rotation = if rotates_into_successor {
-            Self::ROTATION_MARKER
-        } else {
-            0
-        };
-        let image = [
-            successor,
-            packet.compressed_image(),
-            0x8080_0000,
-            0,
-            rotation,
-            predecessor,
-        ];
-        for (cell, word) in self.words.iter().zip(image) {
-            cell.set(word);
-        }
-    }
-
-    fn completion_observed(&self) -> bool {
-        self.words[3].get() & Self::COMPLETION_GATE != 0
-    }
-
-    #[cfg(test)]
-    fn emulate_hardware_completion(&self) {
-        self.words[3].set(self.words[3].get() | Self::COMPLETION_GATE);
-    }
-
-    #[cfg(test)]
-    fn retains_packet(&self, packet: BluetoothPassiveScanRxPacketAddress) -> bool {
-        self.words[1].get() & Self::LINK_MASK == packet.compressed_image()
-    }
-
-    #[cfg(test)]
-    fn successor(&self) -> Option<u32> {
-        let image = self.words[0].get() & Self::LINK_MASK;
-        (image != 0).then_some(image)
-    }
-
-    #[cfg(test)]
-    fn predecessor(&self) -> Option<u32> {
-        let address = self.words[5].get();
-        (address != 0).then_some(address)
-    }
-
-    #[cfg(test)]
-    fn rotates_into_successor(&self) -> bool {
-        self.words[4].get() & Self::ROTATION_MARKER != 0
-    }
-}
-
-/// Private controller-shared receive packet allocation.
-#[repr(C, align(4))]
-struct BluetoothPassiveScanRxPacketStorage {
-    words: [VolatileCell<u32>; RX_PACKET_WORDS],
-}
-
-impl BluetoothPassiveScanRxPacketStorage {
-    const CAPACITY_WORD: usize = 1;
-    const RESULT_WORD: usize = 3;
-    const CAPTURED_TIME_WORD: usize = 4;
-    const EPOCH_WORD: usize = 6;
-    const RESULT_REARM_SENTINEL: u32 = 0x00ff_ffff;
-    const EPOCH_REARM_SENTINEL: u32 = 0x0000_ffff;
-    const CAPACITY_IMAGE: u32 = 0x0001_0100;
-
-    const fn new() -> Self {
-        Self {
-            words: [const { VolatileCell::new(0) }; RX_PACKET_WORDS],
-        }
-    }
-
-    fn initialize(&self) {
-        for word in &self.words {
-            word.set(0);
-        }
-        self.words[Self::CAPACITY_WORD].set(Self::CAPACITY_IMAGE);
-        self.rearm();
-    }
-
-    fn rearm(&self) {
-        self.words[Self::RESULT_WORD]
-            .set(self.words[Self::RESULT_WORD].get() | Self::RESULT_REARM_SENTINEL);
-        self.words[Self::EPOCH_WORD]
-            .set(self.words[Self::EPOCH_WORD].get() | Self::EPOCH_REARM_SENTINEL);
-    }
-
-    fn received_pdu(&self) -> Result<BluetoothPassiveScanReceivedPdu, BluetoothPassiveScanRxError> {
-        let result = self.words[Self::RESULT_WORD].get();
-        if result & Self::RESULT_REARM_SENTINEL == Self::RESULT_REARM_SENTINEL {
-            return Err(BluetoothPassiveScanRxError::ProducerSentinelRetained);
-        }
-        let epoch = self.words[Self::EPOCH_WORD].get();
-        if epoch & Self::EPOCH_REARM_SENTINEL == Self::EPOCH_REARM_SENTINEL {
-            return Err(BluetoothPassiveScanRxError::EpochSentinelRetained);
-        }
-
-        let payload_length = self.read_byte(BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 1);
-        let length = usize::from(payload_length) + 2;
-        let mut bytes = [0; BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2];
-        let mut index = 0;
-        while index < length {
-            bytes[index] =
-                self.read_byte(BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 2 + index);
-            index += 1;
-        }
-        Ok(BluetoothPassiveScanReceivedPdu {
-            bytes,
-            length: length as u16,
-            rssi_dbm: self.read_byte(BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 15) as i8,
-            captured_time: BluetoothLePacketCapturedTime::from_controller_sram_word(
-                self.words[Self::CAPTURED_TIME_WORD].get(),
-            ),
-        })
-    }
-
-    fn read_byte(&self, offset: usize) -> u8 {
-        let word = self.words[offset / 4].get();
-        ((word >> ((offset % 4) * 8)) & 0xff) as u8
-    }
-
-    #[cfg(test)]
-    fn emulate_hardware_receive(&self, pdu: &[u8], rssi_dbm: i8, captured_time: u32) {
-        assert!((2..=BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2).contains(&pdu.len()));
-        assert_eq!(usize::from(pdu[1]) + 2, pdu.len());
-        self.words[Self::RESULT_WORD].set(0);
-        self.words[Self::CAPTURED_TIME_WORD].set(captured_time);
-        self.words[Self::EPOCH_WORD].set(0);
-        for (offset, byte) in pdu.iter().copied().enumerate() {
-            self.write_byte(
-                BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 2 + offset,
-                byte,
-            );
-        }
-        self.write_byte(
-            BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 15,
-            rssi_dbm as u8,
-        );
-    }
-
-    #[cfg(test)]
-    fn write_byte(&self, offset: usize, value: u8) {
-        let shift = (offset % 4) * 8;
-        let word = self.words[offset / 4].get();
-        self.words[offset / 4].set((word & !(0xff << shift)) | (u32::from(value) << shift));
-    }
-
-    #[cfg(test)]
-    fn is_armed(&self) -> bool {
-        self.words[Self::RESULT_WORD].get() & Self::RESULT_REARM_SENTINEL
-            == Self::RESULT_REARM_SENTINEL
-            && self.words[Self::EPOCH_WORD].get() & Self::EPOCH_REARM_SENTINEL
-                == Self::EPOCH_REARM_SENTINEL
-    }
-}
-
-#[repr(C)]
-struct BluetoothPassiveScanRxNodeStorage {
-    header: BluetoothPassiveScanRxBufferHeaderStorage,
-    packet: BluetoothPassiveScanRxPacketStorage,
-}
-
-impl BluetoothPassiveScanRxNodeStorage {
-    const fn new() -> Self {
-        Self {
-            header: BluetoothPassiveScanRxBufferHeaderStorage::new(),
-            packet: BluetoothPassiveScanRxPacketStorage::new(),
-        }
-    }
 }
 
 /// Private controller-shared scanner link state.
@@ -642,27 +368,26 @@ pub struct BluetoothPassiveScanMemoryGraphStorage {
     scheduler_context: BluetoothSchedulerContextStorage,
     scheduler_items:
         [BluetoothPassiveScanSchedulerItemStorage; BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
-    nodes: [BluetoothPassiveScanRxNodeStorage; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
+    nodes: [BluetoothLeRxNodeStorage; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
     #[pin]
     _pin: PhantomPinned,
 }
 
 const MEMORY_GRAPH_BYTES: u32 =
     core::mem::size_of::<BluetoothPassiveScanMemoryGraphStorage>() as u32;
-const RX_NODE_BYTES: u32 = core::mem::size_of::<BluetoothPassiveScanRxNodeStorage>() as u32;
+const RX_NODE_BYTES: u32 = core::mem::size_of::<BluetoothLeRxNodeStorage>() as u32;
 const RX_NODES_OFFSET: u32 =
     core::mem::offset_of!(BluetoothPassiveScanMemoryGraphStorage, nodes) as u32;
 const SCHEDULER_CONTEXT_OFFSET: u32 =
     core::mem::offset_of!(BluetoothPassiveScanMemoryGraphStorage, scheduler_context) as u32;
 const SCHEDULER_ITEMS_OFFSET: u32 =
     core::mem::offset_of!(BluetoothPassiveScanMemoryGraphStorage, scheduler_items) as u32;
-const RX_PACKET_OFFSET: u32 =
-    core::mem::offset_of!(BluetoothPassiveScanRxNodeStorage, packet) as u32;
+const RX_PACKET_OFFSET: u32 = core::mem::offset_of!(BluetoothLeRxNodeStorage, packet) as u32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct BluetoothPassiveScanRxNodeBinding {
     header: BluetoothControllerSramLinkAddress,
-    packet: BluetoothPassiveScanRxPacketAddress,
+    packet: BluetoothLeRxPacketAddress,
 }
 
 /// Why a static passive-scanner allocation cannot become CPU-owned.
@@ -723,11 +448,15 @@ impl BluetoothPassiveScanMemoryGraphBinding {
                 .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
             let header = BluetoothControllerSramLinkAddress::new(node_base)
                 .map_err(|_| BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink)?;
-            let packet = BluetoothPassiveScanRxPacketAddress::new(
+            let packet = BluetoothLeRxPacketAddress::new(
                 node_base
                     .checked_add(RX_PACKET_OFFSET)
                     .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?,
-            )?;
+            )
+            .map_err(BluetoothPassiveScanMemoryGraphBindError::InvalidAddress)?;
+            if packet.compressed_image() == 0 {
+                return Err(BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink);
+            }
             Ok(BluetoothPassiveScanRxNodeBinding { header, packet })
         };
 
@@ -1454,8 +1183,8 @@ impl BluetoothPassiveScanMemoryGraphStorage {
             scheduler_items: [const { BluetoothPassiveScanSchedulerItemStorage::new() };
                 BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
             nodes: [
-                BluetoothPassiveScanRxNodeStorage::new(),
-                BluetoothPassiveScanRxNodeStorage::new(),
+                BluetoothLeRxNodeStorage::new(),
+                BluetoothLeRxNodeStorage::new(),
             ],
             _pin: PhantomPinned,
         }

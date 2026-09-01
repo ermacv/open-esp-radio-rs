@@ -1140,6 +1140,46 @@ accept-incomplete = true
 [[functions]]
 profile = "ble-controller-all"
 source = "ble-controller"
+identity = "ble-controller::r_sym_ble_HXGvbSCEpXjZD3h1P6eU"
+status = "reviewed"
+name = "ble_lll_mmgmt_alloc_link_state"
+role = "ble.memory.allocate-link-state"
+summary = "Allocates one common BLE link-state owner; the current function size and member-local position match the public named same-chip implementation."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_UCGCRefyBslibNM003px"
+status = "reviewed"
+name = "ble_lll_mmgmt_alloc_scheduler_item"
+role = "ble.memory.allocate-scheduler-item"
+summary = "Allocates and clears one common 0x60-byte BLE scheduler item; current linked evidence owns its initialization effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_UagS1VQZDxizyWqNpmtA"
+status = "reviewed"
+name = "ble_lll_mmgmt_alloc_buffer_header"
+role = "ble.memory.allocate-buffer-header"
+summary = "Allocates one common BLE buffer-header owner; the current 0x70-byte body matches the named same-chip role."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_N2bQ5jI8Lnppq1TkXRdA"
+status = "reviewed"
+name = "ble_lll_rx_buffer_link_prepare"
+role = "ble.memory.prepare-rx-links"
+summary = "Prepares the link-state RX chain; the connection allocator's current argument-one path leaves head, tail and reserve empty."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
 identity = "ble-controller::r_sym_ble_O0vMjkEidHi2LMntMUtT"
 status = "reviewed"
 name = "ble_lll_conn_alloc_memory"

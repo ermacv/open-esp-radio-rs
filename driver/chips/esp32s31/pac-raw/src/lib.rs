@@ -59478,22 +59478,9 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_0`.
-    #[inline]
-    pub fn publish_bluetooth_scan_command_0_image_1(registers: &crate::BleScanControl) {
-        // SAFETY: generator validation proves that the target is a
-        // writable 32-bit ordinary or write-one-to-clear register,
-        // while reviewed provenance qualifies this exact image.
-        unsafe {
-            registers
-                .command_0()
-                .write_with_zero(|writer| writer.bits(0x00000001));
-        }
-    }
-
     /// Publish the SVD-qualified image `0x00000100` to `BLE_SCAN_CONTROL`.`COMMAND_0`.
     #[inline]
-    pub fn publish_bluetooth_scan_command_0_image_256(registers: &crate::BleScanControl) {
+    pub fn publish_bluetooth_scan_standard_backoff(registers: &crate::BleScanControl) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.

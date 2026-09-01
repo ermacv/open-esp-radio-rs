@@ -118,9 +118,7 @@ pub use bluetooth_phy_init::{
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
     BluetoothPhyRegisterInitInputs,
 };
-pub use bluetooth_scan::{
-    BluetoothScanCommand0Image, BluetoothScanStartPublished, BluetoothScanStartRequest,
-};
+pub use bluetooth_scan::BluetoothScanStartPublished;
 pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
     BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,

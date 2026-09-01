@@ -251,7 +251,7 @@ description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add
 
 [[sources]]
 id = "BLOB_LIBBLE_SCAN_CONTROL"
-description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; ble_lll_scan.c member 65.o symbol r_sym_ble_znMr0TnKK4lkFEsrathq writes complete images 0x00000100 and 0x00000001 to 0x20101970 and complete image 1 to 0x20101974 and 0x20101978 in two observed paths. The source identity establishes scan-path ownership without assigning undocumented hardware actions to the positional words."
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete ble_lll_scan.c member 65.o symbol r_sym_ble_znMr0TnKK4lkFEsrathq writes complete images 0x00000100 and 0x00000001 to 0x20101970 and complete image 1 to 0x20101974 and 0x20101978 in two observed paths. Public same-chip commit 31c30949541a5d3abd4043a1cb66d55aa55577dd names the instruction-corresponding role r_ble_lll_scan_start and independently reads sdkconfig byte +0x50 for the same branch. Official ESP-IDF commit aeab6dcfbeb44aba4b1f8ed102e3086172833153 pins its ESP32-S31 BT library to 7f20740dd66ee774ffce5db0b55507892551aa31 and publicly defines that exact BLE configuration byte as dis_scan_backoff; its ble_user_cfg.h fixes NIMBLE_DISABLE_SCAN_BACKOFF to zero. Thus the supported standard-backoff profile selects complete image 0x00000100. This assigns the software policy predicate, not undocumented subfield meanings inside the complete hardware command."
 
 [[sources]]
 id = "BLOB_LIBBLE_MMGMT_HW_LISTS"

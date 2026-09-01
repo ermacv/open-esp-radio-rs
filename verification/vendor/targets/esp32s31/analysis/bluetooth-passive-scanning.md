@@ -90,10 +90,16 @@ transaction without requiring the vendor's software object graph:
 6. retry only the scheduler-collision result `-2`, increasing the requested
    delay by 100 controller-time units on every retry.
 
-The branch that chooses `COMMAND_0=0x100` versus `COMMAND_0=1` depends on a
-software-state predicate that has not yet been reduced to the passive-1M
-domain.  Consequently these complete words remain positional PAC operations;
-the driver must not expose them as guessed enable or PHY fields.
+The branch that chooses `COMMAND_0=0x100` versus `COMMAND_0=1` is now reduced
+without guessing a hardware field. The complete current and named start bodies
+read byte `+0x50` from the public BLE controller configuration. At the pinned
+ESP-IDF commit whose S31 submodule is `7f20740d`, that exact structure position
+is `esp_bt_controller_config_t::ble.dis_scan_backoff`; the public
+`ble_user_cfg.h` fixes `NIMBLE_DISABLE_SCAN_BACKOFF` to zero. A zero predicate
+selects complete image `0x100`, while disabling the standard backoff selects
+image `1`. The open Controller supports only the normal backoff policy, so the
+restricted PAC owns one fixed standard-backoff transaction and exposes no
+positional choice to HAL or higher layers.
 
 The already reviewed global-memory classifier is also applicable: scanner
 scheduler kind two uses current/next RX selector one.  DTM's private graph is
@@ -316,6 +322,17 @@ named `r_ble_lll_scan_get_earliest_start_time` result selects the sole
 adjusted-start item flag. The open codec accepts that semantic result rather
 than exposing the positional flag or reproducing the vendor timing policy.
 
+The allocation-time item prefix is mandatory before that event transform.
+The complete common scheduler allocator supplies `+0x1c` with its bit-21
+default cleared and the fixed positional `+0x24` image. The complete scanner
+allocator then clears the high nibble of `+0x1c`, derives each item's low
+twelve bits at `+0x20` from the public extended-advertising-instance and
+connection limits plus one and the zero-based item index, and writes one at
+`+0x2c`. The restricted legacy path has its extended-scan selector clear, so
+the additional extended-scan-only `+0x1c` transform is absent. These fields
+are installed by the private graph codec from a checked semantic allocation
+configuration; callers cannot provide any positional word.
+
 ## Open architecture
 
 The first implementation should contain these owners, in this order:
@@ -337,12 +354,11 @@ of typed memory accessors, just as for the DTM descriptors.
 
 ## Return gate from research to implementation
 
-Implementation can resume as soon as the focused
-`ble-legacy-passive-scanning` Blobray scope closes these four facts for one
-legacy passive 1M event:
+The focused lower research frontier is closed for one legacy passive 1M event:
 
-- the mandatory link-state and scheduler-item fields that select RX and a
-  primary advertising channel;
+- ~~the mandatory link-state and scheduler-item fields that select RX and a
+  primary advertising channel~~ -- closed by the restricted reset, complete
+  allocation prefix and first-event transform above;
 - ~~the scanner RX header/payload topology and selector-one routing~~ -- closed
   by the complete common allocation, reset, removal and append bodies above,
   including the cold `CurrentRx=head` then `NextRx=zero` publication order;

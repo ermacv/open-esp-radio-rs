@@ -317,23 +317,6 @@ impl PhyFbwSelectionState {
     }
 }
 
-/// The two complete positional COMMAND_0 images published by the reviewed BLE scanner start path; their inner hardware semantics remain unassigned.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum BluetoothScanCommand0Image {
-    /// The complete positional image one selected by one reviewed scanner-start branch.
-    Image1 = 0x00000001,
-    /// The complete positional image 0x100 selected by the alternate reviewed scanner-start branch.
-    Image256 = 0x00000100,
-}
-
-impl BluetoothScanCommand0Image {
-    /// Numeric image for diagnostics and the private raw-PAC bridge.
-    pub const fn bits(self) -> u32 {
-        self as u32
-    }
-}
-
 /// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

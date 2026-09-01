@@ -360,6 +360,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
             paths.push(pack.path.clone());
             paths.extend(pack.knowledge_packs.iter().cloned());
         }
+        paths.extend(project.reviewed_knowledge.iter().cloned());
         paths.extend(crate::application::project_ir_build::profile_input_paths(
             profile,
             self.run_spec()?,

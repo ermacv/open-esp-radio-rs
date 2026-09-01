@@ -24,6 +24,7 @@ use crate::{
     build_linked_ir_for_source_with_cache, harnesses, interfaces::InterfaceWorkspace,
     link_project_calls, merge_linked_ir_with_options, project_ir::ProjectIrProfile,
 };
+use open_radio_vendor_contracts::{RevisionOccurrenceId, SemanticEntityId};
 
 #[derive(Debug)]
 pub(crate) struct ProjectIrDocuments {
@@ -45,6 +46,7 @@ pub(crate) struct ProjectProfileRequest<'a, 'cache> {
     pub(crate) effective_code: &'a crate::analysis::EffectiveCodeCatalog,
     pub(crate) interfaces: Option<&'a InterfaceWorkspace>,
     pub(crate) interface_origins: &'a [LinkUnitOriginFact],
+    pub(crate) reviewed_bindings: &'a BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
     pub(crate) jobs: usize,
     pub(crate) function_fact_store: Option<&'cache mut dyn crate::analysis::FunctionFactStore>,
 }
@@ -62,6 +64,7 @@ pub(crate) fn generate_project_profile(
         effective_code,
         interfaces,
         interface_origins,
+        reviewed_bindings,
         jobs,
         function_fact_store,
     } = request;
@@ -105,7 +108,10 @@ pub(crate) fn generate_project_profile(
         &companions,
         profile.roots.symbol_prefix(),
         entry_contract,
-        &report,
+        crate::artifacts::LinkedIrPublication {
+            report: &report,
+            reviewed_bindings,
+        },
         profile.include_reachable,
     )?;
     let bundle = crate::artifacts::stage_linked_ir_bundle(&profile.output, &document)?;

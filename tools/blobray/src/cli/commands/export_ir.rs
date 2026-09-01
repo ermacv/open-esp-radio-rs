@@ -43,6 +43,25 @@ pub(super) fn run(
         .map(crate::linked_ir_export::load_project_interface_origins)
         .transpose()?
         .unwrap_or_default();
+    let reviewed_bindings = project
+        .map(|project| {
+            open_radio_vendor_review::ReviewKnowledge::load_all(&project.reviewed_knowledge)
+                .and_then(|knowledge| knowledge.select_for(&project.review_context))
+                .map(|knowledge| {
+                    knowledge
+                        .bindings()
+                        .values()
+                        .map(|binding| (binding.occurrence.clone(), binding.semantic.clone()))
+                        .collect::<std::collections::BTreeMap<_, _>>()
+                })
+        })
+        .transpose()
+        .map_err(|error| {
+            crate::Error::invalid(format!(
+                "cannot select reviewed entity bindings for linked-IR export: {error}"
+            ))
+        })?
+        .unwrap_or_default();
     if let Some(catalog) = &effective_code {
         for artifact in &mut artifacts {
             artifact.reviewed_code = catalog.reviewed_ranges(&artifact.source, &artifact.path)?;
@@ -79,7 +98,10 @@ pub(super) fn run(
         &arguments.companion,
         &arguments.symbol_prefix,
         entry_contract,
-        &report,
+        crate::artifacts::LinkedIrPublication {
+            report: &report,
+            reviewed_bindings: &reviewed_bindings,
+        },
         arguments.include_reachable,
     )?;
     if let Some(path) = arguments.pseudo_rust.as_deref() {

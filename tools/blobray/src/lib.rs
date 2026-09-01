@@ -5,6 +5,7 @@
 
 mod analysis;
 mod application;
+mod artifact_occurrence;
 mod artifacts;
 mod blocker_resolution;
 mod chip_pack;

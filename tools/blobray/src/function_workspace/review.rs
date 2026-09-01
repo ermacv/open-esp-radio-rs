@@ -622,7 +622,7 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
     }
     output.push_str("\n#### Validated interface call sites\n\n");
     output.push_str(
-        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v66 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
+        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v67 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
     );
     output.push_str("| Contract/version | Slot | Static site | Caller/kind | Recovered arguments | Linked-IR CFG evidence | ABI | Semantic | Execution model |\n");
     output.push_str("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");

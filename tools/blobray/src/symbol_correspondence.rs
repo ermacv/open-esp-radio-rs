@@ -11,9 +11,9 @@ use std::{collections::BTreeMap, path::Path};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use open_radio_vendor_contracts::{ArtifactIdentity, EntityDomain, RevisionOccurrenceId};
+use open_radio_vendor_contracts::ArtifactIdentity;
 
-use crate::{Result, artifact};
+use crate::{Result, artifact, artifact_occurrence};
 
 pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 2;
 
@@ -624,13 +624,15 @@ fn data_object_document(
     object: &artifact::ArtifactDataObjectDefinition,
     artifact: &ArtifactIdentity,
 ) -> Result<DataObjectCorrespondenceObject> {
-    let locator = data_object_locator(object);
-    let occurrence = RevisionOccurrenceId::derive(
-        EntityDomain::MemoryObject,
-        std::slice::from_ref(artifact),
-        &locator,
-    )
-    .map_err(|error| crate::Error::invalid(error.to_string()))?;
+    let occurrence = artifact_occurrence::memory_object_occurrence(
+        artifact,
+        object.member.as_deref(),
+        &object.section,
+        &object.name,
+        object.object_offset,
+        object.address,
+        object.size,
+    )?;
     Ok(DataObjectCorrespondenceObject {
         member: object.member.clone(),
         section: object.section.clone(),
@@ -640,26 +642,21 @@ fn data_object_document(
         size: object.size,
         writable: object.writable,
         initialized: object.initialized,
-        locator,
-        occurrence: occurrence.to_string(),
+        locator: occurrence.locator,
+        occurrence: occurrence.id.to_string(),
         fingerprint: normalized_data_fingerprint(object),
     })
 }
 
 fn data_object_locator(object: &artifact::ArtifactDataObjectDefinition) -> String {
-    match object.member.as_deref() {
-        Some(member) => format!(
-            "archive-member:{member}/section:{}/symbol:{}/object-offset:{:#x}/size:{:#x}",
-            object.section, object.name, object.object_offset, object.size
-        ),
-        None => format!(
-            "section:{}/symbol:{}/address:{:#x}/size:{:#x}",
-            object.section,
-            object.name,
-            object.address.unwrap_or(object.object_offset as u32),
-            object.size
-        ),
-    }
+    artifact_occurrence::memory_object_locator(
+        object.member.as_deref(),
+        &object.section,
+        &object.name,
+        object.object_offset,
+        object.address,
+        object.size,
+    )
 }
 
 fn normalized_data_fingerprint(object: &artifact::ArtifactDataObjectDefinition) -> String {
@@ -867,31 +864,24 @@ fn function_document(
     symbol: &artifact::ArtifactSymbolDefinition,
     artifact: &ArtifactIdentity,
 ) -> Result<SymbolCorrespondenceFunction> {
-    let locator = function_locator(symbol);
-    let occurrence = RevisionOccurrenceId::derive(
-        EntityDomain::Function,
-        std::slice::from_ref(artifact),
-        &locator,
-    )
-    .map_err(|error| crate::Error::invalid(error.to_string()))?;
+    let occurrence = artifact_occurrence::function_occurrence(
+        artifact,
+        symbol.member.as_deref(),
+        &symbol.name,
+        symbol.address,
+    )?;
     Ok(SymbolCorrespondenceFunction {
         member: symbol.member.clone(),
         symbol: symbol.name.clone(),
-        locator,
-        occurrence: occurrence.to_string(),
+        locator: occurrence.locator,
+        occurrence: occurrence.id.to_string(),
         size: symbol.bytes.len(),
         fingerprint: normalized_body_fingerprint(symbol),
     })
 }
 
 fn function_locator(symbol: &artifact::ArtifactSymbolDefinition) -> String {
-    match symbol.member.as_deref() {
-        Some(member) => format!(
-            "archive-member:{member}/symbol:{}/object-offset:{:#x}",
-            symbol.name, symbol.address
-        ),
-        None => format!("symbol:{}/address:{:#x}", symbol.name, symbol.address),
-    }
+    artifact_occurrence::function_locator(symbol.member.as_deref(), &symbol.name, symbol.address)
 }
 
 fn normalized_body_fingerprint(symbol: &artifact::ArtifactSymbolDefinition) -> String {

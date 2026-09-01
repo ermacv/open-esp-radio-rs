@@ -10,6 +10,16 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+fn deserialize_required_option<'de, D, T>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}
+
 use super::linked_ir_read::schema::{
     StoredDataObject, StoredFunction, StoredFunctionReviewProjection, StoredMmioRegister,
 };
@@ -52,6 +62,10 @@ struct FunctionIndexRecord {
     identity: String,
     source: String,
     artifact_sha256: String,
+    locator: String,
+    occurrence: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    semantic: Option<String>,
     member: Option<String>,
     symbol: String,
     address: Option<u32>,
@@ -88,8 +102,14 @@ struct RegisterIndexDocument {
 #[serde(deny_unknown_fields)]
 struct DataObjectIndexRecord {
     source: String,
+    artifact_sha256: String,
+    locator: String,
+    occurrence: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    semantic: Option<String>,
     member: Option<String>,
     symbol: String,
+    aliases: Vec<String>,
     address: Option<String>,
     offset: u64,
     length: u64,
@@ -202,13 +222,23 @@ impl LinkedIrReader {
             .iter()
             .map(|artifact| (artifact.source.as_str(), artifact.artifact.sha256.as_str()))
             .collect::<BTreeSet<_>>();
-        if let Some(record) = index.records.iter().find(|record| {
-            !source_artifacts.contains(&(record.source.as_str(), record.artifact_sha256.as_str()))
-        }) {
-            return Err(crate::Error::invalid(format!(
-                "linked-IR function index record {:?} refers to an undeclared source artifact {}@{}",
-                record.identity, record.source, record.artifact_sha256
-            )));
+        for record in &index.records {
+            if !source_artifacts
+                .contains(&(record.source.as_str(), record.artifact_sha256.as_str()))
+            {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR function index record {:?} refers to an undeclared source artifact {}@{}",
+                    record.identity, record.source, record.artifact_sha256
+                )));
+            }
+            crate::artifact_occurrence::validate(
+                open_radio_vendor_contracts::EntityDomain::Function,
+                &record.source,
+                &record.artifact_sha256,
+                &record.locator,
+                &record.occurrence,
+                record.semantic.as_deref(),
+            )?;
         }
         let data_object_index: DataObjectIndexDocument =
             serde_json::from_str(&fs::read_to_string(path.join(DATA_OBJECT_INDEX))?)?;
@@ -219,6 +249,49 @@ impl LinkedIrReader {
                 "invalid linked-IR data object index in {}",
                 path.display()
             )));
+        }
+        let mut semantics = BTreeMap::<&str, &str>::new();
+        for (semantic, occurrence) in index
+            .records
+            .iter()
+            .filter_map(|record| {
+                record
+                    .semantic
+                    .as_deref()
+                    .map(|semantic| (semantic, record.occurrence.as_str()))
+            })
+            .chain(data_object_index.records.iter().filter_map(|record| {
+                record
+                    .semantic
+                    .as_deref()
+                    .map(|semantic| (semantic, record.occurrence.as_str()))
+            }))
+        {
+            if let Some(previous) = semantics.insert(semantic, occurrence)
+                && previous != occurrence
+            {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR semantic identity {semantic} is bound to multiple occurrences: {previous} and {occurrence}"
+                )));
+            }
+        }
+        for record in &data_object_index.records {
+            if !source_artifacts
+                .contains(&(record.source.as_str(), record.artifact_sha256.as_str()))
+            {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR data object index record {}:{} refers to an undeclared source artifact {}@{}",
+                    record.source, record.symbol, record.source, record.artifact_sha256
+                )));
+            }
+            crate::artifact_occurrence::validate(
+                open_radio_vendor_contracts::EntityDomain::MemoryObject,
+                &record.source,
+                &record.artifact_sha256,
+                &record.locator,
+                &record.occurrence,
+                record.semantic.as_deref(),
+            )?;
         }
         Ok(Self {
             root: path.to_owned(),
@@ -279,7 +352,10 @@ impl LinkedIrReader {
         let matches = self
             .index
             .iter()
-            .filter(|record| record.source == source && record.symbol == symbol)
+            .filter(|record| {
+                record.source == source
+                    && (record.symbol == symbol || record.semantic.as_deref() == Some(symbol))
+            })
             .filter(|record| member.is_none_or(|member| record.member.as_deref() == Some(member)))
             .filter(|record| address.is_none_or(|address| record.address == Some(address)))
             .collect::<Vec<_>>();
@@ -298,9 +374,20 @@ impl LinkedIrReader {
         &self,
         identity: &str,
     ) -> Result<Option<StoredFunction>> {
-        self.index
+        let matches = self
+            .index
             .iter()
-            .find(|record| record.identity == identity)
+            .filter(|record| {
+                record.identity == identity || record.semantic.as_deref() == Some(identity)
+            })
+            .collect::<Vec<_>>();
+        if matches.len() > 1 {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR bundle has multiple functions matching {identity:?}"
+            )));
+        }
+        matches
+            .first()
             .map(|record| self.read_function(record))
             .transpose()
     }
@@ -309,7 +396,11 @@ impl LinkedIrReader {
         self.index
             .iter()
             .filter(|record| record.source == source)
-            .filter(|record| record.identity == selector || record.symbol == selector)
+            .filter(|record| {
+                record.identity == selector
+                    || record.symbol == selector
+                    || record.semantic.as_deref() == Some(selector)
+            })
             .map(|record| record.identity.clone())
             .collect()
     }
@@ -323,28 +414,35 @@ impl LinkedIrReader {
             .filter(|record| record.address == Some(address))
             .map(|record| record.identity.clone())
             .collect::<BTreeSet<_>>();
-        labels.extend(
-            self.data_object_index
-                .iter()
-                .filter(|record| {
-                    record.address.as_deref().and_then(parse_persisted_address) == Some(address)
-                })
-                .map(|record| {
-                    format!(
-                        "{}::{}::{}",
-                        record.source,
-                        record.member.as_deref().unwrap_or("<linked>"),
-                        record.symbol
-                    )
-                }),
-        );
+        labels.extend(self.index.iter().filter_map(|record| {
+            (record.address == Some(address))
+                .then(|| record.semantic.clone())
+                .flatten()
+        }));
+        for record in self.data_object_index.iter().filter(|record| {
+            record.address.as_deref().and_then(parse_persisted_address) == Some(address)
+        }) {
+            labels.insert(format!(
+                "{}::{}::{}",
+                record.source,
+                record.member.as_deref().unwrap_or("<linked>"),
+                record.symbol
+            ));
+            if let Some(semantic) = &record.semantic {
+                labels.insert(semantic.clone());
+            }
+        }
         labels.into_iter().collect()
     }
 
     pub(crate) fn matching_function_identities(&self, selector: &str) -> BTreeSet<String> {
         self.index
             .iter()
-            .filter(|record| record.identity == selector || record.symbol == selector)
+            .filter(|record| {
+                record.identity == selector
+                    || record.symbol == selector
+                    || record.semantic.as_deref() == Some(selector)
+            })
             .map(|record| record.identity.clone())
             .collect()
     }
@@ -750,7 +848,12 @@ impl LinkedIrReader {
     ) -> Result<Vec<StoredDataObject>> {
         self.data_object_index
             .iter()
-            .filter(|record| record.source == source && record.symbol == symbol)
+            .filter(|record| {
+                record.source == source
+                    && (record.symbol == symbol
+                        || record.aliases.iter().any(|alias| alias == symbol)
+                        || record.semantic.as_deref() == Some(symbol))
+            })
             .map(|record| self.read_data_object(record))
             .collect()
     }
@@ -774,6 +877,10 @@ impl LinkedIrReader {
         super::linked_ir_read::schema::validate_return_frontiers(&function)?;
         if function.identity != record.identity
             || function.source != record.source
+            || function.artifact_sha256 != record.artifact_sha256
+            || function.locator != record.locator
+            || function.occurrence != record.occurrence
+            || function.semantic != record.semantic
             || function.member != record.member
             || function.symbol != record.symbol
             || function.address != record.address
@@ -783,6 +890,14 @@ impl LinkedIrReader {
                 record.identity
             )));
         }
+        crate::artifact_occurrence::validate(
+            open_radio_vendor_contracts::EntityDomain::Function,
+            &function.source,
+            &function.artifact_sha256,
+            &function.locator,
+            &function.occurrence,
+            function.semantic.as_deref(),
+        )?;
         Ok(function)
     }
 
@@ -795,8 +910,13 @@ impl LinkedIrReader {
         file.read_exact(&mut bytes)?;
         let object: StoredDataObject = super::json::from_slice(&bytes)?;
         if object.source != record.source
+            || object.artifact_sha256 != record.artifact_sha256
+            || object.locator != record.locator
+            || object.occurrence != record.occurrence
+            || object.semantic != record.semantic
             || object.member != record.member
             || object.symbol != record.symbol
+            || object.aliases != record.aliases
             || object.address != record.address
         {
             return Err(crate::Error::invalid(format!(
@@ -804,6 +924,14 @@ impl LinkedIrReader {
                 record.source, record.symbol
             )));
         }
+        crate::artifact_occurrence::validate(
+            open_radio_vendor_contracts::EntityDomain::MemoryObject,
+            &object.source,
+            &object.artifact_sha256,
+            &object.locator,
+            &object.occurrence,
+            object.semantic.as_deref(),
+        )?;
         Ok(object)
     }
 
@@ -902,6 +1030,9 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
             identity: function.identity.clone(),
             source: function.source.clone(),
             artifact_sha256: function.artifact_sha256.clone(),
+            locator: function.locator.clone(),
+            occurrence: function.occurrence.clone(),
+            semantic: function.semantic.clone(),
             member: function.member.clone(),
             symbol: function.symbol.clone(),
             address: function.address,
@@ -953,8 +1084,13 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
         object_lines.push('\n');
         object_records.push(DataObjectIndexRecord {
             source: object.source,
+            artifact_sha256: object.artifact_sha256,
+            locator: object.locator,
+            occurrence: object.occurrence,
+            semantic: object.semantic,
             member: object.member,
             symbol: object.symbol,
+            aliases: object.aliases,
             address: object.address,
             offset,
             length,
@@ -1041,6 +1177,9 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
     let overview = serde_json::json!({
         "source": full["source"],
         "artifact_sha256": full["artifact_sha256"],
+        "locator": full["locator"],
+        "occurrence": full["occurrence"],
+        "semantic": full["semantic"],
         "identity": full["identity"],
         "selection": full["selection"],
         "member": full["member"],

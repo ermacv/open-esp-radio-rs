@@ -354,6 +354,17 @@ function and memory-object occurrences, but every candidate remains explicitly
 `review = required`; Blobray never promotes generated correspondence into a
 reviewed fact.
 
+Accept a candidate only by adding a sparse `[[bindings]]` record to the
+project's reviewed-knowledge TOML. The record must repeat the target
+occurrence, assign a domain-matching `function:...` or `memory-object:...`
+semantic identity, constrain applicability to the exact artifact digest, and
+cite evidence whose locator re-derives that occurrence. The next Linked-IR
+build publishes `semantic` beside the raw symbol, member, artifact digest,
+locator and occurrence. Linked-IR indexes resolve either identity while raw
+call-graph and xref keys are retained. Changing the reviewed pack invalidates
+the Linked-IR cache. Missing, stale, cross-domain, forged or colliding bindings
+fail closed.
+
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and
 generated evidence, but does not write a snapshot or advance the state. This

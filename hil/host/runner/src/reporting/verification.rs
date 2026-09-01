@@ -9,6 +9,10 @@ use std::{
 use serde::Serialize;
 
 use super::{
+    build::{
+        BUILD_PROVENANCE_SCHEMA, BuildProvenance, BuildReproducibility, BuildSubject,
+        BuildSubjectRole, SourceMaterial, SourceRebuildStatus, build_id,
+    },
     history::{read_json, validate_manifest, validate_suite},
     run::{
         IntegrityIndex, RUN_SCHEMA, RunManifest, RunState, SuiteResult, collect_integrity_files,
@@ -28,12 +32,51 @@ pub(crate) struct VerificationCompletion {
     pub(crate) verified_run_ids: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub(crate) struct ArchivedFirmware {
+    pub(crate) run_id: String,
+    pub(crate) image: crate::qualification::scenario::ImageClass,
+    pub(crate) application_path: PathBuf,
+    pub(crate) application_sha256: String,
+}
+
 pub(crate) fn verify(
     root: &Path,
     target: &str,
     run_id: Option<&str>,
 ) -> Result<VerificationCompletion> {
     verify_at(&root.join("target/hil").join(target), target, run_id)
+}
+
+pub(crate) fn archived_firmware(
+    root: &Path,
+    target: &str,
+    run_id: &str,
+    image: crate::qualification::scenario::ImageClass,
+) -> Result<ArchivedFirmware> {
+    verify(root, target, Some(run_id))?;
+    let run_directory = root
+        .join("target/hil")
+        .join(target)
+        .join("runs")
+        .join(run_id);
+    let manifest: RunManifest = read_json(&run_directory.join("manifest.json"))?;
+    let artifact = manifest
+        .firmware
+        .iter()
+        .find(|artifact| artifact.image == image)
+        .ok_or_else(|| {
+            format!(
+                "HIL run `{run_id}` has no archived `{}` firmware",
+                image.id()
+            )
+        })?;
+    Ok(ArchivedFirmware {
+        run_id: run_id.to_owned(),
+        image,
+        application_path: run_directory.join(&artifact.application_path),
+        application_sha256: artifact.application_sha256.clone(),
+    })
 }
 
 fn verify_at(
@@ -159,7 +202,7 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
             .join("application.bin");
         if artifact.application_path != expected_path
             || !images.insert(artifact.image.id())
-            || !paths.insert(&artifact.application_path)
+            || !paths.insert(artifact.application_path.clone())
         {
             return Err(format!(
                 "HIL run `{}` has non-canonical firmware provenance for `{}`",
@@ -173,15 +216,48 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
             "runtime ELF",
             &manifest.run_id,
         )?;
+        validate_optional_firmware_file(
+            run_directory,
+            &mut paths,
+            artifact.runtime_elf_path.as_deref(),
+            artifact.runtime_elf_size_bytes,
+            &artifact.runtime_elf_sha256,
+            &PathBuf::from("firmware")
+                .join(artifact.image.id())
+                .join("runtime.elf"),
+            "runtime ELF",
+        )?;
         validate_sha256(
             &artifact.runtime_bin_sha256,
             "runtime binary",
             &manifest.run_id,
         )?;
+        validate_optional_firmware_file(
+            run_directory,
+            &mut paths,
+            artifact.runtime_bin_path.as_deref(),
+            artifact.runtime_bin_size_bytes,
+            &artifact.runtime_bin_sha256,
+            &PathBuf::from("firmware")
+                .join(artifact.image.id())
+                .join("runtime.bin"),
+            "runtime binary",
+        )?;
         validate_sha256(
             &artifact.bootstrap_elf_sha256,
             "bootstrap ELF",
             &manifest.run_id,
+        )?;
+        validate_optional_firmware_file(
+            run_directory,
+            &mut paths,
+            artifact.bootstrap_elf_path.as_deref(),
+            artifact.bootstrap_elf_size_bytes,
+            &artifact.bootstrap_elf_sha256,
+            &PathBuf::from("firmware")
+                .join(artifact.image.id())
+                .join("bootstrap.elf"),
+            "bootstrap ELF",
         )?;
         verify_indexed_file(
             run_directory,
@@ -190,6 +266,302 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
             &artifact.application_sha256,
             "firmware application",
         )?;
+        match (&artifact.build_id, &artifact.build_provenance_path) {
+            (None, None) => {}
+            (Some(build_id), Some(path)) => {
+                let expected = PathBuf::from("firmware")
+                    .join(artifact.image.id())
+                    .join("build-provenance.json");
+                if path != &expected || !paths.insert(path.clone()) {
+                    return Err(format!(
+                        "HIL run `{}` has non-canonical build provenance for `{}`",
+                        manifest.run_id,
+                        artifact.image.id()
+                    )
+                    .into());
+                }
+                validate_build_provenance(run_directory, manifest, artifact, build_id, path)?;
+            }
+            _ => {
+                return Err(format!(
+                    "HIL run `{}` has incomplete build provenance reference",
+                    manifest.run_id
+                )
+                .into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_firmware_file(
+    run_directory: &Path,
+    paths: &mut BTreeSet<PathBuf>,
+    path: Option<&Path>,
+    size_bytes: Option<u64>,
+    sha256: &str,
+    expected_path: &Path,
+    kind: &str,
+) -> Result<()> {
+    match (path, size_bytes) {
+        (None, None) => Ok(()),
+        (Some(path), Some(size_bytes))
+            if path == expected_path && paths.insert(path.to_owned()) =>
+        {
+            verify_indexed_file(run_directory, path, size_bytes, sha256, kind)
+        }
+        _ => Err(format!(
+            "HIL {kind} has incomplete, duplicate or non-canonical archive provenance"
+        )
+        .into()),
+    }
+}
+
+fn validate_build_provenance(
+    run_directory: &Path,
+    manifest: &RunManifest,
+    artifact: &super::run::FirmwareArtifact,
+    expected_build_id: &str,
+    path: &Path,
+) -> Result<()> {
+    validate_relative_path(path, "build provenance")?;
+    require_regular_file_below(run_directory, path)?;
+    let provenance: BuildProvenance = read_json(&run_directory.join(path))?;
+    if provenance.schema != BUILD_PROVENANCE_SCHEMA
+        || provenance.build_id != expected_build_id
+        || provenance.build_id != build_id(&provenance.subjects)
+        || provenance.build_type != "open-esp-radio-hil-firmware/v1"
+        || provenance.parameters.image != artifact.image
+        || provenance.parameters.runtime_profile != artifact.image.runtime_profile()
+        || provenance.parameters.runtime_features != artifact.image.runtime_features()
+        || provenance.parameters.target != crate::image::TARGET
+        || provenance.reproducibility != BuildReproducibility::Unverified
+    {
+        return Err(format!(
+            "HIL run `{}` has build provenance inconsistent with `{}`",
+            manifest.run_id,
+            artifact.image.id()
+        )
+        .into());
+    }
+    let expected_subjects = vec![
+        BuildSubject {
+            role: BuildSubjectRole::Application,
+            path: artifact.application_path.clone(),
+            size_bytes: artifact.application_size_bytes,
+            sha256: artifact.application_sha256.clone(),
+        },
+        BuildSubject {
+            role: BuildSubjectRole::BootstrapElf,
+            path: artifact
+                .bootstrap_elf_path
+                .clone()
+                .ok_or("build provenance requires an archived bootstrap ELF")?,
+            size_bytes: artifact
+                .bootstrap_elf_size_bytes
+                .ok_or("build provenance requires a bootstrap ELF size")?,
+            sha256: artifact.bootstrap_elf_sha256.clone(),
+        },
+        BuildSubject {
+            role: BuildSubjectRole::RuntimeBin,
+            path: artifact
+                .runtime_bin_path
+                .clone()
+                .ok_or("build provenance requires an archived runtime binary")?,
+            size_bytes: artifact
+                .runtime_bin_size_bytes
+                .ok_or("build provenance requires a runtime binary size")?,
+            sha256: artifact.runtime_bin_sha256.clone(),
+        },
+        BuildSubject {
+            role: BuildSubjectRole::RuntimeElf,
+            path: artifact
+                .runtime_elf_path
+                .clone()
+                .ok_or("build provenance requires an archived runtime ELF")?,
+            size_bytes: artifact
+                .runtime_elf_size_bytes
+                .ok_or("build provenance requires a runtime ELF size")?,
+            sha256: artifact.runtime_elf_sha256.clone(),
+        },
+    ];
+    if provenance.subjects != expected_subjects || provenance.sources.is_empty() {
+        return Err(format!(
+            "HIL run `{}` has inconsistent build subjects or no source materials",
+            manifest.run_id
+        )
+        .into());
+    }
+    for subject in &provenance.subjects {
+        verify_indexed_file(
+            run_directory,
+            &subject.path,
+            subject.size_bytes,
+            &subject.sha256,
+            "build subject",
+        )?;
+    }
+    let mut source_names = BTreeSet::new();
+    for source in &provenance.sources {
+        if source.name.is_empty() || !source_names.insert(&source.name) {
+            return Err(format!(
+                "HIL run `{}` has an invalid or duplicate source material",
+                manifest.run_id
+            )
+            .into());
+        }
+        validate_source_material(run_directory, manifest, source)?;
+    }
+    let primary = &provenance.sources[0];
+    if primary.name != "repository"
+        || primary.commit != manifest.repository.commit
+        || primary.dirty != manifest.repository.dirty
+        || primary.workspace_sha256 != manifest.repository.workspace_sha256
+    {
+        return Err(format!(
+            "HIL run `{}` has primary source material inconsistent with its manifest",
+            manifest.run_id
+        )
+        .into());
+    }
+    let source_reconstructable = provenance
+        .sources
+        .iter()
+        .all(|source| source.rebuild_status != SourceRebuildStatus::Incomplete);
+    if provenance.source_reconstructable != source_reconstructable {
+        return Err(format!(
+            "HIL run `{}` has inconsistent source reconstructability",
+            manifest.run_id
+        )
+        .into());
+    }
+    let mut file_names = BTreeSet::new();
+    let mut file_paths = BTreeSet::new();
+    for file in &provenance.files {
+        validate_relative_path(&file.path, "build file material")?;
+        validate_sha256(&file.sha256, "build file material", &file.name)?;
+        if file.name.is_empty() || !file_names.insert(&file.name) || !file_paths.insert(&file.path)
+        {
+            return Err(format!(
+                "HIL run `{}` has an invalid or duplicate build file material",
+                manifest.run_id
+            )
+            .into());
+        }
+        if let Some(archive_path) = &file.archive_path {
+            verify_indexed_file(
+                run_directory,
+                archive_path,
+                file.size_bytes,
+                &file.sha256,
+                "archived build file material",
+            )?;
+        }
+    }
+    let expected_lock_archive = PathBuf::from("firmware")
+        .join(artifact.image.id())
+        .join("effective-Cargo.lock");
+    if provenance
+        .files
+        .iter()
+        .find(|file| file.name == "embedded-lock")
+        .and_then(|file| {
+            file.archive_path
+                .as_ref()
+                .filter(|path| *path == &expected_lock_archive)
+        })
+        .is_none()
+    {
+        return Err(format!(
+            "HIL run `{}` does not archive its effective embedded lock file",
+            manifest.run_id
+        )
+        .into());
+    }
+    let mut tools = BTreeSet::new();
+    if provenance.environment.cargo_incremental != "0"
+        || provenance.environment.tools.iter().any(|tool| {
+            tool.name.is_empty() || tool.program.is_empty() || !tools.insert(&tool.name)
+        })
+    {
+        return Err(format!(
+            "HIL run `{}` has invalid build environment provenance",
+            manifest.run_id
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn validate_source_material(
+    run_directory: &Path,
+    manifest: &RunManifest,
+    source: &SourceMaterial,
+) -> Result<()> {
+    match (
+        source.tracked_patch_path.as_deref(),
+        source.tracked_patch_size_bytes,
+        source.tracked_patch_sha256.as_deref(),
+    ) {
+        (None, None, None) => {}
+        (Some(path), Some(size_bytes), Some(sha256)) => verify_indexed_file(
+            run_directory,
+            path,
+            size_bytes,
+            sha256,
+            "tracked source patch",
+        )?,
+        _ => {
+            return Err(format!(
+                "HIL run `{}` has incomplete tracked source patch provenance",
+                manifest.run_id
+            )
+            .into());
+        }
+    }
+    let mut untracked_paths = BTreeSet::new();
+    validate_sha256(&source.workspace_sha256, "source workspace", &source.name)?;
+    for file in &source.untracked_files {
+        validate_relative_path(&file.path, "untracked source identity")?;
+        validate_sha256(
+            &file.sha256,
+            "untracked source identity",
+            &file.path.display().to_string(),
+        )?;
+        if !untracked_paths.insert(&file.path) {
+            return Err(format!(
+                "HIL run `{}` has a duplicate untracked source path `{}`",
+                manifest.run_id,
+                file.path.display()
+            )
+            .into());
+        }
+    }
+    let state_is_consistent = match source.rebuild_status {
+        SourceRebuildStatus::CleanCommit => {
+            !source.dirty
+                && source.tracked_patch_path.is_none()
+                && source.untracked_files.is_empty()
+                && source.limitations.is_empty()
+                && source.remote.is_some()
+                && !source.commit.is_empty()
+        }
+        SourceRebuildStatus::TrackedPatch => {
+            source.dirty
+                && source.tracked_patch_path.is_some()
+                && source.untracked_files.is_empty()
+                && source.limitations.is_empty()
+                && source.remote.is_some()
+                && !source.commit.is_empty()
+        }
+        SourceRebuildStatus::Incomplete => !source.limitations.is_empty(),
+    };
+    if !state_is_consistent {
+        return Err(format!(
+            "HIL run `{}` has inconsistent source rebuild provenance",
+            manifest.run_id
+        )
+        .into());
     }
     Ok(())
 }
@@ -443,6 +815,107 @@ mod tests {
         (root, run)
     }
 
+    fn add_build_provenance(run: &Path) {
+        let runtime_elf_path = PathBuf::from("firmware/correctness/runtime.elf");
+        let runtime_bin_path = PathBuf::from("firmware/correctness/runtime.bin");
+        let bootstrap_elf_path = PathBuf::from("firmware/correctness/bootstrap.elf");
+        let effective_lock_path = PathBuf::from("firmware/correctness/effective-Cargo.lock");
+        fs::write(run.join(&runtime_elf_path), b"runtime elf").unwrap();
+        fs::write(run.join(&runtime_bin_path), b"runtime bin").unwrap();
+        fs::write(run.join(&bootstrap_elf_path), b"bootstrap elf").unwrap();
+        fs::write(run.join(&effective_lock_path), b"effective lock").unwrap();
+        let mut manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
+        manifest.repository.workspace_sha256 = "00".repeat(32);
+        let artifact = &mut manifest.firmware[0];
+        artifact.runtime_elf_path = Some(runtime_elf_path.clone());
+        artifact.runtime_elf_size_bytes = Some(11);
+        artifact.runtime_elf_sha256 = sha256_file(&run.join(&runtime_elf_path)).unwrap();
+        artifact.runtime_bin_path = Some(runtime_bin_path.clone());
+        artifact.runtime_bin_size_bytes = Some(11);
+        artifact.runtime_bin_sha256 = sha256_file(&run.join(&runtime_bin_path)).unwrap();
+        artifact.bootstrap_elf_path = Some(bootstrap_elf_path.clone());
+        artifact.bootstrap_elf_size_bytes = Some(13);
+        artifact.bootstrap_elf_sha256 = sha256_file(&run.join(&bootstrap_elf_path)).unwrap();
+        let subjects = vec![
+            BuildSubject {
+                role: BuildSubjectRole::Application,
+                path: artifact.application_path.clone(),
+                size_bytes: artifact.application_size_bytes,
+                sha256: artifact.application_sha256.clone(),
+            },
+            BuildSubject {
+                role: BuildSubjectRole::BootstrapElf,
+                path: bootstrap_elf_path,
+                size_bytes: 13,
+                sha256: artifact.bootstrap_elf_sha256.clone(),
+            },
+            BuildSubject {
+                role: BuildSubjectRole::RuntimeBin,
+                path: runtime_bin_path,
+                size_bytes: 11,
+                sha256: artifact.runtime_bin_sha256.clone(),
+            },
+            BuildSubject {
+                role: BuildSubjectRole::RuntimeElf,
+                path: runtime_elf_path,
+                size_bytes: 11,
+                sha256: artifact.runtime_elf_sha256.clone(),
+            },
+        ];
+        let build_id = super::super::build::build_id(&subjects);
+        let provenance_path = PathBuf::from("firmware/correctness/build-provenance.json");
+        artifact.build_id = Some(build_id.clone());
+        artifact.build_provenance_path = Some(provenance_path.clone());
+        atomic_json(&run.join("manifest.json"), &manifest).unwrap();
+        atomic_json(
+            &run.join(&provenance_path),
+            &BuildProvenance {
+                schema: BUILD_PROVENANCE_SCHEMA,
+                build_id,
+                build_type: String::from("open-esp-radio-hil-firmware/v1"),
+                parameters: super::super::build::BuildParameters {
+                    image: ImageClass::Correctness,
+                    runtime_profile: ImageClass::Correctness.runtime_profile().to_owned(),
+                    target: crate::image::TARGET.to_owned(),
+                    runtime_features: ImageClass::Correctness.runtime_features().to_owned(),
+                },
+                sources: vec![SourceMaterial {
+                    name: String::from("repository"),
+                    checkout_path: PathBuf::from("/build/source"),
+                    remote: Some(String::from("https://example.invalid/repository.git")),
+                    commit: manifest.repository.commit.clone(),
+                    dirty: manifest.repository.dirty,
+                    workspace_sha256: manifest.repository.workspace_sha256.clone(),
+                    rebuild_status: SourceRebuildStatus::CleanCommit,
+                    tracked_patch_path: None,
+                    tracked_patch_size_bytes: None,
+                    tracked_patch_sha256: None,
+                    untracked_files: Vec::new(),
+                    limitations: Vec::new(),
+                }],
+                files: vec![super::super::build::BuildFileMaterial {
+                    name: String::from("embedded-lock"),
+                    path: PathBuf::from("hil/targets/esp32s31/Cargo.lock"),
+                    archive_path: Some(effective_lock_path.clone()),
+                    size_bytes: 14,
+                    sha256: sha256_file(&run.join(&effective_lock_path)).unwrap(),
+                }],
+                environment: super::super::build::BuildEnvironment {
+                    tools: Vec::new(),
+                    inherited_rustflags: None,
+                    inherited_encoded_rustflags: None,
+                    cargo_incremental: String::from("0"),
+                    source_date_epoch: None,
+                },
+                subjects,
+                source_reconstructable: true,
+                reproducibility: super::super::build::BuildReproducibility::Unverified,
+            },
+        )
+        .unwrap();
+        write_integrity_index(run, "run-1").unwrap();
+    }
+
     #[test]
     fn verifies_firmware_and_attachment_content() {
         let (root, _) = fixture();
@@ -452,6 +925,45 @@ mod tests {
         assert_eq!(completion.attachments, 1);
         assert_eq!(completion.firmware_artifacts, 1);
         assert_eq!(completion.verified_run_ids, ["run-1"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn selects_only_verified_archived_firmware_for_replay() {
+        let (root, run) = fixture();
+        let firmware = archived_firmware(&root, "esp32s31", "run-1", ImageClass::Correctness)
+            .expect("select archived firmware");
+        assert_eq!(
+            firmware.application_path,
+            run.join("firmware/correctness/application.bin")
+        );
+        assert_eq!(firmware.application_sha256.len(), 64);
+        let error = archived_firmware(&root, "esp32s31", "run-1", ImageClass::Performance)
+            .expect_err("reject absent image class");
+        assert!(
+            error
+                .to_string()
+                .contains("no archived `performance` firmware")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn verifies_complete_build_provenance_and_all_firmware_subjects() {
+        let (root, run) = fixture();
+        add_build_provenance(&run);
+        let completion = verify(&root, "esp32s31", Some("run-1")).unwrap();
+        assert_eq!(completion.firmware_artifacts, 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_tampered_archived_runtime_elf() {
+        let (root, run) = fixture();
+        add_build_provenance(&run);
+        fs::write(run.join("firmware/correctness/runtime.elf"), b"runtime elF").unwrap();
+        let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
+        assert!(error.to_string().contains("SHA-256"));
         fs::remove_dir_all(root).unwrap();
     }
 

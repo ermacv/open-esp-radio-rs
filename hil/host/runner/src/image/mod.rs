@@ -183,6 +183,7 @@ struct ArtifactReport<'a> {
     runtime_elf: String,
     runtime_bin: String,
     bootstrap_elf: String,
+    effective_embedded_lock: String,
     application_image: String,
     application_sha256: String,
     flashed: bool,
@@ -200,6 +201,7 @@ pub(crate) fn print_artifacts(
         runtime_elf: artifacts.runtime_elf.display().to_string(),
         runtime_bin: artifacts.runtime_bin.display().to_string(),
         bootstrap_elf: artifacts.bootstrap_elf.display().to_string(),
+        effective_embedded_lock: artifacts.effective_embedded_lock.display().to_string(),
         application_image: artifacts.application_image.display().to_string(),
         application_sha256: sha256_file(&artifacts.application_image)?,
         flashed,
@@ -218,6 +220,7 @@ pub(crate) struct Artifacts {
     pub(crate) runtime_elf: PathBuf,
     pub(crate) runtime_bin: PathBuf,
     pub(crate) bootstrap_elf: PathBuf,
+    pub(crate) effective_embedded_lock: PathBuf,
     pub(crate) application_image: PathBuf,
 }
 
@@ -278,6 +281,7 @@ fn build_resolved(
         .join(TARGET)
         .join("release")
         .join(BOOTSTRAP_BIN);
+    let effective_embedded_lock = output.join("effective-Cargo.lock");
     let application_image = output.join("application.bin");
 
     let runtime_features = class.runtime_features();
@@ -290,7 +294,8 @@ fn build_resolved(
         .arg(&manifest)
         .args(["-p", RUNTIME_BIN, "--release", "--target", TARGET])
         .args(["--no-default-features", "--features", runtime_features])
-        .env("CARGO_TARGET_DIR", &runtime_target);
+        .env("CARGO_TARGET_DIR", &runtime_target)
+        .env("CARGO_INCREMENTAL", "0");
     if local_esp_hal.is_none() {
         runtime.arg("--locked");
     }
@@ -327,6 +332,7 @@ fn build_resolved(
         .arg(&manifest)
         .args(["-p", BOOTSTRAP_BIN, "--release", "--target", TARGET])
         .env("CARGO_TARGET_DIR", &bootstrap_target)
+        .env("CARGO_INCREMENTAL", "0")
         .env("PSRAM_RUNTIME_BIN", absolute(&runtime_bin)?);
     if local_esp_hal.is_none() {
         bootstrap.arg("--locked");
@@ -373,6 +379,10 @@ fn build_resolved(
         .arg(&application_image);
     run_command(&mut save_image, "encode ESP application image")?;
     audit_application_image(&application_image)?;
+    fs::copy(
+        root.join("hil/targets/esp32s31/Cargo.lock"),
+        &effective_embedded_lock,
+    )?;
 
     eprintln!("runtime_crc32={crc:08x}");
     eprintln!("placement_audit=PASS");
@@ -383,6 +393,7 @@ fn build_resolved(
         runtime_elf,
         runtime_bin,
         bootstrap_elf,
+        effective_embedded_lock,
         application_image,
     })
 }

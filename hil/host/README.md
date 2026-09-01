@@ -10,6 +10,7 @@ cargo hil doctor
 cargo hil scenario list
 cargo hil scenario validate [id]
 cargo hil image build|flash <boot-smoke|performance|correctness|diagnostic-mac-irq|diagnostic-task-poll|diagnostic-rx-delivery>
+cargo hil image replay <run-id> <image-class>
 cargo hil device status
 cargo hil report rebuild
 cargo hil report verify [run-id]
@@ -50,8 +51,15 @@ suite.json          typed suite/scenario/repetition outcomes
 junit.xml           CI view derived from suite.json
 report.html         human view derived from suite.json
 integrity.json      deterministic size/SHA-256 inventory of the whole bundle
-firmware/<image>/application.bin
-                    exact application bytes used by the flash operation
+firmware/<image>/
+├── build-provenance.json
+│                   build recipe, source materials, tools and output subjects
+├── application.bin exact application bytes used by the flash operation
+├── runtime.elf     exact symbolized runtime used to produce the image
+├── runtime.bin     exact packed stage-two runtime
+├── bootstrap.elf   exact bootstrap used to encode the application
+└── effective-Cargo.lock
+                    embedded dependency resolution observed before restore
 scenarios/<id>/
 ├── scenario.json
 ├── result.json
@@ -92,6 +100,22 @@ JUnit/HTML views. Unindexed additions, missing files, symlinks, path traversal
 and changed content fail closed. The hashes detect accidental corruption and
 internally inconsistent bundles; because they live beside the evidence, they
 are not a signature against a malicious rewrite of the whole bundle.
+
+New runs retain all firmware subjects through a SHA-256 content-addressed
+store under `target/hil/<target>/objects/`. The files inside a run are ordinary
+hard links when the filesystem supports them, or independent copies
+otherwise. This keeps a copied run self-contained without allocating another
+large runtime ELF for every repeated scenario. Build provenance follows the
+subjects/materials/recipe separation described in
+`docs/HIL_BUILD_AND_REPORT_REPRODUCIBILITY.md`. A tracked dirty delta is stored
+as a binary Git patch; untracked content is identified but never copied
+implicitly, and makes source reconstruction incomplete.
+
+`cargo hil image replay <run-id> <image-class>` first performs the same offline
+bundle verification and then flashes the archived `application.bin` without
+running Cargo or changing its bytes. It is the supported primitive for exact
+historical A/B. It does not by itself rerun a scenario or claim that the lab
+environment matches the original run.
 
 The qualification evaluator consumes these same sealed bundles through an
 independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to

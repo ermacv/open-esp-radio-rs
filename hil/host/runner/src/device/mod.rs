@@ -34,9 +34,26 @@ fn device_status_at(output: &Path, lab: &transport::lab_config::LabConfig) -> Re
 }
 
 pub(crate) fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
+    flash_application(root, &artifacts.application_image, &artifacts.output, port)
+}
+
+pub(crate) fn flash_archived(
+    root: &Path,
+    firmware: &reporting::verification::ArchivedFirmware,
+    port: &Path,
+) -> Result<()> {
+    let output = root
+        .join("target/hil/esp32s31/replay")
+        .join(&firmware.run_id)
+        .join(firmware.image.id());
+    flash_application(root, &firmware.application_path, &output, port)
+}
+
+fn flash_application(root: &Path, application: &Path, output: &Path, port: &Path) -> Result<()> {
+    fs::create_dir_all(output)?;
     let partition_csv = root.join("hil/targets/esp32s31/partitions/hil.csv");
-    let partition_bin = artifacts.output.join("partitions.bin");
-    let selector_bin = artifacts.output.join("otadata-ota0-valid.bin");
+    let partition_bin = output.join("partitions.bin");
+    let selector_bin = output.join("otadata-ota0-valid.bin");
 
     let mut partition = Command::new(program_from_env("ESPFLASH", "espflash"));
     partition
@@ -56,7 +73,7 @@ pub(crate) fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<(
     write_flash_binary(
         port,
         OTA_0_OFFSET,
-        &artifacts.application_image,
+        application,
         "no-reset",
         "write HIL application",
     )?;

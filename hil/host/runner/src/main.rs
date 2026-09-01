@@ -140,6 +140,11 @@ enum ImageCommand {
     Flash {
         class: qualification::scenario::ImageClass,
     },
+    /// Verify and flash an exact application archived by an earlier HIL run.
+    Replay {
+        run_id: String,
+        class: qualification::scenario::ImageClass,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -195,19 +200,37 @@ fn run() -> Result<()> {
                 }
             }
         }
-        CliCommand::Image { command } => {
-            let (class, flash_requested) = match command {
-                ImageCommand::Build { class } => (class, false),
-                ImageCommand::Flash { class } => (class, true),
-            };
-            let artifacts = image::build(&root, class)?;
-            if flash_requested {
+        CliCommand::Image { command } => match command {
+            ImageCommand::Build { class } => {
+                let artifacts = image::build(&root, class)?;
+                image::print_artifacts(class, &artifacts, false)
+            }
+            ImageCommand::Flash { class } => {
+                let artifacts = image::build(&root, class)?;
                 let lab = transport::lab_config::LabConfig::load(&lab_path)?;
                 let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
                 device::flash(&root, &artifacts, &lab.device.serial)?;
+                image::print_artifacts(class, &artifacts, true)
             }
-            image::print_artifacts(class, &artifacts, flash_requested)
-        }
+            ImageCommand::Replay { run_id, class } => {
+                let firmware =
+                    reporting::verification::archived_firmware(&root, "esp32s31", &run_id, class)?;
+                let lab = transport::lab_config::LabConfig::load(&lab_path)?;
+                let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
+                device::flash_archived(&root, &firmware, &lab.device.serial)?;
+                emit_json(
+                    &serde_json::json!({
+                        "schema": reporting::run::RUN_SCHEMA,
+                        "run_id": firmware.run_id,
+                        "image_class": firmware.image,
+                        "application_image": firmware.application_path,
+                        "application_sha256": firmware.application_sha256,
+                        "flashed": true
+                    }),
+                    true,
+                )
+            }
+        },
         CliCommand::Device {
             command: DeviceCommand::Status,
         } => {
@@ -487,6 +510,7 @@ fn prepare_image(
         &artifacts.runtime_elf,
         &artifacts.runtime_bin,
         &artifacts.bootstrap_elf,
+        &artifacts.effective_embedded_lock,
     )?;
     session.record_event(
         "image-build-finished",

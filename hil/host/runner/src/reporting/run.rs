@@ -14,6 +14,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::build::{self, BuildSubject, BuildSubjectRole, SourceMaterial};
 use crate::{Result, qualification::scenario::ImageClass};
 
 pub(crate) const RUN_SCHEMA: u16 = 2;
@@ -384,11 +385,27 @@ pub(super) struct CellProvenance {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) struct FirmwareArtifact {
     pub(super) image: ImageClass,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) build_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) build_provenance_path: Option<PathBuf>,
     pub(super) application_path: PathBuf,
     pub(super) application_size_bytes: u64,
     pub(super) application_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) runtime_elf_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) runtime_elf_size_bytes: Option<u64>,
     pub(super) runtime_elf_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) runtime_bin_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) runtime_bin_size_bytes: Option<u64>,
     pub(super) runtime_bin_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) bootstrap_elf_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) bootstrap_elf_size_bytes: Option<u64>,
     pub(super) bootstrap_elf_sha256: String,
 }
 
@@ -446,12 +463,40 @@ pub(crate) struct CompletionReport {
 }
 
 pub(crate) struct RunSession {
+    repository_root: PathBuf,
     target_directory: PathBuf,
     directory: PathBuf,
+    source_materials: Vec<SourceMaterial>,
     manifest: RunManifest,
     started: Instant,
     events: File,
     finished: bool,
+}
+
+struct UnpublishedRunDirectory {
+    path: PathBuf,
+    published: bool,
+}
+
+impl UnpublishedRunDirectory {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            published: false,
+        }
+    }
+
+    fn publish(&mut self) {
+        self.published = true;
+    }
+}
+
+impl Drop for UnpublishedRunDirectory {
+    fn drop(&mut self) {
+        if !self.published {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 }
 
 impl RunSession {
@@ -465,18 +510,27 @@ impl RunSession {
     ) -> Result<Self> {
         let started = Instant::now();
         let started_unix_millis = unix_millis()?;
-        let repository = repository_provenance(root)?;
-        let runner = runner_provenance();
         let run_id = create_run_id(started_unix_millis);
         let target_directory = root.join("target/hil").join(target);
         let runs = target_directory.join("runs");
         fs::create_dir_all(&runs)?;
         let directory = create_unique_directory(&runs, &run_id)?;
+        let mut unpublished_directory = UnpublishedRunDirectory::new(directory.clone());
         let run_id = directory
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or("HIL run directory does not have a UTF-8 name")?
             .to_owned();
+        let source_materials = build::capture_sources(root, &directory)?;
+        let repository_source = source_materials
+            .first()
+            .ok_or("HIL source material set has no primary repository")?;
+        let repository = RepositoryProvenance {
+            commit: repository_source.commit.clone(),
+            dirty: repository_source.dirty,
+            workspace_sha256: repository_source.workspace_sha256.clone(),
+        };
+        let runner = runner_provenance();
         let events = OpenOptions::new()
             .create_new(true)
             .append(true)
@@ -504,14 +558,17 @@ impl RunSession {
         };
         atomic_json(&directory.join("manifest.json"), &manifest)?;
         let mut session = Self {
+            repository_root: root.to_owned(),
             target_directory,
             directory,
+            source_materials,
             manifest,
             started,
             events,
             finished: false,
         };
         session.record_event("run-started", None, None, None)?;
+        unpublished_directory.publish();
         Ok(session)
     }
 
@@ -558,20 +615,99 @@ impl RunSession {
         runtime_elf: &Path,
         runtime_bin: &Path,
         bootstrap_elf: &Path,
+        effective_embedded_lock: &Path,
     ) -> Result<PathBuf> {
-        let application_path = PathBuf::from("firmware")
-            .join(image.id())
-            .join("application.bin");
+        build::verify_sources_unchanged(&self.repository_root, &self.source_materials)?;
+        let firmware_directory = PathBuf::from("firmware").join(image.id());
+        let application_path = firmware_directory.join("application.bin");
         let archived_application = self.directory.join(&application_path);
-        let application_size_bytes = archive_file(application, &archived_application)?;
+        let runtime_elf_path = firmware_directory.join("runtime.elf");
+        let runtime_bin_path = firmware_directory.join("runtime.bin");
+        let bootstrap_elf_path = firmware_directory.join("bootstrap.elf");
+        let effective_embedded_lock_path = firmware_directory.join("effective-Cargo.lock");
+        let application = build::archive_content_addressed(
+            application,
+            &archived_application,
+            &self.target_directory,
+        )?;
+        let runtime_elf = build::archive_content_addressed(
+            runtime_elf,
+            &self.directory.join(&runtime_elf_path),
+            &self.target_directory,
+        )?;
+        let runtime_bin = build::archive_content_addressed(
+            runtime_bin,
+            &self.directory.join(&runtime_bin_path),
+            &self.target_directory,
+        )?;
+        let bootstrap_elf = build::archive_content_addressed(
+            bootstrap_elf,
+            &self.directory.join(&bootstrap_elf_path),
+            &self.target_directory,
+        )?;
+        let effective_embedded_lock = build::archive_content_addressed(
+            effective_embedded_lock,
+            &self.directory.join(&effective_embedded_lock_path),
+            &self.target_directory,
+        )?;
+        let subjects = vec![
+            BuildSubject {
+                role: BuildSubjectRole::Application,
+                path: application_path.clone(),
+                size_bytes: application.size_bytes,
+                sha256: application.sha256.clone(),
+            },
+            BuildSubject {
+                role: BuildSubjectRole::BootstrapElf,
+                path: bootstrap_elf_path.clone(),
+                size_bytes: bootstrap_elf.size_bytes,
+                sha256: bootstrap_elf.sha256.clone(),
+            },
+            BuildSubject {
+                role: BuildSubjectRole::RuntimeBin,
+                path: runtime_bin_path.clone(),
+                size_bytes: runtime_bin.size_bytes,
+                sha256: runtime_bin.sha256.clone(),
+            },
+            BuildSubject {
+                role: BuildSubjectRole::RuntimeElf,
+                path: runtime_elf_path.clone(),
+                size_bytes: runtime_elf.size_bytes,
+                sha256: runtime_elf.sha256.clone(),
+            },
+        ];
+        let build_id = build::build_id(&subjects);
+        let build_provenance_path = firmware_directory.join("build-provenance.json");
+        let provenance = build::create_provenance(
+            &self.repository_root,
+            image,
+            build_id.clone(),
+            self.source_materials.clone(),
+            subjects,
+            build::archived_file_material(
+                "embedded-lock",
+                Path::new("hil/targets/esp32s31/Cargo.lock"),
+                effective_embedded_lock_path,
+                &effective_embedded_lock,
+            ),
+        )?;
+        atomic_json(&self.directory.join(&build_provenance_path), &provenance)?;
         let artifact = FirmwareArtifact {
             image,
+            build_id: Some(build_id),
+            build_provenance_path: Some(build_provenance_path),
             application_path,
-            application_size_bytes,
-            application_sha256: sha256_file(&archived_application)?,
-            runtime_elf_sha256: sha256_file(runtime_elf)?,
-            runtime_bin_sha256: sha256_file(runtime_bin)?,
-            bootstrap_elf_sha256: sha256_file(bootstrap_elf)?,
+            application_size_bytes: application.size_bytes,
+            application_sha256: application.sha256,
+            runtime_elf_path: Some(runtime_elf_path),
+            runtime_elf_size_bytes: Some(runtime_elf.size_bytes),
+            runtime_elf_sha256: runtime_elf.sha256,
+            runtime_bin_path: Some(runtime_bin_path),
+            runtime_bin_size_bytes: Some(runtime_bin.size_bytes),
+            runtime_bin_sha256: runtime_bin.sha256,
+            bootstrap_elf_path: Some(bootstrap_elf_path),
+            bootstrap_elf_size_bytes: Some(bootstrap_elf.size_bytes),
+            bootstrap_elf_sha256: bootstrap_elf.sha256,
         };
         self.manifest.firmware.retain(|entry| entry.image != image);
         self.manifest.firmware.push(artifact);
@@ -820,102 +956,6 @@ fn collect_integrity_files_below(
         }
     }
     Ok(())
-}
-
-fn archive_file(source: &Path, destination: &Path) -> Result<u64> {
-    let source_metadata = fs::symlink_metadata(source)?;
-    if !source_metadata.file_type().is_file() {
-        return Err(format!(
-            "firmware application is not a regular file: {}",
-            source.display()
-        )
-        .into());
-    }
-    if destination.try_exists()? {
-        return Err(format!(
-            "firmware application is already archived: {}",
-            destination.display()
-        )
-        .into());
-    }
-    let parent = destination.parent().ok_or_else(|| {
-        format!(
-            "firmware archive path has no parent: {}",
-            destination.display()
-        )
-    })?;
-    fs::create_dir_all(parent)?;
-    let counter = UNIQUE_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let temporary = parent.join(format!(
-        ".application.bin.tmp-{}-{counter}",
-        std::process::id()
-    ));
-    let result = (|| -> Result<u64> {
-        let mut input = File::open(source)?;
-        let mut output = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary)?;
-        let size = std::io::copy(&mut input, &mut output)?;
-        output.flush()?;
-        output.sync_all()?;
-        fs::rename(&temporary, destination)?;
-        File::open(parent)?.sync_all()?;
-        Ok(size)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-fn repository_provenance(root: &Path) -> Result<RepositoryProvenance> {
-    let commit = git_output(root, &["rev-parse", "HEAD"])?;
-    let status = git_output(
-        root,
-        &["status", "--porcelain=v1", "--untracked-files=normal"],
-    )?;
-    let tracked_diff = git_output_bytes(root, &["diff", "--binary", "HEAD", "--"])?;
-    let untracked = git_output_bytes(root, &["ls-files", "--others", "--exclude-standard", "-z"])?;
-    let mut digest = Sha256::new();
-    digest.update(status.as_bytes());
-    digest.update(&tracked_diff);
-    for path in untracked
-        .split(|byte| *byte == 0)
-        .filter(|path| !path.is_empty())
-    {
-        digest.update(path);
-        let path = String::from_utf8(path.to_vec())?;
-        digest.update(fs::read(root.join(path))?);
-    }
-    Ok(RepositoryProvenance {
-        commit,
-        dirty: !status.is_empty(),
-        workspace_sha256: format!("{:x}", digest.finalize()),
-    })
-}
-
-fn git_output(root: &Path, arguments: &[&str]) -> Result<String> {
-    Ok(String::from_utf8(git_output_bytes(root, arguments)?)?
-        .trim()
-        .to_owned())
-}
-
-fn git_output_bytes(root: &Path, arguments: &[&str]) -> Result<Vec<u8>> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(arguments)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git {} failed with status {}",
-            arguments.join(" "),
-            output.status
-        )
-        .into());
-    }
-    Ok(output.stdout)
 }
 
 fn runner_provenance() -> RunnerProvenance {
@@ -1261,6 +1301,7 @@ fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reporting::build::{SourceLimitation, SourceRebuildStatus, capture_source_material};
 
     fn temporary_directory(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -1344,9 +1385,40 @@ mod tests {
         manifest.finished_unix_millis = None;
         manifest.duration_millis = None;
         atomic_json(&directory.join("manifest.json"), &manifest).unwrap();
+        let repository_root = directory
+            .parent()
+            .expect("test run directory has a parent")
+            .to_owned();
+        manifest.repository = RepositoryProvenance {
+            commit: String::new(),
+            dirty: true,
+            workspace_sha256: String::from(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+        };
         RunSession {
-            target_directory: directory.to_owned(),
+            repository_root: repository_root.clone(),
+            target_directory: directory
+                .parent()
+                .expect("test run directory has a parent")
+                .to_owned(),
             directory: directory.to_owned(),
+            source_materials: vec![SourceMaterial {
+                name: String::from("repository"),
+                checkout_path: repository_root,
+                remote: Some(String::from("https://example.invalid/repository.git")),
+                commit: String::new(),
+                dirty: true,
+                workspace_sha256: String::from(
+                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                ),
+                rebuild_status: SourceRebuildStatus::Incomplete,
+                tracked_patch_path: None,
+                tracked_patch_size_bytes: None,
+                tracked_patch_sha256: None,
+                untracked_files: Vec::new(),
+                limitations: vec![SourceLimitation::RepositoryStateNotCaptured],
+            }],
             manifest,
             started: Instant::now(),
             events: File::create(directory.join("events.jsonl")).unwrap(),
@@ -1360,6 +1432,20 @@ mod tests {
         let mut session = session(&directory);
         session.target_directory = target_directory.to_owned();
         session
+    }
+
+    fn write_test_build_materials(root: &Path) {
+        for relative in [
+            "Cargo.lock",
+            "hil/targets/esp32s31/Cargo.lock",
+            "hil/targets/esp32s31/Cargo.toml",
+            "hil/targets/esp32s31/stack.toml",
+            "hil/targets/esp32s31/partitions/hil.csv",
+        ] {
+            let path = root.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, format!("test material: {relative}\n")).unwrap();
+        }
     }
 
     #[test]
@@ -1407,6 +1493,104 @@ mod tests {
     }
 
     #[test]
+    fn repository_archive_seals_tracked_patch_and_marks_untracked_content_incomplete() {
+        let base = temporary_directory("source-archive");
+        let repository = base.join("repository");
+        fs::create_dir(&repository).unwrap();
+        for arguments in [
+            &["init", "-q", "-b", "main"][..],
+            &["config", "user.name", "HIL Test"],
+            &["config", "user.email", "hil@example.invalid"],
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://example.invalid/repository.git",
+            ],
+        ] {
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&repository)
+                    .args(arguments)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        fs::write(repository.join("tracked.txt"), b"base\n").unwrap();
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&repository)
+                .args(["add", "tracked.txt"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&repository)
+                .args(["commit", "-m", "base"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        fs::write(repository.join("tracked.txt"), b"changed\n").unwrap();
+        let tracked_run = base.join("tracked-run");
+        fs::create_dir(&tracked_run).unwrap();
+        let tracked_source = capture_source_material(
+            "repository",
+            &repository,
+            &tracked_run,
+            Path::new("source/repository.patch"),
+        )
+        .unwrap();
+        assert!(tracked_source.dirty);
+        assert_eq!(
+            tracked_source.rebuild_status,
+            SourceRebuildStatus::TrackedPatch
+        );
+        assert!(tracked_source.limitations.is_empty());
+        assert!(tracked_source.tracked_patch_size_bytes.unwrap() != 0);
+        assert!(
+            fs::read_to_string(
+                tracked_run.join(tracked_source.tracked_patch_path.expect("tracked patch"))
+            )
+            .unwrap()
+            .contains("+changed")
+        );
+
+        fs::write(repository.join("untracked.txt"), b"untracked\n").unwrap();
+        let incomplete_run = base.join("incomplete-run");
+        fs::create_dir(&incomplete_run).unwrap();
+        let incomplete_source = capture_source_material(
+            "repository",
+            &repository,
+            &incomplete_run,
+            Path::new("source/repository.patch"),
+        )
+        .unwrap();
+        assert_eq!(
+            incomplete_source.rebuild_status,
+            SourceRebuildStatus::Incomplete
+        );
+        assert_eq!(
+            incomplete_source.limitations,
+            [SourceLimitation::UntrackedContentNotArchived]
+        );
+        assert_eq!(incomplete_source.untracked_files.len(), 1);
+        assert_eq!(
+            incomplete_source.untracked_files[0].path,
+            Path::new("untracked.txt")
+        );
+        assert_eq!(incomplete_source.untracked_files[0].size_bytes, 10);
+        assert_eq!(incomplete_source.untracked_files[0].sha256.len(), 64);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn attachments_are_sorted_and_content_addressed() {
         let root = temporary_directory("attachments");
         fs::create_dir(root.join("nested")).unwrap();
@@ -1429,28 +1613,31 @@ mod tests {
     #[test]
     fn firmware_record_archives_the_exact_application() {
         let root = temporary_directory("firmware");
+        write_test_build_materials(&root);
         let run_directory = root.join("run");
         fs::create_dir(&run_directory).unwrap();
         let application = root.join("application.bin");
         let runtime_elf = root.join("runtime.elf");
         let runtime_bin = root.join("runtime.bin");
         let bootstrap_elf = root.join("bootstrap.elf");
+        let effective_embedded_lock = root.join("hil/targets/esp32s31/Cargo.lock");
         fs::write(&application, b"application bytes").unwrap();
         fs::write(&runtime_elf, b"runtime elf").unwrap();
         fs::write(&runtime_bin, b"runtime bin").unwrap();
         fs::write(&bootstrap_elf, b"bootstrap elf").unwrap();
 
-        let mut session = session(&run_directory);
-        session
+        let mut first_session = session(&run_directory);
+        first_session
             .record_firmware(
                 ImageClass::Correctness,
                 &application,
                 &runtime_elf,
                 &runtime_bin,
                 &bootstrap_elf,
+                &effective_embedded_lock,
             )
             .unwrap();
-        let artifact = &session.manifest.firmware[0];
+        let artifact = &first_session.manifest.firmware[0];
         assert_eq!(
             artifact.application_path,
             PathBuf::from("firmware/correctness/application.bin")
@@ -1461,8 +1648,78 @@ mod tests {
             b"application bytes"
         );
         assert_eq!(artifact.application_sha256.len(), 64);
-        session.finished = true;
-        drop(session);
+        assert_eq!(
+            fs::read(
+                run_directory.join(
+                    artifact
+                        .runtime_elf_path
+                        .as_ref()
+                        .expect("runtime ELF path")
+                )
+            )
+            .unwrap(),
+            b"runtime elf"
+        );
+        assert_eq!(artifact.runtime_elf_size_bytes, Some(11));
+        assert_eq!(
+            fs::read(
+                run_directory.join(
+                    artifact
+                        .runtime_bin_path
+                        .as_ref()
+                        .expect("runtime bin path")
+                )
+            )
+            .unwrap(),
+            b"runtime bin"
+        );
+        assert_eq!(
+            fs::read(
+                run_directory.join(
+                    artifact
+                        .bootstrap_elf_path
+                        .as_ref()
+                        .expect("bootstrap ELF path")
+                )
+            )
+            .unwrap(),
+            b"bootstrap elf"
+        );
+        let provenance_path = artifact
+            .build_provenance_path
+            .as_ref()
+            .expect("build provenance path");
+        let provenance: super::super::build::BuildProvenance =
+            serde_json::from_slice(&fs::read(run_directory.join(provenance_path)).unwrap())
+                .unwrap();
+        assert_eq!(provenance.build_id, artifact.build_id.clone().unwrap());
+        assert_eq!(provenance.subjects.len(), 4);
+        assert!(!provenance.source_reconstructable);
+        let object_root = root.join("objects/sha256");
+        let first_objects = collect_integrity_files(&object_root).unwrap();
+        assert_eq!(first_objects.len(), 5);
+        first_session.finished = true;
+        drop(first_session);
+
+        let second_run_directory = root.join("run-2");
+        fs::create_dir(&second_run_directory).unwrap();
+        let mut second = session(&second_run_directory);
+        second
+            .record_firmware(
+                ImageClass::Correctness,
+                &application,
+                &runtime_elf,
+                &runtime_bin,
+                &bootstrap_elf,
+                &effective_embedded_lock,
+            )
+            .unwrap();
+        assert_eq!(
+            collect_integrity_files(&object_root).unwrap(),
+            first_objects
+        );
+        second.finished = true;
+        drop(second);
         fs::remove_dir_all(root).unwrap();
     }
 

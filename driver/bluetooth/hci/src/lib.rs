@@ -18,6 +18,11 @@
 //! session policy retains start/Test End ownership for a hardware runner and
 //! builds only the exact no-test success or active-start busy responses; it
 //! does not dispatch commands or claim radio work.
+//! The legacy advertising codec separately decodes the standard Set
+//! Parameters, Set Data and Set Enable commands into owned semantic values for
+//! the currently supported non-connectable role. It is not yet admitted by the
+//! production classifier: configuration retention and Enable lifecycle policy
+//! belong to the outer Link Layer router.
 //! [`classify_le_controller_command`] joins those two portable policies at a
 //! finite command boundary: valid bootstrap and DTM commands become owned
 //! semantic tokens, malformed known commands become owned error responses,
@@ -48,6 +53,7 @@ mod channel;
 mod classification;
 mod dtm;
 mod dtm_order;
+mod legacy_advertising;
 mod resources;
 mod response;
 
@@ -80,6 +86,13 @@ pub use dtm_order::{
     LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
     LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
     LeControllerResponsePending, LeControllerResponsePublication,
+};
+pub use legacy_advertising::{
+    LE_LEGACY_ADVERTISING_COMMAND_COMPLETE_EVENT_CAPACITY, LE_LEGACY_ADVERTISING_DATA_CAPACITY,
+    LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
+    LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingData, LeLegacyAdvertisingDecodeError,
+    LeLegacyAdvertisingIntervalRange, LeLegacyAdvertisingOwnAddressKind,
+    LeLegacyAdvertisingPrimaryChannels, LeLegacyNonconnectableAdvertisingParameters,
 };
 pub use resources::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,

@@ -182,6 +182,9 @@ pub(crate) struct RevisionRebaseArgs {
     /// Target snapshot name/path, or @live for the current analyzed bindings.
     #[arg(value_name = "TO")]
     pub(crate) to: String,
+    /// Generated symbol lineage used to propose exact occurrence remaps.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) lineage: Option<PathBuf>,
     /// Optional generated rebase plan containing every old reviewed record.
     #[arg(long, value_name = "PATH")]
     pub(crate) output: Option<PathBuf>,

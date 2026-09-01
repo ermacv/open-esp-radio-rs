@@ -23,11 +23,12 @@ use crate::{
     artifacts::LinkedIrReader,
     interfaces::{InterfaceFactRoot, InterfaceFactStep, InterfaceFacts},
     registers::{RegisterFacts, load_effective_register_model},
+    symbol_lineage::{SymbolLineageRebaseEvidence, SymbolLineageStatus},
 };
 
 pub(crate) const REVISION_SCHEMA: u32 = 5;
 pub(crate) const REVISION_DIFF_REPORT_SCHEMA: u32 = 2;
-pub(crate) const REVISION_REBASE_REPORT_SCHEMA: u32 = 2;
+pub(crate) const REVISION_REBASE_REPORT_SCHEMA: u32 = 3;
 pub(crate) const REVISION_PREPARE_UPDATE_REPORT_SCHEMA: u32 = 2;
 pub(crate) const REVISION_SNAPSHOT_REPORT_SCHEMA: u32 = 2;
 pub(crate) const LIVE_REVISION_SELECTOR: &str = "@live";
@@ -260,6 +261,12 @@ pub(crate) struct RevisionRebaseRecord {
     pub(crate) status: RevisionRebaseStatus,
     pub(crate) old_subject: Option<String>,
     pub(crate) proposed_subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) proposed_occurrence: Option<RevisionOccurrenceId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) proposed_locator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) lineage_status: Option<SymbolLineageStatus>,
     pub(crate) reason: String,
     pub(crate) record: serde_json::Value,
 }
@@ -280,8 +287,19 @@ pub(crate) struct RevisionRebaseReport {
     pub(crate) command: String,
     pub(crate) from: String,
     pub(crate) to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) lineage: Option<RevisionRebaseLineageEvidence>,
     pub(crate) summary: RevisionRebaseSummary,
     pub(crate) records: Vec<RevisionRebaseRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RevisionRebaseLineageEvidence {
+    pub(crate) report_sha256: String,
+    pub(crate) source: RevisionArtifact,
+    pub(crate) target: RevisionArtifact,
+    pub(crate) mappings: usize,
 }
 
 /// Small, reviewable index for immutable revision snapshots.
@@ -3087,7 +3105,11 @@ fn increment(summary: &mut RevisionDiffSummary, classification: RevisionChangeCl
 pub(crate) fn rebase(
     from: &RevisionSnapshot,
     to: &RevisionSnapshot,
+    lineage: Option<&SymbolLineageRebaseEvidence>,
 ) -> Result<RevisionRebaseReport> {
+    let lineage_summary = lineage
+        .map(|lineage| validate_rebase_lineage(from, to, lineage))
+        .transpose()?;
     let diff = diff(from, to);
     let mappings = automatic_mappings(&diff);
     let unchanged_subjects = unchanged_subjects(from, to);
@@ -3109,37 +3131,35 @@ pub(crate) fn rebase(
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
-    let mut records = from
-        .assertions
-        .iter()
-        .map(|record| {
-            rebase_record(
-                "assertion",
-                record,
-                &current,
-                &unchanged_subjects,
-                &target_subjects,
-                &to.applicability,
-                &mappings,
-            )
-        })
-        .chain(from.vendor_bugs.iter().map(|record| {
-            rebase_record(
-                "vendor-bug",
-                record,
-                &current,
-                &unchanged_subjects,
-                &target_subjects,
-                &to.applicability,
-                &mappings,
-            )
-        }))
-        .chain(
-            from.bindings
-                .iter()
-                .map(|record| rebase_binding(record, &current_bindings, &to.applicability)),
-        )
-        .collect::<Result<Vec<_>>>()?;
+    let mut records =
+        from.assertions
+            .iter()
+            .map(|record| {
+                rebase_record(
+                    "assertion",
+                    record,
+                    &current,
+                    &unchanged_subjects,
+                    &target_subjects,
+                    &to.applicability,
+                    &mappings,
+                )
+            })
+            .chain(from.vendor_bugs.iter().map(|record| {
+                rebase_record(
+                    "vendor-bug",
+                    record,
+                    &current,
+                    &unchanged_subjects,
+                    &target_subjects,
+                    &to.applicability,
+                    &mappings,
+                )
+            }))
+            .chain(from.bindings.iter().map(|record| {
+                rebase_binding(record, &current_bindings, &to.applicability, lineage)
+            }))
+            .collect::<Result<Vec<_>>>()?;
     records.sort_by(|left, right| left.id.cmp(&right.id));
     let mut summary = RevisionRebaseSummary::default();
     for record in &records {
@@ -3155,8 +3175,48 @@ pub(crate) fn rebase(
         command: "revision rebase".to_owned(),
         from: from.name.clone(),
         to: to.name.clone(),
+        lineage: lineage_summary,
         summary,
         records,
+    })
+}
+
+fn validate_rebase_lineage(
+    from: &RevisionSnapshot,
+    to: &RevisionSnapshot,
+    lineage: &SymbolLineageRebaseEvidence,
+) -> Result<RevisionRebaseLineageEvidence> {
+    let contains = |snapshot: &RevisionSnapshot, artifact: &ArtifactIdentity| {
+        snapshot.artifacts.iter().any(|candidate| {
+            candidate.source == artifact.source() && candidate.sha256 == artifact.sha256()
+        })
+    };
+    if !contains(from, &lineage.source_artifact) {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage source {}@{} is absent from revision {:?}",
+            lineage.source_artifact.source(),
+            lineage.source_artifact.sha256(),
+            from.name
+        )));
+    }
+    if !contains(to, &lineage.target_artifact) {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage target {}@{} is absent from revision {:?}",
+            lineage.target_artifact.source(),
+            lineage.target_artifact.sha256(),
+            to.name
+        )));
+    }
+    let artifact = |identity: &ArtifactIdentity| RevisionArtifact {
+        role: None,
+        source: identity.source().to_owned(),
+        sha256: identity.sha256().to_owned(),
+    };
+    Ok(RevisionRebaseLineageEvidence {
+        report_sha256: lineage.report_sha256.clone(),
+        source: artifact(&lineage.source_artifact),
+        target: artifact(&lineage.target_artifact),
+        mappings: lineage.mappings.len(),
     })
 }
 
@@ -3291,6 +3351,9 @@ fn rebase_record(
         status,
         old_subject: Some(old_subject),
         proposed_subject,
+        proposed_occurrence: None,
+        proposed_locator: None,
+        lineage_status: None,
         reason: reason.to_owned(),
         record: record.record.clone(),
     })
@@ -3315,40 +3378,130 @@ fn rebase_binding(
     record: &RevisionReviewedRecord,
     current: &BTreeMap<&str, &RevisionReviewedRecord>,
     target_context: &ApplicabilityContext,
+    lineage: Option<&SymbolLineageRebaseEvidence>,
 ) -> Result<RevisionRebaseRecord> {
-    let old_subject = record.anchor.primary_semantic().to_string();
-    let applicability_current = applicability_matches(record, target_context)?;
+    let RevisionReviewedAnchor::EntityBinding {
+        occurrence,
+        semantic,
+    } = &record.anchor
+    else {
+        unreachable!("rebase_binding only receives entity bindings")
+    };
+    let old_subject = semantic.to_string();
+    let mapping = lineage.and_then(|lineage| lineage.mappings.get(occurrence));
+    let applicability_current = binding_applicability_matches(record, target_context, lineage)?;
     let already_present = current
         .get(record.id.as_str())
         .is_some_and(|current| *current == record);
-    let (status, proposed_subject, reason) = if !applicability_current {
-        (
-            RevisionRebaseStatus::ReviewRequired,
-            None,
-            "binding applicability does not match the target revision context",
-        )
-    } else if already_present {
-        (
-            RevisionRebaseStatus::AlreadyPresent,
-            Some(old_subject.clone()),
-            "the target snapshot already contains the identical occurrence-to-semantic binding",
-        )
-    } else {
-        (
-            RevisionRebaseStatus::ReviewRequired,
-            None,
-            "occurrence correspondence is not proven; revalidate the binding against the target revision",
-        )
-    };
+    let remap_already_present = mapping.is_some_and(|mapping| {
+        current.get(record.id.as_str()).is_some_and(|current| {
+            matches!(
+                &current.anchor,
+                RevisionReviewedAnchor::EntityBinding {
+                    occurrence,
+                    semantic: current_semantic,
+                } if occurrence == &mapping.target_occurrence && current_semantic == semantic
+            )
+        })
+    });
+    let (status, proposed_subject, proposed_occurrence, proposed_locator, lineage_status, reason) =
+        if !applicability_current {
+            (
+                RevisionRebaseStatus::ReviewRequired,
+                mapping.map(|_| old_subject.clone()),
+                mapping.map(|mapping| mapping.target_occurrence.clone()),
+                mapping.map(|mapping| mapping.target_locator.clone()),
+                mapping.map(|mapping| mapping.status),
+                "binding applicability does not match the target revision context",
+            )
+        } else if remap_already_present {
+            let mapping = mapping.expect("a present remap has lineage evidence");
+            (
+                RevisionRebaseStatus::AlreadyPresent,
+                Some(old_subject.clone()),
+                Some(mapping.target_occurrence.clone()),
+                Some(mapping.target_locator.clone()),
+                Some(mapping.status),
+                "the target snapshot already contains the lineage-mapped occurrence-to-semantic binding",
+            )
+        } else if let Some(mapping) = mapping {
+            let (status, reason) = match mapping.status {
+                SymbolLineageStatus::Confirmed => (
+                    RevisionRebaseStatus::CarryRemapped,
+                    "independent direct and chained correspondence agree on the target occurrence",
+                ),
+                SymbolLineageStatus::DirectOnly => (
+                    RevisionRebaseStatus::ReviewRequired,
+                    "only direct correspondence proposes the target occurrence",
+                ),
+                SymbolLineageStatus::ChainOnly => (
+                    RevisionRebaseStatus::ReviewRequired,
+                    "only chained correspondence proposes the target occurrence",
+                ),
+                SymbolLineageStatus::Conflict | SymbolLineageStatus::Unresolved => {
+                    unreachable!("unresolved lineage records are not rebase mappings")
+                }
+            };
+            (
+                status,
+                Some(old_subject.clone()),
+                Some(mapping.target_occurrence.clone()),
+                Some(mapping.target_locator.clone()),
+                Some(mapping.status),
+                reason,
+            )
+        } else if already_present {
+            (
+                RevisionRebaseStatus::AlreadyPresent,
+                Some(old_subject.clone()),
+                Some(occurrence.clone()),
+                None,
+                None,
+                "the target snapshot already contains the identical occurrence-to-semantic binding",
+            )
+        } else {
+            (
+                RevisionRebaseStatus::ReviewRequired,
+                None,
+                None,
+                None,
+                None,
+                "occurrence correspondence is not proven; revalidate the binding against the target revision",
+            )
+        };
     Ok(RevisionRebaseRecord {
         id: record.id.clone(),
         kind: "entity-binding".to_owned(),
         status,
         old_subject: Some(old_subject),
         proposed_subject,
+        proposed_occurrence,
+        proposed_locator,
+        lineage_status,
         reason: reason.to_owned(),
         record: record.record.clone(),
     })
+}
+
+fn binding_applicability_matches(
+    record: &RevisionReviewedRecord,
+    target_context: &ApplicabilityContext,
+    lineage: Option<&SymbolLineageRebaseEvidence>,
+) -> Result<bool> {
+    let mut applicability = reviewed_record_applicability(record)?;
+    if let Some(lineage) = lineage {
+        for artifact in &mut applicability.artifacts {
+            if artifact == &lineage.source_artifact {
+                *artifact = lineage.target_artifact.clone();
+            }
+        }
+        applicability = applicability
+            .normalized()
+            .map_err(|error| crate::Error::invalid(error.to_string()))?;
+    }
+    applicability
+        .matches_context(target_context)
+        .map_err(|error| crate::Error::invalid(error.to_string()))
 }
 
 fn split_subject_suffix(subject: &str) -> (&str, &str) {
@@ -3776,7 +3929,7 @@ mod tests {
         ];
         let after = snapshot("new", vec![semantic_function("new", "new", "a")]);
 
-        let report = rebase(&before, &after).unwrap();
+        let report = rebase(&before, &after, None).unwrap();
 
         assert_eq!(report.summary.carry_remapped, 1);
         assert_eq!(report.summary.review_required, 1);
@@ -3801,7 +3954,7 @@ mod tests {
         );
         after.assertions = vec![record];
 
-        let report = rebase(&before, &after).unwrap();
+        let report = rebase(&before, &after, None).unwrap();
 
         assert_eq!(report.summary.already_present, 0);
         assert_eq!(report.summary.carry_exact, 0);
@@ -3829,7 +3982,7 @@ mod tests {
         let mut after = snapshot("new", Vec::new());
         after.assertions = vec![record];
 
-        let report = rebase(&before, &after).unwrap();
+        let report = rebase(&before, &after, None).unwrap();
 
         assert_eq!(report.summary.already_present, 0);
         assert_eq!(report.summary.review_required, 1);
@@ -3846,7 +3999,7 @@ mod tests {
         let mut after = snapshot("new", vec![semantic_function("stable", "stable", "a")]);
         after.vendor_bugs = vec![record];
 
-        let report = rebase(&before, &after).unwrap();
+        let report = rebase(&before, &after, None).unwrap();
 
         assert_eq!(report.summary.already_present, 0);
         assert_eq!(report.summary.carry_exact, 0);
@@ -3885,7 +4038,7 @@ mod tests {
         }];
         sync_artifact_context(&mut after);
 
-        let report = rebase(&before, &after).unwrap();
+        let report = rebase(&before, &after, None).unwrap();
 
         assert_eq!(report.summary.review_required, 1);
         assert!(report.records[0].reason.contains("target revision context"));
@@ -3946,7 +4099,7 @@ mod tests {
         sync_artifact_context(&mut identical);
         identical.bindings = vec![binding];
 
-        let present = rebase(&before, &identical).unwrap();
+        let present = rebase(&before, &identical, None).unwrap();
         assert_eq!(present.schema_version, REVISION_REBASE_REPORT_SCHEMA);
         assert_eq!(present.summary.already_present, 1);
         assert_eq!(present.records[0].kind, "entity-binding");
@@ -3954,11 +4107,101 @@ mod tests {
         let mut changed_snapshot = snapshot("changed", Vec::new());
         changed_snapshot.artifacts = before.artifacts.clone();
         sync_artifact_context(&mut changed_snapshot);
-        let changed = rebase(&before, &changed_snapshot).unwrap();
+        let changed = rebase(&before, &changed_snapshot, None).unwrap();
         assert_eq!(changed.summary.review_required, 1);
         assert_eq!(changed.summary.carry_exact, 0);
         assert_eq!(changed.summary.carry_remapped, 0);
         assert!(changed.records[0].reason.contains("not proven"));
+    }
+
+    #[test]
+    fn confirmed_lineage_proposes_an_exact_entity_binding_remap() {
+        let binding = binding_record("binding.radio", "radio/status", 'a');
+        let source_occurrence = match &binding.anchor {
+            RevisionReviewedAnchor::EntityBinding { occurrence, .. } => occurrence.clone(),
+            _ => unreachable!(),
+        };
+        let source_artifact = ArtifactIdentity::new("fixture", "a".repeat(64)).unwrap();
+        let target_artifact = ArtifactIdentity::new("fixture", "b".repeat(64)).unwrap();
+        let target_locator = "archive-member:radio.o/symbol:status";
+        let target_occurrence = RevisionOccurrenceId::derive(
+            open_radio_vendor_contracts::EntityDomain::Function,
+            std::slice::from_ref(&target_artifact),
+            target_locator,
+        )
+        .unwrap();
+        let lineage = SymbolLineageRebaseEvidence {
+            report_sha256: "c".repeat(64),
+            source_artifact: source_artifact.clone(),
+            target_artifact: target_artifact.clone(),
+            mappings: BTreeMap::from([(
+                source_occurrence.clone(),
+                crate::symbol_lineage::SymbolLineageRebaseMapping {
+                    target_occurrence: target_occurrence.clone(),
+                    target_locator: target_locator.to_owned(),
+                    status: SymbolLineageStatus::Confirmed,
+                },
+            )]),
+        };
+        let mut before = snapshot("old", Vec::new());
+        before.artifacts = vec![RevisionArtifact {
+            role: Some("source-artifact:fixture".to_owned()),
+            source: source_artifact.source().to_owned(),
+            sha256: source_artifact.sha256().to_owned(),
+        }];
+        sync_artifact_context(&mut before);
+        before.bindings = vec![binding];
+        let mut after = snapshot("new", Vec::new());
+        after.artifacts = vec![RevisionArtifact {
+            role: Some("source-artifact:fixture".to_owned()),
+            source: target_artifact.source().to_owned(),
+            sha256: target_artifact.sha256().to_owned(),
+        }];
+        sync_artifact_context(&mut after);
+
+        let report = rebase(&before, &after, Some(&lineage)).unwrap();
+
+        assert_eq!(report.summary.carry_remapped, 1);
+        assert_eq!(report.summary.review_required, 0);
+        assert_eq!(
+            report.records[0].proposed_occurrence.as_ref(),
+            Some(&target_occurrence)
+        );
+        assert_eq!(
+            report.records[0].lineage_status,
+            Some(SymbolLineageStatus::Confirmed)
+        );
+        assert_eq!(
+            report.records[0].proposed_locator.as_deref(),
+            Some(target_locator)
+        );
+        assert_eq!(report.lineage.as_ref().unwrap().mappings, 1);
+
+        let mut incompatible_binding = before.bindings[0].clone();
+        incompatible_binding.record["applies-to"]["chips"] = serde_json::json!(["fixture-chip"]);
+        let mut incompatible_before = before.clone();
+        incompatible_before.bindings = vec![incompatible_binding];
+        let mut incompatible_after = after.clone();
+        incompatible_after.applicability.chips = vec!["other-chip".to_owned()];
+        let report = rebase(&incompatible_before, &incompatible_after, Some(&lineage)).unwrap();
+        assert_eq!(report.summary.carry_remapped, 0);
+        assert_eq!(report.summary.review_required, 1);
+        assert_eq!(
+            report.records[0].proposed_occurrence.as_ref(),
+            Some(&target_occurrence)
+        );
+        assert!(report.records[0].reason.contains("target revision context"));
+
+        let mut weaker = lineage;
+        weaker.mappings.get_mut(&source_occurrence).unwrap().status =
+            SymbolLineageStatus::ChainOnly;
+        let report = rebase(&before, &after, Some(&weaker)).unwrap();
+        assert_eq!(report.summary.carry_remapped, 0);
+        assert_eq!(report.summary.review_required, 1);
+        assert_eq!(
+            report.records[0].proposed_occurrence.as_ref(),
+            Some(&target_occurrence)
+        );
     }
 
     #[test]
@@ -4115,7 +4358,7 @@ mod tests {
         let mut after = snapshot("field-new", Vec::new());
         after.registers = vec![register(register_id, 0x2010_3064, 32)];
 
-        let report = rebase(&before, &after).unwrap();
+        let report = rebase(&before, &after, None).unwrap();
         assert_eq!(report.summary.carry_exact, 1);
         assert_eq!(report.records[0].proposed_subject, Some(field.to_string()));
     }

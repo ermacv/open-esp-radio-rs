@@ -1,8 +1,9 @@
 //! Multi-revision composition of exact symbol-correspondence evidence.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
-use serde::Serialize;
+use open_radio_vendor_contracts::{ArtifactIdentity, EntityDomain, RevisionOccurrenceId};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     Result,
@@ -16,7 +17,7 @@ use crate::{
 
 pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 1;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SymbolLineageStatus {
     Confirmed,
@@ -113,6 +114,182 @@ pub(crate) struct SymbolLineageReport {
 pub(crate) struct SymbolLineageRevision<'a> {
     pub(crate) source: &'a str,
     pub(crate) path: &'a Path,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SymbolLineageRebaseMapping {
+    pub(crate) target_occurrence: RevisionOccurrenceId,
+    pub(crate) target_locator: String,
+    pub(crate) status: SymbolLineageStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SymbolLineageRebaseEvidence {
+    pub(crate) report_sha256: String,
+    pub(crate) source_artifact: ArtifactIdentity,
+    pub(crate) target_artifact: ArtifactIdentity,
+    pub(crate) mappings: BTreeMap<RevisionOccurrenceId, SymbolLineageRebaseMapping>,
+}
+
+#[derive(Deserialize)]
+struct RebaseLineageInput {
+    schema_version: u32,
+    command: String,
+    artifacts: Vec<RebaseLineageArtifact>,
+    functions: Vec<RebaseLineageRecord>,
+    data_objects: Vec<RebaseLineageRecord>,
+}
+
+#[derive(Deserialize)]
+struct RebaseLineageArtifact {
+    source: String,
+    sha256: String,
+}
+
+#[derive(Deserialize)]
+struct RebaseLineageRecord {
+    source: RebaseLineageOccurrence,
+    status: SymbolLineageStatus,
+    resolved: Option<RebaseLineageOccurrence>,
+}
+
+#[derive(Deserialize)]
+struct RebaseLineageOccurrence {
+    locator: String,
+    occurrence: RevisionOccurrenceId,
+}
+
+pub(crate) fn load_rebase_evidence(path: &Path) -> Result<SymbolLineageRebaseEvidence> {
+    const MAX_LINEAGE_BYTES: usize = 64 * 1024 * 1024;
+    let bytes = fs::read(path).map_err(|error| {
+        crate::Error::invalid(format!(
+            "cannot read symbol lineage {}: {error}",
+            path.display()
+        ))
+    })?;
+    if bytes.len() > MAX_LINEAGE_BYTES {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage {} is {} bytes; limit is {MAX_LINEAGE_BYTES}",
+            path.display(),
+            bytes.len()
+        )));
+    }
+    let input: RebaseLineageInput = serde_json::from_slice(&bytes).map_err(|error| {
+        crate::Error::invalid(format!(
+            "cannot parse symbol lineage {}: {error}",
+            path.display()
+        ))
+    })?;
+    if input.schema_version != SYMBOL_LINEAGE_SCHEMA || input.command != "symbols lineage" {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage {} must be current schema {SYMBOL_LINEAGE_SCHEMA}",
+            path.display()
+        )));
+    }
+    if input.artifacts.len() < 3 {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage {} has fewer than three ordered artifacts",
+            path.display()
+        )));
+    }
+    let artifacts = input
+        .artifacts
+        .into_iter()
+        .map(|artifact| {
+            ArtifactIdentity::new(artifact.source, artifact.sha256)
+                .map_err(|error| crate::Error::invalid(error.to_string()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let source_artifact = artifacts
+        .first()
+        .expect("three lineage artifacts have a first item")
+        .clone();
+    let target_artifact = artifacts
+        .last()
+        .expect("three lineage artifacts have a last item")
+        .clone();
+    let mut mappings = BTreeMap::new();
+    let mut reverse = BTreeMap::<RevisionOccurrenceId, RevisionOccurrenceId>::new();
+    for (domain, records) in [
+        (EntityDomain::Function, input.functions),
+        (EntityDomain::MemoryObject, input.data_objects),
+    ] {
+        for record in records {
+            validate_lineage_occurrence(&record.source, domain, &source_artifact, "source")?;
+            let resolved_status = matches!(
+                record.status,
+                SymbolLineageStatus::Confirmed
+                    | SymbolLineageStatus::DirectOnly
+                    | SymbolLineageStatus::ChainOnly
+            );
+            if resolved_status != record.resolved.is_some() {
+                return Err(crate::Error::invalid(format!(
+                    "symbol lineage record {} has status {:?} inconsistent with its resolved occurrence",
+                    record.source.occurrence, record.status
+                )));
+            }
+            let Some(target) = record.resolved else {
+                continue;
+            };
+            validate_lineage_occurrence(&target, domain, &target_artifact, "target")?;
+            if let Some(previous) =
+                reverse.insert(target.occurrence.clone(), record.source.occurrence.clone())
+                && previous != record.source.occurrence
+            {
+                return Err(crate::Error::invalid(format!(
+                    "symbol lineage maps both {previous} and {} to {}",
+                    record.source.occurrence, target.occurrence
+                )));
+            }
+            let mapping = SymbolLineageRebaseMapping {
+                target_occurrence: target.occurrence,
+                target_locator: target.locator,
+                status: record.status,
+            };
+            if let Some(previous) =
+                mappings.insert(record.source.occurrence.clone(), mapping.clone())
+                && previous != mapping
+            {
+                return Err(crate::Error::invalid(format!(
+                    "symbol lineage contains conflicting mappings for {}",
+                    record.source.occurrence
+                )));
+            }
+        }
+    }
+    Ok(SymbolLineageRebaseEvidence {
+        report_sha256: crate::artifact_sha256(path)?,
+        source_artifact,
+        target_artifact,
+        mappings,
+    })
+}
+
+fn validate_lineage_occurrence(
+    occurrence: &RebaseLineageOccurrence,
+    domain: EntityDomain,
+    artifact: &ArtifactIdentity,
+    role: &str,
+) -> Result<()> {
+    if occurrence.occurrence.domain() != domain {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage {role} occurrence {} is in the wrong domain",
+            occurrence.occurrence
+        )));
+    }
+    let derived =
+        RevisionOccurrenceId::derive(domain, std::slice::from_ref(artifact), &occurrence.locator)
+            .map_err(|error| crate::Error::invalid(error.to_string()))?;
+    if derived != occurrence.occurrence {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage {role} occurrence {} is not derived from {}@{} and locator {:?}",
+            occurrence.occurrence,
+            artifact.source(),
+            artifact.sha256(),
+            occurrence.locator
+        )));
+    }
+    Ok(())
 }
 
 pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLineageReport> {
@@ -558,5 +735,60 @@ mod tests {
     fn lineage_requires_an_independent_direct_path() {
         let error = build(&[]).unwrap_err();
         assert!(error.to_string().contains("at least three ordered"));
+    }
+
+    #[test]
+    fn rebase_loader_rederives_source_and_target_occurrences() {
+        let source_artifact = ArtifactIdentity::new("old", "a".repeat(64)).unwrap();
+        let middle_artifact = ArtifactIdentity::new("middle", "b".repeat(64)).unwrap();
+        let target_artifact = ArtifactIdentity::new("new", "c".repeat(64)).unwrap();
+        let source_locator = "archive-member:old.o/symbol:named";
+        let target_locator = "archive-member:new.o/symbol:token";
+        let source_occurrence = RevisionOccurrenceId::derive(
+            EntityDomain::Function,
+            std::slice::from_ref(&source_artifact),
+            source_locator,
+        )
+        .unwrap();
+        let target_occurrence = RevisionOccurrenceId::derive(
+            EntityDomain::Function,
+            std::slice::from_ref(&target_artifact),
+            target_locator,
+        )
+        .unwrap();
+        let document = serde_json::json!({
+            "schema_version": SYMBOL_LINEAGE_SCHEMA,
+            "command": "symbols lineage",
+            "artifacts": [source_artifact, middle_artifact, target_artifact],
+            "functions": [{
+                "source": {"locator": source_locator, "occurrence": source_occurrence},
+                "status": "confirmed",
+                "resolved": {"locator": target_locator, "occurrence": target_occurrence}
+            }],
+            "data_objects": []
+        });
+        let path = std::env::temp_dir().join(format!(
+            "blobray-symbol-lineage-rebase-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+
+        let evidence = load_rebase_evidence(&path).unwrap();
+        assert_eq!(evidence.mappings.len(), 1);
+        assert_eq!(
+            evidence.mappings[&source_occurrence].target_occurrence,
+            target_occurrence
+        );
+
+        let mut forged = document;
+        forged["functions"][0]["resolved"]["locator"] = serde_json::json!("forged");
+        std::fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
+        assert!(
+            load_rebase_evidence(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("is not derived")
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

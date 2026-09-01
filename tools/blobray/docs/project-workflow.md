@@ -315,10 +315,23 @@ cargo blobray project revision diff vendor-2026-05 @live \
   --project path/to/vendor-project.toml --details
 cargo blobray project revision rebase vendor-2026-05 @live \
   --project path/to/vendor-project.toml \
+  --lineage generated/revisions/ble-symbol-lineage.json \
   --output generated/revisions/vendor-2026-08.rebase.json
 # after reviewing the delta and rebase plan, publish the immutable new snapshot
 cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
 ```
+
+`--lineage` is optional, but without it entity bindings remain review-required
+because their artifact-bound occurrences cannot survive a blob replacement by
+name alone. A `confirmed` direct-plus-chain mapping becomes a generated
+`carry-remapped` proposal with the exact target occurrence. `direct-only` and
+`chain-only` mappings include the proposed occurrence but remain
+`review-required`. The rebase command validates the lineage schema, report
+digest, endpoint artifacts, occurrence domains, locators and one-to-one target
+ownership. It never edits the reviewed pack.
+When a binding is remapped, only the lineage source artifact constraint is
+projected onto the target artifact; chip, chip-revision, ecosystem, lineage and
+any unrelated artifact constraints must still match the target snapshot.
 
 When a vendor regenerates private symbol names, correlate the public or older
 named archive with the obfuscated revision before reviewing the update:

@@ -59,6 +59,14 @@ pub(super) struct ApEgressIdentityReport {
     pub(super) peer_slot_mismatch: u64,
     pub(super) peer_generation_mismatch: u64,
     pub(super) traffic_class_mismatch: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) terminal_current_aggregates: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) terminal_current_frames: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) terminal_stale_aggregates: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) terminal_stale_frames: Option<u64>,
 }
 
 impl ApEgressIdentityReport {
@@ -70,6 +78,17 @@ impl ApEgressIdentityReport {
     }
 
     fn from_line(line: &str) -> Result<Self, String> {
+        let terminal = [
+            optional_numeric_field(line, "terminal_current_aggregates")?,
+            optional_numeric_field(line, "terminal_current_frames")?,
+            optional_numeric_field(line, "terminal_stale_aggregates")?,
+            optional_numeric_field(line, "terminal_stale_frames")?,
+        ];
+        if terminal.iter().any(Option::is_some) && terminal.iter().any(Option::is_none) {
+            return Err(format!(
+                "ORC0TXI terminal identity fields must be all present or all absent in {line:?}"
+            ));
+        }
         Ok(Self {
             exact: numeric_field(line, "exact")?,
             unclassified: numeric_field(line, "unclassified")?,
@@ -79,21 +98,31 @@ impl ApEgressIdentityReport {
             peer_slot_mismatch: numeric_field(line, "peer_slot_mismatch")?,
             peer_generation_mismatch: numeric_field(line, "peer_generation_mismatch")?,
             traffic_class_mismatch: numeric_field(line, "traffic_class_mismatch")?,
+            terminal_current_aggregates: terminal[0],
+            terminal_current_frames: terminal[1],
+            terminal_stale_aggregates: terminal[2],
+            terminal_stale_frames: terminal[3],
         })
     }
 }
 
 fn numeric_field(line: &str, key: &str) -> Result<u64, String> {
-    let value = line
-        .split_ascii_whitespace()
-        .find_map(|token| {
-            let (candidate, value) = token.split_once('=')?;
-            (candidate == key).then_some(value)
-        })
-        .ok_or_else(|| format!("ORC0TXI field {key:?} is missing in {line:?}"))?;
+    optional_numeric_field(line, key)?
+        .ok_or_else(|| format!("ORC0TXI field {key:?} is missing in {line:?}"))
+}
+
+fn optional_numeric_field(line: &str, key: &str) -> Result<Option<u64>, String> {
+    let value = line.split_ascii_whitespace().find_map(|token| {
+        let (candidate, value) = token.split_once('=')?;
+        (candidate == key).then_some(value)
+    });
     value
-        .parse()
-        .map_err(|error| format!("invalid ORC0TXI field {key:?}={value:?}: {error}"))
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|error| format!("invalid ORC0TXI field {key:?}={value:?}: {error}"))
+        })
+        .transpose()
 }
 
 #[derive(Serialize)]

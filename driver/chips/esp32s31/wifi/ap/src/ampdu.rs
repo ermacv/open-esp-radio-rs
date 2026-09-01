@@ -104,7 +104,7 @@ impl Esp32s31ApAggregateAdmission {
 pub enum Esp32s31ApAmpduError {
     Busy,
     Idle,
-    PeerChanged,
+    AssociationChanged,
     KeyChanged,
     SequenceDiscontinuity,
     TooFewFrames,
@@ -147,7 +147,7 @@ impl From<HtAmpduTxRolePolicyError> for Esp32s31ApAmpduError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApPreparedAmpdu {
-    pub peer: [u8; 6],
+    pub association: ApAssociationIdentity,
     pub rate: HtRate,
     pub first_sequence: u16,
     pub subframes: u8,
@@ -157,6 +157,8 @@ pub struct Esp32s31ApPreparedAmpdu {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApAmpduCompletion {
+    pub association: ApAssociationIdentity,
+    pub rate: HtRate,
     pub tx_status: u8,
     pub block_ack_received: bool,
     pub block_ack_control: u8,
@@ -182,7 +184,7 @@ enum ApAmpduState<const SLOTS: usize> {
     Idle,
     Building {
         cookie: TxCookie,
-        peer: [u8; 6],
+        association: ApAssociationIdentity,
         rate: HtRate,
         first_sequence: u16,
         next_sequence: u16,
@@ -190,13 +192,26 @@ enum ApAmpduState<const SLOTS: usize> {
     },
     Hardware {
         cookie: TxCookie,
+        association: ApAssociationIdentity,
         rate: HtRate,
         hardware_key_selector: u8,
         retry: AmpduRetryState<SLOTS>,
     },
     Completed {
         cookie: TxCookie,
+        association: ApAssociationIdentity,
     },
+}
+
+impl<const SLOTS: usize> ApAmpduState<SLOTS> {
+    const fn association(&self) -> Option<ApAssociationIdentity> {
+        match self {
+            Self::Idle => None,
+            Self::Building { association, .. }
+            | Self::Hardware { association, .. }
+            | Self::Completed { association, .. } => Some(*association),
+        }
+    }
 }
 
 /// One AP publication owner over the same retained-DMA mechanism used by STA.
@@ -229,7 +244,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
 
     pub fn begin(
         &mut self,
-        peer: [u8; 6],
+        association: ApAssociationIdentity,
         rate: HtRate,
         first_sequence: u16,
         hardware_key_selector: u8,
@@ -241,7 +256,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         let first_sequence = first_sequence & 0x0fff;
         self.state = ApAmpduState::Building {
             cookie,
-            peer,
+            association,
             rate,
             first_sequence,
             next_sequence: first_sequence,
@@ -254,15 +269,23 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         matches!(self.state, ApAmpduState::Idle)
     }
 
+    /// Exact association generation owned by the aggregate transaction.
+    ///
+    /// A MAC address alone is insufficient because one AP peer-table slot can
+    /// be torn down and reused while a terminal retry/completion is pending.
+    pub const fn association(&self) -> Option<ApAssociationIdentity> {
+        self.state.association()
+    }
+
     pub fn push(
         &mut self,
-        peer: [u8; 6],
+        association: ApAssociationIdentity,
         backing: B,
         frame: Esp32s31ApAggregateFrame,
     ) -> Result<(), Esp32s31ApAmpduError> {
         let ApAmpduState::Building {
             cookie,
-            peer: expected_peer,
+            association: expected_association,
             rate,
             next_sequence,
             hardware_key_selector,
@@ -271,8 +294,8 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
-        if peer != *expected_peer {
-            return Err(Esp32s31ApAmpduError::PeerChanged);
+        if association != *expected_association {
+            return Err(Esp32s31ApAmpduError::AssociationChanged);
         }
         if frame.hardware_key_selector != *hardware_key_selector {
             return Err(Esp32s31ApAmpduError::KeyChanged);
@@ -302,7 +325,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     pub fn prepared(&self) -> Result<Esp32s31ApPreparedAmpdu, Esp32s31ApAmpduError> {
         let ApAmpduState::Building {
             cookie,
-            peer,
+            association,
             rate,
             first_sequence,
             hardware_key_selector,
@@ -316,7 +339,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             return Err(Esp32s31ApAmpduError::TooFewFrames);
         }
         Ok(Esp32s31ApPreparedAmpdu {
-            peer,
+            association,
             rate,
             first_sequence,
             subframes: aggregate.subframes,
@@ -347,13 +370,19 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 prepared.hardware_key_selector,
             )
             .ok_or(Esp32s31ApAmpduError::Geometry)?;
-        let ApAmpduState::Building { cookie, .. } = self.state else {
+        let ApAmpduState::Building {
+            cookie,
+            association,
+            ..
+        } = self.state
+        else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
         self.inner
             .submit(hardware, cookie, LegacyTxQueue::BestEffort, config)?;
         self.state = ApAmpduState::Hardware {
             cookie,
+            association,
             rate: prepared.rate,
             hardware_key_selector: prepared.hardware_key_selector,
             retry: AmpduRetryState::new(
@@ -382,6 +411,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     {
         let ApAmpduState::Hardware {
             cookie,
+            association,
             rate,
             hardware_key_selector,
             mut retry,
@@ -395,6 +425,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         else {
             self.state = ApAmpduState::Hardware {
                 cookie,
+                association,
                 rate,
                 hardware_key_selector,
                 retry,
@@ -406,6 +437,8 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         let current_first_sequence = observed.first_sequence;
         let decision = observed.decision;
         let observation = Esp32s31ApAmpduCompletion {
+            association,
+            rate,
             tx_status: completion.tx.status(),
             block_ack_received: completion.block_ack_received,
             block_ack_control: completion.block_ack.control,
@@ -431,6 +464,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 .submit(hardware, cookie, LegacyTxQueue::BestEffort, refreshed)?;
             self.state = ApAmpduState::Hardware {
                 cookie,
+                association,
                 rate,
                 hardware_key_selector,
                 retry,
@@ -442,20 +476,25 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         } else {
             ordinary.reset_aggregate_contention();
         }
-        self.state = ApAmpduState::Completed { cookie };
+        self.state = ApAmpduState::Completed {
+            cookie,
+            association,
+        };
         Ok(Esp32s31ApAmpduProgress::CompletionReady(observation))
     }
 
     /// Release the exact detached terminal batch after the caller has
     /// finished completion classification and observation.
-    pub fn release_completed(&mut self) -> Result<(), Esp32s31ApAmpduError> {
-        let ApAmpduState::Completed { cookie } =
-            core::mem::replace(&mut self.state, ApAmpduState::Idle)
+    pub fn release_completed(&mut self) -> Result<ApAssociationIdentity, Esp32s31ApAmpduError> {
+        let ApAmpduState::Completed {
+            cookie,
+            association,
+        } = core::mem::replace(&mut self.state, ApAmpduState::Idle)
         else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
         self.inner.release_completed(cookie)?;
-        Ok(())
+        Ok(association)
     }
 
     pub fn cancel_build(&mut self) -> Result<(), Esp32s31ApAmpduError> {
@@ -529,5 +568,56 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             state: ApAmpduState::Idle,
             attempt_limit,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use open_esp_radio_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs};
+
+    use super::*;
+
+    const ASSOCIATION: ApAssociationIdentity =
+        ApAssociationIdentity::new([0x02, 0, 0, 0, 0, 1], 1, 7).unwrap();
+
+    #[test]
+    fn every_owned_ampdu_phase_retains_the_exact_association_generation() {
+        let rate = HtRate::new(
+            HtMcs::Mcs7,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz40,
+        );
+        let building = ApAmpduState::<32>::Building {
+            cookie: TxCookie(1),
+            association: ASSOCIATION,
+            rate,
+            first_sequence: 10,
+            next_sequence: 11,
+            hardware_key_selector: 8,
+        };
+        let hardware = ApAmpduState::<32>::Hardware {
+            cookie: TxCookie(1),
+            association: ASSOCIATION,
+            rate,
+            hardware_key_selector: 8,
+            retry: AmpduRetryState::new(
+                10,
+                2,
+                AmpduRetryPolicy {
+                    attempt_limit: 3,
+                    retain_single_mpdu: true,
+                },
+            )
+            .unwrap(),
+        };
+        let completed = ApAmpduState::<32>::Completed {
+            cookie: TxCookie(1),
+            association: ASSOCIATION,
+        };
+
+        assert_eq!(building.association(), Some(ASSOCIATION));
+        assert_eq!(hardware.association(), Some(ASSOCIATION));
+        assert_eq!(completed.association(), Some(ASSOCIATION));
+        assert_eq!(ApAmpduState::<32>::Idle.association(), None);
     }
 }

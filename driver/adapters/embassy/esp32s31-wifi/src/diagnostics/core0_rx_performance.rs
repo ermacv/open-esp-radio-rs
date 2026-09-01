@@ -145,6 +145,10 @@ pub struct Core0PerformanceSnapshot {
     pub tx_ap_identity_peer_slot_mismatch: u32,
     pub tx_ap_identity_peer_generation_mismatch: u32,
     pub tx_ap_identity_traffic_class_mismatch: u32,
+    pub tx_ap_terminal_identity_current_aggregates: u32,
+    pub tx_ap_terminal_identity_current_frames: u32,
+    pub tx_ap_terminal_identity_stale_aggregates: u32,
+    pub tx_ap_terminal_identity_stale_frames: u32,
     pub rx_progress_drained: u32,
     pub rx_progress_probe_pending: u32,
     pub rx_progress_protocol_tx_blocked: u32,
@@ -395,6 +399,18 @@ impl Core0PerformanceSnapshot {
             tx_ap_identity_traffic_class_mismatch: self
                 .tx_ap_identity_traffic_class_mismatch
                 .wrapping_sub(earlier.tx_ap_identity_traffic_class_mismatch),
+            tx_ap_terminal_identity_current_aggregates: self
+                .tx_ap_terminal_identity_current_aggregates
+                .wrapping_sub(earlier.tx_ap_terminal_identity_current_aggregates),
+            tx_ap_terminal_identity_current_frames: self
+                .tx_ap_terminal_identity_current_frames
+                .wrapping_sub(earlier.tx_ap_terminal_identity_current_frames),
+            tx_ap_terminal_identity_stale_aggregates: self
+                .tx_ap_terminal_identity_stale_aggregates
+                .wrapping_sub(earlier.tx_ap_terminal_identity_stale_aggregates),
+            tx_ap_terminal_identity_stale_frames: self
+                .tx_ap_terminal_identity_stale_frames
+                .wrapping_sub(earlier.tx_ap_terminal_identity_stale_frames),
             rx_progress_drained: self
                 .rx_progress_drained
                 .wrapping_sub(earlier.rx_progress_drained),
@@ -581,6 +597,10 @@ pub struct Core0PerformanceCounters {
     tx_ap_identity_peer_slot_mismatch: AtomicU32,
     tx_ap_identity_peer_generation_mismatch: AtomicU32,
     tx_ap_identity_traffic_class_mismatch: AtomicU32,
+    tx_ap_terminal_identity_current_aggregates: AtomicU32,
+    tx_ap_terminal_identity_current_frames: AtomicU32,
+    tx_ap_terminal_identity_stale_aggregates: AtomicU32,
+    tx_ap_terminal_identity_stale_frames: AtomicU32,
     active_radio_cycles: AtomicU32,
     active_radio_instructions: AtomicU32,
     active_radio_saw_runner: AtomicU32,
@@ -714,6 +734,10 @@ impl Core0PerformanceCounters {
             tx_ap_identity_peer_slot_mismatch: AtomicU32::new(0),
             tx_ap_identity_peer_generation_mismatch: AtomicU32::new(0),
             tx_ap_identity_traffic_class_mismatch: AtomicU32::new(0),
+            tx_ap_terminal_identity_current_aggregates: AtomicU32::new(0),
+            tx_ap_terminal_identity_current_frames: AtomicU32::new(0),
+            tx_ap_terminal_identity_stale_aggregates: AtomicU32::new(0),
+            tx_ap_terminal_identity_stale_frames: AtomicU32::new(0),
             active_radio_cycles: AtomicU32::new(0),
             active_radio_instructions: AtomicU32::new(0),
             active_radio_saw_runner: AtomicU32::new(0),
@@ -1240,6 +1264,27 @@ impl Core0PerformanceCounters {
         counter.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Bind one terminal AP A-MPDU to the association generation retained by
+    /// its physical aggregate owner. This remains diagnostic-only and does not
+    /// decide whether a completion is accepted or retried.
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_ap_terminal_identity(&self, current: bool, frames: usize) {
+        let (aggregates, frame_counter) = if current {
+            (
+                &self.tx_ap_terminal_identity_current_aggregates,
+                &self.tx_ap_terminal_identity_current_frames,
+            )
+        } else {
+            (
+                &self.tx_ap_terminal_identity_stale_aggregates,
+                &self.tx_ap_terminal_identity_stale_frames,
+            )
+        };
+        aggregates.fetch_add(1, Ordering::Relaxed);
+        frame_counter.fetch_add(u32::try_from(frames).unwrap_or(u32::MAX), Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> Core0PerformanceSnapshot {
         Core0PerformanceSnapshot {
             rx_interrupt_posts: self.rx_interrupt_posts.load(Ordering::Relaxed),
@@ -1360,6 +1405,18 @@ impl Core0PerformanceCounters {
                 .load(Ordering::Relaxed),
             tx_ap_identity_traffic_class_mismatch: self
                 .tx_ap_identity_traffic_class_mismatch
+                .load(Ordering::Relaxed),
+            tx_ap_terminal_identity_current_aggregates: self
+                .tx_ap_terminal_identity_current_aggregates
+                .load(Ordering::Relaxed),
+            tx_ap_terminal_identity_current_frames: self
+                .tx_ap_terminal_identity_current_frames
+                .load(Ordering::Relaxed),
+            tx_ap_terminal_identity_stale_aggregates: self
+                .tx_ap_terminal_identity_stale_aggregates
+                .load(Ordering::Relaxed),
+            tx_ap_terminal_identity_stale_frames: self
+                .tx_ap_terminal_identity_stale_frames
                 .load(Ordering::Relaxed),
             rx_progress_drained: self.rx_progress_drained.load(Ordering::Relaxed),
             rx_progress_probe_pending: self.rx_progress_probe_pending.load(Ordering::Relaxed),
@@ -1497,7 +1554,7 @@ fn instruction_count() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "tx-phase-telemetry"))]
     use super::Core0PerformanceCounters;
     use super::Core0PerformanceSnapshot;
 
@@ -1531,6 +1588,21 @@ mod tests {
         assert_eq!(delta.poll_to_runner_cycles, 4);
         assert_eq!(delta.poll_to_runner_instructions, 5);
         assert_eq!(delta.dma_calls, 3);
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[test]
+    fn terminal_ap_identity_accounts_aggregates_and_frames_separately() {
+        let counters = Core0PerformanceCounters::new();
+        counters.record_ap_terminal_identity(true, 32);
+        counters.record_ap_terminal_identity(true, 7);
+        counters.record_ap_terminal_identity(false, 3);
+
+        let snapshot = counters.snapshot();
+        assert_eq!(snapshot.tx_ap_terminal_identity_current_aggregates, 2);
+        assert_eq!(snapshot.tx_ap_terminal_identity_current_frames, 39);
+        assert_eq!(snapshot.tx_ap_terminal_identity_stale_aggregates, 1);
+        assert_eq!(snapshot.tx_ap_terminal_identity_stale_frames, 3);
     }
 
     #[cfg(feature = "core0-rx-coarse-telemetry")]

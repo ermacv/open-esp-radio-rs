@@ -669,15 +669,18 @@ not a wholesale stack rewrite.
 2. **Grant contract.** The rejected echo deliberately left no compatibility
    API. A real grant still needs key/lifecycle identity, bounded frame and
    airtime horizons, unused-quantum return/expiry, and completion accounting.
-3. **Completion identity.** The final SRAM owner now carries a compact
+3. **Completion identity.** The final SRAM owner carries a compact
    `(VIF, physical-pool index)` tag. The indexed CPU-only sidecar retains the
    exact opaque egress key which Xarxa used at final admission, including the
-   association generation and generic traffic class. The slot cannot be
-   reused while the affine packet owner is live, and direct, staged-promotion
-   and Core1-materializer tests prove that the identity follows the same
-   owner. Role-specific AP/STA validation and completion charging do not yet
-   consume this identity, so stale-generation and per-TID accounting remain a
-   Phase 4 proof obligation rather than an authority claim.
+   schedule epoch, association generation and generic traffic class. The slot
+   cannot be reused while the affine packet owner is live, and direct,
+   staged-promotion and Core1-materializer tests prove that the identity
+   follows the same owner. The AP A-MPDU path now independently retains its
+   exact `ApAssociationIdentity` through build, hardware ownership, retry and
+   terminal release and diagnoses whether that generation is still current.
+   This covers the fixed AP VIF/TID0 aggregate path only. Ordinary MPDU,
+   A-MSDU, group/control, STA and an eventual grant's schedule epoch still
+   need explicit completion binding before authoritative charging.
 4. **Protocol coverage.** UDP has the required removable queue geometry;
    TCP/raw/control paths need a deliberate provider or bypass contract.
 5. **Pre-classification lifetime.** Current packet storage cannot distinguish
@@ -793,6 +796,18 @@ not satisfy the architectural goal.
   diagnostic counters. Reprocessing an already retained frame does not count
   it again. The observation is compiled only into TX-phase diagnostics and
   cannot authorize, defer, drop or rekey a frame.
+- **AP aggregate terminal boundary — implemented, awaiting HIL.** AP A-MPDU
+  state no longer reduces association identity to a MAC address. Building,
+  hardware-owned, retained-retry and completed states carry the exact peer
+  slot and generation, and terminal release returns that identity to the
+  caller. Completion also returns the fixed aggregate PHY rate needed by a
+  later estimator. Diagnostic counters split current and stale terminal
+  aggregates and frames; they neither accept nor reject completion. This
+  change also fixes standby publication bookkeeping so timeout/collision
+  accounting uses the batch actually started rather than the previous active
+  aggregate. Coverage remains deliberately AP A-MPDU/TID0-only: it is not yet
+  an airtime charge, and the stack-side schedule epoch is not yet attached to
+  an aggregate transaction.
 - hierarchical VIF then peer/TID weighted airtime DRR;
 - AQL-like estimated pending airtime charged at successful SRAM admission;
 - completion reconciliation from actual rate, retry and BA results;

@@ -982,6 +982,17 @@ where
         CORE0_PERFORMANCE.record_ap_egress_identity(observation);
     }
 
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn observe_terminal_egress_identity(
+        &self,
+        engine: &Esp32s31ApEngine<'_>,
+        association: ApAssociationIdentity,
+        frames: usize,
+    ) {
+        CORE0_PERFORMANCE
+            .record_ap_terminal_identity(engine.association_is_current(association), frames);
+    }
+
     fn retain_power_save(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
@@ -1721,7 +1732,7 @@ where
             let preparation_started = self.observer.map(AggregateTxObserver::now_micros);
             debug_assert!(admission.accepts_ethernet(second.as_slice()));
 
-            let peer = admission.peer();
+            let association = admission.association();
             let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
                     error,
@@ -1770,14 +1781,14 @@ where
             let active = aggregate.active_mut();
             active
                 .begin(
-                    peer,
+                    association,
                     policy.rate(),
                     first_encoded.sequence_number,
                     policy.role().hardware_key_selector,
                 )
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             active
-                .push(peer, frame, first_encoded)
+                .push(association, frame, first_encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
 
             let second_offset = second.ethernet_offset();
@@ -1795,7 +1806,7 @@ where
                     )
                 })?;
             active
-                .push(peer, second, second_encoded)
+                .push(association, second, second_encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
 
             let target = usize::from(policy.frame_limit());
@@ -1828,7 +1839,7 @@ where
                         )
                     })?;
                 active
-                    .push(peer, next, encoded)
+                    .push(association, next, encoded)
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
                 admitted += 1;
             }
@@ -2145,7 +2156,7 @@ where
             return Ok(false);
         }
 
-        let peer = admission.peer();
+        let association = admission.association();
         for slot in frames[..count].iter_mut() {
             let mut frame = slot
                 .take()
@@ -2171,7 +2182,7 @@ where
             aggregate
                 .standby_mut()
                 .expect("checked standby arena")
-                .push(peer, frame, encoded)
+                .push(association, frame, encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         }
         let frame_limit;
@@ -2274,7 +2285,7 @@ where
                     return Ok(false);
                 }
             };
-            let peer = admission.peer();
+            let association = admission.association();
             let offset = frame.ethernet_offset();
             let length = frame.ethernet_length();
             let encoded = control
@@ -2294,7 +2305,7 @@ where
             aggregate
                 .standby_mut()
                 .expect("checked standby arena")
-                .push(peer, frame, encoded)
+                .push(association, frame, encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             let batch = self
                 .prepared_standby
@@ -2334,7 +2345,7 @@ where
             self.prepared_second = Some(frame);
             return Ok(true);
         };
-        let peer = admission.peer();
+        let association = admission.association();
         {
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
@@ -2387,14 +2398,14 @@ where
         let standby = aggregate.standby_mut().expect("checked standby arena");
         standby
             .begin(
-                peer,
+                association,
                 policy.rate(),
                 first_encoded.sequence_number,
                 policy.role().hardware_key_selector,
             )
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         standby
-            .push(peer, first, first_encoded)
+            .push(association, first, first_encoded)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         let offset = frame.ethernet_offset();
         let length = frame.ethernet_length();
@@ -2415,7 +2426,7 @@ where
         aggregate
             .standby_mut()
             .expect("checked standby arena")
-            .push(peer, frame, encoded)
+            .push(association, frame, encoded)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         #[cfg(feature = "tx-phase-telemetry")]
         self.publish_shadow_grant(admission.association(), policy.frame_limit());
@@ -2495,7 +2506,7 @@ where
         self.prepare_ready_standby(aggregate, control, network)?;
         #[cfg(feature = "tx-phase-telemetry")]
         self.record_partial_frontier(network);
-        let Some(_batch) = self.prepared_standby.take() else {
+        let Some(batch) = self.prepared_standby.take() else {
             loop {
                 let Some(frame) = self.prepared_first.take() else {
                     return Ok(WifiTxProgress::Complete);
@@ -2532,6 +2543,7 @@ where
         aggregate
             .publish_standby(ordinary, hardware)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+        self.last_started_frames = batch.admitted;
         let now = ordinary.now_micros();
         self.deadline_micros = Some(now.saturating_add(ordinary.publication_timeout_micros()));
         #[cfg(any(feature = "diagnostics", test))]
@@ -2542,24 +2554,24 @@ where
         if let Some(observer) = self.observer {
             let finished = observer.now_micros();
             let started = publication_started.unwrap_or(finished);
-            observe_aggregate_rate(observer, _batch.policy.rate());
+            observe_aggregate_rate(observer, batch.policy.rate());
             observer.observe(AggregateTxObservation::Prepared {
-                subframes: u8::try_from(_batch.admitted).unwrap_or(u8::MAX),
-                stop: if _batch.admitted == usize::from(_batch.policy.frame_limit()) {
+                subframes: u8::try_from(batch.admitted).unwrap_or(u8::MAX),
+                stop: if batch.admitted == usize::from(batch.policy.frame_limit()) {
                     AggregateBuildStop::FrameLimit
                 } else {
                     AggregateBuildStop::QueueEmpty
                 },
             });
             observer.observe(AggregateTxObservation::PreparationCompleted {
-                micros: _batch.preparation_micros,
+                micros: batch.preparation_micros,
             });
             observer.observe(AggregateTxObservation::Published {
                 at_micros: started,
                 program_micros: finished.saturating_sub(started),
             });
             observer.observe(AggregateTxObservation::StandbyPublished);
-            control.observe_ht_aggregate(_batch.policy.rate());
+            control.observe_ht_aggregate(batch.policy.rate());
         }
         self.prepare_ready_standby(aggregate, control, network)?;
         #[cfg(feature = "tx-phase-telemetry")]
@@ -2759,6 +2771,10 @@ where
             )
         })?;
         if service_event == AggregateTxServiceEvent::Collision {
+            #[cfg(feature = "tx-phase-telemetry")]
+            let association = aggregate.active_mut().association().ok_or(
+                Esp32s31AccessPointDatapathError::Aggregate(Esp32s31ApAmpduError::Idle),
+            )?;
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
                     error,
@@ -2774,6 +2790,12 @@ where
                 ));
             }
             ordinary.reset_aggregate_contention();
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.observe_terminal_egress_identity(
+                control.mac.engine(),
+                association,
+                self.last_started_frames,
+            );
             self.deadline_micros = None;
             #[cfg(any(feature = "diagnostics", test))]
             {
@@ -2789,6 +2811,10 @@ where
             service_event,
             AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
         ) {
+            #[cfg(feature = "tx-phase-telemetry")]
+            let association = aggregate.active_mut().association().ok_or(
+                Esp32s31AccessPointDatapathError::Aggregate(Esp32s31ApAmpduError::Idle),
+            )?;
             if !aggregate
                 .active_mut()
                 .begin_timeout_abort(hardware)
@@ -2809,6 +2835,12 @@ where
                 .finish_timeout_abort(hardware)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             ordinary.reset_aggregate_contention();
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.observe_terminal_egress_identity(
+                control.mac.engine(),
+                association,
+                self.last_started_frames,
+            );
             self.deadline_micros = None;
             #[cfg(any(feature = "diagnostics", test))]
             {
@@ -2862,10 +2894,17 @@ where
                 let _ = completion;
                 #[cfg(any(feature = "diagnostics", test))]
                 let release_started = self.observer.map(AggregateTxObserver::now_micros);
-                aggregate
+                let released_association = aggregate
                     .active_mut()
                     .release_completed()
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                debug_assert_eq!(released_association, completion.association);
+                #[cfg(feature = "tx-phase-telemetry")]
+                self.observe_terminal_egress_identity(
+                    control.mac.engine(),
+                    released_association,
+                    usize::from(completion.acknowledged.saturating_add(completion.missing)),
+                );
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     let finished = observer.now_micros();

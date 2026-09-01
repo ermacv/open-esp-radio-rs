@@ -1433,7 +1433,7 @@ mod tests {
     fn parses_ap_egress_identity_evidence_per_cycle() {
         let log = "\
 ORC0TXI exact=31 unclassified=1 non_associated=2 role_unbound=3 interface_mismatch=4 peer_slot_mismatch=5 peer_generation_mismatch=6 traffic_class_mismatch=7\n\
-uart: ORC0TXI exact=32 unclassified=0 non_associated=0 role_unbound=0 interface_mismatch=0 peer_slot_mismatch=0 peer_generation_mismatch=0 traffic_class_mismatch=0\n";
+uart: ORC0TXI exact=32 unclassified=0 non_associated=0 role_unbound=0 interface_mismatch=0 peer_slot_mismatch=0 peer_generation_mismatch=0 traffic_class_mismatch=0 terminal_current_aggregates=1 terminal_current_frames=32 terminal_stale_aggregates=0 terminal_stale_frames=0\n";
 
         let parsed = ApEgressIdentityReport::all_from_log(log).unwrap();
 
@@ -1449,6 +1449,10 @@ uart: ORC0TXI exact=32 unclassified=0 non_associated=0 role_unbound=0 interface_
                     peer_slot_mismatch: 5,
                     peer_generation_mismatch: 6,
                     traffic_class_mismatch: 7,
+                    terminal_current_aggregates: None,
+                    terminal_current_frames: None,
+                    terminal_stale_aggregates: None,
+                    terminal_stale_frames: None,
                 },
                 ApEgressIdentityReport {
                     exact: 32,
@@ -1459,6 +1463,10 @@ uart: ORC0TXI exact=32 unclassified=0 non_associated=0 role_unbound=0 interface_
                     peer_slot_mismatch: 0,
                     peer_generation_mismatch: 0,
                     traffic_class_mismatch: 0,
+                    terminal_current_aggregates: Some(1),
+                    terminal_current_frames: Some(32),
+                    terminal_stale_aggregates: Some(0),
+                    terminal_stale_frames: Some(0),
                 },
             ]
         );
@@ -1469,5 +1477,11 @@ uart: ORC0TXI exact=32 unclassified=0 non_associated=0 role_unbound=0 interface_
         let error = ApEgressIdentityReport::all_from_log("ORC0TXI exact=31").unwrap_err();
 
         assert!(error.contains("unclassified"));
+
+        let error = ApEgressIdentityReport::all_from_log(
+            "ORC0TXI exact=31 unclassified=0 non_associated=0 role_unbound=0 interface_mismatch=0 peer_slot_mismatch=0 peer_generation_mismatch=0 traffic_class_mismatch=0 terminal_current_aggregates=1",
+        )
+        .unwrap_err();
+        assert!(error.contains("all present or all absent"));
     }
 }

@@ -75,6 +75,22 @@ pub enum BluetoothPassiveScanRuntimeBeginError {
     EventActive,
 }
 
+/// Reclaimed scanner graph which did not belong to the production runtime.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retain the foreign graph and its copied receive result"]
+#[allow(
+    dead_code,
+    reason = "the fail-stop owner intentionally keeps the foreign graph and copied result opaque"
+)]
+pub(crate) struct BluetoothPassiveScanRuntimeRestoreFailure {
+    pub(crate) graph:
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+    pub(crate) received:
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanReceivedBatch,
+    pub(crate) status:
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
+}
+
 /// Composition-owned immutable configuration and reusable scanner graph.
 #[must_use = "the scanner runtime retains the sole production graph"]
 pub struct BluetoothPassiveScanRuntimeResources {
@@ -152,6 +168,28 @@ impl BluetoothPassiveScanRuntimeResources {
         }
         self.idle = Some(graph);
         Ok(())
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn restore_recycled(
+        &mut self,
+        recycled: crate::BluetoothPassiveScanSchedulerRecycled,
+    ) -> Result<
+        (
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanReceivedBatch,
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
+        ),
+        BluetoothPassiveScanRuntimeRestoreFailure,
+    >{
+        let (graph, received, status) = recycled.into_parts();
+        match self.restore_idle(graph) {
+            Ok(()) => Ok((received, status)),
+            Err(graph) => Err(BluetoothPassiveScanRuntimeRestoreFailure {
+                graph,
+                received,
+                status,
+            }),
+        }
     }
 }
 

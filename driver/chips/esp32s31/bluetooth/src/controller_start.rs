@@ -4954,6 +4954,19 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         self.runtime.recycle_passive_scan_completed(ready)
     }
 
+    pub(crate) fn restore_passive_scan_recycled(
+        &mut self,
+        recycled: crate::BluetoothPassiveScanSchedulerRecycled,
+    ) -> Result<
+        (
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanReceivedBatch,
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
+        ),
+        crate::passive_scanning::BluetoothPassiveScanRuntimeRestoreFailure,
+    >{
+        self.passive_scan_resources.restore_recycled(recycled)
+    }
+
     /// Perform one fresh fenced completion-list transfer and immediately join
     /// its affine result to this exact running DTM graph.
     ///

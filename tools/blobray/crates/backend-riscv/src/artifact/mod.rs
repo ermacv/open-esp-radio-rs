@@ -47,7 +47,8 @@ pub use model::{
 };
 pub use sections::load_executable_sections;
 pub use symbols::{
-    load_code_symbol_exact, load_code_symbols, load_data_symbols, load_reviewed_code_ranges,
+    load_archive_member_names, load_code_symbol_exact, load_code_symbols, load_data_symbols,
+    load_reviewed_code_ranges,
 };
 
 #[cfg(test)]

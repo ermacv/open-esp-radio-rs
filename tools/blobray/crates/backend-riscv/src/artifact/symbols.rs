@@ -142,6 +142,24 @@ pub fn load_code_symbols(
     load_code_symbols_from_data(&data, prefix, selection)
 }
 
+/// Return the physical member names of a relocatable archive in container
+/// order. Linked ELF inputs have no archive-member layer and return `None`.
+pub fn load_archive_member_names(path: &Path) -> Result<Option<Vec<String>>> {
+    let data = crate::read_artifact(path)?;
+    match FileKind::parse(data.as_slice())? {
+        FileKind::Archive => {
+            let archive = ArchiveFile::parse(data.as_slice())?;
+            let mut names = Vec::new();
+            for member in archive.members() {
+                names.push(String::from_utf8_lossy(member?.name()).into_owned());
+            }
+            Ok(Some(names))
+        }
+        FileKind::Elf32 => Ok(None),
+        kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
+    }
+}
+
 pub(super) fn load_code_symbols_from_data(
     data: &[u8],
     prefix: &str,

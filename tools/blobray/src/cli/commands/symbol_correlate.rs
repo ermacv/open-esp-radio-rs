@@ -55,6 +55,28 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
             report.summary.ambiguous,
             report.summary.unmatched,
         );
+        if let Some(member_order) = &report.member_order {
+            outputln!(
+                "Member order: {} mappings, exact-body support={} conflicts={} support={:.3}% (module evidence only)",
+                member_order.correspondences.len(),
+                member_order.exact_function_support,
+                member_order.exact_function_conflicts,
+                f64::from(member_order.support_parts_per_million) / 10_000.0,
+            );
+        }
+        outputln!(
+            "Data objects: source={} target={} unique={} reference-refined={} ambiguous={} unmatched={}",
+            report.data_summary.from_objects,
+            report.data_summary.to_objects,
+            report.data_summary.unique,
+            report.data_summary.reference_refined,
+            report.data_summary.ambiguous,
+            report.data_summary.unmatched,
+        );
+        outputln!(
+            "Pin candidates: {} (all require review)",
+            report.pin_candidates.len()
+        );
         if crate::cli::output::details() {
             let rows = report
                 .correspondences

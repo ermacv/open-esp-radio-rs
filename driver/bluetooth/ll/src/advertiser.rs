@@ -342,7 +342,7 @@ impl<'a> LegacyAdvertisingEventSequenceExhausted<'a> {
     }
 }
 
-/// Next event with a relative deadline which has not yet elapsed.
+/// Next event carrying its relative schedule before backend admission.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "wait, disable, or retain the scheduled event"]
 pub struct LegacyAdvertiserScheduled<'a> {
@@ -365,8 +365,8 @@ impl<'a> LegacyAdvertiserScheduled<'a> {
         self.scheduled.start_offset_micros()
     }
 
-    /// Enter the next event after the external deadline owner fires.
-    pub fn into_due(self) -> LegacyAdvertiserEnabled<'a> {
+    /// Transfer the scheduled event to a backend which will own its deadline.
+    pub fn into_event(self) -> LegacyAdvertiserEnabled<'a> {
         LegacyAdvertiserEnabled {
             standby: self.standby,
             generation: self.generation,
@@ -514,7 +514,7 @@ mod tests {
         assert_eq!(scheduled.generation().get(), 1);
         assert_eq!(scheduled.event_sequence().get(), 1);
         assert_eq!(scheduled.start_offset_micros(), 27_500);
-        let next = scheduled.into_due().prepare_event();
+        let next = scheduled.into_event().prepare_event();
         assert_eq!(next.identity().event().get(), 1);
         assert_eq!(
             next.channels(),

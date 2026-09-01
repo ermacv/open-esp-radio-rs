@@ -12,8 +12,10 @@
 
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_bluetooth_ll::advertiser::{
-    LegacyAdvertiserEventComplete, LegacyAdvertiserEventInFlight,
+    LegacyAdvertiserEventComplete, LegacyAdvertiserEventInFlight, LegacyAdvertiserScheduled,
 };
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_bluetooth_ll::advertising::PrimaryAdvertisingChannel;
 use open_esp_radio_bluetooth_ll::{
@@ -601,8 +603,9 @@ impl<'a> BluetoothLegacyAdvertisingCompletionRecyclePrepared<'a> {
     }
 
     pub(crate) fn commit(self) -> BluetoothLegacyAdvertisingRecycledEvent<'a> {
+        let phase = self.scheduler_window.phase();
         let memory = self.memory.commit();
-        BluetoothLegacyAdvertisingRecycledEvent::new(self.in_flight, memory)
+        BluetoothLegacyAdvertisingRecycledEvent::new(self.in_flight, memory, phase)
     }
 }
 
@@ -635,6 +638,7 @@ pub(crate) struct BluetoothLegacyAdvertisingRecycledEvent<'a> {
     in_flight: LegacyAdvertiserEventInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    phase: crate::BluetoothLegacyAdvertisingEventPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -642,12 +646,14 @@ impl<'a> BluetoothLegacyAdvertisingRecycledEvent<'a> {
     fn new(
         in_flight: LegacyAdvertiserEventInFlight<'a>,
         memory: BluetoothLegacyAdvertisingMemoryGraphRecycled,
+        phase: crate::BluetoothLegacyAdvertisingEventPhase,
     ) -> Self {
         let (memory, statuses) = memory.into_parts();
         Self {
             in_flight,
             memory,
             statuses,
+            phase,
         }
     }
 
@@ -665,11 +671,13 @@ impl<'a> BluetoothLegacyAdvertisingRecycledEvent<'a> {
             in_flight,
             memory,
             statuses,
+            phase,
         } = self;
         BluetoothLegacyAdvertisingEventCompleted {
             complete: in_flight.complete_exact(),
             memory,
             statuses,
+            phase,
         }
     }
 }
@@ -685,6 +693,7 @@ pub struct BluetoothLegacyAdvertisingEventCompleted<'a> {
     complete: LegacyAdvertiserEventComplete<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    phase: crate::BluetoothLegacyAdvertisingEventPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -694,6 +703,43 @@ impl<'a> BluetoothLegacyAdvertisingEventCompleted<'a> {
         self.statuses
     }
 
+    /// Nominal first-event phase retained across hardware completion.
+    pub const fn phase(&self) -> crate::BluetoothLegacyAdvertisingEventPhase {
+        self.phase
+    }
+
+    /// Attach one fresh Link Layer delay to the next event without losing the graph.
+    pub fn schedule_next(
+        self,
+        delay: AdvertisingDelay,
+    ) -> Result<
+        BluetoothLegacyAdvertisingNextEventScheduled<'a>,
+        BluetoothLegacyAdvertisingEventScheduleFailure<'a>,
+    > {
+        let Self {
+            complete,
+            memory,
+            statuses,
+            phase,
+        } = self;
+        match complete.schedule_next(delay) {
+            Ok(scheduled) => Ok(BluetoothLegacyAdvertisingNextEventScheduled {
+                scheduled,
+                memory,
+                previous_statuses: statuses,
+                previous_phase: phase,
+            }),
+            Err(exhausted) => Err(BluetoothLegacyAdvertisingEventScheduleFailure {
+                completed: Self {
+                    complete: exhausted.into_complete(),
+                    memory,
+                    statuses,
+                    phase,
+                },
+            }),
+        }
+    }
+
     /// Recover the protocol continuation, CPU graph and diagnostic status.
     pub fn into_parts(
         self,
@@ -701,8 +747,60 @@ impl<'a> BluetoothLegacyAdvertisingEventCompleted<'a> {
         LegacyAdvertiserEventComplete<'a>,
         BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
         BluetoothLegacyAdvertisingEventCompletionStatuses,
+        crate::BluetoothLegacyAdvertisingEventPhase,
     ) {
-        (self.complete, self.memory, self.statuses)
+        (self.complete, self.memory, self.statuses, self.phase)
+    }
+}
+
+/// Next portable event plus the exact reusable S31 graph and previous phase.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "prepare the recurring event, disable it, or retain every owner"]
+pub struct BluetoothLegacyAdvertisingNextEventScheduled<'a> {
+    scheduled: LegacyAdvertiserScheduled<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    previous_statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingNextEventScheduled<'a> {
+    pub const fn start_offset_micros(&self) -> u64 {
+        self.scheduled.start_offset_micros()
+    }
+
+    pub const fn previous_statuses(&self) -> BluetoothLegacyAdvertisingEventCompletionStatuses {
+        self.previous_statuses
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        LegacyAdvertiserScheduled<'a>,
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothLegacyAdvertisingEventCompletionStatuses,
+        crate::BluetoothLegacyAdvertisingEventPhase,
+    ) {
+        (
+            self.scheduled,
+            self.memory,
+            self.previous_statuses,
+            self.previous_phase,
+        )
+    }
+}
+
+/// Event-sequence exhaustion retaining the complete post-recycle owner.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "recover the completed event and its SRAM graph"]
+pub struct BluetoothLegacyAdvertisingEventScheduleFailure<'a> {
+    completed: BluetoothLegacyAdvertisingEventCompleted<'a>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingEventScheduleFailure<'a> {
+    pub fn into_completed(self) -> BluetoothLegacyAdvertisingEventCompleted<'a> {
+        self.completed
     }
 }
 

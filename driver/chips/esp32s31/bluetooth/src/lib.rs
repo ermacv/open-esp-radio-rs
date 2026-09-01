@@ -319,13 +319,16 @@ pub use interrupt_classifier::{
 pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
 };
-#[cfg(target_arch = "riscv32")]
-pub use legacy_advertising::BluetoothLegacyAdvertisingEventCompleted;
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
     BluetoothLegacyAdvertisingLinkStateReset, BluetoothLegacyAdvertisingLinkStateResetError,
     BluetoothLegacyAdvertisingPreparationError, BluetoothLegacyAdvertisingPreparationErrorKind,
     BluetoothLegacyAdvertisingPrepared,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_advertising::{
+    BluetoothLegacyAdvertisingEventCompleted, BluetoothLegacyAdvertisingEventScheduleFailure,
+    BluetoothLegacyAdvertisingNextEventScheduled,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising::{

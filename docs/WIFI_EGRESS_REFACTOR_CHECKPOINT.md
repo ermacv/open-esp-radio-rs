@@ -669,10 +669,15 @@ not a wholesale stack rewrite.
 2. **Grant contract.** The rejected echo deliberately left no compatibility
    API. A real grant still needs key/lifecycle identity, bounded frame and
    airtime horizons, unused-quantum return/expiry, and completion accounting.
-3. **Completion identity.** Final SRAM frames retain their VIF tag, while
-   exact peer/TID accounting is reconstructed later from frame/radio state.
-   Authority needs an explicit proof that stale association generations and
-   per-TID completion cannot be mischarged.
+3. **Completion identity.** The final SRAM owner now carries a compact
+   `(VIF, physical-pool index)` tag. The indexed CPU-only sidecar retains the
+   exact opaque egress key which Xarxa used at final admission, including the
+   association generation and generic traffic class. The slot cannot be
+   reused while the affine packet owner is live, and direct, staged-promotion
+   and Core1-materializer tests prove that the identity follows the same
+   owner. Role-specific AP/STA validation and completion charging do not yet
+   consume this identity, so stale-generation and per-TID accounting remain a
+   Phase 4 proof obligation rather than an authority claim.
 4. **Protocol coverage.** UDP has the required removable queue geometry;
    TCP/raw/control paths need a deliberate provider or bypass contract.
 5. **Pre-classification lifetime.** Current packet storage cannot distinguish
@@ -733,6 +738,24 @@ not a wholesale stack rewrite.
 - measure AP after echo removal before adding a new return path;
 - eliminate steady-state lifecycle outbox scans and pass the same-ELF
   throughput/Core0/Core1 gate.
+
+### Phase 3.5: retain exact physical-owner identity — complete
+
+- retain the final-admission `EgressKey` in one CPU-only sidecar entry per
+  physical pool slot;
+- carry only the two-byte `(VIF, pool index)` handle through aggregate, retry
+  and role state machines;
+- publish and read the sidecar through an explicit Release/Acquire edge;
+- preserve the identity through direct SRAM, staged promotion and the
+  diagnostic Core1 materializer without enlarging DMA storage or queue
+  entries;
+- reject embedding the complete key in every `PinnedTxFrame`: the linked-image
+  audit measured a 54,112-byte STA+AP frame against its 51,200-byte budget,
+  a 26,976-byte AP control frame against 26,624, and an unreviewed 11,216-byte
+  AP network-TX frame. The compact handle restored the accepted values to
+  47,760 and 22,656 bytes and removed the unreviewed oversized frame;
+- keep the key observational until role-specific identity correspondence and
+  completion accounting are proven.
 
 ### Phase 4: implement policy in shadow
 

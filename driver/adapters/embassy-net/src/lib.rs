@@ -86,10 +86,10 @@ pub use pinned::{
     DualPinnedNetworkRunner, EgressQueueTopology, NetworkEndpointConfig, NetworkInterfaceId,
     PinnedEndpointResources, PinnedNetworkLinkController, PinnedNetworkRunner,
     PinnedNetworkTxFrame, PinnedReceiveToken, PinnedRxPublisher, PinnedTransmitToken,
-    PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider,
-    PinnedTxResources, SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher,
-    SharedPinnedRxQueue, SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice,
-    SplitPinnedRxRunner,
+    PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxMetadata, PinnedTxOwnerTag,
+    PinnedTxPool, PinnedTxProvider, PinnedTxResources, SharedPinnedReceiveToken,
+    SharedPinnedRxConsumer, SharedPinnedRxPublisher, SharedPinnedRxQueue, SharedPoolReceiveToken,
+    SharedRxSplitPinnedDevice, SplitPinnedDevice, SplitPinnedRxRunner,
 };
 #[cfg(feature = "tx-core1-materializer-probe")]
 pub use pinned::{

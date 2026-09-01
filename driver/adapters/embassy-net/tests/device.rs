@@ -447,7 +447,7 @@ fn final_keyed_admission_rejects_stale_and_foreign_peer_keys_before_sram_claim()
     peers
         .replace(&[EgressPeerIdentity::try_new(address, 1, 7)])
         .unwrap();
-    let (provider, _consumer) = tx_resources.split(pool);
+    let (provider, consumer) = tx_resources.split(pool);
     let interface = NetworkInterfaceId::new(1);
     let (mut device, radio) = resources.split(
         provider,
@@ -474,10 +474,16 @@ fn final_keyed_admission_rejects_stale_and_foreign_peer_keys_before_sram_claim()
     ));
 
     let current = device.egress_key(route);
-    assert!(matches!(
-        device.transmit_for(&mut context(), current),
-        EgressAdmission::Granted(_)
-    ));
+    let token = match device.transmit_for(&mut context(), current) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("current generation receives a physical token"),
+    };
+    token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5a));
+    let radio = consumer.for_interface(interface);
+    let frame = radio.try_receive_direct().unwrap();
+    assert_eq!(frame.tag().interface(), interface);
+    assert_eq!(radio.direct_metadata(&frame).egress_key(), Some(current));
+    drop(frame);
 
     let mut foreign_words = current.words();
     foreign_words[0] ^= 1 << 8;
@@ -821,6 +827,46 @@ fn scheduled_staged_tx_keeps_ownership_until_one_dma_promotion_copy() {
     assert!(access_point.transmit(&mut context()).is_some());
 }
 
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-staging-copy-probe"))]
+#[test]
+fn staged_promotion_retains_the_exact_egress_identity() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+
+    let endpoint_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let interface = NetworkInterfaceId::new(1);
+    let destination = [2, 0, 0, 0, 0, 9];
+    let (provider, consumer) = tx_resources.split(pool);
+    let (device, radio_state) = endpoint_resources.split(
+        provider,
+        NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
+    );
+    let mut device = device.with_tx_staging_copy_selected(true);
+    let radio = consumer.for_interface(interface);
+    radio_state.set_link_state(LinkState::Up);
+    let key = device.egress_key(EgressRoute {
+        destination: HardwareAddress::Ethernet(destination),
+        traffic_class: 5,
+    });
+
+    let token = match device.transmit_for(&mut context(), key) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("current egress identity receives one staged credit"),
+    };
+    token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa5));
+    let staged = radio.try_receive().expect("staged owner reaches the radio");
+    assert_eq!(radio.metadata(&staged).egress_key(), Some(key));
+
+    let promoted = radio
+        .try_promote(staged)
+        .unwrap_or_else(|_| panic!("one free DMA slot admits the staged owner"));
+    assert_eq!(promoted.tag().interface(), interface);
+    assert_eq!(radio.direct_metadata(&promoted).egress_key(), Some(key));
+}
+
 #[cfg(feature = "tx-staging-copy-probe")]
 #[test]
 fn scheduled_staged_tx_promotes_a_complete_batch_in_order() {
@@ -878,12 +924,13 @@ fn selected_batch_materializes_in_the_network_driver_poll() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(
+    let (device, radio_state) = endpoint_resources.split(
         provider,
         NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
     );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
+    radio_state.set_link_state(LinkState::Up);
 
     for marker in 1..=3_u8 {
         device
@@ -936,12 +983,13 @@ fn pending_core1_materialization_cancellation_returns_both_credit_classes() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(
+    let (device, radio_state) = endpoint_resources.split(
         provider,
         NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
     );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
+    radio_state.set_link_state(LinkState::Up);
 
     for marker in 1..=3_u8 {
         device
@@ -994,12 +1042,13 @@ fn published_core1_materialization_cancellation_reclaims_ready_dma_owners() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(
+    let (device, radio_state) = endpoint_resources.split(
         provider,
         NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
     );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
+    radio_state.set_link_state(LinkState::Up);
 
     for marker in 1..=3_u8 {
         device
@@ -1052,12 +1101,13 @@ fn materializer_rearms_core1_wake_before_returning_a_staged_credit() {
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let interface = NetworkInterfaceId::new(1);
     let (provider, consumer) = tx_resources.split(pool);
-    let (device, _rx) = endpoint_resources.split(
+    let (device, radio_state) = endpoint_resources.split(
         provider,
         NetworkEndpointConfig::per_link_destination(interface, [2, 0, 0, 0, 0, 2]),
     );
     let mut device = device.with_tx_staging_copy_selected(true);
     let radio = consumer.for_interface(interface);
+    radio_state.set_link_state(LinkState::Up);
 
     device
         .transmit(&mut context())
@@ -1298,7 +1348,12 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     let station_tx = consumer.for_interface(station_interface);
     let access_point_tx = consumer.for_interface(access_point_interface);
     let station_first = station_tx.try_receive_direct().unwrap();
-    assert_eq!(*station_first.tag(), station_interface);
+    assert_eq!(station_first.tag().interface(), station_interface);
+    #[cfg(feature = "tx-egress-scheduling")]
+    assert_eq!(
+        station_tx.direct_metadata(&station_first).egress_key(),
+        None
+    );
     assert_eq!(station_first.ethernet()[0], 0x51);
     drop(station_first);
     assert_eq!(station_wakes.load(Ordering::Relaxed), 0);
@@ -1309,7 +1364,14 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
         .expect("the waiting peer claims the returned credit")
         .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa1));
     let access_point_first = access_point_tx.try_receive_direct().unwrap();
-    assert_eq!(*access_point_first.tag(), access_point_interface);
+    assert_eq!(access_point_first.tag().interface(), access_point_interface);
+    #[cfg(feature = "tx-egress-scheduling")]
+    assert_eq!(
+        access_point_tx
+            .direct_metadata(&access_point_first)
+            .egress_key(),
+        None
+    );
     assert_eq!(access_point_first.ethernet()[0], 0xa1);
     drop(access_point_first);
 

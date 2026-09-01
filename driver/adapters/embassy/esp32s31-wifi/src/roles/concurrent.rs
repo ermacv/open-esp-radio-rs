@@ -11,7 +11,9 @@ use open_esp_radio_dma::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
     AffineSpscTrySendError, TaggedStableDmaBacking,
 };
-use open_esp_radio_embassy_net::{NetworkInterfaceId, PinnedRxPublisher, RawMutex};
+use open_esp_radio_embassy_net::{
+    NetworkInterfaceId, PinnedRxPublisher, PinnedTxOwnerTag, RawMutex,
+};
 use open_esp_radio_esp32s31_wifi_mac::MacInterface;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxError, RxIngressConfig, RxSegment, view_normalized_rx_frame,
@@ -337,15 +339,15 @@ pub const fn sta_ap_vif(interface: NetworkInterfaceId) -> Option<StaApVif> {
 /// Unknown tags retain their exact lease and must be rejected explicitly by
 /// the composition root; no role encoder may guess from Ethernet contents.
 pub enum StaApTxDispatch<B> {
-    Station(TaggedStableDmaBacking<NetworkInterfaceId, B>),
-    AccessPoint(TaggedStableDmaBacking<NetworkInterfaceId, B>),
-    Unknown(TaggedStableDmaBacking<NetworkInterfaceId, B>),
+    Station(TaggedStableDmaBacking<PinnedTxOwnerTag, B>),
+    AccessPoint(TaggedStableDmaBacking<PinnedTxOwnerTag, B>),
+    Unknown(TaggedStableDmaBacking<PinnedTxOwnerTag, B>),
 }
 
 pub fn dispatch_sta_ap_tx<B>(
-    frame: TaggedStableDmaBacking<NetworkInterfaceId, B>,
+    frame: TaggedStableDmaBacking<PinnedTxOwnerTag, B>,
 ) -> StaApTxDispatch<B> {
-    match sta_ap_vif(*frame.tag()) {
+    match sta_ap_vif(frame.tag().interface()) {
         Some(StaApVif::Station) => StaApTxDispatch::Station(frame),
         Some(StaApVif::AccessPoint) => StaApTxDispatch::AccessPoint(frame),
         None => StaApTxDispatch::Unknown(frame),
@@ -839,9 +841,12 @@ mod tests {
 
     #[test]
     fn shared_tx_dispatch_retains_the_exact_owner_for_every_tag() {
-        let station = TaggedStableDmaBacking::new(STA_NETWORK_INTERFACE_ID, 11_u8);
-        let access_point = TaggedStableDmaBacking::new(AP_NETWORK_INTERFACE_ID, 22_u8);
-        let unknown = TaggedStableDmaBacking::new(NetworkInterfaceId::new(9), 33_u8);
+        let station =
+            TaggedStableDmaBacking::new(PinnedTxOwnerTag::new(STA_NETWORK_INTERFACE_ID, 1), 11);
+        let access_point =
+            TaggedStableDmaBacking::new(PinnedTxOwnerTag::new(AP_NETWORK_INTERFACE_ID, 2), 22);
+        let unknown =
+            TaggedStableDmaBacking::new(PinnedTxOwnerTag::new(NetworkInterfaceId::new(9), 3), 33);
 
         assert!(matches!(
             dispatch_sta_ap_tx(station),
@@ -854,7 +859,7 @@ mod tests {
         let StaApTxDispatch::Unknown(owner) = dispatch_sta_ap_tx(unknown) else {
             panic!("unknown interface must fail closed")
         };
-        assert_eq!(*owner.tag(), NetworkInterfaceId::new(9));
+        assert_eq!(owner.tag().interface(), NetworkInterfaceId::new(9));
         assert_eq!(*owner, 33);
     }
 }

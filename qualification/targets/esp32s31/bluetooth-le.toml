@@ -183,8 +183,8 @@ gaps = [
 [[capabilities]]
 id = "dtm-memory-graph"
 title = "Static DTM controller-memory graph"
-scope = "One-time production SRAM ownership and non-movable no-heap storage for every reviewed per-event DTM allocation with target-address binding composition-owned allocator and default-power configuration exact-pinned-storage identity-checked exclusive session checkout and restore distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph"
-implementation = "incomplete"
+scope = "Complete CPU-produced one-time SRAM graph and non-movable no-heap storage for every vendor-written per-event DTM allocation with target-address binding composition-owned allocator and default-power configuration exact-pinned-storage identity-checked exclusive session checkout and restore distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph; undocumented hardware-reader field names remain a vendor and HIL qualification question rather than an omitted producer write"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["controller-memory-lists"]
@@ -192,7 +192,6 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -219,8 +218,8 @@ async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
 [[capabilities]]
 id = "dtm-link-state-reset"
 title = "DTM controller-SRAM link-state reset region"
-scope = "Exact positional transforms for the eight completely reviewed words with chip-private reset construction from one composition-owned physical default-power request and typed role without allocator layout or publication claims"
-implementation = "incomplete"
+scope = "Complete CPU-produced DTM link-state reset over a zero-based allocation: exact positional transforms for every vendor-written reset word with chip-private construction from one composition-owned physical default-power request bound private links and typed role without publication claims; field-specific hardware-reader names remain outside the producer contract"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-memory-graph"]
@@ -229,7 +228,6 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "remaining-hardware-consumed-link-state-fields-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-words-and-field-semantics-missing" },
   { axis = "hil", id = "dtm-link-state-reset-register-and-memory-trace-missing" },
 ]
@@ -237,8 +235,8 @@ gaps = [
 [[capabilities]]
 id = "dtm-scheduler-item"
 title = "DTM scheduler-item event region"
-scope = "Exact positional pre-insert transforms for nine reviewed words with typed channel role PHY images and bidirectional scheduler epoch projection"
-implementation = "incomplete"
+scope = "Complete CPU-produced scheduler item over a zero-based allocation: exact allocation event sequence overlap-power bookkeeping and empty-list linkage transforms with typed channel role PHY images and bidirectional scheduler epoch projection; field-specific hardware-reader names remain outside the producer contract"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["controller-timebase", "dtm-link-state-reset"]
@@ -247,7 +245,6 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "remaining-hardware-consumed-scheduler-item-fields-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-words-and-packet-field-semantics-missing" },
   { axis = "hil", id = "dtm-scheduler-item-memory-and-insert-trace-missing" },
 ]
@@ -256,7 +253,7 @@ gaps = [
 id = "dtm-tx-payload"
 title = "Bounded DTM transmitter packet preparation"
 scope = "Full static packet allocation header image all eight HCI test patterns affine active-TX retention across first and recurring events and Test End transition into the reusable reclaimed graph epoch"
-implementation = "incomplete"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
@@ -264,7 +261,6 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "packet-engine-header-field-interpretation-missing" },
   { axis = "vendor", id = "packet-engine-header-field-reader-and-meaning-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
 ]

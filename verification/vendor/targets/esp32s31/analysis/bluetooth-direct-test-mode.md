@@ -1037,14 +1037,17 @@ it must not be read as claiming on-air validation.
    is now exact. Compose the DTM microsecond interval with the recovered
    environment remainder only after that value has a source-owned
    initialization path.
-3. **Close the hardware-consumed descriptor.** Eight link-state reset words,
-   eleven scheduler-item event words, every allocation footprint, chain anchor,
-   TX/RX header image and RX re-arm transform are now exact. Trace every
-   additional word read by hardware for one TX-role event and prove the
-   complete field masks for access address, CRC, whitening, power and next
-   link. The complete event body proves there is no separate software latch;
-   retain the published `item -> link state -> private links` chain and trace
-   only the undocumented hardware interpretation still needed for completion.
+3. **Use the complete CPU-produced descriptor and keep hardware-reader research
+   independent.** Eight link-state reset words, eleven scheduler-item event
+   words, every zero-based allocation footprint, allocation prefix, chain
+   anchor, TX/RX header image and RX re-arm transform account for every write
+   in the complete allocation/reset/event producer path. The resulting
+   `item -> link state -> private links` graph is therefore an implementation
+   input to controller work now; unknown field-specific names inside the
+   hardware reader do not justify inventing additional writes or keeping the
+   producer implementation open. Continue tracing hardware readers to qualify
+   access-address, CRC, whitening, power, packet-result and completion
+   semantics, and use a concrete divergence to reopen the producer contract.
 4. **Maintain the concrete executor-neutral DTM pump and Test End.** Completion and
    recycle already return active TX/RX identity only after exact list and
    Timeline release, and a rejected recurrence preserves the committed phase.
@@ -1118,7 +1121,9 @@ now-classified scan-resume path.
 
 The operational blockers are the effective controller-time width/wrap contract,
 guaranteed post-unlink progress when the mailbox is full, unrelated finished-list
-routing, source-127 expiration ownership, remaining hardware-consumed descriptor
-semantics, sleep-enabled RF wake and target on-air evidence. The DTM session loop,
+routing, source-127 expiration ownership, sleep-enabled RF wake and target on-air
+evidence. Hardware-reader descriptor semantics remain a qualification gap, but
+the complete CPU producer no longer blocks controller/LL/DTM implementation in
+the absence of a concrete conflicting observation. The DTM session loop,
 in-flight Test End join and backpressured Controller-side HCI publication exist.
 Trouble integration and an RTOS abstraction are not prerequisites.

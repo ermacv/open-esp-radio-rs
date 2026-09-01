@@ -817,6 +817,14 @@ scheduling. Access-point report schema 6 records the complete `ORC0TXI`
 snapshot per cycle and rejects malformed or cycle-count-mismatched diagnostic
 evidence, so future runs do not depend on manual UART inspection.
 
+Host/report commit `4b9275a6f1efa3dcf414ce7cd2b6a3bd99d0c41d`
+replayed that exact archived firmware in run `1788289688064-00176463`. The
+schema-6 report bound 163,297 and 163,521 exact observations to its two cycles,
+with every mismatch counter still zero. The replay delivered 120.175 and
+120.347 Mbit/s at 39.068% and 39.033% Core0 occupancy. This replay validates
+the report extraction and archived-firmware path; it is not a new firmware
+performance comparison because the firmware remains the `ddd9da87` artifact.
+
 ### Phase 5: authoritative cutover
 
 - make missing or exhausted key grants return `KeyDeferred`;

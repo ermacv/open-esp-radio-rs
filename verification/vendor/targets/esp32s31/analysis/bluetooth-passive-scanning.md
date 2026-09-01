@@ -45,6 +45,10 @@ slice.
 | `65.o:r_sym_ble_h1CfV40z3TOeYWAmKSQ9` | 115 | `r_ble_lll_scan_recycle_sch_item` |
 | `65.o:r_sym_ble_QOG2ExWuZYIMUrJH3TXE` | 117 | `r_ble_lll_scan_stop` |
 | `65.o:r_sym_ble_znMr0TnKK4lkFEsrathq` | 121 | `r_ble_lll_scan_start` |
+| `42.o:r_sym_ble_7jmm9D8TwpmRTu2ZnwZc` | 37 | `r_ble_ll_resolv_list_find` |
+| `42.o:r_sym_ble_N3zrn8iyqiZyqv1FOLG3` | 71 | `r_ble_ll_resolv_enabled` |
+| `10.o:r_sym_ble_NZbbpXEXzbgRpDNnAbBu` | 43 | `r_ble_hw_resolv_list_search` |
+| `68.o:r_sym_ble_dl9vMD1HWWBGsoxcgw12` | 8 | `r_ble_lll_sync_set_scan_link_state` |
 | `49.o:r_sym_ble_eTAdDKHzRfvU8IdHAKlf` | 14 | `r_ble_lll_get_rxed_buffer` |
 | `49.o:r_sym_ble_m6P3iS8lEEytcaOFBVC4` | 16 | `r_ble_lll_set_rxbuf_default_value` |
 | `49.o:r_sym_ble_9HlsTu6stE6q0PM6rEpk` | 18 | `r_ble_lll_append_rx_buffer` |
@@ -206,6 +210,64 @@ selector-one transaction through restricted PAC accessors.  The general
 allocator, reference counts, callbacks and `os_mbuf` conversion are
 deliberately excluded.
 
+## Restricted passive-1M reset profile
+
+The complete current reset body and the named initial body are the same
+`0x47c` bytes and have corresponding relocated calls. Reducing that body to
+passive scanning, public own-address type, accept-all filter policy, disabled
+resolving and the already selected standalone Controller options removes the
+initiator, active-scan, privacy and periodic-synchronization branches. The
+remaining hardware-consumed link-state projection is finite:
+
+- the low 20 bits at `+0x08` receive the compressed first RX-header address;
+  the no-TX low-20-bit position at `+0x00` remains empty;
+- the high-half reset profile at `+0x00`, the mode words at `+0x0c`, `+0x14`
+  and `+0x18`, the allocation profile at `+0x30`, and the standalone option
+  image at `+0x50` are all written before scheduling;
+- the rounded default transmit-power projection is retained at `+0x04` even
+  though this role does not transmit;
+- `+0x2c` receives the advertising CRC preset `0x555555`, while `+0x38`
+  receives the primary advertising access address `0x8e89bed6`;
+- public own-address type and accept-all policy leave the privacy/filter
+  selection at `+0x24` with an empty low-20-bit resolving-entry link;
+- the reset samples Controller time into `+0x34` and leaves the initiator-only
+  address, timeout and connection fields untouched.
+
+The common sync helper is not an unresolved scanner MMIO operation. Its named
+role is `r_ble_lll_sync_set_scan_link_state`. When periodic sync is disabled,
+its complete branch performs two fresh-read updates that clear the sync-filter
+and sync-link selections in
+`BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470`. It publishes the adjacent
+`+0x478/+0x47c` values only when an enabled periodic-sync entry is selected.
+The first passive-scanning slice keeps periodic sync disabled, so it needs
+only the clear transition and no sync-entry storage.
+
+The resolving accelerator is likewise not a blocker for this restricted
+role. The current `r_ble_ll_resolv_list_find` wrapper and named same-chip role
+call the complete `r_ble_hw_resolv_list_search` transaction: publish the list
+and search arguments, select resolving configuration, clear the prior result,
+start, poll the completion bit with a finite bound, and return either zero or
+the result offset under the `0x2f000000` Controller-SRAM prefix. The common
+vendor reset invokes it to fill a field shared with active scanning and
+initiating. A passive scanner never transmits its own address, and the open
+standalone profile starts with an empty resolving list and keeps address
+resolution disabled. Its semantic descriptor therefore carries the same zero
+entry link without executing a lookup whose result cannot be consumed. The
+accelerator transaction remains required later for privacy-capable active
+scanning and initiating, where it must be exposed through restricted PAC
+accessors rather than recreated above the PAC.
+
+The first scheduler item is now bounded as well. Complete
+`r_ble_lll_scan_restart` selects primary channel 37, and the already reviewed
+`r_ble_phy_chan_to_freq` mapping lowers it to frequency image zero. The
+selected LE 1M mode passes through `r_ble_phy_rate_to_phy` and
+`r_ble_phy_mode_to_rate` to rate image zero in both replicated scheduler
+lanes. The item carries scanner kind two, a bounded start/end window, the
+rounded-power projection copied from the link state and the existing common
+scheduler insertion links. Channels 38 and 39 are subsequent events using the
+same typed transform with the already reviewed primary-channel frequency
+images 24 and 78; they do not require new MMIO operations.
+
 ## Open architecture
 
 The first implementation should contain these owners, in this order:
@@ -243,10 +305,11 @@ legacy passive 1M event:
   for one standard HCI LE Advertising Report~~ -- closed at packet
   `+0x1c/+0x1d/+0x1e` and signed receive byte `+0x0f`.
 
-Only the first item remains a research blocker.  Once its passive-1M reset
-image is reduced, implementation should immediately resume with the fixed
-typed RX arena and return to research only if that concrete lower transaction
-exposes another missing field.
+All four facts are now closed for the restricted passive-1M, public-address,
+accept-all profile. Research is no longer the active blocker: implementation
+must resume with the fixed typed RX arena, the private link-state/scheduler
+codec and selector-one publication. Return to binary research only if that
+concrete composition exposes a missing hardware transition.
 
 Exact extended-PHY, active-scan request/response, duplicate-cache and vendor
 timer/callout behavior are explicitly deferred.  They do not block the first

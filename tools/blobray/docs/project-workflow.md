@@ -374,6 +374,28 @@ memory-object occurrences, but every candidate remains explicitly
 `review = required`;
 Blobray never promotes generated correspondence into a reviewed fact.
 
+When more than one obfuscation epoch or intermediate vendor release is
+available, build one lineage report instead of manually joining pairwise JSON:
+
+```console
+cargo blobray advanced symbols lineage \
+  --revision named=/path/to/named.a \
+  --revision old-entry=/path/to/first-obfuscated.a \
+  --revision old-exit=/path/to/last-old-epoch.a \
+  --revision new-entry=/path/to/first-new-epoch.a \
+  --revision current=/path/to/current.a \
+  --output generated/revisions/ble-symbol-lineage.json
+```
+
+Lineage runs every adjacent correlation plus an independent first-to-last
+correlation. It composes only unique one-to-one occurrences. Agreement is
+`confirmed`; a result available through only one route is `direct-only` or
+`chain-only`; disagreement is a `conflict` with no resolved target. Partial
+paths retain the exact edge, status, evidence basis and candidate count that
+blocked composition. The report stores artifact digests and every successful
+hop, but not vendor bytes or disassembly. Its pin candidates still require
+review and exclude generated token names.
+
 Accept a candidate only by adding a sparse `[[bindings]]` record to the
 project's reviewed-knowledge TOML. The record must repeat the target
 occurrence, assign a domain-matching `function:...` or `memory-object:...`

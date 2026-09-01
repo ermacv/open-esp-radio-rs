@@ -41,6 +41,7 @@ mod project_verification;
 mod registers;
 mod symbol_correlate;
 mod symbol_inventory;
+mod symbol_lineage;
 mod tooling;
 mod verify_evidence;
 mod verify_inventory;
@@ -189,6 +190,10 @@ pub(super) fn run_symbol_inventory(
 
 pub(super) fn run_symbol_correlate(arguments: super::SymbolCorrelateArgs) -> Result<bool> {
     symbol_correlate::run(arguments)
+}
+
+pub(super) fn run_symbol_lineage(arguments: super::SymbolLineageArgs) -> Result<bool> {
+    symbol_lineage::run(arguments)
 }
 
 pub(super) fn run_interface_discovery(

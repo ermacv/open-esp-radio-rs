@@ -79,6 +79,16 @@ pub(super) fn resolve_from(
             )?;
             return Ok(ResolvedInvocation::SymbolCorrelate(arguments));
         }
+        Command::SymbolLineage(arguments) => {
+            reject_configuration_roots(
+                requested_project.as_ref(),
+                requested_target.as_ref(),
+                requested_run_spec.as_ref(),
+                &svd_paths,
+                "symbols lineage consumes only its explicit --revision artifacts",
+            )?;
+            return Ok(ResolvedInvocation::SymbolLineage(arguments));
+        }
         command => command,
     };
 

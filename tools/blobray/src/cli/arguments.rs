@@ -335,6 +335,19 @@ pub(crate) struct SymbolCorrelateArgs {
     pub(crate) check: bool,
 }
 
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SymbolLineageArgs {
+    /// Ordered artifact revisions from the oldest/named source to the current blob.
+    #[arg(long = "revision", required = true, value_name = "SOURCE=PATH")]
+    pub(crate) revisions: Vec<SourcePath>,
+    /// Write the machine-readable multi-revision lineage report.
+    #[arg(long)]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify that the existing lineage report is current.
+    #[arg(long, requires = "output")]
+    pub(crate) check: bool,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InterfaceDiscoverArgs {
     /// Verify that the configured report is current.

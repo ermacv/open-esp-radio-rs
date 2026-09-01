@@ -1144,7 +1144,7 @@ fn data_pin_candidates(correspondences: &[DataObjectCorrespondence]) -> Vec<Sema
         .collect()
 }
 
-fn is_reviewable_source_name(name: &str) -> bool {
+pub(crate) fn is_reviewable_source_name(name: &str) -> bool {
     is_stable_source_name(name)
 }
 

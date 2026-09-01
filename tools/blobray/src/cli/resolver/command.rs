@@ -259,6 +259,7 @@ pub(super) fn resolve_command(
             run_spec: environment.into_run_spec("symbols inventory")?,
         },
         Command::SymbolCorrelate(arguments) => ResolvedInvocation::SymbolCorrelate(arguments),
+        Command::SymbolLineage(arguments) => ResolvedInvocation::SymbolLineage(arguments),
         Command::InterfaceDiscover(arguments) => {
             let ResolvedEnvironment {
                 project, run_spec, ..

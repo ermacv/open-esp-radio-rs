@@ -434,6 +434,8 @@ leaf_commands!(SymbolCommand {
     Inventory(SymbolInventoryArgs) => Command::SymbolInventory, SymbolInventory,
     /// Correlate renamed functions across two artifact revisions.
     Correlate(SymbolCorrelateArgs) => Command::SymbolCorrelate, SymbolCorrelate,
+    /// Compose direct and adjacent correspondence across ordered revisions.
+    Lineage(SymbolLineageArgs) => Command::SymbolLineage, SymbolLineage,
 });
 
 leaf_commands!(InterfaceCommand {
@@ -599,6 +601,7 @@ pub(crate) enum Command {
     CodeReview(ReviewArgs),
     SymbolInventory(SymbolInventoryArgs),
     SymbolCorrelate(SymbolCorrelateArgs),
+    SymbolLineage(SymbolLineageArgs),
     InterfaceDiscover(InterfaceDiscoverArgs),
     InterfaceInitPack(OutputArgs),
     InterfaceValidate(ValidationArgs),

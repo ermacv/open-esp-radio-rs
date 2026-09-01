@@ -62,6 +62,8 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothLegacyAdvertisingResetRestoreStep, BluetoothLegacyAdvertisingResponsePendingSession,
     BluetoothLegacyAdvertisingResponsePublication, BluetoothLegacyAdvertisingStopping,
     BluetoothLegacyAdvertisingStoppingFault, BluetoothLegacyAdvertisingStoppingStep,
+    BluetoothPassiveScanHciActiveSession, BluetoothPassiveScanHciFirstRunnerFailure,
+    BluetoothPassiveScanHciResponsePendingSession, BluetoothPassiveScanHciResponsePublication,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerRunInterruptStorage,
 };
@@ -75,9 +77,11 @@ use crate::{
     EmbassyBluetoothLegacyAdvertisingDelaySource,
     EmbassyBluetoothLegacyAdvertisingFirstControllerTimeWait,
     EmbassyBluetoothLegacyAdvertisingFirstDrive, EmbassyBluetoothLegacyAdvertisingFirstResume,
-    EmbassyBluetoothLegacyAdvertisingRecurringDrive, EmbassyBluetoothRuntimeWakers,
-    drive_dtm_first_ready, drive_legacy_advertising_active_ready,
-    drive_legacy_advertising_first_ready, drive_legacy_advertising_recurring_ready,
+    EmbassyBluetoothLegacyAdvertisingRecurringDrive,
+    EmbassyBluetoothPassiveScanFirstControllerTimeWait, EmbassyBluetoothPassiveScanFirstDrive,
+    EmbassyBluetoothPassiveScanFirstResume, EmbassyBluetoothRuntimeWakers, drive_dtm_first_ready,
+    drive_legacy_advertising_active_ready, drive_legacy_advertising_first_ready,
+    drive_legacy_advertising_recurring_ready, drive_passive_scan_first_ready,
 };
 
 /// Observable phase of the sole Controller command actor.
@@ -90,6 +94,9 @@ pub enum EmbassyBluetoothControllerCommandPhase {
     LegacyAdvertisingFirst,
     LegacyAdvertisingResponse,
     LegacyAdvertisingActive,
+    PassiveScanFirst,
+    PassiveScanResponse,
+    PassiveScanActive,
     Active,
     ResetStopping,
     ResetRestore,
@@ -114,6 +121,9 @@ enum ControllerCommandStimulus {
     LegacyAdvertisingFirst,
     LegacyAdvertisingResponse,
     LegacyAdvertisingActive,
+    PassiveScanFirst,
+    PassiveScanResponse,
+    PassiveScanActive,
     Active,
     ResetStopping,
     ResetRestore,
@@ -152,17 +162,19 @@ const fn reduce_controller_command_transition(
     use ControllerCommandAction::{Advance, Retain, Terminal};
     use ControllerCommandStimulus::{
         Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, LegacyAdvertisingActive,
-        LegacyAdvertisingFirst, LegacyAdvertisingResponse, ResetCompletion, ResetResponse,
-        ResetRestore, ResetStopping, UnownedFinishedList,
+        LegacyAdvertisingFirst, LegacyAdvertisingResponse, PassiveScanActive, PassiveScanFirst,
+        PassiveScanResponse, ResetCompletion, ResetResponse, ResetRestore, ResetStopping,
+        UnownedFinishedList,
     };
     use EmbassyBluetoothControllerCommandPhase::{
         Active as ActivePhase, FirstEvent as FirstEventPhase, Idle, IdleReset as IdleResetPhase,
         IdleResponse as IdleResponsePhase, LegacyAdvertisingActive as LegacyAdvertisingActivePhase,
         LegacyAdvertisingFirst as LegacyAdvertisingFirstPhase,
         LegacyAdvertisingResponse as LegacyAdvertisingResponsePhase,
-        ResetCompletion as ResetCompletionPhase, ResetResponse as ResetResponsePhase,
-        ResetRestore as ResetRestorePhase, ResetStopping as ResetStoppingPhase,
-        UnownedFinishedList as UnownedFinishedListPhase,
+        PassiveScanActive as PassiveScanActivePhase, PassiveScanFirst as PassiveScanFirstPhase,
+        PassiveScanResponse as PassiveScanResponsePhase, ResetCompletion as ResetCompletionPhase,
+        ResetResponse as ResetResponsePhase, ResetRestore as ResetRestorePhase,
+        ResetStopping as ResetStoppingPhase, UnownedFinishedList as UnownedFinishedListPhase,
     };
 
     match (phase, stimulus) {
@@ -171,12 +183,16 @@ const fn reduce_controller_command_transition(
         (Idle, IdleResponse) => Advance(IdleResponsePhase),
         (Idle, FirstEvent) => Advance(FirstEventPhase),
         (Idle, LegacyAdvertisingFirst) => Advance(LegacyAdvertisingFirstPhase),
+        (Idle, PassiveScanFirst) => Advance(PassiveScanFirstPhase),
         (LegacyAdvertisingFirstPhase, LegacyAdvertisingResponse) => {
             Advance(LegacyAdvertisingResponsePhase)
         }
         (LegacyAdvertisingResponsePhase, LegacyAdvertisingActive) => {
             Advance(LegacyAdvertisingActivePhase)
         }
+        (PassiveScanFirstPhase, PassiveScanResponse) => Advance(PassiveScanResponsePhase),
+        (PassiveScanResponsePhase, PassiveScanActive) => Advance(PassiveScanActivePhase),
+        (PassiveScanFirstPhase, IdleResponse) => Advance(IdleResponsePhase),
         (LegacyAdvertisingFirstPhase, IdleResponse) => Advance(IdleResponsePhase),
         (Idle | FirstEventPhase, Active) => Advance(ActivePhase),
         (IdleResetPhase, IdleResponse) => Advance(IdleResponsePhase),
@@ -191,7 +207,11 @@ const fn reduce_controller_command_transition(
         (ResetStoppingPhase | ResetRestorePhase, ResetCompletion) => Advance(ResetCompletionPhase),
         (ResetCompletionPhase, ResetResponse) => Advance(ResetResponsePhase),
         (
-            IdleResponsePhase | LegacyAdvertisingActivePhase | ActivePhase | ResetResponsePhase,
+            IdleResponsePhase
+            | LegacyAdvertisingActivePhase
+            | PassiveScanActivePhase
+            | ActivePhase
+            | ResetResponsePhase,
             IdleRestored,
         ) => Advance(Idle),
         (
@@ -199,6 +219,8 @@ const fn reduce_controller_command_transition(
             | FirstEventPhase
             | LegacyAdvertisingFirstPhase
             | LegacyAdvertisingActivePhase
+            | PassiveScanFirstPhase
+            | PassiveScanActivePhase
             | ActivePhase
             | ResetStoppingPhase,
             ControllerCommandStimulus::Terminal,
@@ -310,6 +332,10 @@ where
     LegacyAdvertisingRecurringStopRestore(
         BluetoothLegacyAdvertisingRecurringStopRestore<'runtime, S, CAPACITY>,
     ),
+    PassiveScanFirst(EmbassyBluetoothPassiveScanFirstControllerTimeWait<'runtime, S, CAPACITY>),
+    PassiveScanRetry(BluetoothPassiveScanHciFirstRunnerFailure<'runtime, S, CAPACITY>),
+    PassiveScanResponse(BluetoothPassiveScanHciResponsePendingSession<'runtime, S, CAPACITY>),
+    PassiveScanActive(BluetoothPassiveScanHciActiveSession<'runtime, S, CAPACITY>),
     Active(EmbassyBluetoothDtmSessionTask<'runtime, S, CAPACITY>),
     ResetStopping(BluetoothDtmResetStoppingRunner<'runtime, S, CAPACITY>),
     ResetRestore(BluetoothDtmResetRestoreFailure<'runtime, S, CAPACITY>),
@@ -352,6 +378,13 @@ where
             | Self::LegacyAdvertisingRecurringStopRestore(_) => {
                 EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive
             }
+            Self::PassiveScanFirst(_) | Self::PassiveScanRetry(_) => {
+                EmbassyBluetoothControllerCommandPhase::PassiveScanFirst
+            }
+            Self::PassiveScanResponse(_) => {
+                EmbassyBluetoothControllerCommandPhase::PassiveScanResponse
+            }
+            Self::PassiveScanActive(_) => EmbassyBluetoothControllerCommandPhase::PassiveScanActive,
             Self::Active(_) => EmbassyBluetoothControllerCommandPhase::Active,
             Self::ResetStopping(_) => EmbassyBluetoothControllerCommandPhase::ResetStopping,
             Self::ResetRestore(_) => EmbassyBluetoothControllerCommandPhase::ResetRestore,
@@ -371,6 +404,7 @@ pub enum EmbassyBluetoothControllerIdleCompletion {
     DtmStartRejected,
     LegacyAdvertisingStartRejected,
     LegacyAdvertisingDisable,
+    PassiveScanStartRejected,
     TestEnd,
     Reset,
 }
@@ -384,6 +418,7 @@ pub enum EmbassyBluetoothControllerRetry {
     LegacyAdvertisingDisableRestore,
     LegacyAdvertisingResetRestore,
     LegacyAdvertisingRecurringStopRestore,
+    PassiveScanFirst,
     Active(EmbassyBluetoothDtmSessionRetry),
     ResetStopping,
     ResetRestore,
@@ -415,6 +450,8 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     ControllerTimeExhausted,
     /// The accepted advertising Enable reached scheduler `RUN` and its response was published.
     LegacyAdvertisingActive(BluetoothSchedulerHardwareListIndex),
+    /// The accepted passive scanner Enable reached `RUN` and success was published.
+    PassiveScanningActive,
     /// No installed role owns this scheduler list; its exact owner is quarantined in the actor.
     UnownedFinishedList(BluetoothSchedulerHardwareListIndex),
     /// A non-retryable initial transition failed before scheduler `RUN`.
@@ -790,6 +827,74 @@ where
         }
     }
 
+    fn store_passive_scan_failure<'epoch, 'packet>(
+        &mut self,
+        from: EmbassyBluetoothControllerCommandPhase,
+        failure: BluetoothPassiveScanHciFirstRunnerFailure<'runtime, S, CAPACITY>,
+    ) -> Option<EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY>>
+    {
+        match failure.into_hardware_failure_response() {
+            Ok(pending) => {
+                self.store_transition(
+                    from,
+                    ControllerCommandStimulus::IdleResponse,
+                    EmbassyBluetoothControllerCommandState::IdleResponse {
+                        pending,
+                        completion:
+                            EmbassyBluetoothControllerIdleCompletion::PassiveScanStartRejected,
+                    },
+                );
+                None
+            }
+            Err(failure) if failure.retry_cause().is_some() => {
+                let state = EmbassyBluetoothControllerCommandState::PassiveScanRetry(failure);
+                if from == EmbassyBluetoothControllerCommandPhase::PassiveScanFirst {
+                    self.store_retained_state(from, state);
+                } else {
+                    self.store_transition(from, ControllerCommandStimulus::PassiveScanFirst, state);
+                }
+                Some(
+                    self.retain_boundary(EmbassyBluetoothControllerCommandBoundary::Retryable(
+                        EmbassyBluetoothControllerRetry::PassiveScanFirst,
+                    )),
+                )
+            }
+            Err(_) => unreachable!("only a retryable pre-RUN edge lacks idle ownership"),
+        }
+    }
+
+    fn store_passive_scan_drive<'epoch, 'packet>(
+        &mut self,
+        from: EmbassyBluetoothControllerCommandPhase,
+        drive: EmbassyBluetoothPassiveScanFirstDrive<'runtime, S, CAPACITY>,
+    ) -> Option<EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY>>
+    {
+        match drive {
+            EmbassyBluetoothPassiveScanFirstDrive::Wait(wait) => {
+                let state = EmbassyBluetoothControllerCommandState::PassiveScanFirst(wait);
+                if from == EmbassyBluetoothControllerCommandPhase::PassiveScanFirst {
+                    self.store_retained_state(from, state);
+                } else {
+                    self.store_transition(from, ControllerCommandStimulus::PassiveScanFirst, state);
+                }
+                None
+            }
+            EmbassyBluetoothPassiveScanFirstDrive::Running(running) => {
+                self.store_transition(
+                    from,
+                    ControllerCommandStimulus::PassiveScanResponse,
+                    EmbassyBluetoothControllerCommandState::PassiveScanResponse(
+                        running.into_response_pending_session(),
+                    ),
+                );
+                None
+            }
+            EmbassyBluetoothPassiveScanFirstDrive::Failed(failure) => {
+                self.store_passive_scan_failure(from, failure)
+            }
+        }
+    }
+
     fn store_legacy_advertising_recurring_drive<'epoch, 'packet>(
         &mut self,
         drive: EmbassyBluetoothLegacyAdvertisingRecurringDrive<'runtime, S, CAPACITY>,
@@ -976,6 +1081,14 @@ where
                                         return boundary;
                                     }
                                 }
+                                BluetoothControllerIdleCommandRoute::StartPassiveScanning(runner) => {
+                                    if let Some(boundary) = self.store_passive_scan_drive(
+                                        EmbassyBluetoothControllerCommandPhase::Idle,
+                                        drive_passive_scan_first_ready(runner),
+                                    ) {
+                                        return boundary;
+                                    }
+                                }
                                 BluetoothControllerIdleCommandRoute::StartFailed(failure) => {
                                     if let Some(boundary) = self.store_first_failure(
                                         EmbassyBluetoothControllerCommandPhase::Idle,
@@ -988,6 +1101,16 @@ where
                                     failure,
                                 ) => {
                                     if let Some(boundary) = self.store_legacy_advertising_failure(
+                                        EmbassyBluetoothControllerCommandPhase::Idle,
+                                        failure,
+                                    ) {
+                                        return boundary;
+                                    }
+                                }
+                                BluetoothControllerIdleCommandRoute::PassiveScanStartFailed(
+                                    failure,
+                                ) => {
+                                    if let Some(boundary) = self.store_passive_scan_failure(
                                         EmbassyBluetoothControllerCommandPhase::Idle,
                                         failure,
                                     ) {
@@ -1253,6 +1376,123 @@ where
                             );
                         }
                     }
+                }
+                EmbassyBluetoothControllerCommandPhase::PassiveScanFirst => {
+                    if matches!(
+                        self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::PassiveScanRetry(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::PassiveScanRetry(failure) =
+                            self.owner.take()
+                        else {
+                            unreachable!("the selected scanner retry did not change")
+                        };
+                        let runner = failure.retry().unwrap_or_else(|_| {
+                            unreachable!("the retained scanner failure is retryable")
+                        });
+                        if let Some(boundary) = self.store_passive_scan_drive(
+                            EmbassyBluetoothControllerCommandPhase::PassiveScanFirst,
+                            drive_passive_scan_first_ready(runner),
+                        ) {
+                            return boundary;
+                        }
+                        continue;
+                    }
+                    let EmbassyBluetoothControllerCommandState::PassiveScanFirst(wait) =
+                        self.owner.current_mut()
+                    else {
+                        unreachable!("the selected scanner wait did not change")
+                    };
+                    wait.wait_for_recheck(recheck.wait_until_absolute_recheck())
+                        .await;
+                    let EmbassyBluetoothControllerCommandState::PassiveScanFirst(wait) =
+                        self.owner.take()
+                    else {
+                        unreachable!("the awaited scanner wait did not change")
+                    };
+                    match wait.resume() {
+                        EmbassyBluetoothPassiveScanFirstResume::Ready(drive) => {
+                            if let Some(boundary) = self.store_passive_scan_drive(
+                                EmbassyBluetoothControllerCommandPhase::PassiveScanFirst,
+                                drive,
+                            ) {
+                                return boundary;
+                            }
+                        }
+                        EmbassyBluetoothPassiveScanFirstResume::NotReady(wait) => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::PassiveScanFirst,
+                                EmbassyBluetoothControllerCommandState::PassiveScanFirst(wait),
+                            );
+                        }
+                    }
+                }
+                EmbassyBluetoothControllerCommandPhase::PassiveScanResponse => {
+                    let EmbassyBluetoothControllerCommandState::PassiveScanResponse(pending) =
+                        self.owner.current()
+                    else {
+                        unreachable!("the selected scanner response did not change")
+                    };
+                    if pending.wait_response_capacity(controller).await.is_err() {
+                        return self.retain_boundary(
+                            EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                        );
+                    }
+                    let EmbassyBluetoothControllerCommandState::PassiveScanResponse(pending) =
+                        self.owner.take()
+                    else {
+                        unreachable!("the awaited scanner response did not change")
+                    };
+                    match pending.try_publish(controller) {
+                        BluetoothPassiveScanHciResponsePublication::Published(active) => {
+                            self.store_transition(
+                                EmbassyBluetoothControllerCommandPhase::PassiveScanResponse,
+                                ControllerCommandStimulus::PassiveScanActive,
+                                EmbassyBluetoothControllerCommandState::PassiveScanActive(active),
+                            );
+                            return EmbassyBluetoothControllerCommandBoundary::PassiveScanningActive;
+                        }
+                        BluetoothPassiveScanHciResponsePublication::Pending(pending) => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::PassiveScanResponse,
+                                EmbassyBluetoothControllerCommandState::PassiveScanResponse(
+                                    pending,
+                                ),
+                            );
+                        }
+                        BluetoothPassiveScanHciResponsePublication::EndpointMismatch(pending) => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::PassiveScanResponse,
+                                EmbassyBluetoothControllerCommandState::PassiveScanResponse(
+                                    pending,
+                                ),
+                            );
+                            return self.retain_boundary(
+                                EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                            );
+                        }
+                        BluetoothPassiveScanHciResponsePublication::Fault { pending, error } => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::PassiveScanResponse,
+                                EmbassyBluetoothControllerCommandState::PassiveScanResponse(
+                                    pending,
+                                ),
+                            );
+                            return self.retain_boundary(
+                                EmbassyBluetoothControllerCommandBoundary::HciFault(error),
+                            );
+                        }
+                    }
+                }
+                EmbassyBluetoothControllerCommandPhase::PassiveScanActive => {
+                    let EmbassyBluetoothControllerCommandState::PassiveScanActive(_active) =
+                        self.owner.current()
+                    else {
+                        unreachable!("the selected active scanner did not change")
+                    };
+                    return self.retain_boundary(
+                        EmbassyBluetoothControllerCommandBoundary::PassiveScanningActive,
+                    );
                 }
                 EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive => {
                     if matches!(
@@ -2847,8 +3087,9 @@ mod tests {
         use ControllerCommandAction::{Advance, Retain, Terminal};
         use ControllerCommandStimulus::{
             Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, LegacyAdvertisingActive,
-            LegacyAdvertisingFirst, LegacyAdvertisingResponse, ResetCompletion, ResetResponse,
-            ResetRestore, ResetStopping, UnownedFinishedList,
+            LegacyAdvertisingFirst, LegacyAdvertisingResponse, PassiveScanActive, PassiveScanFirst,
+            PassiveScanResponse, ResetCompletion, ResetResponse, ResetRestore, ResetStopping,
+            UnownedFinishedList,
         };
         use EmbassyBluetoothControllerCommandPhase::{
             Active as ActivePhase, FirstEvent as FirstEventPhase, Idle,
@@ -2856,6 +3097,8 @@ mod tests {
             LegacyAdvertisingActive as LegacyAdvertisingActivePhase,
             LegacyAdvertisingFirst as LegacyAdvertisingFirstPhase,
             LegacyAdvertisingResponse as LegacyAdvertisingResponsePhase,
+            PassiveScanActive as PassiveScanActivePhase, PassiveScanFirst as PassiveScanFirstPhase,
+            PassiveScanResponse as PassiveScanResponsePhase,
             ResetCompletion as ResetCompletionPhase, ResetResponse as ResetResponsePhase,
             ResetRestore as ResetRestorePhase, ResetStopping as ResetStoppingPhase,
             UnownedFinishedList as UnownedFinishedListPhase,
@@ -2915,6 +3158,22 @@ mod tests {
         assert_eq!(
             reduce_controller_command_transition(LegacyAdvertisingFirstPhase, IdleResponse),
             Advance(IdleResponsePhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(Idle, PassiveScanFirst),
+            Advance(PassiveScanFirstPhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(PassiveScanFirstPhase, PassiveScanResponse),
+            Advance(PassiveScanResponsePhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(PassiveScanResponsePhase, PassiveScanActive),
+            Advance(PassiveScanActivePhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(PassiveScanActivePhase, IdleRestored),
+            Advance(Idle)
         );
         assert_eq!(
             reduce_controller_command_transition(ActivePhase, IdleRestored),

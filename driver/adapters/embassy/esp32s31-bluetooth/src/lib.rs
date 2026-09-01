@@ -26,6 +26,8 @@ mod legacy_advertising_active;
 #[cfg(target_arch = "riscv32")]
 mod legacy_advertising_first;
 mod modem_timer_task;
+#[cfg(target_arch = "riscv32")]
+mod passive_scanning_first;
 
 #[cfg(target_arch = "riscv32")]
 pub use dtm_active::EmbassyBluetoothDtmActiveWait;
@@ -51,6 +53,11 @@ pub use legacy_advertising_first::{
     EmbassyBluetoothLegacyAdvertisingFirstControllerTimeWait,
     EmbassyBluetoothLegacyAdvertisingFirstDrive, EmbassyBluetoothLegacyAdvertisingFirstResume,
     drive_legacy_advertising_first_ready,
+};
+#[cfg(target_arch = "riscv32")]
+pub use passive_scanning_first::{
+    EmbassyBluetoothPassiveScanFirstControllerTimeWait, EmbassyBluetoothPassiveScanFirstDrive,
+    EmbassyBluetoothPassiveScanFirstResume, drive_passive_scan_first_ready,
 };
 
 pub use dtm_session_task::{

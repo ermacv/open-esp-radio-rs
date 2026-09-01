@@ -1338,6 +1338,19 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     }
                 }
             }
+            open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartLegacyScanning(
+                deferred,
+            ) => {
+                let (task, deferred) = deferred.into_parts();
+                match crate::BluetoothPassiveScanHciFirstRunner::begin(task, deferred) {
+                    Ok(runner) => {
+                        crate::BluetoothControllerIdleCommandRoute::StartPassiveScanning(runner)
+                    }
+                    Err(failure) => {
+                        crate::BluetoothControllerIdleCommandRoute::PassiveScanStartFailed(failure)
+                    }
+                }
+            }
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::ResponsePending(
                 pending,
             ) => crate::BluetoothControllerIdleCommandRoute::ResponsePending(

@@ -401,11 +401,19 @@ where
     StartLegacyAdvertising(
         crate::BluetoothLegacyAdvertisingFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
     ),
+    /// A validated passive scanner Enable entered the HCI-composed first runner.
+    StartPassiveScanning(
+        crate::BluetoothPassiveScanHciFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
     /// Initial Controller-time acquisition failed without losing any owner.
     StartFailed(BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>),
     /// Advertising current acquisition failed without losing HCI order.
     LegacyAdvertisingStartFailed(
         crate::BluetoothLegacyAdvertisingFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    /// Passive scanner start failed without losing HCI order or lower ownership.
+    PassiveScanStartFailed(
+        crate::BluetoothPassiveScanHciFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>,
     ),
     /// Idle Test End became an ordered standard zero-count response.
     ResponsePending(crate::BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>),

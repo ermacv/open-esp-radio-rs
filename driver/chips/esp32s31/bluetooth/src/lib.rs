@@ -127,6 +127,8 @@ mod passive_scanning;
 #[cfg(target_arch = "riscv32")]
 mod passive_scanning_active;
 #[cfg(target_arch = "riscv32")]
+mod passive_scanning_hci;
+#[cfg(target_arch = "riscv32")]
 mod passive_scanning_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod passive_scanning_timing;
@@ -456,6 +458,13 @@ pub use passive_scanning_active::{
     BluetoothPassiveScanActiveFault, BluetoothPassiveScanActiveFaultCause,
     BluetoothPassiveScanActiveSession, BluetoothPassiveScanActiveStep,
     BluetoothPassiveScanActiveWait, BluetoothPassiveScanEventCpuOwned,
+};
+#[cfg(target_arch = "riscv32")]
+pub use passive_scanning_hci::{
+    BluetoothPassiveScanHciActiveSession, BluetoothPassiveScanHciFirstRunner,
+    BluetoothPassiveScanHciFirstRunnerFailure, BluetoothPassiveScanHciFirstRunnerStep,
+    BluetoothPassiveScanHciFirstRunning, BluetoothPassiveScanHciResponsePendingSession,
+    BluetoothPassiveScanHciResponsePublication,
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_runner::{

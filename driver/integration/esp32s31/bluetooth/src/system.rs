@@ -257,7 +257,8 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | EmbassyBluetoothControllerCommandBoundary::ResetStoppingFault(_) => {
             CommandBoundaryClass::Terminal
         }
-        EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActive(_) => {
+        EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActive(_)
+        | EmbassyBluetoothControllerCommandBoundary::PassiveScanningActive => {
             CommandBoundaryClass::Progress
         }
         EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingCommandEndpointMismatch(_)

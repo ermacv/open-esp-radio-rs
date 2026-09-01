@@ -317,6 +317,36 @@ Hardware-facing evidence changes additionally require exact-image replay or a
 same-ELF A/B. Pure module movement does not justify reflashing hardware, but it
 must not be combined with a scenario, fixture or acceptance-policy change.
 
+### Target split progress and behavioural gate
+
+The first target-only split moves the reset-isolated IEEE 802.15.4 probe and
+evidence mapping domain out of `product_hil.rs` into
+`product_hil/ieee802154.rs`. A mechanical comparison proved that all 588 moved
+lines stayed identical apart from the two `pub(super)` entrypoint names. Both
+probe feature profiles, the ordinary Wi-Fi profile, all wire tests and the
+full source-only audit pass.
+
+Because moving source changes embedded panic locations and can perturb an ELF
+even without changing the executed Wi-Fi logic, the split was also tested on
+hardware rather than accepted from source equivalence alone:
+
+- AP performance run `1788269891637-00133af8` passed all six cycles at
+  120.49--121.50 Mbit/s;
+- STA performance run `1788270143730-00133e9b` passed all three repetitions at
+  119.23--119.49 Mbit/s;
+- STA+AP correctness run `1788270588780-001344d0` failed before workload on the
+  AP network RX readiness boundary.
+
+The STA+AP failure is not attributed to this split. Exact replay
+`1788270814590-001348c1` of pre-split correctness image
+`1788268379279-0012dc66` failed at the same boundary in the same current lab
+state. Both images transmitted beacons, associated and authorized the client,
+negotiated BlockAck, and admitted protected AP frames through MAC/reorder, but
+reported zero completed AP network RX units. This localizes the next defect to
+the STA+AP AP-to-network delivery boundary; it is neither an association
+failure nor evidence of an air/AQL cause. The task-residence variant is not a
+valid substitute gate: its run history is currently 0/3.
+
 ## Non-goals
 
 - Do not make bit-identical rebuild verification part of every HIL run. Exact

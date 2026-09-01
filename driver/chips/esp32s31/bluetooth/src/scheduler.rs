@@ -109,7 +109,7 @@ pub enum BluetoothLegacyAdvertisingRecurringEventPreparationError {
     Timeline(BluetoothSchedulerReservationError),
     Sequence(BluetoothSchedulerSequenceAuthorizationError),
     EventImage(
-        open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
     ),
 }
 
@@ -135,13 +135,13 @@ impl<'a> BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'a> {
 /// First advertising descriptor paired with its exact accepted timeline slot.
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the prepared event must be published, cancelled through its controller, or retained"]
-pub struct BluetoothLegacyAdvertisingFirstEventPrepared<'a> {
-    image: crate::legacy_advertising::BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+pub struct BluetoothLegacyAdvertisingEventPrepared<'a> {
+    image: crate::legacy_advertising::BluetoothLegacyAdvertisingEventImagePrepared<'a>,
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl BluetoothLegacyAdvertisingFirstEventPrepared<'_> {
+impl BluetoothLegacyAdvertisingEventPrepared<'_> {
     pub const fn identity(
         &self,
     ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingEventIdentity {
@@ -163,7 +163,7 @@ impl BluetoothLegacyAdvertisingFirstEventPrepared<'_> {
 #[must_use = "the unchanged advertising event remains prepared and CPU-owned"]
 pub struct BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'a> {
     error: BluetoothSchedulerEmptyListMergeError,
-    prepared: BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+    prepared: BluetoothLegacyAdvertisingEventPrepared<'a>,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -172,7 +172,7 @@ impl<'a> BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'a> {
         self.error
     }
 
-    pub fn into_prepared(self) -> BluetoothLegacyAdvertisingFirstEventPrepared<'a> {
+    pub fn into_prepared(self) -> BluetoothLegacyAdvertisingEventPrepared<'a> {
         self.prepared
     }
 }
@@ -458,7 +458,7 @@ pub enum BluetoothLegacyAdvertisingFirstEventPreparationError {
     Timeline(BluetoothSchedulerReservationError),
     Sequence(BluetoothSchedulerSequenceAuthorizationError),
     EventImage(
-        open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
     ),
 }
 
@@ -1881,7 +1881,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         admitted: BluetoothLegacyAdvertisingFirstPreSequence<'a>,
         sequence: BluetoothLegacyAdvertisingSequenceObservation,
     ) -> Result<
-        BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        BluetoothLegacyAdvertisingEventPrepared<'a>,
         BluetoothLegacyAdvertisingFirstEventPreparationFailure<'a>,
     > {
         let BluetoothLegacyAdvertisingFirstPreSequence {
@@ -1901,7 +1901,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         };
         let resolved_window = reservation.window();
         match candidate.prepare_resolved_event_image(resolved_window) {
-            Ok(image) => Ok(BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation }),
+            Ok(image) => Ok(BluetoothLegacyAdvertisingEventPrepared { image, reservation }),
             Err(failure) => {
                 let error = failure.error();
                 let candidate = failure.into_candidate();
@@ -1957,7 +1957,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         admitted: BluetoothLegacyAdvertisingRecurringPreSequence<'a>,
         sequence: BluetoothLegacyAdvertisingSequenceObservation,
     ) -> Result<
-        BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        BluetoothLegacyAdvertisingEventPrepared<'a>,
         BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'a>,
     > {
         let BluetoothLegacyAdvertisingRecurringPreSequence {
@@ -1981,7 +1981,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         match candidate.prepare_resolved_event_image(resolved_window) {
             Ok(prepared) => {
                 let (image, _, _, _) = prepared.into_parts();
-                Ok(BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation })
+                Ok(BluetoothLegacyAdvertisingEventPrepared { image, reservation })
             }
             Err(failure) => {
                 let error = failure.error();
@@ -2001,9 +2001,9 @@ impl<const SCHEDULER_CAPACITY: usize>
     #[cfg(any(target_arch = "riscv32", test))]
     pub fn cancel_legacy_advertising_first_event<'a>(
         &mut self,
-        prepared: BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        prepared: BluetoothLegacyAdvertisingEventPrepared<'a>,
     ) -> crate::BluetoothLegacyAdvertisingCancelled<'a> {
-        let BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation } = prepared;
+        let BluetoothLegacyAdvertisingEventPrepared { image, reservation } = prepared;
         self.release_scheduler_reservation(reservation);
         image.cancel()
     }
@@ -2019,18 +2019,18 @@ impl<const SCHEDULER_CAPACITY: usize>
     )]
     pub fn prepare_legacy_advertising_empty_list_merge<'a>(
         &mut self,
-        prepared: BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        prepared: BluetoothLegacyAdvertisingEventPrepared<'a>,
     ) -> Result<
         BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
         BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'a>,
     > {
-        let BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation } = prepared;
+        let BluetoothLegacyAdvertisingEventPrepared { image, reservation } = prepared;
         let item = image.prepare_scheduler_bookkeeping();
         let address = item.scheduler_item_address();
         if let Err(error) = self._scheduler_list.prepare_first_item(address) {
             return Err(BluetoothLegacyAdvertisingEmptySchedulerMergeFailure {
                 error,
-                prepared: BluetoothLegacyAdvertisingFirstEventPrepared {
+                prepared: BluetoothLegacyAdvertisingEventPrepared {
                     image: item.cancel(),
                     reservation,
                 },
@@ -2052,7 +2052,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &mut self,
         merged: BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
     ) -> Result<
-        BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        BluetoothLegacyAdvertisingEventPrepared<'a>,
         BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a>,
     > {
         if !self
@@ -2062,7 +2062,7 @@ impl<const SCHEDULER_CAPACITY: usize>
             return Err(merged);
         }
         let BluetoothLegacyAdvertisingEmptySchedulerMergePrepared { item, reservation } = merged;
-        Ok(BluetoothLegacyAdvertisingFirstEventPrepared {
+        Ok(BluetoothLegacyAdvertisingEventPrepared {
             image: item.cancel().cancel(),
             reservation,
         })

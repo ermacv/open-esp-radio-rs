@@ -437,11 +437,10 @@ pub use scheduler::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{
-    BluetoothLegacyAdvertisingAdmissionObservation,
+    BluetoothLegacyAdvertisingAdmissionObservation, BluetoothLegacyAdvertisingEventPrepared,
     BluetoothLegacyAdvertisingFirstEventPreparationError,
     BluetoothLegacyAdvertisingFirstEventPreparationFailure,
-    BluetoothLegacyAdvertisingFirstEventPrepared, BluetoothLegacyAdvertisingFirstPreSequence,
-    BluetoothLegacyAdvertisingSequenceObservation,
+    BluetoothLegacyAdvertisingFirstPreSequence, BluetoothLegacyAdvertisingSequenceObservation,
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{

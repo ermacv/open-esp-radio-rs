@@ -657,27 +657,25 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
     }
 
     /// Lower one accepted event into a linked primary-channel item chain.
-    pub fn prepare_first_event(
+    pub fn prepare_event(
         mut self,
         channels: BluetoothLegacyAdvertisingPrimaryChannelPlan,
         raw_start: u32,
         raw_item_duration: u32,
     ) -> Result<
-        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
-        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure,
+        BluetoothLegacyAdvertisingMemoryGraphEventPrepared,
+        BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure,
     > {
         if self.storage.as_ref().get_ref().link_state.scheduler_head()
             != self.binding.scheduler_items[0]
                 .controller_address()
                 .address()
         {
-            return Err(
-                BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
-                    owner: self,
-                    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError::
-                        SchedulerHeadMismatch,
-                },
-            );
+            return Err(BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure {
+                owner: self,
+                error:
+                    BluetoothLegacyAdvertisingMemoryGraphEventPrepareError::SchedulerHeadMismatch,
+            });
         }
         if !self
             .storage
@@ -687,13 +685,11 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
             .iter()
             .all(BluetoothLegacyAdvertisingSchedulerItemStorage::is_terminal)
         {
-            return Err(
-                BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
-                    owner: self,
-                    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError::
-                        NonTerminalSchedulerItem,
-                },
-            );
+            return Err(BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure {
+                owner: self,
+                error:
+                    BluetoothLegacyAdvertisingMemoryGraphEventPrepareError::NonTerminalSchedulerItem,
+            });
         }
 
         let graph = self.storage.as_mut().project();
@@ -721,7 +717,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
         }
         graph.link_state.detach_first_scheduler_item();
 
-        Ok(BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+        Ok(BluetoothLegacyAdvertisingMemoryGraphEventPrepared {
             storage: self.storage,
             binding: self.binding,
             packet_length: self.packet_length,
@@ -742,14 +738,14 @@ impl BluetoothLegacyAdvertisingMemoryGraphLinkStateReset {
 
 /// Advertising graph carrying one complete first scheduler event image.
 #[must_use = "the prepared event must enter admission, be cancelled, or retained"]
-pub struct BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+pub struct BluetoothLegacyAdvertisingMemoryGraphEventPrepared {
     storage: Pin<&'static mut BluetoothLegacyAdvertisingMemoryGraphStorage>,
     binding: BluetoothLegacyAdvertisingMemoryGraphBinding,
     packet_length: AdvertisingTxPacketLength,
     item_count: u8,
 }
 
-impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+impl BluetoothLegacyAdvertisingMemoryGraphEventPrepared {
     pub const fn binding(&self) -> &BluetoothLegacyAdvertisingMemoryGraphBinding {
         &self.binding
     }
@@ -852,7 +848,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
         }
     }
 
-    pub fn cancel(mut self) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+    pub fn cancel(mut self) -> BluetoothLegacyAdvertisingMemoryGraphEventPrepared {
         let items = self.storage.as_mut().project().scheduler_items;
         for (index, item) in items.iter().enumerate().take(self.item_count as usize) {
             item.words[SCHEDULER_ITEM_WORD_4C_OFFSET].set(self.previous_control[index]);
@@ -860,7 +856,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
             item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET]
                 .set(self.previous_completed_link[index]);
         }
-        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+        BluetoothLegacyAdvertisingMemoryGraphEventPrepared {
             storage: self.storage,
             binding: self.binding,
             packet_length: self.packet_length,
@@ -1194,7 +1190,7 @@ impl BluetoothLegacyAdvertisingMemoryGraphRecycled {
 
 /// Why the reset graph could not become a first-event graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+pub enum BluetoothLegacyAdvertisingMemoryGraphEventPrepareError {
     /// The link state did not retain the bound first scheduler item.
     SchedulerHeadMismatch,
     /// The bounded single-item allocation unexpectedly contained a successor.
@@ -1202,13 +1198,13 @@ pub enum BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
 }
 
 /// Failed first-event preparation retaining the exact reset graph.
-pub struct BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
+pub struct BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure {
     owner: BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
-    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    error: BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
 }
 
-impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
-    pub const fn error(&self) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+impl BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingMemoryGraphEventPrepareError {
         self.error
     }
 
@@ -1216,16 +1212,16 @@ impl BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
         self,
     ) -> (
         BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
-        BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+        BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
     ) {
         (self.owner, self.error)
     }
 }
 
-impl core::fmt::Debug for BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure {
+impl core::fmt::Debug for BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
-            .debug_struct("BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareFailure")
+            .debug_struct("BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure")
             .field("error", &self.error)
             .finish_non_exhaustive()
     }
@@ -1388,7 +1384,7 @@ mod tests {
             .expect("the complete graph fits physical controller SRAM")
     }
 
-    fn first_event() -> super::BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+    fn first_event() -> super::BluetoothLegacyAdvertisingMemoryGraphEventPrepared {
         event(
             crate::BluetoothLegacyAdvertisingPrimaryChannelPlan::new(true, false, false)
                 .expect("one channel is non-empty"),
@@ -1397,13 +1393,13 @@ mod tests {
 
     fn event(
         channels: crate::BluetoothLegacyAdvertisingPrimaryChannelPlan,
-    ) -> super::BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared {
+    ) -> super::BluetoothLegacyAdvertisingMemoryGraphEventPrepared {
         owner()
             .prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6])
             .expect("the encoded advertising PDU fits")
             .reset_link_state(0)
             .expect("the PDU selects the restricted reset")
-            .prepare_first_event(channels, 1_000, 128)
+            .prepare_event(channels, 1_000, 128)
             .expect("the bound event graph is intact")
     }
 

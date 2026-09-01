@@ -44,8 +44,8 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared,
-    BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
-    BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
+    BluetoothLegacyAdvertisingMemoryGraphEventPrepared,
     BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
     BluetoothLegacyAdvertisingPrimaryChannelPlan,
 };
@@ -281,7 +281,7 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
         self,
         resolved_window: BluetoothSchedulerRawWindow,
     ) -> Result<
-        BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+        BluetoothLegacyAdvertisingEventImagePrepared<'a>,
         BluetoothLegacyAdvertisingFirstEventImagePrepareFailure<'a>,
     > {
         let Self {
@@ -292,8 +292,8 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
         } = self;
         let BluetoothLegacyAdvertisingLinkStateReset { prepared, memory } = reset;
         let channels = controller_channel_plan(prepared.channels());
-        match memory.prepare_first_event(channels, resolved_window.start(), raw_item_duration) {
-            Ok(memory) => Ok(BluetoothLegacyAdvertisingFirstEventImagePrepared {
+        match memory.prepare_event(channels, resolved_window.start(), raw_item_duration) {
+            Ok(memory) => Ok(BluetoothLegacyAdvertisingEventImagePrepared {
                 prepared,
                 memory,
                 scheduler_window,
@@ -322,14 +322,14 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
 /// Portable work paired with a complete CPU-owned first-event SRAM image.
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the event image must remain paired with its scheduler reservation"]
-pub(crate) struct BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
+pub(crate) struct BluetoothLegacyAdvertisingEventImagePrepared<'a> {
     prepared: LegacyAdvertiserEventPrepared<'a>,
-    memory: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
+    memory: BluetoothLegacyAdvertisingMemoryGraphEventPrepared,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<'a> BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
+impl<'a> BluetoothLegacyAdvertisingEventImagePrepared<'a> {
     pub(crate) const fn identity(&self) -> LegacyAdvertisingEventIdentity {
         self.prepared.identity()
     }
@@ -384,8 +384,8 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared<'a> {
         }
     }
 
-    pub(crate) fn cancel(self) -> BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
-        BluetoothLegacyAdvertisingFirstEventImagePrepared {
+    pub(crate) fn cancel(self) -> BluetoothLegacyAdvertisingEventImagePrepared<'a> {
+        BluetoothLegacyAdvertisingEventImagePrepared {
             prepared: self.prepared,
             memory: self.memory.cancel(),
             scheduler_window: self.scheduler_window,
@@ -968,9 +968,9 @@ impl<'a> BluetoothLegacyAdvertisingRecurringEventCandidate<'a> {
         } = self;
         let BluetoothLegacyAdvertisingLinkStateReset { prepared, memory } = reset;
         let channels = controller_channel_plan(prepared.channels());
-        match memory.prepare_first_event(channels, resolved_window.start(), raw_item_duration) {
+        match memory.prepare_event(channels, resolved_window.start(), raw_item_duration) {
             Ok(memory) => Ok(BluetoothLegacyAdvertisingRecurringEventImagePrepared {
-                image: BluetoothLegacyAdvertisingFirstEventImagePrepared {
+                image: BluetoothLegacyAdvertisingEventImagePrepared {
                     prepared,
                     memory,
                     scheduler_window,
@@ -1011,7 +1011,7 @@ impl<'a> BluetoothLegacyAdvertisingRecurringEventCandidate<'a> {
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingRecurringEventImagePrepared<'a> {
-    image: BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+    image: BluetoothLegacyAdvertisingEventImagePrepared<'a>,
     previous_statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
     previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
     start_offset_micros: u64,
@@ -1022,7 +1022,7 @@ impl<'a> BluetoothLegacyAdvertisingRecurringEventImagePrepared<'a> {
     pub(crate) fn into_parts(
         self,
     ) -> (
-        BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+        BluetoothLegacyAdvertisingEventImagePrepared<'a>,
         BluetoothLegacyAdvertisingEventCompletionStatuses,
         crate::BluetoothLegacyAdvertisingEventPhase,
         u64,
@@ -1092,14 +1092,12 @@ pub enum BluetoothLegacyAdvertisingRecurringPreparationError {
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingRecurringEventImagePrepareFailure<'a> {
     candidate: BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
-    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    error: BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
 }
 
 #[cfg(target_arch = "riscv32")]
 impl<'a> BluetoothLegacyAdvertisingRecurringEventImagePrepareFailure<'a> {
-    pub(crate) const fn error(
-        &self,
-    ) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+    pub(crate) const fn error(&self) -> BluetoothLegacyAdvertisingMemoryGraphEventPrepareError {
         self.error
     }
 
@@ -1155,14 +1153,12 @@ impl<'a> BluetoothLegacyAdvertisingEventScheduleFailure<'a> {
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothLegacyAdvertisingFirstEventImagePrepareFailure<'a> {
     candidate: BluetoothLegacyAdvertisingFirstEventCandidate<'a>,
-    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    error: BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl<'a> BluetoothLegacyAdvertisingFirstEventImagePrepareFailure<'a> {
-    pub(crate) const fn error(
-        &self,
-    ) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+    pub(crate) const fn error(&self) -> BluetoothLegacyAdvertisingMemoryGraphEventPrepareError {
         self.error
     }
 

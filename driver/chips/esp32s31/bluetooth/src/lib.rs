@@ -132,6 +132,7 @@ mod passive_scanning_hci;
 mod passive_scanning_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod passive_scanning_timing;
+mod peripheral_connection;
 #[cfg(target_arch = "riscv32")]
 mod phy;
 mod primary_interrupt;
@@ -485,6 +486,7 @@ pub use passive_scanning_runner::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
+pub use peripheral_connection::BluetoothPeripheralConnectionRuntimeResources;
 #[cfg(target_arch = "riscv32")]
 pub use phy::{
     BluetoothControllerPhyClientAcquire, BluetoothControllerPhyClientAcquireFailure,

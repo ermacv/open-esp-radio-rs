@@ -240,6 +240,42 @@ where
     ) -> bool {
         self.axes.order.accepts_endpoint(controller)
     }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Task<'runtime, S, CAPACITY>,
+        Order<'runtime>,
+        open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
+        BluetoothSchedulerHardwareListIndex,
+        BluetoothLegacyAdvertisingEventCompleted<'static>,
+    ) {
+        (
+            self.axes.task,
+            self.axes.order,
+            self.axes.scheduler_item_address,
+            self.axes.hardware_list_index,
+            self.completed,
+        )
+    }
+
+    pub(crate) fn from_parts(
+        task: Task<'runtime, S, CAPACITY>,
+        order: Order<'runtime>,
+        scheduler_item_address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
+        hardware_list_index: BluetoothSchedulerHardwareListIndex,
+        completed: BluetoothLegacyAdvertisingEventCompleted<'static>,
+    ) -> Self {
+        Self {
+            axes: BluetoothLegacyAdvertisingActiveAxes {
+                task,
+                order,
+                scheduler_item_address,
+                hardware_list_index,
+            },
+            completed,
+        }
+    }
 }
 
 /// Finite fail-closed classification for active advertising progression.
@@ -318,6 +354,22 @@ where
                 order,
                 scheduler_item_address,
                 hardware_list_index,
+            },
+            phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
+        }
+    }
+
+    pub(crate) fn from_recurring_running(
+        task: Task<'runtime, S, CAPACITY>,
+        order: Order<'runtime>,
+        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+    ) -> Self {
+        Self {
+            axes: BluetoothLegacyAdvertisingActiveAxes {
+                scheduler_item_address: running.scheduler_item_address(),
+                hardware_list_index: running.hardware_list_index(),
+                task,
+                order,
             },
             phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
         }

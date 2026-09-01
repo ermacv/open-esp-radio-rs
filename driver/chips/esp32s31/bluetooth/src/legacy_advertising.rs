@@ -119,6 +119,8 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerSoftwareListRemovalReady,
 };
 
+#[cfg(target_arch = "riscv32")]
+use crate::BluetoothLegacyAdvertisingRecurringTimingObservation;
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::{
     BluetoothLegacyAdvertisingEventWindow, BluetoothLegacyAdvertisingTimingObservation,
@@ -1010,7 +1012,7 @@ impl<'a> BluetoothLegacyAdvertisingNextEventScheduled<'a> {
     pub fn prepare_candidate(
         self,
         default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
-        timing: BluetoothLegacyAdvertisingTimingObservation,
+        timing: BluetoothLegacyAdvertisingRecurringTimingObservation,
         config: BluetoothSchedulerSoftwareConfig,
     ) -> Result<
         BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
@@ -1068,7 +1070,7 @@ fn prepare_recurring_candidate<'a>(
     previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
     start_offset_micros: u64,
     default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
-    timing: BluetoothLegacyAdvertisingTimingObservation,
+    timing: BluetoothLegacyAdvertisingRecurringTimingObservation,
     config: BluetoothSchedulerSoftwareConfig,
 ) -> Result<
     BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
@@ -1284,7 +1286,7 @@ impl<'a> BluetoothLegacyAdvertisingRecurringPreparationFailure<'a> {
     pub fn retry(
         self,
         default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
-        timing: BluetoothLegacyAdvertisingTimingObservation,
+        timing: BluetoothLegacyAdvertisingRecurringTimingObservation,
         config: BluetoothSchedulerSoftwareConfig,
     ) -> Result<
         BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,

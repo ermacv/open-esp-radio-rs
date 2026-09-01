@@ -1725,6 +1725,36 @@ pub enum BluetoothLegacyAdvertisingControllerPreparationError {
     EmptyList(crate::BluetoothSchedulerEmptyListMergeError),
 }
 
+/// Lossless failure while rebuilding one completed advertising event.
+#[must_use = "retain the scheduled or preparation owner for retry or disable"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingRecurringCandidateFailure {
+    SchedulerEpochUnavailable(crate::BluetoothLegacyAdvertisingNextEventScheduled<'static>),
+    Preparation(crate::BluetoothLegacyAdvertisingRecurringPreparationFailure<'static>),
+}
+
+/// Result of applying the recurring sequence sample and empty-list merge.
+#[must_use = "retain the task and exact recurring graph outcome together"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingRecurringSequenceCompletion<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Prepared {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        merged: crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+    },
+    EventRejected {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        failure: crate::BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'static>,
+    },
+    EmptyListRejected {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        failure: crate::BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'static>,
+    },
+}
+
 /// Terminal result of one source-ordered first advertising preparation.
 ///
 /// Rejection proves that the LL generation and exact SRAM graph were restored
@@ -3121,6 +3151,48 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         )
     }
 
+    /// Apply one fresh sequence observation to an already reserved successor.
+    pub(crate) fn finish_legacy_advertising_recurring_event(
+        self,
+        admitted: crate::BluetoothLegacyAdvertisingRecurringPreSequence<'static>,
+    ) -> BluetoothLegacyAdvertisingRecurringSequenceCompletion<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let Self {
+            mut controller,
+            sample,
+            ..
+        } = self;
+        let prepared = match controller
+            .runtime
+            .prepare_legacy_advertising_recurring_event(
+                admitted,
+                crate::BluetoothLegacyAdvertisingSequenceObservation { sample },
+            ) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                return BluetoothLegacyAdvertisingRecurringSequenceCompletion::EventRejected {
+                    task: controller,
+                    failure,
+                };
+            }
+        };
+        match controller
+            .runtime
+            .prepare_legacy_advertising_empty_list_merge(prepared)
+        {
+            Ok(merged) => BluetoothLegacyAdvertisingRecurringSequenceCompletion::Prepared {
+                task: controller,
+                merged,
+            },
+            Err(failure) => {
+                BluetoothLegacyAdvertisingRecurringSequenceCompletion::EmptyListRejected {
+                    task: controller,
+                    failure,
+                }
+            }
+        }
+    }
+
     /// Begin the source-ordered first legacy-advertising transaction.
     #[expect(
         clippy::result_large_err,
@@ -3765,6 +3837,74 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// event, so cancellation of a waiter cannot discard notification state.
     pub const fn post_unlink_wake(&self) -> &crate::BluetoothDtmPostUnlinkWakeCell {
         self.mailbox.wake()
+    }
+
+    /// Rebuild one successor from the completed event's nominal phase.
+    pub(crate) fn prepare_legacy_advertising_recurring_candidate(
+        &self,
+        scheduled: crate::BluetoothLegacyAdvertisingNextEventScheduled<'static>,
+    ) -> Result<
+        crate::BluetoothLegacyAdvertisingRecurringEventCandidate<'static>,
+        BluetoothLegacyAdvertisingRecurringCandidateFailure,
+    > {
+        let Some(epoch) = *self.scheduler_epoch else {
+            return Err(
+                BluetoothLegacyAdvertisingRecurringCandidateFailure::SchedulerEpochUnavailable(
+                    scheduled,
+                ),
+            );
+        };
+        scheduled
+            .prepare_candidate(
+                self.legacy_advertising_resources.default_tx_power_dbm(),
+                crate::BluetoothLegacyAdvertisingRecurringTimingObservation::new(epoch),
+                self.runtime.scheduler_config(),
+            )
+            .map_err(BluetoothLegacyAdvertisingRecurringCandidateFailure::Preparation)
+    }
+
+    /// Retry only the finite packet/reset/timing projection of a successor.
+    pub(crate) fn retry_legacy_advertising_recurring_candidate(
+        &self,
+        failure: crate::BluetoothLegacyAdvertisingRecurringPreparationFailure<'static>,
+    ) -> Result<
+        crate::BluetoothLegacyAdvertisingRecurringEventCandidate<'static>,
+        BluetoothLegacyAdvertisingRecurringCandidateFailure,
+    > {
+        let Some(epoch) = *self.scheduler_epoch else {
+            return Err(BluetoothLegacyAdvertisingRecurringCandidateFailure::Preparation(failure));
+        };
+        failure
+            .retry(
+                self.legacy_advertising_resources.default_tx_power_dbm(),
+                crate::BluetoothLegacyAdvertisingRecurringTimingObservation::new(epoch),
+                self.runtime.scheduler_config(),
+            )
+            .map_err(BluetoothLegacyAdvertisingRecurringCandidateFailure::Preparation)
+    }
+
+    /// Reserve one recurring advertising window in the retained timeline.
+    pub(crate) fn admit_legacy_advertising_recurring_candidate(
+        &mut self,
+        candidate: crate::BluetoothLegacyAdvertisingRecurringEventCandidate<'static>,
+    ) -> Result<
+        crate::BluetoothLegacyAdvertisingRecurringPreSequence<'static>,
+        crate::BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'static>,
+    > {
+        self.runtime
+            .admit_legacy_advertising_recurring_event(candidate)
+    }
+
+    /// Retry the empty-list join without rebuilding or reauthorizing the event.
+    pub(crate) fn merge_legacy_advertising_recurring_event(
+        &mut self,
+        prepared: crate::BluetoothLegacyAdvertisingEventPrepared<'static>,
+    ) -> Result<
+        crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+        crate::BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'static>,
+    > {
+        self.runtime
+            .prepare_legacy_advertising_empty_list_merge(prepared)
     }
 
     /// Advance one finite scheduler lock/modify transaction.

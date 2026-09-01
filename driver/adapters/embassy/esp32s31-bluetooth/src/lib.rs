@@ -42,7 +42,9 @@ pub use dtm_first::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_active::{
-    EmbassyBluetoothLegacyAdvertisingActiveDrive, drive_legacy_advertising_active_ready,
+    EmbassyBluetoothLegacyAdvertisingActiveDrive, EmbassyBluetoothLegacyAdvertisingDelaySource,
+    EmbassyBluetoothLegacyAdvertisingRecurringDrive, drive_legacy_advertising_active_ready,
+    drive_legacy_advertising_recurring_ready,
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_first::{

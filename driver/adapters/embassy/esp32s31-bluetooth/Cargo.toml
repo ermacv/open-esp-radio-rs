@@ -12,6 +12,7 @@ embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 open-esp-radio-bluetooth-hci = { path = "../../../bluetooth/hci" }
+open-esp-radio-bluetooth-ll = { path = "../../../bluetooth/ll" }
 open-esp-radio-esp32s31-bluetooth = { path = "../../../chips/esp32s31/bluetooth" }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
 

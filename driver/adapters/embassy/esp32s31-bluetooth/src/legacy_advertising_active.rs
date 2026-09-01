@@ -2,11 +2,19 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothLegacyAdvertisingActiveFault, BluetoothLegacyAdvertisingActiveSession,
     BluetoothLegacyAdvertisingActiveStep, BluetoothLegacyAdvertisingEventCpuOwned,
+    BluetoothLegacyAdvertisingRecurringFault, BluetoothLegacyAdvertisingRecurringRetry,
+    BluetoothLegacyAdvertisingRecurringRunner, BluetoothLegacyAdvertisingRecurringRunnerStep,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
 };
+
+/// Source-owned entropy policy for the Link Layer's fresh 0..=10 ms delay.
+pub trait EmbassyBluetoothLegacyAdvertisingDelaySource {
+    fn next_advertising_delay(&mut self) -> AdvertisingDelay;
+}
 
 /// First externally meaningful result after driving every immediately ready edge.
 #[must_use = "retain the parked, completed, unrelated-list, or fail-stop owner"]
@@ -21,6 +29,44 @@ where
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
     Fault(BluetoothLegacyAdvertisingActiveFault<'runtime, S, CAPACITY>),
+}
+
+/// First externally meaningful recurring-runner result.
+#[must_use = "retain the wait, active session, retry, or fail-stop owner"]
+pub enum EmbassyBluetoothLegacyAdvertisingRecurringDrive<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Wait(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
+    Active(BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>),
+    Retryable(BluetoothLegacyAdvertisingRecurringRetry<'runtime, S, CAPACITY>),
+    Fault(BluetoothLegacyAdvertisingRecurringFault<'runtime, S, CAPACITY>),
+}
+
+/// Run finite successor preparation until controller time, `RUN`, or failure.
+pub fn drive_legacy_advertising_recurring_ready<'runtime, S, const CAPACITY: usize>(
+    mut runner: BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>,
+) -> EmbassyBluetoothLegacyAdvertisingRecurringDrive<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    loop {
+        match runner.step() {
+            BluetoothLegacyAdvertisingRecurringRunnerStep::Continue(next) => runner = next,
+            BluetoothLegacyAdvertisingRecurringRunnerStep::WaitControllerTime(runner) => {
+                return EmbassyBluetoothLegacyAdvertisingRecurringDrive::Wait(runner);
+            }
+            BluetoothLegacyAdvertisingRecurringRunnerStep::Running(active) => {
+                return EmbassyBluetoothLegacyAdvertisingRecurringDrive::Active(active);
+            }
+            BluetoothLegacyAdvertisingRecurringRunnerStep::Retryable(retry) => {
+                return EmbassyBluetoothLegacyAdvertisingRecurringDrive::Retryable(retry);
+            }
+            BluetoothLegacyAdvertisingRecurringRunnerStep::Fault(fault) => {
+                return EmbassyBluetoothLegacyAdvertisingRecurringDrive::Fault(fault);
+            }
+        }
+    }
 }
 
 /// Run only finite ready transitions; this function never polls or waits.

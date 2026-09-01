@@ -116,6 +116,8 @@ mod legacy_advertising;
 #[cfg(target_arch = "riscv32")]
 mod legacy_advertising_active;
 #[cfg(target_arch = "riscv32")]
+mod legacy_advertising_recurring;
+#[cfg(target_arch = "riscv32")]
 mod legacy_advertising_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod legacy_advertising_timing;
@@ -357,6 +359,13 @@ pub use legacy_advertising_active::{
     BluetoothLegacyAdvertisingResponsePublication,
 };
 #[cfg(target_arch = "riscv32")]
+pub use legacy_advertising_recurring::{
+    BluetoothLegacyAdvertisingRecurringFault, BluetoothLegacyAdvertisingRecurringFaultCause,
+    BluetoothLegacyAdvertisingRecurringRetry, BluetoothLegacyAdvertisingRecurringRetryCause,
+    BluetoothLegacyAdvertisingRecurringRunner, BluetoothLegacyAdvertisingRecurringRunnerStep,
+    BluetoothLegacyAdvertisingRecurringStart,
+};
+#[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_runner::{
     BluetoothLegacyAdvertisingDeferredStart, BluetoothLegacyAdvertisingFirstRunner,
     BluetoothLegacyAdvertisingFirstRunnerFailure, BluetoothLegacyAdvertisingFirstRunnerRetry,
@@ -367,6 +376,8 @@ pub use legacy_advertising_runner::{
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingEventPhase;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingEventWindow;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingRecurringTimingObservation;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingTimingObservation;
 pub use modem_lp_timer_queue::{

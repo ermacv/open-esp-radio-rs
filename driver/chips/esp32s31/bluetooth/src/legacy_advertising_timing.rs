@@ -45,30 +45,23 @@ pub struct BluetoothLegacyAdvertisingTimingObservation {
     pub(crate) epoch: BluetoothControllerSchedulerEpoch,
 }
 
-impl BluetoothLegacyAdvertisingTimingObservation {
-    pub(crate) const fn first_le_1m_window(
-        self,
-        config: BluetoothSchedulerSoftwareConfig,
-        payload_length: u8,
-        primary_channel_count: usize,
-    ) -> Option<(
-        BluetoothLegacyAdvertisingEventWindow,
-        BluetoothSchedulerRawWindow,
-        u32,
-    )> {
-        let window = BluetoothLegacyAdvertisingEventWindow::first_le_1m(
-            config,
-            self.current,
-            self.radio_ready,
-            payload_length,
-        );
-        match window.project_raw(self.epoch, primary_channel_count) {
-            Some((raw, raw_item_duration)) => Some((window, raw, raw_item_duration)),
-            None => None,
-        }
+/// Retained scheduler epoch used to project a successor from its nominal phase.
+///
+/// A recurring event does not reuse the first event's `current` or radio-ready
+/// observations. Its phase is already fixed by the completed event; only the
+/// same initialized Controller epoch may project that phase into raw time.
+#[must_use = "the recurring timing authority must remain attached to its controller epoch"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothLegacyAdvertisingRecurringTimingObservation {
+    epoch: BluetoothControllerSchedulerEpoch,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothLegacyAdvertisingRecurringTimingObservation {
+    pub(crate) const fn new(epoch: BluetoothControllerSchedulerEpoch) -> Self {
+        Self { epoch }
     }
 
-    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn recurring_le_1m_window(
         self,
         previous_phase: BluetoothLegacyAdvertisingEventPhase,
@@ -85,6 +78,30 @@ impl BluetoothLegacyAdvertisingTimingObservation {
             previous_phase,
             start_offset_micros,
             config,
+            payload_length,
+        );
+        match window.project_raw(self.epoch, primary_channel_count) {
+            Some((raw, raw_item_duration)) => Some((window, raw, raw_item_duration)),
+            None => None,
+        }
+    }
+}
+
+impl BluetoothLegacyAdvertisingTimingObservation {
+    pub(crate) const fn first_le_1m_window(
+        self,
+        config: BluetoothSchedulerSoftwareConfig,
+        payload_length: u8,
+        primary_channel_count: usize,
+    ) -> Option<(
+        BluetoothLegacyAdvertisingEventWindow,
+        BluetoothSchedulerRawWindow,
+        u32,
+    )> {
+        let window = BluetoothLegacyAdvertisingEventWindow::first_le_1m(
+            config,
+            self.current,
+            self.radio_ready,
             payload_length,
         );
         match window.project_raw(self.epoch, primary_channel_count) {

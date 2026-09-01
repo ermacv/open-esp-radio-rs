@@ -34,6 +34,8 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothLegacyAdvertisingActiveFault, BluetoothLegacyAdvertisingActiveSession,
     BluetoothLegacyAdvertisingActiveWait, BluetoothLegacyAdvertisingEventCpuOwned,
     BluetoothLegacyAdvertisingFirstRunnerFailure, BluetoothLegacyAdvertisingFirstRunnerRetry,
+    BluetoothLegacyAdvertisingRecurringFault, BluetoothLegacyAdvertisingRecurringRetry,
+    BluetoothLegacyAdvertisingRecurringRunner, BluetoothLegacyAdvertisingRecurringStart,
     BluetoothLegacyAdvertisingResponsePendingSession,
     BluetoothLegacyAdvertisingResponsePublication, BluetoothSchedulerFinishedHardwareListObserved,
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerRunInterruptStorage,
@@ -45,10 +47,12 @@ use crate::{
     EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
     EmbassyBluetoothDtmFirstResume, EmbassyBluetoothDtmSessionBoundary,
     EmbassyBluetoothDtmSessionTask, EmbassyBluetoothLegacyAdvertisingActiveDrive,
+    EmbassyBluetoothLegacyAdvertisingDelaySource,
     EmbassyBluetoothLegacyAdvertisingFirstControllerTimeWait,
     EmbassyBluetoothLegacyAdvertisingFirstDrive, EmbassyBluetoothLegacyAdvertisingFirstResume,
-    EmbassyBluetoothRuntimeWakers, drive_dtm_first_ready, drive_legacy_advertising_active_ready,
-    drive_legacy_advertising_first_ready,
+    EmbassyBluetoothLegacyAdvertisingRecurringDrive, EmbassyBluetoothRuntimeWakers,
+    drive_dtm_first_ready, drive_legacy_advertising_active_ready,
+    drive_legacy_advertising_first_ready, drive_legacy_advertising_recurring_ready,
 };
 
 /// Observable phase of the sole Controller command actor.
@@ -241,6 +245,10 @@ where
     ),
     LegacyAdvertisingActive(BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>),
     LegacyAdvertisingCpuOwned(BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>),
+    LegacyAdvertisingRecurring(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
+    LegacyAdvertisingRecurringRetry(
+        BluetoothLegacyAdvertisingRecurringRetry<'runtime, S, CAPACITY>,
+    ),
     Active(EmbassyBluetoothDtmSessionTask<'runtime, S, CAPACITY>),
     ResetStopping(BluetoothDtmResetStoppingRunner<'runtime, S, CAPACITY>),
     ResetRestore(BluetoothDtmResetRestoreFailure<'runtime, S, CAPACITY>),
@@ -268,7 +276,10 @@ where
             Self::LegacyAdvertisingResponse(_) => {
                 EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingResponse
             }
-            Self::LegacyAdvertisingActive(_) | Self::LegacyAdvertisingCpuOwned(_) => {
+            Self::LegacyAdvertisingActive(_)
+            | Self::LegacyAdvertisingCpuOwned(_)
+            | Self::LegacyAdvertisingRecurring(_)
+            | Self::LegacyAdvertisingRecurringRetry(_) => {
                 EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive
             }
             Self::Active(_) => EmbassyBluetoothControllerCommandPhase::Active,
@@ -298,6 +309,7 @@ pub enum EmbassyBluetoothControllerIdleCompletion {
 pub enum EmbassyBluetoothControllerRetry {
     FirstEvent,
     LegacyAdvertisingFirst,
+    LegacyAdvertisingRecurring,
     Active(EmbassyBluetoothDtmSessionRetry),
     ResetStopping,
     ResetRestore,
@@ -329,8 +341,6 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     ControllerTimeExhausted,
     /// The accepted advertising Enable reached scheduler `RUN` and its response was published.
     LegacyAdvertisingActive(BluetoothSchedulerHardwareListIndex),
-    /// One complete advertising event reached a CPU-owned recurrence boundary.
-    LegacyAdvertisingEventCompleted(BluetoothSchedulerHardwareListIndex),
     /// No installed role owns this scheduler list; its exact owner is quarantined in the actor.
     UnownedFinishedList(BluetoothSchedulerHardwareListIndex),
     /// A non-retryable initial transition failed before scheduler `RUN`.
@@ -376,6 +386,12 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     ResetStoppingFault(BluetoothDtmResetStoppingFault<'runtime, S, CAPACITY>),
     /// Active advertising failed closed while retaining its complete graph and HCI order.
     LegacyAdvertisingFault(BluetoothLegacyAdvertisingActiveFault<'runtime, S, CAPACITY>),
+    /// Recurring advertising failed closed while retaining every owner.
+    LegacyAdvertisingRecurringFault(
+        BluetoothLegacyAdvertisingRecurringFault<'runtime, S, CAPACITY>,
+    ),
+    /// The non-repeating advertising event identity space was exhausted.
+    LegacyAdvertisingSequenceExhausted(BluetoothSchedulerHardwareListIndex),
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -678,6 +694,49 @@ where
         }
     }
 
+    fn store_legacy_advertising_recurring_drive<'epoch, 'packet>(
+        &mut self,
+        drive: EmbassyBluetoothLegacyAdvertisingRecurringDrive<'runtime, S, CAPACITY>,
+    ) -> Option<EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY>>
+    {
+        let phase = EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive;
+        match drive {
+            EmbassyBluetoothLegacyAdvertisingRecurringDrive::Wait(runner) => {
+                self.store_retained_state(
+                    phase,
+                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(runner),
+                );
+                None
+            }
+            EmbassyBluetoothLegacyAdvertisingRecurringDrive::Active(active) => {
+                self.store_retained_state(
+                    phase,
+                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingActive(active),
+                );
+                None
+            }
+            EmbassyBluetoothLegacyAdvertisingRecurringDrive::Retryable(retry) => {
+                self.store_retained_state(
+                    phase,
+                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurringRetry(retry),
+                );
+                Some(
+                    self.retain_boundary(EmbassyBluetoothControllerCommandBoundary::Retryable(
+                        EmbassyBluetoothControllerRetry::LegacyAdvertisingRecurring,
+                    )),
+                )
+            }
+            EmbassyBluetoothLegacyAdvertisingRecurringDrive::Fault(fault) => {
+                Some(self.terminal_boundary(
+                    phase,
+                    EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringFault(
+                        fault,
+                    ),
+                ))
+            }
+        }
+    }
+
     async fn wait_reset_stopping<WakeMutex, Recheck>(
         &mut self,
         wakers: &EmbassyBluetoothRuntimeWakers<WakeMutex>,
@@ -721,6 +780,7 @@ where
         const CONTROLLER_TO_HOST_DEPTH: usize,
         const PACKET_CAPACITY: usize,
         Recheck: EmbassyBluetoothDtmControllerTimeRecheck,
+        DelaySource: EmbassyBluetoothLegacyAdvertisingDelaySource,
     >(
         &mut self,
         wakers: &EmbassyBluetoothRuntimeWakers<WakeMutex>,
@@ -733,6 +793,7 @@ where
         >,
         packet: &'packet mut [u8],
         recheck: &mut Recheck,
+        advertising_delay: &mut DelaySource,
     ) -> EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY> {
         let mut packet = Some(packet);
         loop {
@@ -1082,16 +1143,86 @@ where
                     }
                 }
                 EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive => {
-                    if let EmbassyBluetoothControllerCommandState::LegacyAdvertisingCpuOwned(
-                        completed,
-                    ) = self.owner.current()
-                    {
-                        return self.retain_boundary(
-                            EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingEventCompleted(
-                                completed.hardware_list_index(),
-                            ),
-                        );
+                    if matches!(
+                        self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::LegacyAdvertisingCpuOwned(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::LegacyAdvertisingCpuOwned(
+                            completed,
+                        ) = self.owner.take()
+                        else {
+                            unreachable!("the selected completed advertising event did not change")
+                        };
+                        match completed.begin_recurring(advertising_delay.next_advertising_delay())
+                        {
+                            BluetoothLegacyAdvertisingRecurringStart::Runner(runner) => {
+                                if let Some(boundary) = self
+                                    .store_legacy_advertising_recurring_drive(
+                                        drive_legacy_advertising_recurring_ready(runner),
+                                    )
+                                {
+                                    return boundary;
+                                }
+                            }
+                            BluetoothLegacyAdvertisingRecurringStart::SequenceExhausted(
+                                completed,
+                            ) => {
+                                let index = completed.hardware_list_index();
+                                self.store_retained_state(
+                                    EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingCpuOwned(
+                                        completed,
+                                    ),
+                                );
+                                return EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingSequenceExhausted(index);
+                            }
+                        }
+                        continue;
                     }
+
+                    if matches!(
+                        self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurringRetry(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurringRetry(
+                            retry,
+                        ) = self.owner.take()
+                        else {
+                            unreachable!("the selected recurring retry did not change")
+                        };
+                        if let Some(boundary) = self.store_legacy_advertising_recurring_drive(
+                            drive_legacy_advertising_recurring_ready(retry.retry()),
+                        ) {
+                            return boundary;
+                        }
+                        continue;
+                    }
+
+                    if matches!(
+                        self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                            _runner,
+                        ) = self.owner.current()
+                        else {
+                            unreachable!("the selected recurring wait did not change")
+                        };
+                        recheck.wait_until_absolute_recheck().await;
+                        let EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                            runner,
+                        ) = self.owner.take()
+                        else {
+                            unreachable!("the awaited recurring owner did not change")
+                        };
+                        if let Some(boundary) = self.store_legacy_advertising_recurring_drive(
+                            drive_legacy_advertising_recurring_ready(runner),
+                        ) {
+                            return boundary;
+                        }
+                        continue;
+                    }
+
                     let EmbassyBluetoothControllerCommandState::LegacyAdvertisingActive(active) =
                         self.owner.current()
                     else {
@@ -1126,15 +1257,11 @@ where
                             );
                         }
                         EmbassyBluetoothLegacyAdvertisingActiveDrive::CpuOwned(completed) => {
-                            let index = completed.hardware_list_index();
                             self.store_retained_state(
                                 EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
                                 EmbassyBluetoothControllerCommandState::LegacyAdvertisingCpuOwned(
                                     completed,
                                 ),
-                            );
-                            return EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingEventCompleted(
-                                index,
                             );
                         }
                         EmbassyBluetoothLegacyAdvertisingActiveDrive::UnrelatedList {

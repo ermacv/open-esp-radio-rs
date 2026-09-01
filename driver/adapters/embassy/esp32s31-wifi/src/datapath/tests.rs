@@ -14,12 +14,68 @@ use open_esp_radio_embassy_net::{
     PinnedEndpointResources, PinnedNetworkRunner, PinnedNetworkTxFrame, PinnedTxPool,
     PinnedTxResources, RxEnqueueError, SplitPinnedDevice, TxToken as _,
 };
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::{
+    EgressControlledNetwork, EgressDemandUpdate, EgressKey, EgressRadioControlOwner,
+};
 use open_esp_radio_esp32s31_wifi_mac::irq::{EVENT_RX_SUCCESS, EVENT_TX_COMPLETE};
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use std::boxed::Box;
 
 use super::network::{DatapathNetworkRx, DatapathNetworkRxEndpoints, DatapathNetworkRxSet};
 use super::*;
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[derive(Default)]
+struct RecordingEgressPolicy {
+    recommendation_calls: usize,
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl super::egress::DatapathEgressPolicyOwner for RecordingEgressPolicy {
+    fn observe_update(&mut self, _vif: u8, _update: EgressDemandUpdate) {}
+
+    fn prepare_recommendation(
+        &mut self,
+        _opportunity_for: &mut dyn FnMut(
+            open_esp_radio_wifi_softmac::WifiEgressDemand<EgressKey>,
+        )
+            -> Option<super::egress::DatapathHtEgressSnapshot>,
+    ) -> bool {
+        self.recommendation_calls += 1;
+        true
+    }
+
+    fn observe_actual(
+        &mut self,
+        _interface: u8,
+        _key: Option<EgressKey>,
+        _opportunity_for: &mut dyn FnMut(
+            open_esp_radio_wifi_softmac::WifiEgressDemand<EgressKey>,
+        )
+            -> Option<super::egress::DatapathHtEgressSnapshot>,
+    ) -> bool {
+        true
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+struct SilentEgressRadio;
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl EgressRadioControlOwner for SilentEgressRadio {
+    fn service(&mut self) -> bool {
+        false
+    }
+
+    fn service_observed(&mut self, _observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
+        false
+    }
+
+    fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {
+        payload
+    }
+}
 
 const FRAME_CAPACITY: usize = 64;
 const HEADROOM: usize = 32;
@@ -57,6 +113,38 @@ macro_rules! split_network {
         network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
         (device, network)
     }};
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+fn prepare_recommendation_through_network<N>(network: &mut N) -> bool
+where
+    N: super::network::DatapathNetwork<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+            QUEUE_DEPTH,
+        >,
+{
+    network.prepare_egress_recommendation(&mut |_| None)
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn mutable_network_reference_forwards_physical_egress_policy() {
+    let resources = Box::leak(Box::new(Resources::new()));
+    let pool = Pool::pin_static(Box::leak(Box::new(Pool::new())));
+    let (_device, network) = split_network!(resources, pool);
+    let mut controlled = EgressControlledNetwork::new(network, SilentEgressRadio)
+        .with_policy(RecordingEgressPolicy::default());
+
+    let mut borrowed = &mut controlled;
+    assert!(prepare_recommendation_through_network(&mut borrowed));
+
+    let (_, _, policy) = controlled.into_parts();
+    assert_eq!(policy.recommendation_calls, 1);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1020,6 +1020,49 @@ where
 {
     type Error = Esp32s31StaApStationTxError;
 
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        physical: &Esp32s31StaApStationPhysicalTx<
+            'resources,
+            'slot,
+            'ampdu,
+            M,
+            P,
+            E,
+            T,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+            ORDINARY_BUFFER_SIZE,
+        >,
+        demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        if let Some(active) = self.tx().active() {
+            return active.egress_radio_snapshot(demand);
+        }
+        let Some((ordinary, _)) = physical.available() else {
+            return crate::datapath::egress::rejected_ht_egress_snapshot(
+                crate::datapath::egress::DatapathEgressSnapshotRejection::RoleUnavailable,
+            );
+        };
+        let Some(parked) = self.tx().parked_state() else {
+            return crate::datapath::egress::rejected_ht_egress_snapshot(
+                crate::datapath::egress::DatapathEgressSnapshotRejection::RoleUnavailable,
+            );
+        };
+        parked.egress_radio_snapshot(
+            demand,
+            FRAME_CAPACITY,
+            ordinary.policy.ht_ampdu().maximum_aggregate_bytes(),
+        )
+    }
+
     fn last_started_frame_count(&self) -> usize {
         self.tx()
             .active()
@@ -1424,6 +1467,16 @@ where
     Tx: DatapathNetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 {
     type Error = Tx::Error;
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        self.tx().egress_radio_snapshot(demand)
+    }
 
     fn start<'a>(
         &'a mut self,

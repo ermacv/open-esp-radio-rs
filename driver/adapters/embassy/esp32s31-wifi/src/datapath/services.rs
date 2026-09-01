@@ -160,6 +160,18 @@ pub trait DatapathNetworkTxService<
 {
     type Error;
 
+    /// Revalidate one mirrored demand using the role-local TX state. This is
+    /// fact collection only and must not advance rate control or BA state.
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        _demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        None
+    }
+
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
@@ -433,6 +445,16 @@ where
 {
     type Error = DatapathServiceError<R::Error, C::Error, X::Error>;
     type Exit = C::Exit;
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        self.role.tx.egress_radio_snapshot(demand)
+    }
 
     fn service_rx<'a>(
         &'a mut self,

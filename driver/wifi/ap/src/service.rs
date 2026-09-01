@@ -2180,6 +2180,38 @@ impl<'peers> AccessPointService<'peers> {
         })
     }
 
+    /// Resolve one generation-bound authorized association from the bounded
+    /// AID slot encoded in a cross-owner egress key.
+    ///
+    /// Unlike address lookup this is O(1). Both the slot and epoch must match;
+    /// neither value alone may authorize a retained queue after reassociation.
+    pub fn authorized_peer_status_by_id_epoch(
+        &self,
+        association_id: u16,
+        association_epoch: u32,
+    ) -> Option<ApPeerStatus> {
+        let index = usize::from(association_id.checked_sub(1)?);
+        let peer = self.storage().peers.get(index)?.as_ref()?;
+        (peer.phase == ApPeerPhase::Authorized
+            && peer.association_id == association_id
+            && peer.association_epoch == association_epoch)
+            .then(|| ApPeerStatus {
+                address: peer.address,
+                association_id: peer.association_id,
+                association_epoch: peer.association_epoch,
+                phase: peer.phase,
+                maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+                ht: peer.ht,
+                qos_supported: peer.qos_supported,
+                tx_block_ack: peer.tx_block_ack.operational(),
+                power_state: peer.power_state,
+                buffered_unicast_frames: peer.buffered_unicast_frames,
+                buffered_release_in_flight: peer.buffered_release_in_flight,
+                last_activity_micros: peer.last_activity_micros,
+                deadline_micros: peer.deadline_micros,
+            })
+    }
+
     fn bound_peer(&self, binding: ApPeerBinding) -> Option<&ApPeer> {
         if self.storage().generation != binding.generation {
             return None;
@@ -2462,6 +2494,24 @@ mod tests {
         assert_ne!(
             first.identity().association_epoch(),
             second.identity().association_epoch()
+        );
+        assert_eq!(
+            service.authorized_peer_status_by_id_epoch(
+                first.identity().association_id(),
+                first.identity().association_epoch(),
+            ),
+            None,
+            "an old queue key must not bind to the reused AID"
+        );
+        assert_eq!(
+            service
+                .authorized_peer_status_by_id_epoch(
+                    second.identity().association_id(),
+                    second.identity().association_epoch(),
+                )
+                .unwrap()
+                .address,
+            PEER
         );
         assert_eq!(
             service.bound_authorized_peer_status(first.identity()),

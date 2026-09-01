@@ -16,6 +16,8 @@ pub mod core0_rx_performance;
 pub mod core0_rx_reorder_cycles;
 #[cfg(feature = "task-poll-telemetry")]
 pub mod core0_rx_service_histogram;
+#[cfg(feature = "tx-phase-telemetry")]
+pub mod egress;
 #[cfg(feature = "diagnostics")]
 pub mod network;
 pub mod rx_pipeline;

@@ -527,13 +527,96 @@ apply only those accepted `Reset`, `Active` and `Inactive` transitions to the
 portable kernel. Rejected or stale transport events are counted and never
 reach the policy mirror.
 
-This wiring still has no scheduling authority. It does not call
-`select_next`, issue a grant, reserve SRAM, alter `transmit_for`, or charge
-pending airtime. The configured quanta and pending limits are therefore
-provisional shadow parameters, not a claimed production fairness policy. The
-next gate is a role-derived opportunity using the current association,
-power-save state, BlockAck window, PHY rate and a named PPDU cost model; a
-frame count must not be relabeled as airtime.
+This wiring still has no scheduling authority. It does not issue a grant,
+reserve SRAM, alter `transmit_for`, or choose the packet returned by the
+existing production queue. The configured quanta and pending limits are
+therefore provisional shadow parameters, not a claimed production fairness
+policy. A frame count is never relabeled as airtime.
+
+The next source-level shadow step is now implemented. Immediately before the
+unchanged production scheduler removes the head of a new radio transaction,
+the physical policy calls `select_next` using role-derived facts. STA accepts
+only the current single-radio class-zero queue with an operational TID-0 BA
+window and a fresh HT rate-control result. AP additionally requires the exact
+authorized AID slot plus association epoch, an active (non-sleeping) peer,
+current HT capabilities and an operational TID-0 BA agreement. Standalone and
+STA+AP compositions implement the same value-only contract; observing a
+paired role does not lend the shared physical TX owner.
+
+Demand currently carries a ready-frame count but no exact queued byte
+geometry. The provisional opportunity therefore models every admitted frame
+at the explicit maximum Ethernet capacity, then applies the negotiated S31
+A-MPDU byte ceiling, the rate-dependent vendor ceiling and the exact HT PPDU
+duration model. This is a conservative data-PPDU estimate, not measured
+airtime and not complete medium occupancy: contention, protection, SIFS and
+BlockAck remain excluded. HE, ordinary non-aggregate, group/control and
+non-zero traffic classes fail closed rather than receiving a fabricated cost.
+
+The recommendation is compared with the immutable egress key stored beside
+the actual final-SRAM packet. Exact and different-queue outcomes are recorded
+without changing admission. Estimated pending credit is immediately returned
+with the same modeled value in this comparison-only phase, so the shadow DRR
+state advances while the production AQL/hardware horizon remains untouched.
+Selection runs once per new transaction/aggregate head; continuation leases
+already joining that burst do not repeat the queue scan. Host tests cover
+exact and divergent decisions and prove that comparison leaves no pending
+airtime.
+
+### Role-derived shadow HIL result
+
+The first HIL pass found two real boundary defects before it produced a valid
+comparison. The standalone station role prepared the successor aggregate by
+claiming its first network lease inside the role after publication, bypassing
+the physical runner's transaction-head hook. Removing that internal claim
+restored the transaction boundary to `DatapathRunner` while retaining the
+double-buffered continuation drain. A second defect was conventional trait
+forwarding: `DatapathNetwork for &mut N` forwarded the lifecycle service but
+silently inherited the default `false` implementations for recommendation and
+observation. A focused regression test now proves forwarding of both methods.
+
+The clean station A/B uses one archived image from AP source run
+`1788301060881-00191cf6`, application SHA-256
+`59dac66e91c6be2b98f51666012167021181240addb310e318c062446fcbd9ad`.
+Enabled run `1788301452504-001926c3` and disabled run
+`1788301618367-001928c1` replay that exact firmware:
+
+| Mode | Device TX throughput | Recommendations | Exact | Other outcomes |
+| --- | ---: | ---: | ---: | ---: |
+| enabled | 122.865, 122.759, 122.831 Mbit/s | 3,913 / 3,910 / 3,912 | all | 0 |
+| disabled | 123.023, 122.979, 123.054 Mbit/s | 0 | 0 | 0 |
+
+Every enabled snapshot was ready. Key, identity, traffic-class, role, rate,
+BlockAck and geometry rejection counters were all zero. Disabled performed no
+recommendation, observation or snapshot query. The median ceiling difference
+was -0.192 Mbit/s (-0.16%). Median visible Core0 TX phase work was 6,789.9
+versus 6,684.0 cycles per datagram, a difference of about 106 cycles. Complete
+radio-task poll residence was 4.140 versus 3.902 seconds per 12-second sample,
+or approximately +1.98 percentage points of one core. This larger total is the
+correct cost gate because recommendation work surrounds, rather than sits
+inside, the existing TX phase samples. Core1 network residence did not
+increase, so the cost was not merely transferred to Core1.
+
+The station result establishes correspondence but does not pass the desired
+`<= 1 pp` production-overhead gate. The recommendation remains observational.
+
+The AP source run `1788301060881-00191cf6` passed at 119.479 and
+119.673 Mbit/s with BA32, zero OpenWrt retries/failures and 5,073/5,082
+terminal aggregates. It produced only one recommendation per cycle. All role
+snapshot rejection counters were zero, so this is not missing BA, rate,
+association or power-save state. The AP role constructs and fills successive
+`PreparedStandby` aggregates from its Core0-owned per-flow arena, then exposes
+only the prepared publication to the outer runner. Consequently the raw
+network FIFO head is not the universal physical transaction boundary.
+
+This invalidates the remaining source-level assumption in the current shadow
+hook: an outer FIFO removal is not necessarily the egress identity actually
+chosen by a role-specific aggregator. The next refactor must expose the exact
+selected transaction identity from `DatapathServices` at initial and prepared
+publication boundaries. Core0 policy selection occurs before that role
+selection; comparison occurs afterward against the role-selected identity.
+Continuation frames remain unobserved. This preserves one policy operation per
+aggregate, works for AP regrouping and avoids moving radio policy into Xarxa or
+duplicating it inside each role.
 
 ## Rejected candidate/grant experiment
 
@@ -924,6 +1007,22 @@ not satisfy the architectural goal.
   upgrade their provenance to a measurement. Host tests cover HT20/HT40,
   LGI/SGI fractional duration, empty ownership rejection and accumulation of
   retry publications without saturation.
+- **Role-derived recommendation boundary — proven for standalone STA; AP
+  boundary defect localized.** The portable scheduler now sees only demands for which the current
+  role can produce a valid HT opportunity from association generation,
+  power-save state, BA window, PHY rate and aggregate byte limits. It compares
+  one recommendation per externally visible transaction head with the
+  immutable key of the unchanged SRAM packet. It neither returns a grant nor
+  changes queue order.
+  The maximum-frame byte estimate is deliberately conservative until demand
+  carries exact byte geometry. Current scope is HT class zero/TID 0; every
+  unsupported PHY or traffic class is ineligible rather than assigned a fake
+  cost. Same-ELF STA HIL proved exact correspondence and a 0.16% median
+  throughput cost, but approximately 1.98 pp of complete Core0 task residence.
+  AP HIL proved that most aggregates originate from the role-owned prepared
+  arena rather than the raw FIFO hook. The next boundary therefore observes
+  role-selected initial/prepared transaction identity, not a guessed FIFO
+  head.
 - hierarchical VIF then peer/TID weighted airtime DRR;
 - AQL-like estimated pending airtime charged at successful SRAM admission;
 - completion reconciliation from exact published PHY/length and retry/BA
@@ -1121,10 +1220,16 @@ Performance gates:
   scheduler regression;
 - no authoritative fairness claim from throughput alone.
 
-The next gate is Phase 4 policy in shadow. Before any return path becomes
-authoritative, the modeled duration must be attached to exact
-VIF/schedule-epoch/peer-generation/TID aggregate identity and tested through
-retry and terminal release. Policy then selects from the mirrored active
-demands using real Core0 BA, power-save, rate and radio state. Any future grant
-is proactive and burst/airtime-bounded; no packet-frequency request/reply API
-may be reintroduced.
+The next gate is a role-neutral selected-transaction identity returned by
+`DatapathServices` after initial or prepared publication. The physical Core0
+owner prepares at most one recommendation before role selection, then compares
+it with that exact identity after selection. AP, STA and STA+AP same-ELF HIL
+must report exact/different/unavailable outcomes, cycles per selected burst,
+aggregate depth, throughput and both-core residence. The implementation must
+also reduce the measured standalone-STA Core0 control overhead from about
+1.98 pp to at most 1 pp. Only after correspondence and cost both pass may the
+policy gain an affine burst return path. Before that path becomes authoritative,
+modeled terminal duration must reconcile the exact VIF/schedule-epoch/
+peer-generation/TID transaction through retry and terminal release. Any future
+grant is proactive and burst/airtime-bounded; no packet-frequency request/reply
+API may be reintroduced.

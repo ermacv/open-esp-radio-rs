@@ -83,6 +83,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         self.arenas.has_standby()
     }
 
+    pub const fn maximum_aggregate_bytes(&self) -> u16 {
+        self.maximum_aggregate_bytes
+    }
+
     pub fn publish_standby<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H>(
         &mut self,
         ordinary: &mut open_esp_radio_esp32s31_wifi_ap::tx::Esp32s31ApTx<
@@ -177,6 +181,12 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         self,
     ) -> Result<AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>, Self> {
         self.try_park().map(|(resources, _)| resources)
+    }
+}
+
+impl Esp32s31AccessPointAmpduParked {
+    pub const fn maximum_aggregate_bytes(self) -> u16 {
+        self.maximum_aggregate_bytes
     }
 }
 

@@ -26,7 +26,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
-    datapath::{network::DatapathEgressAirtimePolicy, tx::resources::AggregateTxResources},
+    datapath::{egress::DatapathEgressAirtimePolicy, tx::resources::AggregateTxResources},
 };
 use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{
     HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,

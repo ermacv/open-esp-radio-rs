@@ -1586,6 +1586,16 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.bound_authorized_peer_status(identity)
     }
 
+    /// Resolve the current authorized peer behind a generation-bound AID.
+    pub fn association_status_by_id_epoch(
+        &self,
+        association_id: u16,
+        association_epoch: u32,
+    ) -> Option<ApPeerStatus> {
+        self.service
+            .authorized_peer_status_by_id_epoch(association_id, association_epoch)
+    }
+
     pub fn complete_buffered_unicast_release(
         &mut self,
         release: ApBufferedUnicastRelease,

@@ -112,6 +112,10 @@ impl<Processor, Aggregate> Esp32s31StaApAccessPointTxParked<Processor, Aggregate
         &mut self.processor
     }
 
+    pub const fn aggregate(&self) -> &Aggregate {
+        &self.aggregate
+    }
+
     pub fn into_parts(self) -> (Processor, Aggregate) {
         (self.processor, self.aggregate)
     }
@@ -892,6 +896,66 @@ where
     'resources: 'ampdu,
 {
     type Error = Esp32s31StaApAccessPointTxError;
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        _physical: &DatapathPairedPhysicalTx<
+            WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
+            crate::datapath::tx::resources::AggregateTxResources<
+                'ampdu,
+                Esp32s31StaApNetworkTxBacking<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+                AMPDU_SLOTS,
+                AMPDU_BUFFER_SIZE,
+            >,
+        >,
+        demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        let DecodedEgressKey::AssociatedPeer(identity) = DecodedEgressKey::decode(*demand.key())?
+        else {
+            return None;
+        };
+        if identity.interface() != demand.vif()
+            || identity.schedule_epoch() != demand.id().schedule_epoch()
+            || identity.traffic_class() != 0
+        {
+            return None;
+        }
+
+        let (rate, window, maximum_aggregate_bytes) = if let Some(active) = self.protocol.active() {
+            let (rate, window) = active.processor().ht_egress_parameters(
+                u16::from(identity.peer_slot().get()),
+                identity.peer_generation().get(),
+            )?;
+            (rate, window, active.aggregate().maximum_aggregate_bytes())
+        } else {
+            let parked = self.protocol.parked_state()?;
+            let (rate, window) = parked.processor().ht_egress_parameters(
+                u16::from(identity.peer_slot().get()),
+                identity.peer_generation().get(),
+            )?;
+            (rate, window, parked.aggregate().maximum_aggregate_bytes())
+        };
+        let maximum_frames = usize::from(window).min(AMPDU_SLOTS);
+        let maximum_frames = u8::try_from(maximum_frames)
+            .ok()
+            .and_then(core::num::NonZeroU8::new)?;
+        Some(crate::datapath::egress::DatapathHtEgressSnapshot::new(
+            rate,
+            maximum_frames,
+            FRAME_CAPACITY,
+            maximum_aggregate_bytes,
+        ))
+    }
 
     fn last_started_frame_count(&self) -> usize {
         self.network_tx.last_started_frame_count()

@@ -230,7 +230,44 @@ where
                 self.pair_tx_served_frames = [0; 2];
             }
         }
-        self.network.try_receive_tx(interface)
+        self.try_receive_egress_head_for(interface)
+    }
+
+    /// Remove the head of one new radio transaction through the unchanged
+    /// production queue while the new policy observes the decision.
+    ///
+    /// Aggregate continuation frames deliberately bypass this method. The
+    /// shadow control cost is therefore O(transactions), not O(packets), just
+    /// like the intended burst-grant protocol.
+    pub(super) fn try_receive_egress_head_for(
+        &mut self,
+        interface: NetworkInterfaceId,
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        #[cfg(feature = "tx-egress-scheduling")]
+        let recommendation_prepared = {
+            let services = &self.services;
+            let network = &mut self.network;
+            network.prepare_egress_recommendation(&mut |demand| {
+                let snapshot = services.egress_radio_snapshot(demand);
+                super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
+                snapshot
+            })
+        };
+        let frame = self.network.try_receive_tx(interface)?;
+        #[cfg(feature = "tx-egress-scheduling")]
+        if recommendation_prepared {
+            let metadata = self.network.tx_consumer(interface).metadata(&frame);
+            let services = &self.services;
+            let network = &mut self.network;
+            let _ = network.observe_actual_egress(metadata, &mut |demand| {
+                let snapshot = services.egress_radio_snapshot(demand);
+                super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
+                snapshot
+            });
+        }
+        Some(frame)
     }
 
     pub(super) fn account_pair_tx_frames(&mut self, interface: NetworkInterfaceId, frames: usize) {

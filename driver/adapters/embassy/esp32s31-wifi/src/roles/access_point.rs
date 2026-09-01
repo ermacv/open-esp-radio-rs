@@ -15,6 +15,8 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::DecodedEgressKey;
 #[cfg(feature = "tx-phase-telemetry")]
 use open_esp_radio_embassy_net::{
     AssociatedEgressIdentity, EgressGrantKey, EgressShadowGrant, PinnedTxMetadata,
@@ -56,9 +58,11 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
     HtDuplicateRxClassification, HtSignal, RxDescriptorSnapshot,
 };
 #[cfg(any(feature = "diagnostics", test))]
-use open_esp_radio_esp32s31_wifi_mac::tx::HtMcs;
+use open_esp_radio_esp32s31_wifi_mac::tx::HtChannelWidth;
 #[cfg(any(feature = "diagnostics", test))]
-use open_esp_radio_esp32s31_wifi_mac::tx::{HtChannelWidth, HtRate};
+use open_esp_radio_esp32s31_wifi_mac::tx::HtMcs;
+#[cfg(any(feature = "diagnostics", feature = "tx-egress-scheduling", test))]
+use open_esp_radio_esp32s31_wifi_mac::tx::HtRate;
 #[cfg(feature = "tx-phase-telemetry")]
 use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{HtAmpduLength, ModeledHtAmpduPpduDuration};
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -143,6 +147,21 @@ use open_esp_radio_esp32s31_wifi_ap::ampdu::Esp32s31ApAmpduCompletion;
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 const EAPOL_CAPACITY: usize = 512;
+
+#[cfg(feature = "tx-egress-scheduling")]
+fn access_point_ht_egress_parameters(
+    engine: &Esp32s31ApEngine<'_>,
+    association_id: u16,
+    association_epoch: u32,
+) -> Option<(HtRate, u16)> {
+    let status = engine.association_status_by_id_epoch(association_id, association_epoch)?;
+    if status.power_state != ApPeerPowerState::Active {
+        return None;
+    }
+    let agreement = status.tx_block_ack?;
+    let rate = open_esp_radio_esp32s31_wifi_ap::tx::peer_ht_rate(engine.channel(), status.ht?)?;
+    Some((rate, agreement.window))
+}
 
 fn access_point_tx_batch_target(operational_window: Option<u16>, arena_capacity: usize) -> usize {
     operational_window.map_or(1, |window| usize::from(window).min(arena_capacity).max(1))

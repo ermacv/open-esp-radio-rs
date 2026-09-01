@@ -227,6 +227,18 @@ impl<Ordinary, Aggregate> DatapathPairedPhysicalTx<Ordinary, Aggregate> {
         }
     }
 
+    /// Borrow idle physical resources without transferring publication
+    /// authority. A live role transaction returns `None`.
+    pub const fn available(&self) -> Option<(&Ordinary, &Aggregate)> {
+        match &self.state {
+            DatapathPairedPhysicalTxState::Available {
+                ordinary,
+                aggregate,
+            } => Some((ordinary, aggregate)),
+            DatapathPairedPhysicalTxState::Lent(_) => None,
+        }
+    }
+
     pub fn try_lend(
         &mut self,
         role: DatapathPairRole,
@@ -522,6 +534,19 @@ pub trait DatapathPairedNetworkTxService<
 {
     type Error;
 
+    /// Revalidate one mirrored demand against a paired role and the current
+    /// physical TX owner without lending either capability.
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        _physical_tx: &PhysicalTx,
+        _demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        None
+    }
+
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
@@ -789,6 +814,24 @@ where
 {
     type Error = DatapathPairedServiceError<R::Error, FirstTx::Error, SecondTx::Error, C::Error>;
     type Exit = C::Exit;
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        if demand.vif() == self.first_interface.value() {
+            self.first_tx
+                .egress_radio_snapshot(&self.physical_tx, demand)
+        } else if demand.vif() == self.second_interface.value() {
+            self.second_tx
+                .egress_radio_snapshot(&self.physical_tx, demand)
+        } else {
+            None
+        }
+    }
 
     fn service_rx<'a>(
         &'a mut self,

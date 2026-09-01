@@ -407,6 +407,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             open_esp_radio_esp32s31_embassy_wifi::station_egress_control_snapshot(),
             open_esp_radio_esp32s31_embassy_wifi::access_point_egress_control_snapshot(),
         );
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        let egress_policy_start =
+            open_esp_radio_esp32s31_embassy_wifi::egress_policy_shadow_snapshot();
         #[cfg(feature = "tx-architecture-probes")]
         let tx_core1_materializer_start =
             open_esp_radio_embassy_net::TX_CORE1_MATERIALIZER_COUNTERS.snapshot();
@@ -621,6 +624,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         crate::product_hil::traffic::log_open_radio_core1_tx_phases(
             core1_tx_performance_start,
             egress_control_start,
+            egress_policy_start,
         )
         .await;
         #[cfg(any(

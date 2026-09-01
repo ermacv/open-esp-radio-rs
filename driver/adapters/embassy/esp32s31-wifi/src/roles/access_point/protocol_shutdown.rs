@@ -14,6 +14,15 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn ht_egress_parameters(
+        &self,
+        association_id: u16,
+        association_epoch: u32,
+    ) -> Option<(HtRate, u16)> {
+        access_point_ht_egress_parameters(self.mac.engine(), association_id, association_epoch)
+    }
+
     fn rx_batch_record(
         &self,
     ) -> Result<

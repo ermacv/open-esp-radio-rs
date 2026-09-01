@@ -5,6 +5,30 @@
 
 use super::*;
 
+#[cfg(feature = "tx-egress-scheduling")]
+fn single_station_ht_demand(
+    demand: WifiEgressDemand<open_esp_radio_embassy_net::EgressKey>,
+) -> Result<(), DatapathEgressSnapshotRejection> {
+    let Some(decoded) = DecodedEgressKey::decode(*demand.key()) else {
+        return Err(DatapathEgressSnapshotRejection::Key);
+    };
+    let DecodedEgressKey::SingleRadioPeer {
+        interface,
+        schedule_epoch,
+        traffic_class,
+    } = decoded
+    else {
+        return Err(DatapathEgressSnapshotRejection::Key);
+    };
+    if interface != demand.vif() || schedule_epoch != demand.id().schedule_epoch() {
+        return Err(DatapathEgressSnapshotRejection::Identity);
+    }
+    if traffic_class != 0 {
+        return Err(DatapathEgressSnapshotRejection::TrafficClass);
+    }
+    Ok(())
+}
+
 impl<
     'slot,
     'ampdu,
@@ -318,6 +342,45 @@ where
             .unwrap_or(0)
             & 0x7f;
         (window != 0).then_some(u16::from(window))
+    }
+
+    /// Revalidate the sole station egress queue against the fresh aggregate
+    /// rate and current TID-0 BlockAck agreement.
+    ///
+    /// Traffic-class mapping is intentionally fail-closed until the generic
+    /// class-to-WMM contract exists. The current Xarxa UDP path publishes
+    /// class zero, which maps to the production TID-0 aggregate path.
+    #[cfg(feature = "tx-egress-scheduling")]
+    pub fn egress_radio_snapshot(
+        &self,
+        demand: WifiEgressDemand<open_esp_radio_embassy_net::EgressKey>,
+    ) -> Option<DatapathHtEgressSnapshot> {
+        if let Err(reason) = single_station_ht_demand(demand) {
+            return rejected_ht_egress_snapshot(reason);
+        }
+
+        let TxPhyRate::Ht(rate) = self.rate_control.ampdu_tx_rate(self.aggregate_rate_policy)
+        else {
+            return rejected_ht_egress_snapshot(DatapathEgressSnapshotRejection::NonHtRate);
+        };
+        let Some(block_ack_window) = self.block_ack_window(0) else {
+            return rejected_ht_egress_snapshot(DatapathEgressSnapshotRejection::NoBlockAck);
+        };
+        let maximum_frames = usize::from(block_ack_window)
+            .min(usize::from(self.config.frame_limit))
+            .min(SLOTS);
+        let Some(maximum_frames) = u8::try_from(maximum_frames)
+            .ok()
+            .and_then(core::num::NonZeroU8::new)
+        else {
+            return rejected_ht_egress_snapshot(DatapathEgressSnapshotRejection::InvalidGeometry);
+        };
+        Some(DatapathHtEgressSnapshot::new(
+            rate,
+            maximum_frames,
+            FRAME_CAPACITY,
+            self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
+        ))
     }
 
     pub(super) fn block_ack_generation(&self, tid: u8) -> Option<u32> {
@@ -754,5 +817,44 @@ where
                 self.ordinary.wait_deadline().await;
             }
         }
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl<const SLOTS: usize> Esp32s31ConnectedTxParked<'_, SLOTS> {
+    pub fn egress_radio_snapshot(
+        &self,
+        demand: WifiEgressDemand<open_esp_radio_embassy_net::EgressKey>,
+        maximum_ethernet_bytes: usize,
+        maximum_aggregate_bytes: u16,
+    ) -> Option<DatapathHtEgressSnapshot> {
+        if let Err(reason) = single_station_ht_demand(demand) {
+            return rejected_ht_egress_snapshot(reason);
+        }
+        let TxPhyRate::Ht(rate) = self.rate_control.ampdu_tx_rate(self.aggregate_rate_policy)
+        else {
+            return rejected_ht_egress_snapshot(DatapathEgressSnapshotRejection::NonHtRate);
+        };
+        let Some(agreement) = self.block_ack_windows.first().copied() else {
+            return rejected_ht_egress_snapshot(DatapathEgressSnapshotRejection::NoBlockAck);
+        };
+        if self.block_ack_generation_exhausted & 1 != 0 || agreement & 0x7f == 0 {
+            return rejected_ht_egress_snapshot(DatapathEgressSnapshotRejection::NoBlockAck);
+        }
+        let maximum_frames = usize::from(agreement & 0x7f)
+            .min(usize::from(self.config.frame_limit))
+            .min(SLOTS);
+        let Some(maximum_frames) = u8::try_from(maximum_frames)
+            .ok()
+            .and_then(core::num::NonZeroU8::new)
+        else {
+            return rejected_ht_egress_snapshot(DatapathEgressSnapshotRejection::InvalidGeometry);
+        };
+        Some(DatapathHtEgressSnapshot::new(
+            rate,
+            maximum_frames,
+            maximum_ethernet_bytes,
+            maximum_aggregate_bytes,
+        ))
     }
 }

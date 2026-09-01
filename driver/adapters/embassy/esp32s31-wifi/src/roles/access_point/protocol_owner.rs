@@ -166,6 +166,11 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize> core::ops::DerefMut
 impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     Esp32s31AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>
 {
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn ht_egress_parameters(&self, association_id: u16, association_epoch: u32) -> Option<(HtRate, u16)> {
+        access_point_ht_egress_parameters(self.mac.engine(), association_id, association_epoch)
+    }
+
     fn role_status_revision(&self) -> u32 {
         self.mac.engine().service_status_revision()
     }

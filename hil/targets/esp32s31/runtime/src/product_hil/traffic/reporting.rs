@@ -22,6 +22,7 @@ use open_esp_radio_esp32s31_embassy_wifi::{
 ))]
 use open_esp_radio_esp32s31_embassy_wifi::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
+    EgressPolicyShadowSnapshot,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
@@ -1068,6 +1069,7 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
 pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     earlier: TxPerformanceSnapshot,
     earlier_control: (EgressControlSnapshot, EgressControlSnapshot),
+    earlier_policy: EgressPolicyShadowSnapshot,
 ) {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
@@ -1088,6 +1090,28 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     .await;
     yield_now().await;
     log_open_radio_egress_control_interval(earlier_control).await;
+    let policy = open_esp_radio_esp32s31_embassy_wifi::egress_policy_shadow_snapshot()
+        .wrapping_delta_since(earlier_policy);
+    runtime_log_reliably(format_args!(
+        "ONTXES recommendations={} exact={} different={} unavailable={} rejected_updates={} rejected_observations={} snapshot_queries={} snapshot_ready={} key_rejected={} identity_rejected={} traffic_class_rejected={} role_unavailable={} non_ht_rate={} no_block_ack={} invalid_geometry={}",
+        policy.recommendations,
+        policy.exact_recommendations,
+        policy.different_recommendations,
+        policy.unavailable_actual,
+        policy.rejected_updates,
+        policy.rejected_observations,
+        policy.snapshot_queries,
+        policy.snapshot_ready,
+        policy.key_rejected,
+        policy.identity_rejected,
+        policy.traffic_class_rejected,
+        policy.role_unavailable,
+        policy.non_ht_rate,
+        policy.no_block_ack,
+        policy.invalid_geometry,
+    ))
+    .await;
+    yield_now().await;
     let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
     runtime_log_reliably(format_args!(
         "ONTXQ runs={} run31={} run32={} other={} shadow_checks={} shadow_matches={} shadow_no_window={} shadow_key_mismatch={} shadow_credit_exhausted={} shadow_unclassified={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",

@@ -26,6 +26,8 @@ pub use open_esp_radio_esp32s31_wifi::datapath::{
 };
 pub use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
 
+#[cfg(feature = "tx-egress-scheduling")]
+pub mod egress;
 pub mod irq;
 pub mod network;
 pub mod rx;
@@ -329,6 +331,18 @@ pub trait DatapathServices<
 {
     type Error;
     type Exit;
+
+    /// Revalidate one mirrored stack demand against current role-owned radio
+    /// state without reserving airtime, packet storage or a DMA credit.
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        _demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<egress::DatapathHtEgressSnapshot> {
+        None
+    }
 
     /// Drain one snapshotted RX-success frontier into independent ownership.
     fn service_rx<'a>(

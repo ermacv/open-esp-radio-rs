@@ -19,6 +19,8 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::DecodedEgressKey;
 use open_esp_radio_embassy_net::{
     PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
 };
@@ -58,10 +60,16 @@ use open_esp_radio_ieee80211::{
     },
     station_power_save::{StaAssociationId, StaPowerManagement},
 };
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_wifi_softmac::WifiEgressDemand;
 use open_esp_radio_wifi_softmac::{
     MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult,
 };
 
+#[cfg(feature = "tx-egress-scheduling")]
+use crate::datapath::egress::{
+    DatapathEgressSnapshotRejection, DatapathHtEgressSnapshot, rejected_ht_egress_snapshot,
+};
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::{
     AggregateTxObservation, AggregateTxObserver, PreparedTxSchedulerPhase,

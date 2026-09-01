@@ -149,9 +149,7 @@ where
             });
         }
         self.activate_prepared(prepared)?;
-        let progress = self.publish_initial(hardware)?;
-        self.prepare_standby(network);
-        Ok(progress)
+        self.publish_initial(hardware)
     }
 
     fn start_network_ordinary<H: HtAmpduHardware>(
@@ -476,38 +474,6 @@ where
         Ok(())
     }
 
-    /// Fill the software-owned second arena after the current aggregate has
-    /// already been published. No descriptor from this arena becomes visible
-    /// to MAC hardware at this edge.
-    fn prepare_standby(
-        &mut self,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) {
-        if !self.can_prepare_network_tx() {
-            return;
-        }
-        let minimum_frames = if matches!(self.config.rate, TxPhyRate::Ht(_)) {
-            2
-        } else {
-            1
-        };
-        if network.queue_len() < minimum_frames {
-            return;
-        }
-        let Some(first) = network.try_receive_direct() else {
-            return;
-        };
-
-        self.prepare_network_standby(first, network);
-    }
-
     pub(super) fn can_prepare_network_tx(&self) -> bool {
         // The second arena pipelines only the batch after an aggregate that
         // is already hardware-owned. An ordinary transaction may be a
@@ -736,9 +702,7 @@ where
             observer.observe(AggregateTxObservation::StandbyPublished);
         }
         self.activate_prepared(prepared)?;
-        let progress = self.publish_initial(hardware)?;
-        self.prepare_standby(network);
-        Ok(progress)
+        self.publish_initial(hardware)
     }
 
     fn can_push(

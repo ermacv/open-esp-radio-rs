@@ -372,6 +372,16 @@ where
 {
     type Error = AggregateTxError;
 
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        Esp32s31ConnectedTx::egress_radio_snapshot(self, demand)
+    }
+
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,

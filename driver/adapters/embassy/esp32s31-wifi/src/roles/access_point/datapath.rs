@@ -406,6 +406,39 @@ where
     type Error = Esp32s31AccessPointDatapathError;
     type Exit = Infallible;
 
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn egress_radio_snapshot(
+        &self,
+        demand: open_esp_radio_wifi_softmac::WifiEgressDemand<
+            open_esp_radio_embassy_net::EgressKey,
+        >,
+    ) -> Option<crate::datapath::egress::DatapathHtEgressSnapshot> {
+        let DecodedEgressKey::AssociatedPeer(identity) = DecodedEgressKey::decode(*demand.key())?
+        else {
+            return None;
+        };
+        if identity.interface() != demand.vif()
+            || identity.schedule_epoch() != demand.id().schedule_epoch()
+            || identity.traffic_class() != 0
+        {
+            return None;
+        }
+        let (rate, window) = self.control.ht_egress_parameters(
+            u16::from(identity.peer_slot().get()),
+            identity.peer_generation().get(),
+        )?;
+        let maximum_frames = usize::from(window).min(AMPDU_SLOTS);
+        let maximum_frames = u8::try_from(maximum_frames)
+            .ok()
+            .and_then(core::num::NonZeroU8::new)?;
+        Some(crate::datapath::egress::DatapathHtEgressSnapshot::new(
+            rate,
+            maximum_frames,
+            FRAME_CAPACITY,
+            self.aggregate.maximum_aggregate_bytes(),
+        ))
+    }
+
     fn service_rx_during_tx<'a>(
         &'a mut self,
         network_rx: &'a mut dyn crate::datapath::network::DatapathNetworkRxSet,

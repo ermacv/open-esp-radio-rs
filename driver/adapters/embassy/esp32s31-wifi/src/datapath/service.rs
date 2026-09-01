@@ -356,7 +356,13 @@ where
             self.prepared_tx_interface = Some(interface);
             return Ok(());
         }
-        let Some(frame) = self.network.try_receive_tx(interface) else {
+        let starts_new_batch = !self.services.has_prepared_tx();
+        let frame = if starts_new_batch {
+            self.try_receive_egress_head_for(interface)
+        } else {
+            self.network.try_receive_tx(interface)
+        };
+        let Some(frame) = frame else {
             return Ok(());
         };
         #[cfg(feature = "tx-phase-telemetry")]
@@ -550,7 +556,13 @@ where
                         self.prepared_tx_interface = Some(interface);
                         continue;
                     }
-                    let Some(frame) = self.network.try_receive_tx(interface) else {
+                    let starts_new_batch = !self.services.has_prepared_tx();
+                    let frame = if starts_new_batch {
+                        self.try_receive_egress_head_for(interface)
+                    } else {
+                        self.network.try_receive_tx(interface)
+                    };
+                    let Some(frame) = frame else {
                         // `advance_prepared_tx` may consume the readiness edge
                         // itself: an out-of-core completion can be encoded and
                         // immediately replaced by the next affine batch. The

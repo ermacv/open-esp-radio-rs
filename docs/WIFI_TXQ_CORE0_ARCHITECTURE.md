@@ -3,6 +3,13 @@
 Status: working architecture decision, 2026-08-31. This document separates
 measured facts from design conclusions. It is not qualification evidence.
 
+> **Current planning status:** the implemented AP-only burst candidate/grant
+> shadow, its same-ELF cost and the next radio-wide Xarxa/Core0 refactor stages
+> are defined in
+> [`WIFI_EGRESS_REFACTOR_CHECKPOINT.md`](WIFI_EGRESS_REFACTOR_CHECKPOINT.md).
+> Later references here to a not-yet-implemented candidate stream are retained
+> as historical context, not as the current plan.
+
 ## Decision
 
 The target is achieved without growing DMA SRAM and without constructing a

@@ -11,6 +11,9 @@
 - [`WIFI_TXQ_CORE0_ARCHITECTURE.md`](WIFI_TXQ_CORE0_ARCHITECTURE.md): measured
   TXQ/Core0-load audit, mac80211 comparison and evolutionary implementation
   plan for fixed-SRAM multi-peer transmission.
+- [`WIFI_EGRESS_REFACTOR_CHECKPOINT.md`](WIFI_EGRESS_REFACTOR_CHECKPOINT.md):
+  canonical current-state audit, measured shadow-control cost, target
+  ownership model and gated Xarxa/Core0 refactor plan.
 - [`../tools/blobray/README.md`](../tools/blobray/README.md):
   Blobray workflow and canonical documentation.
 - [`../qualification/`](../qualification/README.md): machine-readable claims

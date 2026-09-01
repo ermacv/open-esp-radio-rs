@@ -3,6 +3,13 @@
 Status: route/key separation, generation-bound AP peer publication and Core0
 queue fencing complete, 2026-08-31.
 
+> **Current planning status:** the early candidate/grant control described as
+> a future step in parts of this document is now implemented as an AP-only,
+> burst-granular shadow echo. Its clean same-ELF cost, remaining gaps and the
+> authoritative cutover plan are defined in
+> [`WIFI_EGRESS_REFACTOR_CHECKPOINT.md`](WIFI_EGRESS_REFACTOR_CHECKPOINT.md).
+> This file remains the API decision and historical experiment record.
+
 ## Current implementation status
 
 The earlier lazy-`TxToken` hook proposal below is superseded. The first

@@ -257,6 +257,31 @@ accelerator transaction remains required later for privacy-capable active
 scanning and initiating, where it must be exposed through restricted PAC
 accessors rather than recreated above the PAC.
 
+Starting from the open driver's zero-based private allocation, the complete
+restricted reset therefore has the following exact nonzero link-state words.
+This table is a reviewed SRAM-codec input, not a public descriptor ABI:
+
+| Link-state word | Restricted passive-1M image |
+| ---: | ---: |
+| `+0x00` | `0x1ff00000` |
+| `+0x04` | five-bit rounded default power in bits 27:23 |
+| `+0x08` | `0x4ff00000` plus the bound RX-head low-20-bit link |
+| `+0x0c` | `0xa0100000` |
+| `+0x14` | `0x04000000` |
+| `+0x18` | `0x40000000` |
+| `+0x24` | `0x01100000`; the low-20-bit resolving entry remains zero |
+| `+0x2c` | `0x00555555` |
+| `+0x30` | `0x00001e00` |
+| `+0x34` | the freshly latched controller-time word |
+| `+0x38` | `0x8e89bed6` |
+| `+0x48` | `0x00000200` for the reviewed standalone option profile |
+| `+0x50` | `0x03000000` for the reviewed standalone option profile |
+
+All omitted words remain zero. The open memory layer publishes none of these
+integers: callers provide only a bound memory graph, signed default power and a
+typed controller-time observation. The private codec owns every shift, mask
+and positional constant.
+
 The first scheduler item is now bounded as well. Complete
 `r_ble_lll_scan_restart` selects primary channel 37, and the already reviewed
 `r_ble_phy_chan_to_freq` mapping lowers it to frequency image zero. The

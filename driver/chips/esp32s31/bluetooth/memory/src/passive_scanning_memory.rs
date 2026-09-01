@@ -1,4 +1,4 @@
-//! Fixed controller-SRAM receive arena for legacy passive scanning.
+//! Fixed controller-SRAM memory graph for legacy passive scanning.
 //!
 //! The vendor allocator is deliberately absent. This module owns the reviewed
 //! two-node header/packet topology, private SRAM encoding and affine
@@ -16,6 +16,10 @@ use pin_project::pin_project;
 use vcell::VolatileCell;
 
 use crate::{
+    passive_scanning_event_image::{
+        BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, BluetoothPassiveScanLinkStateImage,
+        BluetoothPassiveScanResetConfig, BluetoothPassiveScanRxHeadProjection,
+    },
     rx_memory_list::BluetoothRxMemoryListClass,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
@@ -27,7 +31,7 @@ use crate::{
 pub const BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT: usize = 2;
 /// Bytes preceding a received Link Layer payload in one controller allocation.
 pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES: usize = 0x1e;
-/// Maximum Link Layer payload admitted by the first scanner arena.
+/// Maximum Link Layer payload admitted by the first scanner graph.
 pub const BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY: usize = u8::MAX as usize;
 /// Complete logical receive-packet allocation size.
 pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES: usize =
@@ -43,18 +47,18 @@ const RX_PACKET_LAST_ALIGNED_OFFSET: u32 =
 struct BluetoothPassiveScanRxPacketAddress(BluetoothControllerSramAddress);
 
 impl BluetoothPassiveScanRxPacketAddress {
-    fn new(address: u32) -> Result<Self, BluetoothPassiveScanRxArenaBindError> {
+    fn new(address: u32) -> Result<Self, BluetoothPassiveScanMemoryGraphBindError> {
         let address = BluetoothControllerSramAddress::new(address)
-            .map_err(BluetoothPassiveScanRxArenaBindError::InvalidAddress)?;
+            .map_err(BluetoothPassiveScanMemoryGraphBindError::InvalidAddress)?;
         if address.compressed_image() == 0 {
-            return Err(BluetoothPassiveScanRxArenaBindError::ZeroCompressedLink);
+            return Err(BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink);
         }
         let tail = address
             .address()
             .checked_add(RX_PACKET_LAST_ALIGNED_OFFSET)
-            .ok_or(BluetoothPassiveScanRxArenaBindError::ExtentOutsidePhysicalSram)?;
+            .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
         BluetoothControllerSramAddress::new(tail)
-            .map_err(BluetoothPassiveScanRxArenaBindError::InvalidAddress)?;
+            .map_err(BluetoothPassiveScanMemoryGraphBindError::InvalidAddress)?;
         Ok(Self(address))
     }
 
@@ -189,20 +193,51 @@ impl BluetoothPassiveScanRxNodeStorage {
     }
 }
 
-/// Complete no-heap allocation for the first passive-scanner RX chain.
+/// Private controller-shared scanner link state.
+#[repr(C, align(4))]
+struct BluetoothPassiveScanLinkStateStorage {
+    words: [VolatileCell<u32>; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
+}
+
+impl BluetoothPassiveScanLinkStateStorage {
+    const fn new() -> Self {
+        Self {
+            words: [const { VolatileCell::new(0) }; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
+        }
+    }
+
+    fn install(&self, image: BluetoothPassiveScanLinkStateImage) {
+        for (cell, word) in self.words.iter().zip(image.words()) {
+            cell.set(word);
+        }
+    }
+
+    #[cfg(test)]
+    fn image(&self) -> BluetoothPassiveScanLinkStateImage {
+        BluetoothPassiveScanLinkStateImage::from_words(core::array::from_fn(|index| {
+            self.words[index].get()
+        }))
+    }
+}
+
+/// Complete no-heap allocation for the first passive-scanner memory graph.
 ///
 /// The storage has no address or publication methods until a unique static
 /// allocation is pinned and validated against physical S31 SRAM.
 #[pin_project]
 #[repr(C)]
-pub struct BluetoothPassiveScanRxArenaStorage {
+pub struct BluetoothPassiveScanMemoryGraphStorage {
+    link_state: BluetoothPassiveScanLinkStateStorage,
     nodes: [BluetoothPassiveScanRxNodeStorage; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
     #[pin]
     _pin: PhantomPinned,
 }
 
-const RX_ARENA_BYTES: u32 = core::mem::size_of::<BluetoothPassiveScanRxArenaStorage>() as u32;
+const MEMORY_GRAPH_BYTES: u32 =
+    core::mem::size_of::<BluetoothPassiveScanMemoryGraphStorage>() as u32;
 const RX_NODE_BYTES: u32 = core::mem::size_of::<BluetoothPassiveScanRxNodeStorage>() as u32;
+const RX_NODES_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothPassiveScanMemoryGraphStorage, nodes) as u32;
 const RX_PACKET_OFFSET: u32 =
     core::mem::offset_of!(BluetoothPassiveScanRxNodeStorage, packet) as u32;
 
@@ -214,46 +249,50 @@ struct BluetoothPassiveScanRxNodeBinding {
 
 /// Why a static passive-scanner allocation cannot become CPU-owned.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothPassiveScanRxArenaBindError {
+pub enum BluetoothPassiveScanMemoryGraphBindError {
     /// A target pointer cannot be represented by the S31 32-bit address space.
     AddressWidth,
     /// One component is outside the compressed controller-address domain.
     InvalidAddress(BluetoothControllerSramAddressError),
-    /// Some byte of the complete arena is outside physical internal SRAM.
+    /// Some byte of the complete graph is outside physical internal SRAM.
     ExtentOutsidePhysicalSram,
     /// A required graph component would encode as the unbound zero link.
     ZeroCompressedLink,
 }
 
-struct BluetoothPassiveScanRxArenaBinding {
+struct BluetoothPassiveScanMemoryGraphBinding {
     base: BluetoothControllerSramAddress,
     end_exclusive: u32,
+    link_state: BluetoothControllerSramLinkAddress,
     nodes: [BluetoothPassiveScanRxNodeBinding; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
 }
 
-impl BluetoothPassiveScanRxArenaBinding {
-    fn new(base: u32) -> Result<Self, BluetoothPassiveScanRxArenaBindError> {
+impl BluetoothPassiveScanMemoryGraphBinding {
+    fn new(base: u32) -> Result<Self, BluetoothPassiveScanMemoryGraphBindError> {
         let base_address = BluetoothControllerSramAddress::new(base)
-            .map_err(BluetoothPassiveScanRxArenaBindError::InvalidAddress)?;
+            .map_err(BluetoothPassiveScanMemoryGraphBindError::InvalidAddress)?;
         let end_exclusive = base
-            .checked_add(RX_ARENA_BYTES)
-            .ok_or(BluetoothPassiveScanRxArenaBindError::ExtentOutsidePhysicalSram)?;
+            .checked_add(MEMORY_GRAPH_BYTES)
+            .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
         if base < BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW
             || end_exclusive > BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH
         {
-            return Err(BluetoothPassiveScanRxArenaBindError::ExtentOutsidePhysicalSram);
+            return Err(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram);
         }
+        let link_state = BluetoothControllerSramLinkAddress::new(base)
+            .map_err(|_| BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink)?;
 
         let node = |index: u32| {
             let node_base = base
-                .checked_add(index * RX_NODE_BYTES)
-                .ok_or(BluetoothPassiveScanRxArenaBindError::ExtentOutsidePhysicalSram)?;
+                .checked_add(RX_NODES_OFFSET)
+                .and_then(|address| address.checked_add(index * RX_NODE_BYTES))
+                .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
             let header = BluetoothControllerSramLinkAddress::new(node_base)
-                .map_err(|_| BluetoothPassiveScanRxArenaBindError::ZeroCompressedLink)?;
+                .map_err(|_| BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink)?;
             let packet = BluetoothPassiveScanRxPacketAddress::new(
                 node_base
                     .checked_add(RX_PACKET_OFFSET)
-                    .ok_or(BluetoothPassiveScanRxArenaBindError::ExtentOutsidePhysicalSram)?,
+                    .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?,
             )?;
             Ok(BluetoothPassiveScanRxNodeBinding { header, packet })
         };
@@ -261,6 +300,7 @@ impl BluetoothPassiveScanRxArenaBinding {
         Ok(Self {
             base: base_address,
             end_exclusive,
+            link_state,
             nodes: [node(0)?, node(1)?],
         })
     }
@@ -269,21 +309,25 @@ impl BluetoothPassiveScanRxArenaBinding {
         self.nodes[0].header.controller_address()
     }
 
+    const fn link_state(&self) -> BluetoothControllerSramAddress {
+        self.link_state.controller_address()
+    }
+
     const fn range(&self) -> (u32, u32) {
         (self.base.address(), self.end_exclusive)
     }
 }
 
 /// Failed static binding retaining the exact allocation unchanged.
-#[must_use = "failed binding still owns the scanner RX arena"]
-pub struct BluetoothPassiveScanRxArenaBindFailure {
-    storage: &'static mut BluetoothPassiveScanRxArenaStorage,
-    error: BluetoothPassiveScanRxArenaBindError,
+#[must_use = "failed binding still owns the scanner memory graph"]
+pub struct BluetoothPassiveScanMemoryGraphBindFailure {
+    storage: &'static mut BluetoothPassiveScanMemoryGraphStorage,
+    error: BluetoothPassiveScanMemoryGraphBindError,
 }
 
-impl BluetoothPassiveScanRxArenaBindFailure {
+impl BluetoothPassiveScanMemoryGraphBindFailure {
     /// Return the finite binding failure reason.
-    pub const fn error(&self) -> BluetoothPassiveScanRxArenaBindError {
+    pub const fn error(&self) -> BluetoothPassiveScanMemoryGraphBindError {
         self.error
     }
 
@@ -291,17 +335,17 @@ impl BluetoothPassiveScanRxArenaBindFailure {
     pub fn into_parts(
         self,
     ) -> (
-        &'static mut BluetoothPassiveScanRxArenaStorage,
-        BluetoothPassiveScanRxArenaBindError,
+        &'static mut BluetoothPassiveScanMemoryGraphStorage,
+        BluetoothPassiveScanMemoryGraphBindError,
     ) {
         (self.storage, self.error)
     }
 }
 
-impl core::fmt::Debug for BluetoothPassiveScanRxArenaBindFailure {
+impl core::fmt::Debug for BluetoothPassiveScanMemoryGraphBindFailure {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
-            .debug_struct("BluetoothPassiveScanRxArenaBindFailure")
+            .debug_struct("BluetoothPassiveScanMemoryGraphBindFailure")
             .field("error", &self.error)
             .finish_non_exhaustive()
     }
@@ -310,10 +354,10 @@ impl core::fmt::Debug for BluetoothPassiveScanRxArenaBindFailure {
 /// Synthetic physical-SRAM base for native ownership tests.
 #[cfg(not(target_arch = "riscv32"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothPassiveScanRxArenaModelAddress(BluetoothControllerSramAddress);
+pub struct BluetoothPassiveScanMemoryGraphModelAddress(BluetoothControllerSramAddress);
 
 #[cfg(not(target_arch = "riscv32"))]
-impl BluetoothPassiveScanRxArenaModelAddress {
+impl BluetoothPassiveScanMemoryGraphModelAddress {
     /// Validate one deterministic controller-SRAM model address.
     pub const fn new(address: u32) -> Result<Self, BluetoothControllerSramAddressError> {
         match BluetoothControllerSramAddress::new(address) {
@@ -327,37 +371,37 @@ impl BluetoothPassiveScanRxArenaModelAddress {
     }
 }
 
-/// CPU-owned, initialized scanner arena not visible to hardware.
-#[must_use = "the initialized scanner arena owns its static allocation"]
-pub struct BluetoothPassiveScanRxArenaCpuOwned {
-    storage: Pin<&'static mut BluetoothPassiveScanRxArenaStorage>,
-    binding: BluetoothPassiveScanRxArenaBinding,
+/// CPU-owned, initialized scanner graph not visible to hardware.
+#[must_use = "the initialized scanner graph owns its static allocation"]
+pub struct BluetoothPassiveScanMemoryGraphCpuOwned {
+    storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
+    binding: BluetoothPassiveScanMemoryGraphBinding,
 }
 
-impl BluetoothPassiveScanRxArenaCpuOwned {
-    /// Return the complete physical SRAM range occupied by the arena.
+impl BluetoothPassiveScanMemoryGraphCpuOwned {
+    /// Return the complete physical SRAM range occupied by the graph.
     pub const fn range(&self) -> (u32, u32) {
         self.binding.range()
     }
 
     /// Freeze CPU initialization before an upper controller owner performs the
     /// ordered MMIO publication.
-    pub fn prepare_publication(self) -> BluetoothPassiveScanRxArenaPublicationPrepared {
-        BluetoothPassiveScanRxArenaPublicationPrepared {
+    pub fn prepare_publication(self) -> BluetoothPassiveScanMemoryGraphPublicationPrepared {
+        BluetoothPassiveScanMemoryGraphPublicationPrepared {
             storage: self.storage,
             binding: self.binding,
         }
     }
 }
 
-/// Initialized pinned arena ready for selector-one list publication.
-#[must_use = "the prepared scanner arena must be published or retained"]
-pub struct BluetoothPassiveScanRxArenaPublicationPrepared {
-    storage: Pin<&'static mut BluetoothPassiveScanRxArenaStorage>,
-    binding: BluetoothPassiveScanRxArenaBinding,
+/// Initialized pinned graph ready for selector-one list publication.
+#[must_use = "the prepared scanner graph must be published or retained"]
+pub struct BluetoothPassiveScanMemoryGraphPublicationPrepared {
+    storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
+    binding: BluetoothPassiveScanMemoryGraphBinding,
 }
 
-impl BluetoothPassiveScanRxArenaPublicationPrepared {
+impl BluetoothPassiveScanMemoryGraphPublicationPrepared {
     /// Return the memory-layer mapping for the passive-scanner RX list.
     #[doc(hidden)]
     pub const fn selector(&self) -> BluetoothMemoryListSelector {
@@ -370,28 +414,37 @@ impl BluetoothPassiveScanRxArenaPublicationPrepared {
         self.binding.head()
     }
 
+    /// Return the private scanner link-state address for the matching
+    /// scheduler-item codec. This grants no dereference or publication access.
+    #[doc(hidden)]
+    pub const fn link_state(&self) -> BluetoothControllerSramAddress {
+        self.binding.link_state()
+    }
+
     /// Consume a matching affine HAL publication into hardware ownership.
     #[doc(hidden)]
     pub fn into_published(
         self,
         publication: BluetoothRxMemoryListPublished,
-    ) -> Result<BluetoothPassiveScanRxArenaPublished, BluetoothPassiveScanRxArenaPublicationMismatch>
-    {
+    ) -> Result<
+        BluetoothPassiveScanMemoryGraphPublished,
+        BluetoothPassiveScanMemoryGraphPublicationMismatch,
+    > {
         let error = if publication.selector() != self.selector() {
-            Some(BluetoothPassiveScanRxArenaPublicationError::SelectorMismatch)
+            Some(BluetoothPassiveScanMemoryGraphPublicationError::SelectorMismatch)
         } else if publication.head() != self.head() {
-            Some(BluetoothPassiveScanRxArenaPublicationError::HeadMismatch)
+            Some(BluetoothPassiveScanMemoryGraphPublicationError::HeadMismatch)
         } else {
             None
         };
         if let Some(error) = error {
-            return Err(BluetoothPassiveScanRxArenaPublicationMismatch {
+            return Err(BluetoothPassiveScanMemoryGraphPublicationMismatch {
                 prepared: self,
                 publication,
                 error,
             });
         }
-        Ok(BluetoothPassiveScanRxArenaPublished {
+        Ok(BluetoothPassiveScanMemoryGraphPublished {
             _storage: self.storage,
             binding: self.binding,
             publication,
@@ -399,9 +452,9 @@ impl BluetoothPassiveScanRxArenaPublicationPrepared {
     }
 }
 
-/// Why a HAL receive-list publication does not name this scanner arena.
+/// Why a HAL receive-list publication does not name this scanner graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothPassiveScanRxArenaPublicationError {
+pub enum BluetoothPassiveScanMemoryGraphPublicationError {
     /// The publication belongs to another positional memory list.
     SelectorMismatch,
     /// The publication names another pinned arena head.
@@ -409,16 +462,16 @@ pub enum BluetoothPassiveScanRxArenaPublicationError {
 }
 
 /// Failed publication join retaining both affine owners.
-#[must_use = "a mismatched publication still owns both the arena and HAL token"]
-pub struct BluetoothPassiveScanRxArenaPublicationMismatch {
-    prepared: BluetoothPassiveScanRxArenaPublicationPrepared,
+#[must_use = "a mismatched publication still owns both the graph and HAL token"]
+pub struct BluetoothPassiveScanMemoryGraphPublicationMismatch {
+    prepared: BluetoothPassiveScanMemoryGraphPublicationPrepared,
     publication: BluetoothRxMemoryListPublished,
-    error: BluetoothPassiveScanRxArenaPublicationError,
+    error: BluetoothPassiveScanMemoryGraphPublicationError,
 }
 
-impl BluetoothPassiveScanRxArenaPublicationMismatch {
+impl BluetoothPassiveScanMemoryGraphPublicationMismatch {
     /// Return the finite mismatch reason.
-    pub const fn error(&self) -> BluetoothPassiveScanRxArenaPublicationError {
+    pub const fn error(&self) -> BluetoothPassiveScanMemoryGraphPublicationError {
         self.error
     }
 
@@ -426,36 +479,36 @@ impl BluetoothPassiveScanRxArenaPublicationMismatch {
     pub fn into_parts(
         self,
     ) -> (
-        BluetoothPassiveScanRxArenaPublicationPrepared,
+        BluetoothPassiveScanMemoryGraphPublicationPrepared,
         BluetoothRxMemoryListPublished,
     ) {
         (self.prepared, self.publication)
     }
 }
 
-impl core::fmt::Debug for BluetoothPassiveScanRxArenaPublicationMismatch {
+impl core::fmt::Debug for BluetoothPassiveScanMemoryGraphPublicationMismatch {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
-            .debug_struct("BluetoothPassiveScanRxArenaPublicationMismatch")
+            .debug_struct("BluetoothPassiveScanMemoryGraphPublicationMismatch")
             .field("error", &self.error)
             .finish_non_exhaustive()
     }
 }
 
-/// Pinned scanner arena visible to and exclusively retained by hardware.
+/// Pinned scanner graph visible to and exclusively retained by hardware.
 ///
 /// No completion or CPU-reclaim method exists yet. Those transitions require
 /// the next controller interrupt/fence proof and cannot be inferred from list
 /// publication alone.
-#[must_use = "the published scanner arena remains hardware-owned"]
-pub struct BluetoothPassiveScanRxArenaPublished {
-    _storage: Pin<&'static mut BluetoothPassiveScanRxArenaStorage>,
-    binding: BluetoothPassiveScanRxArenaBinding,
+#[must_use = "the published scanner graph remains hardware-owned"]
+pub struct BluetoothPassiveScanMemoryGraphPublished {
+    _storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
+    binding: BluetoothPassiveScanMemoryGraphBinding,
     publication: BluetoothRxMemoryListPublished,
 }
 
-impl BluetoothPassiveScanRxArenaPublished {
-    /// Return the exact retained arena head without exposing SRAM contents.
+impl BluetoothPassiveScanMemoryGraphPublished {
+    /// Return the exact retained receive-list head without exposing SRAM contents.
     pub const fn head(&self) -> BluetoothControllerSramAddress {
         self.binding.head()
     }
@@ -467,10 +520,11 @@ impl BluetoothPassiveScanRxArenaPublished {
     }
 }
 
-impl BluetoothPassiveScanRxArenaStorage {
-    /// Reserve a zero-based scanner arena.
+impl BluetoothPassiveScanMemoryGraphStorage {
+    /// Reserve a zero-based scanner memory graph.
     pub const fn new() -> Self {
         Self {
+            link_state: BluetoothPassiveScanLinkStateStorage::new(),
             nodes: [
                 BluetoothPassiveScanRxNodeStorage::new(),
                 BluetoothPassiveScanRxNodeStorage::new(),
@@ -483,17 +537,19 @@ impl BluetoothPassiveScanRxArenaStorage {
     #[cfg(target_arch = "riscv32")]
     pub fn pin_static(
         storage: &'static mut Self,
-    ) -> Result<BluetoothPassiveScanRxArenaCpuOwned, BluetoothPassiveScanRxArenaBindFailure> {
+        config: BluetoothPassiveScanResetConfig,
+    ) -> Result<BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphBindFailure>
+    {
         let base = match u32::try_from(core::ptr::addr_of!(*storage).addr()) {
             Ok(base) => base,
             Err(_) => {
-                return Err(BluetoothPassiveScanRxArenaBindFailure {
+                return Err(BluetoothPassiveScanMemoryGraphBindFailure {
                     storage,
-                    error: BluetoothPassiveScanRxArenaBindError::AddressWidth,
+                    error: BluetoothPassiveScanMemoryGraphBindError::AddressWidth,
                 });
             }
         };
-        Self::pin_static_inner(storage, base)
+        Self::pin_static_inner(storage, base, config)
     }
 
     /// Bind one deterministic physical-SRAM address to a native ownership
@@ -501,34 +557,43 @@ impl BluetoothPassiveScanRxArenaStorage {
     #[cfg(not(target_arch = "riscv32"))]
     pub fn pin_static_model(
         storage: &'static mut Self,
-        base: BluetoothPassiveScanRxArenaModelAddress,
-    ) -> Result<BluetoothPassiveScanRxArenaCpuOwned, BluetoothPassiveScanRxArenaBindFailure> {
-        Self::pin_static_inner(storage, base.address())
+        base: BluetoothPassiveScanMemoryGraphModelAddress,
+        config: BluetoothPassiveScanResetConfig,
+    ) -> Result<BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphBindFailure>
+    {
+        Self::pin_static_inner(storage, base.address(), config)
     }
 
     fn pin_static_inner(
         storage: &'static mut Self,
         base: u32,
-    ) -> Result<BluetoothPassiveScanRxArenaCpuOwned, BluetoothPassiveScanRxArenaBindFailure> {
-        let binding = match BluetoothPassiveScanRxArenaBinding::new(base) {
+        config: BluetoothPassiveScanResetConfig,
+    ) -> Result<BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphBindFailure>
+    {
+        let binding = match BluetoothPassiveScanMemoryGraphBinding::new(base) {
             Ok(binding) => binding,
             Err(error) => {
-                return Err(BluetoothPassiveScanRxArenaBindFailure { storage, error });
+                return Err(BluetoothPassiveScanMemoryGraphBindFailure { storage, error });
             }
         };
-        let mut owner = BluetoothPassiveScanRxArenaCpuOwned {
+        let mut owner = BluetoothPassiveScanMemoryGraphCpuOwned {
             storage: Pin::static_mut(storage),
             binding,
         };
-        owner.initialize();
+        owner.initialize(config);
         Ok(owner)
     }
 }
 
-impl BluetoothPassiveScanRxArenaCpuOwned {
-    fn initialize(&mut self) {
+impl BluetoothPassiveScanMemoryGraphCpuOwned {
+    fn initialize(&mut self, config: BluetoothPassiveScanResetConfig) {
         let bindings = self.binding.nodes;
+        let link_state = BluetoothPassiveScanLinkStateImage::restricted_passive_le_1m(
+            BluetoothPassiveScanRxHeadProjection::from_bound(bindings[0].header),
+            config,
+        );
         let storage = self.storage.as_mut().project();
+        storage.link_state.install(link_state);
         for (node, binding) in storage.nodes.iter().zip(bindings) {
             node.packet.initialize();
             node.header.install(binding.packet, None, None, false);
@@ -545,7 +610,7 @@ impl BluetoothPassiveScanRxArenaCpuOwned {
     }
 }
 
-impl Default for BluetoothPassiveScanRxArenaStorage {
+impl Default for BluetoothPassiveScanMemoryGraphStorage {
     fn default() -> Self {
         Self::new()
     }
@@ -553,24 +618,39 @@ impl Default for BluetoothPassiveScanRxArenaStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothPassiveScanRxArenaBindError,
-        BluetoothPassiveScanRxArenaModelAddress, BluetoothPassiveScanRxArenaStorage,
+    use open_esp_radio_esp32s31_hal::BluetoothControllerLatchedTime;
+
+    use crate::{
+        BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanResetConfig,
+        le_phy_packet::{BluetoothLeAccessAddress, BluetoothLeCrcInit},
+        passive_scanning_event_image::BluetoothPassiveScanRxHeadProjection,
     };
 
-    fn model_arena(base: u32) -> super::BluetoothPassiveScanRxArenaCpuOwned {
+    use super::{
+        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothPassiveScanMemoryGraphBindError,
+        BluetoothPassiveScanMemoryGraphModelAddress, BluetoothPassiveScanMemoryGraphStorage,
+    };
+
+    fn reset_config() -> BluetoothPassiveScanResetConfig {
+        BluetoothPassiveScanResetConfig::le_1m_public_accept_all(
+            BluetoothPassiveScanDefaultTxPowerDbm::new(0),
+            BluetoothControllerLatchedTime::from_bits(0x1234_5678),
+        )
+    }
+
+    fn model_graph(base: u32) -> super::BluetoothPassiveScanMemoryGraphCpuOwned {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(
-            BluetoothPassiveScanRxArenaStorage::new(),
+            BluetoothPassiveScanMemoryGraphStorage::new(),
         ));
-        let address = BluetoothPassiveScanRxArenaModelAddress::new(base)
+        let address = BluetoothPassiveScanMemoryGraphModelAddress::new(base)
             .expect("the model address is controller-encodable");
-        BluetoothPassiveScanRxArenaStorage::pin_static_model(storage, address)
-            .expect("the arena fits physical controller SRAM")
+        BluetoothPassiveScanMemoryGraphStorage::pin_static_model(storage, address, reset_config())
+            .expect("the graph fits physical controller SRAM")
     }
 
     #[test]
-    fn initialized_arena_is_a_two_node_scanning_chain() {
-        let owner = model_arena(0x2f00_0100);
+    fn initialized_graph_contains_the_scanner_link_state_and_receive_chain() {
+        let owner = model_graph(0x2f00_0100);
         let bindings = owner.binding.nodes;
         let storage = owner.storage.as_ref().get_ref();
 
@@ -589,9 +669,26 @@ mod tests {
         assert!(storage.nodes[0].header.rotates_into_successor());
         assert!(!storage.nodes[1].header.rotates_into_successor());
         assert!(storage.nodes.iter().all(|node| node.packet.is_armed()));
+        let link_state = storage.link_state.image();
+        assert!(
+            link_state.retains_rx_head(BluetoothPassiveScanRxHeadProjection::from_bound(
+                bindings[0].header
+            ))
+        );
+        assert_eq!(link_state.crc_init(), BluetoothLeCrcInit::LE_PRESET);
+        assert_eq!(
+            link_state.access_address(),
+            BluetoothLeAccessAddress::PRIMARY_ADVERTISING
+        );
+        assert_eq!(
+            link_state.controller_time(),
+            reset_config().controller_time().bits()
+        );
 
+        let link_state_address = owner.binding.link_state();
         let prepared = owner.prepare_publication();
         assert_eq!(prepared.head(), bindings[0].header.controller_address());
+        assert_eq!(prepared.link_state(), link_state_address);
         assert_eq!(
             prepared.selector(),
             crate::BluetoothRxMemoryListClass::Scanning.selector()
@@ -601,22 +698,26 @@ mod tests {
     #[test]
     fn failed_extent_binding_retains_the_exact_static_allocation() {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(
-            BluetoothPassiveScanRxArenaStorage::new(),
+            BluetoothPassiveScanMemoryGraphStorage::new(),
         ));
         let identity = core::ptr::addr_of!(*storage).addr();
-        let address = BluetoothPassiveScanRxArenaModelAddress::new(
+        let address = BluetoothPassiveScanMemoryGraphModelAddress::new(
             BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH - 4,
         )
         .expect("the aligned address remains controller-encodable");
 
-        let failure = match BluetoothPassiveScanRxArenaStorage::pin_static_model(storage, address) {
-            Ok(_) => panic!("the complete arena must not cross physical SRAM"),
+        let failure = match BluetoothPassiveScanMemoryGraphStorage::pin_static_model(
+            storage,
+            address,
+            reset_config(),
+        ) {
+            Ok(_) => panic!("the complete graph must not cross physical SRAM"),
             Err(failure) => failure,
         };
 
         assert_eq!(
             failure.error(),
-            BluetoothPassiveScanRxArenaBindError::ExtentOutsidePhysicalSram
+            BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram
         );
         let (storage, _) = failure.into_parts();
         assert_eq!(core::ptr::addr_of!(*storage).addr(), identity);

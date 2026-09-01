@@ -29,7 +29,8 @@ mod le_tx_packet;
 mod le_tx_power;
 mod legacy_advertising_event_image;
 mod legacy_advertising_storage;
-mod passive_scanning_storage;
+mod passive_scanning_event_image;
+mod passive_scanning_memory;
 mod rx_memory_list;
 mod scheduler_context;
 mod sram_link;
@@ -116,15 +117,19 @@ pub use legacy_advertising_storage::{
     BluetoothLegacyAdvertisingMemoryGraphStorage,
     BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
 };
+pub use passive_scanning_event_image::{
+    BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanResetConfig,
+};
 #[cfg(not(target_arch = "riscv32"))]
-pub use passive_scanning_storage::BluetoothPassiveScanRxArenaModelAddress;
-pub use passive_scanning_storage::{
+pub use passive_scanning_memory::BluetoothPassiveScanMemoryGraphModelAddress;
+pub use passive_scanning_memory::{
     BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT, BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES,
     BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
-    BluetoothPassiveScanRxArenaBindError, BluetoothPassiveScanRxArenaBindFailure,
-    BluetoothPassiveScanRxArenaCpuOwned, BluetoothPassiveScanRxArenaPublicationError,
-    BluetoothPassiveScanRxArenaPublicationMismatch, BluetoothPassiveScanRxArenaPublicationPrepared,
-    BluetoothPassiveScanRxArenaPublished, BluetoothPassiveScanRxArenaStorage,
+    BluetoothPassiveScanMemoryGraphBindError, BluetoothPassiveScanMemoryGraphBindFailure,
+    BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphPublicationError,
+    BluetoothPassiveScanMemoryGraphPublicationMismatch,
+    BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
+    BluetoothPassiveScanMemoryGraphStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};

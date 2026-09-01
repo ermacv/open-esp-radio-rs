@@ -19,11 +19,16 @@ use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_bluetooth_ll::advertising::PrimaryAdvertisingChannel;
 use open_esp_radio_bluetooth_ll::{
+    LeDeviceAddress, LeDeviceAddressKind,
     advertiser::{
-        LegacyAdvertiserEnabled, LegacyAdvertiserEventPrepared, LegacyAdvertisingEventIdentity,
+        LegacyAdvertiserEnabled, LegacyAdvertiserEventPrepared, LegacyAdvertiserStandby,
+        LegacyAdvertisingEventIdentity,
     },
     advertising::{
-        LEGACY_ADVERTISING_PDU_CAPACITY, LegacyAdvertisingEncodeError, PrimaryAdvertisingChannelMap,
+        AdvertisingInterval, LEGACY_ADVERTISING_PDU_CAPACITY, LegacyAdvertisingData,
+        LegacyAdvertisingDataError, LegacyAdvertisingEncodeError,
+        LegacyNonconnectableAdvertisement, LegacyNonconnectableAdvertisingSet,
+        PrimaryAdvertisingChannelMap, PrimaryAdvertisingChannelMapError,
     },
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -37,6 +42,61 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
     BluetoothLegacyAdvertisingMemoryGraphStorage, BluetoothLegacyAdvertisingPduError,
 };
+
+/// Why an accepted HCI snapshot could not become the portable LL role.
+///
+/// Every variant is a defensive cross-layer invariant: the HCI decoder has
+/// already checked these domains. Keeping the failure typed prevents future
+/// command expansion from silently reaching descriptor preparation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingProgramError {
+    Data(LegacyAdvertisingDataError),
+    Channels(PrimaryAdvertisingChannelMapError),
+    Interval,
+    GenerationExhausted,
+}
+
+/// Project one immutable HCI Enable snapshot into the portable LL lifecycle.
+///
+/// The S31 policy selects the Host's minimum interval, which is always inside
+/// the accepted range and minimizes first-event latency. Advertising data is
+/// copied into a self-contained LL owner so the async actor is not
+/// self-referential and does not borrow the HCI configuration store.
+pub fn prepare_legacy_advertising_program(
+    request: open_esp_radio_bluetooth_hci::LeLegacyAdvertisingEnableRequest,
+) -> Result<LegacyAdvertiserEnabled<'static>, BluetoothLegacyAdvertisingProgramError> {
+    let parameters = request.parameters();
+    let address_kind = match request.advertiser().kind() {
+        open_esp_radio_bluetooth_hci::LeLegacyAdvertisingOwnAddressKind::Public => {
+            LeDeviceAddressKind::Public
+        }
+        open_esp_radio_bluetooth_hci::LeLegacyAdvertisingOwnAddressKind::Random => {
+            LeDeviceAddressKind::Random
+        }
+    };
+    let advertisement = LegacyNonconnectableAdvertisement::new(
+        LeDeviceAddress::from_wire_bytes(request.advertiser().wire_bytes(), address_kind),
+        LegacyAdvertisingData::new_owned(request.data().as_bytes())
+            .map_err(BluetoothLegacyAdvertisingProgramError::Data)?,
+    );
+    let channels = PrimaryAdvertisingChannelMap::new(
+        parameters.channels().channel_37(),
+        parameters.channels().channel_38(),
+        parameters.channels().channel_39(),
+    )
+    .map_err(BluetoothLegacyAdvertisingProgramError::Channels)?;
+    let interval =
+        AdvertisingInterval::new(u32::from(parameters.interval().minimum_units_625_us()))
+            .map_err(|_| BluetoothLegacyAdvertisingProgramError::Interval)?;
+    LegacyAdvertiserStandby::new()
+        .configure(LegacyNonconnectableAdvertisingSet::new(
+            advertisement,
+            channels,
+            interval,
+        ))
+        .enable()
+        .map_err(|_| BluetoothLegacyAdvertisingProgramError::GenerationExhausted)
+}
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingEventCompletionStatuses,
@@ -276,6 +336,10 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
     }
 
     /// Apply the reviewed no-RX/no-CTE/no-privacy LE 1M link-state reset.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the complete advertising program and graph"
+    )]
     pub fn reset_link_state(
         self,
         default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
@@ -327,6 +391,10 @@ impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
     /// window remains inseparable from the reset graph until the common
     /// scheduler accepts or cancels it.
     #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc timing failure returns the complete program and reset graph"
+    )]
     pub fn form_first_event_candidate(
         self,
         timing: BluetoothLegacyAdvertisingTimingObservation,

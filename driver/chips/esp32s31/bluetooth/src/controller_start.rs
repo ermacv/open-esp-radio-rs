@@ -1236,6 +1236,18 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
                 }
             }
+            open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartLegacyAdvertising(
+                deferred,
+            ) => {
+                let (task, deferred) = deferred.into_parts();
+                crate::BluetoothDtmIdleCommandRoute::ResponsePending(
+                    BluetoothControllerIdleResponsePending::new(
+                        deferred
+                            .map_owner(|()| task)
+                            .into_hardware_failure_response(),
+                    ),
+                )
+            }
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::ResponsePending(
                 pending,
             ) => crate::BluetoothDtmIdleCommandRoute::ResponsePending(

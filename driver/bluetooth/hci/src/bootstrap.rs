@@ -64,9 +64,13 @@ impl BluetoothPublicDeviceAddress {
         self.0
     }
 
-    fn hci_wire_address(self) -> BdAddr {
+    pub(crate) const fn hci_wire_bytes(self) -> [u8; 6] {
         let [byte_0, byte_1, byte_2, byte_3, byte_4, byte_5] = self.0;
-        BdAddr::new([byte_5, byte_4, byte_3, byte_2, byte_1, byte_0])
+        [byte_5, byte_4, byte_3, byte_2, byte_1, byte_0]
+    }
+
+    fn hci_wire_address(self) -> BdAddr {
+        BdAddr::new(self.hci_wire_bytes())
     }
 }
 
@@ -1167,9 +1171,12 @@ mod tests {
             LeControllerCommandClassification::LegacyAdvertisingConfiguration(command) => {
                 command_error(command.kind().opcode(), HciError::UNKNOWN_CMD)
             }
-            LeControllerCommandClassification::MalformedLegacyAdvertisingConfiguration(
-                response,
-            ) => command_error(response.opcode(), HciError::UNKNOWN_CMD),
+            LeControllerCommandClassification::LegacyAdvertisingEnable(_) => {
+                command_error(LeSetAdvEnable::OPCODE, HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                command_error(response.opcode(), HciError::UNKNOWN_CMD)
+            }
             LeControllerCommandClassification::Unsupported(response) => {
                 command_error(response.opcode(), HciError::UNKNOWN_CMD)
             }

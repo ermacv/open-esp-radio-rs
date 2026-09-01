@@ -8,7 +8,8 @@ use crate::{
     InProcessHciChannel, InProcessHciControllerEndpoint, InProcessHciHostTransport,
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap, LeControllerBootstrapConfig,
     LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyAdvertisingConfigurationCommand, OwnedBootstrapCommand,
+    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
+    LeLegacyAdvertisingIdleEnableDisposition, OwnedBootstrapCommand,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
@@ -153,6 +154,28 @@ where
     ) -> LeLegacyAdvertisingCommandCompleteEvent {
         self.legacy_advertising
             .dispatch(self.bootstrap.phase(), command)
+    }
+
+    pub(crate) fn dispatch_idle_legacy_advertising_enable(
+        &self,
+        command: LeLegacyAdvertisingEnableCommand,
+    ) -> LeLegacyAdvertisingIdleEnableDisposition {
+        self.legacy_advertising.dispatch_idle_enable(
+            self.bootstrap.phase(),
+            command,
+            self.bootstrap.config().public_address(),
+            self.bootstrap.requested_random_address(),
+        )
+    }
+
+    pub(crate) fn complete_legacy_advertising_enable_while_radio_unavailable(
+        &self,
+        command: LeLegacyAdvertisingEnableCommand,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        LeLegacyAdvertisingConfiguration::complete_enable_while_radio_unavailable(
+            self.bootstrap.phase(),
+            command,
+        )
     }
 }
 

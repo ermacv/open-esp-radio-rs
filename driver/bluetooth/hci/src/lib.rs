@@ -84,16 +84,20 @@ pub use dtm::{
 pub use dtm_order::{
     LeControllerActiveDtmCommandRoute, LeControllerClassifiedCommand,
     LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
-    LeControllerDeferredDtmCommand, LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
+    LeControllerDeferredDtmCommand, LeControllerDeferredLegacyAdvertisingStart,
+    LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
     LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
     LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
     LeControllerResponsePending, LeControllerResponsePublication,
 };
+pub(crate) use legacy_advertising::LeLegacyAdvertisingIdleEnableDisposition;
 pub use legacy_advertising::{
     LE_LEGACY_ADVERTISING_COMMAND_COMPLETE_EVENT_CAPACITY, LE_LEGACY_ADVERTISING_DATA_CAPACITY,
-    LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfigurationCommand,
-    LeLegacyAdvertisingData, LeLegacyAdvertisingDecodeError, LeLegacyAdvertisingIntervalRange,
+    LeLegacyAdvertisingAddress, LeLegacyAdvertisingCommand,
+    LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingCommandKind,
+    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingData,
+    LeLegacyAdvertisingDecodeError, LeLegacyAdvertisingEnableCommand,
+    LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingIntervalRange,
     LeLegacyAdvertisingOwnAddressKind, LeLegacyAdvertisingPrimaryChannels,
     LeLegacyNonconnectableAdvertisingParameters,
 };

@@ -323,8 +323,9 @@ pub use legacy_advertising::{
     BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
     BluetoothLegacyAdvertisingLinkStateReset, BluetoothLegacyAdvertisingLinkStateResetError,
     BluetoothLegacyAdvertisingPreparationError, BluetoothLegacyAdvertisingPreparationErrorKind,
-    BluetoothLegacyAdvertisingPrepared, BluetoothLegacyAdvertisingRuntimeBeginError,
-    BluetoothLegacyAdvertisingRuntimeResources,
+    BluetoothLegacyAdvertisingPrepared, BluetoothLegacyAdvertisingProgramError,
+    BluetoothLegacyAdvertisingRuntimeBeginError, BluetoothLegacyAdvertisingRuntimeResources,
+    prepare_legacy_advertising_program,
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising::{

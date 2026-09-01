@@ -15,7 +15,9 @@ use bt_hci::{
     param::{AddrKind, AdvKind, Error as HciError, Status},
 };
 
-use crate::{BootstrapPhase, HciCommandPacket, HciControllerResponse};
+use crate::{
+    BluetoothPublicDeviceAddress, BootstrapPhase, HciCommandPacket, HciControllerResponse,
+};
 
 /// Largest legacy advertising data value accepted by the HCI command.
 pub const LE_LEGACY_ADVERTISING_DATA_CAPACITY: usize = 31;
@@ -173,6 +175,99 @@ pub enum LeLegacyAdvertisingConfigurationCommand {
     SetData(LeLegacyAdvertisingData),
 }
 
+/// One decoded Set Advertising Enable command awaiting lifecycle policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyAdvertisingEnableCommand {
+    enable: bool,
+}
+
+impl LeLegacyAdvertisingEnableCommand {
+    /// Separate Enable from the full command family without losing its value.
+    pub fn from_command(
+        command: LeLegacyAdvertisingCommand,
+    ) -> Result<Self, LeLegacyAdvertisingCommand> {
+        match command {
+            LeLegacyAdvertisingCommand::SetEnable(enable) => Ok(Self { enable }),
+            command => Err(command),
+        }
+    }
+
+    /// Whether the Host requested entry into the enabled lifecycle.
+    pub const fn enable(self) -> bool {
+        self.enable
+    }
+
+    pub(crate) fn into_started_command_complete(self) -> LeLegacyAdvertisingCommandCompleteEvent {
+        debug_assert!(self.enable);
+        LeLegacyAdvertisingCommandCompleteEvent::new(
+            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+            Status::SUCCESS,
+        )
+    }
+
+    pub(crate) fn into_hardware_failure_command_complete(
+        self,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        debug_assert!(self.enable);
+        LeLegacyAdvertisingCommandCompleteEvent::new(
+            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+            HciError::HARDWARE_FAILURE.to_status(),
+        )
+    }
+}
+
+/// Resolved advertiser address retained by an accepted Enable transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyAdvertisingAddress {
+    wire_bytes: [u8; 6],
+    kind: LeLegacyAdvertisingOwnAddressKind,
+}
+
+impl LeLegacyAdvertisingAddress {
+    /// HCI/Link-Layer least-significant-octet-first address bytes.
+    pub const fn wire_bytes(self) -> [u8; 6] {
+        self.wire_bytes
+    }
+
+    /// Public or random TxAdd identity selected by the accepted parameters.
+    pub const fn kind(self) -> LeLegacyAdvertisingOwnAddressKind {
+        self.kind
+    }
+}
+
+/// Immutable Host configuration snapshot retained from Enable until radio start.
+///
+/// This value owns all software inputs needed to create a portable Link Layer
+/// set. It grants no scheduler, SRAM, radio, or response-completion authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyAdvertisingEnableRequest {
+    parameters: LeLegacyNonconnectableAdvertisingParameters,
+    data: LeLegacyAdvertisingData,
+    advertiser: LeLegacyAdvertisingAddress,
+}
+
+impl LeLegacyAdvertisingEnableRequest {
+    /// Exact accepted non-connectable parameter snapshot.
+    pub const fn parameters(self) -> LeLegacyNonconnectableAdvertisingParameters {
+        self.parameters
+    }
+
+    /// Exact accepted advertising-data snapshot.
+    pub const fn data(self) -> LeLegacyAdvertisingData {
+        self.data
+    }
+
+    /// Address resolved at the Enable ordering boundary.
+    pub const fn advertiser(self) -> LeLegacyAdvertisingAddress {
+        self.advertiser
+    }
+}
+
+pub(crate) enum LeLegacyAdvertisingIdleEnableDisposition {
+    Start(LeLegacyAdvertisingEnableRequest),
+    Complete(LeLegacyAdvertisingCommandCompleteEvent),
+}
+
 impl LeLegacyAdvertisingConfigurationCommand {
     /// Extract the software-only configuration commands from the full family.
     pub fn from_command(
@@ -241,6 +336,81 @@ impl LeLegacyAdvertisingConfiguration {
 
     pub(crate) fn reset(&mut self) {
         *self = Self::new();
+    }
+
+    pub(crate) fn dispatch_idle_enable(
+        &self,
+        phase: BootstrapPhase,
+        command: LeLegacyAdvertisingEnableCommand,
+        public_address: BluetoothPublicDeviceAddress,
+        requested_random_address: Option<bt_hci::param::BdAddr>,
+    ) -> LeLegacyAdvertisingIdleEnableDisposition {
+        if phase == BootstrapPhase::AwaitingReset {
+            return LeLegacyAdvertisingIdleEnableDisposition::Complete(
+                LeLegacyAdvertisingCommandCompleteEvent::new(
+                    LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+                    HciError::CMD_DISALLOWED.to_status(),
+                ),
+            );
+        }
+        if !command.enable() {
+            return LeLegacyAdvertisingIdleEnableDisposition::Complete(
+                LeLegacyAdvertisingCommandCompleteEvent::new(
+                    LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+                    Status::SUCCESS,
+                ),
+            );
+        }
+        let Some(parameters) = self.parameters else {
+            return LeLegacyAdvertisingIdleEnableDisposition::Complete(
+                LeLegacyAdvertisingCommandCompleteEvent::new(
+                    LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+                    HciError::CMD_DISALLOWED.to_status(),
+                ),
+            );
+        };
+        let advertiser = match parameters.own_address_kind() {
+            LeLegacyAdvertisingOwnAddressKind::Public => LeLegacyAdvertisingAddress {
+                wire_bytes: public_address.hci_wire_bytes(),
+                kind: LeLegacyAdvertisingOwnAddressKind::Public,
+            },
+            LeLegacyAdvertisingOwnAddressKind::Random => {
+                let Some(address) = requested_random_address else {
+                    return LeLegacyAdvertisingIdleEnableDisposition::Complete(
+                        LeLegacyAdvertisingCommandCompleteEvent::new(
+                            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+                            HciError::CMD_DISALLOWED.to_status(),
+                        ),
+                    );
+                };
+                let mut wire_bytes = [0; 6];
+                wire_bytes.copy_from_slice(address.raw());
+                LeLegacyAdvertisingAddress {
+                    wire_bytes,
+                    kind: LeLegacyAdvertisingOwnAddressKind::Random,
+                }
+            }
+        };
+        LeLegacyAdvertisingIdleEnableDisposition::Start(LeLegacyAdvertisingEnableRequest {
+            parameters,
+            data: self.data,
+            advertiser,
+        })
+    }
+
+    pub(crate) fn complete_enable_while_radio_unavailable(
+        phase: BootstrapPhase,
+        command: LeLegacyAdvertisingEnableCommand,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        let status = if phase == BootstrapPhase::AwaitingReset || command.enable() {
+            HciError::CMD_DISALLOWED.to_status()
+        } else {
+            Status::SUCCESS
+        };
+        LeLegacyAdvertisingCommandCompleteEvent::new(
+            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+            status,
+        )
     }
 
     #[cfg(test)]
@@ -359,11 +529,6 @@ impl LeLegacyAdvertisingCommand {
             Self::SetEnable(_) => LeLegacyAdvertisingCommandKind::SetEnable,
         }
     }
-
-    /// Consume a command after Controller policy has accepted its transition.
-    pub fn into_success_command_complete(self) -> LeLegacyAdvertisingCommandCompleteEvent {
-        LeLegacyAdvertisingCommandCompleteEvent::new(self.kind().opcode(), Status::SUCCESS)
-    }
 }
 
 /// Why a packet could not become an owned semantic advertising command.
@@ -469,9 +634,10 @@ mod tests {
     use super::{
         LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandKind,
         LeLegacyAdvertisingConfiguration, LeLegacyAdvertisingConfigurationCommand,
+        LeLegacyAdvertisingEnableCommand, LeLegacyAdvertisingIdleEnableDisposition,
         LeLegacyAdvertisingOwnAddressKind,
     };
-    use crate::{BootstrapPhase, HciCommandPacket};
+    use crate::{BluetoothPublicDeviceAddress, BootstrapPhase, HciCommandPacket};
 
     #[test]
     fn decodes_supported_nonconnectable_parameters() {
@@ -564,18 +730,6 @@ mod tests {
     }
 
     #[test]
-    fn enable_success_is_created_only_after_policy_consumes_the_token() {
-        let command = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
-            LeSetAdvEnable::OPCODE,
-            &[1],
-        ))
-        .expect("boolean enable decodes");
-        assert_eq!(command, LeLegacyAdvertisingCommand::SetEnable(true));
-        let response = command.into_success_command_complete();
-        assert_eq!(response.status(), Status::SUCCESS);
-    }
-
-    #[test]
     fn configuration_is_reset_scoped_and_rejects_pre_reset_mutation() {
         let parameters = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
             LeSetAdvParams::OPCODE,
@@ -617,5 +771,119 @@ mod tests {
         configuration.reset();
         assert_eq!(configuration.parameters(), None);
         assert!(configuration.data().is_empty());
+    }
+
+    #[test]
+    fn idle_enable_freezes_parameters_data_and_resolved_public_address() {
+        let parameters = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
+            LeSetAdvParams::OPCODE,
+            &[
+                0x20, 0x00, 0x40, 0x00, 0x03, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0x05, 0x00,
+            ],
+        ))
+        .expect("fixture parameters decode");
+        let mut configuration = LeLegacyAdvertisingConfiguration::new();
+        configuration.dispatch(
+            BootstrapPhase::Configuring,
+            LeLegacyAdvertisingConfigurationCommand::from_command(parameters)
+                .expect("the parameters command is configuration"),
+        );
+
+        let mut body = [0; 32];
+        body[0] = 3;
+        body[1..4].copy_from_slice(&[2, 1, 6]);
+        let data = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
+            LeSetAdvData::OPCODE,
+            &body,
+        ))
+        .expect("fixture data decode");
+        configuration.dispatch(
+            BootstrapPhase::Configuring,
+            LeLegacyAdvertisingConfigurationCommand::from_command(data)
+                .expect("the data command is configuration"),
+        );
+
+        let enable = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
+            LeSetAdvEnable::OPCODE,
+            &[1],
+        ))
+        .expect("Enable decodes");
+        let enable = LeLegacyAdvertisingEnableCommand::from_command(enable)
+            .expect("Enable refines into its lifecycle token");
+        let LeLegacyAdvertisingIdleEnableDisposition::Start(request) = configuration
+            .dispatch_idle_enable(
+                BootstrapPhase::Configuring,
+                enable,
+                BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+                None,
+            )
+        else {
+            panic!("complete configuration must defer a hardware start");
+        };
+        assert_eq!(request.data().as_bytes(), &[2, 1, 6]);
+        assert_eq!(request.advertiser().wire_bytes(), [6, 5, 4, 3, 2, 1]);
+        assert_eq!(
+            request.advertiser().kind(),
+            LeLegacyAdvertisingOwnAddressKind::Public
+        );
+        assert_eq!(request.parameters().interval().minimum_units_625_us(), 0x20);
+        assert_eq!(request.parameters().interval().maximum_units_625_us(), 0x40);
+        assert!(request.parameters().channels().channel_37());
+        assert!(!request.parameters().channels().channel_38());
+        assert!(request.parameters().channels().channel_39());
+    }
+
+    #[test]
+    fn idle_enable_requires_reset_parameters_and_a_selected_random_address() {
+        let enable = LeLegacyAdvertisingEnableCommand::from_command(
+            LeLegacyAdvertisingCommand::SetEnable(true),
+        )
+        .expect("the fixture is Enable");
+        let public_address = BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]);
+        let mut configuration = LeLegacyAdvertisingConfiguration::new();
+
+        for phase in [BootstrapPhase::AwaitingReset, BootstrapPhase::Configuring] {
+            let LeLegacyAdvertisingIdleEnableDisposition::Complete(response) =
+                configuration.dispatch_idle_enable(phase, enable, public_address, None)
+            else {
+                panic!("Enable without an accepted parameter set must fail closed");
+            };
+            assert_eq!(response.status(), HciError::CMD_DISALLOWED.to_status());
+        }
+
+        let parameters = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
+            LeSetAdvParams::OPCODE,
+            &[
+                0x20, 0x00, 0x40, 0x00, 0x03, 0x01, 0x00, 0, 0, 0, 0, 0, 0, 0x07, 0x00,
+            ],
+        ))
+        .expect("random-address parameters decode");
+        configuration.dispatch(
+            BootstrapPhase::Configuring,
+            LeLegacyAdvertisingConfigurationCommand::from_command(parameters)
+                .expect("the parameters command is configuration"),
+        );
+        let LeLegacyAdvertisingIdleEnableDisposition::Complete(response) = configuration
+            .dispatch_idle_enable(BootstrapPhase::Configuring, enable, public_address, None)
+        else {
+            panic!("random advertising cannot start without LE Set Random Address");
+        };
+        assert_eq!(response.status(), HciError::CMD_DISALLOWED.to_status());
+
+        let LeLegacyAdvertisingIdleEnableDisposition::Start(request) = configuration
+            .dispatch_idle_enable(
+                BootstrapPhase::Configuring,
+                enable,
+                public_address,
+                Some(BdAddr::new([9, 8, 7, 6, 5, 0xc4])),
+            )
+        else {
+            panic!("the accepted random address must complete the start snapshot");
+        };
+        assert_eq!(request.advertiser().wire_bytes(), [9, 8, 7, 6, 5, 0xc4]);
+        assert_eq!(
+            request.advertiser().kind(),
+            LeLegacyAdvertisingOwnAddressKind::Random
+        );
     }
 }

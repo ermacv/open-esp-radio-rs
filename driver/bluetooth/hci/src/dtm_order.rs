@@ -14,8 +14,9 @@ use crate::{
     HciChannelError, HciClassifiedCommandIntake, HciControllerResponse, HciEpochBound,
     HciEpochIdentity, HostToControllerFrame, LeControllerCommandClassification,
     LeControllerCommandComplete, LeControllerCommandEndpoint, LeDtmActiveSessionDisposition,
-    LeDtmCommand, LeDtmIdleSessionDisposition, LeReceiverTestCommand, LeTestEndCommand,
-    LeTransmitterTestCommand, OwnedBootstrapCommand,
+    LeDtmCommand, LeDtmIdleSessionDisposition, LeLegacyAdvertisingEnableCommand,
+    LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingIdleEnableDisposition,
+    LeReceiverTestCommand, LeTestEndCommand, LeTransmitterTestCommand, OwnedBootstrapCommand,
 };
 
 /// A combined Controller endpoint does not match retained affine HCI authority.
@@ -215,6 +216,68 @@ impl<'epoch, Owner> LeControllerDeferredTransmitterStart<'epoch, Owner> {
     }
 }
 
+/// One endpoint-validated advertising Enable retaining response order.
+#[must_use = "retain the deferred advertising start until hardware starts or rejects it"]
+pub struct LeControllerDeferredLegacyAdvertisingStart<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeLegacyAdvertisingEnableCommand,
+    request: LeLegacyAdvertisingEnableRequest,
+}
+
+impl<'epoch, Owner> LeControllerDeferredLegacyAdvertisingStart<'epoch, Owner> {
+    /// Borrow the independently progressing lifecycle owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Immutable configuration snapshot accepted at the Enable boundary.
+    pub const fn request(&self) -> LeLegacyAdvertisingEnableRequest {
+        self.request
+    }
+
+    /// Transform only the independently progressing hardware owner.
+    pub fn map_owner<Next>(
+        self,
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerDeferredLegacyAdvertisingStart<'epoch, Next> {
+        LeControllerDeferredLegacyAdvertisingStart {
+            ready: self.ready.map_owner(map),
+            command: self.command,
+            request: self.request,
+        }
+    }
+
+    /// Separate only the lifecycle owner while retaining command and order.
+    pub fn into_parts(
+        self,
+    ) -> (
+        Owner,
+        LeControllerDeferredLegacyAdvertisingStart<'epoch, ()>,
+    ) {
+        let (owner, ready) = self.ready.into_parts();
+        (
+            owner,
+            LeControllerDeferredLegacyAdvertisingStart {
+                ready,
+                command: self.command,
+                request: self.request,
+            },
+        )
+    }
+
+    /// Complete Enable only after the chip runner proves hardware `RUN`.
+    pub fn into_started_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_started_command_complete())
+    }
+
+    /// Complete with Hardware Failure only after the chip runner recovers idle ownership.
+    pub fn into_hardware_failure_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_hardware_failure_command_complete())
+    }
+}
+
 /// One endpoint-validated DTM command retaining next-command authority.
 ///
 /// The command is intentionally not exposed separately. Active-session policy
@@ -313,6 +376,8 @@ pub enum LeControllerIdleClassifiedCommandRoute<'epoch, 'command, Owner> {
     StartReceiver(LeControllerDeferredReceiverStart<'epoch, Owner>),
     /// A transmitter start retains its semantic command and response order.
     StartTransmitter(LeControllerDeferredTransmitterStart<'epoch, Owner>),
+    /// Advertising Enable retains one immutable configuration and response order.
+    StartLegacyAdvertising(LeControllerDeferredLegacyAdvertisingStart<'epoch, Owner>),
     /// The classification completed synchronously into one ordered response.
     ResponsePending(LeControllerResponsePending<'epoch, Owner>),
     /// Reset remains ordered but undispatched until lifecycle quiescence.
@@ -679,11 +744,29 @@ where
                     ready.begin_next_response(response),
                 )
             }
-            LeControllerCommandClassification::MalformedLegacyAdvertisingConfiguration(
-                response,
-            ) => LeControllerIdleClassifiedCommandRoute::ResponsePending(
-                ready.begin_next_response(response),
-            ),
+            LeControllerCommandClassification::LegacyAdvertisingEnable(command) => {
+                match self.dispatch_idle_legacy_advertising_enable(command) {
+                    LeLegacyAdvertisingIdleEnableDisposition::Start(request) => {
+                        LeControllerIdleClassifiedCommandRoute::StartLegacyAdvertising(
+                            LeControllerDeferredLegacyAdvertisingStart {
+                                ready,
+                                command,
+                                request,
+                            },
+                        )
+                    }
+                    LeLegacyAdvertisingIdleEnableDisposition::Complete(response) => {
+                        LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                            ready.begin_next_response(response),
+                        )
+                    }
+                }
+            }
+            LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::Unsupported(response) => {
                 LeControllerIdleClassifiedCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
@@ -745,11 +828,18 @@ where
                         ready.begin_next_response(response),
                     )
                 }
-                LeControllerCommandClassification::MalformedLegacyAdvertisingConfiguration(
-                    response,
-                ) => LeControllerClassifiedCommandRoute::ResponsePending(
-                    ready.begin_next_response(response),
-                ),
+                LeControllerCommandClassification::LegacyAdvertisingEnable(command) => {
+                    let response =
+                        self.complete_legacy_advertising_enable_while_radio_unavailable(command);
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
                 LeControllerCommandClassification::Unsupported(response) => {
                     LeControllerClassifiedCommandRoute::ResponsePending(
                         ready.begin_next_response(response),
@@ -893,7 +983,10 @@ mod tests {
         cmd::{
             Cmd, Opcode, OpcodeGroup,
             controller_baseband::{Reset, SetEventMask},
-            le::{LeReceiverTest, LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2},
+            le::{
+                LeReceiverTest, LeReceiverTestV2, LeSetAdvEnable, LeSetAdvParams, LeTestEnd,
+                LeTransmitterTestV2,
+            },
         },
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
         param::{Error as HciError, Status},
@@ -944,13 +1037,18 @@ mod tests {
         .expect("the profile fits its source-owned storage")
     }
 
-    fn claim_initial_ready<'epoch, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
+    fn claim_initial_ready<
+        'epoch,
+        Owner,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
         controller: &mut LeControllerCommandEndpoint<
             'epoch,
             NoopRawMutex,
             1,
             CONTROLLER_TO_HOST_DEPTH,
-            16,
+            PACKET_CAPACITY,
         >,
         owner: Owner,
     ) -> LeControllerCommandReady<'epoch, Owner> {
@@ -962,13 +1060,19 @@ mod tests {
         ready
     }
 
-    fn intake_command<'epoch, 'resources, Owner, const CONTROLLER_TO_HOST_DEPTH: usize>(
+    fn intake_command<
+        'epoch,
+        'resources,
+        Owner,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
         controller: &LeControllerCommandEndpoint<
             'resources,
             NoopRawMutex,
             1,
             CONTROLLER_TO_HOST_DEPTH,
-            16,
+            PACKET_CAPACITY,
         >,
         ready: LeControllerCommandReady<'epoch, Owner>,
         buffer: &mut [u8],
@@ -1502,6 +1606,120 @@ mod tests {
         assert_command_status(
             block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
             SetEventMask::OPCODE,
+            Status::SUCCESS,
+        );
+    }
+
+    #[test]
+    fn idle_advertising_enable_retains_snapshot_and_order_until_started() {
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 40>::new(
+            LeControllerBootstrapConfig::new(
+                BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
+                12,
+                1,
+            )
+            .expect("the test HCI profile is nonzero"),
+        )
+        .expect("the advertising commands fit the transport");
+        let mut endpoints = resources.split();
+        let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(101));
+        let mut command_buffer = [0; 40];
+        let mut response_buffer = [0; 40];
+
+        block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the Host queue");
+        let reset = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
+            endpoints.controller.route_idle_classified_command(reset)
+        else {
+            panic!("Reset must preserve lifecycle order");
+        };
+        let LeControllerResetCompletion::ResponsePending(pending) = endpoints
+            .controller
+            .complete_reset_after_quiescence(barrier)
+        else {
+            panic!("the matching endpoint completes Reset");
+        };
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the empty response queue accepts Reset");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            Reset::OPCODE,
+            Status::SUCCESS,
+        );
+
+        let parameters = [
+            0x20, 0x00, 0x40, 0x00, 0x03, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0x05, 0x00,
+        ];
+        block_on(
+            endpoints
+                .host
+                .write(&RawCommand::new(LeSetAdvParams::OPCODE, &parameters)),
+        )
+        .expect("Set Advertising Parameters enters the Host queue");
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("accepted parameters complete in software");
+        };
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the empty response queue accepts parameters");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            LeSetAdvParams::OPCODE,
+            Status::SUCCESS,
+        );
+
+        block_on(
+            endpoints
+                .host
+                .write(&RawCommand::new(LeSetAdvEnable::OPCODE, &[1])),
+        )
+        .expect("Enable enters the Host queue");
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartLegacyAdvertising(start) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("Enable must remain deferred until hardware starts");
+        };
+        assert_eq!(start.owner(), &RadioOwner(101));
+        assert_eq!(
+            start.request().advertiser().wire_bytes(),
+            [13, 11, 7, 5, 3, 2]
+        );
+        assert!(start.request().data().is_empty());
+        assert_eq!(
+            start
+                .request()
+                .parameters()
+                .interval()
+                .minimum_units_625_us(),
+            0x20
+        );
+        assert!(start.request().parameters().channels().channel_37());
+        assert!(!start.request().parameters().channels().channel_38());
+        assert!(start.request().parameters().channels().channel_39());
+
+        let (owner, continuation) = start.into_parts();
+        assert_eq!(owner, RadioOwner(101));
+        let pending = continuation
+            .map_owner(|()| RadioOwner(102))
+            .into_started_response();
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("started Enable response publishes exactly once");
+        };
+        assert_eq!(ready.owner(), &RadioOwner(102));
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            LeSetAdvEnable::OPCODE,
             Status::SUCCESS,
         );
     }

@@ -12,10 +12,10 @@ powered task endpoint that keeps the sole lock/modify worker beside the exact
 task-side HAL owner; one finite event step can therefore reach the restricted
 PAC without an MMIO capability escaping into executor code. Primary service is
 also serialized with both ordinary durable publications and a capacity-one DTM
-post-unlink mailbox. Selector actions,
-the hardware-list-to-item relation, NRT feature meanings and the live async ISR
-owner remain unresolved, so neither CPU route may yet form a live production
-interrupt epoch.
+post-unlink mailbox. Selector actions, the hardware-list-to-item relation and
+NRT feature meanings remain unresolved. The live async ISR owner and bounded
+DTM post-unlink retry policy are composed; general finished-list dispatch is
+still incomplete.
 
 Blobray schema 11 records the two callback mechanisms separately and gives
 static event routes an explicit receive/run delivery contract. The
@@ -33,8 +33,8 @@ subscriber callback-pointer store to subscription, plus selector
 `0x8000_0004` and its merged-mask payload, plus the guarded `uwrf -> rmN`
 continuation; it remains `INCOMPLETE` until subscriber lifetime and every
 preceding listener's selector-specific continue result are joined into the
-same broker epoch. Neither route closes source-124 readiness causality or
-post-unlink retry liveness.
+same broker epoch. Neither vendor route closes source-124 readiness causality;
+the open runtime does not depend on that causality for post-unlink progress.
 
 This review separates silicon behavior from the internal callback and RTOS
 architecture of the reference Controller. The Rust driver does not reproduce
@@ -182,14 +182,17 @@ cross-wire an event, cancellation or re-arm. Its later consumer may project
 BUSY from the stored scheduler event and, only when idle,
 perform the separate task-owned command-zero then conditional command-one
 reads. `NoSchedulerWork` and command-pending outcomes re-arm the same owner
-before leaving the serialization boundary. This closes temporal pairing and
-lost-owner holes, but not progress: if the retained first event is not ready, a
-later command-ready edge can arrive while the slot is full and is not retained
-as the next DTM event. Complete vendor removal bodies directly re-read BUSY and
-the command fields, so they prove neither command-ready-to-source-124 causality
-nor a guaranteed retry wake. Source-124 causality, registered consumer wake and
-bounded retry liveness therefore remain session-runtime work rather than an
-interrupt-classifier claim.
+before leaving the serialization boundary. If a later command-ready edge
+arrives while the slot is full, the later event is returned to the general
+route, but progress does not depend on retaining it: after consuming the older
+event the session races the mailbox wake against a caller-owned finite absolute
+deadline, then the Controller performs the same direct read-only removal
+recheck. A pending direct result re-arms the same identity and generation.
+This closes temporal pairing, lost-owner holes and bounded retry liveness.
+Complete vendor removal bodies directly re-read BUSY and the command fields,
+so they still prove neither command-ready-to-source-124 causality nor a
+hardware retry wake; those remain vendor-qualification gaps rather than open
+runtime dependencies.
 
 ## Event multiplicity and RTOS-free replacement
 
@@ -292,9 +295,9 @@ them.
   finished-list edge, memory fence, abort and shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
-- a proven source-124 or other wake for command readiness, plus a bounded
-  policy that cannot lose a later ready edge while the capacity-one DTM slot
-  retains an earlier no-work or command-pending event;
+- independent evidence for which source, if any, signals command readiness;
+  the open runtime already guarantees bounded DTM progress with its absolute
+  read-only recheck when the capacity-one slot retains an older event;
 - live same-core composition of the staged interrupt-bank, scheduler runtime
   and powered task endpoint, including stable waker registration, without
   returning either MMIO capability while the routes are live;

@@ -743,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn one_armed_event_is_durable_and_the_next_is_returned_losslessly() {
+    fn full_slot_preserves_old_event_then_exposes_direct_recheck() {
         let mut mailbox = BluetoothDtmPostUnlinkMailboxState::new();
         let next_identity = Cell::new(0);
         let key = prepare(&mut mailbox, &next_identity);
@@ -767,6 +767,11 @@ mod tests {
         };
         assert_eq!(observed_key, key);
         assert_eq!(event, Event(3));
+        assert!(mailbox.rearm(key));
+        assert!(matches!(
+            mailbox.take(key),
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key: observed } if observed == key
+        ));
     }
 
     #[test]

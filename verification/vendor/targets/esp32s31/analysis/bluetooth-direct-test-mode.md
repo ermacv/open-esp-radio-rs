@@ -1060,16 +1060,17 @@ it must not be read as claiming on-air validation.
    suppresses recurrence after Test End and either cancels before publication
    or joins the accepted event through recycle. BUSY-clear alone remains
    insufficient evidence for whole-session quiescence.
-5. **Complete the open scheduler wake model.** The fixed-capacity Timeline,
+5. **Complete the general scheduler wake model.** The fixed-capacity Timeline,
    explicit prepared/running/completed/recycled owners and globally
    identity-branded atomic unlink-and-arm mailbox now exist. The exact first
    post-arm event is retained
    without a public constructor or service bypass, and no-work/command-pending
    consumption re-arms the same identity and generation before returning. ISR
    wake dispositions are delivered once by primary service, not repeated by
-   late consumption. Add a proven command-ready wake and a
-   bounded policy that cannot miss a later ready edge while that capacity-one
-   slot holds an earlier event. The vendor selector-6 callback validates only
+   late consumption. The bounded absolute read-only recheck closes DTM progress
+   even if a later command-ready event arrives while the capacity-one slot
+   retains an older event; independently determine its hardware interrupt
+   source for general scheduler qualification. The vendor selector-6 callback validates only
    its private intrusive transaction container and has no open-driver runtime
    equivalent; keep scan resume outside the DTM feature graph.
 6. **Preserve the composed ISR epoch and session owner.** The level-3 hard handler
@@ -1119,10 +1120,12 @@ now-classified scan-resume path.
   result-status extraction;
 - bounded abort plus powered quiescence when an event is scheduled or running.
 
-The operational blockers are the effective controller-time width/wrap contract,
-guaranteed post-unlink progress when the mailbox is full, unrelated finished-list
-routing, source-127 expiration ownership, sleep-enabled RF wake and target on-air
-evidence. Hardware-reader descriptor semantics remain a qualification gap, but
+The operational blockers are unrelated finished-list routing, source-127
+expiration ownership, sleep-enabled RF wake and target on-air evidence. The
+effective controller-time width/wrap contract limits sleep and long-duration
+qualification, but not the bounded always-awake DTM path. Post-unlink progress
+is bounded by the absolute direct recheck even when the mailbox is full.
+Hardware-reader descriptor semantics remain a qualification gap, but
 the complete CPU producer no longer blocks controller/LL/DTM implementation in
 the absence of a concrete conflicting observation. The DTM session loop,
 in-flight Test End join and backpressured Controller-side HCI publication exist.

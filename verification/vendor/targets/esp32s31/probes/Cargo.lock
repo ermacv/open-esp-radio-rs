@@ -300,7 +300,7 @@ checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 [[package]]
 name = "embassy-net-driver"
 version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272#3b91c62054669719af1cfc97110ae6ddb5498272"
+source = "git+https://github.com/ermacv/embassy.git?rev=c6d0de6fc1b22aea8cd20aac26a183db4c73d447#c6d0de6fc1b22aea8cd20aac26a183db4c73d447"
 
 [[package]]
 name = "embassy-sync"
@@ -872,7 +872,7 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=c6d0de6fc1b22aea8cd20aac26a183db4c73d447)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
  "pin-project-lite",

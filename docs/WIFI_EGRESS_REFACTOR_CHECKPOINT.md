@@ -51,6 +51,47 @@ The Xarxa sibling worktree was clean at the pinned revision when this audit
 was made. HIL reports remain the detailed evidence; this document records the
 interpretation and the gates for the next change.
 
+## Phase 1 implementation checkpoint
+
+The first generic lifecycle contract was added after the measured checkpoint
+above and is pinned by the current workspace:
+
+```text
+Xarxa revision:   bd2c27fb584445c93aec04e8560835de3dec450e
+Embassy revision: c6d0de6fc1b22aea8cd20aac26a183db4c73d447
+```
+
+This checkpoint adds `EgressDemandId`, `EgressDemandLevel`, `EgressDemand` and
+the ordered `EgressDemandUpdate::{Reset, Active, Inactive}` callback to Xarxa,
+the Embassy driver boundary and the Xarxa-to-Embassy adapter. It deliberately
+does not call the callback from production Xarxa yet, and it does not change
+`transmit_for`, SRAM ownership or radio admission. The existing HIL data path
+therefore remains the behavior oracle for the next integration step.
+
+The host catalog model established one important correction to the initial
+design: a demand key cannot be owned by exactly one socket queue. Multiple
+UDP sockets, IP destinations or future protocol providers may resolve to the
+same physical radio key. The catalog therefore gives each provider an affine
+O(1) update handle, while aggregating all providers into one nonempty key
+lifetime for the driver. The last provider ending emits the terminal update;
+a stale provider handle cannot end or mutate a later lifetime.
+
+The model also proves:
+
+- sparse activation is published immediately and never waits for BA32;
+- exact queue counts are coalesced through high/low hysteresis;
+- a one-frame horizon remains eligible for every nonempty level;
+- schedule epoch reset invalidates every provider handle;
+- catalog overflow and activation before configuration fail closed;
+- aggregate levels saturate only at the public boundary without corrupting
+  internal reclamation;
+- Xarxa middleware and the Embassy stack adapter preserve exact lifecycle
+  identity, key and level values.
+
+The catalog remains a host model until phase 2 gives protocol providers stable
+handles without payload rescans. Shipping unused catalog state in every
+interface would add memory without semantics and is intentionally avoided.
+
 ## Current data path
 
 ```text

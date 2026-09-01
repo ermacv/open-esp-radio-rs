@@ -9,6 +9,7 @@ use crate::dtm_event_prepare::{
 #[cfg(target_arch = "riscv32")]
 use crate::legacy_advertising::{
     BluetoothLegacyAdvertisingCompletionObservedEvent,
+    BluetoothLegacyAdvertisingRecurringEventCandidate,
     BluetoothLegacyAdvertisingRunningEventCompletionObservation,
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -91,6 +92,44 @@ pub struct BluetoothLegacyAdvertisingSequenceObservation {
 pub struct BluetoothLegacyAdvertisingFirstPreSequence<'a> {
     candidate: BluetoothLegacyAdvertisingFirstEventCandidate<'a>,
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerInitialAdmissionResolved>,
+}
+
+/// Recurring advertising event after exact timeline reservation.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "authorize the recurring sequence deadline or retain the event"]
+pub struct BluetoothLegacyAdvertisingRecurringPreSequence<'a> {
+    candidate: BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerRecurringReserved>,
+}
+
+/// Why one recurring event could not reach a sequence-ready descriptor.
+#[cfg(target_arch = "riscv32")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingRecurringEventPreparationError {
+    Timeline(BluetoothSchedulerReservationError),
+    Sequence(BluetoothSchedulerSequenceAuthorizationError),
+    EventImage(
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+    ),
+}
+
+/// Lossless recurring admission/preparation rejection.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retry, cancel, or retain the recurring event candidate"]
+pub struct BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'a> {
+    candidate: BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
+    error: BluetoothLegacyAdvertisingRecurringEventPreparationError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'a> {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingRecurringEventPreparationError {
+        self.error
+    }
+
+    pub fn into_candidate(self) -> BluetoothLegacyAdvertisingRecurringEventCandidate<'a> {
+        self.candidate
+    }
 }
 
 /// First advertising descriptor paired with its exact accepted timeline slot.
@@ -1870,6 +1909,89 @@ impl<const SCHEDULER_CAPACITY: usize>
                 Err(BluetoothLegacyAdvertisingFirstEventPreparationFailure {
                     candidate,
                     error: BluetoothLegacyAdvertisingFirstEventPreparationError::EventImage(error),
+                })
+            }
+        }
+    }
+
+    /// Reserve one exact recurring advertising window without displacement.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the complete recurring event"
+    )]
+    pub fn admit_legacy_advertising_recurring_event<'a>(
+        &mut self,
+        candidate: BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
+    ) -> Result<
+        BluetoothLegacyAdvertisingRecurringPreSequence<'a>,
+        BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'a>,
+    > {
+        let raw_window = candidate.raw_window();
+        let timing_policy =
+            BluetoothSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        match self
+            .runtime
+            .scheduler_timeline_mut()
+            .reserve_recurring_window(raw_window.start(), raw_window.end(), timing_policy)
+        {
+            Ok(reservation) => Ok(BluetoothLegacyAdvertisingRecurringPreSequence {
+                candidate,
+                reservation,
+            }),
+            Err(error) => Err(BluetoothLegacyAdvertisingRecurringEventPreparationFailure {
+                candidate,
+                error: BluetoothLegacyAdvertisingRecurringEventPreparationError::Timeline(error),
+            }),
+        }
+    }
+
+    /// Authorize the recurring deadline and encode its complete event chain.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the complete recurring event"
+    )]
+    pub fn prepare_legacy_advertising_recurring_event<'a>(
+        &mut self,
+        admitted: BluetoothLegacyAdvertisingRecurringPreSequence<'a>,
+        sequence: BluetoothLegacyAdvertisingSequenceObservation,
+    ) -> Result<
+        BluetoothLegacyAdvertisingFirstEventPrepared<'a>,
+        BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'a>,
+    > {
+        let BluetoothLegacyAdvertisingRecurringPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        let reservation = match reservation.authorize_sequence(sequence.sample) {
+            Ok(reservation) => reservation,
+            Err(failure) => {
+                let error = failure.error();
+                self.release_scheduler_reservation(failure.into_reservation());
+                return Err(BluetoothLegacyAdvertisingRecurringEventPreparationFailure {
+                    candidate,
+                    error: BluetoothLegacyAdvertisingRecurringEventPreparationError::Sequence(
+                        error,
+                    ),
+                });
+            }
+        };
+        let resolved_window = reservation.window();
+        match candidate.prepare_resolved_event_image(resolved_window) {
+            Ok(prepared) => {
+                let (image, _, _, _) = prepared.into_parts();
+                Ok(BluetoothLegacyAdvertisingFirstEventPrepared { image, reservation })
+            }
+            Err(failure) => {
+                let error = failure.error();
+                let candidate = failure.into_candidate();
+                self.release_scheduler_reservation(reservation);
+                Err(BluetoothLegacyAdvertisingRecurringEventPreparationFailure {
+                    candidate,
+                    error: BluetoothLegacyAdvertisingRecurringEventPreparationError::EventImage(
+                        error,
+                    ),
                 })
             }
         }

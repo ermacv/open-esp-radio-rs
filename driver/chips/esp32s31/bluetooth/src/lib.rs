@@ -328,7 +328,10 @@ pub use legacy_advertising::{
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingEventCompleted, BluetoothLegacyAdvertisingEventScheduleFailure,
-    BluetoothLegacyAdvertisingNextEventScheduled,
+    BluetoothLegacyAdvertisingNextEventScheduled, BluetoothLegacyAdvertisingRecurringCancelled,
+    BluetoothLegacyAdvertisingRecurringEventCandidate,
+    BluetoothLegacyAdvertisingRecurringPreparationError,
+    BluetoothLegacyAdvertisingRecurringPreparationFailure,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising::{
@@ -423,6 +426,9 @@ pub use scheduler::{
 pub use scheduler::{
     BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
     BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerRunningDrainStep,
+    BluetoothLegacyAdvertisingRecurringEventPreparationError,
+    BluetoothLegacyAdvertisingRecurringEventPreparationFailure,
+    BluetoothLegacyAdvertisingRecurringPreSequence,
     BluetoothLegacyAdvertisingSchedulerCompletionObserved,
     BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep,
     BluetoothLegacyAdvertisingSchedulerCompletionStep,

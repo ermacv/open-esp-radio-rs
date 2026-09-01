@@ -169,10 +169,13 @@ the advanced LL owner. It makes no stronger RF-success claim.
 The first complete primary-channel event contract is therefore closed.
 Recycle retains its nominal phase, reusable CPU-owned graph and ordered
 diagnostics, and accepts a fresh source-owned 0--10 ms delay into the next
-portable event without executor waiting. The next real driver boundary is to
-project that phase plus interval/delay into an exact recurring timeline
-reservation and republish the rebuilt graph for another whole event. Broad
-register discovery, diagnostic logging, extended/periodic
+portable event without executor waiting. The S31 recurrence path rebuilds the
+same restricted graph, projects phase plus interval/delay into the whole next
+chain, takes an exact non-displaced recurring reservation, applies a fresh
+sequence deadline and rejoins the existing publication/completion path. The
+next driver boundary is production actor composition: provide the live timing
+observation and random delay, then retain the returned affine owner across its
+async steps. Broad register discovery, diagnostic logging, extended/periodic
 advertising, scan responses, RX buffers, sleep wake and coexistence remain
 outside this restricted nonconnectable slice.
 

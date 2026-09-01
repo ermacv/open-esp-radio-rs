@@ -80,6 +80,18 @@ impl BluetoothLegacyAdvertisingDefaultTxPowerDbm {
     }
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
+fn controller_channel_plan(
+    selected: PrimaryAdvertisingChannelMap,
+) -> BluetoothLegacyAdvertisingPrimaryChannelPlan {
+    BluetoothLegacyAdvertisingPrimaryChannelPlan::new(
+        selected.contains(PrimaryAdvertisingChannel::Channel37),
+        selected.contains(PrimaryAdvertisingChannel::Channel38),
+        selected.contains(PrimaryAdvertisingChannel::Channel39),
+    )
+    .expect("the portable advertising channel map is non-empty")
+}
+
 /// One fully encoded S31 legacy-advertising transmission before hardware admission.
 ///
 /// The portable continuation remains private, so code cannot claim that the
@@ -279,13 +291,7 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
             raw_item_duration,
         } = self;
         let BluetoothLegacyAdvertisingLinkStateReset { prepared, memory } = reset;
-        let selected = prepared.channels();
-        let channels = BluetoothLegacyAdvertisingPrimaryChannelPlan::new(
-            selected.contains(PrimaryAdvertisingChannel::Channel37),
-            selected.contains(PrimaryAdvertisingChannel::Channel38),
-            selected.contains(PrimaryAdvertisingChannel::Channel39),
-        )
-        .expect("the portable advertising channel map is non-empty");
+        let channels = controller_channel_plan(prepared.channels());
         match memory.prepare_first_event(channels, resolved_window.start(), raw_item_duration) {
             Ok(memory) => Ok(BluetoothLegacyAdvertisingFirstEventImagePrepared {
                 prepared,
@@ -773,6 +779,39 @@ impl<'a> BluetoothLegacyAdvertisingNextEventScheduled<'a> {
         self.previous_statuses
     }
 
+    /// Rebuild the reusable graph and project its exact recurring event window.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains every affine recurrence input"
+    )]
+    pub fn prepare_candidate(
+        self,
+        default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+        timing: BluetoothLegacyAdvertisingTimingObservation,
+        config: BluetoothSchedulerSoftwareConfig,
+    ) -> Result<
+        BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
+        BluetoothLegacyAdvertisingRecurringPreparationFailure<'a>,
+    > {
+        let Self {
+            scheduled,
+            memory,
+            previous_statuses,
+            previous_phase,
+        } = self;
+        let start_offset_micros = scheduled.start_offset_micros();
+        prepare_recurring_candidate(
+            scheduled.into_event(),
+            memory,
+            previous_statuses,
+            previous_phase,
+            start_offset_micros,
+            default_tx_power,
+            timing,
+            config,
+        )
+    }
+
     pub fn into_parts(
         self,
     ) -> (
@@ -786,6 +825,314 @@ impl<'a> BluetoothLegacyAdvertisingNextEventScheduled<'a> {
             self.memory,
             self.previous_statuses,
             self.previous_phase,
+        )
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each affine recurrence input is independently owned and semantically distinct"
+)]
+#[expect(
+    clippy::result_large_err,
+    reason = "the no-alloc failure retains every affine recurrence input"
+)]
+fn prepare_recurring_candidate<'a>(
+    enabled: LegacyAdvertiserEnabled<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    previous_statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
+    start_offset_micros: u64,
+    default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    timing: BluetoothLegacyAdvertisingTimingObservation,
+    config: BluetoothSchedulerSoftwareConfig,
+) -> Result<
+    BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
+    BluetoothLegacyAdvertisingRecurringPreparationFailure<'a>,
+> {
+    let prepared = match BluetoothLegacyAdvertisingPrepared::prepare(enabled, memory) {
+        Ok(prepared) => prepared,
+        Err(failure) => {
+            let (enabled, memory, error) = failure.into_parts();
+            return Err(BluetoothLegacyAdvertisingRecurringPreparationFailure {
+                enabled,
+                memory,
+                previous_statuses,
+                previous_phase,
+                start_offset_micros,
+                error: BluetoothLegacyAdvertisingRecurringPreparationError::Packet(error),
+            });
+        }
+    };
+    let reset = match prepared.reset_link_state(default_tx_power) {
+        Ok(reset) => reset,
+        Err(failure) => {
+            let error = failure.error();
+            let cancelled = failure.into_prepared().cancel();
+            let (enabled, memory) = cancelled.into_parts();
+            return Err(BluetoothLegacyAdvertisingRecurringPreparationFailure {
+                enabled,
+                memory,
+                previous_statuses,
+                previous_phase,
+                start_offset_micros,
+                error: BluetoothLegacyAdvertisingRecurringPreparationError::LinkState(error),
+            });
+        }
+    };
+    let payload_length = reset.memory.payload_length();
+    let Some((scheduler_window, raw_window, raw_item_duration)) = timing.recurring_le_1m_window(
+        previous_phase,
+        start_offset_micros,
+        config,
+        payload_length,
+        reset.prepared.channels().channel_count(),
+    ) else {
+        let cancelled = reset.cancel();
+        let (enabled, memory) = cancelled.into_parts();
+        return Err(BluetoothLegacyAdvertisingRecurringPreparationFailure {
+            enabled,
+            memory,
+            previous_statuses,
+            previous_phase,
+            start_offset_micros,
+            error: BluetoothLegacyAdvertisingRecurringPreparationError::Timing,
+        });
+    };
+    Ok(BluetoothLegacyAdvertisingRecurringEventCandidate {
+        reset,
+        scheduler_window,
+        raw_window,
+        raw_item_duration,
+        previous_statuses,
+        previous_phase,
+        start_offset_micros,
+    })
+}
+
+/// Recurring event rebuilt in CPU-owned memory but not admitted to the timeline.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "admit the recurring event, cancel it, or retain every owner"]
+pub struct BluetoothLegacyAdvertisingRecurringEventCandidate<'a> {
+    reset: BluetoothLegacyAdvertisingLinkStateReset<'a>,
+    scheduler_window: BluetoothLegacyAdvertisingEventWindow,
+    raw_window: BluetoothSchedulerRawWindow,
+    raw_item_duration: u32,
+    previous_statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
+    start_offset_micros: u64,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRecurringEventCandidate<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
+        self.reset.identity()
+    }
+
+    pub fn pdu(&self) -> &[u8] {
+        self.reset.pdu()
+    }
+
+    pub const fn previous_statuses(&self) -> BluetoothLegacyAdvertisingEventCompletionStatuses {
+        self.previous_statuses
+    }
+
+    pub const fn projected_window_duration(&self) -> u32 {
+        self.raw_window.duration()
+    }
+
+    pub(crate) const fn raw_window(&self) -> BluetoothSchedulerRawWindow {
+        self.raw_window
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the exact recurring candidate"
+    )]
+    pub(crate) fn prepare_resolved_event_image(
+        self,
+        resolved_window: BluetoothSchedulerRawWindow,
+    ) -> Result<
+        BluetoothLegacyAdvertisingRecurringEventImagePrepared<'a>,
+        BluetoothLegacyAdvertisingRecurringEventImagePrepareFailure<'a>,
+    > {
+        let Self {
+            reset,
+            scheduler_window,
+            raw_window,
+            raw_item_duration,
+            previous_statuses,
+            previous_phase,
+            start_offset_micros,
+        } = self;
+        let BluetoothLegacyAdvertisingLinkStateReset { prepared, memory } = reset;
+        let channels = controller_channel_plan(prepared.channels());
+        match memory.prepare_first_event(channels, resolved_window.start(), raw_item_duration) {
+            Ok(memory) => Ok(BluetoothLegacyAdvertisingRecurringEventImagePrepared {
+                image: BluetoothLegacyAdvertisingFirstEventImagePrepared {
+                    prepared,
+                    memory,
+                    scheduler_window,
+                },
+                previous_statuses,
+                previous_phase,
+                start_offset_micros,
+            }),
+            Err(failure) => {
+                let (memory, error) = failure.into_parts();
+                Err(
+                    BluetoothLegacyAdvertisingRecurringEventImagePrepareFailure {
+                        candidate: Self {
+                            reset: BluetoothLegacyAdvertisingLinkStateReset { prepared, memory },
+                            scheduler_window,
+                            raw_window,
+                            raw_item_duration,
+                            previous_statuses,
+                            previous_phase,
+                            start_offset_micros,
+                        },
+                        error,
+                    },
+                )
+            }
+        }
+    }
+
+    pub fn cancel(self) -> BluetoothLegacyAdvertisingRecurringCancelled<'a> {
+        BluetoothLegacyAdvertisingRecurringCancelled {
+            cancelled: self.reset.cancel(),
+            previous_statuses: self.previous_statuses,
+            previous_phase: self.previous_phase,
+            start_offset_micros: self.start_offset_micros,
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingRecurringEventImagePrepared<'a> {
+    image: BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+    previous_statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
+    start_offset_micros: u64,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRecurringEventImagePrepared<'a> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingFirstEventImagePrepared<'a>,
+        BluetoothLegacyAdvertisingEventCompletionStatuses,
+        crate::BluetoothLegacyAdvertisingEventPhase,
+        u64,
+    ) {
+        (
+            self.image,
+            self.previous_statuses,
+            self.previous_phase,
+            self.start_offset_micros,
+        )
+    }
+}
+
+/// Failed recurring packet/reset/time preparation retaining every input owner.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retry, disable, or recover every recurrence input"]
+pub struct BluetoothLegacyAdvertisingRecurringPreparationFailure<'a> {
+    enabled: LegacyAdvertiserEnabled<'a>,
+    memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    previous_statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
+    start_offset_micros: u64,
+    error: BluetoothLegacyAdvertisingRecurringPreparationError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRecurringPreparationFailure<'a> {
+    pub const fn error(&self) -> BluetoothLegacyAdvertisingRecurringPreparationError {
+        self.error
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc retry retains every affine recurrence input"
+    )]
+    pub fn retry(
+        self,
+        default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+        timing: BluetoothLegacyAdvertisingTimingObservation,
+        config: BluetoothSchedulerSoftwareConfig,
+    ) -> Result<
+        BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
+        BluetoothLegacyAdvertisingRecurringPreparationFailure<'a>,
+    > {
+        prepare_recurring_candidate(
+            self.enabled,
+            self.memory,
+            self.previous_statuses,
+            self.previous_phase,
+            self.start_offset_micros,
+            default_tx_power,
+            timing,
+            config,
+        )
+    }
+}
+
+/// Finite pre-admission failure while rebuilding one recurring event.
+#[cfg(target_arch = "riscv32")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingRecurringPreparationError {
+    Packet(BluetoothLegacyAdvertisingPreparationErrorKind),
+    LinkState(BluetoothLegacyAdvertisingPduError),
+    Timing,
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingRecurringEventImagePrepareFailure<'a> {
+    candidate: BluetoothLegacyAdvertisingRecurringEventCandidate<'a>,
+    error: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRecurringEventImagePrepareFailure<'a> {
+    pub(crate) const fn error(
+        &self,
+    ) -> BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError {
+        self.error
+    }
+
+    pub(crate) fn into_candidate(self) -> BluetoothLegacyAdvertisingRecurringEventCandidate<'a> {
+        self.candidate
+    }
+}
+
+/// Lossless cancellation after the next event was rebuilt but not published.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "recover the enabled event, graph and previous diagnostics"]
+pub struct BluetoothLegacyAdvertisingRecurringCancelled<'a> {
+    cancelled: BluetoothLegacyAdvertisingCancelled<'a>,
+    previous_statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
+    previous_phase: crate::BluetoothLegacyAdvertisingEventPhase,
+    start_offset_micros: u64,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingRecurringCancelled<'a> {
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingCancelled<'a>,
+        BluetoothLegacyAdvertisingEventCompletionStatuses,
+        crate::BluetoothLegacyAdvertisingEventPhase,
+        u64,
+    ) {
+        (
+            self.cancelled,
+            self.previous_statuses,
+            self.previous_phase,
+            self.start_offset_micros,
         )
     }
 }

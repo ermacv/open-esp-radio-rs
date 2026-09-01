@@ -67,6 +67,31 @@ impl BluetoothLegacyAdvertisingTimingObservation {
             None => None,
         }
     }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn recurring_le_1m_window(
+        self,
+        previous_phase: BluetoothLegacyAdvertisingEventPhase,
+        start_offset_micros: u64,
+        config: BluetoothSchedulerSoftwareConfig,
+        payload_length: u8,
+        primary_channel_count: usize,
+    ) -> Option<(
+        BluetoothLegacyAdvertisingEventWindow,
+        BluetoothSchedulerRawWindow,
+        u32,
+    )> {
+        let window = BluetoothLegacyAdvertisingEventWindow::recurring_le_1m(
+            previous_phase,
+            start_offset_micros,
+            config,
+            payload_length,
+        );
+        match window.project_raw(self.epoch, primary_channel_count) {
+            Some((raw, raw_item_duration)) => Some((window, raw, raw_item_duration)),
+            None => None,
+        }
+    }
 }
 
 impl BluetoothLegacyAdvertisingEventWindow {
@@ -103,6 +128,27 @@ impl BluetoothLegacyAdvertisingEventWindow {
                 end: nominal_end,
             }
         }
+    }
+
+    /// Form one recurring event from the previous nominal phase.
+    pub(crate) const fn recurring_le_1m(
+        previous_phase: BluetoothLegacyAdvertisingEventPhase,
+        start_offset_micros: u64,
+        config: BluetoothSchedulerSoftwareConfig,
+        payload_length: u8,
+    ) -> Self {
+        let anchor = previous_phase.0.wrapping_add(start_offset_micros as u32);
+        let start = BluetoothSchedulerInstant::from_image(
+            anchor
+                .image()
+                .wrapping_sub(config.preparation_lead_scheduler_delta()),
+        );
+        let end = anchor.wrapping_add(
+            (payload_length as u32)
+                .wrapping_mul(8)
+                .wrapping_add(LE_1M_FIXED_PACKET_MICROS),
+        );
+        Self { anchor, start, end }
     }
 
     #[cfg(test)]
@@ -215,5 +261,35 @@ mod tests {
             .expect("bounded three-channel event window");
         assert_eq!(item_duration, 58);
         assert_eq!(raw.duration(), 174);
+    }
+
+    #[test]
+    fn recurring_event_advances_nominal_phase_and_reserves_the_complete_chain() {
+        let first = BluetoothLegacyAdvertisingEventWindow::first_le_1m(
+            BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            instant(10_000),
+            instant(11_999),
+            9,
+        );
+        let recurring = BluetoothLegacyAdvertisingEventWindow::recurring_le_1m(
+            first.phase(),
+            20_000,
+            BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            9,
+        );
+        assert_eq!(recurring.start().image(), 32_000);
+        assert_eq!(recurring.anchor().image(), 32_107);
+        assert_eq!(recurring.end().image(), 32_259);
+
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let epoch = BluetoothControllerSchedulerEpoch::new(
+            BluetoothControllerTimeSample::for_validation(100),
+            1_000,
+            scale,
+        );
+        let (raw, item_duration) = recurring
+            .project_raw(epoch, 3)
+            .expect("the recurring chain fits one raw epoch");
+        assert_eq!(raw.duration(), item_duration * 3);
     }
 }

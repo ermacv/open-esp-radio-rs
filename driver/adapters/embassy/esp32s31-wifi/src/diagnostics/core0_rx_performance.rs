@@ -6,7 +6,28 @@
 //! reads deliberately stay coarse: per-frame CSR sampling would perturb the
 //! datapath which this diagnostic image is intended to measure.
 
+#[cfg(feature = "tx-phase-telemetry")]
+use core::sync::atomic::AtomicBool;
 use core::sync::atomic::{AtomicU32, Ordering};
+
+#[cfg(feature = "tx-phase-telemetry")]
+static AP_TERMINAL_IDENTITY_DIAGNOSTICS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Select AP terminal-identity observation for a same-image HIL control.
+///
+/// This never changes completion, retry or release behavior. It exists only
+/// to isolate the cost of the generation lookup and diagnostic counters from
+/// code-layout and laboratory differences.
+#[cfg(feature = "tx-phase-telemetry")]
+pub fn configure_ap_terminal_identity_diagnostics(enabled: bool) {
+    AP_TERMINAL_IDENTITY_DIAGNOSTICS_ENABLED.store(enabled, Ordering::Release);
+}
+
+#[cfg(feature = "tx-phase-telemetry")]
+#[inline(always)]
+pub(crate) fn ap_terminal_identity_diagnostics_enabled() -> bool {
+    AP_TERMINAL_IDENTITY_DIAGNOSTICS_ENABLED.load(Ordering::Acquire)
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Core0PerformanceSample {

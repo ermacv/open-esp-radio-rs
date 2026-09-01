@@ -989,6 +989,9 @@ where
         association: ApAssociationIdentity,
         frames: usize,
     ) {
+        if !crate::diagnostics::core0_rx_performance::ap_terminal_identity_diagnostics_enabled() {
+            return;
+        }
         CORE0_PERFORMANCE
             .record_ap_terminal_identity(engine.association_is_current(association), frames);
     }

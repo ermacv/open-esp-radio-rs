@@ -1801,6 +1801,11 @@ pub async fn run(
         open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
     ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_esp32s31_embassy_wifi::configure_ap_terminal_identity_diagnostics(!matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+    ));
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
     embassy_net::configure_blocked_egress_socket_wake_suppression(!matches!(
         tx_buffer,
         open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaWakeStormControlDiagnostic

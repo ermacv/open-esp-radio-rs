@@ -796,7 +796,7 @@ not satisfy the architectural goal.
   diagnostic counters. Reprocessing an already retained frame does not count
   it again. The observation is compiled only into TX-phase diagnostics and
   cannot authorize, defer, drop or rekey a frame.
-- **AP aggregate terminal boundary — implemented, awaiting HIL.** AP A-MPDU
+- **AP aggregate terminal boundary — implemented and observed on HIL.** AP A-MPDU
   state no longer reduces association identity to a MAC address. Building,
   hardware-owned, retained-retry and completed states carry the exact peer
   slot and generation, and terminal release returns that identity to the
@@ -839,6 +839,26 @@ with every mismatch counter still zero. The replay delivered 120.175 and
 120.347 Mbit/s at 39.068% and 39.033% Core0 occupancy. This replay validates
 the report extraction and archived-firmware path; it is not a new firmware
 performance comparison because the firmware remains the `ddd9da87` artifact.
+
+Commit `93d74474cf4217cc9e2f686d3b05d9441acd1bc6` extended that boundary through
+terminal AP A-MPDU ownership. Clean run `1788290889195-0017b1f3` and exact
+firmware replay `1788291195847-0017b7d0` each completed two channel-13 cycles.
+Every cycle used full 32-frame aggregates except one terminal packet outside
+the A-MPDU path: terminal current frame counts were respectively
+162,304/163,200 and 162,656/162,976, while exact entry counts were one larger.
+All terminal stale counters and every entry mismatch counter were zero.
+
+The same evidence exposes a performance regression which is not accepted as
+an architectural cost. The clean run measured 119.444/120.109 Mbit/s at
+43.254/43.389% Core0 residence; exact replay measured 119.699/119.939 Mbit/s
+at 43.355/43.430%. The prior identity-only image was near 39.0% Core0. The
+replay proves this is a property of the new image, not one anomalous radio
+sample, but does not identify whether the added cost is the current-generation
+lookup/counters or an induced code-layout effect. The existing same-image
+egress-control switch therefore also suppresses only this terminal diagnostic
+observation in its disabled mode; it does not change retry, release, retained
+identity or hardware behavior. That A/B must localize the cost before shadow
+airtime accounting proceeds.
 
 ### Phase 5: authoritative cutover
 

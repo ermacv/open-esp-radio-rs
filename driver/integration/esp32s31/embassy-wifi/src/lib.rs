@@ -131,6 +131,8 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::{
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::configure_ap_terminal_identity_diagnostics;
 #[cfg(feature = "task-poll-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_reorder_cycles::{
     CORE0_REORDER_CYCLES, Core0ReorderSnapshot,

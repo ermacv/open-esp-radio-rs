@@ -1279,6 +1279,16 @@ pub struct BluetoothPassiveScanMemoryGraphRecyclePrepared {
 }
 
 impl BluetoothPassiveScanMemoryGraphRecyclePrepared {
+    /// Recover both unchanged affine owners before extraction begins.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothPassiveScanMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self._removal)
+    }
+
     /// Validate and copy every contiguous completed node without mutating SRAM.
     pub fn extract_received(
         self,

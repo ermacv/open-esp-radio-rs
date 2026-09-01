@@ -23,7 +23,8 @@ use crate::controller_time::{
 use crate::dtm_post_unlink::{
     BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkMailbox, BluetoothDtmPostUnlinkRearm,
     BluetoothDtmPostUnlinkTake, BluetoothLegacyAdvertisingPostUnlinkRearm,
-    BluetoothLegacyAdvertisingPostUnlinkTake,
+    BluetoothLegacyAdvertisingPostUnlinkTake, BluetoothPassiveScanPostUnlinkRearm,
+    BluetoothPassiveScanPostUnlinkTake,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::modem_lp_timer_queue::{
@@ -429,6 +430,62 @@ pub enum BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep<'a> {
     },
     Ready {
         ready: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
+    },
+}
+
+/// Result of atomically unlinking a scanner item and arming the return mailbox.
+#[must_use = "retain the empty-head scanner graph or armed owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPassiveScanPostUnlinkArmStep {
+    MailboxBusy(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
+    MailboxIdentityExhausted(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
+    GenerationExhausted(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
+    SchedulerIdentityMismatch(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
+    MailboxCommitMismatch(crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+    Armed(crate::BluetoothPassiveScanPostUnlinkAwaiting),
+}
+
+/// Controller result of consuming one scanner post-unlink event pair.
+#[must_use = "every outcome retains the scanner graph"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPassiveScanSoftwareListRemovalPublishedStep {
+    MailboxAffinityMismatch(crate::BluetoothPassiveScanPostUnlinkAwaiting),
+    Fault {
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+        fault: crate::BluetoothPrimaryControllerFault,
+    },
+    NoSchedulerWork {
+        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PublishedPending {
+        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
+    },
+    DirectPending {
+        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
+    },
+    RecheckUnavailable {
+        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
+    },
+    NoSchedulerWorkRearmMismatch {
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PendingRearmMismatch {
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    },
+    RecheckRearmMismatch {
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    },
+    SchedulerIdentityMismatch {
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    },
+    DirectSchedulerIdentityMismatch {
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    },
+    Ready {
+        ready: crate::BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
     },
 }
 
@@ -4278,6 +4335,170 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         ready: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
     ) -> crate::BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
         self.runtime.recycle_legacy_advertising_completed(ready)
+    }
+
+    /// Perform one fresh fenced completion-list transfer for passive scanning.
+    pub fn observe_passive_scan_completion(
+        &mut self,
+        running: crate::BluetoothPassiveScanSchedulerRunning,
+        wake: crate::BluetoothSchedulerWakeBatch,
+    ) -> crate::BluetoothPassiveScanSchedulerCompletionStep {
+        self.runtime.observe_passive_scan_completion(running, wake)
+    }
+
+    /// Continue one retained finished-list capture while the scanner runs.
+    pub fn continue_passive_scan_running_finished_list_drain(
+        &mut self,
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
+            crate::BluetoothPassiveScanSchedulerRunning,
+        >,
+    ) -> crate::BluetoothPassiveScanSchedulerRunningDrainStep {
+        self.runtime
+            .continue_passive_scan_running_finished_list_drain(pending)
+    }
+
+    /// Continue one retained capture after scanner completion was observed.
+    pub fn continue_passive_scan_completed_finished_list_drain(
+        &mut self,
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
+            crate::BluetoothPassiveScanSchedulerCompletionObserved,
+        >,
+    ) -> crate::BluetoothPassiveScanSchedulerCompletionObservedDrainStep {
+        self.runtime
+            .continue_passive_scan_completed_finished_list_drain(pending)
+    }
+
+    /// Observe the post-picker hardware-head retirement barrier for scanning.
+    pub fn observe_passive_scan_hardware_head_retirement(
+        &mut self,
+        completed: crate::BluetoothPassiveScanSchedulerCompletionObserved,
+    ) -> crate::BluetoothPassiveScanSchedulerHardwareHeadRetirementStep {
+        self.runtime
+            .observe_passive_scan_hardware_head_retirement(completed)
+    }
+
+    /// Atomically unlink the scanner item and arm the shared return mailbox.
+    pub fn unlink_and_arm_passive_scan_software_list_removal(
+        &mut self,
+        observed: crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved,
+    ) -> BluetoothPassiveScanPostUnlinkArmStep {
+        let runtime = &mut self.runtime;
+        let mailbox = self.mailbox;
+        critical_section::with(|critical_section| {
+            let key = match mailbox.prepare_arm(critical_section) {
+                Ok(key) => key,
+                Err(BluetoothDtmPostUnlinkArmError::Busy) => {
+                    return BluetoothPassiveScanPostUnlinkArmStep::MailboxBusy(observed);
+                }
+                Err(BluetoothDtmPostUnlinkArmError::IdentityExhausted) => {
+                    return BluetoothPassiveScanPostUnlinkArmStep::MailboxIdentityExhausted(
+                        observed,
+                    );
+                }
+                Err(BluetoothDtmPostUnlinkArmError::GenerationExhausted) => {
+                    return BluetoothPassiveScanPostUnlinkArmStep::GenerationExhausted(observed);
+                }
+            };
+            match runtime.unlink_passive_scan_software_list(observed) {
+                crate::BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(observed) => {
+                    BluetoothPassiveScanPostUnlinkArmStep::SchedulerIdentityMismatch(observed)
+                }
+                crate::BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::Unlinked(unlinked) => {
+                    if mailbox.commit_arm(critical_section, key) {
+                        BluetoothPassiveScanPostUnlinkArmStep::Armed(
+                            crate::BluetoothPassiveScanPostUnlinkAwaiting::new(unlinked, key),
+                        )
+                    } else {
+                        BluetoothPassiveScanPostUnlinkArmStep::MailboxCommitMismatch(unlinked)
+                    }
+                }
+            }
+        })
+    }
+
+    /// Consume or directly recheck one armed scanner removal gate.
+    pub fn consume_published_passive_scan_software_list_removal(
+        &mut self,
+        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
+    ) -> BluetoothPassiveScanSoftwareListRemovalPublishedStep
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let runtime = &mut self.runtime;
+        let storage = self.storage;
+        let mailbox = self.mailbox;
+        critical_section::with(|critical_section| {
+            let (key, pending) = match mailbox.take_passive_scan(critical_section, awaiting) {
+                BluetoothPassiveScanPostUnlinkTake::Recheck { key, unlinked } => {
+                    return match runtime
+                        .recheck_passive_scan_software_list_removal(storage, unlinked)
+                    {
+                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked) => {
+                            BluetoothPassiveScanSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch { unlinked }
+                        }
+                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::StorageUnavailable(unlinked) => {
+                            match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
+                                BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting },
+                                BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
+                            }
+                        }
+                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Pending(unlinked) => {
+                            match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
+                                BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::DirectPending { awaiting },
+                                BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
+                            }
+                        }
+                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Ready(ready) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::Ready { ready },
+                    };
+                }
+                BluetoothPassiveScanPostUnlinkTake::AffinityMismatch(awaiting) => {
+                    return BluetoothPassiveScanSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(awaiting);
+                }
+                BluetoothPassiveScanPostUnlinkTake::Ready { key, event } => (key, event),
+            };
+            let (unlinked, published) = pending.into_parts();
+            match published {
+                BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
+                    BluetoothPassiveScanSoftwareListRemovalPublishedStep::Fault { unlinked, fault }
+                }
+                BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
+                    match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
+                        BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::NoSchedulerWork { awaiting, epoch },
+                        BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch { unlinked, epoch },
+                    }
+                }
+                BluetoothPrimaryPublishedInterruptStep::Scheduler { event, .. } => {
+                    match runtime.join_passive_scan_software_list_removal(unlinked, event) {
+                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch { unlinked, event } => BluetoothPassiveScanSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch { unlinked, event },
+                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Pending(unlinked) => {
+                            match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
+                                BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::PublishedPending { awaiting },
+                                BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::PendingRearmMismatch { unlinked },
+                            }
+                        }
+                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Ready(ready) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::Ready { ready },
+                    }
+                }
+            }
+        })
+    }
+
+    /// Cancel a scanner post-unlink wait without discarding a ready event.
+    pub fn cancel_passive_scan_software_list_removal(
+        &mut self,
+        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
+    ) -> crate::BluetoothPassiveScanPostUnlinkCancelStep {
+        critical_section::with(|critical_section| {
+            self.mailbox.cancel_passive_scan(critical_section, awaiting)
+        })
+    }
+
+    /// Extract completed PDUs and return scanner SRAM to CPU ownership.
+    pub fn recycle_passive_scan_completed(
+        &mut self,
+        ready: crate::BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+    ) -> crate::BluetoothPassiveScanSchedulerRecycleStep {
+        self.runtime.recycle_passive_scan_completed(ready)
     }
 
     /// Perform one fresh fenced completion-list transfer and immediately join

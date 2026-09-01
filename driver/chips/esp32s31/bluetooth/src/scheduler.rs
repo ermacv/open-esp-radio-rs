@@ -52,6 +52,11 @@ use crate::{
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
     BluetoothDtmSchedulerItemCompletionStatus, BluetoothPassiveScanMemoryGraphCommandPublished,
+    BluetoothPassiveScanMemoryGraphCompletionObservation,
+    BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphRecycleError,
+    BluetoothPassiveScanMemoryGraphRecycled, BluetoothPassiveScanMemoryGraphRunning,
+    BluetoothPassiveScanReceivedBatch, BluetoothPassiveScanRxError,
+    BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -309,28 +314,241 @@ impl BluetoothPassiveScanSchedulerHeadPublished {
 #[cfg(target_arch = "riscv32")]
 #[must_use = "the running scanner graph must advance through owned completion"]
 pub struct BluetoothPassiveScanSchedulerRunning {
-    graph: BluetoothPassiveScanMemoryGraphCommandPublished,
+    graph: BluetoothPassiveScanMemoryGraphRunning,
     run: BluetoothSchedulerHardwareRunCommandPublished,
 }
 
 #[cfg(target_arch = "riscv32")]
 impl BluetoothPassiveScanSchedulerRunning {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         graph: BluetoothPassiveScanMemoryGraphCommandPublished,
         run: BluetoothSchedulerHardwareRunCommandPublished,
     ) -> Self {
+        let graph = graph.into_running(&run);
         Self { graph, run }
     }
 
     /// Exact scanner item retained while hardware owns the graph.
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_head()
+        self.graph.scheduler_item_address()
     }
 
     /// Hardware list admitted by the complete run transaction.
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.run.index()
     }
+}
+
+/// Scanner graph after one non-sentinel scheduler completion observation.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed scanner graph must advance through unlink and recycle"]
+pub struct BluetoothPassiveScanSchedulerCompletionObserved {
+    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerCompletionObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+
+    pub const fn status(&self) -> BluetoothPassiveScanSchedulerItemCompletionStatus {
+        self.graph.status()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the empty scanner head must advance through software unlink"]
+pub struct BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
+    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the unlinked scanner graph must pass the removal gate"]
+pub struct BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the removal-ready scanner graph must be extracted and recycled"]
+pub struct BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.removal.index()
+    }
+}
+
+/// CPU-owned scanner graph and copied receive results.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "return the graph and received packets to the scanner role owner"]
+pub struct BluetoothPassiveScanSchedulerRecycled {
+    graph: BluetoothPassiveScanMemoryGraphRecycled,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerRecycled {
+    pub fn into_parts(
+        self,
+    ) -> (
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+        BluetoothPassiveScanReceivedBatch,
+        BluetoothPassiveScanSchedulerItemCompletionStatus,
+    ) {
+        self.graph.into_parts()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the scanner graph and every captured list remain owned"]
+pub enum BluetoothPassiveScanSchedulerCompletionStep {
+    DrainAlreadyActive(BluetoothPassiveScanSchedulerRunning),
+    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerRunning),
+    NoFinishedList(BluetoothPassiveScanSchedulerRunning),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerCompletionObserved>,
+    ),
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the scanner graph and captured drain remain owned"]
+pub enum BluetoothPassiveScanSchedulerRunningDrainStep {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerRunning>,
+    ),
+    DrainLost(BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerRunning>),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerCompletionObserved>,
+    ),
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed scanner graph and captured drain remain owned"]
+pub enum BluetoothPassiveScanSchedulerCompletionObservedDrainStep {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerCompletionObserved>,
+    ),
+    DrainLost(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerCompletionObserved>,
+    ),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothPassiveScanSchedulerCompletionObserved,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    RepeatedScannerList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothPassiveScanSchedulerCompletionObserved,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed scanner graph must retain its head retirement state"]
+pub enum BluetoothPassiveScanSchedulerHardwareHeadRetirementStep {
+    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerCompletionObserved),
+    FinishedListDrainStillActive(BluetoothPassiveScanSchedulerCompletionObserved),
+    ExpectedHeadStillPublished {
+        completed: BluetoothPassiveScanSchedulerCompletionObserved,
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    UnexpectedHeadChanged {
+        completed: BluetoothPassiveScanSchedulerCompletionObserved,
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    EmptyObserved(BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the scanner unlink owner must be retained"]
+pub enum BluetoothPassiveScanSchedulerSoftwareListUnlinkStep {
+    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
+    Unlinked(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the scanner unlinked or removal-ready owner must be retained"]
+pub enum BluetoothPassiveScanSchedulerSoftwareListRemovalJoin {
+    SchedulerIdentityMismatch {
+        unlinked: BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    },
+    Pending(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+    Ready(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the scanner unlinked or removal-ready owner must be retained"]
+pub enum BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck {
+    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+    StorageUnavailable(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+    Pending(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+    Ready(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+}
+
+#[cfg(target_arch = "riscv32")]
+#[must_use = "failure retains the scanner graph; success returns CPU ownership"]
+pub enum BluetoothPassiveScanSchedulerRecycleStep {
+    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+    FinishedListDrainStillActive(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+    MemoryIdentityMismatch {
+        ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+        error: BluetoothPassiveScanMemoryGraphRecycleError,
+    },
+    ReceiveInvalid {
+        ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+        error: BluetoothPassiveScanRxError,
+    },
+    Recycled(BluetoothPassiveScanSchedulerRecycled),
 }
 
 /// Lossless rejection before advertising scheduler-head MMIO publication.
@@ -3871,6 +4089,373 @@ impl<const SCHEDULER_CAPACITY: usize>
         BluetoothLegacyAdvertisingSchedulerRecycleStep::Recycled(
             BluetoothLegacyAdvertisingSchedulerRecycled { item },
         )
+    }
+
+    /// Perform one fresh, fenced scanner completion-list transfer.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_passive_scan_completion(
+        &mut self,
+        running: BluetoothPassiveScanSchedulerRunning,
+        wake: BluetoothSchedulerWakeBatch,
+    ) -> BluetoothPassiveScanSchedulerCompletionStep {
+        let address = running.scheduler_item_address();
+        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerCompletionStep::SchedulerIdentityMismatch(running);
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPassiveScanSchedulerCompletionStep::DrainAlreadyActive(running);
+        }
+        if self
+            .task
+            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake)
+            .is_err()
+        {
+            return BluetoothPassiveScanSchedulerCompletionStep::DrainAlreadyActive(running);
+        }
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
+            self.runtime.scheduler_finished_lists_mut().step()
+        else {
+            return BluetoothPassiveScanSchedulerCompletionStep::NoFinishedList(running);
+        };
+        let BluetoothPassiveScanSchedulerRunning { graph, run } = running;
+        match graph.observe_completion(observed) {
+            BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
+                running,
+                observed,
+            } => BluetoothPassiveScanSchedulerCompletionStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothPassiveScanSchedulerRunning {
+                        graph: running,
+                        run,
+                    },
+                    more,
+                ),
+                observed,
+            },
+            BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(graph) => {
+                BluetoothPassiveScanSchedulerCompletionStep::StillInFlight(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPassiveScanSchedulerRunning { graph, run },
+                        more,
+                    ),
+                )
+            }
+            BluetoothPassiveScanMemoryGraphCompletionObservation::CompletionObserved(graph) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothPassiveScanSchedulerCompletionStep::CompletionObserved(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue the same captured drain while the scanner remains running.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_passive_scan_running_finished_list_drain(
+        &mut self,
+        pending: BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerRunning>,
+    ) -> BluetoothPassiveScanSchedulerRunningDrainStep {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerRunningDrainStep::SchedulerIdentityMismatch(
+                pending,
+            );
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPassiveScanSchedulerRunningDrainStep::DrainLost(pending);
+        }
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
+            self.runtime.scheduler_finished_lists_mut().step()
+        else {
+            return BluetoothPassiveScanSchedulerRunningDrainStep::DrainLost(pending);
+        };
+        let BluetoothPassiveScanSchedulerRunning { graph, run } = pending.into_owner();
+        match graph.observe_completion(observed) {
+            BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
+                running,
+                observed,
+            } => BluetoothPassiveScanSchedulerRunningDrainStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothPassiveScanSchedulerRunning {
+                        graph: running,
+                        run,
+                    },
+                    more,
+                ),
+                observed,
+            },
+            BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(graph) => {
+                BluetoothPassiveScanSchedulerRunningDrainStep::StillInFlight(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPassiveScanSchedulerRunning { graph, run },
+                        more,
+                    ),
+                )
+            }
+            BluetoothPassiveScanMemoryGraphCompletionObservation::CompletionObserved(graph) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothPassiveScanSchedulerRunningDrainStep::CompletionObserved(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue a captured drain after scanner completion was observed.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_passive_scan_completed_finished_list_drain(
+        &mut self,
+        pending: BluetoothSchedulerFinishedListDrainPending<
+            BluetoothPassiveScanSchedulerCompletionObserved,
+        >,
+    ) -> BluetoothPassiveScanSchedulerCompletionObservedDrainStep {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_completion_observed_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
+                pending,
+            );
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPassiveScanSchedulerCompletionObservedDrainStep::DrainLost(pending);
+        }
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
+            self.runtime.scheduler_finished_lists_mut().step()
+        else {
+            return BluetoothPassiveScanSchedulerCompletionObservedDrainStep::DrainLost(pending);
+        };
+        let completed = pending.into_owner();
+        if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
+            BluetoothPassiveScanSchedulerCompletionObservedDrainStep::RepeatedScannerList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
+                observed,
+            }
+        } else {
+            BluetoothPassiveScanSchedulerCompletionObservedDrainStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
+                observed,
+            }
+        }
+    }
+
+    /// Observe retirement of the exact scanner hardware-list head.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_passive_scan_hardware_head_retirement(
+        &mut self,
+        completed: BluetoothPassiveScanSchedulerCompletionObserved,
+    ) -> BluetoothPassiveScanSchedulerHardwareHeadRetirementStep {
+        let address = completed.scheduler_item_address();
+        if completed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_completion_observed_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(completed);
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed);
+        }
+        let BluetoothPassiveScanSchedulerCompletionObserved { graph, run } = completed;
+        match self
+            .task
+            .observe_scheduler_hardware_list_head_retirement(run)
+        {
+            BluetoothSchedulerHardwareListHeadRetirementObservation::ExpectedHeadStillPublished {
+                run,
+                observed,
+            } => BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished {
+                completed: BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                observed,
+            },
+            BluetoothSchedulerHardwareListHeadRetirementObservation::UnexpectedHeadChanged {
+                run,
+                observed,
+            } => BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged {
+                completed: BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                observed,
+            },
+            BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(head) => {
+                assert_eq!(
+                    head.completed_head().address(),
+                    Some(address),
+                    "the retired head must retain the completed scanner identity"
+                );
+                self._scheduler_list
+                    .retain_hardware_head_empty_first_item(address);
+                BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::EmptyObserved(
+                    BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved { graph, head },
+                )
+            }
+        }
+    }
+
+    /// Remove the sole scanner item from the source-owned software list.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn unlink_passive_scan_software_list(
+        &mut self,
+        observed: BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved,
+    ) -> BluetoothPassiveScanSchedulerSoftwareListUnlinkStep {
+        let address = observed.scheduler_item_address();
+        if observed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self
+                ._scheduler_list
+                .unlink_software_list_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
+                observed,
+            );
+        }
+        let BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved { graph, head } = observed;
+        BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::Unlinked(
+            BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+        )
+    }
+
+    /// Join a fresh primary event to the unlinked scanner item.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn join_passive_scan_software_list_removal(
+        &mut self,
+        unlinked: BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    ) -> BluetoothPassiveScanSchedulerSoftwareListRemovalJoin {
+        let address = unlinked.scheduler_item_address();
+        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self._scheduler_list.retains_unlinked_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
+                unlinked,
+                event,
+            };
+        }
+        let idle = match event.into_software_list_removal_gate() {
+            BluetoothSchedulerSoftwareListRemovalInterruptStep::Pending => {
+                return BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Pending(unlinked);
+            }
+            BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
+        };
+        let BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head } = unlinked;
+        match self.task.finish_scheduler_software_list_removal(idle, head) {
+            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
+                BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Pending(
+                    BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+                )
+            }
+            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
+                self._scheduler_list
+                    .retain_software_list_removal_ready_first_item(address);
+                BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Ready(
+                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                )
+            }
+        }
+    }
+
+    /// Recheck an unlinked scanner item without requiring another IRQ edge.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_passive_scan_software_list_removal(
+        &mut self,
+        storage: &impl crate::BluetoothSchedulerRunInterruptStorage,
+        unlinked: BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    ) -> BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck {
+        let address = unlinked.scheduler_item_address();
+        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self._scheduler_list.retains_unlinked_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(
+                unlinked,
+            );
+        }
+        let BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head } = unlinked;
+        let join = match self
+            .task
+            .recheck_scheduler_software_list_removal(storage, head)
+        {
+            Ok(join) => join,
+            Err(head) => {
+                return BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
+                    BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+                );
+            }
+        };
+        match join {
+            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
+                BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Pending(
+                    BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+                )
+            }
+            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
+                self._scheduler_list
+                    .retain_software_list_removal_ready_first_item(address);
+                BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Ready(
+                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                )
+            }
+        }
+    }
+
+    /// Extract RX packets and release the scanner memory and common-list owners.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recycle_passive_scan_completed(
+        &mut self,
+        ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+    ) -> BluetoothPassiveScanSchedulerRecycleStep {
+        let address = ready.scheduler_item_address();
+        if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_software_list_removal_ready_first_item(address)
+        {
+            return BluetoothPassiveScanSchedulerRecycleStep::SchedulerIdentityMismatch(ready);
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPassiveScanSchedulerRecycleStep::FinishedListDrainStillActive(ready);
+        }
+        let BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal } = ready;
+        let prepared = match graph.prepare_recycle_after_software_list_removal(removal) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let error = failure.error();
+                let (graph, removal) = failure.into_parts();
+                return BluetoothPassiveScanSchedulerRecycleStep::MemoryIdentityMismatch {
+                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                    error,
+                };
+            }
+        };
+        let extracted = match prepared.extract_received() {
+            Ok(extracted) => extracted,
+            Err(failure) => {
+                let error = failure.error();
+                let (graph, removal) = failure.into_prepared().into_parts();
+                return BluetoothPassiveScanSchedulerRecycleStep::ReceiveInvalid {
+                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                    error,
+                };
+            }
+        };
+        let graph = extracted.commit();
+        self._scheduler_list.commit_recycled_first_item();
+        BluetoothPassiveScanSchedulerRecycleStep::Recycled(BluetoothPassiveScanSchedulerRecycled {
+            graph,
+        })
     }
 
     /// Perform one fresh, bounded DTM completion observation.

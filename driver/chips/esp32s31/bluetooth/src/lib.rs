@@ -193,7 +193,8 @@ pub use controller_start::{
     BluetoothLegacyAdvertisingPostUnlinkArmStep, BluetoothLegacyAdvertisingSchedulerStartFailure,
     BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
-    BluetoothPassiveScanSchedulerStartFailure, BluetoothSchedulerRunInterruptStorage,
+    BluetoothPassiveScanPostUnlinkArmStep, BluetoothPassiveScanSchedulerStartFailure,
+    BluetoothPassiveScanSoftwareListRemovalPublishedStep, BluetoothSchedulerRunInterruptStorage,
     BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -252,6 +253,7 @@ pub use dtm_payload::{
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep,
     BluetoothLegacyAdvertisingPostUnlinkAwaiting, BluetoothLegacyAdvertisingPostUnlinkCancelStep,
+    BluetoothPassiveScanPostUnlinkAwaiting, BluetoothPassiveScanPostUnlinkCancelStep,
 };
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
@@ -484,8 +486,16 @@ pub use scheduler::{
     BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck,
     BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep,
     BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked,
+    BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved,
+    BluetoothPassiveScanSchedulerHardwareHeadRetirementStep,
     BluetoothPassiveScanSchedulerHeadPublicationFailure,
-    BluetoothPassiveScanSchedulerHeadPublished, BluetoothPassiveScanSchedulerRunning,
+    BluetoothPassiveScanSchedulerHeadPublished, BluetoothPassiveScanSchedulerRecycleStep,
+    BluetoothPassiveScanSchedulerRecycled, BluetoothPassiveScanSchedulerRunning,
+    BluetoothPassiveScanSchedulerSoftwareListRemovalJoin,
+    BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+    BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck,
+    BluetoothPassiveScanSchedulerSoftwareListUnlinkStep,
+    BluetoothPassiveScanSchedulerSoftwareListUnlinked,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{
@@ -498,6 +508,9 @@ pub use scheduler::{
     BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep,
     BluetoothLegacyAdvertisingSchedulerCompletionStep,
     BluetoothLegacyAdvertisingSchedulerRunningDrainStep,
+    BluetoothPassiveScanSchedulerCompletionObserved,
+    BluetoothPassiveScanSchedulerCompletionObservedDrainStep,
+    BluetoothPassiveScanSchedulerCompletionStep, BluetoothPassiveScanSchedulerRunningDrainStep,
     BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
 };
 #[cfg(any(target_arch = "riscv32", test))]

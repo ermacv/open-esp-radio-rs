@@ -1,7 +1,8 @@
 //! Production ownership and final IRQ composition for ESP32-S31 Bluetooth.
 //!
 //! This crate owns placement and one-time acquisition for the BLE PHY
-//! environment, one DTM event graph and one legacy-advertising event graph.
+//! environment, one DTM event graph, one legacy-advertising event graph and
+//! one passive-scanner receive graph.
 //! It also installs the final target-only
 //! bridge from the three typed ESP-HAL routes through the complete chip ISR
 //! service to durable Embassy notification. Controller-memory layout and
@@ -31,9 +32,9 @@ pub use cold_start::{
     Esp32s31BluetoothBlePhyMemoryFailure, Esp32s31BluetoothClaimedMemory,
     Esp32s31BluetoothColdStartConfig, Esp32s31BluetoothColdStartError,
     Esp32s31BluetoothColdStartOutput, Esp32s31BluetoothDtmMemoryFailure,
-    Esp32s31BluetoothLegacyAdvertisingMemoryFailure, Esp32s31BluetoothPoweredFailure,
-    Esp32s31BluetoothRecheckStartFailure, Esp32s31BluetoothReservedFailure,
-    Esp32s31BluetoothUnpoweredOwners, start_esp32s31_bluetooth,
+    Esp32s31BluetoothLegacyAdvertisingMemoryFailure, Esp32s31BluetoothPassiveScanMemoryFailure,
+    Esp32s31BluetoothPoweredFailure, Esp32s31BluetoothRecheckStartFailure,
+    Esp32s31BluetoothReservedFailure, Esp32s31BluetoothUnpoweredOwners, start_esp32s31_bluetooth,
 };
 #[cfg(target_arch = "riscv32")]
 pub use interrupt_runtime::{
@@ -60,16 +61,18 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources,
     BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothLegacyAdvertisingRuntimeResources,
+    BluetoothPassiveScanRuntimeConfig, BluetoothPassiveScanRuntimeResources,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphStorage,
     BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphStorage,
+    BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphStorage,
 };
 #[cfg(not(target_arch = "riscv32"))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineModelAddress, BluetoothDtmMemoryGraphModelAddress,
-    BluetoothLegacyAdvertisingMemoryGraphModelAddress,
+    BluetoothLegacyAdvertisingMemoryGraphModelAddress, BluetoothPassiveScanMemoryGraphModelAddress,
 };
 use static_cell::ConstStaticCell;
 
@@ -368,25 +371,113 @@ pub fn claim_production_legacy_advertising_runtime(
 static PRODUCTION_LEGACY_ADVERTISING_MEMORY: Esp32s31BluetoothLegacyAdvertisingMemory =
     Esp32s31BluetoothLegacyAdvertisingMemory::new();
 
+/// One statically placed passive-scanner graph.
+pub struct Esp32s31BluetoothPassiveScanMemory {
+    claimed: AtomicBool,
+    storage: ConstStaticCell<BluetoothPassiveScanMemoryGraphStorage>,
+}
+
+impl Esp32s31BluetoothPassiveScanMemory {
+    pub const fn new() -> Self {
+        Self {
+            claimed: AtomicBool::new(false),
+            storage: ConstStaticCell::new(BluetoothPassiveScanMemoryGraphStorage::new()),
+        }
+    }
+
+    fn begin_claim(
+        &'static self,
+    ) -> Result<
+        &'static mut BluetoothPassiveScanMemoryGraphStorage,
+        Esp32s31BluetoothPassiveScanMemoryClaimError,
+    > {
+        if self
+            .claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(Esp32s31BluetoothPassiveScanMemoryClaimError::InUse);
+        }
+        Ok(self.storage.take())
+    }
+
+    /// Claim and bind this arena using its real ESP32-S31 address.
+    #[cfg(target_arch = "riscv32")]
+    pub fn claim(
+        &'static self,
+        config: BluetoothPassiveScanRuntimeConfig,
+    ) -> Result<BluetoothPassiveScanRuntimeResources, Esp32s31BluetoothPassiveScanMemoryClaimError>
+    {
+        let storage = self.begin_claim()?;
+        BluetoothPassiveScanRuntimeResources::claim_static(storage, config)
+            .map_err(Esp32s31BluetoothPassiveScanMemoryClaimError::Placement)
+    }
+
+    /// Claim this arena with one deterministic native model address.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn claim_model(
+        &'static self,
+        base: BluetoothPassiveScanMemoryGraphModelAddress,
+        config: BluetoothPassiveScanRuntimeConfig,
+    ) -> Result<BluetoothPassiveScanRuntimeResources, Esp32s31BluetoothPassiveScanMemoryClaimError>
+    {
+        let storage = self.begin_claim()?;
+        BluetoothPassiveScanRuntimeResources::claim_static_model(storage, base, config)
+            .map_err(Esp32s31BluetoothPassiveScanMemoryClaimError::Placement)
+    }
+}
+
+impl Default for Esp32s31BluetoothPassiveScanMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Why the production passive-scanner graph could not be claimed.
+#[derive(Debug)]
+pub enum Esp32s31BluetoothPassiveScanMemoryClaimError {
+    InUse,
+    Placement(BluetoothPassiveScanMemoryGraphBindFailure),
+}
+
+/// Claim the sole production passive-scanner graph.
+#[cfg(target_arch = "riscv32")]
+pub fn claim_production_passive_scan_runtime(
+    config: BluetoothPassiveScanRuntimeConfig,
+) -> Result<BluetoothPassiveScanRuntimeResources, Esp32s31BluetoothPassiveScanMemoryClaimError> {
+    PRODUCTION_PASSIVE_SCAN_MEMORY.claim(config)
+}
+
+#[cfg(target_arch = "riscv32")]
+#[allow(
+    unsafe_code,
+    reason = "the production linker must retain controller storage in internal SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_bluetooth_passive_scan")]
+static PRODUCTION_PASSIVE_SCAN_MEMORY: Esp32s31BluetoothPassiveScanMemory =
+    Esp32s31BluetoothPassiveScanMemory::new();
+
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_bluetooth::{
         BluetoothDtmDefaultTxPowerDbm, BluetoothDtmRuntimeConfig,
-        BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+        BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothPassiveScanRuntimeConfig,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothBlePhyEngineBindError,
         BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
         BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphModelAddress,
         BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
-        BluetoothLegacyAdvertisingMemoryGraphModelAddress,
+        BluetoothLegacyAdvertisingMemoryGraphModelAddress, BluetoothPassiveScanDefaultTxPowerDbm,
+        BluetoothPassiveScanMemoryGraphModelAddress, BluetoothPassiveScanSchedulerAllocationConfig,
     };
 
     use super::{
         Esp32s31BluetoothBlePhyMemory, Esp32s31BluetoothBlePhyMemoryClaimError,
         Esp32s31BluetoothDtmMemory, Esp32s31BluetoothDtmMemoryClaimError,
         Esp32s31BluetoothLegacyAdvertisingMemory,
-        Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
+        Esp32s31BluetoothLegacyAdvertisingMemoryClaimError, Esp32s31BluetoothPassiveScanMemory,
+        Esp32s31BluetoothPassiveScanMemoryClaimError,
     };
 
     const fn runtime_config() -> BluetoothDtmRuntimeConfig {
@@ -431,6 +522,28 @@ mod tests {
         assert!(matches!(
             MEMORY.claim_model(base, BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(6)),
             Err(Esp32s31BluetoothLegacyAdvertisingMemoryClaimError::InUse)
+        ));
+    }
+
+    #[test]
+    fn model_passive_scanner_arena_is_claimed_once() {
+        static MEMORY: Esp32s31BluetoothPassiveScanMemory =
+            Esp32s31BluetoothPassiveScanMemory::new();
+        let base = BluetoothPassiveScanMemoryGraphModelAddress::new(0x2f00_8000)
+            .expect("model base is encodable");
+        let config = BluetoothPassiveScanRuntimeConfig::new(
+            BluetoothPassiveScanSchedulerAllocationConfig::new(2, 3)
+                .expect("the product limits fit the scanner graph"),
+            BluetoothPassiveScanDefaultTxPowerDbm::new(6),
+        );
+        let runtime = MEMORY
+            .claim_model(base, config)
+            .expect("fresh scanner arena binds once");
+        assert!(runtime.event_is_idle());
+        assert_eq!(runtime.config(), config);
+        assert!(matches!(
+            MEMORY.claim_model(base, config),
+            Err(Esp32s31BluetoothPassiveScanMemoryClaimError::InUse)
         ));
     }
 

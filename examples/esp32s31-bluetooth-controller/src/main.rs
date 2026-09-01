@@ -18,14 +18,18 @@ use esp_hal::{
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothDtmDefaultTxPowerDbm, BluetoothDtmRuntimeConfig, BluetoothRadioHardware,
+    BluetoothDtmDefaultTxPowerDbm, BluetoothDtmRuntimeConfig, BluetoothPassiveScanRuntimeConfig,
+    BluetoothRadioHardware,
 };
 use open_esp_radio_esp32s31_bluetooth_embassy::EmbassyBluetoothDtmRecheckPeriod;
 use open_esp_radio_esp32s31_bluetooth_integration::{
     Esp32s31BluetoothColdStartConfig, Esp32s31BluetoothHostController, Esp32s31BluetoothSystem,
     Esp32s31BluetoothSystemStorage, start_esp32s31_bluetooth,
 };
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerAllocationConfig;
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmSchedulerAllocationConfig, BluetoothPassiveScanDefaultTxPowerDbm,
+    BluetoothPassiveScanSchedulerAllocationConfig,
+};
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use open_esp_radio_esp32s31_radio_platform_esp_hal::{
     EspHalBluetoothPlatform, EspHalRadioPlatform,
@@ -101,9 +105,15 @@ async fn bluetooth_controller_task(
         BluetoothDtmSchedulerAllocationConfig::new(0, 0, 0),
         BluetoothDtmDefaultTxPowerDbm::new(0),
     );
+    let passive_scan = BluetoothPassiveScanRuntimeConfig::new(
+        BluetoothPassiveScanSchedulerAllocationConfig::new(0, 0)
+            .expect("the standalone Controller limits fit the scanner graph"),
+        BluetoothPassiveScanDefaultTxPowerDbm::new(0),
+    );
     let recheck_period = EmbassyBluetoothDtmRecheckPeriod::from_duration(Duration::from_micros(50))
         .expect("the Controller-time recheck period must be nonzero");
-    let config = Esp32s31BluetoothColdStartConfig::new(251, 4, None, dtm, recheck_period);
+    let config =
+        Esp32s31BluetoothColdStartConfig::new(251, 4, None, dtm, passive_scan, recheck_period);
     let output =
         match start_esp32s31_bluetooth(platform, hardware, &BLUETOOTH_STORAGE, config).await {
             Ok(output) => output,

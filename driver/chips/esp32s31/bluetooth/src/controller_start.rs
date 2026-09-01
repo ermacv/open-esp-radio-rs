@@ -772,6 +772,7 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     scheduler_epoch: Option<crate::BluetoothControllerSchedulerEpoch>,
     dtm_resources: crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
+    passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
 }
 
 /// Disjoint runtime endpoints borrowed from one statically placed final
@@ -1385,6 +1386,7 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: &'runtime mut crate::BluetoothLegacyAdvertisingRuntimeResources,
+    passive_scan_resources: &'runtime mut crate::BluetoothPassiveScanRuntimeResources,
     always_awake_timing: crate::ble_phy::BluetoothAlwaysAwakeTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
@@ -3513,6 +3515,7 @@ pub struct BluetoothControllerInterruptOwnerPublicationFailure<
     storage: S,
     dtm_resources: crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
+    passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
     error: S::Error,
 }
 
@@ -3609,6 +3612,7 @@ where
             scheduler_epoch,
             dtm_resources,
             legacy_advertising_resources,
+            passive_scan_resources,
             ..
         } = self;
         let (
@@ -3631,6 +3635,7 @@ where
             mailbox: post_unlink_mailbox,
             dtm_resources,
             legacy_advertising_resources,
+            passive_scan_resources,
             always_awake_timing,
             scheduler_epoch,
         };
@@ -4868,6 +4873,7 @@ where
         S,
         crate::BluetoothDtmRuntimeResources,
         crate::BluetoothLegacyAdvertisingRuntimeResources,
+        crate::BluetoothPassiveScanRuntimeResources,
         S::Error,
     ) {
         (
@@ -4875,6 +4881,7 @@ where
             self.storage,
             self.dtm_resources,
             self.legacy_advertising_resources,
+            self.passive_scan_resources,
             self.error,
         )
     }
@@ -4940,6 +4947,7 @@ where
         storage: S,
         dtm_resources: crate::BluetoothDtmRuntimeResources,
         legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
+        passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
     ) -> Result<
         BluetoothControllerInterruptOwnersPublished<
             P,
@@ -4980,6 +4988,7 @@ where
                 scheduler_epoch: None,
                 dtm_resources,
                 legacy_advertising_resources,
+                passive_scan_resources,
             }),
             Err((error, storage, interrupts, timer)) => {
                 Err(BluetoothControllerInterruptOwnerPublicationFailure {
@@ -4992,6 +5001,7 @@ where
                     storage,
                     dtm_resources,
                     legacy_advertising_resources,
+                    passive_scan_resources,
                     error,
                 })
             }

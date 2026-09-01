@@ -123,6 +123,7 @@ mod legacy_advertising_runner;
 mod legacy_advertising_timing;
 mod modem_lp_timer_queue;
 mod nrt_interrupt;
+mod passive_scanning;
 #[cfg(target_arch = "riscv32")]
 mod phy;
 mod primary_interrupt;
@@ -434,6 +435,10 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphBindFailure,
     BluetoothLegacyAdvertisingMemoryGraphCpuOwned, BluetoothLegacyAdvertisingMemoryGraphStorage,
     BluetoothRxMemoryListClass,
+};
+pub use passive_scanning::{
+    BluetoothPassiveScanRuntimeBeginError, BluetoothPassiveScanRuntimeConfig,
+    BluetoothPassiveScanRuntimeResources,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{

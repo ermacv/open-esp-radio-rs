@@ -1,9 +1,9 @@
 //! Production ownership for the first ESP32-S31 BLE peripheral connection.
 //!
-//! The runtime currently retains only the recovered allocation graph.  It has
-//! no transition that can build or publish a connection event; adding such a
-//! transition requires the remaining anchor, sequence and channel-selection
-//! semantics to be closed first.
+//! The runtime currently retains only the recovered allocation graph. It has
+//! no transition that can lower the portable LL connection event into this
+//! graph or publish it; the S31 anchor/deadline and descriptor semantics must
+//! be closed first.
 
 #![forbid(unsafe_code)]
 

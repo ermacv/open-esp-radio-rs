@@ -395,7 +395,7 @@ enum ProductionStationReturnedPhase {
 }
 
 impl ProductionStationRoleResume {
-    fn radio_runner(&self) -> &NetworkRunner {
+    fn radio_runner_mut(&mut self) -> &mut NetworkRunner {
         match self {
             Self::Fresh { network }
             | Self::Returned {
@@ -404,11 +404,11 @@ impl ProductionStationRoleResume {
                     | ProductionStationReturnedPhase::InitialJoin { network, .. }
                     | ProductionStationReturnedPhase::Reconnected { network, .. },
                 ..
-            } => network.radio_runner(),
+            } => network.radio_runner_mut(),
             Self::Returned {
                 phase: ProductionStationReturnedPhase::Disconnected { network, .. },
                 ..
-            } => network.radio_runner(),
+            } => network.radio_runner_mut(),
         }
     }
 
@@ -1500,7 +1500,7 @@ impl ProductionWifiEpochRunner {
             .diagnostics
             .and_then(|hooks| hooks.rx_delivery);
         let result = {
-            let network = task.parked.station.resume.radio_runner();
+            let network = task.parked.station.resume.radio_runner_mut();
             let (_, platform) = task.owner.radio_mut();
             await_stack_boundary!(
                 task.service.run_until_stopped(

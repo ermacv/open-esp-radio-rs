@@ -16,7 +16,7 @@ use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
 #[cfg(feature = "tx-phase-telemetry")]
-use open_esp_radio_embassy_net::{EgressShadowGrant, EgressShadowGrantKey};
+use open_esp_radio_embassy_net::{EgressGrantKey, EgressShadowGrant};
 use open_esp_radio_embassy_net::{
     FrameLengthError, LinkState, PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer,
     RxEnqueueError,
@@ -126,7 +126,7 @@ use crate::{
     datapath::{
         DatapathControlContext, DatapathControlProgress, DatapathRunner, DatapathRxProgress,
         DatapathRxServiceContext, DatapathServices, DatapathStopProgress,
-        network::DatapathNetworkRx,
+        network::{DatapathNetworkLink, DatapathNetworkRx},
     },
     roles::concurrent::Esp32s31StaApRxBlockAck,
 };

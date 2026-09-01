@@ -33,6 +33,7 @@ open-radio-hil = [
     "dep:postcard",
     "dep:serde",
     "embassy-net/tx-egress-metadata",
+    "open-esp-radio-embassy-net/tx-egress-diagnostic-switch",
     "open-esp-radio-embassy-net/tx-egress-scheduling",
 ]
 driver-observation = [

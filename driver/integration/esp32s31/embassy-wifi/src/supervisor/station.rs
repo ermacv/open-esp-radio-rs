@@ -51,6 +51,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
     },
     datapath::rx::staging::Esp32s31StagedRxQueue,
+    datapath::network::DatapathNetwork,
     datapath::{DatapathRunner, DatapathRunnerExit, DatapathServices},
     roles::station::connected::{
         ConnectedControlPublisher, ConnectedControlResources,

@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 
 mod bidirectional;
-#[cfg(feature = "core0-rx-cycle-telemetry")]
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
 mod cache_performance;
 mod evidence;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -82,13 +85,16 @@ pub(super) use reporting::{
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub(super) use reporting::{
     log_open_radio_core0_rx_coarse, log_open_radio_core1_tx_phases,
-    observe_open_radio_core0_task_polls,
 };
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 pub(super) use reporting::{
     log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
-    observe_open_radio_core0_task_polls,
 };
+#[cfg(any(
+    feature = "core0-rx-coarse-telemetry",
+    feature = "core0-rx-cycle-telemetry"
+))]
+pub(super) use reporting::observe_open_radio_core0_task_polls;
 pub(in crate::product_hil) use runtime::{start_connected_traffic, start_traffic_dispatcher};
 pub(super) use tcp::{TcpBenchmarkConfig, run_open_radio_tcp_benchmark};
 pub(super) use udp::{

@@ -7,6 +7,11 @@ use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio_embassy_net::TX_PERFORMANCE;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
+use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
@@ -258,6 +263,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     packet: &'a mut [u8],
     config: UdpTxBenchmarkConfig,
     aggregate_counters: &AggregateTxCounters,
+    #[cfg(any(
+        feature = "core0-rx-cycle-telemetry",
+        feature = "core0-rx-coarse-telemetry"
+    ))]
+    l1_cache: &'static L1CachePerformanceCounters,
 ) -> ! {
     // Complete the connected-data-path settle before advertising readiness.
     // `Start` must mean the benchmark task can consume its session without a
@@ -371,6 +381,18 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             session.session_id,
             duration.as_millis(),
         ));
+        #[cfg(any(
+            feature = "core0-rx-cycle-telemetry",
+            feature = "core0-rx-coarse-telemetry"
+        ))]
+        if crate::product_hil::L1_CACHE_COUNTERS_ENABLED.load(Ordering::Relaxed) {
+            l1_cache.enable();
+        }
+        #[cfg(any(
+            feature = "core0-rx-cycle-telemetry",
+            feature = "core0-rx-coarse-telemetry"
+        ))]
+        let cache_start = l1_cache.snapshot();
         let started = Instant::now();
         let task_poll_start = TASK_POLLS.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -380,6 +402,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         let core1_tx_performance_start = TX_PERFORMANCE.snapshot();
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        let egress_control_start =
+            open_esp_radio_esp32s31_embassy_wifi::access_point_egress_control_snapshot();
         #[cfg(feature = "tx-architecture-probes")]
         let tx_core1_materializer_start =
             open_esp_radio_embassy_net::TX_CORE1_MATERIALIZER_COUNTERS.snapshot();
@@ -527,6 +552,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let tx_vector = qualification_sample(QualificationRequester::UdpTx)
             .await
             .tx_vector;
+        #[cfg(any(
+            feature = "core0-rx-cycle-telemetry",
+            feature = "core0-rx-coarse-telemetry"
+        ))]
+        let cache_interval = l1_cache.snapshot().wrapping_delta_since(cache_start);
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         let network_scheduler =
             crate::product_hil::traffic::network_scheduler::interval_since(
@@ -586,7 +616,16 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        crate::product_hil::traffic::log_open_radio_core1_tx_phases(core1_tx_performance_start)
+        crate::product_hil::traffic::log_open_radio_core1_tx_phases(
+            core1_tx_performance_start,
+            egress_control_start,
+        )
+        .await;
+        #[cfg(any(
+            feature = "core0-rx-cycle-telemetry",
+            feature = "core0-rx-coarse-telemetry"
+        ))]
+        crate::product_hil::traffic::reporting::log_open_radio_l1_cache_interval(cache_interval)
             .await;
         #[cfg(feature = "tx-architecture-probes")]
         crate::product_hil::traffic::reporting::log_open_radio_tx_core1_materializer(

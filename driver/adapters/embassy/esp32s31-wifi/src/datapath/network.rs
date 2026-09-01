@@ -2,9 +2,12 @@
 
 use core::future::Future;
 
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::DefaultEgressControlledNetwork;
 use open_esp_radio_embassy_net::{
-    DualPinnedNetworkRunner, LinkState, NetworkInterfaceId, PinnedNetworkRunner,
-    PinnedNetworkTxFrame, PinnedRxPublisher, PinnedTxInterfaceConsumer, RawMutex, RxEnqueueError,
+    DualPinnedNetworkRunner, LinkState, NetworkInterfaceId, PinnedNetworkLinkController,
+    PinnedNetworkRunner, PinnedNetworkTxFrame, PinnedRxPublisher, PinnedTxInterfaceConsumer,
+    RawMutex, RxEnqueueError,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
@@ -246,11 +249,21 @@ pub trait DatapathNetwork<
     const TX_QUEUE_DEPTH: usize,
 >
 {
+    type LinkController: DatapathNetworkLink + Copy;
+
+    fn link_controller(&self) -> Self::LinkController;
+
     fn rx_publisher(
         &self,
         interface: NetworkInterfaceId,
     ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>;
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState);
+    /// Service one bounded radio-owned egress-control turn.
+    ///
+    /// The datapath calls this at hardware-transaction boundaries, never from
+    /// per-frame queue accessors. Implementations without an egress control
+    /// plane return `false`.
+    fn service_egress_control(&mut self) -> bool;
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize;
     fn try_receive_tx(
         &self,
@@ -312,6 +325,25 @@ pub trait DatapathNetwork<
     > + '_;
 }
 
+/// Link-only capability which may coexist with the unique Core0 scheduler.
+pub trait DatapathNetworkLink {
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState);
+}
+
+impl<
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const TX_QUEUE_DEPTH: usize,
+> DatapathNetworkLink
+    for PinnedNetworkLinkController<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+{
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
+        PinnedNetworkLinkController::set_link_state(*self, interface, state);
+    }
+}
+
 impl<
     'resources,
     M: RawMutex + 'resources,
@@ -331,6 +363,19 @@ impl<
         TX_QUEUE_DEPTH,
     >
 {
+    type LinkController = PinnedNetworkLinkController<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        TX_QUEUE_DEPTH,
+    >;
+
+    fn link_controller(&self) -> Self::LinkController {
+        PinnedNetworkRunner::link_controller(self)
+    }
+
     fn rx_publisher(
         &self,
         interface: NetworkInterfaceId,
@@ -350,6 +395,10 @@ impl<
             "single network owner cannot change another interface"
         );
         PinnedNetworkRunner::set_link_state(self, state);
+    }
+
+    fn service_egress_control(&mut self) -> bool {
+        false
     }
 
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
@@ -459,6 +508,19 @@ impl<
         TX_QUEUE_DEPTH,
     >
 {
+    type LinkController = PinnedNetworkLinkController<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        TX_QUEUE_DEPTH,
+    >;
+
+    fn link_controller(&self) -> Self::LinkController {
+        DualPinnedNetworkRunner::link_controller(self)
+    }
+
     fn rx_publisher(
         &self,
         interface: NetworkInterfaceId,
@@ -468,6 +530,10 @@ impl<
 
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
         DualPinnedNetworkRunner::set_link_state(self, interface, state);
+    }
+
+    fn service_egress_control(&mut self) -> bool {
+        false
     }
 
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
@@ -496,8 +562,16 @@ impl<
             TX_QUEUE_DEPTH,
         >,
     > + '_ {
-        let tx = DualPinnedNetworkRunner::tx_consumer(self);
-        async move { tx.receive_for(interface).await }
+        async move {
+            loop {
+                if let Some(frame) =
+                    DualPinnedNetworkRunner::tx_consumer(self).try_receive_for(interface)
+                {
+                    return frame;
+                }
+                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+            }
+        }
     }
 
     fn tx_consumer(
@@ -513,8 +587,14 @@ impl<
     }
 
     fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
-        let tx = DualPinnedNetworkRunner::tx_consumer(self);
-        async move { tx.wait_ready_for(interface).await }
+        async move {
+            loop {
+                if DualPinnedNetworkRunner::tx_consumer(self).queue_len_for(interface) != 0 {
+                    return;
+                }
+                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+            }
+        }
     }
 
     fn wait_tx_queue_len_at_least(
@@ -522,8 +602,14 @@ impl<
         interface: NetworkInterfaceId,
         minimum: usize,
     ) -> impl Future<Output = ()> + '_ {
-        let tx = DualPinnedNetworkRunner::tx_consumer(self).for_interface(interface);
-        async move { tx.wait_queue_len_at_least(minimum).await }
+        async move {
+            loop {
+                if DualPinnedNetworkRunner::tx_consumer(self).queue_len_for(interface) >= minimum {
+                    return;
+                }
+                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+            }
+        }
     }
 
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
@@ -554,7 +640,140 @@ impl<
             TX_QUEUE_DEPTH,
         >,
     > + '_ {
-        DualPinnedNetworkRunner::receive_tx(self)
+        async move {
+            loop {
+                if let Some(frame) = DualPinnedNetworkRunner::try_receive_tx(self) {
+                    return frame;
+                }
+                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl<
+    'resources,
+    M,
+    N,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+    for DefaultEgressControlledNetwork<'resources, M, N>
+where
+    M: RawMutex + 'resources,
+    N: DatapathNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+{
+    type LinkController = N::LinkController;
+
+    fn link_controller(&self) -> Self::LinkController {
+        N::link_controller(self.inner())
+    }
+
+    fn rx_publisher(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        N::rx_publisher(self.inner(), interface)
+    }
+
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
+        N::set_link_state(self.inner(), interface, state);
+    }
+
+    fn service_egress_control(&mut self) -> bool {
+        DefaultEgressControlledNetwork::service_egress_control(self)
+    }
+
+    fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
+        N::tx_queue_len(self.inner(), interface)
+    }
+
+    fn try_receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        N::try_receive_tx(self.inner(), interface)
+    }
+
+    fn receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> impl Future<
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    > + '_ {
+        N::receive_tx(self.inner(), interface)
+    }
+
+    fn tx_consumer(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        N::tx_consumer(self.inner(), interface)
+    }
+
+    fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
+        N::wait_tx_ready(self.inner(), interface)
+    }
+
+    fn wait_tx_queue_len_at_least(
+        &self,
+        interface: NetworkInterfaceId,
+        minimum: usize,
+    ) -> impl Future<Output = ()> + '_ {
+        N::wait_tx_queue_len_at_least(self.inner(), interface, minimum)
+    }
+
+    fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
+        self.wait_egress_or(N::wait_tx_publication(self.inner()))
+    }
+
+    fn physical_tx_queue_len(&self) -> usize {
+        N::physical_tx_queue_len(self.inner())
+    }
+
+    fn try_receive_physical_tx(
+        &self,
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        N::try_receive_physical_tx(self.inner())
+    }
+
+    fn receive_physical_tx(
+        &self,
+    ) -> impl Future<
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    > + '_ {
+        N::receive_physical_tx(self.inner())
     }
 }
 
@@ -581,6 +800,12 @@ where
             TX_QUEUE_DEPTH,
         > + ?Sized,
 {
+    type LinkController = N::LinkController;
+
+    fn link_controller(&self) -> Self::LinkController {
+        N::link_controller(*self)
+    }
+
     fn rx_publisher(
         &self,
         interface: NetworkInterfaceId,
@@ -590,6 +815,137 @@ where
 
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
         N::set_link_state(*self, interface, state);
+    }
+
+    fn service_egress_control(&mut self) -> bool {
+        // A shared reference cannot own mutable radio policy. Production
+        // egress control is carried by value or through `&mut N` below.
+        false
+    }
+
+    fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
+        N::tx_queue_len(*self, interface)
+    }
+
+    fn try_receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        N::try_receive_tx(*self, interface)
+    }
+
+    fn receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> impl Future<
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    > + '_ {
+        N::receive_tx(*self, interface)
+    }
+
+    fn tx_consumer(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        N::tx_consumer(*self, interface)
+    }
+
+    fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
+        N::wait_tx_ready(*self, interface)
+    }
+
+    fn wait_tx_queue_len_at_least(
+        &self,
+        interface: NetworkInterfaceId,
+        minimum: usize,
+    ) -> impl Future<Output = ()> + '_ {
+        N::wait_tx_queue_len_at_least(*self, interface, minimum)
+    }
+
+    fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
+        N::wait_tx_publication(*self)
+    }
+
+    fn physical_tx_queue_len(&self) -> usize {
+        N::physical_tx_queue_len(*self)
+    }
+
+    fn try_receive_physical_tx(
+        &self,
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        N::try_receive_physical_tx(*self)
+    }
+
+    fn receive_physical_tx(
+        &self,
+    ) -> impl Future<
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    > + '_ {
+        N::receive_physical_tx(*self)
+    }
+}
+
+impl<
+    'resources,
+    M,
+    N,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+    for &mut N
+where
+    M: RawMutex + 'resources,
+    N: DatapathNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        > + ?Sized,
+{
+    type LinkController = N::LinkController;
+
+    fn link_controller(&self) -> Self::LinkController {
+        N::link_controller(*self)
+    }
+
+    fn rx_publisher(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        N::rx_publisher(*self, interface)
+    }
+
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
+        N::set_link_state(*self, interface, state);
+    }
+
+    fn service_egress_control(&mut self) -> bool {
+        N::service_egress_control(*self)
     }
 
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {

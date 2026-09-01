@@ -1,0 +1,31 @@
+schema = 3
+id = "diagnostic-ap-single-client-tx-egress-control-disabled-core0"
+description = "Same-ELF AP TX control with only the affine egress candidate/grant plane disabled"
+repetitions = 1
+image = "diagnostic-core0-rx-coarse"
+isolation = "reset"
+data_plane = "split-radio-network"
+tx_buffer = "direct-dma-egress-control-disabled-diagnostic"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "tx", "core0", "egress-control"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+client = "open-wrt"
+
+[workload.traffic]
+kind = "udp"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps = 130000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_tx_bps = 1
+minimum_concurrent_ap_clients = 1

@@ -409,7 +409,7 @@ where
             .expect("an AP aggregate policy has a non-zero frame limit");
         grant
             .publish(
-                EgressShadowGrantKey::new(
+                EgressGrantKey::new(
                     crate::roles::concurrent::AP_NETWORK_INTERFACE_ID.value(),
                     slot,
                     generation,

@@ -8,71 +8,17 @@
 //! before an affine SPSC grant protocol is allowed to control admission.
 
 use core::{
-    num::{NonZeroU8, NonZeroU32},
+    num::NonZeroU8,
     sync::atomic::{AtomicU32, Ordering},
 };
 
-/// Generation-bound radio queue identity understood on both cores.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EgressShadowGrantKey {
-    interface: u8,
-    peer_slot: NonZeroU8,
-    peer_generation: NonZeroU32,
-    tid: u8,
-}
-
-impl EgressShadowGrantKey {
-    pub const fn new(
-        interface: u8,
-        peer_slot: NonZeroU8,
-        peer_generation: NonZeroU32,
-        tid: u8,
-    ) -> Self {
-        Self {
-            interface,
-            peer_slot,
-            peer_generation,
-            tid,
-        }
-    }
-
-    pub const fn interface(self) -> u8 {
-        self.interface
-    }
-
-    pub const fn peer_slot(self) -> NonZeroU8 {
-        self.peer_slot
-    }
-
-    pub const fn peer_generation(self) -> NonZeroU32 {
-        self.peer_generation
-    }
-
-    pub const fn tid(self) -> u8 {
-        self.tid
-    }
-
-    const fn packed(self) -> u32 {
-        u32::from_le_bytes([self.interface, self.peer_slot.get(), self.tid, 0])
-    }
-
-    fn from_packed(packed: u32, generation: u32) -> Option<Self> {
-        let [interface, peer_slot, tid, reserved] = packed.to_le_bytes();
-        (reserved == 0).then_some(())?;
-        Some(Self::new(
-            interface,
-            NonZeroU8::new(peer_slot)?,
-            NonZeroU32::new(generation)?,
-            tid,
-        ))
-    }
-}
+use crate::EgressGrantKey;
 
 /// One stable point-in-time shadow window.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EgressShadowGrantSnapshot {
     serial: u32,
-    key: EgressShadowGrantKey,
+    key: EgressGrantKey,
     frame_credits: NonZeroU8,
 }
 
@@ -81,7 +27,7 @@ impl EgressShadowGrantSnapshot {
         self.serial
     }
 
-    pub const fn key(self) -> EgressShadowGrantKey {
+    pub const fn key(self) -> EgressGrantKey {
         self.key
     }
 
@@ -131,7 +77,7 @@ impl EgressShadowGrant {
     #[inline(never)]
     pub fn publish(
         &self,
-        key: EgressShadowGrantKey,
+        key: EgressGrantKey,
         frame_credits: NonZeroU8,
     ) -> Result<(), EgressShadowGrantError> {
         let sequence = self.begin_publication()?;
@@ -173,7 +119,7 @@ impl EgressShadowGrant {
         }
         Some(EgressShadowGrantSnapshot {
             serial: start / 2,
-            key: EgressShadowGrantKey::from_packed(packed, generation)?,
+            key: EgressGrantKey::from_packed(packed, generation)?,
             frame_credits: NonZeroU8::new(u8::try_from(credits).ok()?)?,
         })
     }
@@ -210,11 +156,11 @@ impl Default for EgressShadowGrant {
 mod tests {
     use super::*;
 
-    fn key(generation: u32) -> EgressShadowGrantKey {
-        EgressShadowGrantKey::new(
+    fn key(generation: u32) -> EgressGrantKey {
+        EgressGrantKey::new(
             1,
-            NonZeroU8::new(2).unwrap(),
-            NonZeroU32::new(generation).unwrap(),
+            core::num::NonZeroU8::new(2).unwrap(),
+            core::num::NonZeroU32::new(generation).unwrap(),
             0,
         )
     }

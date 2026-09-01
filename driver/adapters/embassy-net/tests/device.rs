@@ -15,15 +15,19 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
 #[cfg(feature = "tx-staging-copy-probe")]
 use open_esp_radio_embassy_net::PinnedNetworkTxFrame;
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::{
+    DefaultEgressControlPlane, DefaultEgressControlledNetwork, DefaultEgressNetworkScheduler,
+    DefaultEgressNetworkState, DefaultEgressRadioScheduler, EgressCandidate, EgressGrant,
+    EgressGrantKey, EgressPeerDirectory, EgressPeerIdentity,
+};
 use open_esp_radio_embassy_net::{
     DualPinnedNetworkRunner, ETHERNET_HEADER_LEN, FrameLengthError, NetworkEndpointConfig,
     NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool,
     PinnedTxResources, Resources, RxEnqueueError, SharedPinnedRxQueue,
 };
-#[cfg(feature = "tx-egress-scheduling")]
-use open_esp_radio_embassy_net::{EgressPeerDirectory, EgressPeerIdentity};
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-use open_esp_radio_embassy_net::{EgressShadowGrant, EgressShadowGrantKey, TX_PERFORMANCE};
+use open_esp_radio_embassy_net::{EgressShadowGrant, TX_PERFORMANCE};
 #[cfg(feature = "tx-core1-materializer-probe")]
 use open_esp_radio_embassy_net::{
     PinnedTxCore1MaterializationPoll, configure_tx_core1_materializer_probe,
@@ -482,6 +486,202 @@ fn final_keyed_admission_rejects_stale_and_foreign_peer_keys_before_sram_claim()
     ));
 }
 
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn affine_control_observes_early_key_and_spends_only_successful_sram_admission() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (network_control, mut radio_control) = control.split();
+    let network_state = Box::leak(Box::new(DefaultEgressNetworkState::new()));
+    let network_control = Box::leak(Box::new(DefaultEgressNetworkScheduler::new(
+        network_control,
+        network_state,
+    )));
+    let peers = EgressPeerDirectory::<1>::new();
+    let address = [2, 0, 0, 0, 0, 3];
+    let identity = EgressPeerIdentity::try_new(address, 1, 7).unwrap();
+    peers.replace(&[Some(identity)]).unwrap();
+    let (provider, _consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(1);
+    let (device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::associated_peers(interface, [2, 0, 0, 0, 0, 2], &peers),
+    );
+    let mut device = device.with_egress_control(network_control);
+    radio.set_link_state(LinkState::Up);
+    let key = device.egress_key(EgressRoute {
+        destination: HardwareAddress::Ethernet(address),
+        traffic_class: 0,
+    });
+
+    drop(match device.transmit_for(&mut context(), key) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("valid peer key must retain real SRAM admission"),
+    });
+    let candidate = radio_control.try_receive_candidate().unwrap();
+    assert_eq!(candidate.key().peer_slot(), identity.slot());
+    assert_eq!(radio_control.try_receive_candidate(), None);
+    radio_control
+        .try_send_grant(EgressGrant::new(
+            candidate.serial(),
+            candidate.key(),
+            core::num::NonZeroU8::new(2).unwrap(),
+        ))
+        .unwrap();
+
+    for _ in 0..2 {
+        drop(match device.transmit_for(&mut context(), key) {
+            EgressAdmission::Granted(token) => token,
+            _ => panic!("shadow credit cannot change real SRAM admission"),
+        });
+    }
+    let successor = radio_control
+        .try_receive_candidate()
+        .expect("a low grant balance prefetches the next bounded window");
+    assert_eq!(successor.key(), candidate.key());
+    assert_ne!(successor.serial(), candidate.serial());
+    drop(match device.transmit_for(&mut context(), key) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("exhausted shadow credit cannot change real SRAM admission"),
+    });
+    assert_eq!(radio_control.try_receive_candidate(), None);
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn dual_radio_owner_echoes_candidates_from_the_publication_wait() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let first_resources = Box::leak(Box::new(EndpointResources::new()));
+    let second_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (provider, consumer) = tx_resources.split(pool);
+    let first_interface = NetworkInterfaceId::new(0);
+    let second_interface = NetworkInterfaceId::new(1);
+    let (_first, first_rx) = first_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(first_interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let (_second, second_rx) = second_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(second_interface, [2, 0, 0, 0, 0, 2]),
+    );
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (mut network_control, radio_control) = control.split();
+    let radio = DualPinnedNetworkRunner::new(
+        first_interface,
+        first_rx,
+        second_interface,
+        second_rx,
+        consumer,
+    );
+    let radio_control = Box::leak(Box::new(DefaultEgressRadioScheduler::new(radio_control)));
+    let mut radio = DefaultEgressControlledNetwork::with_egress_control(radio, radio_control);
+    let key = EgressGrantKey::new(
+        second_interface.value(),
+        core::num::NonZeroU8::new(1).unwrap(),
+        core::num::NonZeroU32::new(7).unwrap(),
+        0,
+    );
+    let candidate = EgressCandidate::new(1, key, core::num::NonZeroU8::new(8).unwrap());
+
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let waker = Waker::from(Arc::new(CountWake(wakes.clone())));
+    let mut wait_context = Context::from_waker(&waker);
+    {
+        let mut cancelled = pin!(radio.wait_egress_or(radio.inner().wait_tx_publication()));
+        assert!(cancelled.as_mut().poll(&mut wait_context).is_pending());
+    }
+    network_control.try_send_candidate(candidate).unwrap();
+    assert_eq!(
+        wakes.load(Ordering::Relaxed),
+        0,
+        "a cancelled idle wait must disarm candidate wakeup"
+    );
+    assert_eq!(network_control.try_receive_grant(), None);
+
+    {
+        let mut publication = pin!(radio.wait_egress_or(radio.inner().wait_tx_publication()));
+        assert!(publication.as_mut().poll(&mut wait_context).is_ready());
+    }
+    assert_eq!(network_control.try_receive_grant(), None);
+    assert!(radio.service_egress_control());
+    assert_eq!(
+        network_control.try_receive_grant(),
+        Some(EgressGrant::new(
+            candidate.serial(),
+            candidate.key(),
+            candidate.requested_frames(),
+        ))
+    );
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn dual_radio_owner_services_control_only_at_tx_selection_boundaries() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+
+    let first_resources = Box::leak(Box::new(EndpointResources::new()));
+    let second_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (provider, consumer) = tx_resources.split(pool);
+    let first_interface = NetworkInterfaceId::new(0);
+    let second_interface = NetworkInterfaceId::new(1);
+    let (_first, first_rx) = first_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(first_interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let (_second, second_rx) = second_resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(second_interface, [2, 0, 0, 0, 0, 2]),
+    );
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (mut network_control, radio_control) = control.split();
+    let radio = DualPinnedNetworkRunner::new(
+        first_interface,
+        first_rx,
+        second_interface,
+        second_rx,
+        consumer,
+    );
+    let radio_control = Box::leak(Box::new(DefaultEgressRadioScheduler::new(radio_control)));
+    let mut radio = DefaultEgressControlledNetwork::with_egress_control(radio, radio_control);
+    let key = EgressGrantKey::new(
+        second_interface.value(),
+        core::num::NonZeroU8::new(1).unwrap(),
+        core::num::NonZeroU32::new(7).unwrap(),
+        0,
+    );
+    let candidate = EgressCandidate::new(1, key, core::num::NonZeroU8::new(8).unwrap());
+    network_control.try_send_candidate(candidate).unwrap();
+
+    let _ = radio.inner().tx_consumer();
+    assert_eq!(network_control.try_receive_grant(), None);
+    assert!(radio.inner().try_receive_tx().is_none());
+    assert_eq!(network_control.try_receive_grant(), None);
+    assert!(radio.service_egress_control());
+    assert_eq!(
+        network_control.try_receive_grant(),
+        Some(EgressGrant::new(
+            candidate.serial(),
+            candidate.key(),
+            candidate.requested_frames(),
+        ))
+    );
+}
+
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 #[test]
 fn shadow_grant_spends_local_credits_without_changing_real_admission() {
@@ -515,7 +715,7 @@ fn shadow_grant_spends_local_credits_without_changing_real_admission() {
     ));
     shadow
         .publish(
-            EgressShadowGrantKey::new(interface.value(), identity.slot(), identity.generation(), 0),
+            EgressGrantKey::new(interface.value(), identity.slot(), identity.generation(), 0),
             core::num::NonZeroU8::new(2).unwrap(),
         )
         .unwrap();
@@ -527,7 +727,7 @@ fn shadow_grant_spends_local_credits_without_changing_real_admission() {
     }
     shadow
         .publish(
-            EgressShadowGrantKey::new(
+            EgressGrantKey::new(
                 interface.value(),
                 identity.slot(),
                 core::num::NonZeroU32::new(8).unwrap(),

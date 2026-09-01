@@ -13,7 +13,10 @@ default = []
 diagnostics = []
 # Intrusive per-datagram Core1 cycle/instruction accounting. Diagnostic HIL
 # images enable this explicitly; production adapters do not.
-tx-phase-telemetry = ["dep:riscv"]
+tx-phase-telemetry = ["dep:riscv", "tx-egress-diagnostic-switch"]
+# Startup-only same-ELF switch used to measure egress-control overhead without
+# compiling the intrusive per-frame/per-burst counter set.
+tx-egress-diagnostic-switch = []
 # Same-image HIL discriminator for the proposed contended-TX ownership
 # boundary. Production images do not compile this branch.
 tx-staging-copy-probe = []
@@ -28,6 +31,7 @@ tx-egress-scheduling = ["embassy-net-driver/tx-egress-metadata"]
 
 [dependencies]
 embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272" }
+embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
 

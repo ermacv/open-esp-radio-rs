@@ -194,6 +194,7 @@ async fn udp_tx_task(
     network_interface: WifiNetworkInterface,
     buffers: UdpSocketBuffers<'static>,
     packet: &'static mut [u8],
+    _l1_cache: &'static L1CachePerformanceCounters,
 ) {
     let resources = resources(network_interface);
     observe_open_radio_task_polls(
@@ -225,6 +226,11 @@ async fn udp_tx_task(
                 },
             },
             &AGGREGATE_TX,
+            #[cfg(any(
+                feature = "core0-rx-cycle-telemetry",
+                feature = "core0-rx-coarse-telemetry"
+            ))]
+            _l1_cache,
         ),
         TASK_POLLS.udp_tx(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
@@ -322,7 +328,13 @@ pub(in crate::product_hil) fn start_connected_traffic(
             .expect("UDP RX task pool must fit both roles"),
     );
     spawner.spawn(
-        udp_tx_task(stack, network_interface, udp_tx_buffers, udp_tx_packet)
+        udp_tx_task(
+            stack,
+            network_interface,
+            udp_tx_buffers,
+            udp_tx_packet,
+            l1_cache,
+        )
             .expect("UDP TX task pool must fit both roles"),
     );
     spawner.spawn(tcp_task(stack, network_interface).expect("TCP task pool must fit both roles"));

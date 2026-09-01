@@ -28,9 +28,9 @@ open-esp-radio-esp32s31-wifi-dma = { path = "../../../chips/esp32s31/wifi/dma" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../chips/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-sta = { path = "../../../chips/esp32s31/wifi/sta" }
 open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net", features = ["tx-egress-scheduling"] }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi" }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi", features = ["tx-egress-scheduling"] }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
-open-esp-radio-wifi-embassy = { path = "../../../adapters/embassy/wifi" }
+open-esp-radio-wifi-embassy = { path = "../../../adapters/embassy/wifi", features = ["tx-egress-scheduling"] }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wifi-ap = { path = "../../../wifi/ap" }
 open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }

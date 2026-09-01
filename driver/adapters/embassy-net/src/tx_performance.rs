@@ -440,6 +440,7 @@ impl TxPerformanceCounters {
     }
 
     #[inline(always)]
+    #[cfg(any(feature = "tx-staging-copy-probe", test))]
     pub(crate) fn record_promotion_no_credit(
         &self,
         started: TxPerformanceSample,
@@ -460,6 +461,7 @@ impl TxPerformanceCounters {
 
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
+    #[cfg(any(feature = "tx-staging-copy-probe", test))]
     pub(crate) fn record_promotion(
         &self,
         bytes: usize,

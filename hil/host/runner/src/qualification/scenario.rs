@@ -572,6 +572,7 @@ impl Scenario {
             WifiTxBufferPolicy::DirectDmaFifoDiagnostic
                 | WifiTxBufferPolicy::DirectDmaWakeStormControlDiagnostic
                 | WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
+                | WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
                 | WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
                 | WifiTxBufferPolicy::PsramStagingCopyDiagnostic
                 | WifiTxBufferPolicy::Core1MaterializationDiagnostic
@@ -596,7 +597,7 @@ impl Scenario {
             }
         )) {
             return Err(format!(
-                "{}: PSRAM TX architecture policies are restricted to an AP UDP TX task-residence or coarse-cycle diagnostic",
+                "{}: TX architecture policies are restricted to a compatible AP UDP TX diagnostic image",
                 self.source.display()
             )
             .into());
@@ -634,9 +635,23 @@ impl Scenario {
             )
             .into());
         }
-        if self.l1_cache_counters && self.image != ImageClass::DiagnosticCore0RxCycles {
+        let coarse_ap_tx_cache_diagnostic = self.image == ImageClass::DiagnosticCore0RxCoarse
+            && matches!(
+                self.workload,
+                Workload::AccessPoint {
+                    traffic: AccessPointTraffic::Udp {
+                        direction: Direction::Tx,
+                        ..
+                    },
+                    ..
+                }
+            );
+        if self.l1_cache_counters
+            && self.image != ImageClass::DiagnosticCore0RxCycles
+            && !coarse_ap_tx_cache_diagnostic
+        {
             return Err(format!(
-                "{}: L1 cache counters are restricted to the Core0 RX cycle diagnostic",
+                "{}: L1 cache counters require the Core0 RX cycle image or an AP UDP TX coarse-cycle diagnostic",
                 self.source.display()
             )
             .into());
@@ -2044,6 +2059,56 @@ mod tests {
         let mut wrong_image = enabled.clone();
         wrong_image.image = ImageClass::DiagnosticTaskPoll;
         assert!(wrong_image.validate().is_err());
+    }
+
+    #[test]
+    fn ap_egress_control_l1_probe_is_a_same_image_runtime_control() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let enabled = catalog
+            .get("diagnostic-ap-single-client-tx-egress-control-l1-cache-core0")
+            .unwrap();
+        let disabled = catalog
+            .get("diagnostic-ap-single-client-tx-egress-control-disabled-l1-cache-core0")
+            .unwrap();
+
+        assert_eq!(enabled.image, ImageClass::DiagnosticCore0RxCoarse);
+        assert_eq!(enabled.image, disabled.image);
+        assert!(enabled.l1_cache_counters);
+        assert_eq!(enabled.l1_cache_counters, disabled.l1_cache_counters);
+        assert_eq!(enabled.workload, disabled.workload);
+        assert_eq!(enabled.link, disabled.link);
+        assert_eq!(enabled.criteria, disabled.criteria);
+        assert_eq!(enabled.evidence, disabled.evidence);
+        assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
+        assert_eq!(
+            disabled.tx_buffer,
+            WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+        );
+    }
+
+    #[test]
+    fn ap_egress_control_task_poll_probe_omits_intrusive_control_counters() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let enabled = catalog
+            .get("access-point-single-client-ceiling-tx-task-poll")
+            .unwrap();
+        let disabled = catalog
+            .get("diagnostic-ap-single-client-tx-egress-control-disabled-task-poll")
+            .unwrap();
+
+        assert_eq!(enabled.image, ImageClass::DiagnosticTaskPoll);
+        assert_eq!(enabled.image, disabled.image);
+        assert_eq!(enabled.workload, disabled.workload);
+        assert_eq!(enabled.link, disabled.link);
+        assert_eq!(enabled.criteria, disabled.criteria);
+        assert_eq!(enabled.evidence, disabled.evidence);
+        assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
+        assert_eq!(
+            disabled.tx_buffer,
+            WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+        );
     }
 
     #[test]

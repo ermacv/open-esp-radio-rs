@@ -39,17 +39,39 @@ use embassy_sync::{
     waitqueue::GenericAtomicWaker,
 };
 
+#[cfg(feature = "tx-egress-scheduling")]
+mod egress_control;
 #[cfg(feature = "tx-phase-telemetry")]
 mod egress_grant;
+#[cfg(feature = "tx-egress-scheduling")]
+mod egress_key;
 mod egress_peer;
 mod pinned;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
-#[cfg(feature = "tx-phase-telemetry")]
-pub use egress_grant::{
-    EgressShadowGrant, EgressShadowGrantError, EgressShadowGrantKey, EgressShadowGrantSnapshot,
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+pub use egress_control::EgressControlSnapshot;
+#[cfg(all(
+    feature = "tx-egress-scheduling",
+    feature = "tx-egress-diagnostic-switch"
+))]
+pub use egress_control::configure_egress_control_for_diagnostics;
+#[cfg(feature = "tx-egress-scheduling")]
+pub use egress_control::{
+    DEFAULT_EGRESS_CONTROL_DEPTH, DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET,
+    DEFAULT_EGRESS_RADIO_SERVICE_BUDGET, DefaultEgressControlPlane, DefaultEgressControlledNetwork,
+    DefaultEgressNetworkPort, DefaultEgressNetworkScheduler, DefaultEgressNetworkState,
+    DefaultEgressRadioOwner, DefaultEgressRadioPort, DefaultEgressRadioScheduler,
+    DefaultEgressRadioWake, EgressCandidate, EgressCandidateFull, EgressControlPlane,
+    EgressControlledNetwork, EgressGrant, EgressGrantFull, EgressNetworkPort,
+    EgressNetworkScheduler, EgressNetworkState, EgressRadioOwner, EgressRadioPort,
+    EgressRadioScheduler, EgressRadioWake,
 };
+#[cfg(feature = "tx-phase-telemetry")]
+pub use egress_grant::{EgressShadowGrant, EgressShadowGrantError, EgressShadowGrantSnapshot};
+#[cfg(feature = "tx-egress-scheduling")]
+pub use egress_key::EgressGrantKey;
 pub use egress_peer::{
     EgressPeerDirectory, EgressPeerDirectoryError, EgressPeerIdentity, EgressPeerResolver,
 };
@@ -59,11 +81,12 @@ pub use pinned::PinnedTxOwnershipSnapshot;
 pub use pinned::configure_tx_staging_copy_probe;
 pub use pinned::{
     DualPinnedNetworkRunner, EgressQueueTopology, NetworkEndpointConfig, NetworkInterfaceId,
-    PinnedEndpointResources, PinnedNetworkRunner, PinnedNetworkTxFrame, PinnedReceiveToken,
-    PinnedRxPublisher, PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame,
-    PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider, PinnedTxResources,
-    SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher, SharedPinnedRxQueue,
-    SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice, SplitPinnedRxRunner,
+    PinnedEndpointResources, PinnedNetworkLinkController, PinnedNetworkRunner,
+    PinnedNetworkTxFrame, PinnedReceiveToken, PinnedRxPublisher, PinnedTransmitToken,
+    PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider,
+    PinnedTxResources, SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher,
+    SharedPinnedRxQueue, SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice,
+    SplitPinnedRxRunner,
 };
 #[cfg(feature = "tx-core1-materializer-probe")]
 pub use pinned::{

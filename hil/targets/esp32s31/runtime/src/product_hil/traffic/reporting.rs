@@ -7,7 +7,9 @@ use embassy_time::Instant;
 #[cfg(feature = "tx-architecture-probes")]
 use open_esp_radio_embassy_net::{TX_CORE1_MATERIALIZER_COUNTERS, TxCore1MaterializerSnapshot};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_embassy_net::{TX_PERFORMANCE, TxPerformanceSnapshot};
+use open_esp_radio_embassy_net::{
+    EgressControlSnapshot, TX_PERFORMANCE, TxPerformanceSnapshot,
+};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
@@ -31,7 +33,10 @@ use open_esp_radio_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRa
 
 use crate::console::runtime_log_reliably;
 
-#[cfg(feature = "core0-rx-cycle-telemetry")]
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
 use super::cache_performance::L1CachePerformanceSnapshot;
 
 pub(in crate::product_hil) fn aggregate_tx_evidence(
@@ -828,6 +833,16 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     ))
     .await;
     yield_now().await;
+    log_open_radio_l1_cache_interval(cache).await;
+}
+
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
+pub(in crate::product_hil) async fn log_open_radio_l1_cache_interval(
+    cache: L1CachePerformanceSnapshot,
+) {
     runtime_log_reliably(format_args!(
         "OCACHEI trace={} bus0_enabled={} bus1_enabled={} bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next={}",
         u8::from(cache.trace_enabled),
@@ -1021,7 +1036,10 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
 
 /// Emit Core1 packet-emission and driver-publication phase costs for TX.
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPerformanceSnapshot) {
+pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
+    earlier: TxPerformanceSnapshot,
+    earlier_control: EgressControlSnapshot,
+) {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
         "ONTX admission_attempts={} admission_successes={} admission_cycles={} admission_instret={} consume_calls={} consume_bytes={} consume_cycles={} consume_instret={} emit_cycles={} emit_instret={} publication_cycles={} publication_instret={}",
@@ -1040,6 +1058,7 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPe
     ))
     .await;
     yield_now().await;
+    log_open_radio_egress_control_interval(earlier_control).await;
     let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
     runtime_log_reliably(format_args!(
         "ONTXQ runs={} run31={} run32={} other={} shadow_checks={} shadow_matches={} shadow_no_window={} shadow_key_mismatch={} shadow_credit_exhausted={} shadow_unclassified={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",
@@ -1094,6 +1113,34 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPe
         performance.promotion_radio_claim_instructions,
         performance.promotion_unattributed_cycles(),
         performance.promotion_unattributed_instructions(),
+    ))
+    .await;
+    yield_now().await;
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub(in crate::product_hil) async fn log_open_radio_egress_control_interval(
+    earlier: EgressControlSnapshot,
+) {
+    let control = open_esp_radio_esp32s31_embassy_wifi::access_point_egress_control_snapshot()
+        .wrapping_delta_since(earlier);
+    runtime_log_reliably(format_args!(
+        "ONTXC candidates={} candidate_full={} radio_candidates={} grants={} grant_full={} received={} accepted={} rejected={} credits_spent={} admissions_without_grant={} radio_wakes={} radio_service_calls={} radio_service_progressed={} radio_service_cycles={} radio_service_instret={}",
+        control.candidate_publications,
+        control.candidate_full,
+        control.radio_candidates,
+        control.grant_publications,
+        control.grant_full,
+        control.grants_received,
+        control.grants_accepted,
+        control.grants_rejected,
+        control.grant_credits_spent,
+        control.admissions_without_grant,
+        control.radio_wakes,
+        control.radio_service_calls,
+        control.radio_service_progressed,
+        control.radio_service_cycles,
+        control.radio_service_instructions,
     ))
     .await;
     yield_now().await;

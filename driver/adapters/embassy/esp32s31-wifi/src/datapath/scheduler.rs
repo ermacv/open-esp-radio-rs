@@ -170,6 +170,11 @@ where
             // wakes before a control or network publication can create a new
             // generation.
             self.discard_stale_tx_wakes();
+            // The idle wait is edge/level notification only. The movable
+            // Core0 owner services policy here, after returning to its unique
+            // mutable scheduling boundary. Saturated traffic uses the same
+            // finite service at the explicit completed-BA boundary below.
+            let _ = self.network.service_egress_control();
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.discard_wakes_completed();
             let network_tx_pending =
@@ -420,6 +425,12 @@ where
                                 break;
                             }
                             self.discard_stale_tx_wakes();
+                            // The saturated fast chain deliberately avoids an
+                            // outer executor re-entry, but every completed BA
+                            // transaction is still a scheduling boundary.
+                            // Advance egress control once here, not once per
+                            // frame while assembling the successor aggregate.
+                            let _ = self.network.service_egress_control();
                             let network_tx_pending =
                                 self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
                             let control_ready = self.control_ready_latched
@@ -500,17 +511,15 @@ where
                     if let Some(deadline) = wait_for_batch_until {
                         let _ =
                             select(self.network.wait_tx_publication(), Timer::at(deadline)).await;
+                    } else if let Some(interface) = prepared_tx_interface {
+                        network.wait_tx_ready(interface).await;
                     } else {
-                        if let Some(interface) = prepared_tx_interface {
-                            network.wait_tx_ready(interface).await;
-                        } else {
-                            match interfaces {
-                                DatapathInterfaceScope::Single(interface) => {
-                                    network.wait_tx_ready(interface).await
-                                }
-                                DatapathInterfaceScope::Pair { .. } => {
-                                    network.wait_tx_publication().await
-                                }
+                        match interfaces {
+                            DatapathInterfaceScope::Single(interface) => {
+                                network.wait_tx_ready(interface).await
+                            }
+                            DatapathInterfaceScope::Pair { .. } => {
+                                network.wait_tx_publication().await
                             }
                         }
                     }

@@ -7,6 +7,8 @@
 //! policy.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::EgressControlledNetwork;
 use open_esp_radio_embassy_net::{DualPinnedNetworkRunner, LinkState, PinnedNetworkRunner};
 
 /// Network ownership before the first association or after a finite connected
@@ -28,6 +30,13 @@ impl<D, R, S> StationNetworkResources<D, R, S> {
         match self {
             Self::Unstarted { runner, .. } => runner,
             Self::Running(network) => &network.runner,
+        }
+    }
+
+    pub fn radio_runner_mut(&mut self) -> &mut R {
+        match self {
+            Self::Unstarted { runner, .. } => runner,
+            Self::Running(network) => network.radio_runner_mut(),
         }
     }
 }
@@ -52,6 +61,10 @@ impl<S, R> RunningStationNetwork<S, R> {
     /// network stack.
     pub const fn radio_runner(&self) -> &R {
         &self.runner
+    }
+
+    pub fn radio_runner_mut(&mut self) -> &mut R {
+        &mut self.runner
     }
 }
 
@@ -82,6 +95,19 @@ pub trait StationNetworkLink {
 impl<N: StationNetworkLink + ?Sized> StationNetworkLink for &N {
     fn publish_link_up(&self) {
         N::publish_link_up(*self);
+    }
+}
+
+impl<N: StationNetworkLink + ?Sized> StationNetworkLink for &mut N {
+    fn publish_link_up(&self) {
+        N::publish_link_up(*self);
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl<N: StationNetworkLink, R> StationNetworkLink for EgressControlledNetwork<N, R> {
+    fn publish_link_up(&self) {
+        self.inner().publish_link_up();
     }
 }
 

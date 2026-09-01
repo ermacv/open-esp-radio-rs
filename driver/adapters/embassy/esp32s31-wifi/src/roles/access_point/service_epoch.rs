@@ -91,7 +91,7 @@ where
         hardware: &mut H,
         interrupts: &mut Esp32s31MacInterruptEpoch<'_, IR, NM>,
         platform: &IR::Platform,
-        network: &NR,
+        network: &mut NR,
         aggregate: &mut Esp32s31AccessPointAmpdu<
             'resources,
             PinnedTxFrame<'resources, NM, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
@@ -132,7 +132,8 @@ where
         N: FnMut() -> ([u8; 32], u64),
         Q: FnMut(u8),
     {
-        network.set_link_state(
+        let network_link = network.link_controller();
+        network_link.set_link_state(
             crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
             LinkState::Down,
         );
@@ -195,7 +196,8 @@ where
             status_observer,
             security_material,
             set_link_state: |state| {
-                network.set_link_state(crate::roles::concurrent::AP_NETWORK_INTERFACE_ID, state)
+                network_link
+                    .set_link_state(crate::roles::concurrent::AP_NETWORK_INTERFACE_ID, state)
             },
             publish_shared_rx,
             #[cfg(any(feature = "diagnostics", test))]

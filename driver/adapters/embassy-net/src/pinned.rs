@@ -31,8 +31,10 @@ use open_esp_radio_dma::{
 
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::EgressShadowGrant;
-#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-use crate::EgressShadowGrantKey;
+#[cfg(feature = "tx-egress-scheduling")]
+use crate::egress_control::{EgressBurstLease, egress_control_enabled};
+#[cfg(feature = "tx-egress-scheduling")]
+use crate::{DefaultEgressNetworkScheduler, EgressGrantKey};
 use crate::{
     ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
 };
@@ -261,8 +263,8 @@ impl<'registry> NetworkEndpointConfig<'registry> {
         }
     }
 
-    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-    fn shadow_grant_key(self, key: EgressKey) -> Option<EgressShadowGrantKey> {
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn grant_key(self, key: EgressKey) -> Option<EgressGrantKey> {
         let [header, _, generation, slot] = key.words();
         if self.egress_topology != EgressQueueTopology::AssociatedPeer
             || header & Self::KEY_FORMAT_MASK != Self::KEY_FORMAT
@@ -271,7 +273,7 @@ impl<'registry> NetworkEndpointConfig<'registry> {
         {
             return None;
         }
-        Some(EgressShadowGrantKey::new(
+        Some(EgressGrantKey::new(
             self.interface.value(),
             u8::try_from(slot).ok().and_then(NonZeroU8::new)?,
             NonZeroU32::new(generation)?,
@@ -1107,11 +1109,17 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 #[cfg(feature = "tx-egress-scheduling")]
                 keyed_run_length: 0,
                 #[cfg(feature = "tx-egress-scheduling")]
+                active_egress_lease: EgressBurstLease::new(),
+                #[cfg(feature = "tx-egress-scheduling")]
                 observed_link_epoch: 0,
                 #[cfg(feature = "tx-egress-scheduling")]
                 observed_peer_revision: 0,
                 #[cfg(feature = "tx-egress-scheduling")]
                 scheduling_epoch: 0,
+                #[cfg(feature = "tx-egress-scheduling")]
+                egress_control: None,
+                #[cfg(feature = "tx-egress-scheduling")]
+                egress_control_active: false,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
                 shadow_grant_serial: 0,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1281,15 +1289,21 @@ pub struct SplitPinnedDevice<
     #[cfg(feature = "tx-egress-scheduling")]
     keyed_run_length: u8,
     #[cfg(feature = "tx-egress-scheduling")]
+    active_egress_lease: EgressBurstLease,
+    #[cfg(feature = "tx-egress-scheduling")]
     observed_link_epoch: u32,
     #[cfg(feature = "tx-egress-scheduling")]
     observed_peer_revision: u32,
     #[cfg(feature = "tx-egress-scheduling")]
     scheduling_epoch: u32,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_control: Option<&'resources mut DefaultEgressNetworkScheduler<'resources, M>>,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_control_active: bool,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     shadow_grant_serial: u32,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-    shadow_grant_key: Option<EgressShadowGrantKey>,
+    shadow_grant_key: Option<EgressGrantKey>,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     shadow_grant_remaining: u8,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1327,6 +1341,29 @@ impl<
         TX_QUEUE_DEPTH,
     >
 {
+    /// Attach the sole stack-side endpoint of the radio egress control plane.
+    ///
+    /// The port is non-`Copy`; moving it into the permanent network device
+    /// proves that only this Core1 driver instance can publish candidates or
+    /// consume grants for the endpoint.
+    #[cfg(feature = "tx-egress-scheduling")]
+    pub fn with_egress_control(
+        mut self,
+        control: &'resources mut DefaultEgressNetworkScheduler<'resources, M>,
+    ) -> Self {
+        assert!(
+            self.egress_control.is_none(),
+            "network egress control may only be attached once"
+        );
+        // The diagnostic selector is immutable after the device owner graph is
+        // built. Snapshotting it here avoids an Acquire load and RISC-V fence
+        // in every packet admission while preserving same-ELF enabled/disabled
+        // comparison.
+        self.egress_control_active = egress_control_enabled();
+        self.egress_control = Some(control);
+        self
+    }
+
     /// Keep one TX credit unavailable to ordinary application egress so an
     /// incoming frame can always receive the paired `TxToken` required by the
     /// embassy-net driver contract. Resource profiles enabling this must add
@@ -1501,6 +1538,9 @@ impl<
                 .expect("network scheduling epoch is not reusable");
             self.keyed_egress = None;
             self.keyed_run_length = 0;
+            if let Some(control) = self.egress_control.as_mut() {
+                control.reset_epoch(&mut self.active_egress_lease);
+            }
         }
         self.scheduling_epoch
     }
@@ -1524,7 +1564,7 @@ impl<
         let Some(grant) = self.endpoint.shadow_grant else {
             return;
         };
-        let Some(requested) = self.endpoint.shadow_grant_key(egress) else {
+        let Some(requested) = self.endpoint.grant_key(egress) else {
             self.record_shadow_grant(TxShadowGrantObservation::Unclassified);
             return;
         };
@@ -2416,11 +2456,26 @@ impl<
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
             return EgressAdmission::KeyDeferred;
         }
-        if self.keyed_egress != Some(egress) {
+        let egress_control_is_enabled = self.egress_control_active;
+        let run_changed = self.keyed_egress != Some(egress);
+        if run_changed {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_egress_run(self.keyed_run_length);
             self.keyed_egress = Some(egress);
             self.keyed_run_length = 0;
+            if egress_control_is_enabled && let Some(control) = self.egress_control.as_mut() {
+                match self.endpoint.grant_key(egress) {
+                    Some(grant_key) => {
+                        control.begin_active_run(
+                            &mut self.active_egress_lease,
+                            cx,
+                            grant_key,
+                            NonZeroU8::new(32).unwrap(),
+                        );
+                    }
+                    None => control.end_active_run(&mut self.active_egress_lease),
+                }
+            }
         }
 
         if !self.poll_reserve_application_tx(cx) {
@@ -2434,6 +2489,12 @@ impl<
             .expect("keyed application admission reserves one TX credit");
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
+        if egress_control_is_enabled {
+            let needs_maintenance = self.active_egress_lease.commit_admission();
+            if needs_maintenance && let Some(control) = self.egress_control.as_mut() {
+                control.maintain_active_run(&mut self.active_egress_lease, cx);
+            }
+        }
         #[cfg(feature = "tx-phase-telemetry")]
         self.observe_successful_shadow_grant(egress);
         self.keyed_run_length = self.keyed_run_length.saturating_add(1);
@@ -2864,6 +2925,109 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH:
 
     pub fn rx_queue_len(&self) -> usize {
         self.ready_rx.len()
+    }
+
+    fn link_endpoint(&self) -> PinnedLinkEndpoint<'resources, M> {
+        PinnedLinkEndpoint {
+            interface: self.tx_interface,
+            link: self.link,
+            tx_active: self.tx_active,
+            tx_credit_wakers: self.tx_credit_wakers,
+        }
+    }
+}
+
+struct PinnedLinkEndpoint<'resources, M: RawMutex> {
+    interface: NetworkInterfaceId,
+    link: &'resources SharedLinkState<M>,
+    tx_active: &'resources AtomicU32,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
+}
+
+impl<M: RawMutex> Clone for PinnedLinkEndpoint<'_, M> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex> Copy for PinnedLinkEndpoint<'_, M> {}
+
+impl<M: RawMutex> PinnedLinkEndpoint<'_, M> {
+    fn set_link_state(self, state: LinkState) {
+        if state == LinkState::Up {
+            self.tx_active
+                .fetch_or(1_u32 << self.interface.value(), Ordering::AcqRel);
+            self.tx_credit_wakers.wake_all();
+            self.link.set(state);
+        } else {
+            self.link.set(state);
+            self.tx_active
+                .fetch_and(!(1_u32 << self.interface.value()), Ordering::AcqRel);
+            self.tx_credit_wakers.wake_all();
+        }
+    }
+}
+
+/// Copyable link-state capability independent of the unique Core0 scheduler.
+///
+/// AP control may retain this value while the datapath exclusively borrows
+/// the egress policy. It can only publish link state and discard TX leases
+/// which became ineligible; it cannot service radio policy or consume an
+/// active frame.
+pub struct PinnedNetworkLinkController<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    first: PinnedLinkEndpoint<'resources, M>,
+    second: Option<PinnedLinkEndpoint<'resources, M>>,
+    tx: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+}
+
+impl<
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> Clone for PinnedNetworkLinkController<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> Copy for PinnedNetworkLinkController<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+}
+
+impl<
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> PinnedNetworkLinkController<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    pub fn set_link_state(self, interface: NetworkInterfaceId, state: LinkState) {
+        let endpoint = if self.first.interface == interface {
+            self.first
+        } else {
+            self.second
+                .filter(|endpoint| endpoint.interface == interface)
+                .expect("network interface does not belong to this link controller")
+        };
+        endpoint.set_link_state(state);
+        self.tx.discard_inactive_ready();
     }
 }
 
@@ -3894,6 +4058,17 @@ impl<
         self.rx_for(interface).rx_publisher()
     }
 
+    pub fn link_controller(
+        &self,
+    ) -> PinnedNetworkLinkController<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        PinnedNetworkLinkController {
+            first: self.first_rx.link_endpoint(),
+            second: Some(self.second_rx.link_endpoint()),
+            tx: self.tx,
+        }
+    }
+
     pub fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
         self.rx_for(interface).set_link_state(state);
         self.tx.discard_inactive_ready();
@@ -3914,7 +4089,7 @@ impl<
         self.tx.receive().await
     }
 
-    pub const fn tx_consumer(
+    pub fn tx_consumer(
         &self,
     ) -> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
         self.tx
@@ -3986,6 +4161,17 @@ impl<
 
     pub fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
         self.rx.rx_publisher()
+    }
+
+    pub fn link_controller(
+        &self,
+    ) -> PinnedNetworkLinkController<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        PinnedNetworkLinkController {
+            first: self.rx.link_endpoint(),
+            second: None,
+            tx: self.tx,
+        }
     }
 
     pub fn set_link_state(&self, state: LinkState) {

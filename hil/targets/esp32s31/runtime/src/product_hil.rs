@@ -1602,6 +1602,7 @@ async fn access_point_status_task(mut status: Esp32s31AccessPointStatus) {
     }
 }
 
+#[cfg(feature = "core0-rx-coarse-telemetry")]
 pub(crate) fn access_point_tx_block_ack_geometry() -> (u32, u32, u32) {
     (
         AP_TX_BLOCK_ACK_OPERATIONAL_PEERS.load(Ordering::Acquire),
@@ -2434,6 +2435,10 @@ pub async fn run(
             open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
         ),
     );
+    open_esp_radio_embassy_net::configure_egress_control_for_diagnostics(!matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+    ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     embassy_net::configure_blocked_egress_socket_wake_suppression(!matches!(
         tx_buffer,

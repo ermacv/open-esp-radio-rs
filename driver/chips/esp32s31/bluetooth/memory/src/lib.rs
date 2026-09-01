@@ -29,6 +29,7 @@ mod le_tx_packet;
 mod le_tx_power;
 mod legacy_advertising_event_image;
 mod legacy_advertising_storage;
+mod passive_scanning_storage;
 mod rx_memory_list;
 mod scheduler_context;
 mod sram_link;
@@ -114,6 +115,16 @@ pub use legacy_advertising_storage::{
     BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
     BluetoothLegacyAdvertisingMemoryGraphStorage,
     BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+};
+#[cfg(not(target_arch = "riscv32"))]
+pub use passive_scanning_storage::BluetoothPassiveScanRxArenaModelAddress;
+pub use passive_scanning_storage::{
+    BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT, BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES,
+    BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
+    BluetoothPassiveScanRxArenaBindError, BluetoothPassiveScanRxArenaBindFailure,
+    BluetoothPassiveScanRxArenaCpuOwned, BluetoothPassiveScanRxArenaPublicationError,
+    BluetoothPassiveScanRxArenaPublicationMismatch, BluetoothPassiveScanRxArenaPublicationPrepared,
+    BluetoothPassiveScanRxArenaPublished, BluetoothPassiveScanRxArenaStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};

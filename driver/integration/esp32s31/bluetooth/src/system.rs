@@ -6,9 +6,11 @@ use embassy_futures::{
     yield_now,
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use esp_hal::rng::Rng;
 use open_esp_radio_bluetooth_hci::{
     InProcessHciHostTransport, LeControllerCommandEndpoint, LeControllerHciEndpoints,
 };
+use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerModemTimerBegin,
     BluetoothControllerModemTimerRearm, BluetoothControllerModemTimerStep,
@@ -18,8 +20,9 @@ use open_esp_radio_esp32s31_bluetooth::{
 use open_esp_radio_esp32s31_bluetooth_embassy::{
     EmbassyBluetoothControllerCommandBoundary, EmbassyBluetoothControllerCommandTask,
     EmbassyBluetoothDtmAbsoluteRecheck, EmbassyBluetoothDtmControllerTimeRecheck,
-    EmbassyBluetoothDtmControllerTimeRecheckStatus, EmbassyBluetoothModemTimerDriveStep,
-    EmbassyBluetoothModemTimerDriver, EmbassyBluetoothRuntimeWakers,
+    EmbassyBluetoothDtmControllerTimeRecheckStatus, EmbassyBluetoothLegacyAdvertisingDelaySource,
+    EmbassyBluetoothModemTimerDriveStep, EmbassyBluetoothModemTimerDriver,
+    EmbassyBluetoothRuntimeWakers,
 };
 use open_esp_radio_esp32s31_radio_platform_esp_hal::{
     EspHalBluetoothModemLpTimerStorageError, PublishedEspHalBluetoothInterruptOwners,
@@ -51,6 +54,16 @@ type ModemDriveStep = EmbassyBluetoothModemTimerDriveStep<
     EspHalBluetoothModemLpTimerStorageError,
     EspHalBluetoothModemLpTimerStorageError,
 >;
+
+struct Esp32s31BluetoothAdvertisingDelaySource;
+
+impl EmbassyBluetoothLegacyAdvertisingDelaySource for Esp32s31BluetoothAdvertisingDelaySource {
+    fn next_advertising_delay(&mut self) -> AdvertisingDelay {
+        let micros = (Rng::new().random() % (u32::from(AdvertisingDelay::MAX_MICROS) + 1)) as u16;
+        AdvertisingDelay::from_micros(micros)
+            .expect("the hardware entropy projection is inside the Link Layer domain")
+    }
+}
 
 /// Standard `bt-hci` Host facade backed by the source-owned in-process transport.
 pub type Esp32s31BluetoothHostController<
@@ -215,6 +228,7 @@ pub struct Esp32s31BluetoothHardwareRunner<
     interrupt: Option<Esp32s31BluetoothInterruptRuntime>,
     packet: [u8; PACKET_CAPACITY],
     recheck: EmbassyBluetoothDtmAbsoluteRecheck,
+    advertising_delay: Esp32s31BluetoothAdvertisingDelaySource,
     wakers: &'static RuntimeWakers,
     schedule: HardwareRunnerSchedule,
 }
@@ -241,6 +255,20 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | EmbassyBluetoothControllerCommandBoundary::CommandReadyRadioFault(_)
         | EmbassyBluetoothControllerCommandBoundary::TestEndStoppingFault(_)
         | EmbassyBluetoothControllerCommandBoundary::ResetStoppingFault(_) => {
+            CommandBoundaryClass::Terminal
+        }
+        EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActive(_) => {
+            CommandBoundaryClass::Progress
+        }
+        EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActiveCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingFault(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingPendingFault(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingStoppingFault(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringStopFault(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringFault(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingSequenceExhausted(_) => {
             CommandBoundaryClass::Terminal
         }
         EmbassyBluetoothControllerCommandBoundary::UnownedFinishedList(_) => {
@@ -359,6 +387,7 @@ impl<
             interrupt: Some(interrupt),
             packet: [0; PACKET_CAPACITY],
             recheck,
+            advertising_delay: Esp32s31BluetoothAdvertisingDelaySource,
             wakers,
             schedule: HardwareRunnerSchedule::new(),
         }
@@ -484,6 +513,7 @@ impl<
                         &mut self.controller,
                         &mut self.packet,
                         &mut self.recheck,
+                        &mut self.advertising_delay,
                     );
 
                 if primary_first {

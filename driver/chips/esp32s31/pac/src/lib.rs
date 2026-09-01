@@ -86,7 +86,7 @@ pub use baseband::{
 };
 pub use bluetooth_controller_hal_init::{
     BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
-    BluetoothHalInitScale, BluetoothRawTimeDeltaProjection,
+    BluetoothHalInitScale, BluetoothRawTickDeltaProjection,
 };
 pub use bluetooth_controller_time::{
     BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,

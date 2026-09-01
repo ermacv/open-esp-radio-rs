@@ -1,4 +1,4 @@
-//! Positional time in the source-owned Bluetooth scheduler domain.
+//! Positional microsecond time in the source-owned Bluetooth scheduler.
 //!
 //! This module carries only wrapping scheduler positions and their ordering.
 //! Projection to or from raw controller time remains owned by the live
@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-/// One positional instant in the BLE software-scheduler domain.
+/// One positional microsecond instant in the BLE software scheduler.
 ///
 /// External callers cannot manufacture an instant from a detached integer
 /// image. Internal protocol roles may share the same retained scheduler epoch
@@ -15,18 +15,18 @@
 pub(crate) struct BluetoothSchedulerInstant(u32);
 
 impl BluetoothSchedulerInstant {
-    /// Preserve one complete positional scheduler-time image.
+    /// Preserve one complete wrapping microsecond image.
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn from_image(image: u32) -> Self {
         Self(image)
     }
 
-    /// Return the complete positional scheduler-time image.
+    /// Return the complete positional microsecond image.
     pub(crate) const fn image(self) -> u32 {
         self.0
     }
 
-    /// Advance by one wrapping scheduler-domain delta.
+    /// Advance by one wrapping microsecond delta.
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn wrapping_add(self, delta: u32) -> Self {
         Self(self.0.wrapping_add(delta))

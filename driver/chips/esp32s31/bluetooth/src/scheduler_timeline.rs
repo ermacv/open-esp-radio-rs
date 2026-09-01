@@ -16,7 +16,7 @@ use crate::{BluetoothControllerTimeSample, BluetoothSchedulerSoftwareConfig};
 
 const MAX_FORWARD_SPAN: u32 = i32::MAX as u32;
 
-/// Raw insertion timing policy derived from one common scheduler epoch.
+/// Raw-tick insertion timing policy derived from one common scheduler epoch.
 ///
 /// Complete overlap admission converts the scheduler environment's first
 /// policy delta through the live Controller time scale for its late-start
@@ -37,11 +37,11 @@ impl BluetoothSchedulerTimingPolicy {
     ) -> Self {
         Self {
             late_start_guard_raw_delta: scale
-                .raw_delta_from_scheduler(config.late_start_guard_scheduler_delta())
-                .whole,
+                .raw_ticks_from_micros(config.late_start_guard_micros())
+                .whole_ticks,
             sequence_lead_raw_delta: scale
-                .raw_delta_from_scheduler(config.sequence_lead_scheduler_delta())
-                .whole,
+                .raw_ticks_from_micros(config.sequence_lead_micros())
+                .whole_ticks,
         }
     }
 
@@ -52,7 +52,7 @@ impl BluetoothSchedulerTimingPolicy {
         raw_item_start: u32,
     ) -> bool {
         (sample
-            .raw_time()
+            .raw_ticks()
             .wrapping_add(self.late_start_guard_raw_delta)
             .wrapping_sub(raw_item_start) as i32)
             < 0
@@ -182,7 +182,7 @@ pub struct BluetoothSchedulerWindowReservation<State> {
 }
 
 impl<State> BluetoothSchedulerWindowReservation<State> {
-    /// Return the phase-bound raw-time window retained by this reservation.
+    /// Return the phase-bound raw-tick window retained by this reservation.
     pub const fn window(&self) -> BluetoothSchedulerRawWindow {
         self.window
     }

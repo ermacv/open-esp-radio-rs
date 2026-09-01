@@ -168,7 +168,7 @@ The scheduler-item update is now a second non-publishable reviewed region.
 It reproduces the role byte at `+0x02`, bit-31 publication prerequisite at
 `+0x04`, four-bit clear at `+0x08`, repeated two-bit PHY image at `+0x14`,
 seven-bit frequency plus low-nibble image at `+0x18`, RX-only complete
-`0x000f0001` at `+0x2c`, two epoch-projected raw-time words at `+0x44/+0x48`
+`0x000f0001` at `+0x2c`, two epoch-projected raw-tick words at `+0x44/+0x48`
 and the low-byte clear at `+0x4c`. Complete common
 `r_btdm_sched_calc_seq_time` additionally stores raw start plus its dynamic
 scheduler-environment lead at `+0x0c` and the wrapping raw window length at
@@ -368,8 +368,9 @@ stored at controller environment offset `+0x24` comes directly from current
 one. Current `r_sym_ble_xHIFihMabllBUXiMYYoN` and
 `r_sym_ble_GzLO7QvWzB8FTsdGLaBt`, mapped to the named initial usec-to-tick and
 tick-to-usec leaves, are both identity returns. The DTM body consequently
-stores `interval_ticks = interval_usecs`, computes a zero one-byte remainder
-and never takes its `remainder == unit` correction branch.
+stores the interval unchanged in its microsecond-domain environment field,
+computes a zero one-byte remainder and never takes its `remainder == unit`
+correction branch.
 
 The scheduler-margin source is closed for the reviewed standalone profile.
 Current member `66.o` function `r_sym_ble_TtdgZbQxHLEPeNfBtjqO` is
@@ -389,7 +390,7 @@ Current member `64.o` wrapper `r_sym_ble_4QeP6vZAoSzLLHdFgwD0` calls
 `r_btdm_sleep_enable_now` followed by `r_sched_timer_convertTimeToUs`. The null
 or disabled sleep-environment branch performs no RF MMIO and obtains a fresh
 controller tick; the sleep-enabled branch first crosses still-open wake helpers
-and then also obtains a fresh tick. RF-ready is therefore the scheduler-domain
+and then also obtains a fresh tick. RF-ready is therefore the microsecond-domain
 instant returned after synchronous RF-enable-now policy, not a PHY status bit
 or caller timestamp. Complete initial TX/RX bodies acquire current before
 RF-ready; recurring RX acquires RF-ready before current; recurring TX has no
@@ -927,22 +928,26 @@ The always-awake time-read prefix is now exact. Complete
 comparison names that function `r_btdm_sleep_timer_ticks_get`; it also maps
 the two conversion helpers below without importing a historical address or
 ABI claim. Complete
-`r_sym_ble_3ISuZaEAZjklAjtGLFxW` converts the delta from an owned raw-time
-anchor into the BLE scheduler epoch, handling either side of the anchor and
-rounding the negative side by one when a discarded remainder is nonzero. For
-the reviewed standalone HAL profile, the signed scale image is three: the
-complete conversion helper shifts a positive raw-time delta left by two and
-the inverse helper shifts a scheduler delta right by two. This proves the
-arithmetic used by DTM, but not a public time unit or the wrap width of the raw
-counter. The restricted PAC now exposes only fresh-read OR publication,
+`r_sym_ble_3ISuZaEAZjklAjtGLFxW` converts the delta from an owned raw-tick
+anchor into the BLE scheduler's microsecond epoch, handling either side of the
+anchor and rounding the negative side by one when a discarded remainder is
+nonzero. For the reviewed standalone HAL profile, the signed scale image is
+three: the complete `r_btdm_hal_util_ticks_to_us` body shifts a positive raw
+tick delta left by two and the inverse helper shifts a microsecond delta right
+by two. The unit is closed by the direct DTM composition: the converted value
+is combined with independently established 500/1000-microsecond literals,
+preparation time and packet airtime, then both descriptor boundaries pass
+through named `r_sched_timer_convertTimeToTicks`. One standalone raw tick is
+therefore four microseconds. Effective counter width remains unproven. The
+restricted PAC now exposes only fresh-read OR publication,
 pending-bit observation and the complete latched word. The Bluetooth layer
 owns affine `publication -> in flight -> read ready -> sample` phases and a
 pure wrapping scheduler-epoch projection. Every pending observation returns
 control immediately. The same powered Controller owner now exposes request,
 generation-scoped abandon and one-observation recheck operations; PAC
 publication includes its device fence. A registered wake or proven bounded
-recheck source, effective counter width and physical unit remain absent, so
-this is not yet a deadline-ready production time source.
+recheck source and effective counter width remain absent, so HIL is still
+required to qualify latch wrap and wake behavior.
 
 The scheduler's first live reference update is exact as well. Its initializer
 zeroes both raw and scheduler reference images, and its task-enable leaf is a
@@ -950,10 +955,10 @@ no-op. The first task-run tail-calls the reference update, which samples raw
 time, converts the wrapping delta from the prior raw reference, stores sampled
 raw time minus the conversion remainder and advances the scheduler reference
 by the converted quotient. Every accepted ESP32-S31 scale image is positive,
-so this first update has zero remainder. It therefore establishes
-`raw_anchor = sample` and
-`scheduler_anchor = sample << (shift_image - 1)` with 32-bit wrapping; the
-standalone shift image three produces `scheduler_anchor = sample << 2`.
+so this first update has zero remainder. It therefore establishes a raw-tick
+anchor equal to the sample and a microsecond anchor equal to
+`sample << (shift_image - 1)` with 32-bit wrapping; the standalone shift image
+three produces `micros_anchor = sample << 2`.
 Every later completed Rust scheduler-current observation applies the same
 reference-update geometry to the retained epoch: it projects the fresh raw
 sample through the prior epoch, stores that projected scheduler image beside
@@ -1026,11 +1031,12 @@ it must not be read as claiming on-air validation.
 2. **Close the controller timebase source.** The latch address/order,
    standalone scale arithmetic, affine nonblocking request phases, pure
    wrapping epoch projection and sole powered task-side MMIO owner now exist.
-   Add a lost-wake-safe registered event or proven bounded timer recheck and
-   establish the effective counter width and physical unit before scheduler
-   deadlines become live. Compose the now-exact DTM
-   microsecond interval with the recovered environment remainder only after
-   that value has a source-owned initialization path.
+   The final runner already supplies a bounded absolute recheck. Establish the
+   effective counter width and a hardware wake source before claiming a
+   sleep-enabled timebase; the always-awake raw-tick-to-microsecond conversion
+   is now exact. Compose the DTM microsecond interval with the recovered
+   environment remainder only after that value has a source-owned
+   initialization path.
 3. **Close the hardware-consumed descriptor.** Eight link-state reset words,
    eleven scheduler-item event words, every allocation footprint, chain anchor,
    TX/RX header image and RX re-arm transform are now exact. Trace every
@@ -1097,7 +1103,7 @@ now-classified scan-resume path.
   already explicit;
 - exact multi-item ordering within a finished hardware list; DTM's capacity-one
   list-zero relation does not establish that rule for other roles;
-- exact controller-time raw width, wrap and physical unit;
+- exact effective controller-time width and hardware wrap behavior;
 - complete S31 descriptor field boundaries, all hardware-read words and the
   hardware interpretation of DTM's published private link-state RX pointer;
 - exact hardware current/next rotation for the normal scan/non-scan global
@@ -1110,7 +1116,7 @@ now-classified scan-resume path.
   result-status extraction;
 - bounded abort plus powered quiescence when an event is scheduled or running.
 
-The operational blockers are the physical controller-time width/unit contract,
+The operational blockers are the effective controller-time width/wrap contract,
 guaranteed post-unlink progress when the mailbox is full, unrelated finished-list
 routing, source-127 expiration ownership, remaining hardware-consumed descriptor
 semantics, sleep-enabled RF wake and target on-air evidence. The DTM session loop,

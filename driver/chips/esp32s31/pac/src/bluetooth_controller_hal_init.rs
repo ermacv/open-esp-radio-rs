@@ -80,29 +80,32 @@ pub struct BluetoothControllerHalInitConfig {
     period: BluetoothHalInitPeriod,
 }
 
-/// Exact integer scale between a raw latched controller-time delta and the
-/// BLE scheduler's internal delta domain.
+/// Exact integer scale between a raw latched controller tick delta and
+/// microseconds.
 ///
-/// The type intentionally assigns no physical unit to either side. Complete
-/// ESP32-S31 bodies prove only the integer transform selected by the same
-/// low-three-bit image written during HAL initialization. Counter width, wrap
-/// and physical frequency remain separate evidence obligations.
+/// Current and same-chip named bodies compose
+/// `r_btdm_sleep_timer_ticks_get`, `r_btdm_hal_util_ticks_to_us` and
+/// `r_sched_timer_convertTimeToUs`. DTM then combines that result with its
+/// independently established microsecond durations before converting the
+/// descriptor deadlines back through `r_sched_timer_convertTimeToTicks`.
+/// Effective hardware counter width, wrap and wake causality remain separate
+/// evidence obligations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothControllerTimeScale {
     shift_image: u8,
 }
 
-/// Projection of one scheduler delta into the raw controller-time domain.
+/// Projection of one microsecond delta into the raw controller-tick domain.
 ///
-/// `remainder` retains the scheduler-domain low bits discarded by the exact
+/// `remainder_micros` retains the microsecond low bits discarded by the exact
 /// inverse shift. Callers must choose a rounding policy explicitly rather than
 /// silently treating the projection as exact.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothRawTimeDeltaProjection {
-    /// Whole raw-time delta produced by the reviewed inverse transform.
-    pub whole: u32,
-    /// Scheduler-domain remainder discarded by that transform.
-    pub remainder: u8,
+pub struct BluetoothRawTickDeltaProjection {
+    /// Whole raw-tick delta produced by the reviewed inverse transform.
+    pub whole_ticks: u32,
+    /// Microseconds discarded by that transform.
+    pub remainder_micros: u8,
 }
 
 impl BluetoothControllerTimeScale {
@@ -111,24 +114,21 @@ impl BluetoothControllerTimeScale {
         self.shift_image
     }
 
-    /// Convert one raw latched-time delta into the scheduler delta domain.
+    /// Convert one raw latched-tick delta into microseconds.
     ///
     /// This uses wrapping 32-bit arithmetic, matching the complete RISC-V
     /// shift helper. It does not decide whether a particular wrapped delta is
     /// temporally before or after an anchor.
-    pub const fn scheduler_delta_from_raw(self, raw_delta: u32) -> u32 {
-        raw_delta.wrapping_shl((self.shift_image - 1) as u32)
+    pub const fn micros_from_raw_ticks(self, raw_ticks: u32) -> u32 {
+        raw_ticks.wrapping_shl((self.shift_image - 1) as u32)
     }
 
-    /// Apply the exact inverse transform while retaining discarded low bits.
-    pub const fn raw_delta_from_scheduler(
-        self,
-        scheduler_delta: u32,
-    ) -> BluetoothRawTimeDeltaProjection {
+    /// Convert microseconds into raw ticks while retaining discarded time.
+    pub const fn raw_ticks_from_micros(self, micros: u32) -> BluetoothRawTickDeltaProjection {
         let shift = (self.shift_image - 1) as u32;
-        BluetoothRawTimeDeltaProjection {
-            whole: scheduler_delta >> shift,
-            remainder: (scheduler_delta & ((1_u32 << shift) - 1)) as u8,
+        BluetoothRawTickDeltaProjection {
+            whole_ticks: micros >> shift,
+            remainder_micros: (micros & ((1_u32 << shift) - 1)) as u8,
         }
     }
 }
@@ -556,14 +556,14 @@ mod tests {
         let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
 
         assert_eq!(scale.shift_image(), 3);
-        assert_eq!(scale.scheduler_delta_from_raw(0), 0);
-        assert_eq!(scale.scheduler_delta_from_raw(625), 2_500);
-        assert_eq!(scale.scheduler_delta_from_raw(0x4000_0000), 0);
+        assert_eq!(scale.micros_from_raw_ticks(0), 0);
+        assert_eq!(scale.micros_from_raw_ticks(625), 2_500);
+        assert_eq!(scale.micros_from_raw_ticks(0x4000_0000), 0);
         assert_eq!(
-            scale.raw_delta_from_scheduler(2_503),
-            super::BluetoothRawTimeDeltaProjection {
-                whole: 625,
-                remainder: 3,
+            scale.raw_ticks_from_micros(2_503),
+            super::BluetoothRawTickDeltaProjection {
+                whole_ticks: 625,
+                remainder_micros: 3,
             }
         );
     }
@@ -596,15 +596,15 @@ mod tests {
         for (scale, period, shift_image) in cases {
             let time_scale = BluetoothControllerHalInitConfig::new(scale, 11, 33, period)
                 .controller_time_scale();
-            let scheduler_delta = 0x1234_567b;
-            let projection = time_scale.raw_delta_from_scheduler(scheduler_delta);
+            let micros = 0x1234_567b;
+            let projection = time_scale.raw_ticks_from_micros(micros);
             let shift = u32::from(shift_image - 1);
 
             assert_eq!(time_scale.shift_image(), shift_image);
-            assert_eq!(projection.whole, scheduler_delta >> shift);
+            assert_eq!(projection.whole_ticks, micros >> shift);
             assert_eq!(
-                u32::from(projection.remainder),
-                scheduler_delta & ((1_u32 << shift) - 1)
+                u32::from(projection.remainder_micros),
+                micros & ((1_u32 << shift) - 1)
             );
         }
     }

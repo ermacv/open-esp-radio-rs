@@ -80,7 +80,7 @@ impl BluetoothAlwaysAwakeTimingReady {
         }
     }
 
-    /// Consume the post-enable timing proof into its scheduler-domain instant.
+    /// Consume the post-enable timing proof into its microsecond-domain instant.
     pub(crate) const fn into_scheduler_instant(self) -> crate::BluetoothSchedulerInstant {
         self.scheduler_instant
     }

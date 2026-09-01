@@ -2227,7 +2227,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         let timing =
             BluetoothDtmTxTimingMicros::new(owner.length(), phy, requested_interval_micros)
                 .scheduler_timing();
-        let margin = self.config.preparation_lead_scheduler_delta();
+        let margin = self.config.preparation_lead_micros();
         let current = dtm_scheduler_current(&now);
         let window = timing.initial_event_window(
             self.config,
@@ -2422,7 +2422,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 owner,
             });
         }
-        let margin = self.config.preparation_lead_scheduler_delta();
+        let margin = self.config.preparation_lead_micros();
         let current = dtm_scheduler_current(&now);
         let window = crate::BluetoothDtmRxInitialEventWindow::new(
             self.config,
@@ -4146,7 +4146,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
 #[cfg(any(target_arch = "riscv32", test))]
 const fn dtm_scheduler_current(now: &BluetoothControllerSchedulerNow) -> BluetoothSchedulerInstant {
-    BluetoothSchedulerInstant::from_image(now.scheduler_image())
+    BluetoothSchedulerInstant::from_image(now.micros())
 }
 
 impl<P> BluetoothControllerHalInitialized<P> {

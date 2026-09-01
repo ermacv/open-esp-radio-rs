@@ -99,7 +99,7 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "source-127-expiration-consumer-and-periodic-phy-tracking-missing" },
-  { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
+  { axis = "vendor", id = "effective-counter-width-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "physical-counter-wake-causality-and-timeline-exhaustion-recovery-missing" },
 ]
@@ -282,7 +282,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "physical-counter-contract-and-on-air-timing-validation-missing" },
+  { axis = "implementation", id = "effective-counter-width-and-on-air-timing-validation-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]

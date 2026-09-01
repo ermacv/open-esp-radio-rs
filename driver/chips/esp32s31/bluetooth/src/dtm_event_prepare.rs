@@ -263,7 +263,7 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
                 seed.rx_header_tail_projection(),
             )
             .apply(current.link_state())
-            .apply_event_context(self.link_state.role(), epoch.raw_time_for_scheduler_time(0));
+            .apply_event_context(self.link_state.role(), epoch.raw_ticks_for_micros(0));
         let scheduler_item = event.apply_raw_window(
             current.scheduler_item(),
             retained_window.start(),
@@ -1811,8 +1811,7 @@ mod tests {
     }
 
     fn margin() -> u32 {
-        crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone()
-            .preparation_lead_scheduler_delta()
+        crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone().preparation_lead_micros()
     }
 
     fn tx_timing() -> crate::BluetoothDtmTxSchedulerTiming {

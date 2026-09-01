@@ -33,8 +33,8 @@ pub enum BluetoothDtmSchedulerItemEventError {
 pub struct BluetoothDtmSchedulerItemEvent {
     frequency: u8,
     event_type: BluetoothDtmSchedulerItemEventType,
-    scheduler_start: u32,
-    scheduler_end: u32,
+    start_micros: u32,
+    end_micros: u32,
 }
 
 impl BluetoothDtmSchedulerItemEvent {
@@ -102,14 +102,14 @@ impl BluetoothDtmSchedulerItemEvent {
     const fn new(
         channel: BluetoothDtmChannel,
         event_type: BluetoothDtmSchedulerItemEventType,
-        scheduler_start: u32,
-        scheduler_end: u32,
+        start_micros: u32,
+        end_micros: u32,
     ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
         Ok(Self {
             frequency: channel.scheduler_frequency_image(),
             event_type,
-            scheduler_start,
-            scheduler_end,
+            start_micros,
+            end_micros,
         })
     }
 
@@ -130,12 +130,12 @@ impl BluetoothDtmSchedulerItemEvent {
 
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn raw_start(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
-        epoch.raw_time_for_scheduler_time(self.scheduler_start)
+        epoch.raw_ticks_for_micros(self.start_micros)
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn raw_end(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
-        epoch.raw_time_for_scheduler_time(self.scheduler_end)
+        epoch.raw_ticks_for_micros(self.end_micros)
     }
 }
 

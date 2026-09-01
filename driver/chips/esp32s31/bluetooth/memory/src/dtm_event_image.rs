@@ -347,9 +347,9 @@ pub struct BluetoothDtmSchedulerItemReviewedWords {
     pub(crate) word_18: u32,
     /// Complete word at byte offset `+0x2c`.
     pub(crate) word_2c: u32,
-    /// Complete raw-time word at byte offset `+0x44`.
+    /// Complete raw-tick word at byte offset `+0x44`.
     pub(crate) word_44: u32,
-    /// Complete raw-time word at byte offset `+0x48`.
+    /// Complete raw-tick word at byte offset `+0x48`.
     pub(crate) word_48: u32,
     /// Complete word at byte offset `+0x4c`; only its low byte is cleared.
     pub(crate) word_4c: u32,
@@ -407,7 +407,7 @@ impl BluetoothDtmSchedulerItemReviewedWords {
 
     /// Apply the complete per-item sequence-time projection.
     ///
-    /// The common scheduler adds its configured raw-time lead to the already
+    /// The common scheduler adds its configured raw-tick lead to the already
     /// projected start and stores the wrapping window length separately. The
     /// broker notification performed between these two writes belongs to the
     /// scheduler runtime, not this CPU-owned memory codec.

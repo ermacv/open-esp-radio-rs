@@ -17,7 +17,7 @@ use crate::{
 const INITIAL_EVENT_DELAY_MICROS: u32 = 2_000;
 const LE_1M_FIXED_PACKET_MICROS: u32 = 80;
 
-/// One restricted legacy advertising event before raw-time projection.
+/// One restricted legacy advertising event before raw-tick projection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct BluetoothLegacyAdvertisingEventWindow {
     anchor: BluetoothSchedulerInstant,
@@ -124,7 +124,7 @@ impl BluetoothLegacyAdvertisingEventWindow {
         payload_length: u8,
     ) -> Self {
         let nominal_start = current.wrapping_add(INITIAL_EVENT_DELAY_MICROS);
-        let anchor = nominal_start.wrapping_add(config.preparation_lead_scheduler_delta());
+        let anchor = nominal_start.wrapping_add(config.preparation_lead_micros());
         let nominal_end = anchor.wrapping_add(
             (payload_length as u32)
                 .wrapping_mul(8)
@@ -158,7 +158,7 @@ impl BluetoothLegacyAdvertisingEventWindow {
         let start = BluetoothSchedulerInstant::from_image(
             anchor
                 .image()
-                .wrapping_sub(config.preparation_lead_scheduler_delta()),
+                .wrapping_sub(config.preparation_lead_micros()),
         );
         let end = anchor.wrapping_add(
             (payload_length as u32)
@@ -192,8 +192,8 @@ impl BluetoothLegacyAdvertisingEventWindow {
         if primary_channel_count == 0 || primary_channel_count > 3 {
             return None;
         }
-        let raw_start = epoch.raw_time_for_scheduler_time(self.start.image());
-        let raw_first_end = epoch.raw_time_for_scheduler_time(self.end.image());
+        let raw_start = epoch.raw_ticks_for_micros(self.start.image());
+        let raw_first_end = epoch.raw_ticks_for_micros(self.end.image());
         let raw_item_duration = raw_first_end.wrapping_sub(raw_start);
         let raw_event_end =
             raw_start.wrapping_add(raw_item_duration.wrapping_mul(primary_channel_count as u32));

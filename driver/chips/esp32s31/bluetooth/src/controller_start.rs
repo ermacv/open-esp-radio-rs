@@ -2132,7 +2132,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 now,
             } => {
                 let epoch = now.epoch();
-                let current = crate::BluetoothSchedulerInstant::from_image(now.scheduler_image());
+                let current = crate::BluetoothSchedulerInstant::from_image(now.micros());
                 let radio_ready = controller
                     .always_awake_timing
                     .complete(epoch, sample)
@@ -3072,7 +3072,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// post-enable-before-current order.
     ///
     /// The retained always-awake BLE-PHY owner first publishes a private
-    /// post-enable timing request. Only its completed scheduler-domain result
+    /// post-enable timing request. Only its completed microsecond-domain result
     /// can advance to a second fresh-current request and reanchor this epoch.
     #[expect(
         clippy::result_large_err,

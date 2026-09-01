@@ -4143,9 +4143,13 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             Err(error) => return Err(BluetoothPassiveScanSchedulerStartFailure { error, head }),
         };
         let address = head.scheduler_item_address();
-        let (graph, publication) = head.into_parts();
+        let (graph, publication, reservation) = head.into_parts();
         let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
-        Ok(crate::BluetoothPassiveScanSchedulerRunning::new(graph, run))
+        Ok(crate::BluetoothPassiveScanSchedulerRunning::new(
+            graph,
+            run,
+            reservation,
+        ))
     }
 
     fn publish_scheduler_run_suffix(

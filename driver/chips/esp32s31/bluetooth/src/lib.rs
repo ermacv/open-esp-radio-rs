@@ -519,6 +519,10 @@ pub use scheduler::{
     BluetoothLegacyAdvertisingFirstEventPreparationError,
     BluetoothLegacyAdvertisingFirstEventPreparationFailure,
     BluetoothLegacyAdvertisingFirstPreSequence, BluetoothLegacyAdvertisingSequenceObservation,
+    BluetoothPassiveScanAdmissionObservation, BluetoothPassiveScanEventPrepared,
+    BluetoothPassiveScanFirstEventCandidate, BluetoothPassiveScanFirstEventPreparationError,
+    BluetoothPassiveScanFirstEventPreparationFailure, BluetoothPassiveScanFirstPreSequence,
+    BluetoothPassiveScanSequenceObservation,
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{

@@ -835,6 +835,18 @@ impl BluetoothPassiveScanMemoryGraphEventPrepared {
         self.window
     }
 
+    /// Return an unpublished event image to ordinary CPU ownership.
+    ///
+    /// A later preparation overwrites every event-specific field before the
+    /// graph can become visible to hardware.
+    #[doc(hidden)]
+    pub fn into_cpu_owned(self) -> BluetoothPassiveScanMemoryGraphCpuOwned {
+        BluetoothPassiveScanMemoryGraphCpuOwned {
+            storage: self.storage,
+            binding: self.binding,
+        }
+    }
+
     /// Detach the prepared item from the private free chain before admission.
     ///
     /// This transition remains CPU-only and is cancellable. It advances the
@@ -1347,6 +1359,12 @@ impl BluetoothPassiveScanMemoryGraphRxExtracted {
     /// Copy of every completed Link Layer PDU in receive-list order.
     pub const fn batch(&self) -> BluetoothPassiveScanReceivedBatch {
         self.batch
+    }
+
+    /// Recover the unchanged recycle proof before reclamation is committed.
+    #[doc(hidden)]
+    pub fn into_prepared(self) -> BluetoothPassiveScanMemoryGraphRecyclePrepared {
+        self.prepared
     }
 
     /// Restore the private lists and return ordinary CPU ownership.

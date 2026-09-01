@@ -375,17 +375,17 @@ No upper layer may construct register images.  No public LL type may contain
 the vendor link-state words.  SRAM masks remain private implementation details
 of typed memory accessors, just as for the DTM descriptors.
 
-The lower scheduler lifecycle now reaches CPU reclamation. The selected item
-is detached and joined to the exclusive list-zero epoch while CPU-owned; the
-Controller validates that exact head before the first MMIO publication, then
-publishes selector-one RX memory, the fixed standard-backoff scan command, the
-scheduler head, dynamic interrupts and `RUN` in order. A pre-publication
-failure restores the complete scanner and common-list owners. After `RUN`, the
-same common fenced finished-list drain, exact head-retirement observation and
-serialized post-unlink mailbox/removal gate authorize bounded RX extraction.
-Only then are the copied PDU/RSSI results returned and both private lists
-restored. This lower lifecycle is still not an operational LL scanner: common
-timeline admission, the production role runner and HCI routing remain absent.
+The lower scheduler lifecycle now reaches CPU reclamation. A CPU-owned scanner
+candidate first reserves the common source-owned timeline and passes its fresh
+sequence deadline. Only the overlap-resolved interval is encoded into SRAM;
+the reservation then remains inseparable from the item through list-zero
+merge, selector-one RX/command/head/interrupt/`RUN` publication, fenced
+finished-list capture, exact head retirement and the serialized post-unlink
+removal gate. Recycle validates the timeline identity before atomically
+returning the slot, copied PDU/RSSI results and both private lists. Every
+pre-publication cancellation likewise returns the exact graph and timeline
+owner. This lower lifecycle is still not an operational LL scanner: the
+production role resource/runner and HCI routing remain absent.
 
 ## Return gate from research to implementation
 

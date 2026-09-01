@@ -71,7 +71,8 @@ pub struct BluetoothSchedulerRawWindow {
 
 impl BluetoothSchedulerRawWindow {
     const fn new(start: u32, end: u32) -> Option<Self> {
-        if end.wrapping_sub(start) > MAX_FORWARD_SPAN {
+        let duration = end.wrapping_sub(start);
+        if duration == 0 || duration > MAX_FORWARD_SPAN {
             None
         } else {
             Some(Self { start, end })
@@ -548,9 +549,10 @@ mod tests {
     };
 
     use super::{
-        BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
-        BluetoothSchedulerReservationError, BluetoothSchedulerReservationReleaseError,
-        BluetoothSchedulerTimeline, BluetoothSchedulerTimelineSlot, BluetoothSchedulerTimingPolicy,
+        BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRawWindow,
+        BluetoothSchedulerRecurringReserved, BluetoothSchedulerReservationError,
+        BluetoothSchedulerReservationReleaseError, BluetoothSchedulerTimeline,
+        BluetoothSchedulerTimelineSlot, BluetoothSchedulerTimingPolicy,
         BluetoothSchedulerWindowReservation,
     };
     use crate::{BluetoothControllerTimeSample, BluetoothSchedulerSoftwareConfig};
@@ -609,6 +611,11 @@ mod tests {
         assert_eq!(reservation.window().start(), 30);
         assert_eq!(reservation.window().end(), 40);
         assert_eq!(reservation.window().duration(), 10);
+    }
+
+    #[test]
+    fn empty_window_is_not_a_scheduler_candidate() {
+        assert!(BluetoothSchedulerRawWindow::from_projected_scheduler_window(30, 30).is_none());
     }
 
     #[test]

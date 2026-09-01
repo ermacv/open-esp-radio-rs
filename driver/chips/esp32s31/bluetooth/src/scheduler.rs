@@ -60,13 +60,15 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothPassiveScanMemoryGraphEventPrepared,
-    BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+    BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphEventPrepared,
+    BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared, BluetoothPassiveScanPrimaryChannel,
+    BluetoothPassiveScanSchedulerWindow, BluetoothPassiveScanStartSelection,
 };
 use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothControllerLatchedTime, BluetoothControllerSramAddress,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareListsCleared,
+    BluetoothSchedulerHardwareRunCommandPublished,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
@@ -206,12 +208,135 @@ impl BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'_> {
     }
 }
 
+/// Fresh initial-admission sample sealed by the controller-time worker.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh scanner admission observation must be consumed or retained"]
+pub struct BluetoothPassiveScanAdmissionObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// Fresh post-overlap sequence sample sealed by the controller-time worker.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh scanner sequence observation must be consumed or retained"]
+pub struct BluetoothPassiveScanSequenceObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// CPU-owned scanner graph with a requested window not yet admitted to the
+/// common scheduler timeline.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the scanner candidate must enter common scheduling or be returned"]
+pub struct BluetoothPassiveScanFirstEventCandidate {
+    graph: BluetoothPassiveScanMemoryGraphCpuOwned,
+    channel: BluetoothPassiveScanPrimaryChannel,
+    requested_window: crate::BluetoothSchedulerRawWindow,
+    controller_time: BluetoothControllerLatchedTime,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPassiveScanFirstEventCandidate {
+    pub(crate) const fn new(
+        graph: BluetoothPassiveScanMemoryGraphCpuOwned,
+        channel: BluetoothPassiveScanPrimaryChannel,
+        requested_window: crate::BluetoothSchedulerRawWindow,
+        controller_time: BluetoothControllerLatchedTime,
+    ) -> Self {
+        Self {
+            graph,
+            channel,
+            requested_window,
+            controller_time,
+        }
+    }
+
+    pub const fn requested_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.requested_window
+    }
+
+    pub fn cancel(self) -> BluetoothPassiveScanMemoryGraphCpuOwned {
+        self.graph
+    }
+
+    fn prepare_resolved_event(
+        self,
+        resolved_window: crate::BluetoothSchedulerRawWindow,
+    ) -> BluetoothPassiveScanMemoryGraphEventPrepared {
+        let window = BluetoothPassiveScanSchedulerWindow::from_controller_ticks(
+            resolved_window.start(),
+            resolved_window.end(),
+        )
+        .expect("a timeline reservation retains a non-empty forward window");
+        let selection = if resolved_window.start() == self.requested_window.start() {
+            BluetoothPassiveScanStartSelection::Requested
+        } else {
+            BluetoothPassiveScanStartSelection::EarliestAvailable
+        };
+        self.graph
+            .prepare_first_event(self.channel, window, selection, self.controller_time)
+    }
+}
+
+/// First scanner event after common timeline admission and before the second
+/// sequence deadline.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the admitted scanner event must pass sequence authorization or be cancelled"]
+pub struct BluetoothPassiveScanFirstPreSequence {
+    candidate: BluetoothPassiveScanFirstEventCandidate,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerInitialAdmissionResolved>,
+}
+
+/// Scanner event image paired with the exact timeline interval encoded into it.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the prepared scanner event must be merged, cancelled, or retained"]
+pub struct BluetoothPassiveScanEventPrepared {
+    graph: BluetoothPassiveScanMemoryGraphEventPrepared,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPassiveScanEventPrepared {
+    pub const fn channel(&self) -> BluetoothPassiveScanPrimaryChannel {
+        self.graph.channel()
+    }
+
+    pub const fn window(&self) -> BluetoothPassiveScanSchedulerWindow {
+        self.graph.window()
+    }
+}
+
+/// Finite scanner preparation rejection before any MMIO publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
+pub enum BluetoothPassiveScanFirstEventPreparationError {
+    Timeline(BluetoothSchedulerReservationError),
+    Sequence(BluetoothSchedulerSequenceAuthorizationError),
+}
+
+/// Lossless first-scanner-event preparation rejection.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the unchanged scanner graph must be retried, cancelled, or retained"]
+pub struct BluetoothPassiveScanFirstEventPreparationFailure {
+    candidate: BluetoothPassiveScanFirstEventCandidate,
+    error: BluetoothPassiveScanFirstEventPreparationError,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPassiveScanFirstEventPreparationFailure {
+    pub const fn error(&self) -> BluetoothPassiveScanFirstEventPreparationError {
+        self.error
+    }
+
+    pub fn into_candidate(self) -> BluetoothPassiveScanFirstEventCandidate {
+        self.candidate
+    }
+}
+
 /// Lossless rejection while joining one detached scanner item to the empty list.
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the unchanged detached scanner event remains CPU-owned"]
 pub struct BluetoothPassiveScanEmptySchedulerMergeFailure {
     error: BluetoothSchedulerEmptyListMergeError,
-    prepared: BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+    prepared: BluetoothPassiveScanEventPrepared,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -222,7 +347,7 @@ impl BluetoothPassiveScanEmptySchedulerMergeFailure {
     }
 
     /// Recover the unchanged detached scanner graph.
-    pub fn into_prepared(self) -> BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
+    pub fn into_prepared(self) -> BluetoothPassiveScanEventPrepared {
         self.prepared
     }
 }
@@ -236,6 +361,7 @@ impl BluetoothPassiveScanEmptySchedulerMergeFailure {
 #[must_use = "the scanner merge must be published through the same scheduler or cancelled"]
 pub struct BluetoothPassiveScanEmptySchedulerMergePrepared {
     graph: BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -283,6 +409,7 @@ impl BluetoothPassiveScanSchedulerHeadPublicationFailure {
 pub struct BluetoothPassiveScanSchedulerHeadPublished {
     graph: BluetoothPassiveScanMemoryGraphCommandPublished,
     publication: BluetoothSchedulerHardwareListHeadPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -302,8 +429,9 @@ impl BluetoothPassiveScanSchedulerHeadPublished {
     ) -> (
         BluetoothPassiveScanMemoryGraphCommandPublished,
         BluetoothSchedulerHardwareListHeadPublished,
+        BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
     ) {
-        (self.graph, self.publication)
+        (self.graph, self.publication, self.reservation)
     }
 }
 
@@ -316,6 +444,7 @@ impl BluetoothPassiveScanSchedulerHeadPublished {
 pub struct BluetoothPassiveScanSchedulerRunning {
     graph: BluetoothPassiveScanMemoryGraphRunning,
     run: BluetoothSchedulerHardwareRunCommandPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -323,9 +452,14 @@ impl BluetoothPassiveScanSchedulerRunning {
     pub(crate) fn new(
         graph: BluetoothPassiveScanMemoryGraphCommandPublished,
         run: BluetoothSchedulerHardwareRunCommandPublished,
+        reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
     ) -> Self {
         let graph = graph.into_running(&run);
-        Self { graph, run }
+        Self {
+            graph,
+            run,
+            reservation,
+        }
     }
 
     /// Exact scanner item retained while hardware owns the graph.
@@ -345,6 +479,7 @@ impl BluetoothPassiveScanSchedulerRunning {
 pub struct BluetoothPassiveScanSchedulerCompletionObserved {
     graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
     run: BluetoothSchedulerHardwareRunCommandPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -367,6 +502,7 @@ impl BluetoothPassiveScanSchedulerCompletionObserved {
 pub struct BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
     graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
     head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -385,6 +521,7 @@ impl BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
 pub struct BluetoothPassiveScanSchedulerSoftwareListUnlinked {
     graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
     head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -403,6 +540,7 @@ impl BluetoothPassiveScanSchedulerSoftwareListUnlinked {
 pub struct BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
     graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
     removal: BluetoothSchedulerSoftwareListRemovalReady,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -548,6 +686,7 @@ pub enum BluetoothPassiveScanSchedulerRecycleStep {
         ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
         error: BluetoothPassiveScanRxError,
     },
+    ReservationIdentityMismatch(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
     Recycled(BluetoothPassiveScanSchedulerRecycled),
 }
 
@@ -2391,6 +2530,92 @@ impl<const SCHEDULER_CAPACITY: usize>
         candidate.cancel()
     }
 
+    /// Admit one requested passive-scanner window into the common timeline.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub fn admit_passive_scan_first_event(
+        &mut self,
+        candidate: BluetoothPassiveScanFirstEventCandidate,
+        admission: BluetoothPassiveScanAdmissionObservation,
+    ) -> Result<
+        BluetoothPassiveScanFirstPreSequence,
+        BluetoothPassiveScanFirstEventPreparationFailure,
+    > {
+        let requested = candidate.requested_window();
+        let timing_policy =
+            BluetoothSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        match self
+            .runtime
+            .scheduler_timeline_mut()
+            .reserve_initial_window(
+                requested.start(),
+                requested.end(),
+                timing_policy,
+                admission.sample,
+            ) {
+            Ok(reservation) => Ok(BluetoothPassiveScanFirstPreSequence {
+                candidate,
+                reservation,
+            }),
+            Err(error) => Err(BluetoothPassiveScanFirstEventPreparationFailure {
+                candidate,
+                error: BluetoothPassiveScanFirstEventPreparationError::Timeline(error),
+            }),
+        }
+    }
+
+    /// Authorize the second deadline and only then encode the
+    /// overlap-resolved scanner window into private SRAM.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub fn prepare_passive_scan_first_event(
+        &mut self,
+        admitted: BluetoothPassiveScanFirstPreSequence,
+        sequence: BluetoothPassiveScanSequenceObservation,
+    ) -> Result<BluetoothPassiveScanEventPrepared, BluetoothPassiveScanFirstEventPreparationFailure>
+    {
+        let BluetoothPassiveScanFirstPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        let reservation = match reservation.authorize_sequence(sequence.sample) {
+            Ok(reservation) => reservation,
+            Err(failure) => {
+                let error = failure.error();
+                self.release_scheduler_reservation(failure.into_reservation());
+                return Err(BluetoothPassiveScanFirstEventPreparationFailure {
+                    candidate,
+                    error: BluetoothPassiveScanFirstEventPreparationError::Sequence(error),
+                });
+            }
+        };
+        let graph = candidate.prepare_resolved_event(reservation.window());
+        Ok(BluetoothPassiveScanEventPrepared { graph, reservation })
+    }
+
+    /// Release one unpublished scanner event and its exact timeline slot.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub fn cancel_passive_scan_first_event(
+        &mut self,
+        prepared: BluetoothPassiveScanEventPrepared,
+    ) -> BluetoothPassiveScanMemoryGraphCpuOwned {
+        let BluetoothPassiveScanEventPrepared { graph, reservation } = prepared;
+        self.release_scheduler_reservation(reservation);
+        graph.into_cpu_owned()
+    }
+
+    /// Release an admitted scanner candidate before its sequence sample arrives.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel_passive_scan_first_pre_sequence(
+        &mut self,
+        admitted: BluetoothPassiveScanFirstPreSequence,
+    ) -> BluetoothPassiveScanMemoryGraphCpuOwned {
+        let BluetoothPassiveScanFirstPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        self.release_scheduler_reservation(reservation);
+        candidate.cancel()
+    }
+
     /// Join one prepared advertising item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
     #[cfg_attr(
@@ -2459,16 +2684,24 @@ impl<const SCHEDULER_CAPACITY: usize>
     #[cfg(any(target_arch = "riscv32", test))]
     pub fn prepare_passive_scan_empty_list_merge(
         &mut self,
-        prepared: BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+        prepared: BluetoothPassiveScanEventPrepared,
     ) -> Result<
         BluetoothPassiveScanEmptySchedulerMergePrepared,
         BluetoothPassiveScanEmptySchedulerMergeFailure,
     > {
-        let address = prepared.scheduler_head();
+        let BluetoothPassiveScanEventPrepared { graph, reservation } = prepared;
+        let graph = graph.prepare_scheduler_admission();
+        let address = graph.scheduler_head();
         if let Err(error) = self._scheduler_list.prepare_first_item(address) {
-            return Err(BluetoothPassiveScanEmptySchedulerMergeFailure { error, prepared });
+            return Err(BluetoothPassiveScanEmptySchedulerMergeFailure {
+                error,
+                prepared: BluetoothPassiveScanEventPrepared {
+                    graph: graph.cancel(),
+                    reservation,
+                },
+            });
         }
-        Ok(BluetoothPassiveScanEmptySchedulerMergePrepared { graph: prepared })
+        Ok(BluetoothPassiveScanEmptySchedulerMergePrepared { graph, reservation })
     }
 
     /// Restore an unpublished scanner merge through the same scheduler epoch.
@@ -2479,17 +2712,19 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub fn cancel_passive_scan_empty_list_merge(
         &mut self,
         merged: BluetoothPassiveScanEmptySchedulerMergePrepared,
-    ) -> Result<
-        BluetoothPassiveScanMemoryGraphEventPrepared,
-        BluetoothPassiveScanEmptySchedulerMergePrepared,
-    > {
+    ) -> Result<BluetoothPassiveScanEventPrepared, BluetoothPassiveScanEmptySchedulerMergePrepared>
+    {
         if !self
             ._scheduler_list
             .cancel_first_item(merged.scheduler_item_address())
         {
             return Err(merged);
         }
-        Ok(merged.graph.cancel())
+        let BluetoothPassiveScanEmptySchedulerMergePrepared { graph, reservation } = merged;
+        Ok(BluetoothPassiveScanEventPrepared {
+            graph: graph.cancel(),
+            reservation,
+        })
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
@@ -3564,11 +3799,16 @@ impl<const SCHEDULER_CAPACITY: usize>
                 return Err(BluetoothPassiveScanSchedulerHeadPublicationFailure { error, merged });
             }
         };
-        let graph = merged.graph.prepare_publication();
+        let BluetoothPassiveScanEmptySchedulerMergePrepared { graph, reservation } = merged;
+        let graph = graph.prepare_publication();
         let graph = unsafe { self.task.publish_passive_scan_rx_memory(graph) };
         let graph = unsafe { self.task.publish_passive_scan_command(graph) };
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
-        Ok(BluetoothPassiveScanSchedulerHeadPublished { graph, publication })
+        Ok(BluetoothPassiveScanSchedulerHeadPublished {
+            graph,
+            publication,
+            reservation,
+        })
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -4119,7 +4359,11 @@ impl<const SCHEDULER_CAPACITY: usize>
         else {
             return BluetoothPassiveScanSchedulerCompletionStep::NoFinishedList(running);
         };
-        let BluetoothPassiveScanSchedulerRunning { graph, run } = running;
+        let BluetoothPassiveScanSchedulerRunning {
+            graph,
+            run,
+            reservation,
+        } = running;
         match graph.observe_completion(observed) {
             BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
                 running,
@@ -4129,6 +4373,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                     BluetoothPassiveScanSchedulerRunning {
                         graph: running,
                         run,
+                        reservation,
                     },
                     more,
                 ),
@@ -4137,7 +4382,11 @@ impl<const SCHEDULER_CAPACITY: usize>
             BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(graph) => {
                 BluetoothPassiveScanSchedulerCompletionStep::StillInFlight(
                     BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerRunning { graph, run },
+                        BluetoothPassiveScanSchedulerRunning {
+                            graph,
+                            run,
+                            reservation,
+                        },
                         more,
                     ),
                 )
@@ -4147,7 +4396,11 @@ impl<const SCHEDULER_CAPACITY: usize>
                     .retain_completion_observed_first_item(address);
                 BluetoothPassiveScanSchedulerCompletionStep::CompletionObserved(
                     BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                        BluetoothPassiveScanSchedulerCompletionObserved {
+                            graph,
+                            run,
+                            reservation,
+                        },
                         more,
                     ),
                 )
@@ -4177,7 +4430,11 @@ impl<const SCHEDULER_CAPACITY: usize>
         else {
             return BluetoothPassiveScanSchedulerRunningDrainStep::DrainLost(pending);
         };
-        let BluetoothPassiveScanSchedulerRunning { graph, run } = pending.into_owner();
+        let BluetoothPassiveScanSchedulerRunning {
+            graph,
+            run,
+            reservation,
+        } = pending.into_owner();
         match graph.observe_completion(observed) {
             BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
                 running,
@@ -4187,6 +4444,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                     BluetoothPassiveScanSchedulerRunning {
                         graph: running,
                         run,
+                        reservation,
                     },
                     more,
                 ),
@@ -4195,7 +4453,11 @@ impl<const SCHEDULER_CAPACITY: usize>
             BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(graph) => {
                 BluetoothPassiveScanSchedulerRunningDrainStep::StillInFlight(
                     BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerRunning { graph, run },
+                        BluetoothPassiveScanSchedulerRunning {
+                            graph,
+                            run,
+                            reservation,
+                        },
                         more,
                     ),
                 )
@@ -4205,7 +4467,11 @@ impl<const SCHEDULER_CAPACITY: usize>
                     .retain_completion_observed_first_item(address);
                 BluetoothPassiveScanSchedulerRunningDrainStep::CompletionObserved(
                     BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                        BluetoothPassiveScanSchedulerCompletionObserved {
+                            graph,
+                            run,
+                            reservation,
+                        },
                         more,
                     ),
                 )
@@ -4270,7 +4536,11 @@ impl<const SCHEDULER_CAPACITY: usize>
         if self.runtime.scheduler_finished_lists_mut().is_active() {
             return BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed);
         }
-        let BluetoothPassiveScanSchedulerCompletionObserved { graph, run } = completed;
+        let BluetoothPassiveScanSchedulerCompletionObserved {
+            graph,
+            run,
+            reservation,
+        } = completed;
         match self
             .task
             .observe_scheduler_hardware_list_head_retirement(run)
@@ -4279,14 +4549,22 @@ impl<const SCHEDULER_CAPACITY: usize>
                 run,
                 observed,
             } => BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished {
-                completed: BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                completed: BluetoothPassiveScanSchedulerCompletionObserved {
+                    graph,
+                    run,
+                    reservation,
+                },
                 observed,
             },
             BluetoothSchedulerHardwareListHeadRetirementObservation::UnexpectedHeadChanged {
                 run,
                 observed,
             } => BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged {
-                completed: BluetoothPassiveScanSchedulerCompletionObserved { graph, run },
+                completed: BluetoothPassiveScanSchedulerCompletionObserved {
+                    graph,
+                    run,
+                    reservation,
+                },
                 observed,
             },
             BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(head) => {
@@ -4298,7 +4576,11 @@ impl<const SCHEDULER_CAPACITY: usize>
                 self._scheduler_list
                     .retain_hardware_head_empty_first_item(address);
                 BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::EmptyObserved(
-                    BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved { graph, head },
+                    BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
+                        graph,
+                        head,
+                        reservation,
+                    },
                 )
             }
         }
@@ -4321,9 +4603,17 @@ impl<const SCHEDULER_CAPACITY: usize>
                 observed,
             );
         }
-        let BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved { graph, head } = observed;
+        let BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
+            graph,
+            head,
+            reservation,
+        } = observed;
         BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::Unlinked(
-            BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+            BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+                graph,
+                head,
+                reservation,
+            },
         )
     }
 
@@ -4350,18 +4640,30 @@ impl<const SCHEDULER_CAPACITY: usize>
             }
             BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
         };
-        let BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head } = unlinked;
+        let BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+            graph,
+            head,
+            reservation,
+        } = unlinked;
         match self.task.finish_scheduler_software_list_removal(idle, head) {
             BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
                 BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Pending(
-                    BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+                    BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+                        graph,
+                        head,
+                        reservation,
+                    },
                 )
             }
             BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
                 self._scheduler_list
                     .retain_software_list_removal_ready_first_item(address);
                 BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Ready(
-                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                        graph,
+                        removal,
+                        reservation,
+                    },
                 )
             }
         }
@@ -4383,7 +4685,11 @@ impl<const SCHEDULER_CAPACITY: usize>
                 unlinked,
             );
         }
-        let BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head } = unlinked;
+        let BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+            graph,
+            head,
+            reservation,
+        } = unlinked;
         let join = match self
             .task
             .recheck_scheduler_software_list_removal(storage, head)
@@ -4391,21 +4697,33 @@ impl<const SCHEDULER_CAPACITY: usize>
             Ok(join) => join,
             Err(head) => {
                 return BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
-                    BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+                    BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+                        graph,
+                        head,
+                        reservation,
+                    },
                 );
             }
         };
         match join {
             BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
                 BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Pending(
-                    BluetoothPassiveScanSchedulerSoftwareListUnlinked { graph, head },
+                    BluetoothPassiveScanSchedulerSoftwareListUnlinked {
+                        graph,
+                        head,
+                        reservation,
+                    },
                 )
             }
             BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
                 self._scheduler_list
                     .retain_software_list_removal_ready_first_item(address);
                 BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Ready(
-                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                        graph,
+                        removal,
+                        reservation,
+                    },
                 )
             }
         }
@@ -4428,14 +4746,22 @@ impl<const SCHEDULER_CAPACITY: usize>
         if self.runtime.scheduler_finished_lists_mut().is_active() {
             return BluetoothPassiveScanSchedulerRecycleStep::FinishedListDrainStillActive(ready);
         }
-        let BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal } = ready;
+        let BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+            graph,
+            removal,
+            reservation,
+        } = ready;
         let prepared = match graph.prepare_recycle_after_software_list_removal(removal) {
             Ok(prepared) => prepared,
             Err(failure) => {
                 let error = failure.error();
                 let (graph, removal) = failure.into_parts();
                 return BluetoothPassiveScanSchedulerRecycleStep::MemoryIdentityMismatch {
-                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                        graph,
+                        removal,
+                        reservation,
+                    },
                     error,
                 };
             }
@@ -4446,12 +4772,35 @@ impl<const SCHEDULER_CAPACITY: usize>
                 let error = failure.error();
                 let (graph, removal) = failure.into_prepared().into_parts();
                 return BluetoothPassiveScanSchedulerRecycleStep::ReceiveInvalid {
-                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady { graph, removal },
+                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                        graph,
+                        removal,
+                        reservation,
+                    },
                     error,
                 };
             }
         };
+        let release = match self
+            .runtime
+            .scheduler_timeline_mut()
+            .prepare_release(reservation)
+        {
+            Ok(release) => release,
+            Err(failure) => {
+                let reservation = failure.into_reservation();
+                let (graph, removal) = extracted.into_prepared().into_parts();
+                return BluetoothPassiveScanSchedulerRecycleStep::ReservationIdentityMismatch(
+                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                        graph,
+                        removal,
+                        reservation,
+                    },
+                );
+            }
+        };
         let graph = extracted.commit();
+        release.commit();
         self._scheduler_list.commit_recycled_first_item();
         BluetoothPassiveScanSchedulerRecycleStep::Recycled(BluetoothPassiveScanSchedulerRecycled {
             graph,
@@ -5053,8 +5402,7 @@ mod tests {
         BluetoothLegacyAdvertisingMemoryGraphStorage, BluetoothPassiveScanDefaultTxPowerDbm,
         BluetoothPassiveScanMemoryGraphModelAddress, BluetoothPassiveScanMemoryGraphStorage,
         BluetoothPassiveScanPrimaryChannel, BluetoothPassiveScanResetConfig,
-        BluetoothPassiveScanSchedulerAllocationConfig, BluetoothPassiveScanSchedulerWindow,
-        BluetoothPassiveScanStartSelection,
+        BluetoothPassiveScanSchedulerAllocationConfig,
     };
     use open_esp_radio_esp32s31_hal::BluetoothControllerLatchedTime;
 
@@ -5093,8 +5441,7 @@ mod tests {
             .expect("the advertising graph fits physical controller SRAM")
     }
 
-    fn passive_scan_event()
-    -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphEventPrepared {
+    fn passive_scan_candidate() -> super::BluetoothPassiveScanFirstEventCandidate {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(
             BluetoothPassiveScanMemoryGraphStorage::new(),
         ));
@@ -5110,11 +5457,11 @@ mod tests {
             storage, base, reset, allocation,
         )
         .expect("the scanner graph fits physical controller SRAM");
-        graph.prepare_first_event(
+        super::BluetoothPassiveScanFirstEventCandidate::new(
+            graph,
             BluetoothPassiveScanPrimaryChannel::Channel37,
-            BluetoothPassiveScanSchedulerWindow::from_controller_ticks(11_000, 12_000)
-                .expect("the scanner window is non-empty"),
-            BluetoothPassiveScanStartSelection::Requested,
+            crate::BluetoothSchedulerRawWindow::from_projected_scheduler_window(11_000, 12_000)
+                .expect("the scanner window is non-empty and forward"),
             BluetoothControllerLatchedTime::from_bits(10_100),
         )
     }
@@ -5242,14 +5589,27 @@ mod tests {
                 .initialize_scheduler_for_validation(
                     BluetoothControllerRuntimeResources::<1, 1>::new(),
                 );
-        let event = passive_scan_event();
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let admitted = task
+            .admit_passive_scan_first_event(
+                passive_scan_candidate(),
+                super::BluetoothPassiveScanAdmissionObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(10_000),
+                },
+            )
+            .unwrap_or_else(|_| panic!("the requested scanner window must be admitted"));
+        let event = task
+            .prepare_passive_scan_first_event(
+                admitted,
+                super::BluetoothPassiveScanSequenceObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(10_001),
+                },
+            )
+            .unwrap_or_else(|_| panic!("the retained scanner deadline must remain open"));
         let channel = event.channel();
         let window = event.window();
-        let detached = event.prepare_scheduler_admission();
-
-        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
         let merged = task
-            .prepare_passive_scan_empty_list_merge(detached)
+            .prepare_passive_scan_empty_list_merge(event)
             .unwrap_or_else(|_| panic!("the pristine common list must accept the scanner item"));
         let event = task
             .cancel_passive_scan_empty_list_merge(merged)
@@ -5258,13 +5618,44 @@ mod tests {
         assert_eq!(event.window(), window);
 
         let merged = task
-            .prepare_passive_scan_empty_list_merge(event.prepare_scheduler_admission())
+            .prepare_passive_scan_empty_list_merge(event)
             .unwrap_or_else(|_| panic!("cancellation must reopen the common list"));
         let event = task
             .cancel_passive_scan_empty_list_merge(merged)
             .unwrap_or_else(|_| panic!("the restored private chain must remain cancellable"));
         assert_eq!(event.channel(), channel);
         assert_eq!(event.window(), window);
+        let _graph = task.cancel_passive_scan_first_event(event);
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
+    }
+
+    #[test]
+    fn passive_scanner_pre_sequence_cancellation_releases_the_timeline() {
+        struct ScannerPlatform;
+
+        let stopped = BluetoothStopped::from_hardware(
+            ScannerPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let admitted = task
+            .admit_passive_scan_first_event(
+                passive_scan_candidate(),
+                super::BluetoothPassiveScanAdmissionObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(10_000),
+                },
+            )
+            .unwrap_or_else(|_| panic!("the first scanner candidate must be admitted"));
+        let _graph = task.cancel_passive_scan_first_pre_sequence(admitted);
         drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());
     }

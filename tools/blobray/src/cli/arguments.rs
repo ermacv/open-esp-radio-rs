@@ -4,7 +4,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use clap::{Args, ValueEnum};
 
-use super::{NamedAddressRange, ProjectInputBinding, SourcePath, SourceValue};
+use super::{NamedAddressRange, ProjectInputBinding, RevisionPath, SourcePath, SourceValue};
 use crate::source_id::SourceId;
 
 /// Bounded default proven to stay below the Blobray wrapper's 1-GiB limit
@@ -340,9 +340,12 @@ pub(crate) struct SymbolCorrelateArgs {
 
 #[derive(Clone, Debug, Args)]
 pub(crate) struct SymbolLineageArgs {
-    /// Ordered artifact revisions from the oldest/named source to the current blob.
-    #[arg(long = "revision", required = true, value_name = "SOURCE=PATH")]
-    pub(crate) revisions: Vec<SourcePath>,
+    /// Stable logical artifact source shared by every revision.
+    #[arg(long, value_name = "SOURCE")]
+    pub(crate) source: SourceId,
+    /// Ordered labeled revisions from the oldest/named artifact to the current blob.
+    #[arg(long = "revision", required = true, value_name = "LABEL=PATH")]
+    pub(crate) revisions: Vec<RevisionPath>,
     /// Write the machine-readable multi-revision lineage report.
     #[arg(long)]
     pub(crate) output: Option<PathBuf>,

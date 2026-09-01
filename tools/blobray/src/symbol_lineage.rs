@@ -1,12 +1,17 @@
 //! Multi-revision composition of exact symbol-correspondence evidence.
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use open_radio_vendor_contracts::{ArtifactIdentity, EntityDomain, RevisionOccurrenceId};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     Result,
+    source_id::validate_source_id,
     symbol_correspondence::{
         self, DataObjectCorrespondence, DataObjectCorrespondenceObject,
         DataObjectCorrespondenceSummary, ObfuscationEpochEvidence, SymbolCorrespondence,
@@ -15,7 +20,7 @@ use crate::{
     },
 };
 
-pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 2;
+pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -32,11 +37,22 @@ pub(crate) enum SymbolLineageStatus {
 pub(crate) struct SymbolLineageEdgeSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) index: Option<usize>,
+    pub(crate) from_label: String,
+    pub(crate) to_label: String,
     pub(crate) from: SymbolCorrespondenceArtifact,
     pub(crate) to: SymbolCorrespondenceArtifact,
     pub(crate) obfuscation_epoch: ObfuscationEpochEvidence,
     pub(crate) functions: SymbolCorrespondenceSummary,
     pub(crate) data_objects: DataObjectCorrespondenceSummary,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct SymbolLineageArtifact {
+    pub(crate) label: String,
+    pub(crate) source: String,
+    pub(crate) path: String,
+    pub(crate) sha256: String,
+    pub(crate) functions: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -135,7 +151,7 @@ pub(crate) struct SymbolLineageReport {
     pub(crate) schema_version: u32,
     pub(crate) command: &'static str,
     pub(crate) method: &'static str,
-    pub(crate) artifacts: Vec<SymbolCorrespondenceArtifact>,
+    pub(crate) artifacts: Vec<SymbolLineageArtifact>,
     pub(crate) edges: Vec<SymbolLineageEdgeSummary>,
     pub(crate) direct: SymbolLineageEdgeSummary,
     pub(crate) function_summary: SymbolLineageSummary,
@@ -147,6 +163,7 @@ pub(crate) struct SymbolLineageReport {
 }
 
 pub(crate) struct SymbolLineageRevision<'a> {
+    pub(crate) label: &'a str,
     pub(crate) source: &'a str,
     pub(crate) path: &'a Path,
 }
@@ -177,6 +194,7 @@ struct RebaseLineageInput {
 
 #[derive(Deserialize)]
 struct RebaseLineageArtifact {
+    label: String,
     source: String,
     path: String,
     sha256: String,
@@ -232,6 +250,7 @@ pub(crate) fn load_rebase_evidence(path: &Path) -> Result<SymbolLineageRebaseEvi
         .artifacts
         .iter()
         .map(|artifact| SymbolLineageRevision {
+            label: &artifact.label,
             source: &artifact.source,
             path: Path::new(&artifact.path),
         })
@@ -351,6 +370,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
             "symbols lineage requires at least three ordered --revision artifacts",
         ));
     }
+    validate_revisions(revisions)?;
     let edges = revisions
         .windows(2)
         .map(|window| correlate(&window[0], &window[1]))
@@ -372,7 +392,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     });
     let function_summary = summarize(&functions);
     let data_summary = summarize(&data_objects);
-    let review_frontiers = review_frontiers(&functions, &data_objects, &edges, &direct);
+    let review_frontiers = review_frontiers(&functions, &data_objects, revisions);
     let mut pin_candidates = function_pin_candidates(&functions);
     pin_candidates.extend(data_pin_candidates(&data_objects));
     pin_candidates.sort_by(|left, right| {
@@ -382,20 +402,42 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
             &right.target_occurrence,
         ))
     });
-    let mut artifacts = Vec::with_capacity(edges.len() + 1);
-    artifacts.push(edges[0].from.clone());
-    artifacts.extend(edges.iter().map(|edge| edge.to.clone()));
+    let correspondence_artifacts =
+        std::iter::once(&edges[0].from).chain(edges.iter().map(|edge| &edge.to));
+    let artifacts = revisions
+        .iter()
+        .zip(correspondence_artifacts)
+        .map(|(revision, artifact)| SymbolLineageArtifact {
+            label: revision.label.to_owned(),
+            source: artifact.source.clone(),
+            path: artifact.path.clone(),
+            sha256: artifact.sha256.clone(),
+            functions: artifact.functions,
+        })
+        .collect();
     let edge_summaries = edges
         .iter()
         .enumerate()
-        .map(|(index, report)| edge_summary(Some(index), report))
+        .map(|(index, report)| {
+            edge_summary(
+                Some(index),
+                revisions[index].label,
+                revisions[index + 1].label,
+                report,
+            )
+        })
         .collect();
-    let direct_summary = edge_summary(None, &direct);
+    let direct_summary = edge_summary(
+        None,
+        revisions.first().expect("validated revisions").label,
+        revisions.last().expect("validated revisions").label,
+        &direct,
+    );
 
     Ok(SymbolLineageReport {
         schema_version: SYMBOL_LINEAGE_SCHEMA,
         command: "symbols lineage",
-        method: "direct-and-ordered-one-to-one-correspondence-composition-v2",
+        method: "direct-and-ordered-one-to-one-correspondence-composition-v3",
         artifacts,
         edges: edge_summaries,
         direct: direct_summary,
@@ -406,6 +448,38 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
         review_frontiers,
         pin_candidates,
     })
+}
+
+fn validate_revisions(revisions: &[SymbolLineageRevision<'_>]) -> Result<()> {
+    let expected_source = revisions.first().expect("three revisions").source;
+    validate_source_id(expected_source)?;
+    let mut labels = BTreeSet::new();
+    for revision in revisions {
+        if revision.source != expected_source {
+            return Err(crate::Error::invalid(format!(
+                "symbols lineage revisions must share logical source {expected_source:?}; label {:?} uses {:?}",
+                revision.label, revision.source
+            )));
+        }
+        if revision.label.is_empty()
+            || !revision
+                .label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        {
+            return Err(crate::Error::invalid(format!(
+                "invalid symbol lineage revision label {:?}",
+                revision.label
+            )));
+        }
+        if !labels.insert(revision.label) {
+            return Err(crate::Error::invalid(format!(
+                "duplicate symbol lineage revision label {:?}",
+                revision.label
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn correlate(
@@ -424,10 +498,14 @@ fn correlate(
 
 fn edge_summary(
     index: Option<usize>,
+    from_label: &str,
+    to_label: &str,
     report: &symbol_correspondence::SymbolCorrespondenceReport,
 ) -> SymbolLineageEdgeSummary {
     SymbolLineageEdgeSummary {
         index,
+        from_label: from_label.to_owned(),
+        to_label: to_label.to_owned(),
         from: report.from.clone(),
         to: report.to.clone(),
         obfuscation_epoch: report.obfuscation_epoch.clone(),
@@ -653,12 +731,11 @@ struct ReviewFrontierCount {
 fn review_frontiers(
     functions: &[SymbolLineageRecord<SymbolCorrespondenceFunction>],
     data_objects: &[SymbolLineageRecord<DataObjectCorrespondenceObject>],
-    edges: &[symbol_correspondence::SymbolCorrespondenceReport],
-    direct: &symbol_correspondence::SymbolCorrespondenceReport,
+    revisions: &[SymbolLineageRevision<'_>],
 ) -> Vec<SymbolLineageReviewFrontier> {
     let mut counts = BTreeMap::new();
-    collect_review_frontiers("function", functions, edges, direct, &mut counts);
-    collect_review_frontiers("memory-object", data_objects, edges, direct, &mut counts);
+    collect_review_frontiers("function", functions, revisions, &mut counts);
+    collect_review_frontiers("memory-object", data_objects, revisions, &mut counts);
     let mut frontiers = counts
         .into_iter()
         .map(|(key, count)| SymbolLineageReviewFrontier {
@@ -705,8 +782,7 @@ fn review_frontiers(
 fn collect_review_frontiers<T>(
     domain: &'static str,
     records: &[SymbolLineageRecord<T>],
-    edges: &[symbol_correspondence::SymbolCorrespondenceReport],
-    direct: &symbol_correspondence::SymbolCorrespondenceReport,
+    revisions: &[SymbolLineageRevision<'_>],
     counts: &mut BTreeMap<ReviewFrontierKey, ReviewFrontierCount>,
 ) {
     for record in records {
@@ -717,15 +793,14 @@ fn collect_review_frontiers<T>(
                     .chain_blocker
                     .as_ref()
                     .expect("an incomplete adjacent route records its exact blocker");
-                let edge = &edges[blocker.edge];
                 (
                     ReviewFrontierKey {
                         domain,
                         affected_status: record.status,
                         route: SymbolLineageFrontierRoute::AdjacentChain,
                         edge: Some(blocker.edge),
-                        from: edge.from.source.clone(),
-                        to: edge.to.source.clone(),
+                        from: revisions[blocker.edge].label.to_owned(),
+                        to: revisions[blocker.edge + 1].label.to_owned(),
                         correspondence_status: blocker.status,
                         basis: blocker.basis,
                     },
@@ -743,8 +818,16 @@ fn collect_review_frontiers<T>(
                         affected_status: record.status,
                         route: SymbolLineageFrontierRoute::DirectEndpoint,
                         edge: None,
-                        from: direct.from.source.clone(),
-                        to: direct.to.source.clone(),
+                        from: revisions
+                            .first()
+                            .expect("validated revisions")
+                            .label
+                            .to_owned(),
+                        to: revisions
+                            .last()
+                            .expect("validated revisions")
+                            .label
+                            .to_owned(),
                         correspondence_status: Some(blocker.status),
                         basis: blocker.basis,
                     },
@@ -757,8 +840,16 @@ fn collect_review_frontiers<T>(
                     affected_status: record.status,
                     route: SymbolLineageFrontierRoute::EndpointConflict,
                     edge: None,
-                    from: direct.from.source.clone(),
-                    to: direct.to.source.clone(),
+                    from: revisions
+                        .first()
+                        .expect("validated revisions")
+                        .label
+                        .to_owned(),
+                    to: revisions
+                        .last()
+                        .expect("validated revisions")
+                        .label
+                        .to_owned(),
                     correspondence_status: None,
                     basis: "direct-and-adjacent-targets-disagree",
                 },
@@ -959,8 +1050,13 @@ mod tests {
         let functions = compose(&direct.correspondences, &edges, |report| {
             &report.correspondences
         });
+        let revisions = ["named", "old", "current"].map(|label| SymbolLineageRevision {
+            label,
+            source: "ble-controller",
+            path: Path::new("unused"),
+        });
 
-        let frontiers = review_frontiers(&functions, &[], &edges, &direct);
+        let frontiers = review_frontiers(&functions, &[], &revisions);
 
         assert_eq!(frontiers.len(), 1);
         assert_eq!(frontiers[0].domain, "function");
@@ -983,6 +1079,57 @@ mod tests {
     }
 
     #[test]
+    fn lineage_requires_unique_labels_and_one_logical_source() {
+        let duplicate_labels = [
+            SymbolLineageRevision {
+                label: "named",
+                source: "btdm",
+                path: Path::new("missing-named.a"),
+            },
+            SymbolLineageRevision {
+                label: "named",
+                source: "btdm",
+                path: Path::new("missing-middle.a"),
+            },
+            SymbolLineageRevision {
+                label: "current",
+                source: "btdm",
+                path: Path::new("missing-current.a"),
+            },
+        ];
+        assert!(
+            build(&duplicate_labels)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate symbol lineage revision label")
+        );
+
+        let mixed_sources = [
+            SymbolLineageRevision {
+                label: "named",
+                source: "btdm",
+                path: Path::new("missing-named.a"),
+            },
+            SymbolLineageRevision {
+                label: "middle",
+                source: "ble",
+                path: Path::new("missing-middle.a"),
+            },
+            SymbolLineageRevision {
+                label: "current",
+                source: "btdm",
+                path: Path::new("missing-current.a"),
+            },
+        ];
+        assert!(
+            build(&mixed_sources)
+                .unwrap_err()
+                .to_string()
+                .contains("must share logical source")
+        );
+    }
+
+    #[test]
     fn rebase_loader_rebuilds_the_report_before_trusting_confirmed_status() {
         let fixture = std::env::temp_dir().join(format!(
             "blobray-symbol-lineage-artifact-{}.elf",
@@ -993,11 +1140,30 @@ mod tests {
             .map(|octet| u8::from_str_radix(octet, 16).unwrap())
             .collect::<Vec<_>>();
         std::fs::write(&fixture, bytes).unwrap();
-        let revisions = ["old", "middle", "new"].map(|source| SymbolLineageRevision {
-            source,
+        let revisions = ["old", "middle", "new"].map(|label| SymbolLineageRevision {
+            label,
+            source: "fixture",
             path: &fixture,
         });
         let report = build(&revisions).unwrap();
+        assert_eq!(
+            report
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.label.as_str())
+                .collect::<Vec<_>>(),
+            ["old", "middle", "new"]
+        );
+        assert!(
+            report
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.source == "fixture")
+        );
+        assert_eq!(report.edges[0].from_label, "old");
+        assert_eq!(report.edges[0].to_label, "middle");
+        assert_eq!(report.direct.from_label, "old");
+        assert_eq!(report.direct.to_label, "new");
         let path = std::env::temp_dir().join(format!(
             "blobray-symbol-lineage-rebase-{}.json",
             std::process::id()
@@ -1038,7 +1204,7 @@ mod tests {
             load_rebase_evidence(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("current schema 2")
+                .contains("current schema 3")
         );
 
         let mut forged: serde_json::Value = serde_json::from_slice(&authentic).unwrap();

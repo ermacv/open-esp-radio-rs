@@ -10,7 +10,8 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
         .revisions
         .iter()
         .map(|revision| SymbolLineageRevision {
-            source: revision.source.as_str(),
+            label: &revision.label,
+            source: arguments.source.as_str(),
             path: &revision.path,
         })
         .collect::<Vec<_>>();
@@ -71,8 +72,8 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
                         edge.index
                             .expect("ordered lineage edges always have an index")
                             .to_string(),
-                        edge.from.source.clone(),
-                        edge.to.source.clone(),
+                        edge.from_label.clone(),
+                        edge.to_label.clone(),
                         format!("{:?}", edge.obfuscation_epoch.status).to_ascii_lowercase(),
                         edge.functions.unique.to_string(),
                         edge.data_objects.unique.to_string(),
@@ -80,8 +81,8 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
                 })
                 .chain(std::iter::once([
                     "direct".to_owned(),
-                    report.direct.from.source.clone(),
-                    report.direct.to.source.clone(),
+                    report.direct.from_label.clone(),
+                    report.direct.to_label.clone(),
                     format!("{:?}", report.direct.obfuscation_epoch.status).to_ascii_lowercase(),
                     report.direct.functions.unique.to_string(),
                     report.direct.data_objects.unique.to_string(),

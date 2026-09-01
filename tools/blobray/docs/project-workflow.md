@@ -396,6 +396,7 @@ available, build one lineage report instead of manually joining pairwise JSON:
 
 ```console
 cargo blobray advanced symbols lineage \
+  --source ble-controller \
   --revision named=/path/to/named.a \
   --revision old-entry=/path/to/first-obfuscated.a \
   --revision old-exit=/path/to/last-old-epoch.a \
@@ -403,6 +404,11 @@ cargo blobray advanced symbols lineage \
   --revision current=/path/to/current.a \
   --output generated/revisions/ble-symbol-lineage.json
 ```
+
+`--source` is the stable logical artifact identity used by project snapshots
+and rebase. Each `--revision` label is only the unique human-readable release,
+tag, or commit name shown in reports; labels such as `5e37d4d` are valid and do
+not change occurrence identity.
 
 Lineage runs every adjacent correlation plus an independent first-to-last
 correlation. It composes only unique one-to-one occurrences. Agreement is
@@ -413,7 +419,7 @@ blocked composition. The report stores artifact digests and every successful
 hop, but not vendor bytes or disassembly. Its pin candidates still require
 review and exclude generated token names.
 
-Schema 2 also retains the failed independent direct correspondence and ranks
+Schema 3 also retains the failed independent direct correspondence and ranks
 `review-frontiers` by the number of affected functions or objects. An
 `adjacent-chain` frontier identifies the exact release boundary that blocks a
 complete history; `direct-endpoint` means the ordered history resolves the
@@ -422,12 +428,13 @@ means both routes resolve to different targets. `--details` prints these
 frontiers highest-impact first and includes the direct endpoint comparison in
 the edge table.
 
-For `project revision rebase`, the first and last lineage source IDs and
-digests must match artifacts in the accepted baseline and target snapshots.
+For `project revision rebase`, the first and last lineage artifact identities
+(the shared source ID plus each digest) must match artifacts in the accepted
+baseline and target snapshots.
 If the useful named archive predates that baseline, keep its naming lineage as
 research evidence and generate a second, smaller lineage beginning at the
-actual baseline artifact. Reusing the project's logical source ID at both
-endpoints is valid; the exact digest distinguishes the revisions.
+actual baseline artifact. Pass the project's logical source ID once with
+`--source`; the exact digest distinguishes its revisions.
 
 Accept a candidate only by adding a sparse `[[bindings]]` record to the
 project's reviewed-knowledge TOML. The record must repeat the target

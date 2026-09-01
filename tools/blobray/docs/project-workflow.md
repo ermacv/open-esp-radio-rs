@@ -330,13 +330,25 @@ cargo blobray advanced symbols correlate \
   --output generated/revisions/named-to-current.json
 ```
 
-The correlator hashes complete relocatable function bytes plus relocation
-offset/kind/addend while deliberately excluding relocation target names. It
-publishes an automatic match only when the normalized body is unique. An
+The correlator distinguishes a source name, a generated obfuscation token and
+a semantic identity. A unique non-generated name is an identity anchor even
+when its implementation changed. A generated 20-character token is an anchor
+only when archive-wide evidence proves that both artifacts belong to the same
+obfuscation epoch: at least 64 tokens must overlap and at least 90% of the
+smaller token set must survive. The report publishes the token counts,
+retention and `compatible`, `distinct` or `inconclusive` decision separately
+for functions and data objects. A hard token regeneration therefore disables
+all token-based automatic matches instead of guessing across the boundary.
+
+The correlator also hashes complete relocatable function bytes plus relocation
+offset/kind/addend while deliberately excluding relocation target names. A
+body-only match is published only when that fingerprint is unique. An
 iterative second pass may resolve otherwise identical bodies when already
-unique caller/callee pairs prove the corresponding call edge. Ambiguous and
-changed bodies remain explicit review work; the report never rewrites the
-artifact or treats an obfuscated symbol as a stable semantic identity.
+unique caller/callee pairs prove the corresponding call edge. Disagreement
+between stable identity and unique-body evidence remains an explicit conflict.
+Other ambiguous and changed bodies remain review work. A stable generated
+token is a revision locator, not a semantic name; the report never rewrites the
+artifact or silently promotes it into reviewed knowledge.
 
 For archive revisions that replace alphabetically sorted source-object names
 with `0.o`, `1.o`, and so on, the report also publishes the complete inferred
@@ -345,15 +357,18 @@ module provenance and a ranking signal only: functions can move between
 modules across releases, so member order never promotes an ambiguous function
 to an automatic match. Every function record includes an exact artifact-bound
 revision occurrence and its derivation locator for a later reviewed pin.
-Static data objects are correlated separately from functions using bounded
-initializer bytes, size/properties, and relocation shape with target names
-removed. Exact mapped function relocations may resolve otherwise identical or
-changed objects. Repeated zero-initialized state and tables without a unique
+Static data objects are correlated separately from functions using stable
+non-generated names, epoch-gated generated tokens, bounded initializer bytes,
+size/properties, and relocation shape with target names removed. Exact mapped
+function relocations may resolve otherwise identical or changed objects.
+Repeated zero-initialized state and tables without a unique identity or
 reference remain ambiguous. The complete data correspondence keeps local
 compiler labels such as `.LANCHOR*` and `.LC*` as provenance, but does not
-offer those unstable labels as semantic pin candidates. The generated
-`pin-candidates` list contains functions and meaningfully named memory-object
-occurrences, but every candidate remains explicitly `review = required`;
+offer those unstable labels as semantic pin candidates. Generated obfuscation
+tokens are likewise excluded from semantic-name suggestions. The generated
+`pin-candidates` list contains only meaningfully named function and
+memory-object occurrences, but every candidate remains explicitly
+`review = required`;
 Blobray never promotes generated correspondence into a reviewed fact.
 
 Accept a candidate only by adding a sparse `[[bindings]]` record to the

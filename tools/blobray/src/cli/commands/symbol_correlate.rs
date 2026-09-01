@@ -47,10 +47,35 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
         );
         outputln!("Method: {}", report.method);
         outputln!(
-            "Summary: source-functions={} target-functions={} unique={} graph-refined={} ambiguous={} unmatched={}",
+            "Obfuscation epoch: functions={:?} (source={} target={} common={} retained={:.3}%) data={:?} (source={} target={} common={} retained={:.3}%)",
+            report.obfuscation_epoch.functions.status,
+            report.obfuscation_epoch.functions.from_tokens,
+            report.obfuscation_epoch.functions.to_tokens,
+            report.obfuscation_epoch.functions.common_tokens,
+            f64::from(
+                report
+                    .obfuscation_epoch
+                    .functions
+                    .smaller_set_retention_parts_per_million
+            ) / 10_000.0,
+            report.obfuscation_epoch.data_objects.status,
+            report.obfuscation_epoch.data_objects.from_tokens,
+            report.obfuscation_epoch.data_objects.to_tokens,
+            report.obfuscation_epoch.data_objects.common_tokens,
+            f64::from(
+                report
+                    .obfuscation_epoch
+                    .data_objects
+                    .smaller_set_retention_parts_per_million
+            ) / 10_000.0,
+        );
+        outputln!(
+            "Summary: source-functions={} target-functions={} unique={} name-stable={} token-stable={} graph-refined={} ambiguous={} unmatched={}",
             report.from.functions,
             report.to.functions,
             report.summary.unique,
+            report.summary.name_stable,
+            report.summary.token_stable,
             report.summary.graph_refined,
             report.summary.ambiguous,
             report.summary.unmatched,
@@ -65,10 +90,12 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
             );
         }
         outputln!(
-            "Data objects: source={} target={} unique={} reference-refined={} ambiguous={} unmatched={}",
+            "Data objects: source={} target={} unique={} name-stable={} token-stable={} reference-refined={} ambiguous={} unmatched={}",
             report.data_summary.from_objects,
             report.data_summary.to_objects,
             report.data_summary.unique,
+            report.data_summary.name_stable,
+            report.data_summary.token_stable,
             report.data_summary.reference_refined,
             report.data_summary.ambiguous,
             report.data_summary.unmatched,

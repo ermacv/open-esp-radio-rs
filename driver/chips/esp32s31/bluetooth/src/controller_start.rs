@@ -1081,6 +1081,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         self.ready.map_owner(|()| self.task)
     }
 
+    pub(crate) const fn scheduler_wake(&self) -> &crate::BluetoothSchedulerWakeCell {
+        self.task.scheduler_wake()
+    }
+
     /// Whether this idle task belongs to the supplied Controller endpoint.
     pub fn accepts_hci_endpoint<
         M: RawMutex,

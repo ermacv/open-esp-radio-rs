@@ -114,6 +114,8 @@ mod interrupt_classifier;
 mod interrupt_wake;
 mod legacy_advertising;
 #[cfg(target_arch = "riscv32")]
+mod legacy_advertising_active;
+#[cfg(target_arch = "riscv32")]
 mod legacy_advertising_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod legacy_advertising_timing;
@@ -345,6 +347,11 @@ pub use legacy_advertising::{
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingFirstEventCandidate,
     BluetoothLegacyAdvertisingFirstEventTimingFailure,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_advertising_active::{
+    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingResponsePendingSession,
+    BluetoothLegacyAdvertisingResponsePublication,
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_runner::{

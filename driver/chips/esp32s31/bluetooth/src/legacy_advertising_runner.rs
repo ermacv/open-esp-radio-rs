@@ -130,13 +130,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    pub fn into_parts(
+    pub fn into_response_pending_session(
         self,
-    ) -> (
-        crate::BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothLegacyAdvertisingSchedulerRunning<'static>,
-    ) {
-        (
+    ) -> crate::BluetoothLegacyAdvertisingResponsePendingSession<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        crate::BluetoothLegacyAdvertisingResponsePendingSession::new(
             crate::BluetoothControllerIdleResponsePending::new(
                 self.command.into_started_response(self.task),
             ),

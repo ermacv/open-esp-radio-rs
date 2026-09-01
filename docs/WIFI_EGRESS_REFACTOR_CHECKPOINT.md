@@ -782,7 +782,8 @@ not satisfy the architectural goal.
 
 ### Phase 4: implement policy in shadow
 
-- **Identity-correspondence boundary — implemented, HIL result pending.** The
+- **Identity-correspondence boundary — implemented and proven for one AP
+  peer.** The
   generic adapter decodes only interface, schedule epoch, associated-peer slot
   and generation, plus the unchanged generic traffic class. The AP reads that
   sidecar exactly once when a newly published frame first enters Core0 and
@@ -797,6 +798,24 @@ not satisfy the architectural goal.
 - completion reconciliation from actual rate, retry and BA results;
 - power-save/progressless-peer eligibility and a separate control reserve;
 - compare every shadow decision with actual queue/radio progress.
+
+The clean channel-13 coarse run `1788289195983-001756d8` at commit
+`ddd9da87688ad4b87b79f05ec8caa738e46e1a25` used build ID
+`da5235bb7aa44064ca8218bb54e24959e2bc2ef4b50a8649a40109a85a88eb29` and
+application SHA-256
+`811a8d846b7f3ad68be7f627255e5aff44e6d525921c44baa4db344629140c3d`.
+Its two cycles delivered 119.915 and 119.833 Mbit/s at 38.997% and 39.172%
+Core0 occupancy. All 325,762 published frames were classified `exact`; every
+unclassified, non-associated, role-unbound, interface, peer-slot,
+peer-generation and traffic-class mismatch counter was zero. OpenWrt observed
+MCS7/40 MHz with zero retries and failed transmissions in both cycles.
+
+This result proves correspondence only for the saturated, single-peer AP data
+path exercised by that scenario. It does not prove reassociation races,
+multiple peers, group/control traffic, sparse traffic or authoritative
+scheduling. Access-point report schema 6 records the complete `ORC0TXI`
+snapshot per cycle and rejects malformed or cycle-count-mismatched diagnostic
+evidence, so future runs do not depend on manual UART inspection.
 
 ### Phase 5: authoritative cutover
 

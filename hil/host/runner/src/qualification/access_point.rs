@@ -44,8 +44,8 @@ use open_esp_radio_hil_protocol::Ipv4Endpoint;
 #[cfg(test)]
 use report::MultiClientFlowReport;
 use report::{
-    ACCESS_POINT_REPORT_SCHEMA, AccessPointReport, BootReport, CycleReport, SessionReport,
-    TrafficReport,
+    ACCESS_POINT_REPORT_SCHEMA, AccessPointReport, ApEgressIdentityReport, BootReport, CycleReport,
+    SessionReport, TrafficReport,
 };
 #[cfg(test)]
 use std::net::Ipv4Addr;
@@ -127,8 +127,21 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
         let capture = SerialCapture::start_with_reset(&lab.device.serial);
         let cycles = qualify(&capture, &config, lab, &boot_output);
         let capture_result = capture.finish_to(&boot_output);
-        let cycles = cycles?;
-        capture_result?;
+        let mut cycles = cycles?;
+        let uart = capture_result?;
+        let identities = ApEgressIdentityReport::all_from_log(&uart)
+            .map_err(|error| format!("invalid AP egress identity evidence: {error}"))?;
+        if !identities.is_empty() && identities.len() != cycles.len() {
+            return Err(format!(
+                "AP egress identity evidence count {} does not match cycle count {}",
+                identities.len(),
+                cycles.len(),
+            )
+            .into());
+        }
+        for (cycle, identity) in cycles.iter_mut().zip(identities) {
+            cycle.egress_identity = Some(identity);
+        }
         report.boots.push(BootReport { boot, cycles });
     }
     fs::write(
@@ -449,6 +462,7 @@ fn qualify(
             secondary_client_link,
             independent_air,
             access_point,
+            egress_identity: None,
         });
     }
     Ok(cycles)
@@ -1393,6 +1407,7 @@ mod tests {
                     secondary_client_link: None,
                     independent_air: None,
                     access_point: None,
+                    egress_identity: None,
                 }],
             }],
         };
@@ -1407,5 +1422,52 @@ mod tests {
                 .is_none()
         );
         assert!(json["boots"][0]["cycles"][0].get("access_point").is_none());
+        assert!(
+            json["boots"][0]["cycles"][0]
+                .get("egress_identity")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn parses_ap_egress_identity_evidence_per_cycle() {
+        let log = "\
+ORC0TXI exact=31 unclassified=1 non_associated=2 role_unbound=3 interface_mismatch=4 peer_slot_mismatch=5 peer_generation_mismatch=6 traffic_class_mismatch=7\n\
+uart: ORC0TXI exact=32 unclassified=0 non_associated=0 role_unbound=0 interface_mismatch=0 peer_slot_mismatch=0 peer_generation_mismatch=0 traffic_class_mismatch=0\n";
+
+        let parsed = ApEgressIdentityReport::all_from_log(log).unwrap();
+
+        assert_eq!(
+            parsed,
+            vec![
+                ApEgressIdentityReport {
+                    exact: 31,
+                    unclassified: 1,
+                    non_associated: 2,
+                    role_unbound: 3,
+                    interface_mismatch: 4,
+                    peer_slot_mismatch: 5,
+                    peer_generation_mismatch: 6,
+                    traffic_class_mismatch: 7,
+                },
+                ApEgressIdentityReport {
+                    exact: 32,
+                    unclassified: 0,
+                    non_associated: 0,
+                    role_unbound: 0,
+                    interface_mismatch: 0,
+                    peer_slot_mismatch: 0,
+                    peer_generation_mismatch: 0,
+                    traffic_class_mismatch: 0,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_ap_egress_identity_evidence() {
+        let error = ApEgressIdentityReport::all_from_log("ORC0TXI exact=31").unwrap_err();
+
+        assert!(error.contains("unclassified"));
     }
 }

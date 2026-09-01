@@ -109,14 +109,16 @@ pub use legacy_advertising::{
     LeLegacyNonconnectableAdvertisingParameters,
 };
 pub use legacy_scanning::{
-    LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyPassiveScanParameters,
-    LeLegacyScanningCommand, LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
+    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
+    LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyAdvertisingReportEvent,
+    LeLegacyAdvertisingReportEventError, LeLegacyPassiveScanParameters, LeLegacyScanningCommand,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
     LeLegacyScanningConfigurationCommand, LeLegacyScanningDecodeError,
     LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
 };
 pub use resources::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,
-    LeControllerHciResources, LeControllerHciResourcesError,
+    LeControllerHciResources, LeControllerHciResourcesError, LeLegacyAdvertisingReportPublication,
 };
 pub use response::{
     HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,

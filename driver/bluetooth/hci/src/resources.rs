@@ -8,15 +8,25 @@ use crate::legacy_scanning::{
 };
 use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
-    InProcessHciChannel, InProcessHciControllerEndpoint, InProcessHciHostTransport,
-    LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap, LeControllerBootstrapConfig,
-    LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
+    HciControllerResponse, InProcessHciChannel, InProcessHciControllerEndpoint,
+    InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap,
+    LeControllerBootstrapConfig, LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
     LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
-    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyScanningCommandCompleteEvent,
-    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand, OwnedBootstrapCommand,
+    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyAdvertisingReportEvent,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningConfigurationCommand,
+    LeLegacyScanningEnableCommand, OwnedBootstrapCommand,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
+
+/// Result of attempting one unsolicited legacy advertising report publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyAdvertisingReportPublication {
+    /// The complete event entered the bounded Controller-to-Host queue.
+    Published,
+    /// The Host currently masks either LE Meta or LE Advertising Report events.
+    Masked,
+}
 
 /// Why an HCI runtime profile cannot represent its advertised LE resources.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -209,6 +219,33 @@ where
             command,
         )
     }
+
+    /// Wait until Controller-to-Host capacity may accept a scan report.
+    ///
+    /// This readiness hint borrows no report and reserves no slot. The caller
+    /// must retain the exact event and retry publication after cancellation or
+    /// a competing Controller response.
+    pub async fn wait_legacy_advertising_report_capacity(&self) {
+        self.transport().wait_publish_ready().await;
+    }
+
+    /// Publish one standard LE Advertising Report if enabled by the Host masks.
+    ///
+    /// The event does not consume or mint command-order authority. A full queue
+    /// returns the unchanged borrowed event to caller policy through the error.
+    pub fn try_publish_legacy_advertising_report(
+        &self,
+        event: &LeLegacyAdvertisingReportEvent,
+    ) -> Result<LeLegacyAdvertisingReportPublication, crate::HciChannelError> {
+        if !self.bootstrap.event_mask().is_le_meta_enabled()
+            || !self.bootstrap.le_event_mask().is_le_adv_report_enabled()
+        {
+            return Ok(LeLegacyAdvertisingReportPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LeLegacyAdvertisingReportPublication::Published)
+    }
 }
 
 /// Complete disjoint endpoints borrowed from one HCI resource epoch.
@@ -352,7 +389,7 @@ mod tests {
             controller_baseband::{Reset, SetEventMask},
         },
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
-        param::{EventMask, Status},
+        param::{AddrKind, BdAddr, EventMask, LeAdvEventKind, LeEventMask, Status},
         transport::Transport,
     };
     use embassy_futures::block_on;
@@ -360,12 +397,13 @@ mod tests {
 
     use super::{
         LeControllerCommandReadyClaim, LeControllerHciResources, LeControllerHciResourcesError,
+        LeLegacyAdvertisingReportPublication,
     };
     use crate::{
-        BluetoothPublicDeviceAddress, BootstrapPhase, LeControllerBootstrapConfig,
+        BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, LeControllerBootstrapConfig,
         LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
         LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
-        LeControllerResponsePublication,
+        LeControllerResponsePublication, LeLegacyAdvertisingReportEvent, OwnedBootstrapCommand,
     };
 
     fn config(payload: u16, credits: u8) -> LeControllerBootstrapConfig {
@@ -393,6 +431,81 @@ mod tests {
                 slots: 1,
             })
         ));
+    }
+
+    #[test]
+    fn advertising_reports_honor_masks_and_retain_backpressure() {
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
+            .expect("the report event fits this transport profile");
+        assert_eq!(
+            resources
+                .bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::Reset)
+                .status(),
+            Status::SUCCESS
+        );
+        let event = LeLegacyAdvertisingReportEvent::new(
+            LeAdvEventKind::AdvNonconnInd,
+            AddrKind::PUBLIC,
+            BdAddr::new([1, 2, 3, 4, 5, 6]),
+            &[2, 1, 6],
+            -60,
+        )
+        .expect("the report is representable");
+
+        let endpoints = resources.split();
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Ok(LeLegacyAdvertisingReportPublication::Masked)
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
+                    EventMask::new().enable_le_meta(true),
+                ))
+                .status(),
+            Status::SUCCESS
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
+                    LeEventMask::new().enable_le_adv_report(true),
+                ))
+                .status(),
+            Status::SUCCESS
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Ok(LeLegacyAdvertisingReportPublication::Published)
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Err(HciChannelError::Full)
+        );
+
+        let mut packet = [0; 45];
+        let received = block_on(endpoints.host.read(&mut packet))
+            .expect("the Host drains the retained first event");
+        let ControllerToHostPacket::Event(received) = received else {
+            panic!("the report changed packet kind");
+        };
+        assert_eq!(received.kind, EventKind::Le);
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Ok(LeLegacyAdvertisingReportPublication::Published)
+        );
     }
 
     #[test]

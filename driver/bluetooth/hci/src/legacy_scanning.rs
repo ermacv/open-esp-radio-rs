@@ -10,16 +10,23 @@ use bt_hci::{
         Cmd, Opcode,
         le::{LeSetScanEnable, LeSetScanEnableParams, LeSetScanParams, LeSetScanParamsParams},
     },
-    param::{AddrKind, Error as HciError, LeScanKind, ScanningFilterPolicy, Status},
+    event::{EventKind, le::LeAdvertisingReport, le::LeEventParams},
+    param::{
+        AddrKind, BdAddr, Error as HciError, LeAdvEventKind, LeScanKind, ScanningFilterPolicy,
+        Status,
+    },
 };
 
 use crate::{BootstrapPhase, HciCommandPacket, HciControllerResponse};
 
 /// Complete Command Complete event size for this command family.
 pub const LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 6;
+/// Largest complete LE Advertising Report event emitted by this profile.
+pub const LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY: usize = 45;
 
 const LEGACY_SCAN_MIN_UNITS: u16 = 0x0004;
 const LEGACY_SCAN_MAX_UNITS: u16 = 0x4000;
+const LEGACY_ADVERTISING_REPORT_DATA_CAPACITY: usize = 31;
 
 /// Closed identity of the standard legacy scanning commands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -466,6 +473,82 @@ impl HciControllerResponse for LeLegacyScanningCommandCompleteEvent {
     }
 }
 
+/// Why one portable report cannot be represented by the legacy HCI event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyAdvertisingReportEventError {
+    /// Legacy advertising data cannot exceed 31 octets.
+    DataTooLong {
+        /// Supplied advertising data length.
+        length: usize,
+    },
+    /// The legacy report supports only public and random advertiser addresses.
+    UnsupportedAddressKind(AddrKind),
+}
+
+/// One owned standard LE Advertising Report event containing exactly one report.
+///
+/// `bt-hci` 0.10 exposes parsing but not construction for Controller events.
+/// This bounded owner therefore accepts only `bt-hci` field-domain types and
+/// is regression-decoded through its standard event model.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyAdvertisingReportEvent {
+    bytes: [u8; LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY],
+    length: u8,
+}
+
+impl LeLegacyAdvertisingReportEvent {
+    /// Build one complete LE Meta event without an H4 packet indicator.
+    pub fn new(
+        event_kind: LeAdvEventKind,
+        address_kind: AddrKind,
+        address: BdAddr,
+        data: &[u8],
+        rssi_dbm: i8,
+    ) -> Result<Self, LeLegacyAdvertisingReportEventError> {
+        if data.len() > LEGACY_ADVERTISING_REPORT_DATA_CAPACITY {
+            return Err(LeLegacyAdvertisingReportEventError::DataTooLong { length: data.len() });
+        }
+        if address_kind != AddrKind::PUBLIC && address_kind != AddrKind::RANDOM {
+            return Err(LeLegacyAdvertisingReportEventError::UnsupportedAddressKind(
+                address_kind,
+            ));
+        }
+
+        let length = 14 + data.len();
+        let parameter_length = length - 2;
+        let mut bytes = [0; LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY];
+        bytes[0] = EventKind::Le.0;
+        bytes[1] = parameter_length as u8;
+        bytes[2] = LeAdvertisingReport::SUBEVENT_CODE;
+        bytes[3] = 1;
+        bytes[4] = event_kind as u8;
+        bytes[5] = address_kind.as_raw();
+        bytes[6..12].copy_from_slice(address.raw());
+        bytes[12] = data.len() as u8;
+        bytes[13..13 + data.len()].copy_from_slice(data);
+        bytes[13 + data.len()] = rssi_dbm.to_le_bytes()[0];
+        Ok(Self {
+            bytes,
+            length: length as u8,
+        })
+    }
+
+    /// Complete HCI Event body without an H4 packet indicator.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..usize::from(self.length)]
+    }
+}
+
+impl HciControllerResponse for LeLegacyAdvertisingReportEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bt_hci::{
@@ -474,11 +557,15 @@ mod tests {
             Cmd,
             le::{LeSetScanEnable, LeSetScanParams},
         },
-        event::{CommandComplete, CommandCompleteWithStatus},
-        param::{AddrKind, Duration, Error as HciError, LeScanKind, ScanningFilterPolicy, Status},
+        event::{CommandComplete, CommandCompleteWithStatus, Event, le::LeEvent},
+        param::{
+            AddrKind, BdAddr, Duration, Error as HciError, LeAdvEventKind, LeScanKind,
+            ScanningFilterPolicy, Status,
+        },
     };
 
     use super::{
+        LeLegacyAdvertisingReportEvent, LeLegacyAdvertisingReportEventError,
         LeLegacyScanningCommand, LeLegacyScanningConfiguration,
         LeLegacyScanningConfigurationCommand, LeLegacyScanningDecodeError,
         LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand,
@@ -676,5 +763,61 @@ mod tests {
 
         configuration.reset();
         assert_eq!(configuration.parameters(), None);
+    }
+
+    #[test]
+    fn single_report_event_roundtrips_through_bt_hci() {
+        let event = LeLegacyAdvertisingReportEvent::new(
+            LeAdvEventKind::AdvNonconnInd,
+            AddrKind::RANDOM,
+            BdAddr::new([1, 2, 3, 4, 5, 0xc6]),
+            &[2, 1, 6],
+            -71,
+        )
+        .expect("the legacy report fits its standard event");
+        let Event::Le(LeEvent::LeAdvertisingReport(event)) =
+            Event::from_hci_bytes_complete(event.as_bytes())
+                .expect("bt-hci decodes the emitted complete event")
+        else {
+            panic!("the emitted event changed standard kind");
+        };
+        assert_eq!(event.reports.len(), 1);
+        let report = event
+            .reports
+            .iter()
+            .next()
+            .expect("one report was declared")
+            .expect("the report fields decode");
+        assert_eq!(report.event_kind, LeAdvEventKind::AdvNonconnInd);
+        assert_eq!(report.addr_kind, AddrKind::RANDOM);
+        assert_eq!(report.addr, BdAddr::new([1, 2, 3, 4, 5, 0xc6]));
+        assert_eq!(report.data, [2, 1, 6]);
+        assert_eq!(report.rssi, -71);
+    }
+
+    #[test]
+    fn report_event_rejects_unrepresentable_legacy_fields() {
+        assert_eq!(
+            LeLegacyAdvertisingReportEvent::new(
+                LeAdvEventKind::AdvInd,
+                AddrKind::PUBLIC,
+                BdAddr::default(),
+                &[0; 32],
+                0,
+            ),
+            Err(LeLegacyAdvertisingReportEventError::DataTooLong { length: 32 })
+        );
+        assert_eq!(
+            LeLegacyAdvertisingReportEvent::new(
+                LeAdvEventKind::AdvInd,
+                AddrKind::RESOLVABLE_PRIVATE_OR_PUBLIC,
+                BdAddr::default(),
+                &[],
+                0,
+            ),
+            Err(LeLegacyAdvertisingReportEventError::UnsupportedAddressKind(
+                AddrKind::RESOLVABLE_PRIVATE_OR_PUBLIC,
+            ))
+        );
     }
 }

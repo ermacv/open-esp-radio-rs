@@ -56,6 +56,7 @@ mod classification;
 mod dtm;
 mod dtm_order;
 mod legacy_advertising;
+mod legacy_scanning;
 mod resources;
 mod response;
 
@@ -101,6 +102,11 @@ pub use legacy_advertising::{
     LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingIntervalRange,
     LeLegacyAdvertisingOwnAddressKind, LeLegacyAdvertisingPrimaryChannels,
     LeLegacyNonconnectableAdvertisingParameters,
+};
+pub use legacy_scanning::{
+    LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyPassiveScanParameters,
+    LeLegacyScanningCommand, LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
+    LeLegacyScanningDecodeError, LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand,
 };
 pub use resources::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,

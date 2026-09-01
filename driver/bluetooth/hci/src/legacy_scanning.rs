@@ -1,0 +1,442 @@
+//! Semantic HCI boundary for legacy passive scanning.
+//!
+//! Standard `bt-hci` parameter types are decoded into owned Controller intent.
+//! This module does not retain configuration, start a Link Layer window,
+//! publish advertising reports, or claim radio progress.
+
+use bt_hci::{
+    FromHciBytes, PacketKind,
+    cmd::{
+        Cmd, Opcode,
+        le::{LeSetScanEnable, LeSetScanEnableParams, LeSetScanParams, LeSetScanParamsParams},
+    },
+    param::{AddrKind, Error as HciError, LeScanKind, ScanningFilterPolicy, Status},
+};
+
+use crate::{HciCommandPacket, HciControllerResponse};
+
+/// Complete Command Complete event size for this command family.
+pub const LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 6;
+
+const LEGACY_SCAN_MIN_UNITS: u16 = 0x0004;
+const LEGACY_SCAN_MAX_UNITS: u16 = 0x4000;
+
+/// Closed identity of the standard legacy scanning commands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyScanningCommandKind {
+    /// LE Set Scan Parameters.
+    SetParameters,
+    /// LE Set Scan Enable.
+    SetEnable,
+}
+
+impl LeLegacyScanningCommandKind {
+    /// Classify an opcode without decoding its parameters.
+    pub const fn from_opcode(opcode: Opcode) -> Option<Self> {
+        let raw = opcode.to_raw();
+        if raw == LeSetScanParams::OPCODE.to_raw() {
+            Some(Self::SetParameters)
+        } else if raw == LeSetScanEnable::OPCODE.to_raw() {
+            Some(Self::SetEnable)
+        } else {
+            None
+        }
+    }
+
+    /// Exact standard HCI opcode.
+    pub const fn opcode(self) -> Opcode {
+        match self {
+            Self::SetParameters => LeSetScanParams::OPCODE,
+            Self::SetEnable => LeSetScanEnable::OPCODE,
+        }
+    }
+}
+
+/// Validated passive LE 1M scan timing supplied by the Host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyPassiveScanParameters {
+    interval_units_625_us: u16,
+    window_units_625_us: u16,
+}
+
+impl LeLegacyPassiveScanParameters {
+    /// Start-to-start scan interval in 0.625 ms units.
+    pub const fn interval_units_625_us(self) -> u16 {
+        self.interval_units_625_us
+    }
+
+    /// Receive-window duration in 0.625 ms units.
+    pub const fn window_units_625_us(self) -> u16 {
+        self.window_units_625_us
+    }
+}
+
+/// Host-selected report duplicate policy for one enabled scan session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyScanningDuplicatePolicy {
+    /// Publish every accepted report.
+    ReportAll,
+    /// Suppress exact duplicates within the enabled scan session.
+    FilterDuplicates,
+}
+
+/// One decoded Set Scan Enable command awaiting lifecycle policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyScanningEnableCommand {
+    enable: bool,
+    duplicate_policy: LeLegacyScanningDuplicatePolicy,
+}
+
+impl LeLegacyScanningEnableCommand {
+    /// Whether the Host requested entry into the enabled lifecycle.
+    pub const fn enable(self) -> bool {
+        self.enable
+    }
+
+    /// Duplicate policy selected for this Enable transaction.
+    pub const fn duplicate_policy(self) -> LeLegacyScanningDuplicatePolicy {
+        self.duplicate_policy
+    }
+}
+
+/// One fully decoded standard command awaiting Controller policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyScanningCommand {
+    /// Replace passive scan parameters while the scanner is disabled.
+    SetParameters(LeLegacyPassiveScanParameters),
+    /// Start or stop passive scanning.
+    SetEnable(LeLegacyScanningEnableCommand),
+}
+
+impl LeLegacyScanningCommand {
+    /// Decode one command without mutating HCI, Link Layer, or hardware state.
+    pub fn decode(command: HciCommandPacket<'_>) -> Result<Self, LeLegacyScanningDecodeError> {
+        let Some(kind) = LeLegacyScanningCommandKind::from_opcode(command.opcode()) else {
+            return Err(LeLegacyScanningDecodeError::UnsupportedOpcode {
+                opcode: command.opcode(),
+            });
+        };
+
+        match kind {
+            LeLegacyScanningCommandKind::SetParameters => {
+                let parameters = LeSetScanParamsParams::from_hci_bytes_complete(
+                    command.parameters(),
+                )
+                .map_err(|_| LeLegacyScanningDecodeError::MalformedParameters { command: kind })?;
+                Self::decode_parameters(parameters)
+            }
+            LeLegacyScanningCommandKind::SetEnable => {
+                let parameters = LeSetScanEnableParams::from_hci_bytes_complete(
+                    command.parameters(),
+                )
+                .map_err(|_| LeLegacyScanningDecodeError::MalformedParameters { command: kind })?;
+                Ok(Self::SetEnable(LeLegacyScanningEnableCommand {
+                    enable: parameters.enable,
+                    duplicate_policy: if parameters.filter_duplicates {
+                        LeLegacyScanningDuplicatePolicy::FilterDuplicates
+                    } else {
+                        LeLegacyScanningDuplicatePolicy::ReportAll
+                    },
+                }))
+            }
+        }
+    }
+
+    fn decode_parameters(
+        parameters: LeSetScanParamsParams,
+    ) -> Result<Self, LeLegacyScanningDecodeError> {
+        let command = LeLegacyScanningCommandKind::SetParameters;
+        let LeSetScanParamsParams {
+            le_scan_kind,
+            le_scan_interval,
+            le_scan_window,
+            own_addr_kind,
+            scanning_filter_policy,
+        } = parameters;
+
+        if le_scan_kind != LeScanKind::Passive
+            || own_addr_kind != AddrKind::PUBLIC
+            || scanning_filter_policy != ScanningFilterPolicy::BasicUnfiltered
+        {
+            return Err(LeLegacyScanningDecodeError::UnsupportedFeature { command });
+        }
+
+        let interval_units_625_us = le_scan_interval.as_u16();
+        let window_units_625_us = le_scan_window.as_u16();
+        if !(LEGACY_SCAN_MIN_UNITS..=LEGACY_SCAN_MAX_UNITS).contains(&interval_units_625_us)
+            || !(LEGACY_SCAN_MIN_UNITS..=LEGACY_SCAN_MAX_UNITS).contains(&window_units_625_us)
+            || window_units_625_us > interval_units_625_us
+        {
+            return Err(LeLegacyScanningDecodeError::InvalidParameters { command });
+        }
+
+        Ok(Self::SetParameters(LeLegacyPassiveScanParameters {
+            interval_units_625_us,
+            window_units_625_us,
+        }))
+    }
+
+    /// Exact command identity retained by this semantic token.
+    pub const fn kind(&self) -> LeLegacyScanningCommandKind {
+        match self {
+            Self::SetParameters(_) => LeLegacyScanningCommandKind::SetParameters,
+            Self::SetEnable(_) => LeLegacyScanningCommandKind::SetEnable,
+        }
+    }
+}
+
+/// Why a packet could not become an owned semantic scanning command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyScanningDecodeError {
+    /// The opcode does not belong to this command family.
+    UnsupportedOpcode {
+        /// Unclaimed opcode.
+        opcode: Opcode,
+    },
+    /// `bt-hci` rejected the standard parameter encoding.
+    MalformedParameters {
+        /// Claimed command kind.
+        command: LeLegacyScanningCommandKind,
+    },
+    /// A standard value violated the Core scan timing constraints.
+    InvalidParameters {
+        /// Claimed command kind.
+        command: LeLegacyScanningCommandKind,
+    },
+    /// A valid standard command selected a role not closed by this Controller.
+    UnsupportedFeature {
+        /// Claimed command kind.
+        command: LeLegacyScanningCommandKind,
+    },
+}
+
+impl LeLegacyScanningDecodeError {
+    /// Convert a rejection for a known opcode into the required completion.
+    pub fn into_command_complete(self) -> Result<LeLegacyScanningCommandCompleteEvent, Self> {
+        let (command, status) = match self {
+            Self::UnsupportedOpcode { .. } => return Err(self),
+            Self::MalformedParameters { command } | Self::InvalidParameters { command } => {
+                (command, HciError::INVALID_HCI_PARAMETERS.to_status())
+            }
+            Self::UnsupportedFeature { command } => (command, HciError::UNSUPPORTED.to_status()),
+        };
+        Ok(LeLegacyScanningCommandCompleteEvent::new(
+            command.opcode(),
+            status,
+        ))
+    }
+}
+
+/// Owned Command Complete for one legacy scanning command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyScanningCommandCompleteEvent {
+    bytes: [u8; LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY],
+    opcode: Opcode,
+    status: Status,
+}
+
+impl LeLegacyScanningCommandCompleteEvent {
+    pub(crate) fn new(opcode: Opcode, status: Status) -> Self {
+        let opcode_bytes = opcode.to_raw().to_le_bytes();
+        Self {
+            bytes: [
+                0x0e,
+                0x04,
+                0x01,
+                opcode_bytes[0],
+                opcode_bytes[1],
+                status.into_inner(),
+            ],
+            opcode,
+            status,
+        }
+    }
+
+    /// Complete HCI Event body without an H4 packet indicator.
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Exact consumed command opcode.
+    pub const fn opcode(&self) -> Opcode {
+        self.opcode
+    }
+
+    /// Result selected by the semantic/controller boundary.
+    pub const fn status(&self) -> Status {
+        self.status
+    }
+}
+
+impl HciControllerResponse for LeLegacyScanningCommandCompleteEvent {
+    fn kind(&self) -> PacketKind {
+        PacketKind::Event
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bt_hci::{
+        FromHciBytes, WriteHci,
+        cmd::{
+            Cmd,
+            le::{LeSetScanEnable, LeSetScanParams},
+        },
+        event::{CommandComplete, CommandCompleteWithStatus},
+        param::{AddrKind, Duration, Error as HciError, LeScanKind, ScanningFilterPolicy},
+    };
+
+    use super::{
+        LeLegacyScanningCommand, LeLegacyScanningDecodeError, LeLegacyScanningDuplicatePolicy,
+    };
+    use crate::HciCommandPacket;
+
+    fn decode<C>(command: &C) -> Result<LeLegacyScanningCommand, LeLegacyScanningDecodeError>
+    where
+        C: Cmd,
+    {
+        let mut encoded = [0_u8; 16];
+        let length = command.params().size();
+        command
+            .params()
+            .write_hci(&mut &mut encoded[..length])
+            .expect("the standard parameters fit their declared size");
+        LeLegacyScanningCommand::decode(HciCommandPacket::for_test(C::OPCODE, &encoded[..length]))
+    }
+
+    #[test]
+    fn standard_passive_parameters_become_owned_timing() {
+        let command = LeSetScanParams::new(
+            LeScanKind::Passive,
+            Duration::from_u16(0x20),
+            Duration::from_u16(0x10),
+            AddrKind::PUBLIC,
+            ScanningFilterPolicy::BasicUnfiltered,
+        );
+        let LeLegacyScanningCommand::SetParameters(parameters) =
+            decode(&command).expect("the supported standard parameters decode")
+        else {
+            panic!("parameters changed semantic command kind");
+        };
+        assert_eq!(parameters.interval_units_625_us(), 0x20);
+        assert_eq!(parameters.window_units_625_us(), 0x10);
+    }
+
+    #[test]
+    fn standard_enable_retains_duplicate_policy() {
+        for (filter_duplicates, expected) in [
+            (false, LeLegacyScanningDuplicatePolicy::ReportAll),
+            (true, LeLegacyScanningDuplicatePolicy::FilterDuplicates),
+        ] {
+            let LeLegacyScanningCommand::SetEnable(enable) =
+                decode(&LeSetScanEnable::new(true, filter_duplicates))
+                    .expect("the standard Enable command decodes")
+            else {
+                panic!("Enable changed semantic command kind");
+            };
+            assert!(enable.enable());
+            assert_eq!(enable.duplicate_policy(), expected);
+        }
+    }
+
+    #[test]
+    fn unsupported_profiles_and_invalid_timing_fail_closed() {
+        for command in [
+            LeSetScanParams::new(
+                LeScanKind::Active,
+                Duration::from_u16(0x20),
+                Duration::from_u16(0x10),
+                AddrKind::PUBLIC,
+                ScanningFilterPolicy::BasicUnfiltered,
+            ),
+            LeSetScanParams::new(
+                LeScanKind::Passive,
+                Duration::from_u16(0x20),
+                Duration::from_u16(0x10),
+                AddrKind::RANDOM,
+                ScanningFilterPolicy::BasicUnfiltered,
+            ),
+            LeSetScanParams::new(
+                LeScanKind::Passive,
+                Duration::from_u16(0x20),
+                Duration::from_u16(0x10),
+                AddrKind::PUBLIC,
+                ScanningFilterPolicy::BasicFiltered,
+            ),
+        ] {
+            let response = decode(&command)
+                .expect_err("the unsupported role must not become Controller intent")
+                .into_command_complete()
+                .expect("the opcode belongs to scanning");
+            assert_eq!(response.status(), HciError::UNSUPPORTED.to_status());
+        }
+
+        for command in [
+            LeSetScanParams::new(
+                LeScanKind::Passive,
+                Duration::from_u16(3),
+                Duration::from_u16(3),
+                AddrKind::PUBLIC,
+                ScanningFilterPolicy::BasicUnfiltered,
+            ),
+            LeSetScanParams::new(
+                LeScanKind::Passive,
+                Duration::from_u16(8),
+                Duration::from_u16(9),
+                AddrKind::PUBLIC,
+                ScanningFilterPolicy::BasicUnfiltered,
+            ),
+        ] {
+            let response = decode(&command)
+                .expect_err("invalid scan timing must not become Controller intent")
+                .into_command_complete()
+                .expect("the opcode belongs to scanning");
+            assert_eq!(
+                response.status(),
+                HciError::INVALID_HCI_PARAMETERS.to_status()
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_standard_parameter_body_is_rejected_by_bt_hci() {
+        let error = LeLegacyScanningCommand::decode(HciCommandPacket::for_test(
+            LeSetScanEnable::OPCODE,
+            &[1],
+        ))
+        .expect_err("a truncated standard command must fail closed");
+        let response = error
+            .into_command_complete()
+            .expect("the opcode belongs to scanning");
+        assert_eq!(
+            response.status(),
+            HciError::INVALID_HCI_PARAMETERS.to_status()
+        );
+    }
+
+    #[test]
+    fn rejection_completion_roundtrips_through_bt_hci() {
+        let response = LeLegacyScanningCommand::decode(HciCommandPacket::for_test(
+            LeSetScanEnable::OPCODE,
+            &[2, 0],
+        ))
+        .expect_err("bt-hci rejects an invalid bool")
+        .into_command_complete()
+        .expect("the opcode belongs to scanning");
+        let complete = CommandComplete::from_hci_bytes_complete(&response.as_bytes()[2..])
+            .expect("the event parameters decode through bt-hci");
+        let complete: CommandCompleteWithStatus<'_> = complete
+            .try_into()
+            .expect("the completion carries a status");
+        assert_eq!(complete.cmd_opcode, LeSetScanEnable::OPCODE);
+        assert_eq!(
+            complete.status,
+            HciError::INVALID_HCI_PARAMETERS.to_status()
+        );
+        assert_eq!(response.status(), complete.status);
+    }
+}

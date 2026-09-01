@@ -22,6 +22,8 @@ mod dtm_session_task;
 #[cfg(any(target_arch = "riscv32", test))]
 mod dtm_stopping;
 #[cfg(target_arch = "riscv32")]
+mod legacy_advertising_active;
+#[cfg(target_arch = "riscv32")]
 mod legacy_advertising_first;
 mod modem_timer_task;
 
@@ -37,6 +39,10 @@ pub use dtm_active::{
 pub use dtm_first::{
     EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
     EmbassyBluetoothDtmFirstResume, drive_dtm_first_ready,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_advertising_active::{
+    EmbassyBluetoothLegacyAdvertisingActiveDrive, drive_legacy_advertising_active_ready,
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_first::{

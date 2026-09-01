@@ -549,28 +549,18 @@ impl<
         DualPinnedNetworkRunner::tx_consumer(self).try_receive_for(interface)
     }
 
-    fn receive_tx(
+    async fn receive_tx(
         &self,
         interface: NetworkInterfaceId,
-    ) -> impl Future<
-        Output = PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    > + '_ {
-        async move {
-            loop {
-                if let Some(frame) =
-                    DualPinnedNetworkRunner::tx_consumer(self).try_receive_for(interface)
-                {
-                    return frame;
-                }
-                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+    ) -> PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        loop {
+            if let Some(frame) =
+                DualPinnedNetworkRunner::tx_consumer(self).try_receive_for(interface)
+            {
+                return frame;
             }
+            DualPinnedNetworkRunner::wait_tx_publication(self).await;
         }
     }
 
@@ -586,29 +576,21 @@ impl<
         DualPinnedNetworkRunner::tx_consumer(self).for_interface(interface)
     }
 
-    fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
-        async move {
-            loop {
-                if DualPinnedNetworkRunner::tx_consumer(self).queue_len_for(interface) != 0 {
-                    return;
-                }
-                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+    async fn wait_tx_ready(&self, interface: NetworkInterfaceId) {
+        loop {
+            if DualPinnedNetworkRunner::tx_consumer(self).queue_len_for(interface) != 0 {
+                return;
             }
+            DualPinnedNetworkRunner::wait_tx_publication(self).await;
         }
     }
 
-    fn wait_tx_queue_len_at_least(
-        &self,
-        interface: NetworkInterfaceId,
-        minimum: usize,
-    ) -> impl Future<Output = ()> + '_ {
-        async move {
-            loop {
-                if DualPinnedNetworkRunner::tx_consumer(self).queue_len_for(interface) >= minimum {
-                    return;
-                }
-                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+    async fn wait_tx_queue_len_at_least(&self, interface: NetworkInterfaceId, minimum: usize) {
+        loop {
+            if DualPinnedNetworkRunner::tx_consumer(self).queue_len_for(interface) >= minimum {
+                return;
             }
+            DualPinnedNetworkRunner::wait_tx_publication(self).await;
         }
     }
 
@@ -628,25 +610,15 @@ impl<
         DualPinnedNetworkRunner::try_receive_tx(self)
     }
 
-    fn receive_physical_tx(
+    async fn receive_physical_tx(
         &self,
-    ) -> impl Future<
-        Output = PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    > + '_ {
-        async move {
-            loop {
-                if let Some(frame) = DualPinnedNetworkRunner::try_receive_tx(self) {
-                    return frame;
-                }
-                DualPinnedNetworkRunner::wait_tx_publication(self).await;
+    ) -> PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        loop {
+            if let Some(frame) = DualPinnedNetworkRunner::try_receive_tx(self) {
+                return frame;
             }
+            DualPinnedNetworkRunner::wait_tx_publication(self).await;
         }
     }
 }

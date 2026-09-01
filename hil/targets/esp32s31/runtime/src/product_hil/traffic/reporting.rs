@@ -120,10 +120,12 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
     let aggregate_min = aggregate.minimum_prepared_subframes().unwrap_or(0);
     let aggregate_max = aggregate.maximum_prepared_subframes().unwrap_or(0);
     runtime_log_reliably(format_args!(
-        "OAMP aggregates={} publications={} completed={} subframes={} \
+        "OAMP width_mhz={} rate_kbps={} aggregates={} publications={} completed={} subframes={} \
          acknowledged={} single={} single_rate={} single_ba={} single_pair={} \
          single_capacity={} single_capacity_max_len={} individual_retry={} timeout={} collision={} \
          min={} max={} stop_frame={} stop_capacity={} stop_empty={}",
+        aggregate.last_bandwidth_mhz,
+        aggregate.last_nominal_rate_kbps,
         aggregate.aggregates_prepared,
         aggregate.aggregate_publications,
         aggregate.aggregates_completed,

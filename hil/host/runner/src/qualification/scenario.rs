@@ -2109,6 +2109,25 @@ mod tests {
             disabled.tx_buffer,
             WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
         );
+
+        let enabled = catalog
+            .get("access-point-single-client-ceiling-tx-task-residence")
+            .unwrap();
+        let disabled = catalog
+            .get("diagnostic-ap-single-client-tx-egress-control-disabled-task-residence")
+            .unwrap();
+
+        assert_eq!(enabled.image, ImageClass::DiagnosticTaskResidence);
+        assert_eq!(enabled.image, disabled.image);
+        assert_eq!(enabled.workload, disabled.workload);
+        assert_eq!(enabled.link, disabled.link);
+        assert_eq!(enabled.criteria, disabled.criteria);
+        assert_eq!(enabled.evidence, disabled.evidence);
+        assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
+        assert_eq!(
+            disabled.tx_buffer,
+            WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+        );
     }
 
     #[test]

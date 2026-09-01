@@ -11,16 +11,17 @@ use core::sync::atomic::AtomicU32;
 use core::{
     future::Future,
     num::NonZeroU8,
+    pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
-    task::Context,
+    task::{Context, Poll},
 };
 
-use embassy_futures::select::select;
 use embassy_sync::{blocking_mutex::raw::RawMutex, signal::Signal, waitqueue::GenericAtomicWaker};
 use open_esp_radio_dma::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
     AffineSpscTrySendError,
 };
+use pin_project_lite::pin_project;
 
 use crate::EgressGrantKey;
 #[cfg(feature = "tx-phase-telemetry")]
@@ -309,6 +310,8 @@ struct NetworkGrant {
 pub(crate) struct EgressBurstLease {
     key: Option<EgressGrantKey>,
     grant_slot: Option<u8>,
+    pending_slot: Option<u8>,
+    direct_grant: Option<EgressGrant>,
     remaining: u16,
     maintenance_at: u16,
     requested_frames: u8,
@@ -324,6 +327,8 @@ impl EgressBurstLease {
         Self {
             key: None,
             grant_slot: None,
+            pending_slot: None,
+            direct_grant: None,
             remaining: 0,
             maintenance_at: 0,
             requested_frames: 0,
@@ -601,10 +606,14 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
         self.release_active_grant(lease);
         lease.key = Some(key);
         lease.grant_slot = None;
+        lease.direct_grant = None;
         lease.remaining = 0;
         lease.maintenance_at = 0;
         lease.requested_frames = requested_frames.get();
-        lease.refill_pending = self.matching_pending_slot(key).is_some();
+        lease.pending_slot = self
+            .matching_pending_slot(key)
+            .and_then(|slot| u8::try_from(slot).ok());
+        lease.refill_pending = lease.pending_slot.is_some();
         self.maintain_active_run(lease, context);
     }
 
@@ -613,6 +622,8 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
         self.release_active_grant(lease);
         lease.key = None;
         lease.grant_slot = None;
+        lease.pending_slot = None;
+        lease.direct_grant = None;
         lease.remaining = 0;
         lease.maintenance_at = 0;
         lease.requested_frames = 0;
@@ -636,8 +647,15 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
         let refill_threshold = u16::from(requested_frames.get() / 4).max(1);
 
         self.port.register_network_waker(context);
-        self.drain_grants();
-        let matching_grant = self.matching_grant(key);
+        self.drain_grants(Some(lease));
+        let matching_grant = if lease.direct_grant.is_some() && lease.grant_slot.is_none() {
+            // A directly accepted active grant proves that this key did not
+            // need an inactive table slot. Keep its subsequent packet and
+            // refill boundaries independent of the cold multi-key table.
+            None
+        } else {
+            self.matching_grant(key)
+        };
         if let Some((slot, grant)) = matching_grant {
             lease.grant_slot = u8::try_from(slot).ok();
             lease.remaining = lease.remaining.saturating_add(grant.remaining);
@@ -652,6 +670,7 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
             });
             if grant.remaining != 0 {
                 lease.refill_pending = false;
+                lease.pending_slot = None;
             }
         }
         let remaining = lease.remaining;
@@ -667,8 +686,9 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
             }
             return;
         }
-        if self.matching_pending_slot(key).is_some() {
+        if let Some(slot) = self.matching_pending_slot(key) {
             lease.refill_pending = true;
+            lease.pending_slot = u8::try_from(slot).ok();
             lease.maintain_at_remaining(0);
             if remaining == 0 {
                 self.port.request_radio_progress();
@@ -685,6 +705,7 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
         if self.port.try_send_candidate(candidate).is_ok() {
             self.state.pending[slot] = Some(candidate);
             lease.refill_pending = true;
+            lease.pending_slot = u8::try_from(slot).ok();
             self.state.next_candidate_serial = serial
                 .checked_add(1)
                 .filter(|serial| *serial != 0)
@@ -708,7 +729,7 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
         self.state.pending.fill(None);
         self.state.granted.fill(None);
         self.state.cached_grant_slot = None;
-        self.drain_grants();
+        self.drain_grants(None);
     }
 
     pub fn pending_candidates(&self) -> usize {
@@ -726,10 +747,11 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
             .filter_map(|(slot, grant)| grant.as_ref().map(|grant| (slot, grant)))
             .filter(|(slot, grant)| Some(*slot) != active_slot && grant.remaining != 0)
             .count();
-        let active = active_slot.is_some_and(|slot| {
-            lease.remaining != 0
-                || self.state.granted[slot].is_some_and(|grant| grant.remaining != 0)
-        });
+        let active = lease.key.is_some()
+            && (lease.remaining != 0
+                || active_slot.is_some_and(|slot| {
+                    self.state.granted[slot].is_some_and(|grant| grant.remaining != 0)
+                }));
         inactive + usize::from(active)
     }
 
@@ -738,22 +760,41 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
     fn release_active_grant(&mut self, lease: &mut EgressBurstLease) {
         #[cfg(feature = "tx-phase-telemetry")]
         self.flush_active_telemetry(lease);
-        let Some(slot) = lease.grant_slot.map(usize::from) else {
-            return;
-        };
-        let Some(mut grant) = self.state.granted.get(slot).copied().flatten() else {
-            return;
-        };
-        grant.remaining = grant.remaining.saturating_add(lease.remaining);
-        if grant.remaining == 0 {
-            self.state.granted[slot] = None;
-            if self.state.cached_grant_slot == u8::try_from(slot).ok() {
-                self.state.cached_grant_slot = None;
+        if let Some(slot) = lease.grant_slot.map(usize::from) {
+            if let Some(mut grant) = self.state.granted.get(slot).copied().flatten() {
+                grant.remaining = grant.remaining.saturating_add(lease.remaining);
+                if grant.remaining == 0 {
+                    self.state.granted[slot] = None;
+                    if self.state.cached_grant_slot == u8::try_from(slot).ok() {
+                        self.state.cached_grant_slot = None;
+                    }
+                } else {
+                    self.state.granted[slot] = Some(grant);
+                }
             }
-        } else {
-            self.state.granted[slot] = Some(grant);
+        } else if lease.remaining != 0
+            && let Some(grant) = lease.direct_grant
+        {
+            // A grant accepted directly into the active run deliberately has
+            // no table slot on the saturated path. Preserve its unused credit
+            // only when the stack changes key, where one bounded table search
+            // is both cold and semantically necessary.
+            if let Some((slot, existing)) = self.matching_grant(grant.key()) {
+                self.state.granted[slot] = Some(NetworkGrant {
+                    grant,
+                    remaining: existing.remaining.saturating_add(lease.remaining),
+                });
+            } else if let Some(slot) = self.state.granted.iter().position(Option::is_none) {
+                self.state.granted[slot] = Some(NetworkGrant {
+                    grant,
+                    remaining: lease.remaining,
+                });
+                self.state.cached_grant_slot = u8::try_from(slot).ok();
+            }
         }
         lease.grant_slot = None;
+        lease.pending_slot = None;
+        lease.direct_grant = None;
         lease.remaining = 0;
         lease.maintenance_at = 0;
         #[cfg(feature = "tx-phase-telemetry")]
@@ -762,11 +803,47 @@ impl<'control, 'state, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DE
         }
     }
 
-    fn drain_grants(&mut self) {
+    fn drain_grants(&mut self, mut active: Option<&mut EgressBurstLease>) {
         for _ in 0..DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET {
             let Some(grant) = self.port.try_receive_grant() else {
                 return;
             };
+
+            // The common saturated path already knows the exact candidate
+            // slot. Accept its reply directly into the Core1-local burst lease
+            // instead of scanning pending, occupied-grant and free-grant
+            // tables once per aggregate. Inactive keys retain the bounded
+            // table path below.
+            if let Some(lease) = active.as_deref_mut()
+                && lease.key == Some(grant.key())
+                && let Some(pending_slot) = lease.pending_slot.map(usize::from)
+                && self
+                    .state
+                    .pending
+                    .get(pending_slot)
+                    .is_some_and(|candidate| {
+                        candidate.is_some_and(|candidate| {
+                            candidate.key() == grant.key()
+                                && candidate.serial() == grant.candidate_serial()
+                        })
+                    })
+            {
+                self.state.pending[pending_slot] = None;
+                lease.pending_slot = None;
+                lease.refill_pending = false;
+                lease.direct_grant = Some(grant);
+                let credits = u16::from(grant.frame_credits().get());
+                lease.remaining = lease.remaining.saturating_add(credits);
+                #[cfg(feature = "tx-phase-telemetry")]
+                {
+                    lease.accounted_remaining = lease.accounted_remaining.saturating_add(credits);
+                    self.port
+                        .telemetry
+                        .grants_accepted
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                continue;
+            }
             let Some(pending_slot) = self.matching_pending_slot(grant.key()).filter(|slot| {
                 self.state.pending[*slot]
                     .is_some_and(|candidate| candidate.serial() == grant.candidate_serial())
@@ -1047,6 +1124,87 @@ pub struct EgressRadioOwner<
     active: bool,
 }
 
+pin_project! {
+    /// Compact wait for either ordinary payload work or a latched Core0
+    /// egress-control edge.
+    ///
+    /// The payload future remains structurally pinned, while the control side
+    /// stores only its three-pointer wake capability and two state bits. A
+    /// custom future avoids retaining the generic `select` state machine in
+    /// every connected datapath branch.
+    pub struct EgressWaitOr<'control, M: RawMutex, F> {
+        wake: EgressRadioWake<'control, M>,
+        active: bool,
+        armed: bool,
+        #[pin]
+        payload: F,
+    }
+
+    impl<M: RawMutex, F> PinnedDrop for EgressWaitOr<'_, M, F> {
+        fn drop(this: Pin<&mut Self>) {
+            let this = this.project();
+            if *this.armed {
+                this.wake.waiting_flag().store(false, Ordering::Release);
+            }
+        }
+    }
+}
+
+impl<M: RawMutex, F: Future<Output = ()>> Future for EgressWaitOr<'_, M, F> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        if !*this.active {
+            return this.payload.poll(context);
+        }
+
+        let wake = *this.wake;
+        let disarm = |armed: &mut bool| {
+            if *armed {
+                wake.waiting_flag().store(false, Ordering::Release);
+                *armed = false;
+            }
+        };
+
+        // A publication before the first poll is a level, not an edge. Avoid
+        // arming the signal waiter when the owner already owes service.
+        if wake.progress_pending() {
+            disarm(this.armed);
+            return Poll::Ready(());
+        }
+
+        if !*this.armed {
+            wake.waiting_flag().store(true, Ordering::Release);
+            *this.armed = true;
+
+            // A producer may have observed the old false waiter state between
+            // the first check and arm. Rechecking closes that lost-wake window.
+            if wake.progress_pending() {
+                disarm(this.armed);
+                return Poll::Ready(());
+            }
+        }
+
+        if this.payload.poll(context).is_ready() {
+            disarm(this.armed);
+            return Poll::Ready(());
+        }
+
+        // Signal::wait is cancel-safe and stores the current task waker in the
+        // signal itself. The temporary future therefore needs no retained
+        // state beyond this poll call.
+        let signal = wake.progress_signal().wait();
+        let mut signal = core::pin::pin!(signal);
+        if signal.as_mut().poll(context).is_ready() {
+            disarm(this.armed);
+            return Poll::Ready(());
+        }
+
+        Poll::Pending
+    }
+}
+
 impl<'control, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DEPTH: usize>
     EgressRadioOwner<'control, M, CANDIDATE_DEPTH, GRANT_DEPTH>
 {
@@ -1081,31 +1239,13 @@ impl<'control, M: RawMutex, const CANDIDATE_DEPTH: usize, const GRANT_DEPTH: usi
     /// This function never services policy. The unique Core0 caller does so
     /// after the wait returns, preserving one obvious mutable owner while the
     /// check/arm/recheck sequence prevents a candidate wake from being lost.
-    pub async fn wait_or(&self, payload: impl Future<Output = ()>) {
-        if !self.active {
-            payload.await;
-            return;
+    pub fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> EgressWaitOr<'control, M, F> {
+        EgressWaitOr {
+            wake: self.scheduler.wake_handle(),
+            active: self.active,
+            armed: false,
+            payload,
         }
-        let wake = self.scheduler.wake_handle();
-        let waiting = wake.waiting_flag();
-        waiting.store(true, Ordering::Release);
-        if wake.progress_flag().load(Ordering::Acquire) {
-            waiting.store(false, Ordering::Release);
-            return;
-        }
-        let guard = EgressProgressWaitGuard { waiting };
-        let _ = select(payload, wake.progress_signal().wait()).await;
-        drop(guard);
-    }
-}
-
-struct EgressProgressWaitGuard<'control> {
-    waiting: &'control AtomicBool,
-}
-
-impl Drop for EgressProgressWaitGuard<'_> {
-    fn drop(&mut self) {
-        self.waiting.store(false, Ordering::Release);
     }
 }
 
@@ -1150,8 +1290,11 @@ impl<'control, M: RawMutex, N, const CANDIDATE_DEPTH: usize, const GRANT_DEPTH: 
         self.radio.service()
     }
 
-    pub async fn wait_egress_or(&self, payload: impl Future<Output = ()>) {
-        self.radio.wait_or(payload).await;
+    pub fn wait_egress_or<F: Future<Output = ()>>(
+        &self,
+        payload: F,
+    ) -> EgressWaitOr<'control, M, F> {
+        self.radio.wait_or(payload)
     }
 }
 
@@ -1209,11 +1352,13 @@ mod tests {
     extern crate std;
 
     use core::{
+        future::{pending, poll_fn, ready},
         num::{NonZeroU8, NonZeroU32},
+        pin::pin,
         sync::atomic::{AtomicUsize, Ordering},
-        task::{Context, Waker},
+        task::{Context, Poll, Waker},
     };
-    use std::{sync::Arc, task::Wake};
+    use std::{boxed::Box, sync::Arc, task::Wake};
 
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
@@ -1239,6 +1384,103 @@ mod tests {
         fn wake_by_ref(self: &Arc<Self>) {
             self.0.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    #[test]
+    fn radio_wait_observes_a_level_published_before_its_first_poll() {
+        let control = Box::leak(Box::new(EgressControlPlane::<NoopRawMutex, 1, 1>::new()));
+        let (mut network, radio) = control.split();
+        network
+            .try_send_candidate(EgressCandidate::new(1, key(1), NonZeroU8::new(1).unwrap()))
+            .unwrap();
+        let scheduler = Box::leak(Box::new(EgressRadioScheduler::new(radio)));
+        let owner = EgressRadioOwner::new(scheduler);
+        let mut wait = pin!(owner.wait_or(pending::<()>()));
+
+        assert!(
+            wait.as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_ready()
+        );
+        assert!(!control.radio_waiting.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn radio_wait_cannot_lose_a_publication_after_arming() {
+        let control = Box::leak(Box::new(EgressControlPlane::<NoopRawMutex, 1, 1>::new()));
+        let (mut network, radio) = control.split();
+        let scheduler = Box::leak(Box::new(EgressRadioScheduler::new(radio)));
+        let mut owner = EgressRadioOwner::new(scheduler);
+        let wakes = Arc::new(WakeCount::default());
+        let waker = Waker::from(wakes.clone());
+        let mut published = false;
+        let publish_after_arm = poll_fn(|_| {
+            if !published {
+                network
+                    .try_send_candidate(EgressCandidate::new(1, key(1), NonZeroU8::new(1).unwrap()))
+                    .unwrap();
+                published = true;
+            }
+            Poll::<()>::Pending
+        });
+        {
+            let mut wait = pin!(owner.wait_or(publish_after_arm));
+            assert!(
+                wait.as_mut()
+                    .poll(&mut Context::from_waker(&waker))
+                    .is_ready()
+            );
+        }
+        assert_eq!(
+            wakes.0.load(Ordering::Relaxed),
+            0,
+            "a signal consumed inside the publishing poll needs no executor wake"
+        );
+        assert!(!control.radio_waiting.load(Ordering::Acquire));
+
+        assert!(owner.service());
+        assert!(network.try_receive_grant().is_some());
+        let mut wait = pin!(owner.wait_or(pending::<()>()));
+        assert!(
+            wait.as_mut()
+                .poll(&mut Context::from_waker(&waker))
+                .is_pending()
+        );
+        network
+            .try_send_candidate(EgressCandidate::new(2, key(1), NonZeroU8::new(1).unwrap()))
+            .unwrap();
+        assert_eq!(
+            wakes.0.load(Ordering::Relaxed),
+            1,
+            "a publication after Pending must wake the registered Core0 task"
+        );
+        assert!(
+            wait.as_mut()
+                .poll(&mut Context::from_waker(&waker))
+                .is_ready()
+        );
+        assert!(!control.radio_waiting.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn radio_wait_disarms_on_payload_completion_and_cancellation() {
+        let control = Box::leak(Box::new(EgressControlPlane::<NoopRawMutex, 1, 1>::new()));
+        let (_network, radio) = control.split();
+        let scheduler = Box::leak(Box::new(EgressRadioScheduler::new(radio)));
+        let owner = EgressRadioOwner::new(scheduler);
+        let context = &mut Context::from_waker(Waker::noop());
+
+        let mut payload_ready = pin!(owner.wait_or(ready(())));
+        assert!(payload_ready.as_mut().poll(context).is_ready());
+        assert!(!control.radio_waiting.load(Ordering::Acquire));
+        drop(payload_ready);
+
+        {
+            let mut cancelled = pin!(owner.wait_or(pending::<()>()));
+            assert!(cancelled.as_mut().poll(context).is_pending());
+            assert!(control.radio_waiting.load(Ordering::Acquire));
+        }
+        assert!(!control.radio_waiting.load(Ordering::Acquire));
     }
 
     #[test]
@@ -1327,12 +1569,12 @@ mod tests {
                 .unwrap();
         }
 
-        network.drain_grants();
+        network.drain_grants(None);
         assert_eq!(
             network.granted_keys(&lease),
             DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET
         );
-        network.drain_grants();
+        network.drain_grants(None);
         assert_eq!(network.granted_keys(&lease), DEPTH);
     }
 
@@ -1498,6 +1740,38 @@ mod tests {
     }
 
     #[test]
+    fn active_grant_uses_no_inactive_table_slot_until_the_key_changes() {
+        let control = EgressControlPlane::<NoopRawMutex, 4, 4>::new();
+        let (network, mut radio) = control.split();
+        let mut state = EgressNetworkState::new();
+        let mut network = EgressNetworkScheduler::new(network, &mut state);
+        let mut lease = EgressBurstLease::new();
+        let context = Context::from_waker(Waker::noop());
+        let requested = NonZeroU8::new(32).unwrap();
+
+        network.begin_active_run(&mut lease, &context, key(1), requested);
+        let candidate = radio.try_receive_candidate().unwrap();
+        radio
+            .try_send_grant(EgressGrant::new(
+                candidate.serial(),
+                candidate.key(),
+                requested,
+            ))
+            .unwrap();
+        network.maintain_active_run(&mut lease, &context);
+
+        assert_eq!(lease.remaining(), 32);
+        assert!(network.state.granted.iter().all(Option::is_none));
+
+        for _ in 0..3 {
+            assert!(!lease.commit_admission());
+        }
+        network.begin_active_run(&mut lease, &context, key(2), requested);
+
+        assert_eq!(network.matching_grant(key(1)).unwrap().1.remaining, 29);
+    }
+
+    #[test]
     fn changing_runs_preserves_each_keys_unused_local_credit() {
         let control = EgressControlPlane::<NoopRawMutex, 4, 4>::new();
         let (network, mut radio) = control.split();
@@ -1589,7 +1863,7 @@ mod tests {
                 NonZeroU8::new(1).unwrap(),
             ))
             .unwrap();
-        network.drain_grants();
+        network.drain_grants(None);
         assert!(!lease.commit_admission());
         assert_eq!(network.pending_candidates(), 0);
         assert_eq!(network.granted_keys(&lease), 0);

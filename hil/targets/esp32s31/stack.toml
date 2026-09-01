@@ -9,12 +9,12 @@ stack_end_symbol = "_stack_end"
 warn_frame_bytes = 8192
 
 # Rust may transiently materialize a large async future before it reaches its
-# Embassy task arena. 48 KiB bounds the expanded concurrent owner transaction
-# while still rejecting the former 52,864-byte owner-future move before
-# flashing. Runtime painting independently enforces aggregate call-chain
-# headroom on the 192-KiB PSRAM task stack, and the separate 4-KiB move limit
-# rejects hidden by-value owner copies.
-max_frame_bytes = 49152
+# Embassy task arena. 50 KiB bounds the expanded concurrent owner transaction
+# plus the affine egress-control capability while still rejecting the former
+# 52,864-byte owner-future move before flashing. Runtime painting independently
+# enforces aggregate call-chain headroom on the 192-KiB PSRAM task stack, and
+# the separate 4-KiB move limit rejects hidden by-value owner copies.
+max_frame_bytes = 51200
 
 # Reject implicit copies/moves large enough to hide owner graphs or buffers in
 # compiler temporaries. The lint is enforced while building the final fat-LTO
@@ -71,8 +71,8 @@ reason = "atomic connected composition retains the validated plan and complete s
 [[reviewed_frames]]
 function_contains = "::supervisor::new::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/mod.rs"
-max_bytes = 17408
-reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor and external diagnostic-storage owner graph into static task ownership on the PSRAM stack"
+max_bytes = 17920
+reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, affine egress-control and external diagnostic-storage owner graph into static task ownership on the PSRAM stack"
 
 [[reviewed_frames]]
 function_contains = "ProductionWifiEpochRunner as"
@@ -131,8 +131,8 @@ reason = "paired service validates association and channel policy while retainin
 [[reviewed_frames]]
 function_contains = "::run_station_access_point_active::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/concurrent.rs"
-max_bytes = 49152
-reason = "the complete same-channel transaction retains the sole RX producer, TX owner, IRQ epoch, both expanded role graphs and their exact inverse on the PSRAM task stack; external RX and fault arenas plus the 48-KiB hard ceiling prevent packet payloads and the former 52,864-byte owner move from returning"
+max_bytes = 51200
+reason = "the complete same-channel transaction retains the sole RX producer, TX owner, IRQ epoch, affine egress-control capability, both expanded role graphs and their exact inverse on the PSRAM task stack; external RX and fault arenas plus the 50-KiB hard ceiling prevent packet payloads and the former 52,864-byte owner move from returning"
 
 [[reviewed_frames]]
 function_contains = "::attempt::Esp32s31StaAttempt<"

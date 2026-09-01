@@ -31,9 +31,9 @@ tx-egress-scheduling = ["embassy-net-driver/tx-egress-metadata"]
 
 [dependencies]
 embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272" }
-embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
+pin-project-lite = "0.2.17"
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }

@@ -1337,10 +1337,10 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-futures",
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
+ "pin-project-lite",
 ]
 
 [[package]]

@@ -51,7 +51,12 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
-    BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmSchedulerItemCompletionStatus, BluetoothPassiveScanMemoryGraphCommandPublished,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothPassiveScanMemoryGraphEventPrepared,
+    BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHeadError,
@@ -193,6 +198,138 @@ impl BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'_> {
 
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         BluetoothSchedulerHardwareListIndex::ZERO
+    }
+}
+
+/// Lossless rejection while joining one detached scanner item to the empty list.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the unchanged detached scanner event remains CPU-owned"]
+pub struct BluetoothPassiveScanEmptySchedulerMergeFailure {
+    error: BluetoothSchedulerEmptyListMergeError,
+    prepared: BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPassiveScanEmptySchedulerMergeFailure {
+    /// Exact reason the exclusive scheduler epoch rejected the scanner item.
+    pub const fn error(&self) -> BluetoothSchedulerEmptyListMergeError {
+        self.error
+    }
+
+    /// Recover the unchanged detached scanner graph.
+    pub fn into_prepared(self) -> BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
+        self.prepared
+    }
+}
+
+/// Detached scanner item joined to the source-owned empty scheduler list.
+///
+/// No scanner register, RX-list head, scheduler head or RUN command is visible
+/// to hardware in this state. Cancellation restores both the common list epoch
+/// and the scanner's private three-item free chain.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the scanner merge must be published through the same scheduler or cancelled"]
+pub struct BluetoothPassiveScanEmptySchedulerMergePrepared {
+    graph: BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPassiveScanEmptySchedulerMergePrepared {
+    /// Exact detached item selected as the common scheduler head.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_head()
+    }
+
+    /// Hardware list assigned to the first standalone passive scanner.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        BluetoothSchedulerHardwareListIndex::ZERO
+    }
+}
+
+/// Lossless rejection before any scanner or scheduler MMIO publication.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the unchanged CPU-owned scanner merge can be retried or cancelled"]
+pub struct BluetoothPassiveScanSchedulerHeadPublicationFailure {
+    error: BluetoothSchedulerHeadPublicationError,
+    merged: BluetoothPassiveScanEmptySchedulerMergePrepared,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerHeadPublicationFailure {
+    /// Exact reason the common scheduler head could not be prepared.
+    pub const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
+        self.error
+    }
+
+    /// Recover the unchanged scanner merge. No MMIO was performed.
+    pub fn into_merged(self) -> BluetoothPassiveScanEmptySchedulerMergePrepared {
+        self.merged
+    }
+}
+
+/// Scanner graph whose RX list, command and scheduler head are hardware-visible.
+///
+/// The publication transaction validates the common list identity before its
+/// first irreversible write, then publishes RX memory, the restricted scanner
+/// command and the exact scheduler head in that order. Dynamic interrupts and
+/// RUN remain absent.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the scanner head must advance through the common RUN suffix"]
+pub struct BluetoothPassiveScanSchedulerHeadPublished {
+    graph: BluetoothPassiveScanMemoryGraphCommandPublished,
+    publication: BluetoothSchedulerHardwareListHeadPublished,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerHeadPublished {
+    /// Exact scanner item retained by the graph and hardware head token.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_head()
+    }
+
+    /// Hardware list containing the first scanner item.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.publication.index()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothPassiveScanMemoryGraphCommandPublished,
+        BluetoothSchedulerHardwareListHeadPublished,
+    ) {
+        (self.graph, self.publication)
+    }
+}
+
+/// Passive scanner graph admitted through the complete common RUN suffix.
+///
+/// The graph remains hardware-owned. Completion, RX extraction and recycling
+/// require later typed transitions and are deliberately not exposed here.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the running scanner graph must advance through owned completion"]
+pub struct BluetoothPassiveScanSchedulerRunning {
+    graph: BluetoothPassiveScanMemoryGraphCommandPublished,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanSchedulerRunning {
+    pub(crate) const fn new(
+        graph: BluetoothPassiveScanMemoryGraphCommandPublished,
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> Self {
+        Self { graph, run }
+    }
+
+    /// Exact scanner item retained while hardware owns the graph.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_head()
+    }
+
+    /// Hardware list admitted by the complete run transaction.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
     }
 }
 
@@ -2096,6 +2233,47 @@ impl<const SCHEDULER_CAPACITY: usize>
         })
     }
 
+    /// Join the detached first scanner item to this epoch's empty scheduler list.
+    ///
+    /// The private scanner graph has already removed the item from its free
+    /// chain. This transition atomically reserves the same address in the
+    /// source-owned common list without publishing MMIO.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub fn prepare_passive_scan_empty_list_merge(
+        &mut self,
+        prepared: BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+    ) -> Result<
+        BluetoothPassiveScanEmptySchedulerMergePrepared,
+        BluetoothPassiveScanEmptySchedulerMergeFailure,
+    > {
+        let address = prepared.scheduler_head();
+        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+            return Err(BluetoothPassiveScanEmptySchedulerMergeFailure { error, prepared });
+        }
+        Ok(BluetoothPassiveScanEmptySchedulerMergePrepared { graph: prepared })
+    }
+
+    /// Restore an unpublished scanner merge through the same scheduler epoch.
+    ///
+    /// Success restores both the common empty-list proof and the selected
+    /// scanner item's position in the private three-item free chain.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub fn cancel_passive_scan_empty_list_merge(
+        &mut self,
+        merged: BluetoothPassiveScanEmptySchedulerMergePrepared,
+    ) -> Result<
+        BluetoothPassiveScanMemoryGraphEventPrepared,
+        BluetoothPassiveScanEmptySchedulerMergePrepared,
+    > {
+        if !self
+            ._scheduler_list
+            .cancel_first_item(merged.scheduler_item_address())
+        {
+            return Err(merged);
+        }
+        Ok(merged.graph.cancel())
+    }
+
     #[cfg(any(target_arch = "riscv32", test))]
     fn release_scheduler_reservation<State>(
         &mut self,
@@ -3142,6 +3320,39 @@ impl<const SCHEDULER_CAPACITY: usize>
         })
     }
 
+    /// Publish the complete lower passive-scanner transaction.
+    ///
+    /// The common list identity and scheduler-head encoding are checked while
+    /// every scanner resource is still CPU-owned. The infallible suffix then
+    /// publishes the RX list, restricted scanner command and scheduler head in
+    /// the reviewed hardware order.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the powered task owner and exact scanner graph jointly retain every PAC publication prerequisite"
+    )]
+    pub(crate) fn publish_passive_scan_scheduler_head(
+        &mut self,
+        merged: BluetoothPassiveScanEmptySchedulerMergePrepared,
+    ) -> Result<
+        BluetoothPassiveScanSchedulerHeadPublished,
+        BluetoothPassiveScanSchedulerHeadPublicationFailure,
+    > {
+        let address = merged.scheduler_item_address();
+        let index = merged.hardware_list_index();
+        let head = match self.validate_first_scheduler_item_head(address) {
+            Ok(head) => head,
+            Err(error) => {
+                return Err(BluetoothPassiveScanSchedulerHeadPublicationFailure { error, merged });
+            }
+        };
+        let graph = merged.graph.prepare_publication();
+        let graph = unsafe { self.task.publish_passive_scan_rx_memory(graph) };
+        let graph = unsafe { self.task.publish_passive_scan_command(graph) };
+        let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
+        Ok(BluetoothPassiveScanSchedulerHeadPublished { graph, publication })
+    }
+
     #[cfg(target_arch = "riscv32")]
     #[allow(
         unsafe_code,
@@ -3153,13 +3364,35 @@ impl<const SCHEDULER_CAPACITY: usize>
         index: BluetoothSchedulerHardwareListIndex,
     ) -> Result<BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHeadPublicationError>
     {
+        let head = self.validate_first_scheduler_item_head(address)?;
+        Ok(self.publish_validated_first_scheduler_item_head(address, index, head))
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    fn validate_first_scheduler_item_head(
+        &self,
+        address: BluetoothControllerSramAddress,
+    ) -> Result<BluetoothSchedulerHardwareListHead, BluetoothSchedulerHeadPublicationError> {
         if !self._scheduler_list.can_publish_first_item(address) {
             return Err(BluetoothSchedulerHeadPublicationError::SchedulerIdentityMismatch);
         }
-        let head = BluetoothSchedulerHardwareListHead::from_address(address)?;
+        Ok(BluetoothSchedulerHardwareListHead::from_address(address)?)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "validation retained the exact source-owned list identity and typed hardware-head encoding"
+    )]
+    fn publish_validated_first_scheduler_item_head(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+        index: BluetoothSchedulerHardwareListIndex,
+        head: BluetoothSchedulerHardwareListHead,
+    ) -> BluetoothSchedulerHardwareListHeadPublished {
         let publication = unsafe { self.task.publish_scheduler_hardware_list_head(index, head) };
         self._scheduler_list.retain_published_first_item(address);
-        Ok(publication)
+        publication
     }
 
     /// Perform one fresh fenced completion-list transfer for advertising.
@@ -4232,8 +4465,13 @@ mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
         BluetoothLegacyAdvertisingMemoryGraphModelAddress,
-        BluetoothLegacyAdvertisingMemoryGraphStorage,
+        BluetoothLegacyAdvertisingMemoryGraphStorage, BluetoothPassiveScanDefaultTxPowerDbm,
+        BluetoothPassiveScanMemoryGraphModelAddress, BluetoothPassiveScanMemoryGraphStorage,
+        BluetoothPassiveScanPrimaryChannel, BluetoothPassiveScanResetConfig,
+        BluetoothPassiveScanSchedulerAllocationConfig, BluetoothPassiveScanSchedulerWindow,
+        BluetoothPassiveScanStartSelection,
     };
+    use open_esp_radio_esp32s31_hal::BluetoothControllerLatchedTime;
 
     use crate::{
         BluetoothClockedResources, BluetoothControllerRuntimeResources,
@@ -4268,6 +4506,32 @@ mod tests {
             .expect("the model base uses controller SRAM syntax");
         BluetoothLegacyAdvertisingMemoryGraphStorage::pin_static_model(storage, base)
             .expect("the advertising graph fits physical controller SRAM")
+    }
+
+    fn passive_scan_event()
+    -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphEventPrepared {
+        let storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothPassiveScanMemoryGraphStorage::new(),
+        ));
+        let base = BluetoothPassiveScanMemoryGraphModelAddress::new(0x2f00_1000)
+            .expect("the model base uses controller SRAM syntax");
+        let reset = BluetoothPassiveScanResetConfig::le_1m_public_accept_all(
+            BluetoothPassiveScanDefaultTxPowerDbm::new(0),
+            BluetoothControllerLatchedTime::from_bits(10_000),
+        );
+        let allocation = BluetoothPassiveScanSchedulerAllocationConfig::new(0, 0)
+            .expect("the restricted product limits fit the scanner graph");
+        let graph = BluetoothPassiveScanMemoryGraphStorage::pin_static_model(
+            storage, base, reset, allocation,
+        )
+        .expect("the scanner graph fits physical controller SRAM");
+        graph.prepare_first_event(
+            BluetoothPassiveScanPrimaryChannel::Channel37,
+            BluetoothPassiveScanSchedulerWindow::from_controller_ticks(11_000, 12_000)
+                .expect("the scanner window is non-empty"),
+            BluetoothPassiveScanStartSelection::Requested,
+            BluetoothControllerLatchedTime::from_bits(10_100),
+        )
     }
 
     #[test]
@@ -4375,6 +4639,49 @@ mod tests {
         assert!(!list.cancel_first_item(other));
         assert!(list.cancel_first_item(first));
         assert_eq!(list.prepare_first_item(other), Ok(()));
+    }
+
+    #[test]
+    fn passive_scanner_merge_cancellation_restores_both_cpu_owned_lists() {
+        struct ScannerPlatform;
+
+        let stopped = BluetoothStopped::from_hardware(
+            ScannerPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let event = passive_scan_event();
+        let channel = event.channel();
+        let window = event.window();
+        let detached = event.prepare_scheduler_admission();
+
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let merged = task
+            .prepare_passive_scan_empty_list_merge(detached)
+            .unwrap_or_else(|_| panic!("the pristine common list must accept the scanner item"));
+        let event = task
+            .cancel_passive_scan_empty_list_merge(merged)
+            .unwrap_or_else(|_| panic!("the same epoch must restore the scanner item"));
+        assert_eq!(event.channel(), channel);
+        assert_eq!(event.window(), window);
+
+        let merged = task
+            .prepare_passive_scan_empty_list_merge(event.prepare_scheduler_admission())
+            .unwrap_or_else(|_| panic!("cancellation must reopen the common list"));
+        let event = task
+            .cancel_passive_scan_empty_list_merge(merged)
+            .unwrap_or_else(|_| panic!("the restored private chain must remain cancellable"));
+        assert_eq!(event.channel(), channel);
+        assert_eq!(event.window(), window);
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
     }
 
     #[test]

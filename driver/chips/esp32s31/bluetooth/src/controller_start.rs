@@ -243,6 +243,27 @@ pub struct BluetoothLegacyAdvertisingSchedulerStartFailure<'a, E> {
     head: crate::BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
 }
 
+/// Failed scanner scheduler start before the synchronous RUN suffix began.
+#[must_use = "a failed scanner start still owns its published graph"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPassiveScanSchedulerStartFailure<E> {
+    error: E,
+    head: crate::BluetoothPassiveScanSchedulerHeadPublished,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<E> BluetoothPassiveScanSchedulerStartFailure<E> {
+    /// Inspect the exact stable interrupt-storage rejection.
+    pub const fn error(&self) -> &E {
+        &self.error
+    }
+
+    /// Recover the error and unchanged published scanner graph.
+    pub fn into_parts(self) -> (E, crate::BluetoothPassiveScanSchedulerHeadPublished) {
+        (self.error, self.head)
+    }
+}
+
 #[cfg(target_arch = "riscv32")]
 impl<'a, E> BluetoothLegacyAdvertisingSchedulerStartFailure<'a, E> {
     pub const fn error(&self) -> &E {
@@ -4047,6 +4068,27 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             run,
             reservation,
         ))
+    }
+
+    /// Admit one published passive-scanner graph through the common RUN suffix.
+    pub(crate) fn start_passive_scan_scheduler(
+        &mut self,
+        head: crate::BluetoothPassiveScanSchedulerHeadPublished,
+    ) -> Result<
+        crate::BluetoothPassiveScanSchedulerRunning,
+        BluetoothPassiveScanSchedulerStartFailure<S::Error>,
+    >
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
+            Ok(interrupts) => interrupts,
+            Err(error) => return Err(BluetoothPassiveScanSchedulerStartFailure { error, head }),
+        };
+        let address = head.scheduler_item_address();
+        let (graph, publication) = head.into_parts();
+        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
+        Ok(crate::BluetoothPassiveScanSchedulerRunning::new(graph, run))
     }
 
     fn publish_scheduler_run_suffix(

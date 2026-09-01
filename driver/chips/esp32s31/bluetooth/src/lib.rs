@@ -193,7 +193,8 @@ pub use controller_start::{
     BluetoothLegacyAdvertisingPostUnlinkArmStep, BluetoothLegacyAdvertisingSchedulerStartFailure,
     BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
-    BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
+    BluetoothPassiveScanSchedulerStartFailure, BluetoothSchedulerRunInterruptStorage,
+    BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use controller_time::{
@@ -457,7 +458,9 @@ pub use scheduler::{
     BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmSchedulerHeadPublicationFailure,
     BluetoothDtmSchedulerHeadPublished, BluetoothDtmSchedulerRunning,
     BluetoothLegacyAdvertisingEmptySchedulerMergeFailure,
-    BluetoothLegacyAdvertisingEmptySchedulerMergePrepared, BluetoothSchedulerEmptyListMergeError,
+    BluetoothLegacyAdvertisingEmptySchedulerMergePrepared,
+    BluetoothPassiveScanEmptySchedulerMergeFailure,
+    BluetoothPassiveScanEmptySchedulerMergePrepared, BluetoothSchedulerEmptyListMergeError,
     BluetoothSchedulerHeadPublicationError, BluetoothSchedulerInitialized,
 };
 #[cfg(target_arch = "riscv32")]
@@ -481,6 +484,8 @@ pub use scheduler::{
     BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck,
     BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep,
     BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked,
+    BluetoothPassiveScanSchedulerHeadPublicationFailure,
+    BluetoothPassiveScanSchedulerHeadPublished, BluetoothPassiveScanSchedulerRunning,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{

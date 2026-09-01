@@ -41,6 +41,11 @@ use crate::controller_time::{
     BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
 };
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothPassiveScanMemoryGraphCommandPublished,
+    BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
+};
 
 /// Opaque singleton root for one standalone Bluetooth lifecycle.
 ///
@@ -219,6 +224,58 @@ pub(crate) struct BluetoothTaskResources {
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 impl BluetoothTaskResources {
+    /// Publish selector-one RX memory for the exact prepared scanner graph.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the pinned graph and the sole powered task
+    /// epoch, and must guarantee that scanner MMIO is not visible through an
+    /// interrupt owner during this transaction.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper scanner lifecycle retains graph lifetime and exclusive task MMIO"
+    )]
+    pub(crate) unsafe fn publish_passive_scan_rx_memory(
+        &mut self,
+        prepared: BluetoothPassiveScanMemoryGraphPublicationPrepared,
+    ) -> BluetoothPassiveScanMemoryGraphPublished {
+        let selector = prepared.selector();
+        let head = prepared.head();
+        let publication = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_rx_memory_list_initial_head(selector, head)
+        };
+        match prepared.into_published(publication) {
+            Ok(published) => published,
+            Err(_) => unreachable!("the publication was built from this exact scanner graph"),
+        }
+    }
+
+    /// Publish the restricted standard-backoff scanner command after RX memory.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the exact RX-published graph and the sole
+    /// powered scanner epoch through the returned state.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper scanner lifecycle retains RX graph and powered command prerequisites"
+    )]
+    pub(crate) unsafe fn publish_passive_scan_command(
+        &mut self,
+        published: BluetoothPassiveScanMemoryGraphPublished,
+    ) -> BluetoothPassiveScanMemoryGraphCommandPublished {
+        let command = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_scan_start()
+        };
+        published.into_scan_command_published(command)
+    }
+
     /// Execute the source-127 register prefix and following complete low-power
     /// hardware component while the upper lifecycle retains initialized
     /// Controller software and an inactive route.

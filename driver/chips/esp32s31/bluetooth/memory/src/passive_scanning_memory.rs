@@ -687,6 +687,12 @@ pub struct BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
 }
 
 impl BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
+    /// Exact selected item that may consume one common scheduler list.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
     /// Restore the exact private chain before any MMIO publication.
     pub fn cancel(mut self) -> BluetoothPassiveScanMemoryGraphEventPrepared {
         let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;

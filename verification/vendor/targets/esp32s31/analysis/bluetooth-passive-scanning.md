@@ -363,6 +363,16 @@ No upper layer may construct register images.  No public LL type may contain
 the vendor link-state words.  SRAM masks remain private implementation details
 of typed memory accessors, just as for the DTM descriptors.
 
+The lower start transaction now reaches the common `RUN` edge. The selected
+item is detached and joined to the exclusive list-zero epoch while CPU-owned;
+the Controller validates that exact head before the first MMIO publication,
+then publishes selector-one RX memory, the fixed standard-backoff scan command,
+the scheduler head, dynamic interrupts and `RUN` in order. A pre-publication
+failure restores the complete scanner and common-list owners. Completion,
+buffer extraction and recycle intentionally remain absent until their typed
+ownership joins are implemented; this lower state is not an operational LL
+scanner and is not yet reachable from HCI.
+
 ## Return gate from research to implementation
 
 The focused lower research frontier is closed for one legacy passive 1M event:

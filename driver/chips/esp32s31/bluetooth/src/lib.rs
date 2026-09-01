@@ -376,7 +376,13 @@ pub use legacy_advertising_active::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_recurring::{
-    BluetoothLegacyAdvertisingRecurringFault, BluetoothLegacyAdvertisingRecurringFaultCause,
+    BluetoothLegacyAdvertisingRecurringCommandIntake,
+    BluetoothLegacyAdvertisingRecurringCommandMismatch,
+    BluetoothLegacyAdvertisingRecurringCommandRoute, BluetoothLegacyAdvertisingRecurringFault,
+    BluetoothLegacyAdvertisingRecurringFaultCause,
+    BluetoothLegacyAdvertisingRecurringOrderProgress,
+    BluetoothLegacyAdvertisingRecurringOrderState,
+    BluetoothLegacyAdvertisingRecurringResponsePublication,
     BluetoothLegacyAdvertisingRecurringRetry, BluetoothLegacyAdvertisingRecurringRetryCause,
     BluetoothLegacyAdvertisingRecurringRunner, BluetoothLegacyAdvertisingRecurringRunnerStep,
     BluetoothLegacyAdvertisingRecurringStart,

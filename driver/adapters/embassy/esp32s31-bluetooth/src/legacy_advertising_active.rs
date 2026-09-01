@@ -4,10 +4,11 @@
 
 use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothLegacyAdvertisingActiveFault, BluetoothLegacyAdvertisingActiveSession,
-    BluetoothLegacyAdvertisingActiveStep, BluetoothLegacyAdvertisingEventCpuOwned,
-    BluetoothLegacyAdvertisingRecurringFault, BluetoothLegacyAdvertisingRecurringRetry,
-    BluetoothLegacyAdvertisingRecurringRunner, BluetoothLegacyAdvertisingRecurringRunnerStep,
+    BluetoothLegacyAdvertisingActiveFault, BluetoothLegacyAdvertisingActiveResponsePending,
+    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingActiveStep,
+    BluetoothLegacyAdvertisingEventCpuOwned, BluetoothLegacyAdvertisingRecurringFault,
+    BluetoothLegacyAdvertisingRecurringRetry, BluetoothLegacyAdvertisingRecurringRunner,
+    BluetoothLegacyAdvertisingRecurringRunnerStep, BluetoothLegacyAdvertisingStopping,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
 };
 
@@ -39,6 +40,8 @@ where
 {
     Wait(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
     Active(BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>),
+    ActiveResponsePending(BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>),
+    Stopping(BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY>),
     Retryable(BluetoothLegacyAdvertisingRecurringRetry<'runtime, S, CAPACITY>),
     Fault(BluetoothLegacyAdvertisingRecurringFault<'runtime, S, CAPACITY>),
 }
@@ -58,6 +61,14 @@ where
             }
             BluetoothLegacyAdvertisingRecurringRunnerStep::Running(active) => {
                 return EmbassyBluetoothLegacyAdvertisingRecurringDrive::Active(active);
+            }
+            BluetoothLegacyAdvertisingRecurringRunnerStep::RunningResponsePending(pending) => {
+                return EmbassyBluetoothLegacyAdvertisingRecurringDrive::ActiveResponsePending(
+                    pending,
+                );
+            }
+            BluetoothLegacyAdvertisingRecurringRunnerStep::RunningStopping(stopping) => {
+                return EmbassyBluetoothLegacyAdvertisingRecurringDrive::Stopping(stopping);
             }
             BluetoothLegacyAdvertisingRecurringRunnerStep::Retryable(retry) => {
                 return EmbassyBluetoothLegacyAdvertisingRecurringDrive::Retryable(retry);

@@ -255,7 +255,7 @@ where
     _response: LeControllerResponsePending<'runtime, ()>,
 }
 
-enum BluetoothLegacyAdvertisingStopOrder<'runtime> {
+pub(crate) enum BluetoothLegacyAdvertisingStopOrder<'runtime> {
     Disable(LeControllerDeferredLegacyAdvertisingDisable<'runtime, ()>),
     Reset(LeControllerResetBarrier<'runtime, ()>),
 }
@@ -1367,6 +1367,42 @@ where
             },
             phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
         }
+    }
+
+    pub(crate) fn from_recurring_response_pending(
+        task: Task<'runtime, S, CAPACITY>,
+        response: LeControllerResponsePending<'runtime, ()>,
+        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+    ) -> BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY> {
+        let active = Self {
+            axes: BluetoothLegacyAdvertisingActiveAxes {
+                scheduler_item_address: running.scheduler_item_address(),
+                hardware_list_index: running.hardware_list_index(),
+                task,
+                order: BluetoothLegacyAdvertisingOrder::Detached,
+            },
+            phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
+        };
+        BluetoothLegacyAdvertisingActiveResponsePending {
+            transaction: response.map_owner(|()| active),
+        }
+    }
+
+    pub(crate) fn from_recurring_stopping(
+        task: Task<'runtime, S, CAPACITY>,
+        order: BluetoothLegacyAdvertisingStopOrder<'runtime>,
+        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+    ) -> BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY> {
+        let active = Self {
+            axes: BluetoothLegacyAdvertisingActiveAxes {
+                scheduler_item_address: running.scheduler_item_address(),
+                hardware_list_index: running.hardware_list_index(),
+                task,
+                order: BluetoothLegacyAdvertisingOrder::Detached,
+            },
+            phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
+        };
+        BluetoothLegacyAdvertisingStopping { active, order }
     }
 
     pub const fn scheduler_item_address(

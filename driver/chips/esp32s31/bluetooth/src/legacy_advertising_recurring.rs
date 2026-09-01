@@ -2,7 +2,13 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_bluetooth_hci::LeControllerCommandReady;
+use embassy_sync::blocking_mutex::raw::RawMutex;
+use open_esp_radio_bluetooth_hci::{
+    HciChannelError, HciEpochBound, HostToControllerFrame,
+    LeControllerActiveLegacyAdvertisingCommandRoute as HciActiveLegacyAdvertisingCommandRoute,
+    LeControllerClassifiedCommand, LeControllerCommandEndpoint, LeControllerCommandIntake,
+    LeControllerCommandReady, LeControllerResponsePending, LeControllerResponsePublication,
+};
 use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 
@@ -10,29 +16,38 @@ use crate::controller_start::{
     BluetoothLegacyAdvertisingRecurringCandidateFailure,
     BluetoothLegacyAdvertisingRecurringSequenceCompletion,
 };
+use crate::legacy_advertising_active::BluetoothLegacyAdvertisingStopOrder;
 use crate::{
     BluetoothControllerPublishedTaskService, BluetoothControllerSchedulerCurrentBeginError,
     BluetoothControllerSchedulerCurrentError, BluetoothControllerSchedulerCurrentPending,
-    BluetoothControllerSchedulerCurrentStep, BluetoothLegacyAdvertisingActiveSession,
-    BluetoothLegacyAdvertisingEmptySchedulerMergePrepared, BluetoothLegacyAdvertisingEventCpuOwned,
-    BluetoothLegacyAdvertisingEventPrepared, BluetoothLegacyAdvertisingNextEventScheduled,
+    BluetoothControllerSchedulerCurrentStep, BluetoothLegacyAdvertisingActiveResponsePending,
+    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingEmptySchedulerMergePrepared,
+    BluetoothLegacyAdvertisingEventCpuOwned, BluetoothLegacyAdvertisingEventPrepared,
+    BluetoothLegacyAdvertisingNextEventScheduled,
     BluetoothLegacyAdvertisingRecurringEventCandidate,
     BluetoothLegacyAdvertisingRecurringEventPreparationError,
     BluetoothLegacyAdvertisingRecurringPreSequence,
     BluetoothLegacyAdvertisingRecurringPreparationError,
     BluetoothLegacyAdvertisingRecurringPreparationFailure,
-    BluetoothLegacyAdvertisingSchedulerHeadPublished, BluetoothSchedulerEmptyListMergeError,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHeadPublicationError,
-    BluetoothSchedulerRunInterruptStorage,
+    BluetoothLegacyAdvertisingSchedulerHeadPublished, BluetoothLegacyAdvertisingStopping,
+    BluetoothSchedulerEmptyListMergeError, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
     BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>;
 type Order<'runtime> = LeControllerCommandReady<'runtime, ()>;
 
+enum BluetoothLegacyAdvertisingRecurringOrder<'runtime> {
+    Ready(Order<'runtime>),
+    ResponsePending(LeControllerResponsePending<'runtime, ()>),
+    Stopping(BluetoothLegacyAdvertisingStopOrder<'runtime>),
+    Detached,
+}
+
 struct BluetoothLegacyAdvertisingRecurringAxes<'runtime, S, const CAPACITY: usize> {
     task: Option<Task<'runtime, S, CAPACITY>>,
-    order: Order<'runtime>,
+    order: BluetoothLegacyAdvertisingRecurringOrder<'runtime>,
     previous_scheduler_item_address: BluetoothControllerSramAddress,
     hardware_list_index: BluetoothSchedulerHardwareListIndex,
 }
@@ -80,8 +95,107 @@ where
     Continue(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
     WaitControllerTime(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
     Running(BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>),
+    RunningResponsePending(BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>),
+    RunningStopping(BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY>),
     Retryable(BluetoothLegacyAdvertisingRecurringRetry<'runtime, S, CAPACITY>),
     Fault(BluetoothLegacyAdvertisingRecurringFault<'runtime, S, CAPACITY>),
+}
+
+/// HCI order currently retained beside a recurring radio graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingRecurringOrderState {
+    CommandReady,
+    ResponsePending,
+    Stopping,
+}
+
+/// One readiness observation for the recurring HCI order axis.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingRecurringOrderProgress {
+    Command,
+    Response,
+}
+
+/// Opaque owner for an impossible endpoint mismatch after recurring intake.
+#[must_use = "retain the complete command, recurring radio graph and order"]
+pub struct BluetoothLegacyAdvertisingRecurringCommandMismatch<
+    'runtime,
+    'command,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _command: LeControllerClassifiedCommand<
+        'runtime,
+        'command,
+        BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// Typed route for a command accepted while preparing the next event.
+#[must_use = "continue, publish, stop, or retain the exact mismatch owner"]
+pub enum BluetoothLegacyAdvertisingRecurringCommandRoute<
+    'runtime,
+    'command,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Continue(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
+    EndpointMismatch(
+        BluetoothLegacyAdvertisingRecurringCommandMismatch<'runtime, 'command, S, CAPACITY>,
+    ),
+}
+
+/// One non-blocking command intake while a successor event is being prepared.
+#[must_use = "route a command or retain the exact recurring runner"]
+pub enum BluetoothLegacyAdvertisingRecurringCommandIntake<
+    'runtime,
+    'command,
+    'buffer,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Routed {
+        route: BluetoothLegacyAdvertisingRecurringCommandRoute<'runtime, 'command, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Empty {
+        runner: BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    EndpointMismatch {
+        runner: BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Channel {
+        runner: BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+        error: HciChannelError,
+    },
+    NonCommand {
+        runner: BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>,
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
+    },
+}
+
+/// Result of publishing a recurring response without pausing radio progress.
+#[must_use = "retain the recurring runner and exact HCI response order"]
+pub enum BluetoothLegacyAdvertisingRecurringResponsePublication<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Published(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
+    Pending(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
+    Fault {
+        runner: BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>,
+        error: HciChannelError,
+    },
 }
 
 /// Finite reason a lossless recurring phase asks its supervisor to retry.
@@ -180,7 +294,7 @@ where
                 BluetoothLegacyAdvertisingRecurringRunner {
                     axes: Some(BluetoothLegacyAdvertisingRecurringAxes {
                         task: Some(task),
-                        order,
+                        order: BluetoothLegacyAdvertisingRecurringOrder::Ready(order),
                         previous_scheduler_item_address: address,
                         hardware_list_index: index,
                     }),
@@ -225,6 +339,279 @@ where
                 runner: self,
             },
         )
+    }
+
+    /// Current independently progressing HCI order beside the radio graph.
+    pub fn order_state(&self) -> BluetoothLegacyAdvertisingRecurringOrderState {
+        let axes = self
+            .axes
+            .as_ref()
+            .expect("a recurring runner retains its exact Controller axes");
+        match axes.order {
+            BluetoothLegacyAdvertisingRecurringOrder::Ready(_) => {
+                BluetoothLegacyAdvertisingRecurringOrderState::CommandReady
+            }
+            BluetoothLegacyAdvertisingRecurringOrder::ResponsePending(_) => {
+                BluetoothLegacyAdvertisingRecurringOrderState::ResponsePending
+            }
+            BluetoothLegacyAdvertisingRecurringOrder::Stopping(_) => {
+                BluetoothLegacyAdvertisingRecurringOrderState::Stopping
+            }
+            BluetoothLegacyAdvertisingRecurringOrder::Detached => {
+                unreachable!("a stored recurring runner cannot have detached HCI order")
+            }
+        }
+    }
+
+    /// Wait for the currently attached command or response order to progress.
+    pub async fn wait_order_progress<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<
+        BluetoothLegacyAdvertisingRecurringOrderProgress,
+        open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch,
+    > {
+        let axes = self
+            .axes
+            .as_ref()
+            .expect("a recurring runner retains its exact Controller axes");
+        match &axes.order {
+            BluetoothLegacyAdvertisingRecurringOrder::Ready(order) => {
+                controller.wait_command_available(order).await?;
+                Ok(BluetoothLegacyAdvertisingRecurringOrderProgress::Command)
+            }
+            BluetoothLegacyAdvertisingRecurringOrder::ResponsePending(response) => {
+                controller.wait_response_capacity(response).await?;
+                Ok(BluetoothLegacyAdvertisingRecurringOrderProgress::Response)
+            }
+            BluetoothLegacyAdvertisingRecurringOrder::Stopping(_) => {
+                unreachable!("a stopping recurrence has no independently progressing HCI wait")
+            }
+            BluetoothLegacyAdvertisingRecurringOrder::Detached => {
+                unreachable!("a stored recurring runner cannot have detached HCI order")
+            }
+        }
+    }
+
+    fn detach_ready_order(mut self) -> (Self, Order<'runtime>) {
+        let axes = self
+            .axes
+            .as_mut()
+            .expect("a recurring runner retains its exact Controller axes");
+        let order = core::mem::replace(
+            &mut axes.order,
+            BluetoothLegacyAdvertisingRecurringOrder::Detached,
+        );
+        match order {
+            BluetoothLegacyAdvertisingRecurringOrder::Ready(order) => (self, order),
+            _ => unreachable!("only a command-ready recurrence can accept another command"),
+        }
+    }
+
+    fn attach_ready_order(mut self, order: Order<'runtime>) -> Self {
+        let axes = self
+            .axes
+            .as_mut()
+            .expect("a recurring runner retains its exact Controller axes");
+        match axes.order {
+            BluetoothLegacyAdvertisingRecurringOrder::Detached => {
+                axes.order = BluetoothLegacyAdvertisingRecurringOrder::Ready(order);
+                self
+            }
+            _ => unreachable!("a recurring runner cannot acquire a second HCI order"),
+        }
+    }
+
+    fn attach_response(mut self, response: LeControllerResponsePending<'runtime, ()>) -> Self {
+        let axes = self
+            .axes
+            .as_mut()
+            .expect("a recurring runner retains its exact Controller axes");
+        match axes.order {
+            BluetoothLegacyAdvertisingRecurringOrder::Detached => {
+                axes.order = BluetoothLegacyAdvertisingRecurringOrder::ResponsePending(response);
+                self
+            }
+            _ => unreachable!("a recurring runner cannot acquire a second HCI order"),
+        }
+    }
+
+    fn attach_stopping(mut self, order: BluetoothLegacyAdvertisingStopOrder<'runtime>) -> Self {
+        let axes = self
+            .axes
+            .as_mut()
+            .expect("a recurring runner retains its exact Controller axes");
+        match axes.order {
+            BluetoothLegacyAdvertisingRecurringOrder::Detached => {
+                axes.order = BluetoothLegacyAdvertisingRecurringOrder::Stopping(order);
+                self
+            }
+            _ => unreachable!("a recurring runner cannot acquire a second HCI order"),
+        }
+    }
+
+    /// Consume and route at most one command without advancing recurrence.
+    pub fn try_route_controller_command_with_buffer<
+        'command,
+        'buffer,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &mut LeControllerCommandEndpoint<
+            'command,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        buffer: &'buffer mut [u8],
+    ) -> BluetoothLegacyAdvertisingRecurringCommandIntake<'runtime, 'command, 'buffer, S, CAPACITY>
+    {
+        let (runner, order) = self.detach_ready_order();
+        let ready = order.map_owner(|()| runner);
+        match controller.try_receive_classified_command_with_buffer(ready, buffer) {
+            LeControllerCommandIntake::Command { command, buffer } => {
+                let route =
+                    match controller.route_active_legacy_advertising_classified_command(command) {
+                        HciActiveLegacyAdvertisingCommandRoute::ResponsePending(response) => {
+                            let (runner, response) = response.into_parts();
+                            BluetoothLegacyAdvertisingRecurringCommandRoute::Continue(
+                                runner.attach_response(response),
+                            )
+                        }
+                        HciActiveLegacyAdvertisingCommandRoute::Disable(deferred) => {
+                            let (runner, deferred) = deferred.into_parts();
+                            BluetoothLegacyAdvertisingRecurringCommandRoute::Continue(
+                                runner.attach_stopping(
+                                    BluetoothLegacyAdvertisingStopOrder::Disable(deferred),
+                                ),
+                            )
+                        }
+                        HciActiveLegacyAdvertisingCommandRoute::ResetBarrier(barrier) => {
+                            let (runner, barrier) = barrier.into_parts();
+                            BluetoothLegacyAdvertisingRecurringCommandRoute::Continue(
+                                runner.attach_stopping(BluetoothLegacyAdvertisingStopOrder::Reset(
+                                    barrier,
+                                )),
+                            )
+                        }
+                        HciActiveLegacyAdvertisingCommandRoute::EndpointMismatch(command) => {
+                            BluetoothLegacyAdvertisingRecurringCommandRoute::EndpointMismatch(
+                                BluetoothLegacyAdvertisingRecurringCommandMismatch {
+                                    _command: command,
+                                },
+                            )
+                        }
+                    };
+                BluetoothLegacyAdvertisingRecurringCommandIntake::Routed { route, buffer }
+            }
+            LeControllerCommandIntake::Empty { ready, buffer } => {
+                let (runner, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingRecurringCommandIntake::Empty {
+                    runner: runner.attach_ready_order(order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::EndpointMismatch { ready, buffer } => {
+                let (runner, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingRecurringCommandIntake::EndpointMismatch {
+                    runner: runner.attach_ready_order(order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::Channel {
+                ready,
+                buffer,
+                error,
+            } => {
+                let (runner, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingRecurringCommandIntake::Channel {
+                    runner: runner.attach_ready_order(order),
+                    buffer,
+                    error,
+                }
+            }
+            LeControllerCommandIntake::NonCommand { ready, frame } => {
+                let (runner, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingRecurringCommandIntake::NonCommand {
+                    runner: runner.attach_ready_order(order),
+                    frame,
+                }
+            }
+        }
+    }
+
+    /// Publish a pending command response while retaining the recurrence.
+    pub fn try_publish_response<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        mut self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothLegacyAdvertisingRecurringResponsePublication<'runtime, S, CAPACITY> {
+        let axes = self
+            .axes
+            .as_mut()
+            .expect("a recurring runner retains its exact Controller axes");
+        let response = core::mem::replace(
+            &mut axes.order,
+            BluetoothLegacyAdvertisingRecurringOrder::Detached,
+        );
+        let BluetoothLegacyAdvertisingRecurringOrder::ResponsePending(response) = response else {
+            unreachable!("only a response-pending recurrence can publish a response")
+        };
+        match response.map_owner(|()| self).try_publish(controller) {
+            LeControllerResponsePublication::Published(ready) => {
+                let (runner, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingRecurringResponsePublication::Published(
+                    runner.attach_ready_order(order),
+                )
+            }
+            LeControllerResponsePublication::Pending(response) => {
+                let (runner, response) = response.into_parts();
+                BluetoothLegacyAdvertisingRecurringResponsePublication::Pending(
+                    runner.attach_response(response),
+                )
+            }
+            LeControllerResponsePublication::EndpointMismatch(response) => {
+                let (runner, response) = response.into_parts();
+                BluetoothLegacyAdvertisingRecurringResponsePublication::EndpointMismatch(
+                    runner.attach_response(response),
+                )
+            }
+            LeControllerResponsePublication::Fault {
+                pending: response,
+                error,
+            } => {
+                let (runner, response) = response.into_parts();
+                BluetoothLegacyAdvertisingRecurringResponsePublication::Fault {
+                    runner: runner.attach_response(response),
+                    error,
+                }
+            }
+        }
     }
 
     /// Execute exactly one recurrence edge.
@@ -574,16 +961,38 @@ where
                     .expect("a published recurrence retains its task service")
                     .start_legacy_advertising_scheduler(head)
                 {
-                    Ok(running) => BluetoothLegacyAdvertisingRecurringRunnerStep::Running(
-                        BluetoothLegacyAdvertisingActiveSession::from_recurring_running(
-                            axes
-                                .task
-                                .take()
-                                .expect("the running recurrence consumes its task service"),
-                            axes.order,
-                            running,
-                        ),
-                    ),
+                    Ok(running) => {
+                        let task = axes
+                            .task
+                            .take()
+                            .expect("the running recurrence consumes its task service");
+                        match axes.order {
+                            BluetoothLegacyAdvertisingRecurringOrder::Ready(order) => {
+                                BluetoothLegacyAdvertisingRecurringRunnerStep::Running(
+                                    BluetoothLegacyAdvertisingActiveSession::from_recurring_running(
+                                        task, order, running,
+                                    ),
+                                )
+                            }
+                            BluetoothLegacyAdvertisingRecurringOrder::ResponsePending(response) => {
+                                BluetoothLegacyAdvertisingRecurringRunnerStep::RunningResponsePending(
+                                    BluetoothLegacyAdvertisingActiveSession::from_recurring_response_pending(
+                                        task, response, running,
+                                    ),
+                                )
+                            }
+                            BluetoothLegacyAdvertisingRecurringOrder::Stopping(order) => {
+                                BluetoothLegacyAdvertisingRecurringRunnerStep::RunningStopping(
+                                    BluetoothLegacyAdvertisingActiveSession::from_recurring_stopping(
+                                        task, order, running,
+                                    ),
+                                )
+                            }
+                            BluetoothLegacyAdvertisingRecurringOrder::Detached => {
+                                unreachable!("a running recurrence cannot have detached HCI order")
+                            }
+                        }
+                    }
                     Err(failure) => {
                         let (error, head) = failure.into_parts();
                         Self::from_parts(

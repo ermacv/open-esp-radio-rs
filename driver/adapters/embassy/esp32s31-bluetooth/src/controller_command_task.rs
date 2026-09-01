@@ -47,10 +47,15 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothLegacyAdvertisingDisableResponsePublication, BluetoothLegacyAdvertisingDisableRestore,
     BluetoothLegacyAdvertisingDisableRestoreStep, BluetoothLegacyAdvertisingEventCpuOwned,
     BluetoothLegacyAdvertisingFirstRunnerFailure, BluetoothLegacyAdvertisingFirstRunnerRetry,
-    BluetoothLegacyAdvertisingRecurringFault, BluetoothLegacyAdvertisingRecurringRetry,
-    BluetoothLegacyAdvertisingRecurringRunner, BluetoothLegacyAdvertisingRecurringStart,
-    BluetoothLegacyAdvertisingResetCompletion, BluetoothLegacyAdvertisingResetCompletionReady,
-    BluetoothLegacyAdvertisingResetResponsePending,
+    BluetoothLegacyAdvertisingRecurringCommandIntake,
+    BluetoothLegacyAdvertisingRecurringCommandMismatch,
+    BluetoothLegacyAdvertisingRecurringCommandRoute, BluetoothLegacyAdvertisingRecurringFault,
+    BluetoothLegacyAdvertisingRecurringOrderProgress,
+    BluetoothLegacyAdvertisingRecurringOrderState,
+    BluetoothLegacyAdvertisingRecurringResponsePublication,
+    BluetoothLegacyAdvertisingRecurringRetry, BluetoothLegacyAdvertisingRecurringRunner,
+    BluetoothLegacyAdvertisingRecurringStart, BluetoothLegacyAdvertisingResetCompletion,
+    BluetoothLegacyAdvertisingResetCompletionReady, BluetoothLegacyAdvertisingResetResponsePending,
     BluetoothLegacyAdvertisingResetResponsePublication, BluetoothLegacyAdvertisingResetRestore,
     BluetoothLegacyAdvertisingResetRestoreStep, BluetoothLegacyAdvertisingResponsePendingSession,
     BluetoothLegacyAdvertisingResponsePublication, BluetoothLegacyAdvertisingStopping,
@@ -435,6 +440,10 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     LegacyAdvertisingActiveCommandEndpointMismatch(
         BluetoothLegacyAdvertisingActiveCommandMismatch<'runtime, 'epoch, S, CAPACITY>,
     ),
+    /// Recurring preparation intake found an impossible post-classification mismatch.
+    LegacyAdvertisingRecurringCommandEndpointMismatch(
+        BluetoothLegacyAdvertisingRecurringCommandMismatch<'runtime, 'epoch, S, CAPACITY>,
+    ),
     /// Active radio failed while its response axis was still pending.
     PendingRadioFault(
         BluetoothDtmActiveSessionFault<
@@ -788,6 +797,22 @@ where
                 self.store_retained_state(
                     phase,
                     EmbassyBluetoothControllerCommandState::LegacyAdvertisingActive(active),
+                );
+                None
+            }
+            EmbassyBluetoothLegacyAdvertisingRecurringDrive::ActiveResponsePending(pending) => {
+                self.store_retained_state(
+                    phase,
+                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingActiveResponse(
+                        pending,
+                    ),
+                );
+                None
+            }
+            EmbassyBluetoothLegacyAdvertisingRecurringDrive::Stopping(stopping) => {
+                self.store_retained_state(
+                    phase,
+                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingStopping(stopping),
                 );
                 None
             }
@@ -1696,18 +1721,177 @@ where
                         EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(_)
                     ) {
                         let EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
-                            _runner,
+                            runner,
                         ) = self.owner.current()
                         else {
                             unreachable!("the selected recurring wait did not change")
                         };
-                        recheck.wait_until_absolute_recheck().await;
+                        let order_progress = match runner.order_state() {
+                            BluetoothLegacyAdvertisingRecurringOrderState::Stopping => {
+                                recheck.wait_until_absolute_recheck().await;
+                                None
+                            }
+                            BluetoothLegacyAdvertisingRecurringOrderState::CommandReady
+                            | BluetoothLegacyAdvertisingRecurringOrderState::ResponsePending => {
+                                match select(
+                                    recheck.wait_until_absolute_recheck(),
+                                    runner.wait_order_progress(controller),
+                                )
+                                .await
+                                {
+                                    Either::First(()) => None,
+                                    Either::Second(Ok(progress)) => Some(progress),
+                                    Either::Second(Err(_)) => {
+                                        return self.retain_boundary(
+                                            EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                        );
+                                    }
+                                }
+                            }
+                        };
                         let EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
                             runner,
                         ) = self.owner.take()
                         else {
                             unreachable!("the awaited recurring owner did not change")
                         };
+                        if let Some(progress) = order_progress {
+                            match progress {
+                                BluetoothLegacyAdvertisingRecurringOrderProgress::Command => {
+                                    let buffer = packet.take().expect(
+                                        "recurring command intake retains its sole scratch buffer",
+                                    );
+                                    match runner.try_route_controller_command_with_buffer(
+                                        controller, buffer,
+                                    ) {
+                                        BluetoothLegacyAdvertisingRecurringCommandIntake::Routed {
+                                            route,
+                                            buffer,
+                                        } => {
+                                            packet = Some(buffer);
+                                            match route {
+                                                BluetoothLegacyAdvertisingRecurringCommandRoute::Continue(
+                                                    runner,
+                                                ) => self.store_retained_state(
+                                                    EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                        runner,
+                                                    ),
+                                                ),
+                                                BluetoothLegacyAdvertisingRecurringCommandRoute::EndpointMismatch(
+                                                    mismatch,
+                                                ) => {
+                                                    return self.terminal_boundary(
+                                                        EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                        EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringCommandEndpointMismatch(
+                                                            mismatch,
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        BluetoothLegacyAdvertisingRecurringCommandIntake::Empty {
+                                            runner,
+                                            buffer,
+                                        } => {
+                                            packet = Some(buffer);
+                                            self.store_retained_state(
+                                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                    runner,
+                                                ),
+                                            );
+                                        }
+                                        BluetoothLegacyAdvertisingRecurringCommandIntake::EndpointMismatch {
+                                            runner,
+                                            buffer: _,
+                                        } => {
+                                            self.store_retained_state(
+                                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                    runner,
+                                                ),
+                                            );
+                                            return self.retain_boundary(
+                                                EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                            );
+                                        }
+                                        BluetoothLegacyAdvertisingRecurringCommandIntake::Channel {
+                                            runner,
+                                            buffer: _,
+                                            error,
+                                        } => {
+                                            self.store_retained_state(
+                                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                    runner,
+                                                ),
+                                            );
+                                            return self.retain_boundary(
+                                                EmbassyBluetoothControllerCommandBoundary::HciFault(error),
+                                            );
+                                        }
+                                        BluetoothLegacyAdvertisingRecurringCommandIntake::NonCommand {
+                                            runner,
+                                            frame,
+                                        } => {
+                                            self.store_retained_state(
+                                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                    runner,
+                                                ),
+                                            );
+                                            return self.retain_boundary(
+                                                EmbassyBluetoothControllerCommandBoundary::NonCommand(frame),
+                                            );
+                                        }
+                                    }
+                                }
+                                BluetoothLegacyAdvertisingRecurringOrderProgress::Response => {
+                                    match runner.try_publish_response(controller) {
+                                        BluetoothLegacyAdvertisingRecurringResponsePublication::Published(
+                                            runner,
+                                        )
+                                        | BluetoothLegacyAdvertisingRecurringResponsePublication::Pending(
+                                            runner,
+                                        ) => self.store_retained_state(
+                                            EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                            EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                runner,
+                                            ),
+                                        ),
+                                        BluetoothLegacyAdvertisingRecurringResponsePublication::EndpointMismatch(
+                                            runner,
+                                        ) => {
+                                            self.store_retained_state(
+                                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                    runner,
+                                                ),
+                                            );
+                                            return self.retain_boundary(
+                                                EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                            );
+                                        }
+                                        BluetoothLegacyAdvertisingRecurringResponsePublication::Fault {
+                                            runner,
+                                            error,
+                                        } => {
+                                            self.store_retained_state(
+                                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive,
+                                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingRecurring(
+                                                    runner,
+                                                ),
+                                            );
+                                            return self.retain_boundary(
+                                                EmbassyBluetoothControllerCommandBoundary::HciFault(error),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         if let Some(boundary) = self.store_legacy_advertising_recurring_drive(
                             drive_legacy_advertising_recurring_ready(runner),
                         ) {

@@ -115,13 +115,14 @@ impl BluetoothPassiveScanSchedulerAllocationConfig {
 /// One bounded Link Layer PDU copied from a completed scanner packet.
 ///
 /// The vendor packet prefix, producer sentinel and receive epoch remain
-/// private. Callers receive only the on-air advertising-channel PDU and its
-/// signed receive-strength sample.
+/// private. Callers receive only the on-air advertising-channel PDU, its
+/// signed receive-strength sample and a typed controller-time observation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPassiveScanReceivedPdu {
     bytes: [u8; BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2],
     length: u16,
     rssi_dbm: i8,
+    captured_time: BluetoothLePacketCapturedTime,
 }
 
 impl BluetoothPassiveScanReceivedPdu {
@@ -143,6 +144,33 @@ impl BluetoothPassiveScanReceivedPdu {
     /// Signed receive-strength byte supplied by the controller packet prefix.
     pub const fn rssi_dbm(&self) -> i8 {
         self.rssi_dbm
+    }
+
+    /// Controller-time observation captured by hardware for this exact PDU.
+    pub const fn captured_time(&self) -> BluetoothLePacketCapturedTime {
+        self.captured_time
+    }
+}
+
+/// Opaque raw-controller-time observation attached to one received LE packet.
+///
+/// The value is not scheduler time and is not yet the on-air packet start. It
+/// can enter only the chip-private epoch and PHY-calibration operation before
+/// protocol timing consumes it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLePacketCapturedTime(u32);
+
+impl BluetoothLePacketCapturedTime {
+    /// Construct the typed value at the private SRAM descriptor boundary.
+    #[doc(hidden)]
+    pub const fn from_controller_sram_word(word: u32) -> Self {
+        Self(word)
+    }
+
+    /// Borrow the wrapping tick position for the chip-private epoch projector.
+    #[doc(hidden)]
+    pub const fn wrapping_controller_ticks(self) -> u32 {
+        self.0
     }
 }
 
@@ -314,6 +342,7 @@ struct BluetoothPassiveScanRxPacketStorage {
 impl BluetoothPassiveScanRxPacketStorage {
     const CAPACITY_WORD: usize = 1;
     const RESULT_WORD: usize = 3;
+    const CAPTURED_TIME_WORD: usize = 4;
     const EPOCH_WORD: usize = 6;
     const RESULT_REARM_SENTINEL: u32 = 0x00ff_ffff;
     const EPOCH_REARM_SENTINEL: u32 = 0x0000_ffff;
@@ -363,6 +392,9 @@ impl BluetoothPassiveScanRxPacketStorage {
             bytes,
             length: length as u16,
             rssi_dbm: self.read_byte(BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 15) as i8,
+            captured_time: BluetoothLePacketCapturedTime::from_controller_sram_word(
+                self.words[Self::CAPTURED_TIME_WORD].get(),
+            ),
         })
     }
 
@@ -372,10 +404,11 @@ impl BluetoothPassiveScanRxPacketStorage {
     }
 
     #[cfg(test)]
-    fn emulate_hardware_receive(&self, pdu: &[u8], rssi_dbm: i8) {
+    fn emulate_hardware_receive(&self, pdu: &[u8], rssi_dbm: i8, captured_time: u32) {
         assert!((2..=BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2).contains(&pdu.len()));
         assert_eq!(usize::from(pdu[1]) + 2, pdu.len());
         self.words[Self::RESULT_WORD].set(0);
+        self.words[Self::CAPTURED_TIME_WORD].set(captured_time);
         self.words[Self::EPOCH_WORD].set(0);
         for (offset, byte) in pdu.iter().copied().enumerate() {
             self.write_byte(
@@ -1759,7 +1792,9 @@ mod tests {
         let owner = model_graph(0x2f00_1000);
         let storage = owner.storage.as_ref().get_ref();
         let pdu = [0x02, 6, 1, 2, 3, 4, 5, 6];
-        storage.nodes[0].packet.emulate_hardware_receive(&pdu, -47);
+        storage.nodes[0]
+            .packet
+            .emulate_hardware_receive(&pdu, -47, 0x1234_5678);
         storage.nodes[0].header.emulate_hardware_completion();
 
         let batch = storage
@@ -1776,9 +1811,11 @@ mod tests {
     fn completed_receive_chain_rejects_a_gap_before_packet_access() {
         let owner = model_graph(0x2f00_2000);
         let storage = owner.storage.as_ref().get_ref();
-        storage.nodes[1]
-            .packet
-            .emulate_hardware_receive(&[0x02, 6, 1, 2, 3, 4, 5, 6], -20);
+        storage.nodes[1].packet.emulate_hardware_receive(
+            &[0x02, 6, 1, 2, 3, 4, 5, 6],
+            -20,
+            0x2345_6789,
+        );
         storage.nodes[1].header.emulate_hardware_completion();
 
         assert_eq!(

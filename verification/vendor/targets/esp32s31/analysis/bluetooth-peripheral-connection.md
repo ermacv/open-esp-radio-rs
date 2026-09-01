@@ -45,11 +45,17 @@ part of the Rust identity transition.
 The separate `ble-connectable-advertising-response` scope closes the causal
 path into that transition. Current `ble_lll_adv_rx_process` reads the received
 packet owner, passes its PDU at the reviewed advertising-packet boundary and
-converts the descriptor's captured time word with
+converts the descriptor's captured time word at packet-prefix offset `+0x10`
+with
 `ble_phy_get_actual_tx_time`. That helper first converts controller ticks to
 microseconds, then subtracts two PHY-mode-indexed calibration terms. The
 result is an on-air packet-start time, not a packet-end time and not an
 ordinary observation of controller `now()`.
+
+The controller-memory codec now copies that word into an opaque
+`BluetoothLePacketCapturedTime` beside the received PDU and RSSI. It exposes
+no field mask or scheduler-time claim: conversion still requires the retained
+S31 scheduler epoch and initialized PHY calibration in the chip controller.
 
 The calibration is not implicit zero state. Current `ble_phy_module_init`
 copies three separately owned tables into the BLE PHY environment before the

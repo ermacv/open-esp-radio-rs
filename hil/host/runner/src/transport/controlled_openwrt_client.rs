@@ -5,7 +5,7 @@ use std::{
     net::Ipv4Addr,
     process::{Command, Stdio},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use zeroize::{Zeroize, Zeroizing};
@@ -42,6 +42,12 @@ pub(crate) struct ControlledOpenWrtClient {
     fixture: OpenWrtConfig,
     forward_address: Option<Ipv4Addr>,
     restored: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct OpenWrtClientFixturePreparation {
+    pub(crate) wireless_restarted: bool,
+    pub(crate) elapsed_millis: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -92,6 +98,7 @@ pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) 
          command -v ip >/dev/null; \
          command -v ping >/dev/null; \
          command -v wpa_supplicant >/dev/null; \
+         command -v wifi >/dev/null; \
          command -v nft >/dev/null; \
          command -v fw4 >/dev/null; \
          test \"$(sysctl -n net.ipv4.ip_forward)\" = 1; \
@@ -116,6 +123,34 @@ pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) 
 }
 
 impl ControlledOpenWrtClient {
+    /// Rebuild the fixture's complete mac80211/mt76 radio epoch before AP HIL.
+    ///
+    /// Repeated creation and destruction of the scoped managed interface can
+    /// leave the fixture accepting every BA32 while inserting milliseconds of
+    /// unexplained idle time between aggregates. Neither retry counters nor
+    /// driver recovery logs expose that state. A fresh OpenWrt wireless epoch
+    /// is therefore part of the controlled-client measurement boundary, just
+    /// like resetting the DUT is part of the target boundary.
+    pub(crate) fn prepare_fixture(
+        access_point: &AccessPointConfig,
+        fixture: &OpenWrtConfig,
+    ) -> Result<OpenWrtClientFixturePreparation> {
+        let started = Instant::now();
+        let script = prepare_fixture_script(access_point, fixture);
+        let output = ssh(fixture, &script)?;
+        if !output.status.success() {
+            return Err(format!(
+                "cannot establish a fresh OpenWrt AP-client radio epoch: {}",
+                String::from_utf8_lossy(&output.stderr).trim(),
+            )
+            .into());
+        }
+        Ok(OpenWrtClientFixturePreparation {
+            wireless_restarted: true,
+            elapsed_millis: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+        })
+    }
+
     pub(crate) fn connect(
         access_point: &AccessPointConfig,
         fixture: &OpenWrtConfig,
@@ -304,6 +339,33 @@ impl ControlledOpenWrtClient {
         let fixture = self.fixture.clone();
         thread::spawn(move || probe(&fixture, target, duration))
     }
+}
+
+fn prepare_fixture_script(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> String {
+    let cleanup = cleanup_forwarding_script();
+    format!(
+        r#"set -eu; \
+         {cleanup}; \
+         if test -f {PID_FILE}; then kill $(cat {PID_FILE}) 2>/dev/null || true; fi; \
+         iw dev {INTERFACE} del 2>/dev/null || true; \
+         rm -f {PID_FILE} {CONFIG_FILE}; \
+         wifi down; \
+         sleep 2; \
+         wifi up; \
+         ready=0; \
+         for attempt in $(seq 1 20); do \
+             if iw dev {} info >/dev/null 2>&1; then ready=1; break; fi; \
+             sleep 1; \
+         done; \
+         test "$ready" = 1; \
+         info=$(iw dev {} info); \
+         printf '%s\n' "$info" | grep -q 'channel {} '; \
+         printf '%s\n' "$info" | grep -q 'width: {} MHz'"#,
+        fixture.wireless_interface,
+        fixture.wireless_interface,
+        access_point.channel(),
+        access_point.bandwidth_mhz(),
+    )
 }
 
 impl OpenWrtClientLinkObservation {
@@ -644,6 +706,33 @@ mod tests {
             tagged_ipv4("forward_address=192.168.178.2\n", "forward_address").unwrap(),
             Ipv4Addr::new(192, 168, 178, 2),
         );
+    }
+
+    #[test]
+    fn fixture_preparation_rebuilds_and_revalidates_the_radio_epoch() {
+        let lab = crate::transport::lab_config::LabConfig::for_test();
+        let crate::transport::lab_config::StationFixtureConfig::OpenWrt(fixture) =
+            &lab.station_fixture
+        else {
+            panic!("test lab must use the OpenWrt fixture");
+        };
+        let script = prepare_fixture_script(&lab.access_point, fixture);
+
+        let cleanup = script
+            .find("delete table inet open_radio_hil")
+            .expect("fixture forwarding must be removed");
+        let down = script
+            .find("wifi down")
+            .expect("the old wireless epoch must be stopped");
+        let up = script
+            .find("wifi up")
+            .expect("a new wireless epoch must be started");
+        let ready = script
+            .find("iw dev phy0-ap0 info")
+            .expect("the configured interface must become ready");
+        assert!(cleanup < down && down < up && up < ready);
+        assert!(script.contains("grep -q 'channel 6 '"));
+        assert!(script.contains("grep -q 'width: 40 MHz'"));
     }
 
     #[test]

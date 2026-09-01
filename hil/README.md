@@ -65,6 +65,16 @@ flows use the local IPv4 route selected for the discovered target. The
 upstream FRITZ!Box supplies Internet access and optional HE20 compatibility
 smoke tests, but is not an exact-delivery fixture.
 
+An AP scenario that uses the controlled OpenWrt client starts from a fresh
+OpenWrt wireless epoch. The runner removes its scoped forwarding/VIF state,
+restarts the OpenWrt wireless subsystem, and verifies the requested channel
+and width before resetting the DUT. This is part of measurement isolation:
+mt76/mac80211 can otherwise retain a pathological state across many virtual
+client lifecycles in which every BA32 succeeds and all retry/error counters
+remain zero, but several milliseconds of idle time appear between aggregates.
+The AP report records whether this fixture preparation ran and how long it
+took.
+
 The Linux helper is installed separately because its narrowly scoped AP,
 managed-client, monitor and USB-reset operations require root privileges:
 

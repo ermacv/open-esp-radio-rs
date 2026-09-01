@@ -35,8 +35,8 @@ use crate::{
     traffic::tx_traffic::{Burst, receive_bursts},
     transport::controlled_client::ControlledClient,
     transport::controlled_openwrt_client::{
-        ControlledOpenWrtClient, OpenWrtClientLinkEvidence, OpenWrtClientLinkObservation,
-        SecondaryClientProbeEvidence,
+        ControlledOpenWrtClient, OpenWrtClientFixturePreparation, OpenWrtClientLinkEvidence,
+        OpenWrtClientLinkObservation, SecondaryClientProbeEvidence,
     },
     transport::lab_config::{LabConfig, StationFixtureConfig},
     transport::local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
@@ -117,6 +117,7 @@ impl ConnectedClients {
 #[derive(Serialize)]
 struct AccessPointReport {
     schema: u8,
+    fixture_preparation: Option<OpenWrtClientFixturePreparation>,
     boots: Vec<BootReport>,
 }
 
@@ -249,8 +250,22 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
         }
     }
     fs::create_dir_all(output)?;
+    let minimum_clients = config.criteria.minimum_concurrent_ap_clients.unwrap_or(1);
+    let fixture_preparation = if config.client == AccessPointClient::OpenWrt || minimum_clients >= 2
+    {
+        let StationFixtureConfig::OpenWrt(fixture) = &lab.station_fixture else {
+            return Err("AP controlled OpenWrt client requires the OpenWrt station fixture".into());
+        };
+        Some(ControlledOpenWrtClient::prepare_fixture(
+            &lab.access_point,
+            fixture,
+        )?)
+    } else {
+        None
+    };
     let mut report = AccessPointReport {
-        schema: 3,
+        schema: 4,
+        fixture_preparation,
         boots: Vec::with_capacity(usize::from(config.boots)),
     };
     for boot in 0..config.boots {
@@ -2519,7 +2534,8 @@ mod tests {
     #[test]
     fn performance_cycle_omits_unavailable_driver_observation() {
         let report = AccessPointReport {
-            schema: 3,
+            schema: 4,
+            fixture_preparation: None,
             boots: vec![BootReport {
                 boot: 0,
                 cycles: vec![CycleReport {
@@ -2535,7 +2551,8 @@ mod tests {
         };
 
         let json = serde_json::to_value(report).unwrap();
-        assert_eq!(json["schema"], 3);
+        assert_eq!(json["schema"], 4);
+        assert!(json["fixture_preparation"].is_null());
         assert!(json["boots"][0]["cycles"][0].get("access_point").is_none());
     }
 }

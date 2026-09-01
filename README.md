@@ -14,12 +14,14 @@ static policy, and isolated DMA/IRQ semantic leaves plus a pure fail-closed MAC
 control model. It now exposes serialized, route-detached polled ED and CCA
 commands with exact selected `ED_DONE` recovery; their RSS result is explicitly
 uncalibrated. PHY/RF qualification, active IRQ, RX/TX dataplanes and operational
-MAC readiness remain incomplete. ESP32-C5 and operational Bluetooth/BLE support
-remain future work. The ESP32-S31 Bluetooth tree now also carries an explicit
+MAC readiness remain incomplete. ESP32-C5 and on-air-qualified Bluetooth/BLE
+support remain future work. The ESP32-S31 Bluetooth tree now also carries an explicit
 [BLE feature frontier](driver/chips/esp32s31/bluetooth/FEATURES.md) and a
-portable bounded asynchronous HCI transport; neither is an on-air readiness
-claim. Its closed Host-bootstrap command table rejects every Link-Layer
-operation until a real controller backend owns it.
+portable bounded asynchronous HCI transport. Its source-connected restricted
+passive LE scanner accepts standard `bt-hci` commands and emits standard legacy
+advertising reports; this is target-build and host-model evidence, not an
+on-air readiness claim. The standalone Host-bootstrap table still rejects
+Link-Layer operations when no chip Controller backend owns them.
 Host tests also run the released Trouble Runner through the same raw Controller
 endpoint and bootstrap state exposed to a future hardware session runner; this
 is software integration evidence, not an ESP32-S31 task or hardware capability.

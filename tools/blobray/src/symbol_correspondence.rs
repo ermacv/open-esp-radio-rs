@@ -20,7 +20,7 @@ use open_radio_vendor_contracts::ArtifactIdentity;
 
 use crate::{Result, artifact, artifact_occurrence};
 
-pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 6;
+pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 7;
 const MINIMUM_COMMON_OBFUSCATION_TOKENS: usize = 64;
 const MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION: u32 = 900_000;
 const MINIMUM_MEMBER_ORDER_FUNCTION_SUPPORT: usize = 64;
@@ -262,7 +262,12 @@ pub(crate) fn correlate(
         obfuscation_epoch.automatic_matches,
         &mut correspondences,
     )?;
-    refine_ambiguous_matches(&from_symbols, &to_symbols, &mut correspondences);
+    refine_function_matches_by_call_graph(
+        &from_symbols,
+        &to_symbols,
+        &to_identity,
+        &mut correspondences,
+    )?;
     correspondences.sort_by(|left, right| left.from.cmp(&right.from));
     let mut summary = SymbolCorrespondenceSummary::default();
     for correspondence in &correspondences {
@@ -273,9 +278,7 @@ pub(crate) fn correlate(
                     usize::from(correspondence.basis.contains("stable-symbol-name"));
                 summary.token_stable +=
                     usize::from(correspondence.basis.contains("stable-obfuscation-token"));
-                summary.graph_refined += usize::from(
-                    correspondence.basis == "exact-normalized-body-and-mapped-call-graph",
-                );
+                summary.graph_refined += usize::from(correspondence.basis.contains("mapped-call"));
             }
             SymbolCorrespondenceStatus::Ambiguous => summary.ambiguous += 1,
             SymbolCorrespondenceStatus::Unmatched => summary.unmatched += 1,
@@ -302,7 +305,7 @@ pub(crate) fn correlate(
     Ok(SymbolCorrespondenceReport {
         schema_version: SYMBOL_CORRESPONDENCE_SCHEMA,
         command: "symbols correlate",
-        method: "archive-epoch-gated-stable-identity-or-sha256-relocatable-body-and-relocation-shape-v5",
+        method: "archive-epoch-gated-stable-identity-or-sha256-relocatable-body-relocations-and-one-to-one-call-sites-v6",
         from: from_artifact,
         to: to_artifact,
         obfuscation_epoch,
@@ -524,11 +527,12 @@ fn obfuscation_epoch_evidence(
     }
 }
 
-fn refine_ambiguous_matches(
+fn refine_function_matches_by_call_graph(
     from_symbols: &[artifact::ArtifactSymbolDefinition],
     to_symbols: &[artifact::ArtifactSymbolDefinition],
+    to_artifact: &ArtifactIdentity,
     correspondences: &mut [SymbolCorrespondence],
-) {
+) -> Result<()> {
     let from_by_name = unique_symbols_by_name(from_symbols);
     let to_by_name = unique_symbols_by_name(to_symbols);
     let mut changed = true;
@@ -539,6 +543,8 @@ fn refine_ambiguous_matches(
             .filter(|correspondence| {
                 correspondence.status == SymbolCorrespondenceStatus::Unique
                     && correspondence.candidates.len() == 1
+                    && from_by_name.contains_key(correspondence.from.symbol.as_str())
+                    && to_by_name.contains_key(correspondence.candidates[0].symbol.as_str())
             })
             .map(|correspondence| {
                 (
@@ -547,7 +553,7 @@ fn refine_ambiguous_matches(
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        let mut edge_votes = BTreeMap::<&str, Vec<&str>>::new();
+        let mut edge_votes = BTreeMap::<String, BTreeSet<String>>::new();
         for (from_name, to_name) in &mappings {
             let (Some(from), Some(to)) = (
                 from_by_name.get(from_name.as_str()),
@@ -562,28 +568,62 @@ fn refine_ambiguous_matches(
             }
             for (from_call, to_call) in from_calls.iter().zip(to_calls) {
                 edge_votes
-                    .entry(from_call.symbol.as_str())
+                    .entry(from_call.symbol.clone())
                     .or_default()
-                    .push(to_call.symbol.as_str());
+                    .insert(to_call.symbol.clone());
             }
         }
+        let edge_votes = unique_one_to_one_votes(edge_votes);
 
         for correspondence in correspondences.iter_mut().filter(|correspondence| {
-            correspondence.status == SymbolCorrespondenceStatus::Ambiguous
+            correspondence.status != SymbolCorrespondenceStatus::Unique
                 && !correspondence.basis.starts_with("conflicting-")
         }) {
             let Some(from) = from_by_name.get(correspondence.from.symbol.as_str()) else {
                 continue;
             };
+            if let Some(voted_target) = edge_votes.get(correspondence.from.symbol.as_str())
+                && let Some(target) = to_by_name.get(voted_target.as_str())
+            {
+                let target = function_document(target, to_artifact)?;
+                match correspondence.status {
+                    SymbolCorrespondenceStatus::Unmatched => {
+                        correspondence.status = SymbolCorrespondenceStatus::Unique;
+                        correspondence.basis = "unique-one-to-one-mapped-caller-call-site";
+                        correspondence.candidates = vec![target];
+                        changed = true;
+                        continue;
+                    }
+                    SymbolCorrespondenceStatus::Ambiguous
+                        if correspondence.candidates.contains(&target) =>
+                    {
+                        correspondence.status = SymbolCorrespondenceStatus::Unique;
+                        correspondence.basis =
+                            "exact-normalized-body-and-unique-one-to-one-mapped-caller-call-site";
+                        correspondence.candidates = vec![target];
+                        changed = true;
+                        continue;
+                    }
+                    SymbolCorrespondenceStatus::Ambiguous => {
+                        correspondence.basis =
+                            "conflicting-normalized-body-and-one-to-one-mapped-caller-call-site";
+                        correspondence.candidates.push(target);
+                        correspondence.candidates.sort();
+                        correspondence.candidates.dedup();
+                        continue;
+                    }
+                    SymbolCorrespondenceStatus::Unique => {
+                        unreachable!("unique correspondences are filtered above")
+                    }
+                }
+            }
+            if correspondence.status != SymbolCorrespondenceStatus::Ambiguous {
+                continue;
+            }
             let from_calls = call_relocations(from);
-            let voted_targets = edge_votes
-                .get(correspondence.from.symbol.as_str())
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            let has_graph_evidence = !voted_targets.is_empty()
-                || from_calls
-                    .iter()
-                    .any(|call| mappings.contains_key(call.symbol.as_str()));
+            let has_graph_evidence = from_calls
+                .iter()
+                .any(|call| mappings.contains_key(call.symbol.as_str()));
             if !has_graph_evidence {
                 continue;
             }
@@ -591,13 +631,6 @@ fn refine_ambiguous_matches(
                 .candidates
                 .iter()
                 .filter(|candidate| {
-                    if !voted_targets.is_empty()
-                        && !voted_targets
-                            .iter()
-                            .all(|target| *target == candidate.symbol)
-                    {
-                        return false;
-                    }
                     let Some(target) = to_by_name.get(candidate.symbol.as_str()) else {
                         return false;
                     };
@@ -621,6 +654,7 @@ fn refine_ambiguous_matches(
             }
         }
     }
+    Ok(())
 }
 
 fn unique_symbols_by_name(
@@ -1517,7 +1551,13 @@ mod tests {
             },
         ];
 
-        refine_ambiguous_matches(&from_symbols, &to_symbols, &mut correspondences);
+        refine_function_matches_by_call_graph(
+            &from_symbols,
+            &to_symbols,
+            &artifact_identity("current", '2'),
+            &mut correspondences,
+        )
+        .unwrap();
 
         assert_eq!(
             correspondences[1].status,
@@ -1526,11 +1566,135 @@ mod tests {
         assert_eq!(correspondences[1].candidates[0].symbol, "r_sym_leaf_b");
         assert_eq!(
             correspondences[1].basis,
-            "exact-normalized-body-and-mapped-call-graph"
+            "exact-normalized-body-and-unique-one-to-one-mapped-caller-call-site"
         );
         assert_eq!(
             correspondences[2].status,
             SymbolCorrespondenceStatus::Ambiguous
+        );
+    }
+
+    #[test]
+    fn a_unique_mapped_caller_site_identifies_a_changed_callee() {
+        let leaf = |member: &str, name: &str, bytes: &[u8]| artifact::ArtifactSymbolDefinition {
+            member: Some(member.to_owned()),
+            name: name.to_owned(),
+            address: 0,
+            bytes: bytes.to_vec(),
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let from_symbols = vec![
+            symbol("named_root", &[1, 2, 3, 4], "named_changed_leaf"),
+            leaf("named-leaf.o", "named_changed_leaf", &[5, 6, 7, 8]),
+        ];
+        let to_symbols = vec![
+            symbol("current_root", &[1, 2, 3, 4], "current_changed_leaf"),
+            leaf("current-leaf.o", "current_changed_leaf", &[9, 10, 11, 12]),
+        ];
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let mut correspondences = vec![
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[0], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to_symbols[0], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[1], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unmatched,
+                basis: "exact-normalized-body",
+                candidates: Vec::new(),
+            },
+        ];
+
+        refine_function_matches_by_call_graph(
+            &from_symbols,
+            &to_symbols,
+            &to_identity,
+            &mut correspondences,
+        )
+        .unwrap();
+
+        assert_eq!(
+            correspondences[1].status,
+            SymbolCorrespondenceStatus::Unique
+        );
+        assert_eq!(
+            correspondences[1].candidates[0].symbol,
+            "current_changed_leaf"
+        );
+        assert_eq!(
+            correspondences[1].basis,
+            "unique-one-to-one-mapped-caller-call-site"
+        );
+    }
+
+    #[test]
+    fn mapped_caller_sites_never_merge_two_source_functions() {
+        let leaf = |name: &str| artifact::ArtifactSymbolDefinition {
+            member: Some("leaves.o".to_owned()),
+            name: name.to_owned(),
+            address: 0,
+            bytes: vec![9, 8],
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let from_symbols = vec![
+            symbol("named_root_a", &[1, 2, 3, 4], "named_leaf_a"),
+            symbol("named_root_b", &[5, 6, 7, 8], "named_leaf_b"),
+            leaf("named_leaf_a"),
+            leaf("named_leaf_b"),
+        ];
+        let to_symbols = vec![
+            symbol("current_root_a", &[1, 2, 3, 4], "current_leaf"),
+            symbol("current_root_b", &[5, 6, 7, 8], "current_leaf"),
+            leaf("current_leaf"),
+        ];
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let mut correspondences = vec![
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[0], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to_symbols[0], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[1], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to_symbols[1], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[2], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unmatched,
+                basis: "exact-normalized-body",
+                candidates: Vec::new(),
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[3], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unmatched,
+                basis: "exact-normalized-body",
+                candidates: Vec::new(),
+            },
+        ];
+
+        refine_function_matches_by_call_graph(
+            &from_symbols,
+            &to_symbols,
+            &to_identity,
+            &mut correspondences,
+        )
+        .unwrap();
+
+        assert!(
+            correspondences[2..].iter().all(
+                |correspondence| correspondence.status == SymbolCorrespondenceStatus::Unmatched
+            )
         );
     }
 

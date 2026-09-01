@@ -82,6 +82,7 @@ pub use le_tx_packet::{
 };
 pub use legacy_advertising_event_image::{
     BluetoothLegacyAdvertisingPduError, BluetoothLegacyAdvertisingPrimaryChannel,
+    BluetoothLegacyAdvertisingPrimaryChannelPlan,
 };
 #[cfg(not(target_arch = "riscv32"))]
 pub use legacy_advertising_storage::BluetoothLegacyAdvertisingMemoryGraphModelAddress;
@@ -89,7 +90,9 @@ pub use legacy_advertising_storage::{
     BLUETOOTH_LEGACY_ADVERTISING_LINK_STATE_BYTES, BLUETOOTH_LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES,
     BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY,
-    BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES, BluetoothLegacyAdvertisingMemoryGraphBindError,
+    BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES,
+    BluetoothLegacyAdvertisingEventCompletionStatuses,
+    BluetoothLegacyAdvertisingMemoryGraphBindError,
     BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphBinding,
     BluetoothLegacyAdvertisingMemoryGraphCompletionObservation,
     BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,

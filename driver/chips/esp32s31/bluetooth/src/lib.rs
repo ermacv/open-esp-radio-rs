@@ -320,7 +320,7 @@ pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
 };
 #[cfg(target_arch = "riscv32")]
-pub use legacy_advertising::BluetoothLegacyAdvertisingAttemptCompleted;
+pub use legacy_advertising::BluetoothLegacyAdvertisingEventCompleted;
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
     BluetoothLegacyAdvertisingLinkStateReset, BluetoothLegacyAdvertisingLinkStateResetError,

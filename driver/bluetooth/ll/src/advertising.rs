@@ -2,9 +2,10 @@
 //!
 //! The first closed role is non-connectable, non-scannable undirected
 //! advertising. It needs no receive window or response policy and therefore
-//! exposes the smallest honest Link Layer/backend contract. The state machine
-//! prepares at most one `ADV_NONCONN_IND` per selected primary channel; only a
-//! completed backend attempt may advance the affine event.
+//! exposes the smallest honest Link Layer/backend contract. One prepared event
+//! contains the single `ADV_NONCONN_IND` PDU and the complete ordered primary
+//! channel plan. Only completion of that whole backend event may advance the
+//! affine Link Layer owner.
 
 use crate::{LeDeviceAddress, LeDeviceAddressKind};
 
@@ -237,23 +238,31 @@ impl PrimaryAdvertisingChannelMap {
         self.selected & channel.map_bit() != 0
     }
 
-    const fn lowest(self) -> PrimaryAdvertisingChannel {
-        if self.contains(PrimaryAdvertisingChannel::Channel37) {
-            PrimaryAdvertisingChannel::Channel37
-        } else if self.contains(PrimaryAdvertisingChannel::Channel38) {
-            PrimaryAdvertisingChannel::Channel38
-        } else {
-            PrimaryAdvertisingChannel::Channel39
-        }
+    /// Number of selected primary channels in the event.
+    pub const fn channel_count(self) -> usize {
+        self.selected.count_ones() as usize
     }
 
-    const fn without(self, channel: PrimaryAdvertisingChannel) -> Option<Self> {
-        let selected = self.selected & !channel.map_bit();
-        if selected == 0 {
-            None
-        } else {
-            Some(Self { selected })
+    /// The selected channel at one canonical event position.
+    pub const fn channel(self, position: usize) -> Option<PrimaryAdvertisingChannel> {
+        let mut current = 0;
+        let channels = [
+            PrimaryAdvertisingChannel::Channel37,
+            PrimaryAdvertisingChannel::Channel38,
+            PrimaryAdvertisingChannel::Channel39,
+        ];
+        let mut index = 0;
+        while index < channels.len() {
+            let channel = channels[index];
+            if self.contains(channel) {
+                if current == position {
+                    return Some(channel);
+                }
+                current += 1;
+            }
+            index += 1;
         }
+        None
     }
 }
 
@@ -356,29 +365,21 @@ impl<'a> LegacyNonconnectableAdvertisingSet<'a> {
 
     /// Begin one event with every configured channel still pending.
     pub const fn begin_event(self) -> LegacyNonconnectableAdvertisingEvent<'a> {
-        LegacyNonconnectableAdvertisingEvent {
-            set: self,
-            remaining: self.channels,
-        }
+        LegacyNonconnectableAdvertisingEvent { set: self }
     }
 }
 
-/// Affine event whose next selected channel has not reached hardware.
+/// Affine event which has not reached a hardware backend.
 #[derive(Debug, Eq, PartialEq)]
-#[must_use = "prepare, transmit, or retain the advertising event"]
+#[must_use = "prepare, cancel, or retain the advertising event"]
 pub struct LegacyNonconnectableAdvertisingEvent<'a> {
     set: LegacyNonconnectableAdvertisingSet<'a>,
-    remaining: PrimaryAdvertisingChannelMap,
 }
 
 impl<'a> LegacyNonconnectableAdvertisingEvent<'a> {
-    /// Prepare one channel without claiming that hardware transmitted it.
-    pub fn prepare_next(self) -> LegacyPreparedAdvertisingTransmission<'a> {
-        let channel = self.remaining.lowest();
-        LegacyPreparedAdvertisingTransmission {
-            event: self,
-            channel,
-        }
+    /// Prepare the complete ordered primary-channel event.
+    pub fn prepare(self) -> LegacyPreparedAdvertisingEvent<'a> {
+        LegacyPreparedAdvertisingEvent { event: self }
     }
 
     /// Cancel an event which has no in-flight transmission and retain its set.
@@ -387,18 +388,17 @@ impl<'a> LegacyNonconnectableAdvertisingEvent<'a> {
     }
 }
 
-/// One prepared PDU plus the exact event which advances only after completion.
+/// One prepared PDU and its complete selected primary-channel plan.
 #[derive(Debug, Eq, PartialEq)]
-#[must_use = "publish the PDU or cancel back to the unchanged event"]
-pub struct LegacyPreparedAdvertisingTransmission<'a> {
+#[must_use = "publish the event or cancel back to the unchanged event"]
+pub struct LegacyPreparedAdvertisingEvent<'a> {
     event: LegacyNonconnectableAdvertisingEvent<'a>,
-    channel: PrimaryAdvertisingChannel,
 }
 
-impl<'a> LegacyPreparedAdvertisingTransmission<'a> {
-    /// Selected primary advertising channel.
-    pub const fn channel(&self) -> PrimaryAdvertisingChannel {
-        self.channel
+impl<'a> LegacyPreparedAdvertisingEvent<'a> {
+    /// Complete non-empty channel selection in canonical 37, 38, 39 order.
+    pub const fn channels(&self) -> PrimaryAdvertisingChannelMap {
+        self.event.set.channels
     }
 
     /// Encode the prepared PDU without advancing the event.
@@ -411,32 +411,16 @@ impl<'a> LegacyPreparedAdvertisingTransmission<'a> {
         self.event
     }
 
-    /// Record one completed backend attempt and advance exactly once.
+    /// Record completion of the complete selected-channel backend event.
     ///
-    /// Completion means that the backend has consumed the scheduled channel
-    /// attempt. It does not by itself claim that the packet reached the air;
+    /// Completion means that the backend consumed every scheduled item in the
+    /// event. It does not by itself claim that any packet reached the air;
     /// chip-specific diagnostic status remains below this protocol boundary.
-    pub fn into_attempt_completed(self) -> LegacyAdvertisingEventProgress<'a> {
-        match self.event.remaining.without(self.channel) {
-            Some(remaining) => {
-                LegacyAdvertisingEventProgress::More(LegacyNonconnectableAdvertisingEvent {
-                    set: self.event.set,
-                    remaining,
-                })
-            }
-            None => LegacyAdvertisingEventProgress::Complete(LegacyAdvertisingEventComplete {
-                set: self.event.set,
-            }),
+    pub fn into_event_completed(self) -> LegacyAdvertisingEventComplete<'a> {
+        LegacyAdvertisingEventComplete {
+            set: self.event.set,
         }
     }
-}
-
-/// State after one prepared channel attempt completed in the backend.
-#[derive(Debug, Eq, PartialEq)]
-#[must_use = "continue the event or schedule its next occurrence"]
-pub enum LegacyAdvertisingEventProgress<'a> {
-    More(LegacyNonconnectableAdvertisingEvent<'a>),
-    Complete(LegacyAdvertisingEventComplete<'a>),
 }
 
 /// Completed event retaining the reusable advertising-set configuration.
@@ -579,36 +563,33 @@ mod tests {
     }
 
     #[test]
-    fn event_advances_only_after_attempt_completion_and_repeats_after_a_fresh_delay() {
+    fn event_advances_only_after_complete_backend_event_and_repeats_after_a_fresh_delay() {
         let set = LegacyNonconnectableAdvertisingSet::new(
             sample_advertisement(&[1, 2, 3]),
             PrimaryAdvertisingChannelMap::new(true, false, true).unwrap(),
             AdvertisingInterval::new(AdvertisingInterval::MIN_UNITS).unwrap(),
         );
 
-        let prepared_37 = set.begin_event().prepare_next();
-        assert_eq!(prepared_37.channel(), PrimaryAdvertisingChannel::Channel37);
-        let prepared_37 = prepared_37.cancel().prepare_next();
-        assert_eq!(prepared_37.channel(), PrimaryAdvertisingChannel::Channel37);
-
-        let LegacyAdvertisingEventProgress::More(event) = prepared_37.into_attempt_completed()
-        else {
-            panic!("channel 39 remains in the event");
-        };
-        let prepared_39 = event.prepare_next();
-        assert_eq!(prepared_39.channel(), PrimaryAdvertisingChannel::Channel39);
-        let LegacyAdvertisingEventProgress::Complete(complete) =
-            prepared_39.into_attempt_completed()
-        else {
-            panic!("the configured channel set must now be exhausted");
-        };
+        let prepared = set.begin_event().prepare();
+        assert_eq!(prepared.channels().channel_count(), 2);
+        assert_eq!(
+            prepared.channels().channel(0),
+            Some(PrimaryAdvertisingChannel::Channel37)
+        );
+        assert_eq!(
+            prepared.channels().channel(1),
+            Some(PrimaryAdvertisingChannel::Channel39)
+        );
+        assert_eq!(prepared.channels().channel(2), None);
+        let prepared = prepared.cancel().prepare();
+        let complete = prepared.into_event_completed();
 
         let scheduled = complete
             .schedule_next(AdvertisingDelay::from_micros(AdvertisingDelay::MAX_MICROS).unwrap());
         assert_eq!(scheduled.start_offset_micros(), 30_000);
         assert_eq!(
-            scheduled.into_event().prepare_next().channel(),
-            PrimaryAdvertisingChannel::Channel37
+            scheduled.into_event().prepare().channels(),
+            PrimaryAdvertisingChannelMap::new(true, false, true).unwrap()
         );
     }
 

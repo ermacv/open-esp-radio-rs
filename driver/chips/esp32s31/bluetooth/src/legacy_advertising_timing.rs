@@ -50,9 +50,11 @@ impl BluetoothLegacyAdvertisingTimingObservation {
         self,
         config: BluetoothSchedulerSoftwareConfig,
         payload_length: u8,
+        primary_channel_count: usize,
     ) -> Option<(
         BluetoothLegacyAdvertisingEventWindow,
         BluetoothSchedulerRawWindow,
+        u32,
     )> {
         let window = BluetoothLegacyAdvertisingEventWindow::first_le_1m(
             config,
@@ -60,8 +62,8 @@ impl BluetoothLegacyAdvertisingTimingObservation {
             self.radio_ready,
             payload_length,
         );
-        match window.project_raw(self.epoch) {
-            Some(raw) => Some((window, raw)),
+        match window.project_raw(self.epoch, primary_channel_count) {
+            Some((raw, raw_item_duration)) => Some((window, raw, raw_item_duration)),
             None => None,
         }
     }
@@ -122,11 +124,21 @@ impl BluetoothLegacyAdvertisingEventWindow {
     pub(crate) const fn project_raw(
         self,
         epoch: BluetoothControllerSchedulerEpoch,
-    ) -> Option<BluetoothSchedulerRawWindow> {
-        BluetoothSchedulerRawWindow::from_projected_scheduler_window(
-            epoch.raw_time_for_scheduler_time(self.start.image()),
-            epoch.raw_time_for_scheduler_time(self.end.image()),
-        )
+        primary_channel_count: usize,
+    ) -> Option<(BluetoothSchedulerRawWindow, u32)> {
+        if primary_channel_count == 0 || primary_channel_count > 3 {
+            return None;
+        }
+        let raw_start = epoch.raw_time_for_scheduler_time(self.start.image());
+        let raw_first_end = epoch.raw_time_for_scheduler_time(self.end.image());
+        let raw_item_duration = raw_first_end.wrapping_sub(raw_start);
+        let raw_event_end =
+            raw_start.wrapping_add(raw_item_duration.wrapping_mul(primary_channel_count as u32));
+        match BluetoothSchedulerRawWindow::from_projected_scheduler_window(raw_start, raw_event_end)
+        {
+            Some(window) => Some((window, raw_item_duration)),
+            None => None,
+        }
     }
 
     pub(crate) const fn phase(self) -> BluetoothLegacyAdvertisingEventPhase {
@@ -198,7 +210,10 @@ mod tests {
             1_000,
             scale,
         );
-        let raw = window.project_raw(epoch).expect("bounded event window");
-        assert_eq!(raw.duration(), 58);
+        let (raw, item_duration) = window
+            .project_raw(epoch, 3)
+            .expect("bounded three-channel event window");
+        assert_eq!(item_duration, 58);
+        assert_eq!(raw.duration(), 174);
     }
 }

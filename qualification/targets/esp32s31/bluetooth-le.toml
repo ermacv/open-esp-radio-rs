@@ -385,7 +385,7 @@ gaps = [
 [[capabilities]]
 id = "portable-legacy-advertising"
 title = "Portable legacy non-connectable advertising"
-scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty primary channel selection affine enable generation event and channel identity stale-completion retention in-flight disable join and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
+scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty ordered primary channel event plan affine enable generation and event identity stale-completion retention in-flight disable join and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
 implementation = "complete"
 host = "covered"
 async = "not-applicable"
@@ -406,7 +406,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",
 ]
 gaps = [
-  { axis = "implementation", id = "legacy-advertising-hardware-ticket-scanning-connection-and-llcp-missing" },
+  { axis = "implementation", id = "legacy-advertising-recurrence-scanning-connection-and-llcp-missing" },
   { axis = "host", id = "virtual-clock-link-layer-tests-missing" },
   { axis = "vendor", id = "link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },

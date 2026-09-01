@@ -41,17 +41,20 @@ reset, start and recurrence research.
 
 The portable Link Layer validates address kind, advertising data, non-empty
 primary channel maps and interval bounds. It encodes an exact bounded
-`ADV_NONCONN_IND` and retains generation, event and channel identity through
-an affine lifecycle. The S31 pre-admission owner installs that PDU in the
-common typed controller TX allocation used by DTM and advertising. That
-allocation now lives inside a pinned, physically bounded graph. The graph
+`ADV_NONCONN_IND` and retains generation, event and the complete ordered
+channel plan through an affine lifecycle. The selected channels form one
+backend event rather than separate executor-driven submissions. The S31
+pre-admission owner installs that PDU in the common typed controller TX
+allocation used by DTM and advertising. That allocation lives inside a pinned,
+physically bounded graph. The graph
 binds the common TX header to its packet, installs that header as the sole TX
 head/tail, keeps the RX chain absent, retains one separately allocated common
-scheduler context, binds the first scheduler item back to this link state and
-installs that item as the link-state scheduler head. Channel identity stays at
-the portable boundary; only the private memory codec lowers it to the S31
-frequency field. The owner supports lossless cancellation of both portable
-and SRAM owners. The complete first-attempt path now joins the descriptor graph
+scheduler context, binds up to three scheduler items back to this link state
+and installs the first item as the link-state scheduler head. The semantic
+channel plan stays at the portable boundary; only the private memory codec
+lowers it to S31 frequency fields and private compressed successor links. The
+owner supports lossless cancellation of both portable and SRAM owners. The
+complete first-event path now joins the descriptor graph
 to common scheduler bookkeeping, an independently proven empty list, typed
 `HEAD` publication, dynamic interrupt publication, the synchronous scheduler
 event and `RUN`. Publication is the sole transition that moves the portable
@@ -94,15 +97,25 @@ If the radio observation is later than the nominal start, it shifts start and
 end together and preserves duration. Both positions then pass through the
 retained scheduler epoch into raw controller time.
 
-The private SRAM codec detaches the sole allocation-time scheduler item from
-the link-state head, lowers channel 37/38/39 into the packet frequency field,
+Complete current `r_sym_ble_77zgK6v8rbStzf0ReBjv`, named
+`r_ble_lll_adv_sched_next_pri_event` and
+`r_ble_lll_adv_sched_remaining_pri_after` establish that selected primary
+channels are not resubmitted after an IRQ. Before the first `RUN`, the producer
+allocates every remaining selected channel, advances each follower start from
+the previous item end, adds the same item duration, and links items through the
+hardware successor field. The completed-queue link at item `+0x54` is a
+different software ownership link, not the execution chain.
+
+The private SRAM codec therefore detaches the allocation-time scheduler head,
+lowers the canonical selected channels 37, 38, 39 into one 1--3 item chain,
 selects the legacy LE 1M transmitter role, copies the reset link state's
-rounded power, installs the accepted raw window and clears the event-local
-bookkeeping fields. No field mask, rounded-power image or frequency integer
-crosses into the controller/LL layer. Before this mutation, the common Rust
-timeline performs guarded initial admission, duration-preserving overlap
-displacement and a separate fresh sequence-deadline check. Rejection releases
-the exact slot and returns the unchanged affine candidate.
+rounded power, installs contiguous accepted raw windows and clears bookkeeping
+for every active item. No link image, field mask, rounded-power image or
+frequency integer crosses into the controller/LL layer. Before this mutation,
+the common Rust timeline reserves the complete chain duration, performs guarded
+initial admission and duration-preserving overlap displacement, then applies a
+separate fresh sequence-deadline check. Rejection releases the exact slot and
+returns the unchanged affine candidate.
 
 ## Minimum production admission contract
 
@@ -121,11 +134,10 @@ evidence closes the following connected edges:
 4. **Terminal observation:** the interrupt/finished-list path identifies the
    same item, fences hardware writes, unlinks it from both hardware and
    software lists and returns CPU ownership exactly once.
-5. **Result and recurrence:** every non-sentinel completion consumes the exact
-   scheduled channel attempt and advances the matching portable identity once.
-   The raw completion status remains a diagnostic backend result rather than a
-   claim of successful on-air transmission. The first slice needs no RX or
-   scan-response handling.
+5. **Result and recurrence:** every active item must have a non-sentinel
+   completion before the exact scheduled event advances its portable identity
+   once. Per-item values remain diagnostic rather than a claim of successful
+   on-air transmission. The first slice needs no RX or scan-response handling.
 
 Unknown private fields do not block the first driver merely because they lack
 vendor names. They do block admission when their value participates in packet
@@ -135,31 +147,30 @@ not required.
 
 ## Current blockers and non-blockers
 
-The encoded PDU now completes one full hardware attempt without raw SRAM fields
+The encoded PDU now completes one full hardware event without raw SRAM fields
 escaping the memory codec. Allocation, restricted reset, first-event timing,
 timeline admission, descriptor transform, empty-list merge, typed
 `HEAD`/interrupt/event/`RUN` publication, finished-list observation, fresh
 head-empty proof, software unlink, post-unlink interrupt join and CPU recycle
 are closed. The exact `InFlight` portable owner advances only after that final
-recycle.
+recycle. A selected 1--3 channel plan is published as one prelinked hardware
+chain, so executor latency cannot open a gap between primary channels.
 
 Current and named recycle bodies both load scheduler item `+0x38`. The all-ones
 value remains the in-flight sentinel. For every other value, both zero and
-nonzero paths consume the current primary-channel attempt: the nonzero branch
+nonzero paths consume the current primary-channel item: the nonzero branch
 adds diagnostic/exception handling, while the channel/event counters and later
 recurrence path still advance. Consequently `status == 0` is not modeled as
 the only protocol success and `status != 0` is not a retryable pre-publication
-failure. Rust retains `Zero | NonZero(NonZeroU32)` as diagnostic evidence next
-to the advanced LL owner and makes no stronger RF-success claim.
+failure. Rust waits until all active items are non-sentinel and retains a
+bounded ordered set of `Zero | NonZero(NonZeroU32)` diagnostic values next to
+the advanced LL owner. It makes no stronger RF-success claim.
 
-The first-attempt admission contract is therefore closed. The next real driver
-blocker is the second primary-channel producer: derive the reviewed
-next-channel timing and descriptor delta from current
-`r_sym_ble_77zgK6v8rbStzf0ReBjv` plus named
-`r_ble_lll_adv_sched_next_pri_event`, then feed the returned `Event` and
-CPU-owned graph back into the same publication/completion lifecycle. After
-channel-map exhaustion, add fresh-delay recurrence for the next advertising
-event. Broad register discovery, diagnostic logging, extended/periodic
+The first complete primary-channel event contract is therefore closed. The
+next real driver boundary is fresh-delay recurrence: retain the nominal event
+phase through recycle, obtain a source-owned 0--10 ms advertising delay, form
+the next exact timeline reservation, and reuse the CPU-owned graph for another
+whole event. Broad register discovery, diagnostic logging, extended/periodic
 advertising, scan responses, RX buffers, sleep wake and coexistence remain
 outside this restricted nonconnectable slice.
 
@@ -184,8 +195,9 @@ tools/blobray/scripts/run-limited \
   --full --details
 ```
 
-The first-attempt gate is closed: the Rust-owned static graph implements all
+The first-event gate is closed: the Rust-owned static graph implements all
 five edges without exposing raw SRAM images above the private memory codec.
-Research now returns to the controller/LL path and should inspect only the
-next-channel producer when that implementation reaches its descriptor/timing
-boundary; full vendor-scope completion is neither required nor desirable.
+Implementation now returns to the controller/LL recurrence path. Further
+vendor research is needed only when recurrence reaches an unresolved hardware
+timing or ownership boundary; full vendor-scope completion is neither required
+nor desirable.

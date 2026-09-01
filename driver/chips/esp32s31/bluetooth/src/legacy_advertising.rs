@@ -1,25 +1,27 @@
 //! ESP32-S31 hardware ownership for restricted legacy advertising.
 //!
-//! This boundary lowers one portable `ADV_NONCONN_IND` transmission into a
-//! bounded PDU and a reviewed S31 descriptor graph. The first primary-channel
-//! attempt advances through scheduler bookkeeping, `HEAD`/interrupt/event/`RUN`
+//! This boundary lowers one portable `ADV_NONCONN_IND` event into a bounded PDU
+//! and a reviewed 1--3 item S31 descriptor chain. The complete selected-channel
+//! event advances through scheduler bookkeeping, `HEAD`/interrupt/event/`RUN`
 //! publication, fenced completion, hardware-head retirement, software unlink
 //! and CPU recycle. Only that complete lower proof may advance the portable LL
-//! owner. The returned status remains diagnostic and makes no claim about
+//! owner. Returned per-item statuses remain diagnostic and make no claim about
 //! observability on air.
 
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_bluetooth_ll::advertiser::{
-    LegacyAdvertiserAdvance, LegacyAdvertiserTxInFlight,
+    LegacyAdvertiserEventComplete, LegacyAdvertiserEventInFlight,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_bluetooth_ll::advertising::PrimaryAdvertisingChannel;
 use open_esp_radio_bluetooth_ll::{
     advertiser::{
-        LegacyAdvertiserEnabled, LegacyAdvertiserTxPrepared, LegacyAdvertisingTxIdentity,
+        LegacyAdvertiserEnabled, LegacyAdvertiserEventPrepared, LegacyAdvertisingEventIdentity,
     },
     advertising::{
-        LEGACY_ADVERTISING_PDU_CAPACITY, LegacyAdvertisingEncodeError, PrimaryAdvertisingChannel,
+        LEGACY_ADVERTISING_PDU_CAPACITY, LegacyAdvertisingEncodeError, PrimaryAdvertisingChannelMap,
     },
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -29,13 +31,13 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothLegacyAdvertisingEventCompletionStatuses,
     BluetoothLegacyAdvertisingMemoryGraphCompletionObservation,
     BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
     BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
     BluetoothLegacyAdvertisingMemoryGraphRecycleError,
     BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared,
     BluetoothLegacyAdvertisingMemoryGraphRecycled, BluetoothLegacyAdvertisingMemoryGraphRunning,
-    BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -43,7 +45,7 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepareError,
     BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
     BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
-    BluetoothLegacyAdvertisingPrimaryChannel,
+    BluetoothLegacyAdvertisingPrimaryChannelPlan,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
@@ -83,12 +85,12 @@ impl BluetoothLegacyAdvertisingDefaultTxPowerDbm {
 /// hardware ticket at this boundary.
 #[must_use = "admit through a reviewed hardware ticket, cancel, or retain the prepared owner"]
 pub struct BluetoothLegacyAdvertisingPrepared<'a> {
-    prepared: LegacyAdvertiserTxPrepared<'a>,
+    prepared: LegacyAdvertiserEventPrepared<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
 }
 
 impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
-    /// Encode the next portable channel transmission into bounded chip-owned storage.
+    /// Encode one complete portable event into bounded chip-owned storage.
     #[cfg_attr(
         target_pointer_width = "64",
         expect(
@@ -100,7 +102,7 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         enabled: LegacyAdvertiserEnabled<'a>,
         memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     ) -> Result<Self, BluetoothLegacyAdvertisingPreparationError<'a>> {
-        let prepared = enabled.prepare_next();
+        let prepared = enabled.prepare_event();
         let mut encoded = [0; LEGACY_ADVERTISING_PDU_CAPACITY];
         let pdu_len = match prepared.encode(&mut encoded) {
             Ok(length) => length,
@@ -126,14 +128,14 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
         Ok(Self { prepared, memory })
     }
 
-    /// Exact portable generation/event/channel identity retained by this owner.
-    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+    /// Exact portable generation/event identity retained by this owner.
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
         self.prepared.identity()
     }
 
-    /// Selected primary advertising channel.
-    pub const fn channel(&self) -> PrimaryAdvertisingChannel {
-        self.identity().channel()
+    /// Complete selected primary-channel map for this event.
+    pub const fn channels(&self) -> PrimaryAdvertisingChannelMap {
+        self.prepared.channels()
     }
 
     /// Complete encoded Link Layer PDU, excluding preamble, Access Address, CRC and whitening.
@@ -142,13 +144,6 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
     }
 
     /// Apply the reviewed no-RX/no-CTE/no-privacy LE 1M link-state reset.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure must return the exact affine prepared owner"
-        )
-    )]
     pub fn reset_link_state(
         self,
         default_tx_power: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
@@ -181,12 +176,12 @@ impl<'a> BluetoothLegacyAdvertisingPrepared<'a> {
 /// One reset advertising graph which still lacks scheduler event timing.
 #[must_use = "advance to event scheduling, cancel, or retain the reset owner"]
 pub struct BluetoothLegacyAdvertisingLinkStateReset<'a> {
-    prepared: LegacyAdvertiserTxPrepared<'a>,
+    prepared: LegacyAdvertiserEventPrepared<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
 }
 
 impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
-    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
         self.prepared.identity()
     }
 
@@ -200,13 +195,6 @@ impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
     /// window remains inseparable from the reset graph until the common
     /// scheduler accepts or cancels it.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure returns the exact affine reset graph and protocol owner"
-        )
-    )]
     pub fn form_first_event_candidate(
         self,
         timing: BluetoothLegacyAdvertisingTimingObservation,
@@ -216,15 +204,18 @@ impl<'a> BluetoothLegacyAdvertisingLinkStateReset<'a> {
         BluetoothLegacyAdvertisingFirstEventTimingFailure<'a>,
     > {
         let payload_length = self.memory.payload_length();
-        let Some((scheduler_window, raw_window)) =
-            timing.first_le_1m_window(config, payload_length)
-        else {
+        let Some((scheduler_window, raw_window, raw_item_duration)) = timing.first_le_1m_window(
+            config,
+            payload_length,
+            self.prepared.channels().channel_count(),
+        ) else {
             return Err(BluetoothLegacyAdvertisingFirstEventTimingFailure { reset: self });
         };
         Ok(BluetoothLegacyAdvertisingFirstEventCandidate {
             reset: self,
             scheduler_window,
             raw_window,
+            raw_item_duration,
         })
     }
 
@@ -243,11 +234,12 @@ pub struct BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
     reset: BluetoothLegacyAdvertisingLinkStateReset<'a>,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
     raw_window: BluetoothSchedulerRawWindow,
+    raw_item_duration: u32,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
-    pub const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
         self.reset.identity()
     }
 
@@ -282,20 +274,17 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
             reset,
             scheduler_window,
             raw_window,
+            raw_item_duration,
         } = self;
         let BluetoothLegacyAdvertisingLinkStateReset { prepared, memory } = reset;
-        let channel = match prepared.identity().channel() {
-            PrimaryAdvertisingChannel::Channel37 => {
-                BluetoothLegacyAdvertisingPrimaryChannel::Channel37
-            }
-            PrimaryAdvertisingChannel::Channel38 => {
-                BluetoothLegacyAdvertisingPrimaryChannel::Channel38
-            }
-            PrimaryAdvertisingChannel::Channel39 => {
-                BluetoothLegacyAdvertisingPrimaryChannel::Channel39
-            }
-        };
-        match memory.prepare_first_event(channel, resolved_window.start(), resolved_window.end()) {
+        let selected = prepared.channels();
+        let channels = BluetoothLegacyAdvertisingPrimaryChannelPlan::new(
+            selected.contains(PrimaryAdvertisingChannel::Channel37),
+            selected.contains(PrimaryAdvertisingChannel::Channel38),
+            selected.contains(PrimaryAdvertisingChannel::Channel39),
+        )
+        .expect("the portable advertising channel map is non-empty");
+        match memory.prepare_first_event(channels, resolved_window.start(), raw_item_duration) {
             Ok(memory) => Ok(BluetoothLegacyAdvertisingFirstEventImagePrepared {
                 prepared,
                 memory,
@@ -308,6 +297,7 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
                         reset: BluetoothLegacyAdvertisingLinkStateReset { prepared, memory },
                         scheduler_window,
                         raw_window,
+                        raw_item_duration,
                     },
                     error,
                 })
@@ -325,14 +315,14 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventCandidate<'a> {
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the event image must remain paired with its scheduler reservation"]
 pub(crate) struct BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
-    prepared: LegacyAdvertiserTxPrepared<'a>,
+    prepared: LegacyAdvertiserEventPrepared<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphFirstEventPrepared,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl<'a> BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
-    pub(crate) const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+    pub(crate) const fn identity(&self) -> LegacyAdvertisingEventIdentity {
         self.prepared.identity()
     }
 
@@ -365,7 +355,7 @@ impl<'a> BluetoothLegacyAdvertisingFirstEventImagePrepared<'a> {
 /// Portable event paired with common scheduler bookkeeping.
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared<'a> {
-    prepared: LegacyAdvertiserTxPrepared<'a>,
+    prepared: LegacyAdvertiserEventPrepared<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
@@ -398,7 +388,7 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerBookkeepingPrepared<'a> {
 /// CPU-owned advertising event joined to an independently proven empty list.
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a> {
-    prepared: LegacyAdvertiserTxPrepared<'a>,
+    prepared: LegacyAdvertiserEventPrepared<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
@@ -433,7 +423,7 @@ impl<'a> BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a> {
 /// Hardware-visible advertising event after exact scheduler-head publication.
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
-    in_flight: LegacyAdvertiserTxInFlight<'a>,
+    in_flight: LegacyAdvertiserEventInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
@@ -459,7 +449,7 @@ impl<'a> BluetoothLegacyAdvertisingHeadPublishedEvent<'a> {
 /// Hardware-owned advertising event admitted through the complete RUN suffix.
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingRunningEvent<'a> {
-    in_flight: LegacyAdvertiserTxInFlight<'a>,
+    in_flight: LegacyAdvertiserEventInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphRunning,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
@@ -527,7 +517,7 @@ pub(crate) enum BluetoothLegacyAdvertisingRunningEventCompletionObservation<'a> 
 /// Hardware-owned advertising event after a non-sentinel completion status.
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingCompletionObservedEvent<'a> {
-    _in_flight: LegacyAdvertiserTxInFlight<'a>,
+    _in_flight: LegacyAdvertiserEventInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
     _scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
@@ -538,13 +528,17 @@ impl BluetoothLegacyAdvertisingCompletionObservedEvent<'_> {
         self.memory.scheduler_item_address()
     }
 
-    pub(crate) const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
-        self.memory.status()
+    pub(crate) const fn statuses(&self) -> BluetoothLegacyAdvertisingEventCompletionStatuses {
+        self.memory.statuses()
     }
 }
 
 #[cfg(target_arch = "riscv32")]
 impl<'a> BluetoothLegacyAdvertisingCompletionObservedEvent<'a> {
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains the exact completed event and removal proof"
+    )]
     pub(crate) fn prepare_recycle(
         self,
         removal: BluetoothSchedulerSoftwareListRemovalReady,
@@ -582,7 +576,7 @@ impl<'a> BluetoothLegacyAdvertisingCompletionObservedEvent<'a> {
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingCompletionRecyclePrepared<'a> {
-    in_flight: LegacyAdvertiserTxInFlight<'a>,
+    in_flight: LegacyAdvertiserEventInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared,
     scheduler_window: BluetoothLegacyAdvertisingEventWindow,
 }
@@ -635,80 +629,80 @@ impl<'a> BluetoothLegacyAdvertisingCompletionRecycleFailure<'a> {
     }
 }
 
-/// CPU-owned graph after one scheduler-completed advertising attempt.
+/// CPU-owned graph after one scheduler-completed advertising event.
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyAdvertisingRecycledEvent<'a> {
-    in_flight: LegacyAdvertiserTxInFlight<'a>,
+    in_flight: LegacyAdvertiserEventInFlight<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
-    status: BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+    statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
 }
 
 #[cfg(target_arch = "riscv32")]
 impl<'a> BluetoothLegacyAdvertisingRecycledEvent<'a> {
     fn new(
-        in_flight: LegacyAdvertiserTxInFlight<'a>,
+        in_flight: LegacyAdvertiserEventInFlight<'a>,
         memory: BluetoothLegacyAdvertisingMemoryGraphRecycled,
     ) -> Self {
-        let (memory, status) = memory.into_parts();
+        let (memory, statuses) = memory.into_parts();
         Self {
             in_flight,
             memory,
-            status,
+            statuses,
         }
     }
 
-    pub(crate) const fn identity(&self) -> LegacyAdvertisingTxIdentity {
+    pub(crate) const fn identity(&self) -> LegacyAdvertisingEventIdentity {
         self.in_flight.identity()
     }
 
-    pub(crate) const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
-        self.status
+    pub(crate) const fn statuses(&self) -> BluetoothLegacyAdvertisingEventCompletionStatuses {
+        self.statuses
     }
 
-    /// Consume the exact completed-attempt proof and advance portable LL state.
-    pub(crate) fn complete_attempt(self) -> BluetoothLegacyAdvertisingAttemptCompleted<'a> {
+    /// Consume the exact completed-event proof and advance portable LL state.
+    pub(crate) fn complete_event(self) -> BluetoothLegacyAdvertisingEventCompleted<'a> {
         let Self {
             in_flight,
             memory,
-            status,
+            statuses,
         } = self;
-        BluetoothLegacyAdvertisingAttemptCompleted {
-            advance: in_flight.complete_exact(),
+        BluetoothLegacyAdvertisingEventCompleted {
+            complete: in_flight.complete_exact(),
             memory,
-            status,
+            statuses,
         }
     }
 }
 
 /// Portable LL continuation paired with the released S31 SRAM graph.
 ///
-/// The status is diagnostic: reviewed vendor recycling consumes the scheduled
-/// primary-channel attempt for both zero and nonzero non-sentinel values. This
-/// type therefore makes no claim that the packet was observable on air.
+/// Statuses are diagnostic: reviewed vendor recycling consumes every scheduled
+/// primary-channel item for zero and nonzero non-sentinel values. This type
+/// therefore makes no claim that a packet was observable on air.
 #[cfg(target_arch = "riscv32")]
-#[must_use = "continue the advertising event or retain all returned owners"]
-pub struct BluetoothLegacyAdvertisingAttemptCompleted<'a> {
-    advance: LegacyAdvertiserAdvance<'a>,
+#[must_use = "schedule the next advertising event or retain all returned owners"]
+pub struct BluetoothLegacyAdvertisingEventCompleted<'a> {
+    complete: LegacyAdvertiserEventComplete<'a>,
     memory: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
-    status: BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+    statuses: BluetoothLegacyAdvertisingEventCompletionStatuses,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'a> BluetoothLegacyAdvertisingAttemptCompleted<'a> {
-    /// Scheduler completion value retained for diagnostics and future research.
-    pub const fn status(&self) -> BluetoothLegacyAdvertisingSchedulerItemCompletionStatus {
-        self.status
+impl<'a> BluetoothLegacyAdvertisingEventCompleted<'a> {
+    /// Per-channel scheduler values retained for diagnostics and research.
+    pub const fn statuses(&self) -> BluetoothLegacyAdvertisingEventCompletionStatuses {
+        self.statuses
     }
 
     /// Recover the protocol continuation, CPU graph and diagnostic status.
     pub fn into_parts(
         self,
     ) -> (
-        LegacyAdvertiserAdvance<'a>,
+        LegacyAdvertiserEventComplete<'a>,
         BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
-        BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+        BluetoothLegacyAdvertisingEventCompletionStatuses,
     ) {
-        (self.advance, self.memory, self.status)
+        (self.complete, self.memory, self.statuses)
     }
 }
 
@@ -861,8 +855,7 @@ mod tests {
         advertiser::LegacyAdvertiserStandby,
         advertising::{
             AdvertisingInterval, LegacyAdvertisingData, LegacyNonconnectableAdvertisement,
-            LegacyNonconnectableAdvertisingSet, PrimaryAdvertisingChannel,
-            PrimaryAdvertisingChannelMap,
+            LegacyNonconnectableAdvertisingSet, PrimaryAdvertisingChannelMap,
         },
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -908,7 +901,7 @@ mod tests {
     }
 
     #[test]
-    fn preparation_retains_identity_and_cancel_restores_the_same_channel() {
+    fn preparation_retains_identity_and_cancel_restores_the_same_event() {
         let prepared = BluetoothLegacyAdvertisingPrepared::prepare(
             enabled(PrimaryAdvertisingChannelMap::all()),
             memory(),
@@ -917,30 +910,21 @@ mod tests {
         let identity = prepared.identity();
 
         assert_eq!(prepared.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
-        assert_eq!(prepared.channel(), PrimaryAdvertisingChannel::Channel37);
+        assert_eq!(prepared.channels(), PrimaryAdvertisingChannelMap::all());
         let (enabled, _memory) = prepared.cancel().into_parts();
-        assert_eq!(enabled.prepare_next().identity(), identity);
+        assert_eq!(enabled.prepare_event().identity(), identity);
     }
 
     #[test]
-    fn portable_primary_channel_identity_survives_chip_preparation() {
-        for (channels, channel) in [
-            (
-                PrimaryAdvertisingChannelMap::new(true, false, false).unwrap(),
-                PrimaryAdvertisingChannel::Channel37,
-            ),
-            (
-                PrimaryAdvertisingChannelMap::new(false, true, false).unwrap(),
-                PrimaryAdvertisingChannel::Channel38,
-            ),
-            (
-                PrimaryAdvertisingChannelMap::new(false, false, true).unwrap(),
-                PrimaryAdvertisingChannel::Channel39,
-            ),
+    fn portable_primary_channel_plan_survives_chip_preparation() {
+        for channels in [
+            PrimaryAdvertisingChannelMap::new(true, false, false).unwrap(),
+            PrimaryAdvertisingChannelMap::new(false, true, true).unwrap(),
+            PrimaryAdvertisingChannelMap::all(),
         ] {
             let prepared = BluetoothLegacyAdvertisingPrepared::prepare(enabled(channels), memory())
                 .expect("bounded validated advertising data always fits the chip PDU");
-            assert_eq!(prepared.channel(), channel);
+            assert_eq!(prepared.channels(), channels);
         }
     }
 
@@ -959,7 +943,7 @@ mod tests {
         assert_eq!(reset.identity(), identity);
         assert_eq!(reset.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
         let (enabled, memory) = reset.cancel().into_parts();
-        assert_eq!(enabled.prepare_next().identity(), identity);
+        assert_eq!(enabled.prepare_event().identity(), identity);
         assert!(memory.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
     }
 
@@ -990,11 +974,11 @@ mod tests {
             .expect("the reviewed timing window projects into one raw epoch");
 
         assert_eq!(candidate.pdu(), &[0x02, 9, 6, 5, 4, 3, 2, 1, 2, 1, 6]);
-        assert_eq!(candidate.projected_window_duration(), 64);
+        assert_eq!(candidate.projected_window_duration(), 192);
         let (enabled, _) = candidate.cancel().into_parts();
         assert_eq!(
-            enabled.prepare_next().identity().channel(),
-            PrimaryAdvertisingChannel::Channel37
+            enabled.prepare_event().channels(),
+            PrimaryAdvertisingChannelMap::all()
         );
     }
 }

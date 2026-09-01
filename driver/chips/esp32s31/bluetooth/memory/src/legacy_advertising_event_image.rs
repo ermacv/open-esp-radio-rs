@@ -23,7 +23,7 @@ const RATE_LANES_MASK: u32 = 0xf000_0000;
 const OPTIONS_IMAGE_MASK: u32 = 0x3f00_0000;
 const REVIEWED_STANDALONE_OPTIONS: u32 = 3 << 24;
 
-const SCHEDULER_ITEM_LINK_MASK: u32 = 0x003f_ffff;
+const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
 const SCHEDULER_ITEM_FREQUENCY_MASK: u32 = 0x0000_7f00;
 const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 
@@ -44,6 +44,58 @@ impl BluetoothLegacyAdvertisingPrimaryChannel {
             Self::Channel37 => 0,
             Self::Channel38 => 24,
             Self::Channel39 => 78,
+        }
+    }
+}
+
+/// Canonical non-empty primary-channel plan for one hardware event.
+///
+/// The plan is semantic: it contains no frequency, whitening or SRAM image.
+/// Selected channels are always ordered 37, 38, 39.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLegacyAdvertisingPrimaryChannelPlan {
+    channels: [BluetoothLegacyAdvertisingPrimaryChannel; 3],
+    len: u8,
+}
+
+impl BluetoothLegacyAdvertisingPrimaryChannelPlan {
+    pub const fn new(channel_37: bool, channel_38: bool, channel_39: bool) -> Option<Self> {
+        let mut channels = [BluetoothLegacyAdvertisingPrimaryChannel::Channel37; 3];
+        let mut len = 0;
+        if channel_37 {
+            channels[len] = BluetoothLegacyAdvertisingPrimaryChannel::Channel37;
+            len += 1;
+        }
+        if channel_38 {
+            channels[len] = BluetoothLegacyAdvertisingPrimaryChannel::Channel38;
+            len += 1;
+        }
+        if channel_39 {
+            channels[len] = BluetoothLegacyAdvertisingPrimaryChannel::Channel39;
+            len += 1;
+        }
+        if len == 0 {
+            None
+        } else {
+            Some(Self {
+                channels,
+                len: len as u8,
+            })
+        }
+    }
+
+    pub const fn channel_count(self) -> usize {
+        self.len as usize
+    }
+
+    pub const fn channel(
+        self,
+        position: usize,
+    ) -> Option<BluetoothLegacyAdvertisingPrimaryChannel> {
+        if position < self.channel_count() {
+            Some(self.channels[position])
+        } else {
+            None
         }
     }
 }
@@ -170,15 +222,19 @@ pub(super) struct BluetoothLegacyAdvertisingSchedulerItemWords {
 }
 
 impl BluetoothLegacyAdvertisingSchedulerItemWords {
-    /// Lower one accepted LE 1M event into the private scheduler-item layout.
-    pub(super) const fn prepare_first_event(
+    /// Lower one accepted LE 1M channel item into the private layout.
+    pub(super) const fn prepare_event_item(
         mut self,
         link_state: BluetoothLegacyAdvertisingLinkStateWords,
         channel: BluetoothLegacyAdvertisingPrimaryChannel,
+        successor: Option<BluetoothControllerSramLinkAddress>,
         raw_start: u32,
         raw_end: u32,
     ) -> Self {
-        self.word_00 &= !SCHEDULER_ITEM_LINK_MASK;
+        self.word_00 &= !SCHEDULER_ITEM_HARDWARE_NEXT_MASK;
+        if let Some(successor) = successor {
+            self.word_00 |= successor.compressed_image();
+        }
         self.word_04 |= 0x8000_0000;
         self.word_14 = (self.word_14 & !SCHEDULER_ITEM_RATE_AND_POWER_MASK)
             | (link_state.rounded_power() << 20);

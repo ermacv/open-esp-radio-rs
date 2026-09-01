@@ -105,7 +105,7 @@ pub struct BluetoothLegacyAdvertisingFirstEventPrepared<'a> {
 impl BluetoothLegacyAdvertisingFirstEventPrepared<'_> {
     pub const fn identity(
         &self,
-    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingTxIdentity {
+    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingEventIdentity {
         self.image.identity()
     }
 
@@ -234,11 +234,11 @@ impl BluetoothLegacyAdvertisingSchedulerCompletionObserved<'_> {
         self.run.index()
     }
 
-    pub const fn status(
+    pub const fn statuses(
         &self,
-    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingSchedulerItemCompletionStatus
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingEventCompletionStatuses
     {
-        self.item.status()
+        self.item.statuses()
     }
 }
 
@@ -300,7 +300,7 @@ impl BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'_> {
 }
 
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the completed attempt must advance the LL owner exactly once"]
+#[must_use = "the completed event must advance the LL owner exactly once"]
 pub struct BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
     item: crate::legacy_advertising::BluetoothLegacyAdvertisingRecycledEvent<'a>,
 }
@@ -309,22 +309,22 @@ pub struct BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
 impl<'a> BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
     pub const fn identity(
         &self,
-    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingTxIdentity {
+    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingEventIdentity {
         self.item.identity()
     }
 
-    pub const fn status(
+    pub const fn statuses(
         &self,
-    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingSchedulerItemCompletionStatus
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingEventCompletionStatuses
     {
-        self.item.status()
+        self.item.statuses()
     }
 
-    /// Advance the exact LL attempt while retaining S31 diagnostic status.
-    pub fn complete_attempt(
+    /// Advance the exact LL event while retaining S31 diagnostic statuses.
+    pub fn complete_event(
         self,
-    ) -> crate::legacy_advertising::BluetoothLegacyAdvertisingAttemptCompleted<'a> {
-        self.item.complete_attempt()
+    ) -> crate::legacy_advertising::BluetoothLegacyAdvertisingEventCompleted<'a> {
+        self.item.complete_event()
     }
 }
 
@@ -1888,9 +1888,12 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Join one prepared advertising item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc failure retains the complete advertising event"
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure retains the complete affine event"
+        )
     )]
     pub fn prepare_legacy_advertising_empty_list_merge<'a>(
         &mut self,
@@ -4499,7 +4502,7 @@ mod tests {
         };
         let cancelled = task.cancel_legacy_advertising_first_event(prepared);
         let (enabled, memory) = cancelled.into_parts();
-        assert_eq!(enabled.prepare_next().identity(), identity);
+        assert_eq!(enabled.prepare_event().identity(), identity);
         assert!(memory.prepare_packet(&[0x02, 6, 1, 2, 3, 4, 5, 6]).is_ok());
         drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());

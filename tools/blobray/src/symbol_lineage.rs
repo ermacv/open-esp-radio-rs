@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 4;
+pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 5;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -108,6 +108,7 @@ pub(crate) enum SymbolLineageFrontierRoute {
 pub(crate) struct SymbolLineageReviewFrontier {
     pub(crate) domain: &'static str,
     pub(crate) affected_status: SymbolLineageStatus,
+    pub(crate) resolution_blocked: bool,
     pub(crate) route: SymbolLineageFrontierRoute,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) edge: Option<usize>,
@@ -118,6 +119,7 @@ pub(crate) struct SymbolLineageReviewFrontier {
     pub(crate) basis: &'static str,
     pub(crate) candidate_min: usize,
     pub(crate) candidate_max: usize,
+    pub(crate) reviewable_records: usize,
     pub(crate) records: usize,
 }
 
@@ -437,7 +439,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     Ok(SymbolLineageReport {
         schema_version: SYMBOL_LINEAGE_SCHEMA,
         command: "symbols lineage",
-        method: "direct-and-ordered-one-to-one-correspondence-composition-v4",
+        method: "direct-and-ordered-one-to-one-correspondence-composition-v5",
         artifacts,
         edges: edge_summaries,
         direct: direct_summary,
@@ -725,6 +727,7 @@ struct ReviewFrontierKey {
 struct ReviewFrontierCount {
     candidate_min: usize,
     candidate_max: usize,
+    reviewable_records: usize,
     records: usize,
 }
 
@@ -741,6 +744,10 @@ fn review_frontiers(
         .map(|(key, count)| SymbolLineageReviewFrontier {
             domain: key.domain,
             affected_status: key.affected_status,
+            resolution_blocked: matches!(
+                key.affected_status,
+                SymbolLineageStatus::Conflict | SymbolLineageStatus::Unresolved
+            ),
             route: key.route,
             edge: key.edge,
             from: key.from,
@@ -749,37 +756,43 @@ fn review_frontiers(
             basis: key.basis,
             candidate_min: count.candidate_min,
             candidate_max: count.candidate_max,
+            reviewable_records: count.reviewable_records,
             records: count.records,
         })
         .collect::<Vec<_>>();
     frontiers.sort_by(|left, right| {
-        right.records.cmp(&left.records).then_with(|| {
-            (
-                left.domain,
-                left.route,
-                left.edge,
-                left.affected_status,
-                &left.from,
-                &left.to,
-                left.correspondence_status,
-                left.basis,
-            )
-                .cmp(&(
-                    right.domain,
-                    right.route,
-                    right.edge,
-                    right.affected_status,
-                    &right.from,
-                    &right.to,
-                    right.correspondence_status,
-                    right.basis,
-                ))
-        })
+        right
+            .resolution_blocked
+            .cmp(&left.resolution_blocked)
+            .then_with(|| right.reviewable_records.cmp(&left.reviewable_records))
+            .then_with(|| right.records.cmp(&left.records))
+            .then_with(|| {
+                (
+                    left.domain,
+                    left.route,
+                    left.edge,
+                    left.affected_status,
+                    &left.from,
+                    &left.to,
+                    left.correspondence_status,
+                    left.basis,
+                )
+                    .cmp(&(
+                        right.domain,
+                        right.route,
+                        right.edge,
+                        right.affected_status,
+                        &right.from,
+                        &right.to,
+                        right.correspondence_status,
+                        right.basis,
+                    ))
+            })
     });
     frontiers
 }
 
-fn collect_review_frontiers<T>(
+fn collect_review_frontiers<T: LineageEntity>(
     domain: &'static str,
     records: &[SymbolLineageRecord<T>],
     revisions: &[SymbolLineageRevision<'_>],
@@ -861,11 +874,17 @@ fn collect_review_frontiers<T>(
             .and_modify(|count| {
                 count.candidate_min = count.candidate_min.min(candidates);
                 count.candidate_max = count.candidate_max.max(candidates);
+                count.reviewable_records += usize::from(
+                    symbol_correspondence::is_reviewable_source_name(record.source.symbol()),
+                );
                 count.records += 1;
             })
             .or_insert(ReviewFrontierCount {
                 candidate_min: candidates,
                 candidate_max: candidates,
+                reviewable_records: usize::from(symbol_correspondence::is_reviewable_source_name(
+                    record.source.symbol(),
+                )),
                 records: 1,
             });
     }
@@ -1069,7 +1088,82 @@ mod tests {
             SymbolLineageFrontierRoute::AdjacentChain
         );
         assert_eq!(frontiers[0].edge, Some(1));
+        assert!(frontiers[0].resolution_blocked);
+        assert_eq!(frontiers[0].reviewable_records, 1);
         assert_eq!(frontiers[0].records, 1);
+    }
+
+    #[test]
+    fn review_frontiers_rank_semantic_work_before_compiler_artifacts() {
+        let named = entity("controller_state", "named-source");
+        let middle = entity("token-old", "named-middle");
+        let compiler = entity(".LC0", "compiler-source");
+        let edges = vec![
+            empty_report(vec![
+                correspondence(named.clone(), Some(middle.clone())),
+                correspondence(compiler.clone(), None),
+            ]),
+            empty_report(vec![correspondence(middle, None)]),
+        ];
+        let direct = empty_report(vec![
+            correspondence(named, None),
+            correspondence(compiler, None),
+        ]);
+        let functions = compose(&direct.correspondences, &edges, |report| {
+            &report.correspondences
+        });
+        let revisions = ["named", "old", "current"].map(|label| SymbolLineageRevision {
+            label,
+            source: "ble-controller",
+            path: Path::new("unused"),
+        });
+
+        let frontiers = review_frontiers(&functions, &[], &revisions);
+
+        assert_eq!(frontiers.len(), 2);
+        assert_eq!(frontiers[0].edge, Some(1));
+        assert_eq!(frontiers[0].reviewable_records, 1);
+        assert_eq!(frontiers[1].edge, Some(0));
+        assert_eq!(frontiers[1].reviewable_records, 0);
+    }
+
+    #[test]
+    fn unresolved_work_ranks_before_larger_corroboration_frontiers() {
+        let unresolved = entity("unresolved", "unresolved-source");
+        let mut direct = vec![correspondence(unresolved.clone(), None)];
+        let mut first_edge = vec![correspondence(unresolved, None)];
+        let mut second_edge = Vec::new();
+        for index in 0..3 {
+            let source = entity(&format!("chain_{index}"), &format!("source-{index}"));
+            let middle = entity(&format!("token_{index}"), &format!("middle-{index}"));
+            let target = entity(&format!("target_{index}"), &format!("target-{index}"));
+            direct.push(correspondence(source.clone(), None));
+            first_edge.push(correspondence(source, Some(middle.clone())));
+            second_edge.push(correspondence(middle, Some(target)));
+        }
+        let edges = vec![empty_report(first_edge), empty_report(second_edge)];
+        let direct = empty_report(direct);
+        let functions = compose(&direct.correspondences, &edges, |report| {
+            &report.correspondences
+        });
+        let revisions = ["named", "old", "current"].map(|label| SymbolLineageRevision {
+            label,
+            source: "ble-controller",
+            path: Path::new("unused"),
+        });
+
+        let frontiers = review_frontiers(&functions, &[], &revisions);
+
+        assert_eq!(frontiers.len(), 2);
+        assert!(frontiers[0].resolution_blocked);
+        assert_eq!(
+            frontiers[0].affected_status,
+            SymbolLineageStatus::Unresolved
+        );
+        assert_eq!(frontiers[0].records, 1);
+        assert!(!frontiers[1].resolution_blocked);
+        assert_eq!(frontiers[1].affected_status, SymbolLineageStatus::ChainOnly);
+        assert_eq!(frontiers[1].records, 3);
     }
 
     #[test]
@@ -1204,7 +1298,7 @@ mod tests {
             load_rebase_evidence(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("current schema 4")
+                .contains("current schema 5")
         );
 
         let mut forged: serde_json::Value = serde_json::from_slice(&authentic).unwrap();

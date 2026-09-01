@@ -95,11 +95,13 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
                 )
             );
             if !report.review_frontiers.is_empty() {
-                outputln!("\nReview frontiers (highest impact first)");
+                outputln!(
+                    "\nReview frontiers (reviewable facts / total records; highest impact first)"
+                );
                 outputln!(
                     "{}",
                     crate::cli::table::render(
-                        ["Impact", "Domain", "Affected", "Frontier", "Evidence"],
+                        ["Facts", "Domain", "Affected", "Frontier", "Evidence"],
                         report.review_frontiers.iter().map(|frontier| {
                             let candidates = if frontier.candidate_min == frontier.candidate_max {
                                 frontier.candidate_min.to_string()
@@ -118,7 +120,11 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
                                 |edge| format!("edge {edge}: {} → {}", frontier.from, frontier.to),
                             );
                             [
-                                frontier.records.to_string(),
+                                if frontier.reviewable_records == frontier.records {
+                                    frontier.records.to_string()
+                                } else {
+                                    format!("{}/{}", frontier.reviewable_records, frontier.records)
+                                },
                                 frontier.domain.to_owned(),
                                 lineage_status_label(frontier.affected_status).to_owned(),
                                 frontier_name,

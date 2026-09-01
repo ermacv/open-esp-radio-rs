@@ -423,8 +423,11 @@ blocked composition. The report stores artifact digests and every successful
 hop, but not vendor bytes or disassembly. Its pin candidates still require
 review and exclude generated token names.
 
-Schema 4 also retains the failed independent direct correspondence and ranks
-`review-frontiers` by the number of affected functions or objects. An
+Schema 5 also retains the failed independent direct correspondence and ranks
+`review-frontiers` that lack any resolved target before routes that need only
+independent corroboration, then by reviewable semantic names and finally by
+all affected functions or objects. Compiler labels remain counted but cannot
+outrank a frontier that unlocks project-owned facts. An
 `adjacent-chain` frontier identifies the exact release boundary that blocks a
 complete history; `direct-endpoint` means the ordered history resolves the
 entity but the independent endpoint proof is absent; `endpoint-conflict`

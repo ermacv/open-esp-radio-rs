@@ -12,5 +12,6 @@
 mod address;
 pub mod advertiser;
 pub mod advertising;
+pub mod scanning;
 
 pub use address::{LeDeviceAddress, LeDeviceAddressKind};

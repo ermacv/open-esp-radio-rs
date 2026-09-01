@@ -918,6 +918,50 @@ per-MPDU hot path. Shadow airtime work may now resume, but every new accounting
 boundary must preserve this normalized Core0 baseline rather than treating a
 per-packet identity protocol as an acceptable policy cost.
 
+Commit `9badaf84f843e9b52fc24501255f5e384de93cde` completes the next shadow
+boundary without making it authoritative. The AP MAC returns the exact
+initial and retained-retry publication vectors to the single Core0 radio
+owner. That owner binds the first frame's stable
+`(interface, schedule epoch, peer slot, peer generation, traffic class)`
+identity once per aggregate, accumulates modeled data-PPDU duration for every
+actual publication, and reconciles the association slot/generation at every
+terminal completion, timeout or collision path. The accounting state exists
+once outside the active/standby DMA arenas; it is not duplicated with physical
+storage. Access-point report schema 7 adds an optional `modeled_airtime`
+record and preserves `hardware_measurement: unavailable` as parsed provenance,
+not explanatory prose.
+
+The clean channel-13 source run `1788294706225-00184f86`, disabled replay
+`1788294955903-00185bbb` and enabled replay `1788295065959-00185da3` form one
+same-ELF A/B/A. All use build ID
+`5968a01c8ae51ae8ed071151830936bba336c2c8e4d4aa913abf941cc8061604`
+and application SHA-256
+`1bdb8e87c4ba0dd95467ee75d8b22e10ed00aa98165d78144a59ce98722bcd49`.
+
+| Run/mode | throughput | Core0 residence | Core0 cycles/datagram |
+| --- | ---: | ---: | ---: |
+| enabled A1, two-cycle mean | 119.966 Mbit/s | 39.862% | 12,521.2 |
+| disabled B, two-cycle mean | 119.382 Mbit/s | 39.584% | 12,494.8 |
+| enabled A2, two-cycle mean | 119.517 Mbit/s | 39.851% | 12,564.7 |
+| enabled A1+A2, weighted | 119.742 Mbit/s | 39.856% | 12,542.9 |
+
+The enabled-minus-disabled normalized cost is approximately 48.2 Core0
+cycles/datagram, or 0.39%, and 0.27 percentage point of Core0 residence. It is
+inside the one-percentage-point gate. Enabled throughput was 0.36 Mbit/s
+higher rather than lower, which is treated as run variation rather than an
+optimization claim. Core1 TX consume cost was 13,417 cycles/datagram enabled
+versus 13,461 disabled, so this shadow did not move work from Core0 to Core1.
+
+Across the four enabled cycles, all 20,338 terminal aggregates were bound to
+the current identity and every terminal mismatch was zero. The MAC published
+20,369 A-MPDU vectors: the extra 31 retained retries prove that the evidence
+does not cover only the no-retry path. Their summed modeled data-PPDU duration
+was 550,700,432 × 100 ns. This is approximately 55.070 seconds of submitted
+data-PPDU model during 64 seconds of workload; it remains neither measured
+airtime nor a complete medium-occupancy estimate. In the disabled replay all
+terminal/model counters were zero while the unchanged entry-side identity
+mirror remained exact, proving the runtime switch isolates the new boundary.
+
 ### Phase 5: authoritative cutover
 
 - make missing or exhausted key grants return `KeyDeferred`;

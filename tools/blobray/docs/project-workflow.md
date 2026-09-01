@@ -349,10 +349,12 @@ Static data objects are correlated separately from functions using bounded
 initializer bytes, size/properties, and relocation shape with target names
 removed. Exact mapped function relocations may resolve otherwise identical or
 changed objects. Repeated zero-initialized state and tables without a unique
-reference remain ambiguous. The generated `pin-candidates` list contains both
-function and memory-object occurrences, but every candidate remains explicitly
-`review = required`; Blobray never promotes generated correspondence into a
-reviewed fact.
+reference remain ambiguous. The complete data correspondence keeps local
+compiler labels such as `.LANCHOR*` and `.LC*` as provenance, but does not
+offer those unstable labels as semantic pin candidates. The generated
+`pin-candidates` list contains functions and meaningfully named memory-object
+occurrences, but every candidate remains explicitly `review = required`;
+Blobray never promotes generated correspondence into a reviewed fact.
 
 Accept a candidate only by adding a sparse `[[bindings]]` record to the
 project's reviewed-knowledge TOML. The record must repeat the target
@@ -364,6 +366,40 @@ locator and occurrence. Linked-IR indexes resolve either identity while raw
 call-graph and xref keys are retained. Changing the reviewed pack invalidates
 the Linked-IR cache. Missing, stale, cross-domain, forged or colliding bindings
 fail closed.
+
+One accepted candidate is the only project-owned growth required for one new
+fact. Copy `target_occurrence` and `target_locator` from the candidate and the
+target source/digest from the report header; choose the semantic path only
+after review:
+
+```toml
+schema = 2
+id = "esp32s31-ble-reviewed-identities"
+
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[[bindings]]
+id = "ble.scheduler-state.binding"
+occurrence = "occurrence:memory-object:sha256:<candidate-digest>"
+semantic = "memory-object:esp-idf/ble/controller/scheduler-state"
+
+[bindings.applies-to]
+artifacts = [
+  { source = "ble-controller", sha256 = "<report-target-sha256>" },
+]
+
+[[bindings.evidence]]
+source = "manual-symbol-correspondence-review"
+locator = "<candidate-target-locator>"
+occurrence = "occurrence:memory-object:sha256:<candidate-digest>"
+```
+
+Do not copy `suggested_name` into `semantic` mechanically. It is old-archive
+nomenclature and remains a review hint, not an accepted hardware or controller
+model.
 
 Revision snapshots use a reviewed function ID as the comparison key while
 retaining the raw identity, exact artifact digest, locator and occurrence as

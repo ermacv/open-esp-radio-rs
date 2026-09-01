@@ -15,7 +15,7 @@ use open_radio_vendor_contracts::ArtifactIdentity;
 
 use crate::{Result, artifact, artifact_occurrence};
 
-pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 2;
+pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -700,6 +700,7 @@ fn data_pin_candidates(correspondences: &[DataObjectCorrespondence]) -> Vec<Sema
         .filter(|correspondence| {
             correspondence.status == SymbolCorrespondenceStatus::Unique
                 && correspondence.candidates.len() == 1
+                && is_reviewable_data_name(&correspondence.from.symbol)
         })
         .map(|correspondence| SemanticPinCandidate {
             domain: "memory-object",
@@ -711,6 +712,10 @@ fn data_pin_candidates(correspondences: &[DataObjectCorrespondence]) -> Vec<Sema
             source_occurrence: correspondence.from.occurrence.clone(),
         })
         .collect()
+}
+
+fn is_reviewable_data_name(name: &str) -> bool {
+    !name.starts_with('.')
 }
 
 fn infer_member_order(from: &Path, to: &Path) -> Result<Option<BTreeMap<String, String>>> {
@@ -1123,5 +1128,40 @@ mod tests {
             correspondences[1].status,
             SymbolCorrespondenceStatus::Ambiguous
         );
+    }
+
+    #[test]
+    fn data_pin_candidates_exclude_compiler_local_labels() {
+        let object = |symbol: &str, occurrence: &str| DataObjectCorrespondenceObject {
+            member: Some("radio.o".to_owned()),
+            section: ".bss".to_owned(),
+            symbol: symbol.to_owned(),
+            aliases: Vec::new(),
+            object_offset: 0,
+            size: 4,
+            writable: true,
+            initialized: false,
+            locator: format!("archive-member:radio.o/section:.bss/symbol:{symbol}"),
+            occurrence: occurrence.to_owned(),
+            fingerprint: "sha256:body".to_owned(),
+        };
+        let correspondence = |symbol: &str| DataObjectCorrespondence {
+            from: object(symbol, "occurrence:memory-object:sha256:source"),
+            status: SymbolCorrespondenceStatus::Unique,
+            basis: "mapped-function-reference",
+            candidates: vec![object(
+                "sym_obfuscated",
+                "occurrence:memory-object:sha256:target",
+            )],
+        };
+
+        let candidates = data_pin_candidates(&[
+            correspondence("ble_ll_env_p"),
+            correspondence(".LANCHOR0"),
+            correspondence(".LC0"),
+        ]);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].suggested_name, "ble_ll_env_p");
     }
 }

@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 3;
+pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -437,7 +437,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     Ok(SymbolLineageReport {
         schema_version: SYMBOL_LINEAGE_SCHEMA,
         command: "symbols lineage",
-        method: "direct-and-ordered-one-to-one-correspondence-composition-v3",
+        method: "direct-and-ordered-one-to-one-correspondence-composition-v4",
         artifacts,
         edges: edge_summaries,
         direct: direct_summary,
@@ -1204,7 +1204,7 @@ mod tests {
             load_rebase_evidence(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("current schema 3")
+                .contains("current schema 4")
         );
 
         let mut forged: serde_json::Value = serde_json::from_slice(&authentic).unwrap();

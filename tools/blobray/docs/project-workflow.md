@@ -373,10 +373,14 @@ artifact or silently promotes it into reviewed knowledge.
 For archive revisions that replace alphabetically sorted source-object names
 with `0.o`, `1.o`, and so on, the report also publishes the complete inferred
 member-order table and measures it against unique exact-body matches. This is
-module provenance and a ranking signal only: functions can move between
-modules across releases, so member order never promotes an ambiguous function
-to an automatic match. Every function record includes an exact artifact-bound
-revision occurrence and its derivation locator for a later reviewed pin.
+module provenance and never promotes an ambiguous function: functions can
+move between modules across releases. When at least 64 exact function bodies
+support the table, at least 90% of all measured bodies agree, and none
+conflict, an ambiguous exact-body static object may be reduced to the single
+candidate in its proven renamed member. Member order cannot rescue a changed
+or absent object. Every function and object record includes an exact
+artifact-bound revision occurrence and its derivation locator for a later
+reviewed pin.
 Static data objects are correlated separately from functions using stable
 non-generated names, epoch-gated generated tokens, bounded initializer bytes,
 size/properties, and relocation shape with target names removed. Exact mapped
@@ -419,7 +423,7 @@ blocked composition. The report stores artifact digests and every successful
 hop, but not vendor bytes or disassembly. Its pin candidates still require
 review and exclude generated token names.
 
-Schema 3 also retains the failed independent direct correspondence and ranks
+Schema 4 also retains the failed independent direct correspondence and ranks
 `review-frontiers` by the number of affected functions or objects. An
 `adjacent-chain` frontier identifies the exact release boundary that blocks a
 complete history; `direct-endpoint` means the ordered history resolves the

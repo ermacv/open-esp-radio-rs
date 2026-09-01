@@ -83,21 +83,27 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
         );
         if let Some(member_order) = &report.member_order {
             outputln!(
-                "Member order: {} mappings, exact-body support={} conflicts={} support={:.3}% (module evidence only)",
+                "Member order: {} mappings, exact-body support={} conflicts={} support={:.3}% data-refinement={}",
                 member_order.correspondences.len(),
                 member_order.exact_function_support,
                 member_order.exact_function_conflicts,
                 f64::from(member_order.support_parts_per_million) / 10_000.0,
+                if member_order.automatic_data_matches {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
             );
         }
         outputln!(
-            "Data objects: source={} target={} unique={} name-stable={} token-stable={} reference-refined={} ambiguous={} unmatched={}",
+            "Data objects: source={} target={} unique={} name-stable={} token-stable={} reference-refined={} member-refined={} ambiguous={} unmatched={}",
             report.data_summary.from_objects,
             report.data_summary.to_objects,
             report.data_summary.unique,
             report.data_summary.name_stable,
             report.data_summary.token_stable,
             report.data_summary.reference_refined,
+            report.data_summary.member_refined,
             report.data_summary.ambiguous,
             report.data_summary.unmatched,
         );

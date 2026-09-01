@@ -26,10 +26,16 @@ use open_esp_radio_bluetooth_ll::{
         LEGACY_ADVERTISING_PDU_CAPACITY, LegacyAdvertisingEncodeError, PrimaryAdvertisingChannelMap,
     },
 };
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphIdentity;
+#[cfg(not(target_arch = "riscv32"))]
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphModelAddress;
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothLeTxPacketPrepareError, BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    BluetoothLeTxPacketPrepareError, BluetoothLegacyAdvertisingMemoryGraphBindFailure,
+    BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
     BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
-    BluetoothLegacyAdvertisingMemoryGraphPacketPrepared, BluetoothLegacyAdvertisingPduError,
+    BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphStorage, BluetoothLegacyAdvertisingPduError,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -77,6 +83,118 @@ impl BluetoothLegacyAdvertisingDefaultTxPowerDbm {
 
     pub const fn dbm(self) -> i8 {
         self.0
+    }
+}
+
+/// A second advertising epoch cannot check out the sole controller graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyAdvertisingRuntimeBeginError {
+    EventActive,
+}
+
+/// Composition-owned graph and physical power policy for legacy advertising.
+///
+/// An empty slot means that the exact graph is retained by an affine event
+/// typestate. Dropping that event cannot recreate availability.
+#[must_use = "the advertising runtime retains the sole production graph"]
+pub struct BluetoothLegacyAdvertisingRuntimeResources {
+    default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        expect(
+            dead_code,
+            reason = "identity becomes live with the next production Enable actor iteration"
+        )
+    )]
+    graph_identity: BluetoothLegacyAdvertisingMemoryGraphIdentity,
+    idle: Option<BluetoothLegacyAdvertisingMemoryGraphCpuOwned>,
+}
+
+impl BluetoothLegacyAdvertisingRuntimeResources {
+    fn from_claimed_graph(
+        default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+        graph: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    ) -> Self {
+        #[cfg(any(target_arch = "riscv32", test))]
+        let graph_identity = graph.binding().identity();
+        Self {
+            default_tx_power_dbm,
+            #[cfg(any(target_arch = "riscv32", test))]
+            graph_identity,
+            idle: Some(graph),
+        }
+    }
+
+    /// Bind one real statically placed advertising graph.
+    #[cfg(target_arch = "riscv32")]
+    pub fn claim_static(
+        storage: &'static mut BluetoothLegacyAdvertisingMemoryGraphStorage,
+        default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    ) -> Result<Self, BluetoothLegacyAdvertisingMemoryGraphBindFailure> {
+        let graph = BluetoothLegacyAdvertisingMemoryGraphStorage::pin_static(storage)?;
+        Ok(Self::from_claimed_graph(default_tx_power_dbm, graph))
+    }
+
+    /// Bind one native model graph at a deterministic controller address.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn claim_static_model(
+        storage: &'static mut BluetoothLegacyAdvertisingMemoryGraphStorage,
+        base: BluetoothLegacyAdvertisingMemoryGraphModelAddress,
+        default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    ) -> Result<Self, BluetoothLegacyAdvertisingMemoryGraphBindFailure> {
+        let graph = BluetoothLegacyAdvertisingMemoryGraphStorage::pin_static_model(storage, base)?;
+        Ok(Self::from_claimed_graph(default_tx_power_dbm, graph))
+    }
+
+    /// Physical default-power request retained with this exact graph.
+    pub const fn default_tx_power_dbm(&self) -> BluetoothLegacyAdvertisingDefaultTxPowerDbm {
+        self.default_tx_power_dbm
+    }
+
+    /// Whether no advertising event currently owns the graph.
+    pub const fn event_is_idle(&self) -> bool {
+        self.idle.is_some()
+    }
+
+    /// Check out the unique graph for one advertising lifecycle.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        expect(
+            dead_code,
+            reason = "production checkout becomes live with the next Enable actor iteration"
+        )
+    )]
+    pub(crate) fn begin_event(
+        &mut self,
+    ) -> Result<
+        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothLegacyAdvertisingRuntimeBeginError,
+    > {
+        self.idle
+            .take()
+            .ok_or(BluetoothLegacyAdvertisingRuntimeBeginError::EventActive)
+    }
+
+    /// Return a cancelled or completed graph to this exact runtime.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_arch = "riscv32",
+        expect(
+            dead_code,
+            reason = "production restore becomes live with the next Enable actor iteration"
+        )
+    )]
+    pub(crate) fn restore_idle(
+        &mut self,
+        graph: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    ) -> Result<(), BluetoothLegacyAdvertisingMemoryGraphCpuOwned> {
+        if self.idle.is_some() || graph.binding().identity() != self.graph_identity {
+            return Err(graph);
+        }
+        self.idle = Some(graph);
+        Ok(())
     }
 }
 
@@ -1306,7 +1424,10 @@ mod tests {
     };
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
-    use super::{BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothLegacyAdvertisingPrepared};
+    use super::{
+        BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothLegacyAdvertisingPrepared,
+        BluetoothLegacyAdvertisingRuntimeBeginError, BluetoothLegacyAdvertisingRuntimeResources,
+    };
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
         BluetoothLegacyAdvertisingTimingObservation, BluetoothSchedulerInstant,
@@ -1339,6 +1460,43 @@ mod tests {
             .expect("the model base uses controller SRAM syntax");
         BluetoothLegacyAdvertisingMemoryGraphStorage::pin_static_model(storage, base)
             .expect("the advertising graph fits physical controller SRAM")
+    }
+
+    fn runtime_at(base: u32) -> BluetoothLegacyAdvertisingRuntimeResources {
+        let storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothLegacyAdvertisingMemoryGraphStorage::new(),
+        ));
+        let base = BluetoothLegacyAdvertisingMemoryGraphModelAddress::new(base)
+            .expect("the model base uses controller SRAM syntax");
+        BluetoothLegacyAdvertisingRuntimeResources::claim_static_model(
+            storage,
+            base,
+            BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(6),
+        )
+        .expect("the advertising runtime graph fits controller SRAM")
+    }
+
+    #[test]
+    fn runtime_checks_out_and_restores_only_its_exact_graph() {
+        let mut runtime = runtime_at(0x2f00_1000);
+        assert_eq!(runtime.default_tx_power_dbm().dbm(), 6);
+        assert!(runtime.event_is_idle());
+        let graph = runtime
+            .begin_event()
+            .expect("the idle graph checks out once");
+        assert!(matches!(
+            runtime.begin_event(),
+            Err(BluetoothLegacyAdvertisingRuntimeBeginError::EventActive)
+        ));
+        assert!(runtime.restore_idle(graph).is_ok());
+        assert!(runtime.event_is_idle());
+
+        let mut foreign = runtime_at(0x2f00_2000);
+        let foreign_graph = foreign.begin_event().expect("the foreign graph checks out");
+        let foreign_graph = runtime
+            .restore_idle(foreign_graph)
+            .expect_err("a different graph identity cannot enter this runtime");
+        assert!(foreign.restore_idle(foreign_graph).is_ok());
     }
 
     #[test]

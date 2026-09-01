@@ -1,7 +1,8 @@
 //! Production ownership and final IRQ composition for ESP32-S31 Bluetooth.
 //!
-//! This crate owns placement and one-time acquisition for both the BLE PHY
-//! environment and one DTM event graph. It also installs the final target-only
+//! This crate owns placement and one-time acquisition for the BLE PHY
+//! environment, one DTM event graph and one legacy-advertising event graph.
+//! It also installs the final target-only
 //! bridge from the three typed ESP-HAL routes through the complete chip ISR
 //! service to durable Embassy notification. Controller-memory layout and
 //! address validation remain in the chip memory crate. Command/HCI ownership
@@ -30,8 +31,9 @@ pub use cold_start::{
     Esp32s31BluetoothBlePhyMemoryFailure, Esp32s31BluetoothClaimedMemory,
     Esp32s31BluetoothColdStartConfig, Esp32s31BluetoothColdStartError,
     Esp32s31BluetoothColdStartOutput, Esp32s31BluetoothDtmMemoryFailure,
-    Esp32s31BluetoothPoweredFailure, Esp32s31BluetoothRecheckStartFailure,
-    Esp32s31BluetoothReservedFailure, Esp32s31BluetoothUnpoweredOwners, start_esp32s31_bluetooth,
+    Esp32s31BluetoothLegacyAdvertisingMemoryFailure, Esp32s31BluetoothPoweredFailure,
+    Esp32s31BluetoothRecheckStartFailure, Esp32s31BluetoothReservedFailure,
+    Esp32s31BluetoothUnpoweredOwners, start_esp32s31_bluetooth,
 };
 #[cfg(target_arch = "riscv32")]
 pub use interrupt_runtime::{
@@ -55,14 +57,19 @@ pub use system_storage::{
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use open_esp_radio_esp32s31_bluetooth::{BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources};
+use open_esp_radio_esp32s31_bluetooth::{
+    BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources,
+    BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothLegacyAdvertisingRuntimeResources,
+};
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphStorage,
+    BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphStorage,
 };
 #[cfg(not(target_arch = "riscv32"))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineModelAddress, BluetoothDtmMemoryGraphModelAddress,
+    BluetoothLegacyAdvertisingMemoryGraphModelAddress,
 };
 use static_cell::ConstStaticCell;
 
@@ -260,21 +267,126 @@ pub fn claim_production_dtm_runtime(
 #[unsafe(link_section = ".dma.bss.open_radio_bluetooth_dtm")]
 static PRODUCTION_DTM_MEMORY: Esp32s31BluetoothDtmMemory = Esp32s31BluetoothDtmMemory::new();
 
+/// One statically placed legacy advertising graph.
+///
+/// The arena is independent from DTM because their affine lifecycles may not
+/// exchange descriptors or synthesize ownership from an idle slot.
+pub struct Esp32s31BluetoothLegacyAdvertisingMemory {
+    claimed: AtomicBool,
+    storage: ConstStaticCell<BluetoothLegacyAdvertisingMemoryGraphStorage>,
+}
+
+impl Esp32s31BluetoothLegacyAdvertisingMemory {
+    /// Reserve one fresh arena without touching Controller memory or MMIO.
+    pub const fn new() -> Self {
+        Self {
+            claimed: AtomicBool::new(false),
+            storage: ConstStaticCell::new(BluetoothLegacyAdvertisingMemoryGraphStorage::new()),
+        }
+    }
+
+    fn begin_claim(
+        &'static self,
+    ) -> Result<
+        &'static mut BluetoothLegacyAdvertisingMemoryGraphStorage,
+        Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
+    > {
+        if self
+            .claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(Esp32s31BluetoothLegacyAdvertisingMemoryClaimError::InUse);
+        }
+        Ok(self.storage.take())
+    }
+
+    /// Claim and bind this arena using its real ESP32-S31 address.
+    #[cfg(target_arch = "riscv32")]
+    pub fn claim(
+        &'static self,
+        default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    ) -> Result<
+        BluetoothLegacyAdvertisingRuntimeResources,
+        Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
+    > {
+        let storage = self.begin_claim()?;
+        BluetoothLegacyAdvertisingRuntimeResources::claim_static(storage, default_tx_power_dbm)
+            .map_err(Esp32s31BluetoothLegacyAdvertisingMemoryClaimError::Placement)
+    }
+
+    /// Claim this arena with a deterministic native model address.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn claim_model(
+        &'static self,
+        base: BluetoothLegacyAdvertisingMemoryGraphModelAddress,
+        default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    ) -> Result<
+        BluetoothLegacyAdvertisingRuntimeResources,
+        Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
+    > {
+        let storage = self.begin_claim()?;
+        BluetoothLegacyAdvertisingRuntimeResources::claim_static_model(
+            storage,
+            base,
+            default_tx_power_dbm,
+        )
+        .map_err(Esp32s31BluetoothLegacyAdvertisingMemoryClaimError::Placement)
+    }
+}
+
+impl Default for Esp32s31BluetoothLegacyAdvertisingMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Why the production legacy advertising graph could not be claimed.
+#[derive(Debug)]
+pub enum Esp32s31BluetoothLegacyAdvertisingMemoryClaimError {
+    InUse,
+    Placement(BluetoothLegacyAdvertisingMemoryGraphBindFailure),
+}
+
+/// Claim the sole production legacy advertising graph.
+#[cfg(target_arch = "riscv32")]
+pub fn claim_production_legacy_advertising_runtime(
+    default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+) -> Result<
+    BluetoothLegacyAdvertisingRuntimeResources,
+    Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
+> {
+    PRODUCTION_LEGACY_ADVERTISING_MEMORY.claim(default_tx_power_dbm)
+}
+
+#[cfg(target_arch = "riscv32")]
+#[allow(
+    unsafe_code,
+    reason = "the production linker must retain controller storage in internal SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_bluetooth_legacy_advertising")]
+static PRODUCTION_LEGACY_ADVERTISING_MEMORY: Esp32s31BluetoothLegacyAdvertisingMemory =
+    Esp32s31BluetoothLegacyAdvertisingMemory::new();
+
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_bluetooth::{
         BluetoothDtmDefaultTxPowerDbm, BluetoothDtmRuntimeConfig,
+        BluetoothLegacyAdvertisingDefaultTxPowerDbm,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothBlePhyEngineBindError,
         BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
         BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphModelAddress,
         BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
+        BluetoothLegacyAdvertisingMemoryGraphModelAddress,
     };
 
     use super::{
         Esp32s31BluetoothBlePhyMemory, Esp32s31BluetoothBlePhyMemoryClaimError,
         Esp32s31BluetoothDtmMemory, Esp32s31BluetoothDtmMemoryClaimError,
+        Esp32s31BluetoothLegacyAdvertisingMemory,
+        Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
     };
 
     const fn runtime_config() -> BluetoothDtmRuntimeConfig {
@@ -302,6 +414,23 @@ mod tests {
         assert!(matches!(
             MEMORY.claim_model(base),
             Err(Esp32s31BluetoothBlePhyMemoryClaimError::InUse)
+        ));
+    }
+
+    #[test]
+    fn model_legacy_advertising_arena_is_claimed_once() {
+        static MEMORY: Esp32s31BluetoothLegacyAdvertisingMemory =
+            Esp32s31BluetoothLegacyAdvertisingMemory::new();
+        let base = BluetoothLegacyAdvertisingMemoryGraphModelAddress::new(0x2f00_6000)
+            .expect("model base is encodable");
+        let runtime = MEMORY
+            .claim_model(base, BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(6))
+            .expect("fresh advertising arena binds once");
+        assert!(runtime.event_is_idle());
+        assert_eq!(runtime.default_tx_power_dbm().dbm(), 6);
+        assert!(matches!(
+            MEMORY.claim_model(base, BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(6)),
+            Err(Esp32s31BluetoothLegacyAdvertisingMemoryClaimError::InUse)
         ));
     }
 

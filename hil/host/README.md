@@ -47,6 +47,7 @@ run. Its canonical records are:
 
 ```text
 manifest.json       invocation, repository, host, lab and firmware provenance
+lab-provenance.json secret-free pre-run topology, host and fixture observation
 plan.json           selected and filtered catalog entries
 events.jsonl        append-only execution timeline
 suite.json          typed suite/scenario/repetition outcomes
@@ -67,8 +68,19 @@ scenarios/<id>/
 ├── result.json
 └── repetition-NNN/
     ├── result.json
+    ├── host-route.json
     └── workload evidence
 ```
+
+`lab-provenance.json` is collected while the fixture lock is held and before a
+firmware build or flash. It deliberately omits both network credentials and
+transport endpoints. For a managed OpenWrt fixture it records the actual
+release/kernel/boot identity, driver and firmware, country, TX power, channel,
+frequency, width, associated-station count and concurrent VIFs. Host interface
+and route-table state are recorded at the same boundary. The target-specific
+route cannot exist reliably at that point, so every station traffic repetition
+later writes `host-route.json` after address assignment and fails unless the
+socket source and required Ethernet/WLAN medium match the kernel route.
 
 Repetition records index every evidence attachment with its relative path,
 media type, byte length and SHA-256 digest. Schema 2 repetition records also

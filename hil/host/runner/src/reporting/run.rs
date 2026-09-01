@@ -457,6 +457,8 @@ pub(super) struct RunManifest {
     pub(super) repository: RepositoryProvenance,
     runner: RunnerProvenance,
     pub(super) cell: CellProvenance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) lab_provenance_path: Option<PathBuf>,
     pub(super) firmware: Vec<FirmwareArtifact>,
 }
 
@@ -580,6 +582,7 @@ impl RunSession {
                 device_id: device_id.to_owned(),
                 serial_device: serial_device.to_owned(),
             },
+            lab_provenance_path: None,
             firmware: Vec::new(),
         };
         atomic_json(&directory.join("manifest.json"), &manifest)?;
@@ -608,6 +611,16 @@ impl RunSession {
 
     pub(crate) fn write_plan(&self, plan: &RunPlan) -> Result<()> {
         atomic_json(&self.directory.join("plan.json"), plan)
+    }
+
+    pub(crate) fn record_lab_provenance(
+        &mut self,
+        provenance: &crate::transport::lab_provenance::LabProvenance,
+    ) -> Result<()> {
+        let path = PathBuf::from("lab-provenance.json");
+        atomic_json(&self.directory.join(&path), provenance)?;
+        self.manifest.lab_provenance_path = Some(path);
+        atomic_json(&self.directory.join("manifest.json"), &self.manifest)
     }
 
     pub(crate) fn scenario_directory(&self, scenario: &str) -> PathBuf {
@@ -1558,6 +1571,7 @@ mod tests {
                 device_id: String::from("dut-1"),
                 serial_device: PathBuf::from("/dev/ttyACM0"),
             },
+            lab_provenance_path: None,
             firmware: Vec::new(),
         }
     }

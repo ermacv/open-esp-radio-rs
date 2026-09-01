@@ -546,6 +546,10 @@ impl AccessPointConfig {
         self.channel_width.bandwidth_mhz()
     }
 
+    pub(crate) const fn channel_width(&self) -> WifiChannelWidth {
+        self.channel_width
+    }
+
     /// Exact primary-channel frequency used to constrain client scanning.
     pub(crate) const fn frequency_mhz(&self) -> u16 {
         2_407 + self.channel as u16 * 5

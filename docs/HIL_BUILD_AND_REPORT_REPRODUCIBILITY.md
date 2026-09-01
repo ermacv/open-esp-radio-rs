@@ -172,6 +172,7 @@ target/hil/esp32s31/
 ├── objects/sha256/aa/<digest>       local content-addressed objects
 └── runs/<run-id>/
     ├── manifest.json                experiment provenance
+    ├── lab-provenance.json          secret-free pre-run cell observation
     ├── source/
     │   ├── repository.patch         optional tracked developer delta
     │   └── overrides/...            optional tracked override deltas
@@ -257,13 +258,27 @@ Current implementation status:
   binds the direct source run, its sealed-integrity digest, build ID and
   firmware-source repository. Replayed runs are never accepted as
   current-clean qualification evidence;
+- step 5 now records a typed, secret-free `lab-provenance.json` before any
+  firmware build or flash. It binds the sanitized cell topology, host kernel,
+  boot and interface state, main IPv4 routes, and the managed OpenWrt release,
+  kernel, boot, driver/firmware, country, TX power, channel geometry,
+  associated-station count and concurrent VIFs to the run manifest;
+- each station traffic repetition independently discovers the route after the
+  DUT has an address, rejects ARP-flux topology, verifies the socket source and
+  asserts Ethernet for the OpenWrt fixture or WLAN for the local-Linux
+  fixture. The resulting typed `host-route.json` is sealed with the workload
+  evidence. This per-flow observation is deliberately not inferred from the
+  earlier run-level route table;
+- SSIDs, passphrases and SSH endpoints are structurally absent from lab
+  provenance. The offline reader validates the canonical path, schema,
+  cell/device binding, timestamps and fixture/observation geometry even if an
+  integrity index has been regenerated;
 - all Git source/override identities are captured before the build and checked
   again before firmware provenance is published, so an ordinary edit during a
   build fails closed instead of creating a misleading record;
 - `reproducibility` remains explicitly `unverified`; the reader rejects a
   `verified` claim until step 6 defines and retains its independent proof;
-- multi-image `run-all` replay, lab snapshots, deterministic two-directory
-  rebuilds and CAS garbage
+- multi-image `run-all` replay, deterministic two-directory rebuilds and CAS garbage
   collection remain pending and must not be inferred from exact artifact
   replay.
 

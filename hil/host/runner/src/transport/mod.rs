@@ -5,6 +5,7 @@ pub(crate) mod fixture_lock;
 pub(crate) mod ieee802154_ed_event;
 pub(crate) mod ieee802154_event_status;
 pub(crate) mod lab_config;
+pub(crate) mod lab_provenance;
 pub(crate) mod local_air_monitor;
 pub(crate) mod local_linux_fixture;
 pub(crate) mod network_helper;

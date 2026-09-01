@@ -1,11 +1,12 @@
 //! Qualification preflights for the host-side IP topology.
 
 use std::{
-    fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
     process::Command,
 };
+
+use serde::{Deserialize, Serialize};
 
 use crate::{Result, transport::lab_config::StationFixtureConfig};
 
@@ -13,6 +14,28 @@ use crate::{Result, transport::lab_config::StationFixtureConfig};
 pub(crate) struct BenchmarkIpv4Route {
     interface: String,
     source: Ipv4Addr,
+    medium: RouteMedium,
+    expected_medium: Option<RouteMedium>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RouteMedium {
+    Ethernet,
+    Wireless,
+}
+
+#[derive(Debug, Serialize)]
+struct HostRouteEvidence<'a> {
+    schema: u16,
+    target: Ipv4Addr,
+    interface: &'a str,
+    route_source: Ipv4Addr,
+    socket_source: Ipv4Addr,
+    medium: RouteMedium,
+    expected_medium: Option<RouteMedium>,
+    medium_assertion_passed: bool,
+    socket_source_assertion_passed: bool,
 }
 
 impl BenchmarkIpv4Route {
@@ -30,11 +53,22 @@ impl BenchmarkIpv4Route {
             )
             .into());
         }
-        let route = parse_ipv4_route(&String::from_utf8(output.stdout)?, device)?;
-        if matches!(fixture, StationFixtureConfig::OpenWrt(_)) && route.is_wireless() {
+        let mut route = parse_ipv4_route(&String::from_utf8(output.stdout)?, device)?;
+        route.medium = interface_medium(&route.interface);
+        route.expected_medium = match fixture {
+            StationFixtureConfig::OpenWrt(_) => Some(RouteMedium::Ethernet),
+            StationFixtureConfig::LocalLinux(_) => Some(RouteMedium::Wireless),
+            StationFixtureConfig::External(_) => None,
+        };
+        if route
+            .expected_medium
+            .is_some_and(|expected| route.medium != expected)
+        {
             return Err(format!(
-                "OpenWrt qualification route to {device} uses wireless interface `{}`; the host data path must use Ethernet",
-                route.interface
+                "qualification route to {device} uses {:?} interface `{}`, expected {:?}",
+                route.medium,
+                route.interface,
+                route.expected_medium.expect("checked above")
             )
             .into());
         }
@@ -58,19 +92,32 @@ impl BenchmarkIpv4Route {
         target: Ipv4Addr,
         socket_source: Ipv4Addr,
     ) -> Result<()> {
-        fs::write(
-            output.join("host-route.txt"),
-            format!(
-                "target={target}\ninterface={}\nroute_source={}\nsocket_source={socket_source}\n",
-                self.interface, self.source
-            ),
-        )?;
-        Ok(())
+        self.verify_socket_source(socket_source)?;
+        crate::reporting::run::atomic_json(
+            &output.join("host-route.json"),
+            &HostRouteEvidence {
+                schema: 1,
+                target,
+                interface: &self.interface,
+                route_source: self.source,
+                socket_source,
+                medium: self.medium,
+                expected_medium: self.expected_medium,
+                medium_assertion_passed: self
+                    .expected_medium
+                    .is_none_or(|expected| expected == self.medium),
+                socket_source_assertion_passed: true,
+            },
+        )
     }
+}
 
-    fn is_wireless(&self) -> bool {
-        let interface = PathBuf::from("/sys/class/net").join(&self.interface);
-        interface.join("phy80211").exists() || interface.join("wireless").exists()
+fn interface_medium(interface: &str) -> RouteMedium {
+    let interface = PathBuf::from("/sys/class/net").join(interface);
+    if interface.join("phy80211").exists() || interface.join("wireless").exists() {
+        RouteMedium::Wireless
+    } else {
+        RouteMedium::Ethernet
     }
 }
 
@@ -95,6 +142,8 @@ fn parse_ipv4_route(output: &str, device: Ipv4Addr) -> Result<BenchmarkIpv4Route
     Ok(BenchmarkIpv4Route {
         interface: interface.to_owned(),
         source,
+        medium: RouteMedium::Ethernet,
+        expected_medium: None,
     })
 }
 
@@ -207,6 +256,8 @@ mod tests {
             BenchmarkIpv4Route {
                 interface: String::from("enp0s20f0u2u4c2"),
                 source: Ipv4Addr::new(192, 168, 178, 129),
+                medium: RouteMedium::Ethernet,
+                expected_medium: None,
             }
         );
         route
@@ -226,5 +277,43 @@ mod tests {
         assert!(parse_ipv4_route("", device).is_err());
         assert!(parse_ipv4_route("192.168.178.127 src 192.168.178.129", device).is_err());
         assert!(parse_ipv4_route("192.168.178.127 dev enp0", device).is_err());
+    }
+
+    #[test]
+    fn route_evidence_is_typed_and_requires_the_bound_socket_source() {
+        let output =
+            std::env::temp_dir().join(format!("open-radio-host-route-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&output);
+        std::fs::create_dir(&output).unwrap();
+        let route = BenchmarkIpv4Route {
+            interface: String::from("enp0"),
+            source: Ipv4Addr::new(192, 0, 2, 10),
+            medium: RouteMedium::Ethernet,
+            expected_medium: Some(RouteMedium::Ethernet),
+        };
+
+        route
+            .record(
+                &output,
+                Ipv4Addr::new(192, 0, 2, 20),
+                Ipv4Addr::new(192, 0, 2, 10),
+            )
+            .unwrap();
+        let evidence: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output.join("host-route.json")).unwrap())
+                .unwrap();
+        assert_eq!(evidence["medium"], "ethernet");
+        assert_eq!(evidence["expected_medium"], "ethernet");
+        assert_eq!(evidence["socket_source_assertion_passed"], true);
+        assert!(
+            route
+                .record(
+                    &output,
+                    Ipv4Addr::new(192, 0, 2, 20),
+                    Ipv4Addr::new(192, 0, 2, 11),
+                )
+                .is_err()
+        );
+        std::fs::remove_dir_all(output).unwrap();
     }
 }

@@ -330,6 +330,8 @@ fn doctor(root: &std::path::Path, lab: &transport::lab_config::LabConfig) -> Res
         .into());
     }
     eprintln!("serial_device=PASS");
+    let _lab_provenance = transport::lab_provenance::LabProvenance::capture(lab)?;
+    eprintln!("lab_provenance=PASS");
     match &lab.station_fixture {
         transport::lab_config::StationFixtureConfig::LocalLinux(_) => {
             transport::controlled_ap::doctor_local()?;
@@ -676,6 +678,9 @@ fn start_run(
         &lab.device.serial,
         invocation,
     )?;
+    let lab_provenance = transport::lab_provenance::LabProvenance::capture(lab)?;
+    session.record_lab_provenance(&lab_provenance)?;
+    session.record_event("lab-provenance-captured", None, None, None)?;
     let entries = catalog
         .all()
         .iter()

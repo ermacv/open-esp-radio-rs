@@ -20,6 +20,7 @@ use super::{
     },
 };
 use crate::Result;
+use crate::transport::lab_provenance::LabProvenance;
 
 #[derive(Debug, Serialize)]
 pub(crate) struct VerificationCompletion {
@@ -119,6 +120,7 @@ fn verify_at(
             )
             .into());
         }
+        validate_lab_provenance(&run_directory, &manifest)?;
         validate_firmware(&run_directory, &manifest)?;
         firmware_artifacts += manifest.firmware.len();
 
@@ -142,6 +144,30 @@ fn verify_at(
         firmware_artifacts,
         verified_run_ids,
     })
+}
+
+fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Result<()> {
+    let Some(path) = manifest.lab_provenance_path.as_deref() else {
+        // Schema-2 bundles created before lab provenance remain valid history.
+        return Ok(());
+    };
+    let expected = Path::new("lab-provenance.json");
+    if path != expected {
+        return Err(format!(
+            "HIL run `{}` has a non-canonical lab provenance path `{}`",
+            manifest.run_id,
+            path.display()
+        )
+        .into());
+    }
+    require_regular_file_below(run_directory, path)?;
+    let provenance: LabProvenance = read_json(&run_directory.join(path))?;
+    provenance.validate_binding(
+        &manifest.cell.cell_id,
+        &manifest.cell.device_id,
+        manifest.started_unix_millis,
+        manifest.finished_unix_millis,
+    )
 }
 
 fn validate_integrity_index(run_directory: &Path, manifest: &RunManifest) -> Result<()> {
@@ -757,7 +783,13 @@ mod tests {
             Attachment, Measurement, MeasurementUnit, Outcome, RepetitionResult, ScenarioResult,
             SuiteCounts, atomic_json, write_integrity_index,
         },
+        transport::lab_provenance::{
+            AccessPointDefinition, FixtureObservation, HostInterfaceObservation, HostObservation,
+            LabDefinition, LabProvenance, SensitiveValueDisposition, StationFixtureDefinition,
+            StationIpv4Definition,
+        },
     };
+    use open_esp_radio_hil_protocol::WifiChannelWidth;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -964,6 +996,56 @@ mod tests {
         write_integrity_index(run, "run-1").unwrap();
     }
 
+    fn add_lab_provenance(run: &Path, device_id: &str) {
+        let mut manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
+        let path = PathBuf::from("lab-provenance.json");
+        manifest.lab_provenance_path = Some(path.clone());
+        atomic_json(&run.join("manifest.json"), &manifest).unwrap();
+        atomic_json(
+            &run.join(path),
+            &LabProvenance {
+                schema: crate::transport::lab_provenance::LAB_PROVENANCE_SCHEMA,
+                captured_unix_millis: 150,
+                definition: LabDefinition {
+                    cell_id: String::from("cell-1"),
+                    device_id: device_id.to_owned(),
+                    station_ipv4: StationIpv4Definition::Dhcp,
+                    access_point: AccessPointDefinition {
+                        channel: 6,
+                        channel_width: WifiChannelWidth::Mhz40Above,
+                        client_limit: 4,
+                        target_address: "10.43.0.1".parse().unwrap(),
+                        client_address: "10.43.0.2".parse().unwrap(),
+                        secondary_client_address: None,
+                    },
+                    station_fixture: StationFixtureDefinition::External {
+                        phys: vec![crate::qualification::scenario::PhyExpectation::Ht40],
+                    },
+                    sensitive_network_values: SensitiveValueDisposition::Omitted,
+                },
+                host: HostObservation {
+                    kernel_release: String::from("6.12.0"),
+                    machine: String::from("x86_64"),
+                    os_release: Some(String::from("Test Linux")),
+                    boot_id: None,
+                    interfaces: vec![HostInterfaceObservation {
+                        name: String::from("lo"),
+                        operstate: String::from("unknown"),
+                        mac_address: Some(String::from("00:00:00:00:00:00")),
+                        master: None,
+                        wireless: false,
+                        ipv4_addresses: vec![String::from("127.0.0.1/8")],
+                        wireless_link: None,
+                    }],
+                    ipv4_routes: Vec::new(),
+                },
+                fixture: FixtureObservation::External { managed: false },
+            },
+        )
+        .unwrap();
+        write_integrity_index(run, "run-1").unwrap();
+    }
+
     #[test]
     fn verifies_firmware_and_attachment_content() {
         let (root, _) = fixture();
@@ -973,6 +1055,19 @@ mod tests {
         assert_eq!(completion.attachments, 1);
         assert_eq!(completion.firmware_artifacts, 1);
         assert_eq!(completion.verified_run_ids, ["run-1"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn verifies_typed_lab_provenance_and_rejects_wrong_device_binding() {
+        let (root, run) = fixture();
+        add_lab_provenance(&run, "dut-1");
+        verify(&root, "esp32s31", Some("run-1")).unwrap();
+
+        add_lab_provenance(&run, "another-dut");
+        let error = verify(&root, "esp32s31", Some("run-1"))
+            .expect_err("reject lab snapshot for another device");
+        assert!(error.to_string().contains("not bound"));
         fs::remove_dir_all(root).unwrap();
     }
 

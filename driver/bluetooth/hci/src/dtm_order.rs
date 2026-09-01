@@ -673,6 +673,17 @@ where
                     ready.begin_next_response(response),
                 )
             }
+            LeControllerCommandClassification::LegacyAdvertisingConfiguration(command) => {
+                let response = self.dispatch_legacy_advertising_configuration(command);
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::MalformedLegacyAdvertisingConfiguration(
+                response,
+            ) => LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                ready.begin_next_response(response),
+            ),
             LeControllerCommandClassification::Unsupported(response) => {
                 LeControllerIdleClassifiedCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
@@ -728,6 +739,17 @@ where
                         ready.begin_next_response(response),
                     )
                 }
+                LeControllerCommandClassification::LegacyAdvertisingConfiguration(command) => {
+                    let response = self.dispatch_legacy_advertising_configuration(command);
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::MalformedLegacyAdvertisingConfiguration(
+                    response,
+                ) => LeControllerClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                ),
                 LeControllerCommandClassification::Unsupported(response) => {
                     LeControllerClassifiedCommandRoute::ResponsePending(
                         ready.begin_next_response(response),

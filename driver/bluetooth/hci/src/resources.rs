@@ -2,11 +2,13 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
+use crate::legacy_advertising::LeLegacyAdvertisingConfiguration;
 use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
     InProcessHciChannel, InProcessHciControllerEndpoint, InProcessHciHostTransport,
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap, LeControllerBootstrapConfig,
-    LeControllerCommandReady, OwnedBootstrapCommand,
+    LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
+    LeLegacyAdvertisingConfigurationCommand, OwnedBootstrapCommand,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
@@ -67,6 +69,7 @@ pub struct LeControllerCommandEndpoint<
         PACKET_CAPACITY,
     >,
     bootstrap: &'resources mut LeControllerBootstrap,
+    legacy_advertising: &'resources mut LeLegacyAdvertisingConfiguration,
     initial_ready_available: &'resources mut bool,
 }
 
@@ -136,7 +139,20 @@ where
         &mut self,
         command: OwnedBootstrapCommand,
     ) -> BootstrapCommandCompleteEvent {
-        self.bootstrap.dispatch_owned(command)
+        let reset = command.is_reset();
+        let response = self.bootstrap.dispatch_owned(command);
+        if reset {
+            self.legacy_advertising.reset();
+        }
+        response
+    }
+
+    pub(crate) fn dispatch_legacy_advertising_configuration(
+        &mut self,
+        command: LeLegacyAdvertisingConfigurationCommand,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        self.legacy_advertising
+            .dispatch(self.bootstrap.phase(), command)
     }
 }
 
@@ -191,6 +207,7 @@ pub struct LeControllerHciResources<
     channel:
         InProcessHciChannel<M, HOST_TO_CONTROLLER_DEPTH, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
     bootstrap: LeControllerBootstrap,
+    legacy_advertising: LeLegacyAdvertisingConfiguration,
     initial_ready_available: bool,
 }
 
@@ -229,6 +246,7 @@ where
         Ok(Self {
             channel: InProcessHciChannel::new(),
             bootstrap: LeControllerBootstrap::new(config),
+            legacy_advertising: LeLegacyAdvertisingConfiguration::new(),
             initial_ready_available: true,
         })
     }
@@ -260,6 +278,7 @@ where
             controller: LeControllerCommandEndpoint {
                 transport,
                 bootstrap: &mut self.bootstrap,
+                legacy_advertising: &mut self.legacy_advertising,
                 initial_ready_available: &mut self.initial_ready_available,
             },
         }

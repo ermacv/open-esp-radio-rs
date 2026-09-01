@@ -15,7 +15,7 @@ use bt_hci::{
     param::{AddrKind, AdvKind, Error as HciError, Status},
 };
 
-use crate::{HciCommandPacket, HciControllerResponse};
+use crate::{BootstrapPhase, HciCommandPacket, HciControllerResponse};
 
 /// Largest legacy advertising data value accepted by the HCI command.
 pub const LE_LEGACY_ADVERTISING_DATA_CAPACITY: usize = 31;
@@ -164,6 +164,94 @@ pub enum LeLegacyAdvertisingCommand {
     SetParameters(LeLegacyNonconnectableAdvertisingParameters),
     SetData(LeLegacyAdvertisingData),
     SetEnable(bool),
+}
+
+/// Configuration-only subset which can complete without starting hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyAdvertisingConfigurationCommand {
+    SetParameters(LeLegacyNonconnectableAdvertisingParameters),
+    SetData(LeLegacyAdvertisingData),
+}
+
+impl LeLegacyAdvertisingConfigurationCommand {
+    /// Extract the software-only configuration commands from the full family.
+    pub fn from_command(
+        command: LeLegacyAdvertisingCommand,
+    ) -> Result<Self, LeLegacyAdvertisingCommand> {
+        match command {
+            LeLegacyAdvertisingCommand::SetParameters(parameters) => {
+                Ok(Self::SetParameters(parameters))
+            }
+            LeLegacyAdvertisingCommand::SetData(data) => Ok(Self::SetData(data)),
+            command @ LeLegacyAdvertisingCommand::SetEnable(_) => Err(command),
+        }
+    }
+
+    /// Exact standard HCI command identity.
+    pub const fn kind(&self) -> LeLegacyAdvertisingCommandKind {
+        match self {
+            Self::SetParameters(_) => LeLegacyAdvertisingCommandKind::SetParameters,
+            Self::SetData(_) => LeLegacyAdvertisingCommandKind::SetData,
+        }
+    }
+}
+
+/// Reset-scoped software configuration for one legacy advertising set.
+///
+/// This state contains only accepted Host intent. It grants no Link Layer,
+/// scheduler, SRAM, or radio ownership and has no enabled state.
+pub(crate) struct LeLegacyAdvertisingConfiguration {
+    parameters: Option<LeLegacyNonconnectableAdvertisingParameters>,
+    data: LeLegacyAdvertisingData,
+}
+
+impl LeLegacyAdvertisingConfiguration {
+    pub(crate) const fn new() -> Self {
+        Self {
+            parameters: None,
+            data: LeLegacyAdvertisingData {
+                bytes: [0; LE_LEGACY_ADVERTISING_DATA_CAPACITY],
+                length: 0,
+            },
+        }
+    }
+
+    pub(crate) fn dispatch(
+        &mut self,
+        phase: BootstrapPhase,
+        command: LeLegacyAdvertisingConfigurationCommand,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        let kind = command.kind();
+        if phase == BootstrapPhase::AwaitingReset {
+            return LeLegacyAdvertisingCommandCompleteEvent::new(
+                kind.opcode(),
+                HciError::CMD_DISALLOWED.to_status(),
+            );
+        }
+        match command {
+            LeLegacyAdvertisingConfigurationCommand::SetParameters(parameters) => {
+                self.parameters = Some(parameters);
+            }
+            LeLegacyAdvertisingConfigurationCommand::SetData(data) => {
+                self.data = data;
+            }
+        }
+        LeLegacyAdvertisingCommandCompleteEvent::new(kind.opcode(), Status::SUCCESS)
+    }
+
+    pub(crate) fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn parameters(&self) -> Option<LeLegacyNonconnectableAdvertisingParameters> {
+        self.parameters
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn data(&self) -> LeLegacyAdvertisingData {
+        self.data
+    }
 }
 
 impl LeLegacyAdvertisingCommand {
@@ -323,7 +411,7 @@ pub struct LeLegacyAdvertisingCommandCompleteEvent {
 }
 
 impl LeLegacyAdvertisingCommandCompleteEvent {
-    fn new(opcode: Opcode, status: Status) -> Self {
+    pub(crate) fn new(opcode: Opcode, status: Status) -> Self {
         let opcode_bytes = opcode.to_raw().to_le_bytes();
         Self {
             bytes: [
@@ -380,9 +468,10 @@ mod tests {
 
     use super::{
         LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandKind,
+        LeLegacyAdvertisingConfiguration, LeLegacyAdvertisingConfigurationCommand,
         LeLegacyAdvertisingOwnAddressKind,
     };
-    use crate::HciCommandPacket;
+    use crate::{BootstrapPhase, HciCommandPacket};
 
     #[test]
     fn decodes_supported_nonconnectable_parameters() {
@@ -484,5 +573,49 @@ mod tests {
         assert_eq!(command, LeLegacyAdvertisingCommand::SetEnable(true));
         let response = command.into_success_command_complete();
         assert_eq!(response.status(), Status::SUCCESS);
+    }
+
+    #[test]
+    fn configuration_is_reset_scoped_and_rejects_pre_reset_mutation() {
+        let parameters = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
+            LeSetAdvParams::OPCODE,
+            &[
+                0x20, 0x00, 0x40, 0x00, 0x03, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0x07, 0x00,
+            ],
+        ))
+        .expect("fixture parameters decode");
+        let parameters = LeLegacyAdvertisingConfigurationCommand::from_command(parameters)
+            .expect("Set Parameters is software-only configuration");
+        let mut configuration = LeLegacyAdvertisingConfiguration::new();
+
+        let rejected = configuration.dispatch(BootstrapPhase::AwaitingReset, parameters);
+        assert_eq!(rejected.status(), HciError::CMD_DISALLOWED.to_status());
+        assert_eq!(configuration.parameters(), None);
+
+        let accepted = configuration.dispatch(BootstrapPhase::Configuring, parameters);
+        assert_eq!(accepted.status(), Status::SUCCESS);
+        assert!(configuration.parameters().is_some());
+
+        let mut body = [0; 32];
+        body[0] = 3;
+        body[1..4].copy_from_slice(&[2, 1, 6]);
+        let data = LeLegacyAdvertisingCommand::decode(HciCommandPacket::for_test(
+            LeSetAdvData::OPCODE,
+            &body,
+        ))
+        .expect("fixture data decode");
+        let data = LeLegacyAdvertisingConfigurationCommand::from_command(data)
+            .expect("Set Data is software-only configuration");
+        assert_eq!(
+            configuration
+                .dispatch(BootstrapPhase::Configuring, data)
+                .status(),
+            Status::SUCCESS
+        );
+        assert_eq!(configuration.data().as_bytes(), &[2, 1, 6]);
+
+        configuration.reset();
+        assert_eq!(configuration.parameters(), None);
+        assert!(configuration.data().is_empty());
     }
 }

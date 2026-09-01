@@ -6,7 +6,10 @@ use bt_hci::{
     param::{Error as HciError, Status},
 };
 
-use crate::{BootstrapCommandCompleteEvent, LeDtmCommandCompleteEvent};
+use crate::{
+    BootstrapCommandCompleteEvent, LeDtmCommandCompleteEvent,
+    LeLegacyAdvertisingCommandCompleteEvent,
+};
 
 const UNKNOWN_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 6;
 
@@ -103,6 +106,8 @@ pub enum LeControllerCommandComplete {
     Bootstrap(BootstrapCommandCompleteEvent),
     /// Completion supplied by the hardware-owned DTM session.
     Dtm(LeDtmCommandCompleteEvent),
+    /// Completion for accepted or rejected advertising configuration.
+    LegacyAdvertising(LeLegacyAdvertisingCommandCompleteEvent),
     /// Terminal response for an opcode outside the closed command table.
     UnknownCommand(UnknownCommandCompleteEvent),
 }
@@ -116,6 +121,7 @@ impl HciControllerResponse for LeControllerCommandComplete {
         match self {
             Self::Bootstrap(response) => response.as_bytes(),
             Self::Dtm(response) => response.as_bytes(),
+            Self::LegacyAdvertising(response) => response.as_bytes(),
             Self::UnknownCommand(response) => response.as_bytes(),
         }
     }
@@ -130,6 +136,12 @@ impl From<BootstrapCommandCompleteEvent> for LeControllerCommandComplete {
 impl From<LeDtmCommandCompleteEvent> for LeControllerCommandComplete {
     fn from(response: LeDtmCommandCompleteEvent) -> Self {
         Self::Dtm(response)
+    }
+}
+
+impl From<LeLegacyAdvertisingCommandCompleteEvent> for LeControllerCommandComplete {
+    fn from(response: LeLegacyAdvertisingCommandCompleteEvent) -> Self {
+        Self::LegacyAdvertising(response)
     }
 }
 

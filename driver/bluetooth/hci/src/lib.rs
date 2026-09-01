@@ -20,13 +20,15 @@
 //! does not dispatch commands or claim radio work.
 //! The legacy advertising codec separately decodes the standard Set
 //! Parameters, Set Data and Set Enable commands into owned semantic values for
-//! the currently supported non-connectable role. It is not yet admitted by the
-//! production classifier: configuration retention and Enable lifecycle policy
-//! belong to the outer Link Layer router.
+//! the currently supported non-connectable role. Set Parameters and Set Data
+//! enter the common classifier and update one reset-scoped configuration owner
+//! under exact response order. Set Enable remains unclaimed until the outer
+//! Link Layer router can retain it through hardware start/stop.
 //! [`classify_le_controller_command`] joins those two portable policies at a
-//! finite command boundary: valid bootstrap and DTM commands become owned
-//! semantic tokens, malformed known commands become owned error responses,
-//! and every other opcode becomes an owned Unknown Command completion.
+//! finite command boundary: valid bootstrap, DTM and advertising configuration
+//! commands become owned semantic tokens, malformed known commands become
+//! owned error responses, and every other opcode becomes an owned Unknown
+//! Command completion.
 //! Classification never advances bootstrap state, leaves no result borrowing
 //! receive scratch storage, and keeps Reset plus other bootstrap commands
 //! available to session-aware policy before explicit dispatch.
@@ -90,9 +92,10 @@ pub use dtm_order::{
 pub use legacy_advertising::{
     LE_LEGACY_ADVERTISING_COMMAND_COMPLETE_EVENT_CAPACITY, LE_LEGACY_ADVERTISING_DATA_CAPACITY,
     LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingData, LeLegacyAdvertisingDecodeError,
-    LeLegacyAdvertisingIntervalRange, LeLegacyAdvertisingOwnAddressKind,
-    LeLegacyAdvertisingPrimaryChannels, LeLegacyNonconnectableAdvertisingParameters,
+    LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfigurationCommand,
+    LeLegacyAdvertisingData, LeLegacyAdvertisingDecodeError, LeLegacyAdvertisingIntervalRange,
+    LeLegacyAdvertisingOwnAddressKind, LeLegacyAdvertisingPrimaryChannels,
+    LeLegacyNonconnectableAdvertisingParameters,
 };
 pub use resources::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,

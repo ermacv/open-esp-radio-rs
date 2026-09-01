@@ -171,12 +171,14 @@ impl EgressControlTelemetry {
 /// Core1-only lifecycle state kept outside recoverable async device owners.
 pub struct EgressNetworkState<const DEMAND_DEPTH: usize> {
     demands: EgressDemandOutbox<DEMAND_DEPTH>,
+    flush_pending: bool,
 }
 
 impl<const DEMAND_DEPTH: usize> EgressNetworkState<DEMAND_DEPTH> {
     pub const fn new() -> Self {
         Self {
             demands: EgressDemandOutbox::new(),
+            flush_pending: false,
         }
     }
 }
@@ -352,26 +354,41 @@ impl<'control, 'state, M: RawMutex, const DEMAND_DEPTH: usize>
         &mut self,
         context: &Context<'_>,
         update: EgressDemandUpdate,
-    ) -> Result<(), EgressDemandStateError> {
+    ) -> Result<bool, EgressDemandStateError> {
         self.port.register_network_waker(context);
         self.state.demands.record(update)?;
-        self.flush_egress_demand();
-        Ok(())
+        self.state.flush_pending = true;
+        Ok(self.flush_egress_demand())
     }
 
-    pub(crate) fn flush_egress_demand(&mut self) {
+    /// Advance an already-dirty outbox and return whether a retry is needed.
+    ///
+    /// The explicit bit keeps the ordinary `egress_schedule` observation O(1)
+    /// after lifecycle state is synchronized. In particular it avoids
+    /// rescanning every key in cached external state at network-poll frequency.
+    pub(crate) fn flush_egress_demand(&mut self) -> bool {
+        if !self.state.flush_pending {
+            return false;
+        }
         for _ in 0..DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET {
             let Some(update) = self.state.demands.next() else {
-                return;
+                self.state.flush_pending = false;
+                return false;
             };
             if self.port.try_send_demand(update).is_err() {
-                return;
+                return true;
             }
             self.state.demands.commit(update);
         }
-        if self.state.demands.next().is_some() {
+        self.state.flush_pending = self.state.demands.next().is_some();
+        if self.state.flush_pending {
             self.port.network_progress.wake();
         }
+        self.state.flush_pending
+    }
+
+    pub(crate) fn egress_demand_flush_pending(&self) -> bool {
+        self.state.flush_pending
     }
 }
 
@@ -848,16 +865,20 @@ mod tests {
         let mut radio = EgressRadioScheduler::new(radio);
         let context = Context::from_waker(Waker::noop());
 
-        network
-            .update_egress_demand(&context, EgressDemandUpdate::Reset { schedule_epoch: 5 })
-            .unwrap();
-        network
-            .update_egress_demand(&context, EgressDemandUpdate::Active(demand(5, 1, 1)))
-            .unwrap();
+        assert!(
+            !network
+                .update_egress_demand(&context, EgressDemandUpdate::Reset { schedule_epoch: 5 })
+                .unwrap()
+        );
+        assert!(
+            network
+                .update_egress_demand(&context, EgressDemandUpdate::Active(demand(5, 1, 1)))
+                .unwrap()
+        );
         assert!(radio.service_shadow());
         assert_eq!(radio.active_demand_count(), 0);
 
-        network.flush_egress_demand();
+        assert!(!network.flush_egress_demand());
         assert!(radio.service_shadow());
         assert_eq!(radio.active_demand_count(), 1);
         #[cfg(feature = "tx-phase-telemetry")]

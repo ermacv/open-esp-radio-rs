@@ -1123,6 +1123,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 #[cfg(feature = "tx-egress-scheduling")]
                 egress_demand_active: false,
                 #[cfg(feature = "tx-egress-scheduling")]
+                egress_demand_flush_pending: false,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
                 shadow_grant_serial: 0,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1302,6 +1303,7 @@ pub struct SplitPinnedDevice<
     #[cfg(feature = "tx-egress-scheduling")]
     egress_demand_active: bool,
     #[cfg(feature = "tx-egress-scheduling")]
+    egress_demand_flush_pending: bool,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     shadow_grant_serial: u32,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1362,6 +1364,8 @@ impl<
         // in every packet admission while preserving same-ELF enabled/disabled
         // comparison.
         self.egress_demand_active = egress_control_enabled();
+        self.egress_demand_flush_pending =
+            self.egress_demand_active && control.egress_demand_flush_pending();
         self.egress_control = Some(control);
         self
     }
@@ -2497,9 +2501,10 @@ impl<
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_schedule(&mut self) -> Option<EgressSchedule> {
         if self.egress_demand_active
+            && self.egress_demand_flush_pending
             && let Some(control) = self.egress_control.as_mut()
         {
-            control.flush_egress_demand();
+            self.egress_demand_flush_pending = control.flush_egress_demand();
         }
         if self.link.is_up() && crate::keyed_egress_scheduling_enabled() {
             let epoch = self.refresh_scheduling_epoch();
@@ -2525,7 +2530,9 @@ impl<
             // This phase remains observational. A malformed or over-capacity
             // lifecycle is omitted from radio shadow state while synchronous
             // `transmit_for` remains the sole admission authority.
-            let _ = control.update_egress_demand(cx, update);
+            if let Ok(pending) = control.update_egress_demand(cx, update) {
+                self.egress_demand_flush_pending = pending;
+            }
         }
     }
 

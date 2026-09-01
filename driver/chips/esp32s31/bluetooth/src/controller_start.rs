@@ -1072,6 +1072,15 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         Self { task, ready }
     }
 
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        open_esp_radio_bluetooth_hci::LeControllerCommandReady<'runtime, ()>,
+    ) {
+        (self.task, self.ready)
+    }
+
     pub(crate) fn into_ready(
         self,
     ) -> open_esp_radio_bluetooth_hci::LeControllerCommandReady<
@@ -1079,10 +1088,6 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         self.ready.map_owner(|()| self.task)
-    }
-
-    pub(crate) const fn scheduler_wake(&self) -> &crate::BluetoothSchedulerWakeCell {
-        self.task.scheduler_wake()
     }
 
     /// Whether this idle task belongs to the supplied Controller endpoint.

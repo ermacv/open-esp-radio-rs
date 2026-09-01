@@ -350,7 +350,10 @@ pub use legacy_advertising::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_active::{
-    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingResponsePendingSession,
+    BluetoothLegacyAdvertisingActiveFault, BluetoothLegacyAdvertisingActiveFaultCause,
+    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingActiveStep,
+    BluetoothLegacyAdvertisingActiveWait, BluetoothLegacyAdvertisingEventCpuOwned,
+    BluetoothLegacyAdvertisingResponsePendingSession,
     BluetoothLegacyAdvertisingResponsePublication,
 };
 #[cfg(target_arch = "riscv32")]

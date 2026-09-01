@@ -16,6 +16,7 @@
 //! means only that a caller must not assume the operation is an offload.
 
 pub mod configuration;
+pub mod egress;
 pub mod esp_now;
 pub mod esp_now_security;
 pub mod interface;
@@ -27,6 +28,11 @@ pub use configuration::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
     WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
     WifiStationConfig,
+};
+pub use egress::{
+    WifiAirtimeUnits, WifiEgressAdmission, WifiEgressAdmissionObservation, WifiEgressAirtimeConfig,
+    WifiEgressAirtimeError, WifiEgressAirtimeScheduler, WifiEgressDemand, WifiEgressDemandId,
+    WifiEgressDemandLevel, WifiEgressOpportunity, WifiEgressSelection,
 };
 pub use esp_now::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY, EspNowConfig,

@@ -436,6 +436,87 @@ therefore remains under the existing direct-SRAM arbiter. This is intentional:
 the next policy must select an active demand and issue an affine quantum from
 real Core0 state, not resurrect an echo of a Core1 packet request.
 
+## Reviewed selectable-work boundary
+
+The intended production contract is bidirectional in control, but it is not a
+driver callback into a socket:
+
+```text
+Core1 / Xarxa                         Core0 / physical radio owner
+
+opaque-key readiness  ------------> bounded demand catalogue
+                                      BA / PS / rate / AQL / airtime policy
+cached burst permission <---------- affine key + frame/airtime quantum
+selected-key final SRAM frames ----> MAC / DMA / radio
+modeled terminal airtime <---------- completion feedback
+```
+
+Xarxa remains the poll-driven owner of protocol state. It asks the driver for
+final backing through `transmit_for(key)` and may try another eligible key when
+that key is deferred. Core0 never names or invokes a UDP socket or TCP
+connection. The reverse direction is only a bounded permission for one opaque
+physical egress identity. One permission must cover a radio transaction or
+airtime quantum; a request/reply per packet is rejected.
+
+This model is already mechanically plausible for the indexed UDP path. Xarxa
+can retain an exact per-key queue head after `KeyDeferred`, then construct the
+eventually selected packet directly in final SRAM. It does not require a
+separate complete-frame PSRAM staging queue or a transferable packet object.
+Socket-owned PSRAM payload is the canonical backlog; SRAM is the short radio
+execution horizon.
+
+It is not yet a generic stack contract:
+
+- only UDP publishes keyed demand and exposes independently removable keyed
+  queue heads;
+- the current demand stream reports a frame count/high watermark, not a
+  stable generic transmission opportunity for every protocol;
+- TCP decides segment eligibility from stream, congestion, retransmission and
+  timer state during `dispatch()`. Its current implementation also mutates
+  some pre-transmit state before the fallible emit boundary. Making TCP
+  selectable therefore requires an audited prepare/commit or rollback
+  boundary; it cannot be declared covered merely by adding its buffered byte
+  count to the UDP catalogue;
+- route traffic class is currently zero and AP radio identity is best-effort
+  TID 0. QoS intent can later be generic Xarxa metadata, while TID/AC and EDCA
+  remain Wi-Fi-owned policy.
+
+The evolutionary cut remains UDP shadow first. It will prove that a Core0
+recommendation derived from early demand corresponds to the actual key chosen
+by the unchanged Xarxa dispatcher, measure disagreement and policy cost, and
+leave `transmit_for` authoritative. TCP, generated control traffic and an
+authoritative grant transport are separate gates.
+
+## Portable airtime-policy kernel
+
+`open-esp-radio-wifi-softmac::egress` now defines the executor- and
+chip-independent policy state used by the next shadow phase. It owns no packet,
+DMA, wake, peer table or association object. Callers supply generation-bound
+demand and a radio-valid opportunity containing a bounded frame count,
+estimated transaction airtime, queue pending limit and weight.
+
+The kernel implements hierarchical deficit service across VIFs and queues,
+plus independent global, VIF and queue pending-airtime limits. A queue keeps
+the cursor while it has positive deficit, so equal transaction counts cannot
+masquerade as airtime fairness. A sole eligible queue remains work-conserving,
+including a sparse packet or a transaction larger than one quantum. Completion
+returns an affine non-`Copy` admission receipt and corrects estimated debt with
+the exact modeled terminal PPDU duration.
+
+Demand lifetime and physical pending credit are deliberately separate. Removing
+or resetting a demand invalidates an outstanding recommendation immediately,
+but a queue with admitted airtime remains as an unreusable tombstone until its
+terminal receipt returns. This prevents reassociation from leaking pending
+credit or letting an old transaction charge a newly reused slot.
+
+Host tests currently prove sparse immediate selection, STA-versus-AP VIF
+fairness, equal-airtime service for different peer costs, weighted service,
+AQL isolation, oversized-transaction progress, exact versus divergent shadow
+observation, affine selection, stale-lifetime rejection and terminal pending
+credit after demand removal. The kernel is not yet wired into packet
+admission, so none of these model tests is a throughput or fairness claim for
+hardware.
+
 ## Rejected candidate/grant experiment
 
 The following measurements describe the now-deleted AP candidate/grant echo,

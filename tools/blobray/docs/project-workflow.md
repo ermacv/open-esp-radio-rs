@@ -326,9 +326,13 @@ because their artifact-bound occurrences cannot survive a blob replacement by
 name alone. A `confirmed` direct-plus-chain mapping becomes a generated
 `carry-remapped` proposal with the exact target occurrence. `direct-only` and
 `chain-only` mappings include the proposed occurrence but remain
-`review-required`. The rebase command validates the lineage schema, report
-digest, endpoint artifacts, occurrence domains, locators and one-to-one target
-ownership. It never edits the reviewed pack.
+`review-required`. The rebase command rebuilds the complete current-schema
+lineage from the artifact paths embedded in the report and requires canonical
+byte equality before trusting any `confirmed` status. It then validates the
+report digest, endpoint artifacts, occurrence domains, locators and one-to-one
+target ownership. A missing artifact or manually changed report fails closed.
+It never edits the reviewed pack.
+
 When a binding is remapped, only the lineage source artifact constraint is
 projected onto the target artifact; chip, chip-revision, ecosystem, lineage and
 any unrelated artifact constraints must still match the target snapshot.
@@ -408,6 +412,22 @@ paths retain the exact edge, status, evidence basis and candidate count that
 blocked composition. The report stores artifact digests and every successful
 hop, but not vendor bytes or disassembly. Its pin candidates still require
 review and exclude generated token names.
+
+Schema 2 also retains the failed independent direct correspondence and ranks
+`review-frontiers` by the number of affected functions or objects. An
+`adjacent-chain` frontier identifies the exact release boundary that blocks a
+complete history; `direct-endpoint` means the ordered history resolves the
+entity but the independent endpoint proof is absent; `endpoint-conflict`
+means both routes resolve to different targets. `--details` prints these
+frontiers highest-impact first and includes the direct endpoint comparison in
+the edge table.
+
+For `project revision rebase`, the first and last lineage source IDs and
+digests must match artifacts in the accepted baseline and target snapshots.
+If the useful named archive predates that baseline, keep its naming lineage as
+research evidence and generate a second, smaller lineage beginning at the
+actual baseline artifact. Reusing the project's logical source ID at both
+endpoints is valid; the exact digest distinguishes the revisions.
 
 Accept a candidate only by adding a sparse `[[bindings]]` record to the
 project's reviewed-knowledge TOML. The record must repeat the target

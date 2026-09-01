@@ -1,7 +1,9 @@
 //! Multi-revision symbol-identity lineage.
 
 use super::super::*;
-use crate::symbol_lineage::{self, SymbolLineageRevision};
+use crate::symbol_lineage::{
+    self, SymbolLineageFrontierRoute, SymbolLineageRevision, SymbolLineageStatus,
+};
 
 pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
     let revisions = arguments
@@ -61,18 +63,29 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
             report.pin_candidates.len()
         );
         if crate::cli::output::details() {
-            let rows = report.edges.iter().map(|edge| {
-                [
-                    edge.index
-                        .expect("ordered lineage edges always have an index")
-                        .to_string(),
-                    edge.from.source.clone(),
-                    edge.to.source.clone(),
-                    format!("{:?}", edge.obfuscation_epoch.status).to_ascii_lowercase(),
-                    edge.functions.unique.to_string(),
-                    edge.data_objects.unique.to_string(),
-                ]
-            });
+            let rows = report
+                .edges
+                .iter()
+                .map(|edge| {
+                    [
+                        edge.index
+                            .expect("ordered lineage edges always have an index")
+                            .to_string(),
+                        edge.from.source.clone(),
+                        edge.to.source.clone(),
+                        format!("{:?}", edge.obfuscation_epoch.status).to_ascii_lowercase(),
+                        edge.functions.unique.to_string(),
+                        edge.data_objects.unique.to_string(),
+                    ]
+                })
+                .chain(std::iter::once([
+                    "direct".to_owned(),
+                    report.direct.from.source.clone(),
+                    report.direct.to.source.clone(),
+                    format!("{:?}", report.direct.obfuscation_epoch.status).to_ascii_lowercase(),
+                    report.direct.functions.unique.to_string(),
+                    report.direct.data_objects.unique.to_string(),
+                ]));
             outputln!(
                 "{}",
                 crate::cli::table::render(
@@ -80,10 +93,69 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
                     rows,
                 )
             );
+            if !report.review_frontiers.is_empty() {
+                outputln!("\nReview frontiers (highest impact first)");
+                outputln!(
+                    "{}",
+                    crate::cli::table::render(
+                        ["Impact", "Domain", "Affected", "Frontier", "Evidence"],
+                        report.review_frontiers.iter().map(|frontier| {
+                            let candidates = if frontier.candidate_min == frontier.candidate_max {
+                                frontier.candidate_min.to_string()
+                            } else {
+                                format!("{}..{}", frontier.candidate_min, frontier.candidate_max)
+                            };
+                            let frontier_name = frontier.edge.map_or_else(
+                                || {
+                                    format!(
+                                        "{}: {} → {}",
+                                        frontier_route_label(frontier.route),
+                                        frontier.from,
+                                        frontier.to
+                                    )
+                                },
+                                |edge| format!("edge {edge}: {} → {}", frontier.from, frontier.to),
+                            );
+                            [
+                                frontier.records.to_string(),
+                                frontier.domain.to_owned(),
+                                lineage_status_label(frontier.affected_status).to_owned(),
+                                frontier_name,
+                                format!(
+                                    "{}; {}; candidates={candidates}",
+                                    frontier
+                                        .correspondence_status
+                                        .map(|status| format!("{status:?}").to_ascii_lowercase())
+                                        .unwrap_or_else(|| "conflict".to_owned()),
+                                    frontier.basis,
+                                ),
+                            ]
+                        }),
+                    )
+                );
+            }
         }
         if let Some(publication) = publication {
             outputln!("Publication: {} — {}", publication.status, publication.path);
         }
     }
     Ok(true)
+}
+
+fn lineage_status_label(status: SymbolLineageStatus) -> &'static str {
+    match status {
+        SymbolLineageStatus::Confirmed => "confirmed",
+        SymbolLineageStatus::DirectOnly => "direct-only",
+        SymbolLineageStatus::ChainOnly => "chain-only",
+        SymbolLineageStatus::Conflict => "conflict",
+        SymbolLineageStatus::Unresolved => "unresolved",
+    }
+}
+
+fn frontier_route_label(route: SymbolLineageFrontierRoute) -> &'static str {
+    match route {
+        SymbolLineageFrontierRoute::AdjacentChain => "adjacent-chain",
+        SymbolLineageFrontierRoute::DirectEndpoint => "direct-endpoint",
+        SymbolLineageFrontierRoute::EndpointConflict => "endpoint-conflict",
+    }
 }

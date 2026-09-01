@@ -15,9 +15,9 @@ use crate::{
     },
 };
 
-pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 1;
+pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 2;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SymbolLineageStatus {
     Confirmed,
@@ -57,6 +57,13 @@ pub(crate) struct SymbolLineageBlocker {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct SymbolLineageDirectBlocker {
+    pub(crate) status: SymbolCorrespondenceStatus,
+    pub(crate) basis: &'static str,
+    pub(crate) candidates: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct SymbolLineageRecord<T> {
     pub(crate) source: T,
     pub(crate) status: SymbolLineageStatus,
@@ -64,11 +71,38 @@ pub(crate) struct SymbolLineageRecord<T> {
     pub(crate) direct_basis: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) direct: Option<T>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) direct_blocker: Option<SymbolLineageDirectBlocker>,
     pub(crate) chain: Vec<SymbolLineageHop<T>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) chain_blocker: Option<SymbolLineageBlocker>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resolved: Option<T>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum SymbolLineageFrontierRoute {
+    AdjacentChain,
+    DirectEndpoint,
+    EndpointConflict,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct SymbolLineageReviewFrontier {
+    pub(crate) domain: &'static str,
+    pub(crate) affected_status: SymbolLineageStatus,
+    pub(crate) route: SymbolLineageFrontierRoute,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) edge: Option<usize>,
+    pub(crate) from: String,
+    pub(crate) to: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) correspondence_status: Option<SymbolCorrespondenceStatus>,
+    pub(crate) basis: &'static str,
+    pub(crate) candidate_min: usize,
+    pub(crate) candidate_max: usize,
+    pub(crate) records: usize,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -108,6 +142,7 @@ pub(crate) struct SymbolLineageReport {
     pub(crate) functions: Vec<SymbolLineageRecord<SymbolCorrespondenceFunction>>,
     pub(crate) data_summary: SymbolLineageSummary,
     pub(crate) data_objects: Vec<SymbolLineageRecord<DataObjectCorrespondenceObject>>,
+    pub(crate) review_frontiers: Vec<SymbolLineageReviewFrontier>,
     pub(crate) pin_candidates: Vec<SymbolLineagePinCandidate>,
 }
 
@@ -143,6 +178,7 @@ struct RebaseLineageInput {
 #[derive(Deserialize)]
 struct RebaseLineageArtifact {
     source: String,
+    path: String,
     sha256: String,
 }
 
@@ -189,6 +225,23 @@ pub(crate) fn load_rebase_evidence(path: &Path) -> Result<SymbolLineageRebaseEvi
     if input.artifacts.len() < 3 {
         return Err(crate::Error::invalid(format!(
             "symbol lineage {} has fewer than three ordered artifacts",
+            path.display()
+        )));
+    }
+    let revisions = input
+        .artifacts
+        .iter()
+        .map(|artifact| SymbolLineageRevision {
+            source: &artifact.source,
+            path: Path::new(&artifact.path),
+        })
+        .collect::<Vec<_>>();
+    let rebuilt = build(&revisions)?;
+    let mut expected = serde_json::to_vec(&rebuilt)?;
+    expected.push(b'\n');
+    if bytes != expected {
+        return Err(crate::Error::invalid(format!(
+            "symbol lineage {} is not the current generated report for its artifact paths; rerun symbols lineage",
             path.display()
         )));
     }
@@ -258,7 +311,7 @@ pub(crate) fn load_rebase_evidence(path: &Path) -> Result<SymbolLineageRebaseEvi
         }
     }
     Ok(SymbolLineageRebaseEvidence {
-        report_sha256: crate::artifact_sha256(path)?,
+        report_sha256: crate::bytes_sha256(&bytes),
         source_artifact,
         target_artifact,
         mappings,
@@ -319,6 +372,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     });
     let function_summary = summarize(&functions);
     let data_summary = summarize(&data_objects);
+    let review_frontiers = review_frontiers(&functions, &data_objects, &edges, &direct);
     let mut pin_candidates = function_pin_candidates(&functions);
     pin_candidates.extend(data_pin_candidates(&data_objects));
     pin_candidates.sort_by(|left, right| {
@@ -341,7 +395,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     Ok(SymbolLineageReport {
         schema_version: SYMBOL_LINEAGE_SCHEMA,
         command: "symbols lineage",
-        method: "direct-and-ordered-one-to-one-correspondence-composition-v1",
+        method: "direct-and-ordered-one-to-one-correspondence-composition-v2",
         artifacts,
         edges: edge_summaries,
         direct: direct_summary,
@@ -349,6 +403,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
         functions,
         data_summary,
         data_objects,
+        review_frontiers,
         pin_candidates,
     })
 }
@@ -497,6 +552,13 @@ where
         .iter()
         .map(|direct| {
             let direct_target = unique_target(direct).cloned();
+            let direct_blocker = direct_target
+                .is_none()
+                .then_some(SymbolLineageDirectBlocker {
+                    status: direct.status(),
+                    basis: direct.basis(),
+                    candidates: direct.candidates().len(),
+                });
             let mut current = direct.source().clone();
             let mut chain = Vec::with_capacity(indexes.len());
             let mut chain_blocker = None;
@@ -542,6 +604,7 @@ where
                 status,
                 direct_basis: direct_target.as_ref().map(|_| direct.basis()),
                 direct: direct_target,
+                direct_blocker,
                 chain,
                 chain_blocker,
                 resolved,
@@ -566,6 +629,155 @@ fn summarize<T>(records: &[SymbolLineageRecord<T>]) -> SymbolLineageSummary {
         }
     }
     summary
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ReviewFrontierKey {
+    domain: &'static str,
+    affected_status: SymbolLineageStatus,
+    route: SymbolLineageFrontierRoute,
+    edge: Option<usize>,
+    from: String,
+    to: String,
+    correspondence_status: Option<SymbolCorrespondenceStatus>,
+    basis: &'static str,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ReviewFrontierCount {
+    candidate_min: usize,
+    candidate_max: usize,
+    records: usize,
+}
+
+fn review_frontiers(
+    functions: &[SymbolLineageRecord<SymbolCorrespondenceFunction>],
+    data_objects: &[SymbolLineageRecord<DataObjectCorrespondenceObject>],
+    edges: &[symbol_correspondence::SymbolCorrespondenceReport],
+    direct: &symbol_correspondence::SymbolCorrespondenceReport,
+) -> Vec<SymbolLineageReviewFrontier> {
+    let mut counts = BTreeMap::new();
+    collect_review_frontiers("function", functions, edges, direct, &mut counts);
+    collect_review_frontiers("memory-object", data_objects, edges, direct, &mut counts);
+    let mut frontiers = counts
+        .into_iter()
+        .map(|(key, count)| SymbolLineageReviewFrontier {
+            domain: key.domain,
+            affected_status: key.affected_status,
+            route: key.route,
+            edge: key.edge,
+            from: key.from,
+            to: key.to,
+            correspondence_status: key.correspondence_status,
+            basis: key.basis,
+            candidate_min: count.candidate_min,
+            candidate_max: count.candidate_max,
+            records: count.records,
+        })
+        .collect::<Vec<_>>();
+    frontiers.sort_by(|left, right| {
+        right.records.cmp(&left.records).then_with(|| {
+            (
+                left.domain,
+                left.route,
+                left.edge,
+                left.affected_status,
+                &left.from,
+                &left.to,
+                left.correspondence_status,
+                left.basis,
+            )
+                .cmp(&(
+                    right.domain,
+                    right.route,
+                    right.edge,
+                    right.affected_status,
+                    &right.from,
+                    &right.to,
+                    right.correspondence_status,
+                    right.basis,
+                ))
+        })
+    });
+    frontiers
+}
+
+fn collect_review_frontiers<T>(
+    domain: &'static str,
+    records: &[SymbolLineageRecord<T>],
+    edges: &[symbol_correspondence::SymbolCorrespondenceReport],
+    direct: &symbol_correspondence::SymbolCorrespondenceReport,
+    counts: &mut BTreeMap<ReviewFrontierKey, ReviewFrontierCount>,
+) {
+    for record in records {
+        let (key, candidates) = match record.status {
+            SymbolLineageStatus::Confirmed => continue,
+            SymbolLineageStatus::DirectOnly | SymbolLineageStatus::Unresolved => {
+                let blocker = record
+                    .chain_blocker
+                    .as_ref()
+                    .expect("an incomplete adjacent route records its exact blocker");
+                let edge = &edges[blocker.edge];
+                (
+                    ReviewFrontierKey {
+                        domain,
+                        affected_status: record.status,
+                        route: SymbolLineageFrontierRoute::AdjacentChain,
+                        edge: Some(blocker.edge),
+                        from: edge.from.source.clone(),
+                        to: edge.to.source.clone(),
+                        correspondence_status: blocker.status,
+                        basis: blocker.basis,
+                    },
+                    blocker.candidates,
+                )
+            }
+            SymbolLineageStatus::ChainOnly => {
+                let blocker = record
+                    .direct_blocker
+                    .as_ref()
+                    .expect("a missing direct route records its exact blocker");
+                (
+                    ReviewFrontierKey {
+                        domain,
+                        affected_status: record.status,
+                        route: SymbolLineageFrontierRoute::DirectEndpoint,
+                        edge: None,
+                        from: direct.from.source.clone(),
+                        to: direct.to.source.clone(),
+                        correspondence_status: Some(blocker.status),
+                        basis: blocker.basis,
+                    },
+                    blocker.candidates,
+                )
+            }
+            SymbolLineageStatus::Conflict => (
+                ReviewFrontierKey {
+                    domain,
+                    affected_status: record.status,
+                    route: SymbolLineageFrontierRoute::EndpointConflict,
+                    edge: None,
+                    from: direct.from.source.clone(),
+                    to: direct.to.source.clone(),
+                    correspondence_status: None,
+                    basis: "direct-and-adjacent-targets-disagree",
+                },
+                2,
+            ),
+        };
+        counts
+            .entry(key)
+            .and_modify(|count| {
+                count.candidate_min = count.candidate_min.min(candidates);
+                count.candidate_max = count.candidate_max.max(candidates);
+                count.records += 1;
+            })
+            .or_insert(ReviewFrontierCount {
+                candidate_min: candidates,
+                candidate_max: candidates,
+                records: 1,
+            });
+    }
 }
 
 fn function_pin_candidates(
@@ -729,6 +941,39 @@ mod tests {
         assert_eq!(records[0].status, SymbolLineageStatus::Unresolved);
         assert_eq!(records[0].chain.len(), 1);
         assert_eq!(records[0].chain_blocker.as_ref().unwrap().edge, 1);
+        assert_eq!(
+            records[0].direct_blocker.as_ref().unwrap().status,
+            SymbolCorrespondenceStatus::Unmatched
+        );
+    }
+
+    #[test]
+    fn review_frontiers_rank_the_exact_route_that_blocks_confirmation() {
+        let source = entity("named", "source");
+        let middle = entity("token-old", "middle");
+        let edges = vec![
+            empty_report(vec![correspondence(source.clone(), Some(middle.clone()))]),
+            empty_report(vec![correspondence(middle, None)]),
+        ];
+        let direct = empty_report(vec![correspondence(source, None)]);
+        let functions = compose(&direct.correspondences, &edges, |report| {
+            &report.correspondences
+        });
+
+        let frontiers = review_frontiers(&functions, &[], &edges, &direct);
+
+        assert_eq!(frontiers.len(), 1);
+        assert_eq!(frontiers[0].domain, "function");
+        assert_eq!(
+            frontiers[0].affected_status,
+            SymbolLineageStatus::Unresolved
+        );
+        assert_eq!(
+            frontiers[0].route,
+            SymbolLineageFrontierRoute::AdjacentChain
+        );
+        assert_eq!(frontiers[0].edge, Some(1));
+        assert_eq!(frontiers[0].records, 1);
     }
 
     #[test]
@@ -738,57 +983,82 @@ mod tests {
     }
 
     #[test]
-    fn rebase_loader_rederives_source_and_target_occurrences() {
-        let source_artifact = ArtifactIdentity::new("old", "a".repeat(64)).unwrap();
-        let middle_artifact = ArtifactIdentity::new("middle", "b".repeat(64)).unwrap();
-        let target_artifact = ArtifactIdentity::new("new", "c".repeat(64)).unwrap();
-        let source_locator = "archive-member:old.o/symbol:named";
-        let target_locator = "archive-member:new.o/symbol:token";
-        let source_occurrence = RevisionOccurrenceId::derive(
-            EntityDomain::Function,
-            std::slice::from_ref(&source_artifact),
-            source_locator,
-        )
-        .unwrap();
-        let target_occurrence = RevisionOccurrenceId::derive(
-            EntityDomain::Function,
-            std::slice::from_ref(&target_artifact),
-            target_locator,
-        )
-        .unwrap();
-        let document = serde_json::json!({
-            "schema_version": SYMBOL_LINEAGE_SCHEMA,
-            "command": "symbols lineage",
-            "artifacts": [source_artifact, middle_artifact, target_artifact],
-            "functions": [{
-                "source": {"locator": source_locator, "occurrence": source_occurrence},
-                "status": "confirmed",
-                "resolved": {"locator": target_locator, "occurrence": target_occurrence}
-            }],
-            "data_objects": []
+    fn rebase_loader_rebuilds_the_report_before_trusting_confirmed_status() {
+        let fixture = std::env::temp_dir().join(format!(
+            "blobray-symbol-lineage-artifact-{}.elf",
+            std::process::id()
+        ));
+        let bytes = include_str!("../tests/fixtures/symbols-rv32.hex")
+            .split_ascii_whitespace()
+            .map(|octet| u8::from_str_radix(octet, 16).unwrap())
+            .collect::<Vec<_>>();
+        std::fs::write(&fixture, bytes).unwrap();
+        let revisions = ["old", "middle", "new"].map(|source| SymbolLineageRevision {
+            source,
+            path: &fixture,
         });
+        let report = build(&revisions).unwrap();
         let path = std::env::temp_dir().join(format!(
             "blobray-symbol-lineage-rebase-{}.json",
             std::process::id()
         ));
-        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+        crate::application::generated_file::write_or_check_json(
+            &path,
+            &report,
+            false,
+            "symbol lineage fixture",
+            false,
+        )
+        .unwrap();
 
         let evidence = load_rebase_evidence(&path).unwrap();
-        assert_eq!(evidence.mappings.len(), 1);
+        let confirmed = report
+            .functions
+            .iter()
+            .find(|record| record.status == SymbolLineageStatus::Confirmed)
+            .unwrap();
+        let source_occurrence = confirmed.source.occurrence.parse().unwrap();
+        let target_occurrence = confirmed
+            .resolved
+            .as_ref()
+            .unwrap()
+            .occurrence
+            .parse()
+            .unwrap();
         assert_eq!(
             evidence.mappings[&source_occurrence].target_occurrence,
             target_occurrence
         );
 
-        let mut forged = document;
-        forged["functions"][0]["resolved"]["locator"] = serde_json::json!("forged");
-        std::fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
+        let authentic = std::fs::read(&path).unwrap();
+        let mut obsolete: serde_json::Value = serde_json::from_slice(&authentic).unwrap();
+        obsolete["schema_version"] = serde_json::json!(1);
+        std::fs::write(&path, serde_json::to_vec(&obsolete).unwrap()).unwrap();
         assert!(
             load_rebase_evidence(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("is not derived")
+                .contains("current schema 2")
+        );
+
+        let mut forged: serde_json::Value = serde_json::from_slice(&authentic).unwrap();
+        let confirmed_index = forged["functions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|record| record["status"] == "confirmed")
+            .unwrap();
+        forged["functions"][confirmed_index]["status"] = serde_json::json!("chain-only");
+        let mut forged_bytes = serde_json::to_vec(&forged).unwrap();
+        forged_bytes.push(b'\n');
+        std::fs::write(&path, forged_bytes).unwrap();
+        assert!(
+            load_rebase_evidence(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("not the current generated report")
         );
         std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(fixture).unwrap();
     }
 }

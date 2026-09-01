@@ -24,7 +24,7 @@ pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 5;
 const MINIMUM_COMMON_OBFUSCATION_TOKENS: usize = 64;
 const MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION: u32 = 900_000;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SymbolCorrespondenceStatus {
     Unique,

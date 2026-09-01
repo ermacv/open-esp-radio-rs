@@ -141,6 +141,52 @@ that architectural mistake. The aggregate-only redesign removes provider-sized
 state and carries a regression assertion that the 16-key catalog remains at or
 below 1,024 bytes; increasing the stack threshold was explicitly rejected.
 
+## Phase 3 radio-mirror work in progress
+
+The next evolutionary step now transports the Phase 2 lifecycle into Core0
+without making it authoritative. It deliberately does not enqueue an
+unbounded history of callback events. Each Core1 interface owner retains two
+bounded 16-key views:
+
+```text
+desired = latest Xarxa demand state
+sent    = state already admitted into the ordered SPSC
+```
+
+When the SPSC is full, callback churn only changes `desired`. Once capacity
+returns, the publisher reconstructs the minimal ordered suffix needed to make
+`sent == desired`: a newer `Reset` supersedes unsent old-epoch work, an old
+lifetime receives `Inactive` before a replacement `Active`, and level changes
+coalesce to their latest observation. This makes memory proportional to the
+maximum distinct radio keys, not to event rate or stall duration. A finite
+four-update Core1 turn self-wakes when a successful turn leaves more diff; a
+full transport is woken only when Core0 actually frees capacity.
+
+STA and AP own independent SPSC streams, outboxes, grants and telemetry. Their
+Core0 endpoints share one level-triggered physical-radio wake and are held by
+one affine dual-VIF owner. Every physical service turn gives each VIF its own
+finite budget and alternates which VIF is serviced first. This is the required
+ownership shape for future radio-wide VIF/peer/TID airtime policy; it avoids
+both an MPSC scheduler lock and an AP-only policy owner. The STA stack now
+publishes its single-radio-peer lifecycle through this path as well.
+
+This remains a shadow mirror:
+
+- `transmit_for` still admits valid keys from the shared 67-slot SRAM pool
+  regardless of mirrored demand or grant availability;
+- the existing AP run/refill echo remains temporarily in place as the
+  same-ELF semantic/performance oracle;
+- Core0 only validates and stores lifecycle ordering. It does not yet select a
+  VIF/key, charge airtime, inspect BA/power-save state, or return an
+  authoritative burst grant;
+- HIL telemetry reports the STA and AP control streams separately (`ONTXC
+  vif=sta` and `ONTXC vif=ap`) so future STA+AP accounting cannot hide work by
+  folding both interfaces into one counter set;
+- the complete source-only audit, including all 117 isolated feature profiles,
+  the final performance image, placement and stack-frame checks, passes with
+  this ownership shape. The next gate is same-ELF HIL CPU accounting. Only
+  then can the old run/refill publisher be replaced.
+
 ## Current data path
 
 ```text

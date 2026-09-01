@@ -16,7 +16,9 @@ use embassy_net_driver::{
     Capabilities, Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
 };
 #[cfg(feature = "tx-egress-scheduling")]
-use embassy_net_driver::{EgressAdmission, EgressKey, EgressRoute, EgressSchedule};
+use embassy_net_driver::{
+    EgressAdmission, EgressDemandUpdate, EgressKey, EgressRoute, EgressSchedule,
+};
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
@@ -2517,6 +2519,11 @@ impl<
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_schedule(&mut self) -> Option<EgressSchedule> {
+        if self.egress_control_active
+            && let Some(control) = self.egress_control.as_mut()
+        {
+            control.flush_egress_demand();
+        }
         if self.link.is_up() && crate::keyed_egress_scheduling_enabled() {
             let epoch = self.refresh_scheduling_epoch();
             Some(EgressSchedule::new(
@@ -2530,6 +2537,18 @@ impl<
             // peer generation becomes active; no down-state publication can
             // reach the radio because inactive-VIF owners are reclaimed.
             None
+        }
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn update_egress_demand(&mut self, cx: &mut Context<'_>, update: EgressDemandUpdate) {
+        if self.egress_control_active
+            && let Some(control) = self.egress_control.as_mut()
+        {
+            // This phase remains observational. A malformed or over-capacity
+            // lifecycle is omitted from radio shadow state while synchronous
+            // `transmit_for` remains the sole admission authority.
+            let _ = control.update_egress_demand(cx, update);
         }
     }
 
@@ -2650,6 +2669,11 @@ impl<
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_schedule(&mut self) -> Option<EgressSchedule> {
         self.inner.egress_schedule()
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn update_egress_demand(&mut self, cx: &mut Context<'_>, update: EgressDemandUpdate) {
+        self.inner.update_egress_demand(cx, update);
     }
 
     fn hardware_address(&self) -> HardwareAddress {

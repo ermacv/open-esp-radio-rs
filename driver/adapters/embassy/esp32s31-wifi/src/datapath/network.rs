@@ -2,13 +2,13 @@
 
 use core::future::Future;
 
-#[cfg(feature = "tx-egress-scheduling")]
-use open_esp_radio_embassy_net::DefaultEgressControlledNetwork;
 use open_esp_radio_embassy_net::{
     DualPinnedNetworkRunner, LinkState, NetworkInterfaceId, PinnedNetworkLinkController,
     PinnedNetworkRunner, PinnedNetworkTxFrame, PinnedRxPublisher, PinnedTxInterfaceConsumer,
     RawMutex, RxEnqueueError,
 };
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::{EgressControlledNetwork, EgressRadioControlOwner};
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
 /// RX-only network publication capability exposed to one finite DATAPATH service.
@@ -628,15 +628,17 @@ impl<
     'resources,
     M,
     N,
+    R,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 > DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
-    for DefaultEgressControlledNetwork<'resources, M, N>
+    for EgressControlledNetwork<N, R>
 where
     M: RawMutex + 'resources,
+    R: EgressRadioControlOwner,
     N: DatapathNetwork<
             'resources,
             M,
@@ -665,7 +667,7 @@ where
     }
 
     fn service_egress_control(&mut self) -> bool {
-        DefaultEgressControlledNetwork::service_egress_control(self)
+        EgressControlledNetwork::service_egress_control(self)
     }
 
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {

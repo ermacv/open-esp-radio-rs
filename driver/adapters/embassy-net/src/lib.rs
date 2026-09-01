@@ -41,6 +41,8 @@ use embassy_sync::{
 
 #[cfg(feature = "tx-egress-scheduling")]
 mod egress_control;
+#[cfg(feature = "tx-egress-scheduling")]
+mod egress_demand;
 #[cfg(feature = "tx-phase-telemetry")]
 mod egress_grant;
 #[cfg(feature = "tx-egress-scheduling")]
@@ -60,13 +62,14 @@ pub use egress_control::configure_egress_control_for_diagnostics;
 #[cfg(feature = "tx-egress-scheduling")]
 pub use egress_control::{
     DEFAULT_EGRESS_CONTROL_DEPTH, DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET,
-    DEFAULT_EGRESS_RADIO_SERVICE_BUDGET, DefaultEgressControlPlane, DefaultEgressControlledNetwork,
+    DEFAULT_EGRESS_RADIO_SERVICE_BUDGET, DefaultDualEgressControlledNetwork,
+    DefaultDualEgressRadioOwner, DefaultEgressControlPlane, DefaultEgressControlledNetwork,
     DefaultEgressNetworkPort, DefaultEgressNetworkScheduler, DefaultEgressNetworkState,
     DefaultEgressRadioOwner, DefaultEgressRadioPort, DefaultEgressRadioScheduler,
-    DefaultEgressRadioWake, EgressCandidate, EgressCandidateFull, EgressControlPlane,
-    EgressControlledNetwork, EgressGrant, EgressGrantFull, EgressNetworkPort,
-    EgressNetworkScheduler, EgressNetworkState, EgressRadioOwner, EgressRadioPort,
-    EgressRadioScheduler, EgressRadioWake,
+    DefaultEgressRadioWake, DualEgressRadioOwner, EgressCandidate, EgressCandidateFull,
+    EgressControlPlane, EgressControlledNetwork, EgressGrant, EgressGrantFull, EgressNetworkPort,
+    EgressNetworkScheduler, EgressNetworkState, EgressRadioControlOwner, EgressRadioOwner,
+    EgressRadioPort, EgressRadioScheduler, EgressRadioWake, EgressSharedRadioWake,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use egress_grant::{EgressShadowGrant, EgressShadowGrantError, EgressShadowGrantSnapshot};

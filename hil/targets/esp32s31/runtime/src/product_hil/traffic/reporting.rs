@@ -1040,7 +1040,7 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     earlier: TxPerformanceSnapshot,
-    earlier_control: EgressControlSnapshot,
+    earlier_control: (EgressControlSnapshot, EgressControlSnapshot),
 ) {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
@@ -1122,12 +1122,25 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub(in crate::product_hil) async fn log_open_radio_egress_control_interval(
-    earlier: EgressControlSnapshot,
+    earlier: (EgressControlSnapshot, EgressControlSnapshot),
 ) {
-    let control = open_esp_radio_esp32s31_embassy_wifi::access_point_egress_control_snapshot()
-        .wrapping_delta_since(earlier);
+    let station = open_esp_radio_esp32s31_embassy_wifi::station_egress_control_snapshot()
+        .wrapping_delta_since(earlier.0);
+    let access_point = open_esp_radio_esp32s31_embassy_wifi::access_point_egress_control_snapshot()
+        .wrapping_delta_since(earlier.1);
+    log_open_radio_egress_control_vif("sta", station).await;
+    log_open_radio_egress_control_vif("ap", access_point).await;
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+async fn log_open_radio_egress_control_vif(vif: &str, control: EgressControlSnapshot) {
     runtime_log_reliably(format_args!(
-        "ONTXC candidates={} candidate_full={} radio_candidates={} grants={} grant_full={} received={} accepted={} rejected={} credits_spent={} admissions_without_grant={} radio_wakes={} radio_service_calls={} radio_service_progressed={} radio_service_cycles={} radio_service_instret={}",
+        "ONTXC vif={} demands={} demand_full={} radio_demands={} radio_demand_rejected={} candidates={} candidate_full={} radio_candidates={} grants={} grant_full={} received={} accepted={} rejected={} credits_spent={} admissions_without_grant={} radio_wakes={} radio_service_calls={} radio_service_progressed={} radio_service_cycles={} radio_service_instret={}",
+        vif,
+        control.demand_publications,
+        control.demand_full,
+        control.radio_demand_updates,
+        control.radio_demand_rejected,
         control.candidate_publications,
         control.candidate_full,
         control.radio_candidates,

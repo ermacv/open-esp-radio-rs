@@ -9,7 +9,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use open_esp_radio_embassy_net::{
-    DefaultEgressControlPlane, DefaultEgressControlledNetwork, DefaultEgressNetworkScheduler,
+    DefaultDualEgressControlledNetwork, DefaultEgressControlPlane, DefaultEgressNetworkScheduler,
     DefaultEgressNetworkState, DefaultEgressRadioScheduler, DualPinnedNetworkRunner,
     EgressPeerDirectory, EgressPeerIdentity, NetworkEndpointConfig, PinnedEndpointResources,
     PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxPool, PinnedTxResources, SharedPinnedRxConsumer,
@@ -112,15 +112,15 @@ pub(super) type RadioNetworkRunner = DualPinnedNetworkRunner<
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
 >;
-type ControlledRadioNetworkRunner = DefaultEgressControlledNetwork<
+type ControlledRadioNetworkRunner = DefaultDualEgressControlledNetwork<
     'static,
     CriticalSectionRawMutex,
     &'static RadioNetworkRunner,
 >;
 pub(super) type NetworkRunner = &'static mut ControlledRadioNetworkRunner;
-type AccessPointEgressNetworkScheduler =
+type InterfaceEgressNetworkScheduler =
     DefaultEgressNetworkScheduler<'static, CriticalSectionRawMutex>;
-type AccessPointEgressRadioScheduler =
+type InterfaceEgressRadioScheduler =
     DefaultEgressRadioScheduler<'static, CriticalSectionRawMutex>;
 pub(super) type RadioAmpduStorage =
     AggregateTxResources<'static, RadioTxBacking, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
@@ -136,18 +136,31 @@ static NETWORK_TX_RESOURCES: ConstStaticCell<NetworkTxResources> =
 static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
 static CONTROLLED_NETWORK_RUNNER: StaticCell<ControlledRadioNetworkRunner> = StaticCell::new();
 static AP_EGRESS_PEERS: EgressPeerDirectory<AP_MAX_CLIENTS> = EgressPeerDirectory::new();
+static STATION_EGRESS_CONTROL: DefaultEgressControlPlane<CriticalSectionRawMutex> =
+    DefaultEgressControlPlane::new();
 static AP_EGRESS_CONTROL: DefaultEgressControlPlane<CriticalSectionRawMutex> =
     DefaultEgressControlPlane::new();
+static STATION_EGRESS_NETWORK_STATE: ConstStaticCell<DefaultEgressNetworkState> =
+    ConstStaticCell::new(DefaultEgressNetworkState::new());
 static AP_EGRESS_NETWORK_STATE: ConstStaticCell<DefaultEgressNetworkState> =
     ConstStaticCell::new(DefaultEgressNetworkState::new());
-static AP_EGRESS_NETWORK_SCHEDULER: StaticCell<AccessPointEgressNetworkScheduler> =
+static STATION_EGRESS_NETWORK_SCHEDULER: StaticCell<InterfaceEgressNetworkScheduler> =
     StaticCell::new();
-static AP_EGRESS_RADIO_SCHEDULER: StaticCell<AccessPointEgressRadioScheduler> = StaticCell::new();
+static AP_EGRESS_NETWORK_SCHEDULER: StaticCell<InterfaceEgressNetworkScheduler> =
+    StaticCell::new();
+static STATION_EGRESS_RADIO_SCHEDULER: StaticCell<InterfaceEgressRadioScheduler> =
+    StaticCell::new();
+static AP_EGRESS_RADIO_SCHEDULER: StaticCell<InterfaceEgressRadioScheduler> = StaticCell::new();
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub fn access_point_egress_control_snapshot() -> open_esp_radio_embassy_net::EgressControlSnapshot
 {
     AP_EGRESS_CONTROL.snapshot()
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub fn station_egress_control_snapshot() -> open_esp_radio_embassy_net::EgressControlSnapshot {
+    STATION_EGRESS_CONTROL.snapshot()
 }
 #[allow(
     unsafe_code,
@@ -303,13 +316,23 @@ pub(super) fn initialize_network(
     );
     let (access_point_device, access_point_rx) =
         access_point_resources.split(tx_provider, access_point_endpoint);
+    let physical_egress_wake = AP_EGRESS_CONTROL.shared_radio_wake();
     let (access_point_egress_network, access_point_egress_radio) = AP_EGRESS_CONTROL.split();
+    let (station_egress_network, station_egress_radio) =
+        STATION_EGRESS_CONTROL.split_with_radio_wake(physical_egress_wake);
+    let station_egress_network = STATION_EGRESS_NETWORK_SCHEDULER.init(
+        DefaultEgressNetworkScheduler::new(
+            station_egress_network,
+            STATION_EGRESS_NETWORK_STATE.take(),
+        ),
+    );
     let access_point_egress_network = AP_EGRESS_NETWORK_SCHEDULER.init(
         DefaultEgressNetworkScheduler::new(
             access_point_egress_network,
             AP_EGRESS_NETWORK_STATE.take(),
         ),
     );
+    let station_device = station_device.with_egress_control(station_egress_network);
     let access_point_device = access_point_device.with_egress_control(access_point_egress_network);
     let runner = DualPinnedNetworkRunner::new(
         station_interface,
@@ -320,13 +343,17 @@ pub(super) fn initialize_network(
     )
     .with_shared_rx_ordering(&station_shared, &access_point_shared);
     let runner = NETWORK_RUNNER.init(runner);
+    let station_egress_radio = STATION_EGRESS_RADIO_SCHEDULER.init(
+        DefaultEgressRadioScheduler::new(station_egress_radio),
+    );
     let access_point_egress_radio = AP_EGRESS_RADIO_SCHEDULER.init(
         DefaultEgressRadioScheduler::new(access_point_egress_radio),
     );
     let runner = CONTROLLED_NETWORK_RUNNER.init(
-        DefaultEgressControlledNetwork::with_egress_control(
-        &*runner,
-        access_point_egress_radio,
+        DefaultDualEgressControlledNetwork::with_dual_egress_control(
+            &*runner,
+            station_egress_radio,
+            access_point_egress_radio,
         ),
     );
     #[cfg(feature = "tx-staging-copy-probe")]

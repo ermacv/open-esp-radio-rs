@@ -11,6 +11,8 @@ use embassy_net_driver::{
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use embassy_net_driver::{EgressAdmission, EgressKey, EgressRoute, EgressSchedule};
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+use embassy_net_driver::{EgressDemand, EgressDemandId, EgressDemandLevel, EgressDemandUpdate};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
 #[cfg(feature = "tx-staging-copy-probe")]
@@ -551,6 +553,64 @@ fn affine_control_observes_early_key_and_spends_only_successful_sram_admission()
         _ => panic!("exhausted shadow credit cannot change real SRAM admission"),
     });
     assert_eq!(radio_control.try_receive_candidate(), None);
+}
+
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+#[test]
+fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (network_control, radio_control) = control.split();
+    let network_state = Box::leak(Box::new(DefaultEgressNetworkState::new()));
+    let network_control = Box::leak(Box::new(DefaultEgressNetworkScheduler::new(
+        network_control,
+        network_state,
+    )));
+    let (provider, _consumer) = tx_resources.split(pool);
+    let (device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]),
+    );
+    let mut device = device.with_egress_control(network_control);
+    radio.set_link_state(LinkState::Up);
+    let schedule = device.egress_schedule().unwrap();
+    let key = device.egress_key(EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 2]),
+        traffic_class: 0,
+    });
+    let mut cx = context();
+    device.update_egress_demand(
+        &mut cx,
+        EgressDemandUpdate::Reset {
+            schedule_epoch: schedule.epoch(),
+        },
+    );
+    device.update_egress_demand(
+        &mut cx,
+        EgressDemandUpdate::Active(EgressDemand::new(
+            EgressDemandId::new(schedule.epoch(), core::num::NonZeroU32::new(1).unwrap()),
+            key,
+            EgressDemandLevel::new(core::num::NonZeroU16::new(32).unwrap(), true),
+        )),
+    );
+
+    // Demand is observational in this phase: the same valid key still claims
+    // its real SRAM token before Core0 consumes either lifecycle transition.
+    drop(match device.transmit_for(&mut cx, key) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("demand publication must not gate SRAM admission"),
+    });
+    let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
+    assert!(radio_control.service_shadow());
+    assert_eq!(control.snapshot().demand_publications, 2);
+    assert_eq!(control.snapshot().radio_demand_updates, 2);
+    assert_eq!(control.snapshot().radio_demand_rejected, 0);
 }
 
 #[cfg(feature = "tx-egress-scheduling")]

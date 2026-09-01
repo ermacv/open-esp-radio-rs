@@ -16,7 +16,9 @@ use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
 #[cfg(feature = "tx-phase-telemetry")]
-use open_esp_radio_embassy_net::{EgressGrantKey, EgressShadowGrant};
+use open_esp_radio_embassy_net::{
+    AssociatedEgressIdentity, EgressGrantKey, EgressShadowGrant, PinnedTxMetadata,
+};
 use open_esp_radio_embassy_net::{
     FrameLengthError, LinkState, PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer,
     RxEnqueueError,
@@ -112,7 +114,9 @@ use crate::diagnostics::aggregate_tx::{
     AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, PreparedTxSchedulerPhase,
 };
 #[cfg(feature = "tx-phase-telemetry")]
-use crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE;
+use crate::diagnostics::core0_rx_performance::{
+    CORE0_PERFORMANCE, Core0ApEgressIdentityObservation,
+};
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::network::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 use crate::{

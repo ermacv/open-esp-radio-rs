@@ -404,6 +404,7 @@ pub(crate) fn run(
                 task_polls: task_polls_from_log(&log),
                 core0_coarse: Core0CoarseEvidence::from_log(&log),
                 tx_phases: TxPhaseEvidence::from_log(&log),
+                ap_egress_identity: ApEgressIdentityEvidence::from_log(&log),
                 failure: throughput_failure.as_deref(),
             },
         )?;
@@ -787,6 +788,7 @@ struct TxPerformanceReport<'a> {
     task_polls: TaskPollSet,
     core0_coarse: Option<Core0CoarseEvidence>,
     tx_phases: Option<TxPhaseEvidence>,
+    ap_egress_identity: Option<ApEgressIdentityEvidence>,
     failure: Option<&'a str>,
 }
 
@@ -825,6 +827,61 @@ impl Core0CoarseEvidence {
              - IPC: `{ipc:.3}`\n\
              - Cycles / instructions per TX datagram: `{cycles_per_datagram:.2}` / `{instructions_per_datagram:.2}`\n\n",
             self.radio_polls, self.radio_cycles, self.radio_instructions,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ApEgressIdentityEvidence {
+    exact: u64,
+    unclassified: u64,
+    non_associated: u64,
+    role_unbound: u64,
+    interface_mismatch: u64,
+    peer_slot_mismatch: u64,
+    peer_generation_mismatch: u64,
+    traffic_class_mismatch: u64,
+}
+
+impl ApEgressIdentityEvidence {
+    fn from_log(log: &str) -> Option<Self> {
+        let line = log
+            .lines()
+            .find(|line| line.starts_with("ORC0TXI ") || line.contains(" ORC0TXI "))?;
+        Some(Self {
+            exact: numeric_field(line, "exact")?,
+            unclassified: numeric_field(line, "unclassified")?,
+            non_associated: numeric_field(line, "non_associated")?,
+            role_unbound: numeric_field(line, "role_unbound")?,
+            interface_mismatch: numeric_field(line, "interface_mismatch")?,
+            peer_slot_mismatch: numeric_field(line, "peer_slot_mismatch")?,
+            peer_generation_mismatch: numeric_field(line, "peer_generation_mismatch")?,
+            traffic_class_mismatch: numeric_field(line, "traffic_class_mismatch")?,
+        })
+    }
+
+    fn markdown(self) -> String {
+        let mismatches = self
+            .role_unbound
+            .saturating_add(self.interface_mismatch)
+            .saturating_add(self.peer_slot_mismatch)
+            .saturating_add(self.peer_generation_mismatch)
+            .saturating_add(self.traffic_class_mismatch);
+        format!(
+            "## AP egress identity correspondence\n\n\
+             This is observational. AP role admission remains authoritative.\n\n\
+             - Exact associated-peer identities: `{}`\n\
+             - Unclassified / non-associated frames: `{}` / `{}`\n\
+             - Role-unbound / interface / slot / generation / traffic-class mismatches: `{}` / `{}` / `{}` / `{}` / `{}`\n\
+             - Total role-identity mismatches: `{mismatches}`\n\n",
+            self.exact,
+            self.unclassified,
+            self.non_associated,
+            self.role_unbound,
+            self.interface_mismatch,
+            self.peer_slot_mismatch,
+            self.peer_generation_mismatch,
+            self.traffic_class_mismatch,
         )
     }
 }
@@ -996,6 +1053,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         task_polls,
         core0_coarse,
         tx_phases,
+        ap_egress_identity,
         failure,
     } = report;
     let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
@@ -1025,6 +1083,9 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
     let tx_phase_report = tx_phases
         .map(|evidence| evidence.markdown(structured.transport.tx_units, core0_coarse))
         .unwrap_or_default();
+    let ap_egress_identity_report = ap_egress_identity
+        .map(ApEgressIdentityEvidence::markdown)
+        .unwrap_or_default();
     fs::write(
         output.join("report.md"),
         format!(
@@ -1046,6 +1107,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
              {task_poll_report}\
              {core0_report}\
              {tx_phase_report}\
+             {ap_egress_identity_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.device,
             bursts.len(),
@@ -1322,6 +1384,19 @@ mod tests {
         assert!(markdown.contains("Core0 residual | - | 6.00"));
         assert!(markdown.contains("12 attempts / 10 successes / 2 failures"));
         assert!(markdown.contains("Core1 driver publication | 10 | 20.00"));
+    }
+
+    #[test]
+    fn parses_ap_egress_identity_correspondence_without_authorizing_it() {
+        let evidence = ApEgressIdentityEvidence::from_log(
+            "ORC0TXI exact=100 unclassified=2 non_associated=3 role_unbound=4 interface_mismatch=5 peer_slot_mismatch=6 peer_generation_mismatch=7 traffic_class_mismatch=8",
+        )
+        .unwrap();
+        assert_eq!(evidence.exact, 100);
+        assert_eq!(evidence.peer_generation_mismatch, 7);
+        let markdown = evidence.markdown();
+        assert!(markdown.contains("AP role admission remains authoritative"));
+        assert!(markdown.contains("Total role-identity mismatches: `30`"));
     }
 
     #[test]

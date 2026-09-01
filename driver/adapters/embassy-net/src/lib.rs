@@ -74,7 +74,7 @@ pub use egress_control::{
 #[cfg(feature = "tx-phase-telemetry")]
 pub use egress_grant::{EgressShadowGrant, EgressShadowGrantError, EgressShadowGrantSnapshot};
 #[cfg(feature = "tx-egress-scheduling")]
-pub use egress_key::EgressGrantKey;
+pub use egress_key::{AssociatedEgressIdentity, EgressGrantKey};
 pub use egress_peer::{
     EgressPeerDirectory, EgressPeerDirectoryError, EgressPeerIdentity, EgressPeerResolver,
 };

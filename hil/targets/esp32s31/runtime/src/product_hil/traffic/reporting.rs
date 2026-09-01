@@ -995,6 +995,19 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "ORC0TXI exact={} unclassified={} non_associated={} role_unbound={} interface_mismatch={} peer_slot_mismatch={} peer_generation_mismatch={} traffic_class_mismatch={}",
+        performance.tx_ap_identity_exact,
+        performance.tx_ap_identity_unclassified,
+        performance.tx_ap_identity_non_associated,
+        performance.tx_ap_identity_role_unbound,
+        performance.tx_ap_identity_interface_mismatch,
+        performance.tx_ap_identity_peer_slot_mismatch,
+        performance.tx_ap_identity_peer_generation_mismatch,
+        performance.tx_ap_identity_traffic_class_mismatch,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "ORC0P drained={} probe={} protocol_tx_blocked={} recycled_append={} budget={} stage_blocked={} network_blocked={} droppable={}",
         performance.rx_progress_drained,
         performance.rx_progress_probe_pending,

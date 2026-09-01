@@ -31,14 +31,14 @@ use open_esp_radio_dma::{
     RxNetworkLease, RxRadioLease, TaggedStableDmaBacking,
 };
 
-#[cfg(feature = "tx-egress-scheduling")]
-use crate::DefaultEgressNetworkScheduler;
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 use crate::EgressGrantKey;
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::EgressShadowGrant;
 #[cfg(feature = "tx-egress-scheduling")]
 use crate::egress_control::egress_control_enabled;
+#[cfg(feature = "tx-egress-scheduling")]
+use crate::{AssociatedEgressIdentity, DefaultEgressNetworkScheduler};
 use crate::{
     ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
 };
@@ -96,6 +96,17 @@ impl PinnedTxMetadata {
     #[cfg(feature = "tx-egress-scheduling")]
     pub const fn egress_key(self) -> Option<EgressKey> {
         self.egress_key
+    }
+
+    /// Decode the generic associated-peer identity retained at final SRAM
+    /// admission.
+    ///
+    /// The result still carries a generic traffic class. It is not transmit
+    /// authority and does not map that class to a Wi-Fi TID; the radio role
+    /// must perform both operations against its current state.
+    #[cfg(feature = "tx-egress-scheduling")]
+    pub fn associated_peer_identity(self) -> Option<AssociatedEgressIdentity> {
+        self.egress_key.and_then(AssociatedEgressIdentity::decode)
     }
 }
 
@@ -228,19 +239,6 @@ pub struct NetworkEndpointConfig<'registry> {
 }
 
 impl<'registry> NetworkEndpointConfig<'registry> {
-    #[cfg(feature = "tx-egress-scheduling")]
-    const KEY_FORMAT: u32 = 0x5700_0000;
-    #[cfg(feature = "tx-egress-scheduling")]
-    const KEY_FORMAT_MASK: u32 = 0xff00_0000;
-    #[cfg(feature = "tx-egress-scheduling")]
-    const TOPOLOGY_MASK: u32 = 0x00ff_0000;
-    #[cfg(feature = "tx-egress-scheduling")]
-    const SINGLE_RADIO_PEER: u32 = 1 << 16;
-    #[cfg(feature = "tx-egress-scheduling")]
-    const PER_LINK_DESTINATION: u32 = 2 << 16;
-    #[cfg(feature = "tx-egress-scheduling")]
-    const ASSOCIATED_PEER: u32 = 3 << 16;
-
     /// Configure an endpoint whose routes all reach one physical radio peer.
     pub const fn single_radio_peer(
         interface: NetworkInterfaceId,
@@ -312,16 +310,19 @@ impl<'registry> NetworkEndpointConfig<'registry> {
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn classify(self, epoch: u32, route: EgressRoute) -> EgressKey {
-        let header = Self::KEY_FORMAT
-            | (u32::from(self.interface.value()) << 8)
-            | u32::from(route.traffic_class);
+        use crate::egress_key::{
+            ASSOCIATED_PEER, KEY_FORMAT, PER_LINK_DESTINATION, SINGLE_RADIO_PEER,
+        };
+
+        let header =
+            KEY_FORMAT | (u32::from(self.interface.value()) << 8) | u32::from(route.traffic_class);
         match (self.egress_topology, route.destination) {
             (EgressQueueTopology::SingleRadioPeer, HardwareAddress::Ethernet(_)) => {
-                EgressKey::from_words([header | Self::SINGLE_RADIO_PEER, epoch, 0, 0])
+                EgressKey::from_words([header | SINGLE_RADIO_PEER, epoch, 0, 0])
             }
             (EgressQueueTopology::PerLinkDestination, HardwareAddress::Ethernet(address)) => {
                 EgressKey::from_words([
-                    header | Self::PER_LINK_DESTINATION,
+                    header | PER_LINK_DESTINATION,
                     epoch,
                     u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
                     u32::from(u16::from_le_bytes([address[4], address[5]])),
@@ -333,7 +334,7 @@ impl<'registry> NetworkEndpointConfig<'registry> {
                 .map_or_else(
                     || {
                         EgressKey::from_words([
-                            header | Self::PER_LINK_DESTINATION,
+                            header | PER_LINK_DESTINATION,
                             epoch,
                             u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
                             u32::from(u16::from_le_bytes([address[4], address[5]])),
@@ -341,7 +342,7 @@ impl<'registry> NetworkEndpointConfig<'registry> {
                     },
                     |peer| {
                         EgressKey::from_words([
-                            header | Self::ASSOCIATED_PEER,
+                            header | ASSOCIATED_PEER,
                             epoch,
                             peer.generation().get(),
                             u32::from(peer.slot().get()),
@@ -362,28 +363,33 @@ impl<'registry> NetworkEndpointConfig<'registry> {
     /// scheduler may additionally defer a valid key.
     #[cfg(feature = "tx-egress-scheduling")]
     fn key_is_current(self, key: EgressKey, epoch: u32) -> bool {
+        use crate::egress_key::{
+            ASSOCIATED_PEER, KEY_FORMAT, KEY_FORMAT_MASK, PER_LINK_DESTINATION, SINGLE_RADIO_PEER,
+            TOPOLOGY_MASK,
+        };
+
         let [header, key_epoch, generation, slot] = key.words();
-        if header & Self::KEY_FORMAT_MASK != Self::KEY_FORMAT
+        if header & KEY_FORMAT_MASK != KEY_FORMAT
             || ((header >> 8) & 0xff) != u32::from(self.interface.value())
             || key_epoch != epoch
         {
             return false;
         }
 
-        match (self.egress_topology, header & Self::TOPOLOGY_MASK) {
-            (EgressQueueTopology::SingleRadioPeer, Self::SINGLE_RADIO_PEER) => {
+        match (self.egress_topology, header & TOPOLOGY_MASK) {
+            (EgressQueueTopology::SingleRadioPeer, SINGLE_RADIO_PEER) => {
                 generation == 0 && slot == 0
             }
-            (EgressQueueTopology::PerLinkDestination, Self::PER_LINK_DESTINATION) => {
+            (EgressQueueTopology::PerLinkDestination, PER_LINK_DESTINATION) => {
                 slot <= u32::from(u16::MAX)
             }
-            (EgressQueueTopology::AssociatedPeer, Self::PER_LINK_DESTINATION) => {
+            (EgressQueueTopology::AssociatedPeer, PER_LINK_DESTINATION) => {
                 // Unknown unicast and group destinations retain their full
                 // link identity. A peer-directory revision advances `epoch`,
                 // so an old fallback key cannot survive association.
                 slot <= u32::from(u16::MAX)
             }
-            (EgressQueueTopology::AssociatedPeer, Self::ASSOCIATED_PEER) => {
+            (EgressQueueTopology::AssociatedPeer, ASSOCIATED_PEER) => {
                 let Some(slot) = u8::try_from(slot).ok().and_then(NonZeroU8::new) else {
                     return false;
                 };
@@ -399,18 +405,17 @@ impl<'registry> NetworkEndpointConfig<'registry> {
 
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     fn grant_key(self, key: EgressKey) -> Option<EgressGrantKey> {
-        let [header, _, generation, slot] = key.words();
+        let identity = AssociatedEgressIdentity::decode(key)?;
         if self.egress_topology != EgressQueueTopology::AssociatedPeer
-            || header & Self::KEY_FORMAT_MASK != Self::KEY_FORMAT
-            || header & Self::TOPOLOGY_MASK != Self::ASSOCIATED_PEER
-            || header as u8 != 0
+            || identity.interface() != self.interface.value()
+            || identity.traffic_class() != 0
         {
             return None;
         }
         Some(EgressGrantKey::new(
-            self.interface.value(),
-            u8::try_from(slot).ok().and_then(NonZeroU8::new)?,
-            NonZeroU32::new(generation)?,
+            identity.interface(),
+            identity.peer_slot(),
+            identity.peer_generation(),
             // The AP currently negotiates only best-effort TID 0. The generic
             // route traffic class is not silently treated as a WMM mapping.
             0,

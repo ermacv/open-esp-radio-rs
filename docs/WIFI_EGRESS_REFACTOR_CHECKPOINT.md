@@ -782,6 +782,16 @@ not satisfy the architectural goal.
 
 ### Phase 4: implement policy in shadow
 
+- **Identity-correspondence boundary — implemented, HIL result pending.** The
+  generic adapter decodes only interface, schedule epoch, associated-peer slot
+  and generation, plus the unchanged generic traffic class. The AP reads that
+  sidecar exactly once when a newly published frame first enters Core0 and
+  compares it with its independently admitted `ApAssociationIdentity` and
+  current TID0 policy. Exact, unclassified, non-associated, role-unbound,
+  interface, slot, generation and traffic-class outcomes are separate
+  diagnostic counters. Reprocessing an already retained frame does not count
+  it again. The observation is compiled only into TX-phase diagnostics and
+  cannot authorize, defer, drop or rekey a frame.
 - hierarchical VIF then peer/TID weighted airtime DRR;
 - AQL-like estimated pending airtime charged at successful SRAM admission;
 - completion reconciliation from actual rate, retry and BA results;

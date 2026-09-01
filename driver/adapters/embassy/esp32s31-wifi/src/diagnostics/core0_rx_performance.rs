@@ -43,6 +43,21 @@ pub(crate) enum Core0TxPhase {
     Commit,
 }
 
+/// Shadow comparison between the stack-retained associated-peer identity and
+/// the AP role's current admission identity.
+#[cfg(feature = "tx-phase-telemetry")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Core0ApEgressIdentityObservation {
+    Exact,
+    Unclassified,
+    NonAssociated,
+    RoleUnbound,
+    InterfaceMismatch,
+    PeerSlotMismatch,
+    PeerGenerationMismatch,
+    TrafficClassMismatch,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Core0PerformanceSnapshot {
     pub rx_interrupt_posts: u32,
@@ -122,6 +137,14 @@ pub struct Core0PerformanceSnapshot {
     pub tx_ap_publication_tokens_in_flight: u32,
     pub tx_ap_publication_radio_owned: u32,
     pub tx_ap_publication_unattributed_radio_owned: u32,
+    pub tx_ap_identity_exact: u32,
+    pub tx_ap_identity_unclassified: u32,
+    pub tx_ap_identity_non_associated: u32,
+    pub tx_ap_identity_role_unbound: u32,
+    pub tx_ap_identity_interface_mismatch: u32,
+    pub tx_ap_identity_peer_slot_mismatch: u32,
+    pub tx_ap_identity_peer_generation_mismatch: u32,
+    pub tx_ap_identity_traffic_class_mismatch: u32,
     pub rx_progress_drained: u32,
     pub rx_progress_probe_pending: u32,
     pub rx_progress_protocol_tx_blocked: u32,
@@ -348,6 +371,30 @@ impl Core0PerformanceSnapshot {
             tx_ap_publication_unattributed_radio_owned: self
                 .tx_ap_publication_unattributed_radio_owned
                 .wrapping_sub(earlier.tx_ap_publication_unattributed_radio_owned),
+            tx_ap_identity_exact: self
+                .tx_ap_identity_exact
+                .wrapping_sub(earlier.tx_ap_identity_exact),
+            tx_ap_identity_unclassified: self
+                .tx_ap_identity_unclassified
+                .wrapping_sub(earlier.tx_ap_identity_unclassified),
+            tx_ap_identity_non_associated: self
+                .tx_ap_identity_non_associated
+                .wrapping_sub(earlier.tx_ap_identity_non_associated),
+            tx_ap_identity_role_unbound: self
+                .tx_ap_identity_role_unbound
+                .wrapping_sub(earlier.tx_ap_identity_role_unbound),
+            tx_ap_identity_interface_mismatch: self
+                .tx_ap_identity_interface_mismatch
+                .wrapping_sub(earlier.tx_ap_identity_interface_mismatch),
+            tx_ap_identity_peer_slot_mismatch: self
+                .tx_ap_identity_peer_slot_mismatch
+                .wrapping_sub(earlier.tx_ap_identity_peer_slot_mismatch),
+            tx_ap_identity_peer_generation_mismatch: self
+                .tx_ap_identity_peer_generation_mismatch
+                .wrapping_sub(earlier.tx_ap_identity_peer_generation_mismatch),
+            tx_ap_identity_traffic_class_mismatch: self
+                .tx_ap_identity_traffic_class_mismatch
+                .wrapping_sub(earlier.tx_ap_identity_traffic_class_mismatch),
             rx_progress_drained: self
                 .rx_progress_drained
                 .wrapping_sub(earlier.rx_progress_drained),
@@ -526,6 +573,14 @@ pub struct Core0PerformanceCounters {
     tx_ap_publication_tokens_in_flight: AtomicU32,
     tx_ap_publication_radio_owned: AtomicU32,
     tx_ap_publication_unattributed_radio_owned: AtomicU32,
+    tx_ap_identity_exact: AtomicU32,
+    tx_ap_identity_unclassified: AtomicU32,
+    tx_ap_identity_non_associated: AtomicU32,
+    tx_ap_identity_role_unbound: AtomicU32,
+    tx_ap_identity_interface_mismatch: AtomicU32,
+    tx_ap_identity_peer_slot_mismatch: AtomicU32,
+    tx_ap_identity_peer_generation_mismatch: AtomicU32,
+    tx_ap_identity_traffic_class_mismatch: AtomicU32,
     active_radio_cycles: AtomicU32,
     active_radio_instructions: AtomicU32,
     active_radio_saw_runner: AtomicU32,
@@ -651,6 +706,14 @@ impl Core0PerformanceCounters {
             tx_ap_publication_tokens_in_flight: AtomicU32::new(0),
             tx_ap_publication_radio_owned: AtomicU32::new(0),
             tx_ap_publication_unattributed_radio_owned: AtomicU32::new(0),
+            tx_ap_identity_exact: AtomicU32::new(0),
+            tx_ap_identity_unclassified: AtomicU32::new(0),
+            tx_ap_identity_non_associated: AtomicU32::new(0),
+            tx_ap_identity_role_unbound: AtomicU32::new(0),
+            tx_ap_identity_interface_mismatch: AtomicU32::new(0),
+            tx_ap_identity_peer_slot_mismatch: AtomicU32::new(0),
+            tx_ap_identity_peer_generation_mismatch: AtomicU32::new(0),
+            tx_ap_identity_traffic_class_mismatch: AtomicU32::new(0),
             active_radio_cycles: AtomicU32::new(0),
             active_radio_instructions: AtomicU32::new(0),
             active_radio_saw_runner: AtomicU32::new(0),
@@ -1151,6 +1214,32 @@ impl Core0PerformanceCounters {
         }
     }
 
+    /// Record one observational comparison at the AP's first Core0 ownership
+    /// boundary. This never authorizes, defers, drops or rekeys a frame.
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_ap_egress_identity(&self, observation: Core0ApEgressIdentityObservation) {
+        let counter = match observation {
+            Core0ApEgressIdentityObservation::Exact => &self.tx_ap_identity_exact,
+            Core0ApEgressIdentityObservation::Unclassified => &self.tx_ap_identity_unclassified,
+            Core0ApEgressIdentityObservation::NonAssociated => &self.tx_ap_identity_non_associated,
+            Core0ApEgressIdentityObservation::RoleUnbound => &self.tx_ap_identity_role_unbound,
+            Core0ApEgressIdentityObservation::InterfaceMismatch => {
+                &self.tx_ap_identity_interface_mismatch
+            }
+            Core0ApEgressIdentityObservation::PeerSlotMismatch => {
+                &self.tx_ap_identity_peer_slot_mismatch
+            }
+            Core0ApEgressIdentityObservation::PeerGenerationMismatch => {
+                &self.tx_ap_identity_peer_generation_mismatch
+            }
+            Core0ApEgressIdentityObservation::TrafficClassMismatch => {
+                &self.tx_ap_identity_traffic_class_mismatch
+            }
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> Core0PerformanceSnapshot {
         Core0PerformanceSnapshot {
             rx_interrupt_posts: self.rx_interrupt_posts.load(Ordering::Relaxed),
@@ -1253,6 +1342,24 @@ impl Core0PerformanceCounters {
                 .load(Ordering::Relaxed),
             tx_ap_publication_unattributed_radio_owned: self
                 .tx_ap_publication_unattributed_radio_owned
+                .load(Ordering::Relaxed),
+            tx_ap_identity_exact: self.tx_ap_identity_exact.load(Ordering::Relaxed),
+            tx_ap_identity_unclassified: self.tx_ap_identity_unclassified.load(Ordering::Relaxed),
+            tx_ap_identity_non_associated: self
+                .tx_ap_identity_non_associated
+                .load(Ordering::Relaxed),
+            tx_ap_identity_role_unbound: self.tx_ap_identity_role_unbound.load(Ordering::Relaxed),
+            tx_ap_identity_interface_mismatch: self
+                .tx_ap_identity_interface_mismatch
+                .load(Ordering::Relaxed),
+            tx_ap_identity_peer_slot_mismatch: self
+                .tx_ap_identity_peer_slot_mismatch
+                .load(Ordering::Relaxed),
+            tx_ap_identity_peer_generation_mismatch: self
+                .tx_ap_identity_peer_generation_mismatch
+                .load(Ordering::Relaxed),
+            tx_ap_identity_traffic_class_mismatch: self
+                .tx_ap_identity_traffic_class_mismatch
                 .load(Ordering::Relaxed),
             rx_progress_drained: self.rx_progress_drained.load(Ordering::Relaxed),
             rx_progress_probe_pending: self.rx_progress_probe_pending.load(Ordering::Relaxed),

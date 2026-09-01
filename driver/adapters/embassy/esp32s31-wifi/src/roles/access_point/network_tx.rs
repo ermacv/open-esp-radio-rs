@@ -74,6 +74,52 @@ impl ApTxFlowKey {
     }
 }
 
+#[cfg(feature = "tx-phase-telemetry")]
+fn compare_ap_egress_identity(
+    metadata: PinnedTxMetadata,
+    role_key: ApTxFlowKey,
+) -> Core0ApEgressIdentityObservation {
+    compare_ap_associated_identity(
+        metadata.egress_key().is_some(),
+        metadata.associated_peer_identity(),
+        role_key,
+    )
+}
+
+#[cfg(feature = "tx-phase-telemetry")]
+fn compare_ap_associated_identity(
+    classified: bool,
+    identity: Option<AssociatedEgressIdentity>,
+    role_key: ApTxFlowKey,
+) -> Core0ApEgressIdentityObservation {
+    if !classified {
+        return Core0ApEgressIdentityObservation::Unclassified;
+    }
+    let Some(identity) = identity else {
+        return Core0ApEgressIdentityObservation::NonAssociated;
+    };
+    let Some(role_identity) = role_key.association() else {
+        return Core0ApEgressIdentityObservation::RoleUnbound;
+    };
+    if identity.interface() != crate::roles::concurrent::AP_NETWORK_INTERFACE_ID.value() {
+        return Core0ApEgressIdentityObservation::InterfaceMismatch;
+    }
+    if u16::from(identity.peer_slot().get()) != role_identity.association_id() {
+        return Core0ApEgressIdentityObservation::PeerSlotMismatch;
+    }
+    if identity.peer_generation().get() != role_identity.association_epoch() {
+        return Core0ApEgressIdentityObservation::PeerGenerationMismatch;
+    }
+    // Xarxa carries generic QoS intent. Until AP WMM is implemented, only
+    // default best-effort traffic class zero maps to the negotiated TID 0.
+    if identity.traffic_class() != 0
+        || role_key.tid != open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID
+    {
+        return Core0ApEgressIdentityObservation::TrafficClassMismatch;
+    }
+    Core0ApEgressIdentityObservation::Exact
+}
+
 /// Single physical owner of every AP-retained network lease which is not yet
 /// encoded into an A-MPDU arena or published through ordinary TX.
 ///
@@ -795,6 +841,14 @@ where
     fn retain_active_frame(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
         frame: PinnedNetworkTxFrame<
             'resources,
             M,
@@ -805,7 +859,7 @@ where
         >,
     ) -> Result<(), Esp32s31AccessPointDatapathError> {
         self.observe_network_claim(&frame);
-        let Some((key, frame)) = self.retain_power_save(engine, frame)? else {
+        let Some((key, frame)) = self.retain_power_save(engine, Some(network), frame)? else {
             return Ok(());
         };
         // The arena owns every default producer credit which is not already
@@ -845,7 +899,8 @@ where
         }
         while let Some(frame) = network.try_receive() {
             self.observe_network_claim(&frame);
-            let Some((frame_key, frame)) = self.retain_power_save(engine, frame)? else {
+            let Some((frame_key, frame)) = self.retain_power_save(engine, Some(network), frame)?
+            else {
                 continue;
             };
             if frame_key == key {
@@ -893,12 +948,53 @@ where
             return Ok(None);
         };
         self.observe_network_claim(&frame);
-        self.retain_power_save(engine, frame)
+        self.retain_power_save(engine, Some(network), frame)
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn observe_egress_identity(
+        &self,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                TX_QUEUE_DEPTH,
+            >,
+        >,
+        frame: &PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+        role_key: ApTxFlowKey,
+    ) {
+        let Some(network) = network else {
+            return;
+        };
+        let metadata = network.metadata(frame);
+        let observation = compare_ap_egress_identity(metadata, role_key);
+        CORE0_PERFORMANCE.record_ap_egress_identity(observation);
     }
 
     fn retain_power_save(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
+        network: Option<
+            &PinnedTxInterfaceConsumer<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                TX_QUEUE_DEPTH,
+            >,
+        >,
         frame: PinnedNetworkTxFrame<
             'resources,
             M,
@@ -914,6 +1010,8 @@ where
         )>,
         Esp32s31AccessPointDatapathError,
     > {
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        let _ = network;
         let unbound_key = ApTxFlowKey::unbound_from_ethernet(frame.as_slice());
         let Some(peer) = frame
             .as_slice()
@@ -923,6 +1021,8 @@ where
             return Ok(Some((unbound_key, frame)));
         };
         if peer[0] & 1 != 0 {
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.observe_egress_identity(network, &frame, unbound_key);
             if engine.group_downlink_disposition() == ApDownlinkDisposition::TransmitNow {
                 return Ok(Some((unbound_key, frame)));
             }
@@ -948,10 +1048,16 @@ where
             // Preserve the ordinary admission path for an unknown or
             // unauthorized destination so its existing rejection accounting
             // remains authoritative.
-            Err(_) => return Ok(Some((unbound_key, frame))),
+            Err(_) => {
+                #[cfg(feature = "tx-phase-telemetry")]
+                self.observe_egress_identity(network, &frame, unbound_key);
+                return Ok(Some((unbound_key, frame)));
+            }
         };
         let identity = admission.identity();
         let key = ApTxFlowKey::associated(identity);
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.observe_egress_identity(network, &frame, key);
         if admission.disposition() == ApDownlinkDisposition::TransmitNow {
             return Ok(Some((key, frame)));
         }
@@ -1541,7 +1647,7 @@ where
     {
         self.last_started_frames = 1;
         let _ = self.stage_dtim_group_release(control)?;
-        self.retain_active_frame(control.mac.engine_mut(), frame)?;
+        self.retain_active_frame(control.mac.engine_mut(), network, frame)?;
         if self.prepared_group_release.is_some() {
             return self.start_prepared_group_release(control, hardware);
         }
@@ -1822,7 +1928,7 @@ where
             (self.aggregate_pending() || self.has_prepared()) && aggregate.has_standby(),
             "DATAPATH must check AP standby ownership before claiming another ordered lease"
         );
-        self.retain_active_frame(control.mac.engine_mut(), frame)?;
+        self.retain_active_frame(control.mac.engine_mut(), network, frame)?;
 
         // The AP-specific peer, power-save and key checks remain per frame.
         // The Core0 arena, rather than the immutable cross-core FIFO order,
@@ -2405,7 +2511,7 @@ where
                     continue;
                 }
                 let Some((readmitted_key, frame)) =
-                    self.retain_power_save(control.mac.engine_mut(), frame)?
+                    self.retain_power_save(control.mac.engine_mut(), None, frame)?
                 else {
                     continue;
                 };
@@ -2944,6 +3050,10 @@ mod tests {
         ApActiveFrameQueues, ApAssociationIdentity, ApFrameLeaseArena, ApPowerSaveFrameQueue,
         ApTxFlowKey, aggregate_adapter_available,
     };
+    #[cfg(feature = "tx-phase-telemetry")]
+    use super::{AssociatedEgressIdentity, compare_ap_associated_identity};
+    #[cfg(feature = "tx-phase-telemetry")]
+    use crate::diagnostics::core0_rx_performance::Core0ApEgressIdentityObservation;
 
     struct TestActiveArena<B> {
         leases: ApFrameLeaseArena<B>,
@@ -3003,6 +3113,64 @@ mod tests {
     #[test]
     fn generation_bound_flow_key_stays_compact() {
         assert_eq!(core::mem::size_of::<ApTxFlowKey>(), 12);
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[test]
+    fn stack_and_ap_association_identity_match_only_at_the_exact_generation() {
+        let exact = AssociatedEgressIdentity::new(
+            crate::roles::concurrent::AP_NETWORK_INTERFACE_ID.value(),
+            3,
+            core::num::NonZeroU8::new(1).unwrap(),
+            core::num::NonZeroU32::new(10).unwrap(),
+            0,
+        );
+        assert_eq!(
+            compare_ap_associated_identity(true, Some(exact), FLOW_A),
+            Core0ApEgressIdentityObservation::Exact
+        );
+        assert_eq!(
+            compare_ap_associated_identity(
+                true,
+                Some(AssociatedEgressIdentity::new(
+                    exact.interface(),
+                    exact.schedule_epoch(),
+                    exact.peer_slot(),
+                    core::num::NonZeroU32::new(12).unwrap(),
+                    exact.traffic_class(),
+                )),
+                FLOW_A,
+            ),
+            Core0ApEgressIdentityObservation::PeerGenerationMismatch
+        );
+        assert_eq!(
+            compare_ap_associated_identity(true, Some(exact), FLOW_A_REASSOCIATED),
+            Core0ApEgressIdentityObservation::PeerGenerationMismatch
+        );
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[test]
+    fn generic_traffic_class_is_not_silently_used_as_a_wifi_tid() {
+        let identity = AssociatedEgressIdentity::new(
+            crate::roles::concurrent::AP_NETWORK_INTERFACE_ID.value(),
+            3,
+            core::num::NonZeroU8::new(1).unwrap(),
+            core::num::NonZeroU32::new(10).unwrap(),
+            6,
+        );
+        assert_eq!(
+            compare_ap_associated_identity(true, Some(identity), FLOW_A),
+            Core0ApEgressIdentityObservation::TrafficClassMismatch
+        );
+        assert_eq!(
+            compare_ap_associated_identity(false, None, FLOW_A),
+            Core0ApEgressIdentityObservation::Unclassified
+        );
+        assert_eq!(
+            compare_ap_associated_identity(true, None, FLOW_A),
+            Core0ApEgressIdentityObservation::NonAssociated
+        );
     }
 
     #[test]

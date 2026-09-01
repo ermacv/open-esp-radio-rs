@@ -482,7 +482,14 @@ fn final_keyed_admission_rejects_stale_and_foreign_peer_keys_before_sram_claim()
     let radio = consumer.for_interface(interface);
     let frame = radio.try_receive_direct().unwrap();
     assert_eq!(frame.tag().interface(), interface);
-    assert_eq!(radio.direct_metadata(&frame).egress_key(), Some(current));
+    let metadata = radio.direct_metadata(&frame);
+    assert_eq!(metadata.egress_key(), Some(current));
+    let retained_identity = metadata.associated_peer_identity().unwrap();
+    assert_eq!(retained_identity.interface(), interface.value());
+    assert_ne!(retained_identity.schedule_epoch(), 0);
+    assert_eq!(retained_identity.peer_slot().get(), 1);
+    assert_eq!(retained_identity.peer_generation().get(), 8);
+    assert_eq!(retained_identity.traffic_class(), 0);
     drop(frame);
 
     let mut foreign_words = current.words();

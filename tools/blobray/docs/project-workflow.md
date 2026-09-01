@@ -371,6 +371,16 @@ vendor inventory is unchanged. The durable raw-vendor identity comes from the
 corresponding `source-inventory:*` inputs; do not interpret exclusion of Rust
 probes as proof that every analysis container is itself vendor-distributed.
 
+When no linked container is needed, one logical source may instead bind an
+ordered set of primary archives by repeating `source-artifact:ID`. Blobray
+analyzes every member in place and links uniquely named relocation targets
+across the set without synthesizing an executable or assigning runtime
+addresses. The same `source-artifact:ID=PATH` pair may occur only once, and an
+archive set cannot also use `source-companion:ID`: add every required code
+archive to the primary set explicitly. Stable function identities retain the
+logical source, archive member and symbol, so a blob update remains eligible
+for normal revision diff and rebase.
+
 Snapshots contain artifact
 digests, address-independent function feature fingerprints, MMIO/interface
 observations and complete serialized reviewed records, but no vendor bytes or

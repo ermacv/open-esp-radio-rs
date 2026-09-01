@@ -2,6 +2,11 @@
 
 use super::*;
 
+const TEST_ARTIFACT_SHA256: &str =
+    "1111111111111111111111111111111111111111111111111111111111111111";
+const TEST_OTHER_ARTIFACT_SHA256: &str =
+    "2222222222222222222222222222222222222222222222222222222222222222";
+
 fn symbol(name: &str, address: u64, bytes: Vec<u8>) -> artifact::ArtifactSymbolDefinition {
     artifact::ArtifactSymbolDefinition {
         member: Some("member.o".to_owned()),
@@ -37,6 +42,7 @@ fn linked_test_function(
 ) -> LinkedIrFunction {
     LinkedIrFunction {
         source: source.to_owned(),
+        artifact_sha256: TEST_ARTIFACT_SHA256.to_owned(),
         identity: format!("{source}::{symbol}"),
         selection: "symbol-prefix-root",
         member: None,
@@ -88,13 +94,35 @@ fn linked_test_function(
 }
 
 #[test]
-fn schema_v65_requires_frontier_fields_and_rejects_unknown_nested_frontier_data() {
+fn schema_v66_requires_artifact_provenance_and_frontier_fields() {
     let render = || {
         crate::artifacts::render_linked_ir_fixture(
             vec![linked_test_function("rom", "worker", "global", Vec::new())],
             Vec::new(),
         )
     };
+    let mut missing: serde_json::Value = serde_json::from_str(&render()).unwrap();
+    missing["functions"][0]
+        .as_object_mut()
+        .expect("function object")
+        .remove("artifact_sha256");
+    let error = crate::artifacts::parse_linked_ir(&missing.to_string()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("missing field `artifact_sha256`"),
+        "{error}"
+    );
+
+    let mut mismatched: serde_json::Value = serde_json::from_str(&render()).unwrap();
+    mismatched["functions"][0]["artifact_sha256"] =
+        serde_json::Value::String(TEST_OTHER_ARTIFACT_SHA256.to_owned());
+    let error = crate::artifacts::parse_linked_ir(&mismatched.to_string()).unwrap_err();
+    assert!(
+        error.to_string().contains("undeclared source artifact"),
+        "{error}"
+    );
+
     let mut missing: serde_json::Value = serde_json::from_str(&render()).unwrap();
     missing["functions"][0]
         .as_object_mut()

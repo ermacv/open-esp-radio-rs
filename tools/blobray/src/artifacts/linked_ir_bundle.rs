@@ -51,6 +51,7 @@ struct FunctionIndexDocument {
 struct FunctionIndexRecord {
     identity: String,
     source: String,
+    artifact_sha256: String,
     member: Option<String>,
     symbol: String,
     address: Option<u32>,
@@ -196,6 +197,19 @@ impl LinkedIrReader {
                 path.display()
             )));
         }
+        let source_artifacts = manifest
+            .artifacts
+            .iter()
+            .map(|artifact| (artifact.source.as_str(), artifact.artifact.sha256.as_str()))
+            .collect::<BTreeSet<_>>();
+        if let Some(record) = index.records.iter().find(|record| {
+            !source_artifacts.contains(&(record.source.as_str(), record.artifact_sha256.as_str()))
+        }) {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function index record {:?} refers to an undeclared source artifact {}@{}",
+                record.identity, record.source, record.artifact_sha256
+            )));
+        }
         let data_object_index: DataObjectIndexDocument =
             serde_json::from_str(&fs::read_to_string(path.join(DATA_OBJECT_INDEX))?)?;
         if data_object_index.schema_version != super::LINKED_IR.version
@@ -228,12 +242,15 @@ impl LinkedIrReader {
     pub(crate) fn authenticated_source_artifact(
         &self,
         source: &str,
+        artifact_sha256: &str,
     ) -> Result<AuthenticatedSourceArtifact> {
         let matches = self
             .manifest
             .artifacts
             .iter()
-            .filter(|artifact| artifact.source == source)
+            .filter(|artifact| {
+                artifact.source == source && artifact.artifact.sha256 == artifact_sha256
+            })
             .map(|artifact| {
                 (
                     PathBuf::from(&artifact.artifact.path),
@@ -244,7 +261,7 @@ impl LinkedIrReader {
         match matches.as_slice() {
             [(path, expected)] => read_authenticated_source_artifact(path, expected),
             _ => Err(crate::Error::invalid(format!(
-                "linked-IR bundle {} contains {} source artifacts named {source:?}, expected one",
+                "linked-IR bundle {} contains {} source artifacts matching {source}@{artifact_sha256}, expected one",
                 self.root.display(),
                 matches.len()
             ))),
@@ -596,6 +613,7 @@ impl LinkedIrReader {
                 (
                     &record.identity,
                     &record.source,
+                    &record.artifact_sha256,
                     &record.symbol,
                     record.address,
                 )
@@ -607,6 +625,7 @@ impl LinkedIrReader {
                 (
                     &function.identity,
                     &function.source,
+                    &function.artifact_sha256,
                     &function.symbol,
                     function.address,
                 )
@@ -649,6 +668,7 @@ impl LinkedIrReader {
                 (
                     &record.identity,
                     &record.source,
+                    &record.artifact_sha256,
                     &record.symbol,
                     &record.member,
                 )
@@ -660,6 +680,7 @@ impl LinkedIrReader {
                 (
                     &function.identity,
                     &function.source,
+                    &function.artifact_sha256,
                     &function.symbol,
                     &function.member,
                 )
@@ -880,6 +901,7 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
         records.push(FunctionIndexRecord {
             identity: function.identity.clone(),
             source: function.source.clone(),
+            artifact_sha256: function.artifact_sha256.clone(),
             member: function.member.clone(),
             symbol: function.symbol.clone(),
             address: function.address,
@@ -1018,6 +1040,7 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
     .collect::<Vec<_>>();
     let overview = serde_json::json!({
         "source": full["source"],
+        "artifact_sha256": full["artifact_sha256"],
         "identity": full["identity"],
         "selection": full["selection"],
         "member": full["member"],

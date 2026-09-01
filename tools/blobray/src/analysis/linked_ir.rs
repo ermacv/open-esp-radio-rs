@@ -683,6 +683,7 @@ fn function_completeness(
 pub(crate) struct LinkedIrSourceOptions<'a> {
     pub(crate) symbol_prefix: &'a str,
     pub(crate) source: &'a str,
+    pub(crate) artifact_sha256: &'a str,
     pub(crate) namespace_identities: bool,
     pub(crate) include_reachable: bool,
     pub(crate) jobs: usize,
@@ -712,6 +713,7 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
     let LinkedIrSourceOptions {
         symbol_prefix,
         source,
+        artifact_sha256,
         namespace_identities,
         include_reachable,
         jobs,
@@ -739,11 +741,18 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
     );
     let functions = if jobs > 1 && symbol_prefix.is_empty() {
         build_all_linked_functions_parallel(
-            resolver,
+            LinkedFunctionBuild {
+                resolver,
+                symbol_prefix: "",
+                svd,
+                source,
+                artifact_sha256,
+                progress_label: source,
+                namespace_identities,
+                include_reachable: false,
+                fact_store: None,
+            },
             roots,
-            svd,
-            source,
-            namespace_identities,
             jobs,
             &function_cache,
         )
@@ -754,6 +763,7 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
                 symbol_prefix,
                 svd,
                 source,
+                artifact_sha256,
                 progress_label: source,
                 namespace_identities,
                 include_reachable,
@@ -811,6 +821,7 @@ struct LinkedFunctionBuild<'a> {
     symbol_prefix: &'a str,
     svd: &'a MmioMap,
     source: &'a str,
+    artifact_sha256: &'a str,
     progress_label: &'a str,
     namespace_identities: bool,
     include_reachable: bool,
@@ -827,6 +838,7 @@ fn build_linked_functions_for_roots(
         symbol_prefix,
         svd,
         source,
+        artifact_sha256,
         progress_label,
         namespace_identities,
         include_reachable,
@@ -1027,6 +1039,7 @@ fn build_linked_functions_for_roots(
                 let pseudo = annotate_indexed_dispatch_pseudo(pseudo, &indexed_dispatches);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
+                    artifact_sha256: artifact_sha256.to_owned(),
                     identity: function_identity.clone(),
                     selection,
                     member: symbol.member.clone(),
@@ -1083,6 +1096,7 @@ fn build_linked_functions_for_roots(
                 let scenario_suggestions = scenario_suggestions(None, &direct_mmio_predicates, &[]);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
+                    artifact_sha256: artifact_sha256.to_owned(),
                     identity: function_identity.clone(),
                     selection,
                     member: symbol.member.clone(),
@@ -1189,14 +1203,19 @@ fn linked_ir_worker_count(requested: usize, functions: usize) -> usize {
 }
 
 fn build_all_linked_functions_parallel(
-    resolver: &ReferenceResolver,
+    build: LinkedFunctionBuild<'_>,
     mut roots: Vec<&artifact::ArtifactSymbolDefinition>,
-    svd: &MmioMap,
-    source: &str,
-    namespace_identities: bool,
     jobs: usize,
     function_cache: &FunctionCacheRun,
 ) -> Vec<LinkedIrFunction> {
+    let LinkedFunctionBuild {
+        resolver,
+        svd,
+        source,
+        artifact_sha256,
+        namespace_identities,
+        ..
+    } = build;
     // Long ROM routines dominate short thunks. Greedily balancing byte counts
     // gives every worker comparable input while retaining deterministic
     // partitioning and final identity order.
@@ -1234,6 +1253,7 @@ fn build_all_linked_functions_parallel(
                             symbol_prefix: "",
                             svd,
                             source,
+                            artifact_sha256,
                             progress_label: &progress_label,
                             namespace_identities,
                             include_reachable: false,

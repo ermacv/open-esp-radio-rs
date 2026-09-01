@@ -895,8 +895,8 @@ fn investigate_static_event_callback(
         .arguments
         .get(usize::from(route.run_event_argument))
         .ok_or_else(|| route_mismatch(&route.id, "event run argument is absent"))?;
-    let delivery_artifact =
-        delivery_reader.authenticated_source_artifact(&route.delivery_source)?;
+    let delivery_artifact = delivery_reader
+        .authenticated_source_artifact(&route.delivery_source, &delivery.artifact_sha256)?;
     let delivery_body = artifact::inspect_function_body_at_data(
         &delivery_artifact.path,
         &delivery_artifact.bytes,
@@ -1285,7 +1285,8 @@ fn investigate_broker_subscription(
             ),
         ));
     }
-    let binding_artifact = binding_reader.authenticated_source_artifact(&route.binding_source)?;
+    let binding_artifact = binding_reader
+        .authenticated_source_artifact(&route.binding_source, &binding.artifact_sha256)?;
     let binding_body = artifact::inspect_function_body_at_data(
         &binding_artifact.path,
         &binding_artifact.bytes,

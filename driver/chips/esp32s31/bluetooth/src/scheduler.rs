@@ -674,7 +674,7 @@ pub enum BluetoothSchedulerEmptyListMergeError {
 /// the role-specific preparation failure continues to own every retry resource.
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmControllerTimeAcquisitionError {
+pub enum BluetoothControllerTimeAcquisitionError {
     /// Another request or abandoned request still owns the latch worker.
     Busy,
     /// The logical worker and lower sticky latch owner disagreed at begin.
@@ -715,7 +715,7 @@ pub enum BluetoothDtmControllerEventPreparationError {
     SequenceAuthorization(BluetoothSchedulerSequenceAuthorizationError),
     /// A private post-enable timing, current, admission or sequence acquisition
     /// failed.
-    ControllerTime(BluetoothDtmControllerTimeAcquisitionError),
+    ControllerTime(BluetoothControllerTimeAcquisitionError),
     /// The bound SRAM graph rejected the positional event transaction.
     #[cfg(target_arch = "riscv32")]
     Graph(BluetoothDtmMemoryGraphPrepareError),
@@ -749,7 +749,7 @@ pub(crate) const fn classify_dtm_first_preparation_completion(
             BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
         )
         | BluetoothDtmControllerEventPreparationError::ControllerTime(
-            BluetoothDtmControllerTimeAcquisitionError::Busy,
+            BluetoothControllerTimeAcquisitionError::Busy,
         ) => BluetoothDtmFirstPreparationCompletionClass::HardwareFailure,
         BluetoothDtmControllerEventPreparationError::LinkStateRoleMismatch { .. }
         | BluetoothDtmControllerEventPreparationError::Reservation(
@@ -759,12 +759,12 @@ pub(crate) const fn classify_dtm_first_preparation_completion(
             | BluetoothSchedulerReservationError::GenerationExhausted,
         )
         | BluetoothDtmControllerEventPreparationError::ControllerTime(
-            BluetoothDtmControllerTimeAcquisitionError::OwnershipCollision
-            | BluetoothDtmControllerTimeAcquisitionError::GenerationExhausted
-            | BluetoothDtmControllerTimeAcquisitionError::RequestMismatch
-            | BluetoothDtmControllerTimeAcquisitionError::OwnershipLost
-            | BluetoothDtmControllerTimeAcquisitionError::Faulted
-            | BluetoothDtmControllerTimeAcquisitionError::Cancelled,
+            BluetoothControllerTimeAcquisitionError::OwnershipCollision
+            | BluetoothControllerTimeAcquisitionError::GenerationExhausted
+            | BluetoothControllerTimeAcquisitionError::RequestMismatch
+            | BluetoothControllerTimeAcquisitionError::OwnershipLost
+            | BluetoothControllerTimeAcquisitionError::Faulted
+            | BluetoothControllerTimeAcquisitionError::Cancelled,
         )
         | BluetoothDtmControllerEventPreparationError::EmptyList(_) => {
             BluetoothDtmFirstPreparationCompletionClass::FailStop
@@ -2162,7 +2162,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn reject_dtm_transmitter_first_before_stage(
         &mut self,
         owner: BluetoothDtmPreparedTxGraph,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerTxPreparationFailure {
         BluetoothDtmControllerTxPreparationFailure::from_prepared(
             BluetoothDtmControllerEventPreparationError::ControllerTime(error),
@@ -2258,7 +2258,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_transmitter_first_staged(
         &mut self,
         staged: BluetoothDtmTransmitterFirstStaged,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerTxPreparationFailure {
         self.reject_dtm_transmitter_first_before_stage(staged.owner, error)
     }
@@ -2268,7 +2268,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_transmitter_first_pre_sequence(
         &mut self,
         pre_sequence: BluetoothDtmTransmitterFirstPreSequence,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerTxPreparationFailure {
         self.release_dtm_reservation(pre_sequence.reservation);
         self.cancel_dtm_transmitter_first_staged(pre_sequence.staged, error)
@@ -2366,7 +2366,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn reject_dtm_receiver_first_before_stage(
         &mut self,
         owner: BluetoothDtmReceiverCpuOwned,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxPreparationFailure {
         BluetoothDtmControllerRxPreparationFailure {
             error: BluetoothDtmControllerEventPreparationError::ControllerTime(error),
@@ -2453,7 +2453,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_receiver_first_staged(
         &mut self,
         staged: BluetoothDtmReceiverFirstStaged,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxPreparationFailure {
         self.reject_dtm_receiver_first_before_stage(staged.owner, error)
     }
@@ -2463,7 +2463,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_receiver_first_pre_sequence(
         &mut self,
         pre_sequence: BluetoothDtmReceiverFirstPreSequence,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxPreparationFailure {
         self.release_dtm_reservation(pre_sequence.reservation);
         self.cancel_dtm_receiver_first_staged(pre_sequence.staged, error)
@@ -2613,7 +2613,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_transmitter_recurring_staged(
         &mut self,
         staged: BluetoothDtmTransmitterRecurringStaged,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerTxRecurringPreparationFailure {
         BluetoothDtmControllerTxRecurringPreparationFailure {
             error: BluetoothDtmControllerEventPreparationError::ControllerTime(error),
@@ -2626,7 +2626,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_transmitter_recurring_pre_sequence(
         &mut self,
         pre_sequence: BluetoothDtmTransmitterRecurringPreSequence,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerTxRecurringPreparationFailure {
         self.release_dtm_reservation(pre_sequence.reservation);
         self.cancel_dtm_transmitter_recurring_staged(pre_sequence.staged, error)
@@ -2714,7 +2714,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn reject_dtm_receiver_recurring_before_stage(
         &mut self,
         owner: BluetoothDtmActiveReceiverCpuOwned,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxRecurringPreparationFailure {
         BluetoothDtmControllerRxRecurringPreparationFailure {
             error: BluetoothDtmControllerEventPreparationError::ControllerTime(error),
@@ -2790,7 +2790,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_receiver_recurring_staged(
         &mut self,
         staged: BluetoothDtmReceiverRecurringStaged,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxRecurringPreparationFailure {
         self.reject_dtm_receiver_recurring_before_stage(staged.owner, error)
     }
@@ -2800,7 +2800,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn cancel_dtm_receiver_recurring_pre_sequence(
         &mut self,
         pre_sequence: BluetoothDtmReceiverRecurringPreSequence,
-        error: BluetoothDtmControllerTimeAcquisitionError,
+        error: BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxRecurringPreparationFailure {
         self.release_dtm_reservation(pre_sequence.reservation);
         self.cancel_dtm_receiver_recurring_staged(pre_sequence.staged, error)
@@ -4245,8 +4245,8 @@ mod tests {
     #[test]
     fn first_preparation_completion_classifies_every_portable_error_branch() {
         use super::{
+            BluetoothControllerTimeAcquisitionError as TimeError,
             BluetoothDtmControllerEventPreparationError as PreparationError,
-            BluetoothDtmControllerTimeAcquisitionError as TimeError,
             BluetoothDtmFirstPreparationCompletionClass, BluetoothSchedulerEmptyListMergeError,
             BluetoothSchedulerReservationError as ReservationError,
             BluetoothSchedulerSequenceAuthorizationError as SequenceError,

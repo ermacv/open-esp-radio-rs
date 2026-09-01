@@ -1563,19 +1563,19 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 #[cfg(target_arch = "riscv32")]
 const fn dtm_time_begin_error(
     error: BluetoothControllerTimeRequestError,
-) -> crate::BluetoothDtmControllerTimeAcquisitionError {
+) -> crate::BluetoothControllerTimeAcquisitionError {
     match error {
         BluetoothControllerTimeRequestError::Busy => {
-            crate::BluetoothDtmControllerTimeAcquisitionError::Busy
+            crate::BluetoothControllerTimeAcquisitionError::Busy
         }
         BluetoothControllerTimeRequestError::OwnershipCollision => {
-            crate::BluetoothDtmControllerTimeAcquisitionError::OwnershipCollision
+            crate::BluetoothControllerTimeAcquisitionError::OwnershipCollision
         }
         BluetoothControllerTimeRequestError::GenerationExhausted => {
-            crate::BluetoothDtmControllerTimeAcquisitionError::GenerationExhausted
+            crate::BluetoothControllerTimeAcquisitionError::GenerationExhausted
         }
         BluetoothControllerTimeRequestError::Faulted => {
-            crate::BluetoothDtmControllerTimeAcquisitionError::Faulted
+            crate::BluetoothControllerTimeAcquisitionError::Faulted
         }
     }
 }
@@ -1583,16 +1583,16 @@ const fn dtm_time_begin_error(
 #[cfg(target_arch = "riscv32")]
 const fn dtm_time_event_error(
     error: BluetoothControllerTimeEventError,
-) -> crate::BluetoothDtmControllerTimeAcquisitionError {
+) -> crate::BluetoothControllerTimeAcquisitionError {
     match error {
         BluetoothControllerTimeEventError::RequestMismatch => {
-            crate::BluetoothDtmControllerTimeAcquisitionError::RequestMismatch
+            crate::BluetoothControllerTimeAcquisitionError::RequestMismatch
         }
         BluetoothControllerTimeEventError::OwnershipLost => {
-            crate::BluetoothDtmControllerTimeAcquisitionError::OwnershipLost
+            crate::BluetoothControllerTimeAcquisitionError::OwnershipLost
         }
         BluetoothControllerTimeEventError::Faulted => {
-            crate::BluetoothDtmControllerTimeAcquisitionError::Faulted
+            crate::BluetoothControllerTimeAcquisitionError::Faulted
         }
     }
 }
@@ -2239,7 +2239,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendin
             request,
         );
         let error = match result {
-            Ok(()) => crate::BluetoothDtmControllerTimeAcquisitionError::Cancelled,
+            Ok(()) => crate::BluetoothControllerTimeAcquisitionError::Cancelled,
             Err(error) => dtm_time_event_error(error),
         };
         let phase = self
@@ -2355,7 +2355,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     fn cancel_dtm_preparation_phase(
         &mut self,
         phase: BluetoothDtmControllerPreparationPhase,
-        error: crate::BluetoothDtmControllerTimeAcquisitionError,
+        error: crate::BluetoothControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerPreparationOutcome {
         match phase {
             BluetoothDtmControllerPreparationPhase::TransmitterFirstAlwaysAwakeTiming {

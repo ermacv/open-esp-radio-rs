@@ -394,7 +394,7 @@ pub use runtime_resources::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{
-    BluetoothDtmControllerEventPreparationError, BluetoothDtmControllerTimeAcquisitionError,
+    BluetoothControllerTimeAcquisitionError, BluetoothDtmControllerEventPreparationError,
     BluetoothDtmEmptySchedulerMergePrepared, BluetoothDtmInitialSchedulerItemPhase,
     BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmSchedulerHeadPublicationFailure,
     BluetoothDtmSchedulerHeadPublished, BluetoothDtmSchedulerRunning,

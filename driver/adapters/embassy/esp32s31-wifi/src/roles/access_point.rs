@@ -140,6 +140,17 @@ fn access_point_tx_batch_target(operational_window: Option<u16>, arena_capacity:
     operational_window.map_or(1, |window| usize::from(window).min(arena_capacity).max(1))
 }
 
+/// Publish the AP network endpoint only while at least one peer has completed
+/// authorization. Standalone and paired lifecycles use this same policy so a
+/// role composition cannot leave one permanent logical device down.
+pub const fn access_point_network_link_state(authorized_peers: u8) -> LinkState {
+    if authorized_peers == 0 {
+        LinkState::Down
+    } else {
+        LinkState::Up
+    }
+}
+
 #[cfg(any(feature = "diagnostics", test))]
 fn observe_aggregate_rate(observer: &dyn AggregateTxObserver, rate: HtRate) {
     observer.observe(AggregateTxObservation::RateSelected {
@@ -229,3 +240,21 @@ include!("access_point/control_readiness.rs");
 include!("access_point/protocol_shutdown.rs");
 include!("access_point/service_epoch.rs");
 include!("access_point/ethernet_diagnostics.rs");
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn network_link_requires_an_authorized_peer_in_every_ap_composition() {
+        assert!(matches!(
+            access_point_network_link_state(0),
+            LinkState::Down
+        ));
+        assert!(matches!(access_point_network_link_state(1), LinkState::Up));
+        assert!(matches!(
+            access_point_network_link_state(AP_MAX_CLIENTS as u8),
+            LinkState::Up
+        ));
+    }
+}

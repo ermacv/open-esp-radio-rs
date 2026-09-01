@@ -337,15 +337,51 @@ hardware rather than accepted from source equivalence alone:
 - STA+AP correctness run `1788270588780-001344d0` failed before workload on the
   AP network RX readiness boundary.
 
-The STA+AP failure is not attributed to this split. Exact replay
+The STA+AP failure was not caused by this split. Exact replay
 `1788270814590-001348c1` of pre-split correctness image
 `1788268379279-0012dc66` failed at the same boundary in the same current lab
 state. Both images transmitted beacons, associated and authorized the client,
-negotiated BlockAck, and admitted protected AP frames through MAC/reorder, but
-reported zero completed AP network RX units. This localizes the next defect to
-the STA+AP AP-to-network delivery boundary; it is neither an association
-failure nor evidence of an air/AQL cause. The task-residence variant is not a
-valid substitute gate: its run history is currently 0/3.
+negotiated BlockAck, and admitted protected AP frames through MAC/reorder. In
+the new-image failure, 23 ARP requests reached AP Ethernet staging while the AP
+network endpoint observed no TX frame and emitted no ARP reply. This ruled out
+association, air timing, BA negotiation and the target Ethernet delivery
+boundary as the primary cause.
+
+The defect was a missing lifecycle bridge in the paired STA+AP composition.
+Standalone AP observes every AP service-status revision, publishes peer
+generations and changes the AP network link to `Up` after the first peer is
+authorized. `AccessPointRoleRuntime`, used by STA+AP, did none of those things,
+so the independently addressed AP network endpoint remained at its initial
+`Down` state even though the AP MAC was operational. The fix gives standalone
+and paired AP one link-state policy and makes paired AP status publication part
+of the affine role runtime. A down transition is published before clearing or
+replacing peer identity; an up transition is published only after the current
+peer generations are visible to egress admission. Paired teardown explicitly
+clears both link-visible status and egress peer identity.
+
+HIL run `1788272583862-00138479` validates the final causal fix. The same
+`station-access-point-load` scenario that failed twice completed both flows:
+the station and AP target RX rates were 8.654 and 8.376 Mbit/s, host RX rates
+were 10.079 and 10.080 Mbit/s, and both directions reported zero missing,
+reordered or duplicate host datagrams. The AP observed an ARP request, emitted
+an ARP reply, observed four network TX frames, staged 12,181 Ethernet frames and
+rejected zero TX frames for missing peer identity. It also completed 514 HT
+aggregates with no DMA buffer-full or FIFO-overflow event. This is a
+correctness result, not a CPU or ceiling-performance claim.
+
+The same archived ELF then passed standalone AP bidirectional lifecycle run
+`1788272789362-00138d2e` and all three STA RX ceiling repetitions in run
+`1788272869730-00138fba` at 114.068--114.480 Mbit/s target median. These are
+composition-regression gates for this fix; they do not replace the clean
+performance baselines above.
+
+Older successful STA+AP records do not contradict this diagnosis. Runs
+`1787954618530-0007fb70` and `1788041719551-001bb2cb` were produced from dirty
+worktrees, and the older report format did not archive their source patches.
+They therefore cannot reconstruct which local lifecycle logic was present and
+cannot establish that the current clean paired runtime ever published AP link
+state. The task-residence variant is likewise not a substitute gate: its run
+history is currently 0/3.
 
 ## Non-goals
 

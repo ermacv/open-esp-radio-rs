@@ -25,6 +25,7 @@ use open_esp_radio_esp32s31_wifi::datapath::lifecycle::{
     StaApLifecycle, StaApReceiveIdentities, apply_sta_ap_register_action, sta_ap_register_action,
 };
 use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaGroupSecurity;
+use open_esp_radio_esp32s31_wifi_ap::protocol::AccessPointServiceStatus;
 use open_esp_radio_esp32s31_wifi_embassy::{
     composition::resources::{
         ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
@@ -32,11 +33,14 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
     datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxEpoch},
     datapath::rx::hardware::EmbassyEsp32s31RxDmaObservationDelay,
-    datapath::{DatapathRunnerExit, paired::DatapathPairRole, services::SingleRoleServices},
+    datapath::{
+        DatapathRunnerExit, network::DatapathNetwork, paired::DatapathPairRole,
+        services::SingleRoleServices,
+    },
     roles::access_point::{
         AccessPointRoleRuntime, Esp32s31AccessPointAmpdu, Esp32s31AccessPointProtocolProcessor,
-        finish_sta_ap_access_point_role, network_tx::Esp32s31AccessPointNetworkTx,
-        park_sta_ap_access_point_role,
+        access_point_network_link_state, finish_sta_ap_access_point_role,
+        network_tx::Esp32s31AccessPointNetworkTx, park_sta_ap_access_point_role,
     },
     roles::concurrent::{
         Esp32s31StaApControlExit, Esp32s31StaApRxService, Esp32s31StaApStationRxSink,
@@ -838,6 +842,7 @@ impl ProductionWifiEpochRunner {
                 #[cfg(feature = "diagnostics")]
                 diagnostics.map(|hooks| hooks.aggregate_tx),
             );
+        let access_point_network_link = network_runner.link_controller();
         let access_point_role = AccessPointRoleRuntime::new(
             access_point_processor,
             access_point_network_tx,
@@ -851,6 +856,23 @@ impl ProductionWifiEpochRunner {
                 (nonce, replay)
             },
             publish_access_point_shared_network_rx as fn(u8),
+            move |status: AccessPointServiceStatus| {
+                let link_state = access_point_network_link_state(status.authorized);
+                if matches!(link_state, open_esp_radio_embassy_net::LinkState::Down) {
+                    access_point_network_link.set_link_state(
+                        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+                        link_state,
+                    );
+                }
+                crate::radio_resources::publish_access_point_egress_peers(&status);
+                if matches!(link_state, open_esp_radio_embassy_net::LinkState::Up) {
+                    access_point_network_link.set_link_state(
+                        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+                        link_state,
+                    );
+                }
+                crate::status::publish_access_point_status(generation, status);
+            },
         );
         let access_point_role = park_sta_ap_access_point_role(
             access_point_role,
@@ -1013,6 +1035,8 @@ impl ProductionWifiEpochRunner {
             publish_shared_rx: _access_point_shared_rx,
             physical_tx,
         } = access_point_finished;
+        crate::radio_resources::clear_access_point_egress_peers();
+        crate::status::publish_access_point_stopped();
         #[cfg(feature = "diagnostics")]
         if let Some(hooks) = diagnostics {
             super::access_point::publish_stored_access_point_observation(

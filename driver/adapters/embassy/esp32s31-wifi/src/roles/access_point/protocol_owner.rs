@@ -166,6 +166,14 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize> core::ops::DerefMut
 impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     Esp32s31AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>
 {
+    fn role_status_revision(&self) -> u32 {
+        self.mac.engine().service_status_revision()
+    }
+
+    fn role_status(&self) -> AccessPointServiceStatus {
+        self.mac.engine().service_status()
+    }
+
     pub const fn rx_batch_pending(&self) -> bool {
         self.state.rx_batch_offset < self.state.rx_batch_used
     }

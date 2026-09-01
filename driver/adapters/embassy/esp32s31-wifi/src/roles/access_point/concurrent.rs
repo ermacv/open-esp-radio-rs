@@ -38,11 +38,13 @@ pub enum Esp32s31StaApAccessPointRxError {
 /// Physical RX/DMA, interrupt and final network endpoints remain outside this
 /// value. TX/control state will be added to this same role owner rather than
 /// manufacturing a second AP protocol object for the paired runtime.
-pub struct AccessPointRoleRuntime<Processor, NetworkTx, Security, SharedRx> {
+pub struct AccessPointRoleRuntime<Processor, NetworkTx, Security, SharedRx, StatusObserver = ()> {
     protocol: Processor,
     network_tx: NetworkTx,
     security_material: Security,
     publish_shared_rx: SharedRx,
+    status_observer: StatusObserver,
+    last_status_revision: u32,
     #[cfg(feature = "diagnostics")]
     network_backpressure_since_micros: Option<u64>,
     #[cfg(feature = "diagnostics")]
@@ -59,6 +61,8 @@ impl<Processor> AccessPointRoleRuntime<Processor, (), (), ()> {
             network_tx: (),
             security_material: (),
             publish_shared_rx: (),
+            status_observer: (),
+            last_status_revision: 0,
             #[cfg(feature = "diagnostics")]
             network_backpressure_since_micros: None,
             #[cfg(feature = "diagnostics")]
@@ -193,6 +197,7 @@ pub fn park_sta_ap_access_point_role<
     NetworkTx,
     Security,
     SharedRx,
+    StatusObserver,
     B,
     const DMA_BUFFER_SIZE: usize,
     const TX_BUFFER_SIZE: usize,
@@ -213,6 +218,7 @@ pub fn park_sta_ap_access_point_role<
         NetworkTx,
         Security,
         SharedRx,
+        StatusObserver,
     >,
     aggregate: Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
     physical: &mut DatapathPairedPhysicalTx<
@@ -248,6 +254,7 @@ pub fn park_sta_ap_access_point_role<
         NetworkTx,
         Security,
         SharedRx,
+        StatusObserver,
     >,
     Esp32s31StaApAccessPointParkError<
         AccessPointRoleRuntime<
@@ -264,6 +271,7 @@ pub fn park_sta_ap_access_point_role<
             NetworkTx,
             Security,
             SharedRx,
+            StatusObserver,
         >,
         Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
     >,
@@ -279,6 +287,8 @@ where
         network_tx,
         security_material,
         publish_shared_rx,
+        status_observer,
+        last_status_revision,
         #[cfg(feature = "diagnostics")]
         network_backpressure_since_micros,
         #[cfg(feature = "diagnostics")]
@@ -294,6 +304,8 @@ where
                     network_tx,
                     security_material,
                     publish_shared_rx,
+                    status_observer,
+                    last_status_revision,
                     #[cfg(feature = "diagnostics")]
                     network_backpressure_since_micros,
                     #[cfg(feature = "diagnostics")]
@@ -313,6 +325,8 @@ where
                     network_tx,
                     security_material,
                     publish_shared_rx,
+                    status_observer,
+                    last_status_revision,
                     #[cfg(feature = "diagnostics")]
                     network_backpressure_since_micros,
                     #[cfg(feature = "diagnostics")]
@@ -332,6 +346,8 @@ where
                 network_tx,
                 security_material,
                 publish_shared_rx,
+                status_observer,
+                last_status_revision,
                 #[cfg(feature = "diagnostics")]
                 network_backpressure_since_micros,
                 #[cfg(feature = "diagnostics")]
@@ -348,6 +364,8 @@ where
         network_tx,
         security_material,
         publish_shared_rx,
+        status_observer,
+        last_status_revision,
         #[cfg(feature = "diagnostics")]
         network_backpressure_since_micros,
         #[cfg(feature = "diagnostics")]
@@ -374,6 +392,7 @@ pub fn finish_sta_ap_access_point_role<
     NetworkTx,
     Security,
     SharedRx,
+    StatusObserver,
     B,
     H,
     const DMA_BUFFER_SIZE: usize,
@@ -404,6 +423,7 @@ pub fn finish_sta_ap_access_point_role<
         NetworkTx,
         Security,
         SharedRx,
+        StatusObserver,
     >,
     mut physical_tx: DatapathPairedPhysicalTx<
         WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -455,6 +475,7 @@ pub fn finish_sta_ap_access_point_role<
             NetworkTx,
             Security,
             SharedRx,
+            StatusObserver,
         >,
         DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -486,6 +507,8 @@ where
         network_tx,
         security_material,
         publish_shared_rx,
+        status_observer,
+        last_status_revision,
         #[cfg(feature = "diagnostics")]
         network_backpressure_since_micros,
         #[cfg(feature = "diagnostics")]
@@ -503,6 +526,8 @@ where
                     network_tx,
                     security_material,
                     publish_shared_rx,
+                    status_observer,
+                    last_status_revision,
                     #[cfg(feature = "diagnostics")]
                     network_backpressure_since_micros,
                     #[cfg(feature = "diagnostics")]
@@ -528,6 +553,8 @@ where
                     network_tx,
                     security_material,
                     publish_shared_rx,
+                    status_observer,
+                    last_status_revision,
                     #[cfg(feature = "diagnostics")]
                     network_backpressure_since_micros,
                     #[cfg(feature = "diagnostics")]
@@ -555,6 +582,8 @@ where
                     network_tx,
                     security_material,
                     publish_shared_rx,
+                    status_observer,
+                    last_status_revision,
                     #[cfg(feature = "diagnostics")]
                     network_backpressure_since_micros,
                     #[cfg(feature = "diagnostics")]
@@ -568,6 +597,8 @@ where
     physical_tx
         .restore(DatapathPairRole::Second, ordinary, aggregate_resources)
         .unwrap_or_else(|_| unreachable!("paired AP activation records the second role"));
+    drop(status_observer);
+    let _ = last_status_revision;
 
     Ok(Esp32s31StaApAccessPointFinished {
         stopped,
@@ -589,6 +620,7 @@ impl<
     NetworkTx,
     Security,
     SharedRx,
+    StatusObserver,
     B,
     const DMA_BUFFER_SIZE: usize,
     const TX_BUFFER_SIZE: usize,
@@ -618,6 +650,7 @@ impl<
         NetworkTx,
         Security,
         SharedRx,
+        StatusObserver,
     >
 where
     P: WifiTxPowerProfile,
@@ -625,6 +658,32 @@ where
     T: WifiTxTimer,
     B: StableDmaBacking + 'ampdu,
 {
+    fn observe_role_state(&mut self)
+    where
+        StatusObserver: FnMut(AccessPointServiceStatus),
+    {
+        let (revision, status) = self.protocol.active().map_or_else(
+            || {
+                let processor = &self
+                    .protocol
+                    .parked_state()
+                    .expect("paired AP role is active or parked")
+                    .processor;
+                (processor.role_status_revision(), processor.role_status())
+            },
+            |active| {
+                (
+                    active.processor.role_status_revision(),
+                    active.processor.role_status(),
+                )
+            },
+        );
+        if revision != self.last_status_revision {
+            (self.status_observer)(status);
+            self.last_status_revision = revision;
+        }
+    }
+
     pub fn activate_tx(
         &mut self,
         physical: &mut DatapathPairedPhysicalTx<
@@ -752,6 +811,7 @@ impl<
     T,
     Security,
     SharedRx,
+    StatusObserver,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -818,6 +878,7 @@ impl<
         >,
         Security,
         SharedRx,
+        StatusObserver,
     >
 where
     M: RawMutex,
@@ -1200,6 +1261,7 @@ impl<
     NetworkTx,
     Security,
     SharedRx,
+    StatusObserver,
     B,
     const STAGE_CAPACITY: usize,
     const STAGE_SLOTS: usize,
@@ -1246,6 +1308,7 @@ impl<
         NetworkTx,
         Security,
         SharedRx,
+        StatusObserver,
     >
 where
     H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
@@ -1256,6 +1319,7 @@ where
     NetworkTx: network_tx::AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>,
     Security: FnMut() -> ([u8; 32], u64),
     SharedRx: FnMut(u8),
+    StatusObserver: FnMut(AccessPointServiceStatus),
 {
     type Error = Esp32s31StaApAccessPointPairedRxError;
 
@@ -1475,6 +1539,7 @@ where
                     )
                 })? {
                 crate::roles::concurrent::Esp32s31RoutedRxDisposition::Processed => {
+                    self.observe_role_state();
                     return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Processed);
                 }
                 crate::roles::concurrent::Esp32s31RoutedRxDisposition::Deferred(frame) => frame,
@@ -1527,6 +1592,7 @@ where
         {
             return Err(Esp32s31StaApAccessPointPairedRxError::Ownership(error));
         }
+        self.observe_role_state();
         result
     }
 
@@ -1545,7 +1611,7 @@ where
             // recovering AP TX resources here would violate affine ownership.
             return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Deferred(frame));
         };
-        active
+        let result = active
             .processor
             .service_routed_rx_during_tx::<H, _, _, _>(
                 frame,
@@ -1559,7 +1625,9 @@ where
                 Esp32s31StaApAccessPointPairedRxError::Role(
                     Esp32s31StaApAccessPointRxError::Control(error),
                 )
-            })
+            });
+        self.observe_role_state();
+        result
     }
 
     fn has_pending_rx(&self) -> bool {
@@ -1599,6 +1667,7 @@ impl<
     NetworkTx,
     Security,
     SharedRx,
+    StatusObserver,
     B,
     const DMA_BUFFER_SIZE: usize,
     const TX_BUFFER_SIZE: usize,
@@ -1640,6 +1709,7 @@ impl<
         NetworkTx,
         Security,
         SharedRx,
+        StatusObserver,
     >
 where
     H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
@@ -1648,6 +1718,7 @@ where
     T: WifiTxTimer,
     B: StableDmaBacking + 'ampdu,
     NetworkTx: network_tx::AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>,
+    StatusObserver: FnMut(AccessPointServiceStatus),
 {
     type Error = Esp32s31StaApAccessPointPairedControlError;
 
@@ -1695,6 +1766,7 @@ where
         let progress = processor
             .service_control(hardware, now_micros)
             .map_err(Esp32s31StaApAccessPointPairedControlError::Role)?;
+        self.observe_role_state();
         match progress {
             DatapathControlProgress::Idle => {
                 if !retain_physical_tx {
@@ -1785,20 +1857,23 @@ where
     }
 }
 
-impl<Processor, NetworkTx, Security, SharedRx>
-    AccessPointRoleRuntime<Processor, NetworkTx, Security, SharedRx>
+impl<Processor, NetworkTx, Security, SharedRx, StatusObserver>
+    AccessPointRoleRuntime<Processor, NetworkTx, Security, SharedRx, StatusObserver>
 {
     pub const fn new(
         protocol: Processor,
         network_tx: NetworkTx,
         security_material: Security,
         publish_shared_rx: SharedRx,
+        status_observer: StatusObserver,
     ) -> Self {
         Self {
             protocol,
             network_tx,
             security_material,
             publish_shared_rx,
+            status_observer,
+            last_status_revision: 0,
             #[cfg(feature = "diagnostics")]
             network_backpressure_since_micros: None,
             #[cfg(feature = "diagnostics")]
@@ -1814,12 +1889,13 @@ impl<Processor, NetworkTx, Security, SharedRx>
         &mut self.protocol
     }
 
-    pub fn into_parts(self) -> (Processor, NetworkTx, Security, SharedRx) {
+    pub fn into_parts(self) -> (Processor, NetworkTx, Security, SharedRx, StatusObserver) {
         (
             self.protocol,
             self.network_tx,
             self.security_material,
             self.publish_shared_rx,
+            self.status_observer,
         )
     }
 }

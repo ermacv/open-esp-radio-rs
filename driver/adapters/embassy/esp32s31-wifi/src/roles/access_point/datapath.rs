@@ -171,7 +171,8 @@ where
             return;
         }
         let status = self.control.role_status();
-        let authorized = status.authorized != 0;
+        let link_state = access_point_network_link_state(status.authorized);
+        let authorized = matches!(link_state, LinkState::Up);
         #[cfg(any(feature = "diagnostics", test))]
         self.block_ack_observation.update(
             self.control.has_operational_tx_block_ack(),
@@ -180,11 +181,7 @@ where
         (self.status_observer)(status);
         self.last_status_revision = status_revision;
         if authorized != self.network_link_up {
-            (self.set_link_state)(if authorized {
-                LinkState::Up
-            } else {
-                LinkState::Down
-            });
+            (self.set_link_state)(link_state);
             self.network_link_up = authorized;
         }
     }

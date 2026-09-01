@@ -331,7 +331,7 @@ where
             protocol_rx,
             role,
         } = self;
-        let (processor, (), (), ()) = role.into_parts();
+        let (processor, (), (), (), ()) = role.into_parts();
         let Esp32s31AccessPointProtocolStopped {
             transmit,
             rx_frame,

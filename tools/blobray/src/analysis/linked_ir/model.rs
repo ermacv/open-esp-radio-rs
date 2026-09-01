@@ -1029,6 +1029,11 @@ pub(crate) struct LinkedIndexedDispatch {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
+    /// Digest of the exact input artifact that owns this function.
+    ///
+    /// A logical source may be an ordered archive set, so `source` alone is
+    /// not sufficient provenance for reviewed facts or cross-revision pins.
+    pub(crate) artifact_sha256: String,
     pub(crate) identity: String,
     pub(crate) selection: &'static str,
     pub(crate) member: Option<String>,

@@ -628,6 +628,7 @@ fn manifest_projection<'a>(document: &'a LinkedIrDocument<'a>) -> LinkedIrDocume
 #[derive(Serialize)]
 struct FunctionOverviewDocument<'a> {
     source: &'a str,
+    artifact_sha256: &'a str,
     identity: &'a str,
     selection: &'a str,
     member: &'a Option<String>,
@@ -872,6 +873,7 @@ impl<'a> FunctionOverviewDocument<'a> {
         deduplicate_observable_effects(&mut direct_effects);
         Self {
             source: &function.source,
+            artifact_sha256: &function.artifact_sha256,
             identity: &function.identity,
             selection: function.selection,
             member: &function.member,
@@ -1007,6 +1009,7 @@ struct FunctionIndexDocument<'a> {
 struct FunctionIndexRecord<'a> {
     identity: &'a str,
     source: &'a str,
+    artifact_sha256: &'a str,
     member: &'a Option<String>,
     symbol: &'a str,
     address: Option<u32>,
@@ -1204,6 +1207,7 @@ pub(crate) fn stage_linked_ir_bundle(
             records.push(FunctionIndexRecord {
                 identity: &function.identity,
                 source: &function.source,
+                artifact_sha256: &function.artifact_sha256,
                 member: &function.member,
                 symbol: &function.symbol,
                 address: function.address,
@@ -1375,7 +1379,7 @@ pub(crate) fn render_linked_ir_fixture(
         projected_memory_fields: 0,
         scenario_suggestions: 0,
     };
-    let document = build_linked_ir_document(
+    let mut document = build_linked_ir_document(
         &[],
         &[],
         &[],
@@ -1385,6 +1389,21 @@ pub(crate) fn render_linked_ir_fixture(
         false,
     )
     .unwrap();
+    document.artifacts = report
+        .functions
+        .iter()
+        .map(|function| (function.source.as_str(), function.artifact_sha256.as_str()))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|(source, sha256)| SourceArtifact {
+            source,
+            artifact: ArtifactIdentity {
+                path: "<fixture>".to_owned(),
+                sha256: sha256.to_owned(),
+            },
+            reviewed_code_boundaries: Vec::new(),
+        })
+        .collect();
     render_linked_ir(&document).unwrap()
 }
 

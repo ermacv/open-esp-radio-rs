@@ -168,6 +168,7 @@ pub(crate) fn analyze(
     validate_artifact_inputs(artifacts, companions)?;
     let mut reports = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
+        let artifact_sha256 = crate::artifact_sha256(&artifact.path)?;
         let source_inventories = inventories
             .iter()
             .filter(|(source, _)| source == &artifact.source)
@@ -226,6 +227,7 @@ pub(crate) fn analyze(
             LinkedIrSourceOptions {
                 symbol_prefix,
                 source: &artifact.source,
+                artifact_sha256: &artifact_sha256,
                 namespace_identities: true,
                 include_reachable,
                 jobs,

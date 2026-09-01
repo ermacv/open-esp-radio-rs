@@ -209,6 +209,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         LinkedIrSourceOptions {
             symbol_prefix: "private_",
             source: "primary",
+            artifact_sha256: TEST_ARTIFACT_SHA256,
             namespace_identities: false,
             include_reachable: false,
             jobs: 1,
@@ -237,6 +238,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
             LinkedIrSourceOptions {
                 symbol_prefix: "private_",
                 source: "libphy",
+                artifact_sha256: TEST_ARTIFACT_SHA256,
                 namespace_identities: true,
                 include_reachable: false,
                 jobs: 1,
@@ -249,6 +251,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
             LinkedIrSourceOptions {
                 symbol_prefix: "private_",
                 source: "rom",
+                artifact_sha256: TEST_OTHER_ARTIFACT_SHA256,
                 namespace_identities: true,
                 include_reachable: false,
                 jobs: 1,
@@ -257,6 +260,19 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         ),
     ]);
     assert_eq!(project_report.functions.len(), 4);
+    assert_eq!(
+        project_report
+            .functions
+            .iter()
+            .map(|function| function.artifact_sha256.as_str())
+            .collect::<Vec<_>>(),
+        [
+            TEST_ARTIFACT_SHA256,
+            TEST_ARTIFACT_SHA256,
+            TEST_OTHER_ARTIFACT_SHA256,
+            TEST_OTHER_ARTIFACT_SHA256,
+        ]
+    );
     assert_eq!(
         project_report
             .functions
@@ -286,6 +302,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
                 symbol_prefix: "",
                 svd: &map,
                 source: "primary",
+                artifact_sha256: TEST_ARTIFACT_SHA256,
                 progress_label: "primary",
                 namespace_identities: false,
                 include_reachable: false,
@@ -298,11 +315,18 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
     );
     let parallel = summarize_linked_ir_with_jobs(
         build_all_linked_functions_parallel(
-            &resolver,
+            LinkedFunctionBuild {
+                resolver: &resolver,
+                symbol_prefix: "",
+                svd: &map,
+                source: "primary",
+                artifact_sha256: TEST_ARTIFACT_SHA256,
+                progress_label: "primary",
+                namespace_identities: false,
+                include_reachable: false,
+                fact_store: None,
+            },
             resolver.symbols.iter().collect(),
-            &map,
-            "primary",
-            false,
             2,
             &function_cache,
         ),
@@ -354,6 +378,7 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
         LinkedIrSourceOptions {
             symbol_prefix: "",
             source: "primary",
+            artifact_sha256: TEST_ARTIFACT_SHA256,
             namespace_identities: false,
             include_reachable: false,
             jobs: 1,

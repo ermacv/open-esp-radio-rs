@@ -379,7 +379,8 @@ fn investigate_profile(
         ));
     }
 
-    let authenticated = reader.authenticated_source_artifact(&function.source)?;
+    let authenticated =
+        reader.authenticated_source_artifact(&function.source, &function.artifact_sha256)?;
     let body = artifact::inspect_function_body_at_data(
         &authenticated.path,
         &authenticated.bytes,

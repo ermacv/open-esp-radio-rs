@@ -321,6 +321,7 @@ fn write_ir(path: &std::path::Path) {
                     effect_summary: crate::LinkedEffectSummary,
                     pseudo: &str| crate::LinkedIrFunction {
         source: "rom".to_owned(),
+        artifact_sha256: digest.clone(),
         identity: identity.to_owned(),
         selection,
         member: None,

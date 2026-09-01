@@ -636,6 +636,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         LinkedIrSourceOptions {
             symbol_prefix: "vendor_parent",
             source: "primary",
+            artifact_sha256: TEST_ARTIFACT_SHA256,
             namespace_identities: false,
             include_reachable: false,
             jobs: 1,
@@ -651,6 +652,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         LinkedIrSourceOptions {
             symbol_prefix: "vendor_parent",
             source: "primary",
+            artifact_sha256: TEST_ARTIFACT_SHA256,
             namespace_identities: false,
             include_reachable: true,
             jobs: 1,
@@ -731,6 +733,7 @@ fn reachable_callees_are_loaded_as_one_late_cache_batch() {
     let options = LinkedIrSourceOptions {
         symbol_prefix: "vendor_parent",
         source: "primary",
+        artifact_sha256: TEST_ARTIFACT_SHA256,
         namespace_identities: false,
         include_reachable: true,
         jobs: 1,
@@ -789,6 +792,7 @@ fn changing_one_function_reuses_unrelated_persistent_facts() {
     let options = LinkedIrSourceOptions {
         symbol_prefix: "",
         source: "primary",
+        artifact_sha256: TEST_ARTIFACT_SHA256,
         namespace_identities: false,
         include_reachable: false,
         jobs: 1,
@@ -876,6 +880,7 @@ fn linked_base_shift_does_not_reuse_stale_pc_relative_mmio_facts() {
     let options = LinkedIrSourceOptions {
         symbol_prefix: "pc_relative_store",
         source: "primary",
+        artifact_sha256: TEST_ARTIFACT_SHA256,
         namespace_identities: false,
         include_reachable: false,
         jobs: 1,

@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v65.
+//! Complete owned DTO for linked-IR schema v66.
 
 #![allow(
     dead_code,
@@ -199,6 +199,7 @@ pub(crate) struct StoredDataObjectXref {
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredFunction {
     pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
     pub(crate) identity: String,
     pub(crate) selection: String,
     pub(crate) member: Option<String>,
@@ -466,6 +467,7 @@ pub(crate) struct StoredFlowValue {
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredFunctionReviewProjection {
     pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
     pub(crate) identity: String,
     pub(crate) selection: String,
     pub(crate) member: Option<String>,

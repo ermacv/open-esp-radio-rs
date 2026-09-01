@@ -20,11 +20,11 @@ use open_radio_vendor_contracts::ArtifactIdentity;
 
 use crate::{Result, artifact, artifact_occurrence};
 
-pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 4;
+pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 5;
 const MINIMUM_COMMON_OBFUSCATION_TOKENS: usize = 64;
 const MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION: u32 = 900_000;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SymbolCorrespondenceStatus {
     Unique,
@@ -32,7 +32,7 @@ pub(crate) enum SymbolCorrespondenceStatus {
     Unmatched,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ObfuscationEpochStatus {
     Compatible,
@@ -52,9 +52,11 @@ pub(crate) struct ObfuscationTokenOverlap {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ObfuscationEpochEvidence {
+    pub(crate) status: ObfuscationEpochStatus,
     pub(crate) basis: &'static str,
     pub(crate) minimum_common_tokens: usize,
     pub(crate) minimum_smaller_set_retention_parts_per_million: u32,
+    pub(crate) automatic_matches: bool,
     pub(crate) functions: ObfuscationTokenOverlap,
     pub(crate) data_objects: ObfuscationTokenOverlap,
 }
@@ -201,20 +203,16 @@ pub(crate) fn correlate(
         .map_err(|error| crate::Error::invalid(error.to_string()))?;
     let from_data = artifact::load_data_objects(request.from_path)?;
     let to_data = artifact::load_data_objects(request.to_path)?;
-    let obfuscation_epoch = ObfuscationEpochEvidence {
-        basis: "archive-wide-20-character-obfuscation-token-overlap-v1",
-        minimum_common_tokens: MINIMUM_COMMON_OBFUSCATION_TOKENS,
-        minimum_smaller_set_retention_parts_per_million:
-            MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION,
-        functions: obfuscation_token_overlap(
+    let obfuscation_epoch = obfuscation_epoch_evidence(
+        obfuscation_token_overlap(
             function_obfuscation_tokens(&from_symbols),
             function_obfuscation_tokens(&to_symbols),
         ),
-        data_objects: obfuscation_token_overlap(
+        obfuscation_token_overlap(
             data_obfuscation_tokens(&from_data),
             data_obfuscation_tokens(&to_data),
         ),
-    };
+    );
     let mut source_fingerprints = BTreeMap::<String, usize>::new();
     for symbol in &from_symbols {
         *source_fingerprints
@@ -257,7 +255,7 @@ pub(crate) fn correlate(
         &from_symbols,
         &to_symbols,
         &to_identity,
-        obfuscation_epoch.functions.automatic_matches,
+        obfuscation_epoch.automatic_matches,
         &mut correspondences,
     )?;
     refine_ambiguous_matches(&from_symbols, &to_symbols, &mut correspondences);
@@ -290,7 +288,7 @@ pub(crate) fn correlate(
         &correspondences,
         &from_identity,
         &to_identity,
-        obfuscation_epoch.data_objects.automatic_matches,
+        obfuscation_epoch.automatic_matches,
     )?;
     let mut pin_candidates = function_pin_candidates(&correspondences);
     pin_candidates.extend(data_pin_candidates(&data_correspondences));
@@ -299,7 +297,7 @@ pub(crate) fn correlate(
     Ok(SymbolCorrespondenceReport {
         schema_version: SYMBOL_CORRESPONDENCE_SCHEMA,
         command: "symbols correlate",
-        method: "epoch-gated-stable-identity-or-sha256-relocatable-body-and-relocation-shape-v3",
+        method: "archive-epoch-gated-stable-identity-or-sha256-relocatable-body-and-relocation-shape-v4",
         from: from_artifact,
         to: to_artifact,
         obfuscation_epoch,
@@ -493,6 +491,31 @@ fn obfuscation_token_overlap(
         common_tokens,
         smaller_set_retention_parts_per_million,
         automatic_matches: compatible,
+    }
+}
+
+fn obfuscation_epoch_evidence(
+    functions: ObfuscationTokenOverlap,
+    data_objects: ObfuscationTokenOverlap,
+) -> ObfuscationEpochEvidence {
+    let status = if [functions.status, data_objects.status]
+        .contains(&ObfuscationEpochStatus::Compatible)
+    {
+        ObfuscationEpochStatus::Compatible
+    } else if [functions.status, data_objects.status].contains(&ObfuscationEpochStatus::Distinct) {
+        ObfuscationEpochStatus::Distinct
+    } else {
+        ObfuscationEpochStatus::Inconclusive
+    };
+    ObfuscationEpochEvidence {
+        status,
+        basis: "archive-wide-20-character-obfuscation-token-overlap-v2",
+        minimum_common_tokens: MINIMUM_COMMON_OBFUSCATION_TOKENS,
+        minimum_smaller_set_retention_parts_per_million:
+            MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION,
+        automatic_matches: status == ObfuscationEpochStatus::Compatible,
+        functions,
+        data_objects,
     }
 }
 
@@ -1620,6 +1643,19 @@ mod tests {
         assert_eq!(distinct.status, ObfuscationEpochStatus::Distinct);
         assert_eq!(distinct.common_tokens, 0);
         assert!(!distinct.automatic_matches);
+
+        let sparse_data_from = (0..70)
+            .map(|index| format!("{index:020}"))
+            .collect::<BTreeSet<_>>();
+        let sparse_data_to = (0..62)
+            .map(|index| format!("{index:020}"))
+            .chain((100..108).map(|index| format!("{index:020}")))
+            .collect::<BTreeSet<_>>();
+        let sparse_data = obfuscation_token_overlap(sparse_data_from, sparse_data_to);
+        assert_eq!(sparse_data.status, ObfuscationEpochStatus::Inconclusive);
+        let archive = obfuscation_epoch_evidence(compatible, sparse_data);
+        assert_eq!(archive.status, ObfuscationEpochStatus::Compatible);
+        assert!(archive.automatic_matches);
     }
 
     #[test]

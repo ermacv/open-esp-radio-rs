@@ -334,11 +334,14 @@ The correlator distinguishes a source name, a generated obfuscation token and
 a semantic identity. A unique non-generated name is an identity anchor even
 when its implementation changed. A generated 20-character token is an anchor
 only when archive-wide evidence proves that both artifacts belong to the same
-obfuscation epoch: at least 64 tokens must overlap and at least 90% of the
-smaller token set must survive. The report publishes the token counts,
-retention and `compatible`, `distinct` or `inconclusive` decision separately
-for functions and data objects. A hard token regeneration therefore disables
-all token-based automatic matches instead of guessing across the boundary.
+obfuscation epoch: in at least one domain, 64 tokens must overlap and at least
+90% of the smaller token set must survive. The report publishes the token
+counts, retention and `compatible`, `distinct` or `inconclusive` evidence
+separately for functions and data objects, plus one archive-wide decision. A
+strong function overlap can therefore prove the epoch even when data objects
+were aggressively removed; only exact unique shared data tokens are then
+carried. A hard token regeneration disables all token-based automatic matches
+instead of guessing across the boundary.
 
 The correlator also hashes complete relocatable function bytes plus relocation
 offset/kind/addend while deliberately excluding relocation target names. A

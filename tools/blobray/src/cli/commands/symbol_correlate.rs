@@ -47,7 +47,8 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
         );
         outputln!("Method: {}", report.method);
         outputln!(
-            "Obfuscation epoch: functions={:?} (source={} target={} common={} retained={:.3}%) data={:?} (source={} target={} common={} retained={:.3}%)",
+            "Obfuscation epoch: {:?}; functions={:?} (source={} target={} common={} retained={:.3}%) data={:?} (source={} target={} common={} retained={:.3}%)",
+            report.obfuscation_epoch.status,
             report.obfuscation_epoch.functions.status,
             report.obfuscation_epoch.functions.from_tokens,
             report.obfuscation_epoch.functions.to_tokens,

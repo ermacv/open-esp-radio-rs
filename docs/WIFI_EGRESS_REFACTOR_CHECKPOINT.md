@@ -810,9 +810,25 @@ not satisfy the architectural goal.
   aggregate. Coverage remains deliberately AP A-MPDU/TID0-only: it is not yet
   an airtime charge, and the stack-side schedule epoch is not yet attached to
   an aggregate transaction.
+- **Airtime evidence boundary — specified and host-tested.** Normal S31 TX
+  completion exposes no reviewed hardware airtime counter; its portable
+  `MacTxStatus::airtime_micros` therefore remains `None`. The MAC now provides
+  `ModeledHtAmpduPpduDuration`, a protocol-derived duration in exact 100 ns
+  units for the mixed-format data PPDU implied by one published A-MPDU byte
+  length, MCS, width and GI. It includes the HT preamble, service and BCC tail
+  bits, but deliberately excludes contention/backoff, protection, SIFS and
+  BlockAck. Submission also does not prove that a PPDU reached the medium.
+  Future accounting must consequently retain three different meanings:
+  admission-time estimated pending work, completion-time modeled published
+  PPDU duration, and hardware-measured airtime (currently unavailable). BA and
+  retry results may select the exact modeled publication lengths, but cannot
+  upgrade their provenance to a measurement. Host tests cover HT20/HT40,
+  LGI/SGI fractional duration, empty ownership rejection and accumulation of
+  retry publications without saturation.
 - hierarchical VIF then peer/TID weighted airtime DRR;
 - AQL-like estimated pending airtime charged at successful SRAM admission;
-- completion reconciliation from actual rate, retry and BA results;
+- completion reconciliation from exact published PHY/length and retry/BA
+  results, explicitly labeled as modeled until hardware evidence exists;
 - power-save/progressless-peer eligibility and a separate control reserve;
 - compare every shadow decision with actual queue/radio progress.
 
@@ -963,9 +979,9 @@ Performance gates:
 - no authoritative fairness claim from throughput alone.
 
 The next gate is Phase 4 policy in shadow. Before any return path becomes
-authoritative, exact VIF/peer-generation/TID completion identity and the
-estimated-versus-actual airtime accounting boundary must be specified and
-tested. Policy then selects from the mirrored active demands using real Core0
-BA, power-save, rate and radio state. Any future grant is proactive and
-burst/airtime-bounded; no packet-frequency request/reply API may be
-reintroduced.
+authoritative, the modeled duration must be attached to exact
+VIF/schedule-epoch/peer-generation/TID aggregate identity and tested through
+retry and terminal release. Policy then selects from the mirrored active
+demands using real Core0 BA, power-save, rate and radio state. Any future grant
+is proactive and burst/airtime-bounded; no packet-frequency request/reply API
+may be reintroduced.

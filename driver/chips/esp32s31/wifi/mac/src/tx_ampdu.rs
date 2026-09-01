@@ -15,6 +15,7 @@ use open_esp_radio_esp32s31_hal::types::{
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorageError;
 use pin_project::pin_project;
 
+mod airtime;
 pub mod block_ack;
 mod capacity;
 mod commit;
@@ -28,6 +29,7 @@ mod request;
 mod retry;
 mod submission;
 
+pub use airtime::{HtAmpduPpduDurationError, ModeledHtAmpduPpduDuration};
 pub use block_ack::{
     ADDBA_ACTION_BODY_LEN, ADDBA_REQUEST_ACTION, ADDBA_RESPONSE_ACTION, AddbaRequest,
     BLOCK_ACK_CATEGORY, BlockAckAction, DELBA_ACTION, HtBlockAckObservation, OperationalTxBlockAck,

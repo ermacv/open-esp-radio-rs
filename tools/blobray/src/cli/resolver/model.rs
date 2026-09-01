@@ -99,6 +99,7 @@ pub(in crate::cli) enum ResolvedInvocation {
         arguments: SymbolInventoryArgs,
         run_spec: RunSpec,
     },
+    SymbolCorrelate(SymbolCorrelateArgs),
     InterfaceDiscover {
         arguments: InterfaceDiscoverArgs,
         run_spec: RunSpec,

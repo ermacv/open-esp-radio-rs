@@ -432,6 +432,8 @@ leaf_commands!(CodeCommand {
 leaf_commands!(SymbolCommand {
     /// Inventory definitions, references and cross-input symbol candidates.
     Inventory(SymbolInventoryArgs) => Command::SymbolInventory, SymbolInventory,
+    /// Correlate renamed functions across two artifact revisions.
+    Correlate(SymbolCorrelateArgs) => Command::SymbolCorrelate, SymbolCorrelate,
 });
 
 leaf_commands!(InterfaceCommand {
@@ -596,6 +598,7 @@ pub(crate) enum Command {
     CodeValidate(ValidationArgs),
     CodeReview(ReviewArgs),
     SymbolInventory(SymbolInventoryArgs),
+    SymbolCorrelate(SymbolCorrelateArgs),
     InterfaceDiscover(InterfaceDiscoverArgs),
     InterfaceInitPack(OutputArgs),
     InterfaceValidate(ValidationArgs),

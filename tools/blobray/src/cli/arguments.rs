@@ -313,6 +313,28 @@ pub(crate) struct SymbolInventoryArgs {
     pub(crate) undefined_only: bool,
 }
 
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SymbolCorrelateArgs {
+    /// Older or named artifact used as the correspondence source.
+    #[arg(long, value_name = "SOURCE=PATH")]
+    pub(crate) from: SourcePath,
+    /// Newer or obfuscated artifact receiving candidate identities.
+    #[arg(long, value_name = "SOURCE=PATH")]
+    pub(crate) to: SourcePath,
+    /// Restrict source functions to this symbol prefix.
+    #[arg(long, default_value = "")]
+    pub(crate) from_prefix: String,
+    /// Restrict target functions to this symbol prefix.
+    #[arg(long, default_value = "")]
+    pub(crate) to_prefix: String,
+    /// Write the machine-readable correspondence report.
+    #[arg(long)]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify that the existing correspondence report is current.
+    #[arg(long, requires = "output")]
+    pub(crate) check: bool,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InterfaceDiscoverArgs {
     /// Verify that the configured report is current.

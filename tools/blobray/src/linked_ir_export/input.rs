@@ -46,12 +46,13 @@ pub(crate) fn validate_artifact_inputs(
             "--companion is only supported with one primary IR artifact",
         ));
     }
-    let mut sources = BTreeSet::new();
+    let mut bindings = BTreeSet::new();
     for artifact in artifacts {
-        if !sources.insert(artifact.source.clone()) {
+        if !bindings.insert((artifact.source.clone(), artifact.path.clone())) {
             return Err(crate::Error::invalid(format!(
-                "duplicate artifact source {:?}",
-                artifact.source
+                "duplicate artifact binding {:?}={}",
+                artifact.source,
+                artifact.path.display()
             )));
         }
     }

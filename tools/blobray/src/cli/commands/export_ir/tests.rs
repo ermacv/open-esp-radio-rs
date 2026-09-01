@@ -34,10 +34,18 @@ fn artifact_source_ids_are_stable_machine_keys() {
 }
 
 #[test]
-fn project_inputs_require_unique_explicit_sources_and_no_companions() {
+fn project_inputs_accept_archive_sets_but_reject_duplicate_bindings_and_companions() {
     let rom = named_artifact("rom", "rom.elf").unwrap();
     let libphy = named_artifact("libphy", "libphy.a").unwrap();
     validate_artifact_inputs(&[rom.clone(), libphy], &[]).unwrap();
+    validate_artifact_inputs(
+        &[
+            rom.clone(),
+            named_artifact("rom", "libbtdm_common.a").unwrap(),
+        ],
+        &[],
+    )
+    .unwrap();
     assert!(validate_artifact_inputs(&[rom.clone(), rom], &[]).is_err());
     assert!(
         validate_artifact_inputs(

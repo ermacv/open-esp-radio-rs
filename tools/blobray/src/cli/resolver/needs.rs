@@ -153,6 +153,9 @@ impl ResolutionNeeds {
             | Command::AuditImageTargets(_) => {
                 Self::new(false, true, false, false, false, false, true)
             }
+            Command::SymbolCorrelate(_) => {
+                Self::new(false, false, false, false, false, false, false)
+            }
             Command::DiscoverMmio(_) => {
                 Self::new(false, true, false, false, true, true, true).with_review_context()
             }

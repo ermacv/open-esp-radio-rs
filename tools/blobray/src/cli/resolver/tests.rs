@@ -101,6 +101,31 @@ fn composite_analysis_requires_only_a_selected_harness() {
 }
 
 #[test]
+fn symbol_correspondence_needs_only_its_explicit_artifacts() {
+    let directory = fixture_directory("symbol-correspondence");
+    let resolved = resolve_from(
+        parse(&[
+            "advanced",
+            "symbols",
+            "correlate",
+            "--from",
+            "named=old.a",
+            "--to",
+            "current=new.a",
+        ]),
+        &directory,
+    )
+    .unwrap();
+    let ResolvedInvocation::SymbolCorrelate(arguments) = resolved else {
+        panic!("expected symbol-correspondence arguments")
+    };
+    assert_eq!(arguments.from.source.as_str(), "named");
+    assert_eq!(arguments.to.source.as_str(), "current");
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn explicit_cli_paths_win_over_all_run_spec_defaults() {
     let (path, run_spec) = run_spec(
         "explicit",

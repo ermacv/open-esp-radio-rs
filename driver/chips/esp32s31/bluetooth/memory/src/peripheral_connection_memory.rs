@@ -3,8 +3,9 @@
 //! This is the stable memory boundary recovered from the current controller
 //! artifact.  It owns the two reusable scheduler items, their shared context,
 //! the connection link state and the initially empty transmit queue sentinel.
-//! It deliberately does not encode anchor policy, packet sequence state or a
-//! hardware-ready event image.
+//! The first event-time transition installs only the reviewed Access Address
+//! and CRC initialization fields. It deliberately does not encode anchor
+//! policy, packet sequence state or a hardware-ready event image.
 
 #![forbid(unsafe_code)]
 
@@ -43,6 +44,8 @@ const LINK_STATE_TX_HEAD: usize = 0x6c / 4;
 const LINK_STATE_RX_TAIL: usize = 0x70 / 4;
 const LINK_STATE_TX_TAIL: usize = 0x74 / 4;
 const LINK_STATE_RX_RESERVE: usize = 0x78 / 4;
+const LINK_STATE_CRC_INITIALIZATION: usize = 0x2c / 4;
+const LINK_STATE_ACCESS_ADDRESS: usize = 0x38 / 4;
 
 const SCHEDULER_ITEM_NEXT: usize = 0;
 const SCHEDULER_ITEM_CONTEXT: usize = 1;
@@ -97,6 +100,63 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
 
     fn retains_scheduler_head(&self, head: BluetoothControllerSramLinkAddress) -> bool {
         self.words[LINK_STATE_SCHEDULER_HEAD].get() == head.controller_address().address()
+    }
+
+    fn prepare_identity(&self, identity: BluetoothPeripheralConnectionIdentity) {
+        self.words[LINK_STATE_CRC_INITIALIZATION]
+            .set(u32::from_le_bytes(identity.crc_initialization_word()));
+        self.words[LINK_STATE_ACCESS_ADDRESS]
+            .set(u32::from_le_bytes(identity.access_address_wire_bytes()));
+    }
+
+    fn identity(&self) -> BluetoothPeripheralConnectionIdentity {
+        let crc_initialization = self.words[LINK_STATE_CRC_INITIALIZATION]
+            .get()
+            .to_le_bytes();
+        BluetoothPeripheralConnectionIdentity::new(
+            self.words[LINK_STATE_ACCESS_ADDRESS].get().to_le_bytes(),
+            [
+                crc_initialization[0],
+                crc_initialization[1],
+                crc_initialization[2],
+            ],
+        )
+    }
+}
+
+/// Air-interface identity consumed by the S31 connection link state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionIdentity {
+    access_address: [u8; 4],
+    crc_initialization: [u8; 3],
+}
+
+impl BluetoothPeripheralConnectionIdentity {
+    /// Construct the exact two fields in over-the-air little-endian order.
+    pub const fn new(access_address: [u8; 4], crc_initialization: [u8; 3]) -> Self {
+        Self {
+            access_address,
+            crc_initialization,
+        }
+    }
+
+    /// Access Address octets in Link Layer wire order.
+    pub const fn access_address_wire_bytes(self) -> [u8; 4] {
+        self.access_address
+    }
+
+    /// CRCInit octets in Link Layer wire order.
+    pub const fn crc_initialization_wire_bytes(self) -> [u8; 3] {
+        self.crc_initialization
+    }
+
+    const fn crc_initialization_word(self) -> [u8; 4] {
+        [
+            self.crc_initialization[0],
+            self.crc_initialization[1],
+            self.crc_initialization[2],
+            0,
+        ]
     }
 }
 
@@ -404,6 +464,50 @@ impl BluetoothPeripheralConnectionMemoryGraphCpuOwned {
                 self.binding.link_state,
             )
     }
+
+    /// Install only the reviewed connection identity fields.
+    ///
+    /// This state cannot publish a scheduler item. A later event builder must
+    /// consume it after closing the anchor, duration and packet sequence
+    /// semantics.
+    pub fn prepare_identity(
+        self,
+        identity: BluetoothPeripheralConnectionIdentity,
+    ) -> BluetoothPeripheralConnectionMemoryGraphIdentityPrepared {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .link_state
+            .prepare_identity(identity);
+        BluetoothPeripheralConnectionMemoryGraphIdentityPrepared {
+            storage: self.storage,
+            binding: self.binding,
+        }
+    }
+}
+
+/// CPU-owned graph with Access Address and CRCInit installed, but no event.
+#[must_use = "the identity-prepared connection graph must be retained or cancelled"]
+pub struct BluetoothPeripheralConnectionMemoryGraphIdentityPrepared {
+    storage: Pin<&'static mut BluetoothPeripheralConnectionMemoryGraphStorage>,
+    binding: BluetoothPeripheralConnectionMemoryGraphBinding,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphIdentityPrepared {
+    /// Read the two installed semantic values without exposing SRAM words.
+    pub fn identity(&self) -> BluetoothPeripheralConnectionIdentity {
+        self.storage.as_ref().get_ref().link_state.identity()
+    }
+
+    /// Discard the unsubmitted identity and recover the pristine allocation.
+    pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphCpuOwned {
+        let mut owner = BluetoothPeripheralConnectionMemoryGraphCpuOwned {
+            storage: self.storage,
+            binding: self.binding,
+        };
+        owner.reinitialize_graph();
+        owner
+    }
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphStorage {
@@ -481,7 +585,7 @@ impl Default for BluetoothPeripheralConnectionMemoryGraphStorage {
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothPeripheralConnectionMemoryGraphBindError,
+        BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionMemoryGraphBindError,
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
         BluetoothPeripheralConnectionMemoryGraphStorage,
     };
@@ -500,6 +604,27 @@ mod tests {
             BluetoothPeripheralConnectionMemoryGraphStorage::pin_static_model(storage(), base)
                 .expect("the complete graph fits physical controller SRAM");
 
+        assert!(owner.has_recovered_scheduler_pool());
+        assert!(owner.has_empty_receive_queue());
+        assert!(owner.has_empty_transmit_queue());
+    }
+
+    #[test]
+    fn identity_preparation_is_affine_and_cancellable() {
+        let base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(0x2f00_1000)
+            .expect("the model base uses controller SRAM syntax");
+        let owner =
+            BluetoothPeripheralConnectionMemoryGraphStorage::pin_static_model(storage(), base)
+                .expect("the complete graph fits physical controller SRAM");
+        let identity = BluetoothPeripheralConnectionIdentity::new(
+            [0xd4, 0xc3, 0xb2, 0xa1],
+            [0x33, 0x22, 0x11],
+        );
+
+        let prepared = owner.prepare_identity(identity);
+        assert_eq!(prepared.identity(), identity);
+
+        let owner = prepared.cancel();
         assert!(owner.has_recovered_scheduler_pool());
         assert!(owner.has_empty_receive_queue());
         assert!(owner.has_empty_transmit_queue());

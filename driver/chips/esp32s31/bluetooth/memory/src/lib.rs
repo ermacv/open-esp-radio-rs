@@ -25,6 +25,7 @@ mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
 mod le_phy_packet;
+mod le_rx_packet;
 mod le_tx_packet;
 mod le_tx_power;
 mod legacy_advertising_event_image;
@@ -42,6 +43,7 @@ pub use ble_phy_engine::{
     BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES, BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES,
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineBinding,
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
+    BluetoothBlePhyLe1MPacketStartCalibration,
 };
 
 pub use dtm_event_image::{
@@ -79,6 +81,7 @@ pub use dtm_storage::{
     BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
     BluetoothDtmTxPacketPrepareError,
 };
+pub use le_rx_packet::{BluetoothLePacketCapturedTime, BluetoothLeReceivedPdu};
 pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
     BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
@@ -141,8 +144,7 @@ pub use passive_scanning_memory::{
     BluetoothPassiveScanMemoryGraphRxExtractionFailure,
     BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
     BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanReceivedBatch,
-    BluetoothPassiveScanReceivedPdu, BluetoothPassiveScanRxError,
-    BluetoothPassiveScanSchedulerAllocationConfig,
+    BluetoothPassiveScanRxError, BluetoothPassiveScanSchedulerAllocationConfig,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 #[cfg(not(target_arch = "riscv32"))]
@@ -151,11 +153,12 @@ pub use peripheral_connection_memory::{
     BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
-    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
+    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES, BluetoothPeripheralConnectionIdentity,
     BluetoothPeripheralConnectionMemoryGraphBindError,
     BluetoothPeripheralConnectionMemoryGraphBindFailure,
     BluetoothPeripheralConnectionMemoryGraphBinding,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+    BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
     BluetoothPeripheralConnectionMemoryGraphStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;

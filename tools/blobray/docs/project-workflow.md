@@ -320,6 +320,24 @@ cargo blobray project revision rebase vendor-2026-05 @live \
 cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
 ```
 
+When a vendor regenerates private symbol names, correlate the public or older
+named archive with the obfuscated revision before reviewing the update:
+
+```console
+cargo blobray advanced symbols correlate \
+  --from named=/path/to/older-named.a \
+  --to current=/path/to/current.a \
+  --output generated/revisions/named-to-current.json
+```
+
+The correlator hashes complete relocatable function bytes plus relocation
+offset/kind/addend while deliberately excluding relocation target names. It
+publishes an automatic match only when the normalized body is unique. An
+iterative second pass may resolve otherwise identical bodies when already
+unique caller/callee pairs prove the corresponding call edge. Ambiguous and
+changed bodies remain explicit review work; the report never rewrites the
+artifact or treats an obfuscated symbol as a stable semantic identity.
+
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and
 generated evidence, but does not write a snapshot or advance the state. This
@@ -370,6 +388,16 @@ relinking that container can require a revision preflight even when the raw
 vendor inventory is unchanged. The durable raw-vendor identity comes from the
 corresponding `source-inventory:*` inputs; do not interpret exclusion of Rust
 probes as proof that every analysis container is itself vendor-distributed.
+
+When no linked container is needed, one logical source may instead bind an
+ordered set of primary archives by repeating `source-artifact:ID`. Blobray
+analyzes every member in place and links uniquely named relocation targets
+across the set without synthesizing an executable or assigning runtime
+addresses. The same `source-artifact:ID=PATH` pair may occur only once, and an
+archive set cannot also use `source-companion:ID`: add every required code
+archive to the primary set explicitly. Stable function identities retain the
+logical source, archive member and symbol, so a blob update remains eligible
+for normal revision diff and rebase.
 
 Snapshots contain artifact
 digests, address-independent function feature fingerprints, MMIO/interface

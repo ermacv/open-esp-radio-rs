@@ -3,7 +3,10 @@
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyEngineCpuOwned;
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyLe1MPacketStartCalibration,
+    BluetoothLePacketCapturedTime,
+};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerLowPowerHardwareInitializedOwner;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -94,22 +97,36 @@ impl BluetoothAlwaysAwakeTimingReady {
 /// observation. The authority makes no RF-readiness claim.
 #[must_use = "the timing authority must remain owned by the BLE-PHY task service"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothAlwaysAwakeTimingAuthority {
-    _private: (),
+pub(crate) struct BluetoothBlePhyTimingAuthority {
+    le_1m_packet_start_calibration: BluetoothBlePhyLe1MPacketStartCalibration,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothAlwaysAwakeTimingAuthority {
-    const fn new() -> Self {
-        Self { _private: () }
+impl BluetoothBlePhyTimingAuthority {
+    fn new(le_1m_packet_start_calibration: BluetoothBlePhyLe1MPacketStartCalibration) -> Self {
+        Self {
+            le_1m_packet_start_calibration,
+        }
     }
 
-    pub(crate) fn complete(
+    pub(crate) fn complete_always_awake(
         &mut self,
         epoch: crate::BluetoothControllerSchedulerEpoch,
         sample: crate::BluetoothControllerTimeSample,
     ) -> BluetoothAlwaysAwakeTimingReady {
         BluetoothAlwaysAwakeTimingReady::from_completed_sample(epoch, sample)
+    }
+
+    pub(crate) fn complete_le_1m_packet_start(
+        &mut self,
+        epoch: crate::BluetoothControllerSchedulerEpoch,
+        captured: BluetoothLePacketCapturedTime,
+    ) -> crate::BluetoothLe1MPacketStartTiming {
+        let captured_micros = epoch.project_le_packet_capture(captured);
+        crate::BluetoothLe1MPacketStartTiming::from_scheduler_micros(
+            self.le_1m_packet_start_calibration
+                .normalize_controller_micros(captured_micros),
+        )
     }
 }
 
@@ -143,7 +160,7 @@ pub struct BluetoothControllerBlePhyEngineInitialized<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
-    _storage: BluetoothBlePhyEngineCpuOwned,
+    storage: BluetoothBlePhyEngineCpuOwned,
     report: BluetoothBlePhyInitializationReport,
 }
 
@@ -210,11 +227,12 @@ where
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-        BluetoothAlwaysAwakeTimingAuthority,
+        BluetoothBlePhyTimingAuthority,
     ) {
+        let calibration = self.storage.le_1m_packet_start_calibration();
         (
             self.initialized.initialized.controller.split_runtime(),
-            BluetoothAlwaysAwakeTimingAuthority::new(),
+            BluetoothBlePhyTimingAuthority::new(calibration),
         )
     }
 }
@@ -278,7 +296,7 @@ where
 
         BluetoothControllerBlePhyEngineInitialized {
             initialized: self,
-            _storage: storage,
+            storage,
             report,
         }
     }

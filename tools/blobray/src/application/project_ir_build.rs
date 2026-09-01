@@ -300,7 +300,13 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
             };
             Some((source.as_str(), &input.path))
         })
-        .collect::<std::collections::BTreeMap<_, _>>();
+        .fold(
+            std::collections::BTreeMap::<_, Vec<_>>::new(),
+            |mut bound, (source, path)| {
+                bound.entry(source).or_default().push(path);
+                bound
+            },
+        );
     let artifacts = if profile.sources.is_empty() {
         run_spec
             .inputs()
@@ -316,17 +322,15 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
         profile
             .sources
             .iter()
-            .map(|source| {
-                bound
-                    .get(source.as_str())
-                    .map(|path| (source.clone(), (*path).clone()))
-                    .ok_or_else(|| {
-                        crate::Error::invalid(format!(
-                            "IR profile {:?} requests missing run-spec role source-artifact:{source}",
-                            profile.id
-                        )
-                        )
-                    })
+            .flat_map(|source| match bound.get(source.as_str()) {
+                Some(paths) => paths
+                    .iter()
+                    .map(|path| Ok((source.clone(), (*path).clone())))
+                    .collect::<Vec<_>>(),
+                None => vec![Err(crate::Error::invalid(format!(
+                    "IR profile {:?} requests missing run-spec role source-artifact:{source}",
+                    profile.id
+                )))],
             })
             .collect::<Result<Vec<_>>>()?
     };
@@ -477,6 +481,42 @@ mod tests {
             ["archive", "rom"]
         );
         assert!(combined_inputs.companions.is_empty());
+    }
+
+    #[test]
+    fn source_selection_preserves_one_logical_sources_ordered_archive_set() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-project-primary-archive-set-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:ble-controller\"\npath = \"libble_app.a\"\n\n[[inputs]]\nrole = \"source-artifact:ble-controller\"\npath = \"libbtdm_common.a\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        let mut selected = profile("ble-controller");
+        selected.sources = vec!["ble-controller".to_owned()];
+        let inputs = resolve_inputs(&selected, &run).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(
+            inputs
+                .artifacts
+                .iter()
+                .map(|(source, path)| (
+                    source.as_str(),
+                    path.file_name().unwrap().to_str().unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("ble-controller", "libble_app.a"),
+                ("ble-controller", "libbtdm_common.a")
+            ]
+        );
+        assert!(inputs.companions.is_empty());
     }
 
     #[test]

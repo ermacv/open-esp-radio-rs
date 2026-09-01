@@ -39,6 +39,7 @@ mod project_revision;
 pub(crate) mod project_status;
 mod project_verification;
 mod registers;
+mod symbol_correlate;
 mod symbol_inventory;
 mod tooling;
 mod verify_evidence;
@@ -184,6 +185,10 @@ pub(super) fn run_symbol_inventory(
     run_spec: &crate::run_spec::RunSpec,
 ) -> Result<bool> {
     symbol_inventory::run(arguments, run_spec)
+}
+
+pub(super) fn run_symbol_correlate(arguments: super::SymbolCorrelateArgs) -> Result<bool> {
+    symbol_correlate::run(arguments)
 }
 
 pub(super) fn run_interface_discovery(

@@ -230,7 +230,9 @@ impl RunSpec {
             let repeatable = role == InputRole::Companion
                 || matches!(
                     role,
-                    InputRole::SourceInventory(_) | InputRole::SourceCompanion(_)
+                    InputRole::SourceArtifact(_)
+                        | InputRole::SourceInventory(_)
+                        | InputRole::SourceCompanion(_)
                 );
             if !repeatable && !unique_roles.insert(role.clone()) {
                 return Err(invalid(
@@ -385,6 +387,32 @@ mod tests {
             .map(|input| input.path.file_name().unwrap().to_str().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(inventories, ["libnet80211.a", "libpp.a"]);
+    }
+
+    #[test]
+    fn one_source_accepts_multiple_ordered_primary_archives() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-run-spec-primary-archive-set-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:ble-controller\"\npath = \"libble_app.a\"\n\n[[inputs]]\nrole = \"source-artifact:ble-controller\"\npath = \"libbtdm_common.a\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(
+            run.inputs()
+                .iter()
+                .filter(|input| matches!(input.role, InputRole::SourceArtifact(_)))
+                .map(|input| input.path.file_name().unwrap().to_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["libble_app.a", "libbtdm_common.a"]
+        );
     }
 
     #[test]

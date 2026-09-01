@@ -94,6 +94,7 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             arguments,
             run_spec,
         } => commands::run_symbol_inventory(arguments, &run_spec),
+        ResolvedInvocation::SymbolCorrelate(arguments) => commands::run_symbol_correlate(arguments),
         ResolvedInvocation::InterfaceDiscover {
             arguments,
             run_spec,

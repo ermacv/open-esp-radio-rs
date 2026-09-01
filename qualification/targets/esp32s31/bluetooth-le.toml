@@ -23,6 +23,8 @@ required-capabilities = [
   "hci-controller-endpoints",
   "packet-dataplane",
   "portable-legacy-advertising",
+  "portable-connectable-advertising",
+  "portable-peripheral-connection",
   "legacy-passive-scanning",
   "le-link-layer",
   "typed-hci-controller",
@@ -390,6 +392,28 @@ hil-not-applicable = "hardware-independent-protocol-state"
 async-not-applicable = "pure-finite-state-transition"
 
 [[capabilities]]
+id = "portable-peripheral-connection"
+title = "Portable legacy LE peripheral connection admission"
+scope = "Exact CONNECT_IND decode intrinsic uncoded Access Address validation first-window recurring interval latency and supervision relation validation bounded data-channel map negotiated CSA one or two event selection and affine prepare cancel submit complete progression without a hardware or executor dependency"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "bluetooth-core-protocol-state"
+hil-not-applicable = "hardware-independent-protocol-state"
+async-not-applicable = "pure-finite-state-transition"
+
+[[capabilities]]
+id = "portable-connectable-advertising"
+title = "Portable legacy connectable advertising response"
+scope = "Exact bounded ADV_IND encode and decode public or random TxAdd and channel-selection capability non-empty ordered primary channel event plan exact advertiser-address CONNECT_IND admission lossless malformed foreign-address and unsupported-CSA-two rejection transition into the portable peripheral connection owner and fresh bounded interval-plus-delay recurrence without a hardware or executor dependency"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "bluetooth-core-protocol-state"
+hil-not-applicable = "hardware-independent-protocol-state"
+async-not-applicable = "pure-finite-state-transition"
+
+[[capabilities]]
 id = "legacy-passive-scanning"
 title = "Legacy LE passive scanning"
 scope = "Restricted LE 1M passive scanner using a public own address and the unfiltered accept-all policy from standard bt-hci Set Scan Parameters and Enable commands through recurring ESP32-S31 scheduler windows to bounded legacy advertising reports optional exact duplicate suppression and quiescent Disable or Reset"
@@ -409,21 +433,22 @@ gaps = [
 [[capabilities]]
 id = "le-link-layer"
 title = "Bluetooth LE Link Layer"
-scope = "Production legacy advertising scanning one peripheral connection reliability supervision and minimum LL control procedures"
+scope = "Production legacy advertising scanning and one peripheral connection from portable admission and channel selection through causal captured-packet timestamp projection initialized LE 1M PHY normalization absolute first transmit-window derivation S31 event scheduling packet reliability supervision and minimum LL control procedures"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-depends-on = ["packet-dataplane", "portable-legacy-advertising", "legacy-passive-scanning"]
+depends-on = ["packet-dataplane", "portable-legacy-advertising", "portable-connectable-advertising", "portable-peripheral-connection", "legacy-passive-scanning"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
   "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",
+  "verification/vendor/targets/esp32s31/analysis/bluetooth-peripheral-connection.md",
 ]
 gaps = [
-  { axis = "implementation", id = "peripheral-connection-reliability-and-llcp-missing" },
-  { axis = "host", id = "virtual-clock-connection-link-layer-tests-missing" },
+  { axis = "implementation", id = "s31-peripheral-event-reliability-supervision-and-llcp-missing" },
+  { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
   { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
-  { axis = "async", id = "connection-event-deadline-contract-missing" },
+  { axis = "async", id = "connection-window-admission-and-deadline-runtime-missing" },
 ]
 
 [[capabilities]]

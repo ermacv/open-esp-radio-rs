@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-load-rx"
 description = "Sustained two-flow AP inbound fairness baseline with exact delivery"
 repetitions = 5

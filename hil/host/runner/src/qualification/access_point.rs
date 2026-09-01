@@ -43,7 +43,10 @@ use multi_client::validate_multi_client_fairness;
 use open_esp_radio_hil_protocol::Ipv4Endpoint;
 #[cfg(test)]
 use report::MultiClientFlowReport;
-use report::{AccessPointReport, BootReport, CycleReport, SessionReport, TrafficReport};
+use report::{
+    ACCESS_POINT_REPORT_SCHEMA, AccessPointReport, BootReport, CycleReport, SessionReport,
+    TrafficReport,
+};
 #[cfg(test)]
 use std::net::Ipv4Addr;
 #[cfg(test)]
@@ -71,7 +74,7 @@ pub(crate) struct Config {
     pub(crate) expected_link: Option<LinkExpectation>,
     pub(crate) require_driver_observation: bool,
     pub(crate) require_rx_delivery_evidence: bool,
-    pub(crate) capture_independent_laptop_monitor_rx: bool,
+    pub(crate) capture_independent_laptop_air_monitor: bool,
     pub(crate) openwrt_client_fixed_ht_mcs: Option<u8>,
     pub(crate) openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
 }
@@ -110,7 +113,7 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
         None
     };
     let mut report = AccessPointReport {
-        schema: 4,
+        schema: ACCESS_POINT_REPORT_SCHEMA,
         fixture_preparation,
         boots: Vec::with_capacity(usize::from(config.boots)),
     };
@@ -235,7 +238,7 @@ fn qualify(
         let primary_link_observation = clients.begin_primary_link_observation();
         let secondary_link_observation = clients.begin_secondary_link_observation();
         let air_output = output.join(format!("cycle-{cycle:02}"));
-        let independent_air_capture = if config.capture_independent_laptop_monitor_rx {
+        let independent_air_capture = if config.capture_independent_laptop_air_monitor {
             fs::create_dir_all(&air_output)?;
             let StationFixtureConfig::OpenWrt(openwrt) = &lab.station_fixture else {
                 unreachable!("scenario validation constrains independent AP air evidence")
@@ -428,7 +431,7 @@ fn qualify(
         let secondary_client = secondary_probe_result.transpose()?;
         let primary_client_link = primary_link_result?;
         let secondary_client_link = secondary_link_result?;
-        let independent_air_rx = independent_air_result?;
+        let independent_air = independent_air_result?;
         client_restore?;
         let stopped = stop_result?;
         stop_stack_result?;
@@ -444,7 +447,7 @@ fn qualify(
             secondary_client,
             primary_client_link,
             secondary_client_link,
-            independent_air_rx,
+            independent_air,
             access_point,
         });
     }
@@ -1378,7 +1381,7 @@ mod tests {
     #[test]
     fn performance_cycle_omits_unavailable_driver_observation() {
         let report = AccessPointReport {
-            schema: 4,
+            schema: ACCESS_POINT_REPORT_SCHEMA,
             fixture_preparation: None,
             boots: vec![BootReport {
                 boot: 0,
@@ -1388,15 +1391,21 @@ mod tests {
                     secondary_client: None,
                     primary_client_link: None,
                     secondary_client_link: None,
-                    independent_air_rx: None,
+                    independent_air: None,
                     access_point: None,
                 }],
             }],
         };
 
         let json = serde_json::to_value(report).unwrap();
-        assert_eq!(json["schema"], 4);
+        assert_eq!(json["schema"], ACCESS_POINT_REPORT_SCHEMA);
         assert!(json["fixture_preparation"].is_null());
+        assert!(json["boots"][0]["cycles"][0]["independent_air"].is_null());
+        assert!(
+            json["boots"][0]["cycles"][0]
+                .get("independent_air_rx")
+                .is_none()
+        );
         assert!(json["boots"][0]["cycles"][0].get("access_point").is_none());
     }
 }

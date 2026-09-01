@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-bidirectional-task-poll"
 description = "Split-core AP HT40 saturated bidirectional UDP executor-residence diagnostic"
 repetitions = 1

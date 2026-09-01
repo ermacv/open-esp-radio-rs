@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-rx-core0-cycles"
 description = "Single-client AP HT40 UDP receive ceiling with intrusive Core0 AP phase accounting"
 repetitions = 1

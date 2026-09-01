@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-core0-direct-adaptive-probe-40m-1472-diagnostic"
 description = "Same-image HT40 RX adaptive-continuation cost at 40 Mbit/s with full-size UDP payloads"
 image = "diagnostic-core0-rx-coarse"
@@ -27,4 +27,4 @@ maximum_idle_channel_utilization_255 = 64
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

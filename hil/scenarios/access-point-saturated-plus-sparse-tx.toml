@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-saturated-plus-sparse-tx"
 description = "Observer-free AP TX service of a sparse peer beside one saturated HT40 peer"
 repetitions = 3

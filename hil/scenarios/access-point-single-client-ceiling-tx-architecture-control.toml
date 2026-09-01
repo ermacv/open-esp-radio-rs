@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-tx-architecture-control"
 description = "Direct-SRAM same-image control for invasive single-client TX architecture probes"
 repetitions = 1

@@ -213,26 +213,20 @@ impl Scenario {
             )
             .into());
         }
-        let independent_ap_uplink = matches!(
+        let independent_ap_air = matches!(
             &self.workload,
             Workload::AccessPoint {
                 client: AccessPointClient::OpenWrt,
-                traffic: AccessPointTraffic::Udp {
-                    direction: Direction::Rx | Direction::Bidirectional,
-                    ..
-                },
+                traffic: AccessPointTraffic::Udp { .. } | AccessPointTraffic::UdpMultiClient { .. },
                 ..
-            } | Workload::StationAccessPoint {
-                direction: Direction::Rx | Direction::Bidirectional,
-                ..
-            }
+            } | Workload::StationAccessPoint { .. }
         );
-        if self.evidence.independent_laptop_monitor_rx
+        if self.evidence.independent_laptop_air_monitor
             && !self.evidence.openwrt_tx_monitor_rx
-            && !independent_ap_uplink
+            && !independent_ap_air
         {
             return Err(format!(
-                "{}: independent laptop RX evidence requires either correlated OpenWrt TX-monitor evidence or an RX-bearing OpenWrt-client AP workload",
+                "{}: independent laptop air evidence requires either correlated OpenWrt TX-monitor evidence or an OpenWrt-client AP workload",
                 self.source.display()
             )
             .into());
@@ -265,7 +259,7 @@ impl Scenario {
                 )
                 .into());
             }
-            if !self.evidence.openwrt_tx_monitor_rx || !self.evidence.independent_laptop_monitor_rx
+            if !self.evidence.openwrt_tx_monitor_rx || !self.evidence.independent_laptop_air_monitor
             {
                 return Err(format!(
                     "{}: OpenWrt fixed-GI mutation requires AP and independent air evidence",
@@ -299,7 +293,7 @@ impl Scenario {
                 .into());
             }
             if !self.image.requires_driver_observation()
-                || !self.evidence.independent_laptop_monitor_rx
+                || !self.evidence.independent_laptop_air_monitor
             {
                 return Err(format!(
                     "{}: OpenWrt AP-client fixed HT MCS requires driver and independent-air evidence",
@@ -334,7 +328,7 @@ impl Scenario {
                 .into());
             }
             if !self.image.requires_driver_observation()
-                || !self.evidence.independent_laptop_monitor_rx
+                || !self.evidence.independent_laptop_air_monitor
             {
                 return Err(format!(
                     "{}: OpenWrt AP-client fixed GI requires driver and independent-air evidence",

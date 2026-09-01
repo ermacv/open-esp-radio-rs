@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-45-45-cold-epoch"
 description = "Temporary AP 45+45 Mbit/s cold-epoch control for role-transition leakage"
 repetitions = 2
@@ -32,4 +32,4 @@ minimum_tx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

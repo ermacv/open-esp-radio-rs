@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-airtime-rx40-tx40-observed"
 description = "Temporary observed AP balanced duplex ceiling sweep with driver RX disposition"
 repetitions = 1
@@ -29,4 +29,4 @@ minimum_tx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

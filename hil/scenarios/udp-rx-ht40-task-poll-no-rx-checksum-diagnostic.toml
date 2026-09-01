@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-task-poll-no-rx-checksum-diagnostic"
 description = "Split-core HT40 saturated RX checksum-cost diagnostic"
 image = "diagnostic-task-poll"
@@ -25,4 +25,4 @@ maximum_idle_channel_utilization_255 = 64
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "station-access-point-tx-task-residence"
 description = "Production-like Core0 residence with simultaneous STA and AP UDP egress at a 65 Mbit/s aggregate offer"
 image = "diagnostic-task-residence"

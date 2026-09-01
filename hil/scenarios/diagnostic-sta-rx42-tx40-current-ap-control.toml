@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-sta-rx42-tx40-current-ap-control"
 description = "Same diagnostic image station control for the AP 42/40 duplex failure"
 repetitions = 1
@@ -26,4 +26,4 @@ require_no_beacon_loss = true
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

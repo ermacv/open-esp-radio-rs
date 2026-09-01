@@ -19,7 +19,7 @@ mod validation;
 #[cfg(test)]
 use validation::validate_direction_rates;
 
-pub const SCENARIO_SCHEMA: u16 = 3;
+pub const SCENARIO_SCHEMA: u16 = 4;
 // Diagnostic phase totals use u32 cycle accumulators. At 320 MHz, 12 seconds
 // leaves margin below the 2^32 wrap point; a 14-second interval cannot.
 const CORE0_RX_CYCLE_MAX_DURATION_SECONDS: u16 = 12;
@@ -414,7 +414,7 @@ pub struct EvidenceConfig {
     /// Capture the OpenWrt AP's own TX monitor tap. Diagnostic only.
     pub openwrt_tx_monitor_rx: bool,
     /// Capture the same radio channel through the laptop's independent adapter.
-    pub independent_laptop_monitor_rx: bool,
+    pub independent_laptop_air_monitor: bool,
 }
 
 /// Explicit, diagnostic-only mutations of a managed laboratory fixture.

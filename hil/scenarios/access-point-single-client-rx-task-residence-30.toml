@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-rx-task-residence-30"
 description = "Split-core AP HT40 RX executor-residence control at 30 Mbit/s offered load"
 repetitions = 1

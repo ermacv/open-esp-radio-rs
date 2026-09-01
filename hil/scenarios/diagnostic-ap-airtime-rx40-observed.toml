@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-airtime-rx40-observed"
 description = "Temporary AP uplink-only control for terminal MAC RX error correlation"
 repetitions = 1
@@ -27,4 +27,4 @@ minimum_rx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

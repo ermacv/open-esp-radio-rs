@@ -225,7 +225,7 @@ fn performance_catalog_is_observer_free_and_covers_both_roles() {
         );
         assert!(!scenario.evidence.openwrt_tx_monitor_rx, "{}", scenario.id);
         assert!(
-            !scenario.evidence.independent_laptop_monitor_rx,
+            !scenario.evidence.independent_laptop_air_monitor,
             "{}",
             scenario.id
         );
@@ -279,7 +279,7 @@ fn link_guard_interval_observation_is_separate_from_fixed_gi_mutation() {
     assert!(mismatch.validate().is_err());
 
     let mut unobserved = lgi.clone();
-    unobserved.evidence.independent_laptop_monitor_rx = false;
+    unobserved.evidence.independent_laptop_air_monitor = false;
     assert!(unobserved.validate().is_err());
 }
 

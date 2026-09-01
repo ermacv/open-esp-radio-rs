@@ -43,7 +43,7 @@ pub(crate) struct Config {
     pub(crate) maximum_fairness_skew_percent: u8,
     pub(crate) payload_bytes: usize,
     pub(crate) require_driver_observation: bool,
-    pub(crate) capture_independent_laptop_monitor_rx: bool,
+    pub(crate) capture_independent_laptop_air_monitor: bool,
 }
 
 #[derive(Serialize)]
@@ -201,7 +201,7 @@ fn qualify(
     let station_session = start_session(capture, &station_flow, config, target_duration)?;
     let access_point_session = start_session(capture, &access_point_flow, config, target_duration)?;
     let access_point_air_capture = config
-        .capture_independent_laptop_monitor_rx
+        .capture_independent_laptop_air_monitor
         .then(|| LocalAirMonitorCapture::start_associated(client.bssid()?, config.duration, output))
         .transpose()?;
 

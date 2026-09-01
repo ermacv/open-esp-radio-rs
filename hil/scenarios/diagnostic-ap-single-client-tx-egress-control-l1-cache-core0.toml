@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-single-client-tx-egress-control-l1-cache-core0"
 description = "Same-ELF AP TX affine egress control with per-core L1 cache event accounting"
 repetitions = 1

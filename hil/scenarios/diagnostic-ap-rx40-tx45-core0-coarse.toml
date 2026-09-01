@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-rx40-tx45-core0-coarse"
 description = "Temporary AP 40 Mbit/s uplink and 45 Mbit/s downlink Core0 phase control"
 repetitions = 1

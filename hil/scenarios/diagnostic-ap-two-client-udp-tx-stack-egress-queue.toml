@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-stack-egress-queue"
 description = "Two-client AP UDP TX stack-side destination queue selection before direct-DMA admission"
 repetitions = 1

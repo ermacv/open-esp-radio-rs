@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-single-client-udp-tx-psram-dma"
 description = "Bounded single-client Wi-Fi TX DMA source-address proof with descriptors in SRAM and packet buffers in PSRAM"
 repetitions = 1

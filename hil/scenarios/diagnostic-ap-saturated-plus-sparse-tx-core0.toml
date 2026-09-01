@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-saturated-plus-sparse-tx-core0"
 description = "AP TX service of a two-datagram sparse peer beside one saturated peer, with Core0/Core1 residence"
 repetitions = 1

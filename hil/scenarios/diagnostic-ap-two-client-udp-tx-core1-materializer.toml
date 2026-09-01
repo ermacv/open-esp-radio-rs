@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-core1-materializer"
 description = "Same-image two-client AP UDP TX Core1 selected-batch materialization discriminator"
 repetitions = 1

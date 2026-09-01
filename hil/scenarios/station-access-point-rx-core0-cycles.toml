@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "station-access-point-rx-core0-cycles"
 description = "Intrusive Core0 phase accounting for simultaneous STA and AP UDP ingress"
 image = "diagnostic-core0-rx-cycles"
@@ -23,4 +23,4 @@ maximum_fairness_skew_percent = 50
 payload_bytes = 1472
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

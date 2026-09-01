@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-rx"
 description = "Observer-free single-client AP HT40 UDP receive ceiling gate with 130 Mbit/s offer"
 repetitions = 3

@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-performance-ceiling"
 description = "Observer-free HT40 UDP host-to-station 100 Mbit/s production gate"
 repetitions = 1

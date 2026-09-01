@@ -151,7 +151,7 @@ fn execute_workload_inner(
                             capture_openwrt_tx_monitor: selected.evidence.openwrt_tx_monitor_rx,
                             capture_independent_laptop_monitor: selected
                                 .evidence
-                                .independent_laptop_monitor_rx,
+                                .independent_laptop_air_monitor,
                             minimum_mcs: link.minimum_mcs,
                             guard_interval: link.guard_interval,
                             fixture_guard_interval: selected
@@ -212,9 +212,9 @@ fn execute_workload_inner(
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
                             capture_openwrt_tx_monitor_rx: selected.evidence.openwrt_tx_monitor_rx,
-                            capture_independent_laptop_monitor_rx: selected
+                            capture_independent_laptop_air_monitor: selected
                                 .evidence
-                                .independent_laptop_monitor_rx,
+                                .independent_laptop_air_monitor,
                             require_driver_observation: selected
                                 .image
                                 .requires_driver_observation(),
@@ -418,9 +418,9 @@ fn execute_workload_inner(
                 require_driver_observation: selected.image.requires_driver_observation(),
                 require_rx_delivery_evidence: selected.image
                     == qualification::scenario::ImageClass::DiagnosticRxDelivery,
-                capture_independent_laptop_monitor_rx: selected
+                capture_independent_laptop_air_monitor: selected
                     .evidence
-                    .independent_laptop_monitor_rx,
+                    .independent_laptop_air_monitor,
                 openwrt_client_fixed_ht_mcs: selected.fixture_mutation.openwrt_client_fixed_ht_mcs,
                 openwrt_client_fixed_guard_interval: selected
                     .fixture_mutation
@@ -447,9 +447,9 @@ fn execute_workload_inner(
                 maximum_fairness_skew_percent: *maximum_fairness_skew_percent,
                 payload_bytes: usize::from(*payload_bytes),
                 require_driver_observation: selected.image.requires_driver_observation(),
-                capture_independent_laptop_monitor_rx: selected
+                capture_independent_laptop_air_monitor: selected
                     .evidence
-                    .independent_laptop_monitor_rx,
+                    .independent_laptop_air_monitor,
             },
             output,
             lab,

@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-openwrt-delivery-diagnostic"
 description = "Split-core HT40 AP TX-monitor to station delivery-frontier diagnostic"
 repetitions = 1
@@ -24,4 +24,4 @@ require_no_beacon_loss = false
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = false
+independent_laptop_air_monitor = false

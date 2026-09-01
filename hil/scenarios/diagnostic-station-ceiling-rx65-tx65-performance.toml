@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-station-ceiling-rx65-tx65-performance"
 description = "Observer-free station HT40 65/65 Mbit/s ceiling control for AP comparison"
 repetitions = 1

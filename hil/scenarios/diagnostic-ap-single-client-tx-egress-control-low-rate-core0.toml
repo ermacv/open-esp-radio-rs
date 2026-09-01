@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-single-client-tx-egress-control-low-rate-core0"
 description = "Low-rate AP TX proving one-shot affine egress candidate/grant progress without saturation feedback"
 repetitions = 1

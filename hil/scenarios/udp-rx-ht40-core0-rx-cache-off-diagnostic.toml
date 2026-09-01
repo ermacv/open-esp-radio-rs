@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-core0-rx-cache-off-diagnostic"
 description = "Same-ELF Core0 RX control with L1 cache event tracing disabled"
 image = "diagnostic-core0-rx-cycles"
@@ -30,4 +30,4 @@ maximum_idle_channel_utilization_255 = 64
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = false
+independent_laptop_air_monitor = false

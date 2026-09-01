@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-single-client-tx-egress-control-disabled-task-residence"
 description = "Production-like same-ELF AP TX residence with affine egress control disabled at startup"
 repetitions = 1

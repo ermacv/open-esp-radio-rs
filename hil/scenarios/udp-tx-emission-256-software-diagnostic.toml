@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-tx-emission-256-software-diagnostic"
 description = "Fixed-rate 256-byte UDP TX software-checksum emission-cost diagnostic"
 repetitions = 2

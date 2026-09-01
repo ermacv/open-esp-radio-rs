@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-load-bidirectional"
 description = "Observer-free station-level balanced single-client AP performance baseline"
 repetitions = 1

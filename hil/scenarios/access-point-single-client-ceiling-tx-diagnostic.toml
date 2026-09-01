@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-tx-diagnostic"
 description = "Diagnostic single-client AP HT40 saturated UDP transmit characterization"
 repetitions = 1

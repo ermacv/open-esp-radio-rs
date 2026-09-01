@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-bidirectional-rx-delivery"
 description = "Single-client AP full-duplex RX delivery-frontier diagnostic"
 repetitions = 1
@@ -29,4 +29,4 @@ minimum_concurrent_ap_clients = 1
 
 [evidence]
 openwrt_tx_monitor_rx = false
-independent_laptop_monitor_rx = false
+independent_laptop_air_monitor = false

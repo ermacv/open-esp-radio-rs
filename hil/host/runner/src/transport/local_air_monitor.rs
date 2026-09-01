@@ -36,6 +36,38 @@ pub(crate) struct LocalAirMonitorEvidence {
     pub(crate) hole_block_ack_frames: u32,
     pub(crate) unique_block_acked_mpdus: u32,
     pub(crate) backward_block_ack_starts: u32,
+    /// Target-oriented egress timing. This is deliberately independent of
+    /// whether the target is a station or an access point.
+    pub(crate) target_egress: TargetEgressAirTimingEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct AirIntervalSummary {
+    pub(crate) samples: u32,
+    pub(crate) total_micros: u64,
+    pub(crate) minimum_micros: u64,
+    pub(crate) p50_micros: u64,
+    pub(crate) p95_micros: u64,
+    pub(crate) p99_micros: u64,
+    pub(crate) maximum_micros: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct TargetEgressAirTimingEvidence {
+    pub(crate) target_data_frames: u32,
+    pub(crate) peer_block_ack_frames: u32,
+    /// Whether the observer decoded enough target data records to pair every
+    /// peer BlockAck with a target transmission. Pair-derived intervals stay
+    /// absent when this is false; sparse target decoding must not manufacture
+    /// apparently valid multi-millisecond gaps.
+    pub(crate) target_data_pairing_available: bool,
+    /// Direction-neutral cadence of peer BlockAck responses to the target.
+    /// This remains useful when the observer cannot decode the target's HT40
+    /// A-MPDU records, but it cannot separate peer response time from the
+    /// target's post-BlockAck scheduling delay.
+    pub(crate) peer_block_ack_interarrival: Option<AirIntervalSummary>,
+    pub(crate) data_to_block_ack: Option<AirIntervalSummary>,
+    pub(crate) block_ack_to_next_data: Option<AirIntervalSummary>,
 }
 
 pub(crate) struct LocalAirMonitorCapture {
@@ -310,7 +342,162 @@ fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidenc
         }
     }
     parse_block_ack_capture(path, target_mac, &mut evidence)?;
+    evidence.target_egress = parse_target_egress_capture(path, target_mac)?;
     Ok(evidence)
+}
+
+fn parse_target_egress_capture(
+    path: &Path,
+    target_mac: &str,
+) -> Result<TargetEgressAirTimingEvidence> {
+    let output = Command::new("tshark")
+        .args(["-r"])
+        .arg(path)
+        .args([
+            "-Y",
+            &format!(
+                "(wlan.fc.type == 2 && wlan.ta == {target_mac}) || \
+                 (wlan.fc.type == 1 && wlan.fc.subtype == 9 && wlan.ra == {target_mac})"
+            ),
+            "-T",
+            "fields",
+            "-E",
+            "separator=\t",
+            "-e",
+            "frame.time_epoch",
+            "-e",
+            "wlan.fc.type",
+            "-e",
+            "wlan.fc.subtype",
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot decode target-egress air timing: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    Ok(target_egress_timing_from_fields(&String::from_utf8(
+        output.stdout,
+    )?))
+}
+
+fn target_egress_timing_from_fields(fields: &str) -> TargetEgressAirTimingEvidence {
+    let mut target_data_frames = 0_u32;
+    let mut peer_block_ack_frames = 0_u32;
+    let mut last_target_data = None;
+    let mut previous_block_ack = None;
+    let mut pending_block_ack = None;
+    let mut peer_block_ack_interarrival = Vec::new();
+    let mut data_to_block_ack = Vec::new();
+    let mut block_ack_to_next_data = Vec::new();
+
+    for line in fields.lines() {
+        let mut fields = line.splitn(3, '\t');
+        let Some(timestamp) = fields.next().and_then(epoch_micros) else {
+            continue;
+        };
+        let frame_type = fields.next().and_then(parse_tshark_u8);
+        let subtype = fields.next().and_then(parse_tshark_u8);
+        match (frame_type, subtype) {
+            (Some(2), _) => {
+                target_data_frames = target_data_frames.saturating_add(1);
+                if let Some(block_ack) = pending_block_ack.take()
+                    && let Some(interval) = timestamp.checked_sub(block_ack)
+                {
+                    block_ack_to_next_data.push(interval);
+                }
+                // An A-MPDU can be exposed as multiple MPDU records. Keeping
+                // the final data timestamp before the BlockAck measures from
+                // the observed end of the PPDU, not from its first subframe.
+                last_target_data = Some(timestamp);
+            }
+            (Some(1), Some(9)) => {
+                peer_block_ack_frames = peer_block_ack_frames.saturating_add(1);
+                if let Some(previous) = previous_block_ack
+                    && let Some(interval) = timestamp.checked_sub(previous)
+                {
+                    peer_block_ack_interarrival.push(interval);
+                }
+                previous_block_ack = Some(timestamp);
+                if let Some(target_data) = last_target_data.take()
+                    && let Some(interval) = timestamp.checked_sub(target_data)
+                {
+                    data_to_block_ack.push(interval);
+                    pending_block_ack = Some(timestamp);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let target_data_pairing_available = peer_block_ack_frames != 0
+        && usize::try_from(peer_block_ack_frames).ok() == Some(data_to_block_ack.len());
+    TargetEgressAirTimingEvidence {
+        target_data_frames,
+        peer_block_ack_frames,
+        target_data_pairing_available,
+        peer_block_ack_interarrival: summarize_intervals(peer_block_ack_interarrival),
+        data_to_block_ack: target_data_pairing_available
+            .then(|| summarize_intervals(data_to_block_ack))
+            .flatten(),
+        block_ack_to_next_data: target_data_pairing_available
+            .then(|| summarize_intervals(block_ack_to_next_data))
+            .flatten(),
+    }
+}
+
+fn epoch_micros(value: &str) -> Option<u64> {
+    let (seconds, fraction) = value.trim().split_once('.').unwrap_or((value.trim(), ""));
+    let seconds = seconds.parse::<u64>().ok()?;
+    let mut micros = 0_u64;
+    let mut digits = 0_u8;
+    for byte in fraction.bytes().take(6) {
+        if !byte.is_ascii_digit() {
+            return None;
+        }
+        micros = micros
+            .checked_mul(10)?
+            .checked_add(u64::from(byte - b'0'))?;
+        digits += 1;
+    }
+    while digits < 6 {
+        micros = micros.checked_mul(10)?;
+        digits += 1;
+    }
+    seconds.checked_mul(1_000_000)?.checked_add(micros)
+}
+
+fn parse_tshark_u8(value: &str) -> Option<u8> {
+    let value = value.trim();
+    value.parse().ok().or_else(|| {
+        value
+            .strip_prefix("0x")
+            .and_then(|value| u8::from_str_radix(value, 16).ok())
+    })
+}
+
+fn summarize_intervals(mut intervals: Vec<u64>) -> Option<AirIntervalSummary> {
+    if intervals.is_empty() {
+        return None;
+    }
+    intervals.sort_unstable();
+    let samples = u32::try_from(intervals.len()).unwrap_or(u32::MAX);
+    Some(AirIntervalSummary {
+        samples,
+        total_micros: intervals.iter().copied().fold(0_u64, u64::saturating_add),
+        minimum_micros: intervals[0],
+        p50_micros: nearest_rank(&intervals, 50),
+        p95_micros: nearest_rank(&intervals, 95),
+        p99_micros: nearest_rank(&intervals, 99),
+        maximum_micros: *intervals.last().expect("nonempty interval sample"),
+    })
+}
+
+fn nearest_rank(sorted: &[u64], percentile: usize) -> u64 {
+    let rank = sorted.len().saturating_mul(percentile).div_ceil(100).max(1);
+    sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
 }
 
 fn parse_block_ack_capture(
@@ -487,6 +674,112 @@ fn dumpcap_dropped(summary: &str) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_egress_timing_pairs_ppdu_tail_block_ack_and_next_ppdu() {
+        let evidence = target_egress_timing_from_fields(
+            "100.000000\t2\t8\n\
+             100.000100\t2\t8\n\
+             100.000140\t1\t9\n\
+             100.000300\t2\t8\n\
+             100.000500\t1\t9\n\
+             100.000900\t2\t8\n",
+        );
+
+        assert_eq!(evidence.target_data_frames, 4);
+        assert_eq!(evidence.peer_block_ack_frames, 2);
+        assert!(evidence.target_data_pairing_available);
+        assert_eq!(
+            evidence.peer_block_ack_interarrival,
+            Some(AirIntervalSummary {
+                samples: 1,
+                total_micros: 360,
+                minimum_micros: 360,
+                p50_micros: 360,
+                p95_micros: 360,
+                p99_micros: 360,
+                maximum_micros: 360,
+            })
+        );
+        assert_eq!(
+            evidence.data_to_block_ack,
+            Some(AirIntervalSummary {
+                samples: 2,
+                total_micros: 240,
+                minimum_micros: 40,
+                p50_micros: 40,
+                p95_micros: 200,
+                p99_micros: 200,
+                maximum_micros: 200,
+            })
+        );
+        assert_eq!(
+            evidence.block_ack_to_next_data,
+            Some(AirIntervalSummary {
+                samples: 2,
+                total_micros: 560,
+                minimum_micros: 160,
+                p50_micros: 160,
+                p95_micros: 400,
+                p99_micros: 400,
+                maximum_micros: 400,
+            })
+        );
+    }
+
+    #[test]
+    fn block_ack_cadence_survives_missing_target_data_decode() {
+        let evidence = target_egress_timing_from_fields(
+            "100.000000\t2\t8\n\
+             100.000100\t1\t9\n\
+             100.000500\t1\t9\n\
+             100.001100\t1\t9\n",
+        );
+
+        assert_eq!(evidence.target_data_frames, 1);
+        assert_eq!(evidence.peer_block_ack_frames, 3);
+        assert!(!evidence.target_data_pairing_available);
+        assert_eq!(evidence.data_to_block_ack, None);
+        assert_eq!(evidence.block_ack_to_next_data, None);
+        assert_eq!(
+            evidence.peer_block_ack_interarrival,
+            Some(AirIntervalSummary {
+                samples: 2,
+                total_micros: 1_000,
+                minimum_micros: 400,
+                p50_micros: 400,
+                p95_micros: 600,
+                p99_micros: 600,
+                maximum_micros: 600,
+            })
+        );
+    }
+
+    #[test]
+    fn unpaired_block_ack_disables_pair_derived_timing_even_with_many_data_records() {
+        let evidence = target_egress_timing_from_fields(
+            "100.000000\t2\t8\n\
+             100.000010\t2\t8\n\
+             100.000020\t2\t8\n\
+             100.000100\t1\t9\n\
+             100.000500\t1\t9\n",
+        );
+
+        assert_eq!(evidence.target_data_frames, 3);
+        assert_eq!(evidence.peer_block_ack_frames, 2);
+        assert!(!evidence.target_data_pairing_available);
+        assert_eq!(evidence.data_to_block_ack, None);
+        assert_eq!(evidence.block_ack_to_next_data, None);
+    }
+
+    #[test]
+    fn epoch_parser_is_integer_and_microsecond_bounded() {
+        assert_eq!(epoch_micros("12"), Some(12_000_000));
+        assert_eq!(epoch_micros("12.3"), Some(12_300_000));
+        assert_eq!(epoch_micros("12.345678999"), Some(12_345_678));
+        assert_eq!(epoch_micros("broken"), None);
+        assert_eq!(parse_tshark_u8("0x09"), Some(9));
+    }
 
     #[test]
     fn retry_grouping_counts_one_logical_mpdu() {

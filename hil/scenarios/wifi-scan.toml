@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "wifi-scan"
 description = "Standalone full-band scan with target-side dwell timing"
 image = "correctness"

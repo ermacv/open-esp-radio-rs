@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-guard-interval-auto-diagnostic"
 description = "Same-ELF HT40 MCS7 automatic-GI RX ceiling and Core0 residence control"
 image = "diagnostic-task-poll"

@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-task-residence-90"
 description = "Split-core HT40 RX executor-residence control at 90 Mbit/s offered load"
 image = "diagnostic-task-residence"

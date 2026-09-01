@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-stack-egress-queue-task-poll"
 description = "Two-client AP UDP TX stack-selected destination burst with aggregate/BA phase evidence"
 repetitions = 1

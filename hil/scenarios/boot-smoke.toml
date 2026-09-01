@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "boot-smoke"
 description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
 image = "boot-smoke"

@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-bidirectional-ht40-split-soak"
 description = "Five-minute split-core HT40 full-duplex stability gate"
 image = "correctness"

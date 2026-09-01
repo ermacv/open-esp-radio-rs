@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "tcp-tx-ht40-split"
 description = "Split-core HT40 sustained TCP station-to-host transmission"
 repetitions = 3

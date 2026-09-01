@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-tx-ht40-no-udp-checksum-diagnostic"
 description = "Split-core HT40 saturated TX software UDP checksum-cost diagnostic"
 repetitions = 3

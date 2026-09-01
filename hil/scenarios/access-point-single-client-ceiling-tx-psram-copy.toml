@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-tx-psram-copy"
 description = "Same-image single-client AP HT40 UDP TX PSRAM-to-DMA materialization cost discriminator"
 repetitions = 1

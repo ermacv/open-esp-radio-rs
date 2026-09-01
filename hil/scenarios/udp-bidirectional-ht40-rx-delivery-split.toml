@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-bidirectional-ht40-rx-delivery-split"
 description = "Split-core HT40 full-duplex RX delivery-frontier diagnostic"
 repetitions = 3
@@ -27,4 +27,4 @@ require_no_beacon_loss = true
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

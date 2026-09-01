@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-tx-core0-coarse"
 description = "Single-client AP HT40 saturated UDP transmit with coarse Core0 phase accounting"
 repetitions = 1

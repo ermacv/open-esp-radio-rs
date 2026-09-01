@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "ieee802154-ed-event-selective-write"
 description = "Two back-to-back production polled ED transactions followed by reset-detached ED-DONE plus TIMER0 selected-write validation"
 image = "diagnostic-ieee802154-ed-event"

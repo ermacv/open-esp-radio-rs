@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-tx-ht40-task-residence-diagnostic"
 description = "Split radio/network HT40 saturated station TX executor-residence diagnostic without driver observers"
 repetitions = 1

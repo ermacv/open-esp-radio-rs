@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-load-rx"
 description = "Observer-free sustained single-client AP inbound performance baseline"
 repetitions = 1

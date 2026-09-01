@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "station-access-point-rx-core0-coarse"
 description = "Coarse Core0 ownership accounting during simultaneous STA and AP UDP ingress"
 image = "diagnostic-core0-rx-coarse"

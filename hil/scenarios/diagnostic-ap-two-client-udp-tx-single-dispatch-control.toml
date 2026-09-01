@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-single-dispatch-control"
 description = "Same-image resolved-egress control returning from Xarxa after every packet"
 repetitions = 1

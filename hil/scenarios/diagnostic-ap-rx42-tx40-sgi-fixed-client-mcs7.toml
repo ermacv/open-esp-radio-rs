@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-rx42-tx40-sgi-fixed-client-mcs7"
 description = "AP 42/40 Mbit/s fixed-MCS7/SGI client A/B with Core0 RX telemetry"
 repetitions = 1
@@ -34,7 +34,7 @@ minimum_tx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true
 
 [fixture_mutation]
 openwrt_client_fixed_ht_mcs = 7

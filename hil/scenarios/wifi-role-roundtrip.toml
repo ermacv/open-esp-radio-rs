@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "wifi-role-roundtrip"
 description = "Station, idle, scan and monitor ownership roundtrip"
 image = "correctness"

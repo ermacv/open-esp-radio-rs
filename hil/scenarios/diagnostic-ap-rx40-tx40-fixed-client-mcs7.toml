@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-rx40-tx40-fixed-client-mcs7"
 description = "Same-image AP duplex control with the controlled client TX fixed at HT40 MCS7"
 repetitions = 1
@@ -32,7 +32,7 @@ minimum_tx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true
 
 [fixture_mutation]
 openwrt_client_fixed_ht_mcs = 7

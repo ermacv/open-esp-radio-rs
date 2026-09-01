@@ -134,7 +134,7 @@ pub(crate) struct RunPolicy {
     pub(crate) require_exact_delivery: bool,
     pub(crate) require_no_beacon_loss: bool,
     pub(crate) capture_openwrt_tx_monitor_rx: bool,
-    pub(crate) capture_independent_laptop_monitor_rx: bool,
+    pub(crate) capture_independent_laptop_air_monitor: bool,
     pub(crate) require_driver_observation: bool,
     pub(crate) minimum_mcs: Option<u8>,
     pub(crate) guard_interval: HtGuardIntervalExpectation,
@@ -151,7 +151,7 @@ pub(crate) fn run(
         require_exact_delivery,
         require_no_beacon_loss,
         capture_openwrt_tx_monitor_rx,
-        capture_independent_laptop_monitor_rx,
+        capture_independent_laptop_air_monitor,
         require_driver_observation,
         minimum_mcs,
         guard_interval,
@@ -236,7 +236,7 @@ pub(crate) fn run(
     } else {
         None
     };
-    let independent_air_capture = if capture_independent_laptop_monitor_rx {
+    let independent_air_capture = if capture_independent_laptop_air_monitor {
         let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
             return Err("independent laptop evidence requires an OpenWrt station fixture".into());
         };

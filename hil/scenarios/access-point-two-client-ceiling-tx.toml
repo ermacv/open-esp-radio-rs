@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-two-client-ceiling-tx"
 description = "Observer-free two-client AP HT40 saturated UDP transmit fairness ceiling"
 repetitions = 3

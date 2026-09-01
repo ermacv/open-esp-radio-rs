@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-rate-mask-auto-air-diagnostic"
 description = "HT40 MCS7 automatic-rate RX air and AP aggregation control"
 image = "diagnostic-rx-delivery"
@@ -25,4 +25,4 @@ minimum_rx_bps = 60000000
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

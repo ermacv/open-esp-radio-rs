@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-bidirectional-ht40-35-55"
 description = "Split-core HT40 35/55 Mbit/s full-duplex characterization"
 repetitions = 3

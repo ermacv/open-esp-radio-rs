@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-bidirectional-task-poll"
 description = "Single-client AP full-duplex executor-residence diagnostic"
 repetitions = 1

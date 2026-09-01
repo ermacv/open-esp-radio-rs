@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "station-reconnect-ht40"
 description = "HT40 repeated safe station teardown and reassociation"
 image = "correctness"

@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-ceiling-tx-task-poll"
 description = "Diagnostic single-client AP HT40 saturated UDP transmit executor-residence characterization"
 repetitions = 1

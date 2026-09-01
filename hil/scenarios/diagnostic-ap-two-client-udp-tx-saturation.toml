@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-saturation"
 description = "Two-client AP UDP TX saturation, exact delivery and peer fairness"
 repetitions = 1

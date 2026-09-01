@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx"
 description = "Two-client AP UDP TX endpoint and per-flow accounting smoke"
 repetitions = 1

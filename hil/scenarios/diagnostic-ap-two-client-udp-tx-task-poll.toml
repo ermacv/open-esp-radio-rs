@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-task-poll"
 description = "Two-client saturated AP UDP TX executor residence characterization"
 repetitions = 1

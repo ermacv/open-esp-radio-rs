@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-tx-ht40-split-task-poll-diagnostic"
 description = "Split-core HT40 saturated TX executor, A-MPDU, and block-ack diagnostic"
 repetitions = 3

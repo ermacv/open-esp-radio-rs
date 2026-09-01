@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-load-bidirectional"
 description = "Sustained balanced four-flow AP fairness baseline with exact delivery"
 repetitions = 5

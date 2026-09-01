@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-40m-512-performance"
 description = "Production HT40 RX packet-rate control at 40 Mbit/s with 512-byte UDP payloads"
 image = "performance"

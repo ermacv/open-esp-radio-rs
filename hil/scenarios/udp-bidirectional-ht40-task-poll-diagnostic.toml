@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-bidirectional-ht40-task-poll-diagnostic"
 description = "Split radio/network HT40 saturated full-duplex executor-residence diagnostic"
 image = "diagnostic-task-poll"

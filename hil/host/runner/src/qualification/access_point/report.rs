@@ -15,6 +15,8 @@ use crate::{
     },
 };
 
+pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 5;
+
 #[derive(Serialize)]
 pub(super) struct AccessPointReport {
     pub(super) schema: u8,
@@ -35,7 +37,7 @@ pub(super) struct CycleReport {
     pub(super) secondary_client: Option<SecondaryClientProbeEvidence>,
     pub(super) primary_client_link: Option<OpenWrtClientLinkEvidence>,
     pub(super) secondary_client_link: Option<OpenWrtClientLinkEvidence>,
-    pub(super) independent_air_rx: Option<LocalAirMonitorEvidence>,
+    pub(super) independent_air: Option<LocalAirMonitorEvidence>,
     /// Intrusive driver-internal evidence is absent from observer-free
     /// performance images. An omitted field is deliberately different from a
     /// diagnostic snapshot whose counters all happened to be zero.

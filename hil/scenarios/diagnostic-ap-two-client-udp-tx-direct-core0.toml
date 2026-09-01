@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-direct-core0"
 description = "Two-client AP UDP TX interleaved direct-DMA coarse Core0 control"
 repetitions = 1

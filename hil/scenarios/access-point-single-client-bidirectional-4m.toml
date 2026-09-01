@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "access-point-single-client-bidirectional-4m"
 description = "Single-client AP 4+4 Mbit/s bidirectional baseline"
 repetitions = 1

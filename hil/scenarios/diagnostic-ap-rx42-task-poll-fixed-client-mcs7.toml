@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-rx42-task-poll-fixed-client-mcs7"
 description = "AP 42 Mbit/s fixed-MCS7 uplink control with Core0 task-poll telemetry"
 repetitions = 1
@@ -30,7 +30,7 @@ minimum_rx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true
 
 [fixture_mutation]
 openwrt_client_fixed_ht_mcs = 7

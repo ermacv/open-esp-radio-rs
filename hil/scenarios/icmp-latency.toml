@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "icmp-latency"
 description = "Connected-station ICMP latency and loss"
 image = "correctness"

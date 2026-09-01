@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-airtime-tx40-observed"
 description = "Temporary AP downlink-only control for terminal MAC RX error correlation"
 repetitions = 1
@@ -25,3 +25,6 @@ payload_bytes = 1472
 exact_delivery = false
 minimum_tx_bps = 1
 minimum_concurrent_ap_clients = 1
+
+[evidence]
+independent_laptop_air_monitor = true

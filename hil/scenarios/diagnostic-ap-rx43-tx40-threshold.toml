@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-rx43-tx40-threshold"
 description = "Temporary AP duplex threshold probe with 43 Mbit/s uplink and 40 Mbit/s downlink"
 repetitions = 1
@@ -32,4 +32,4 @@ minimum_tx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

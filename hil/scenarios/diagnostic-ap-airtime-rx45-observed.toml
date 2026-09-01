@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-airtime-rx45-observed"
 description = "Temporary AP 45 Mbit/s uplink-only control for duplex-threshold localization"
 repetitions = 1
@@ -30,4 +30,4 @@ minimum_rx_bps = 1
 minimum_concurrent_ap_clients = 1
 
 [evidence]
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true

@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-single-client-tx-egress-control-disabled-core0"
 description = "Same-ELF AP TX control with only the affine egress candidate/grant plane disabled"
 repetitions = 1

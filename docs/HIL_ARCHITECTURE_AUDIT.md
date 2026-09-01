@@ -1,6 +1,6 @@
 # HIL architecture audit and refactor plan
 
-Status: current-state audit, 2026-09-01. This document describes the HIL
+Status: current-state audit and implementation record, 2026-09-01. This document describes the HIL
 implementation after exact firmware replay, build/lab provenance, route
 validation and controlled-OpenWrt epoch isolation were implemented. It is a
 refactor plan, not a qualification claim.
@@ -37,7 +37,9 @@ The audit used the repository catalog at commit `e14f0ad7` and obtained:
 - 12,369 lines in the ESP32-S31 runtime;
 - 4,564 lines in target-only telemetry;
 - 3,948 lines in the wire protocol;
-- 202 versioned scenario files, all schema 3 and reset-isolated;
+- 202 versioned scenario files, all reset-isolated. They were schema 3 at the
+  audited commit and are now schema 4 after the direction-neutral independent
+  air-monitor cutover;
 - 124 scenarios tagged `diagnostic` and 63 whose ID starts with
   `diagnostic-`;
 - 202 host-runner unit tests, 39 protocol tests and five target-runtime host
@@ -143,21 +145,36 @@ or terminal evidence block per interval. High-frequency samples must not be
 streamed through the reliable control queue and must never backpressure the
 radio. Raw text can remain as a human diagnostic attachment.
 
-### 3. Downlink air timing has no first-class observer
+### 3. Downlink air timing is only partially observable
 
-The current independent laptop monitor and OpenWrt monitor integrations were
-built primarily around station RX/uplink qualification. They cannot directly
-answer the AP-TX question:
+The independent laptop observer now records a direction-neutral target-egress
+evidence block. It always summarizes consecutive peer BlockAck timestamps and
+only publishes paired intervals when it decoded enough target data records to
+associate every BlockAck with a target transmission. This fail-closed
+availability bit prevents a sparse decoder result from becoming false timing
+evidence.
+
+Exact replay `1788269193985-00130434`, using the archived current correctness
+image from `1788268379279-0012dc66`, passed and produced:
+
+| Cycle | Target data records | Peer BlockAck | BA-to-BA p50 | p95 | p99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 | 1 | 1,228 | 4,475 us | 26,618 us | 28,010 us |
+| 1 | 0 | 1,247 | 4,463 us | 23,723 us | 28,328 us |
+
+The independent Intel observer therefore captures peer BlockAck cadence but,
+in this laboratory mode, does not decode the ESP target's HT40 A-MPDU records
+reliably enough to answer the full AP-TX question:
 
 ```text
 end of ESP PPDU -> BlockAck response -> next ESP PPDU
 ```
 
-Consequently a full BA32 count plus a large application-level gap does not
-localize whether the delay precedes the BlockAck, follows it inside the target,
-or belongs to the peer/fixture. A direction-neutral air-timing evidence type is
-needed before AQL, BA responder or target-completion accounting can be called a
-cause.
+Consequently the observed 4--27 ms cadence distribution proves that exchanges
+are not evenly spaced, but it does not localize whether a gap precedes the
+BlockAck, follows it inside the target, or belongs to the traffic source or
+peer. AQL, TXQ accounting, BA response and target completion remain possible
+investigation branches, not established causes.
 
 ### 4. Report schemas are local and uneven
 
@@ -275,6 +292,8 @@ central wire enums and discriminant tests remain obvious.
    serial owner and one decoder-health accumulator.
 6. Add typed interval summaries and direction-neutral AP-TX air timing as
    separate evidence improvements, each with a focused schema/test and HIL A/B.
+   This is complete through the honest BA-cadence observer described above;
+   direct target-data pairing remains unavailable with the current adapter.
 7. Split target composition and protocol domains only after host refactors are
    complete. Run protocol framing tests, target checks, placement/stack audits
    and representative STA/AP/STA+AP HIL.
@@ -288,7 +307,8 @@ Every step must pass, as applicable:
 cargo hil scenario validate
 cargo test -p open-esp-radio-hil-runner
 cargo test -p open-esp-radio-hil-protocol
-cargo check -p open-esp-radio-hil-runtime
+cargo check --manifest-path hil/targets/esp32s31/runtime/Cargo.toml \
+  --target riscv32imafc-unknown-none-elf --features boot-smoke
 cargo fmt --all -- --check
 tools/audit-source-only.sh
 ```

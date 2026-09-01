@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-rx45-tx40-task-poll"
 description = "Temporary AP 45 Mbit/s uplink and 40 Mbit/s downlink Core0 task-poll diagnostic"
 repetitions = 1

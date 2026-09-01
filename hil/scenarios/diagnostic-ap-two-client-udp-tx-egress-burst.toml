@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "diagnostic-ap-two-client-udp-tx-egress-burst"
 description = "Same-image two-client AP UDP TX pre-DMA destination-burst discriminator"
 repetitions = 1

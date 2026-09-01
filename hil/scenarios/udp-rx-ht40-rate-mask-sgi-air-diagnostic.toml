@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "udp-rx-ht40-rate-mask-sgi-air-diagnostic"
 description = "HT40 MCS7 OpenWrt fixed-SGI rate-mask perturbation with air and AP aggregation evidence"
 image = "diagnostic-rx-delivery"
@@ -25,7 +25,7 @@ minimum_rx_bps = 60000000
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = true
+independent_laptop_air_monitor = true
 
 [fixture_mutation]
 openwrt_fixed_guard_interval = "short"

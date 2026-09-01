@@ -66,15 +66,15 @@ tools/audit-driver-safety.sh
 tools/audit-driver-architecture.sh
 
 # Validate the checked-in register sources without requiring disposable vendor
-# analysis output. The review-scope report is produced by `project analyze`, is
-# gitignored, and may depend on authenticated local inputs; a clean source-only
-# checkout must therefore not require it.
+# analysis output. Unreviewed observations are the explicit research backlog,
+# not invalid source: this gate validates their schema, ownership, evidence and
+# publication boundaries without turning incomplete research into a build
+# failure. Completion claims use the stricter `--deny-unreviewed` policy.
 cargo blobray project configure \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
 cargo blobray registers validate \
-    --project verification/vendor/targets/esp32s31/vendor-project.toml \
-    --deny-unreviewed
+    --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 # When the optional analysis report is already available, also prove that the
 # complete generated SVD/PAC/binding publication is reproducible. Its absence

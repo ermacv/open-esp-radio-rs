@@ -35,6 +35,11 @@ type Task<'runtime, S, const CAPACITY: usize> =
     BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>;
 type Order<'runtime> = open_esp_radio_bluetooth_hci::LeControllerCommandReady<'runtime, ()>;
 
+enum BluetoothLegacyAdvertisingOrder<'runtime> {
+    Ready(Order<'runtime>),
+    Detached,
+}
+
 /// Accepted Enable response paired with the exact already-running graph.
 #[must_use = "publish the response while retaining the running advertising owner"]
 pub struct BluetoothLegacyAdvertisingResponsePendingSession<
@@ -138,7 +143,7 @@ where
 
 struct BluetoothLegacyAdvertisingActiveAxes<'runtime, S, const CAPACITY: usize> {
     task: Task<'runtime, S, CAPACITY>,
-    order: Order<'runtime>,
+    order: BluetoothLegacyAdvertisingOrder<'runtime>,
     scheduler_item_address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
     hardware_list_index: BluetoothSchedulerHardwareListIndex,
 }
@@ -195,6 +200,165 @@ where
     },
     CpuOwned(BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>),
     Fault(BluetoothLegacyAdvertisingActiveFault<'runtime, S, CAPACITY>),
+}
+
+/// One pending command response whose radio continuation remains independently active.
+#[must_use = "publish the response while continuing the advertising radio graph"]
+pub struct BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    transaction: LeControllerResponsePending<
+        'runtime,
+        BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// Response publication with the active radio owner preserved exactly once.
+#[must_use = "retain the pending response or the returned command-ready session"]
+pub enum BluetoothLegacyAdvertisingActiveResponsePublication<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Published(BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>),
+    Pending(BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>),
+    Fault {
+        pending: BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>,
+        error: HciChannelError,
+    },
+}
+
+/// One bounded radio transition while an HCI response remains pending.
+#[must_use = "continue radio progress without losing the pending response"]
+pub enum BluetoothLegacyAdvertisingActivePendingRadioStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Continue(BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>),
+    Waiting(BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>),
+    UnrelatedList {
+        pending: BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    CpuOwned(BluetoothLegacyAdvertisingCpuOwnedResponsePending<'runtime, S, CAPACITY>),
+    Fault(BluetoothLegacyAdvertisingActivePendingFault<'runtime, S, CAPACITY>),
+}
+
+/// Fail-stop owner preserving the exact pending response and radio fault.
+#[must_use = "retain the failed radio and ordered response for shutdown diagnostics"]
+pub struct BluetoothLegacyAdvertisingActivePendingFault<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _fault: BluetoothLegacyAdvertisingActiveFault<'runtime, S, CAPACITY>,
+    _response: LeControllerResponsePending<'runtime, ()>,
+}
+
+enum BluetoothLegacyAdvertisingStopOrder<'runtime> {
+    Disable(LeControllerDeferredLegacyAdvertisingDisable<'runtime, ()>),
+    Reset(LeControllerResetBarrier<'runtime, ()>),
+}
+
+/// Accepted active-role Disable or Reset driven through the current event completion.
+#[must_use = "drive the current event to CPU ownership before restoring the runtime"]
+pub struct BluetoothLegacyAdvertisingStopping<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    active: BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
+    order: BluetoothLegacyAdvertisingStopOrder<'runtime>,
+}
+
+/// One bounded active advertising stop transition.
+#[must_use = "retain the stop order through event completion and runtime restore"]
+pub enum BluetoothLegacyAdvertisingStoppingStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Continue(BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY>),
+    Waiting(BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY>),
+    UnrelatedList {
+        stopping: BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    DisableRestore(BluetoothLegacyAdvertisingDisableRestore<'runtime, S, CAPACITY>),
+    ResetRestore(BluetoothLegacyAdvertisingResetRestore<'runtime, S, CAPACITY>),
+    Fault(BluetoothLegacyAdvertisingStoppingFault<'runtime, S, CAPACITY>),
+}
+
+/// Fail-stop owner retaining Disable/Reset order beside the exact lower fault.
+#[must_use = "retain the failed stop transaction for shutdown diagnostics"]
+pub struct BluetoothLegacyAdvertisingStoppingFault<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _fault: BluetoothLegacyAdvertisingActiveFault<'runtime, S, CAPACITY>,
+    _order: BluetoothLegacyAdvertisingStopOrder<'runtime>,
+}
+
+/// Opaque owner for an impossible endpoint mismatch after active command intake.
+#[must_use = "retain the complete command, radio continuation and order"]
+pub struct BluetoothLegacyAdvertisingActiveCommandMismatch<
+    'runtime,
+    'command,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _command: LeControllerClassifiedCommand<
+        'runtime,
+        'command,
+        BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// Typed route for a command accepted while an advertising event is in flight.
+#[must_use = "publish, stop, or retain the exact mismatch owner"]
+pub enum BluetoothLegacyAdvertisingActiveCommandRoute<'runtime, 'command, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    ResponsePending(BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>),
+    Stopping(BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY>),
+    EndpointMismatch(
+        BluetoothLegacyAdvertisingActiveCommandMismatch<'runtime, 'command, S, CAPACITY>,
+    ),
+}
+
+/// One non-blocking command intake while the current event remains hardware-owned.
+#[must_use = "route a command or retain the exact active session"]
+pub enum BluetoothLegacyAdvertisingActiveCommandIntake<
+    'runtime,
+    'command,
+    'buffer,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Routed {
+        route: BluetoothLegacyAdvertisingActiveCommandRoute<'runtime, 'command, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Empty {
+        active: BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    EndpointMismatch {
+        active: BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Channel {
+        active: BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+        error: HciChannelError,
+    },
+    NonCommand {
+        active: BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
+    },
 }
 
 /// Exact Controller, HCI order and completed event between advertising events.
@@ -470,7 +634,10 @@ where
             PACKET_CAPACITY,
         >,
     ) -> bool {
-        self.axes.order.accepts_endpoint(controller)
+        match &self.axes.order {
+            BluetoothLegacyAdvertisingOrder::Ready(order) => order.accepts_endpoint(controller),
+            BluetoothLegacyAdvertisingOrder::Detached => false,
+        }
     }
 
     pub(crate) fn into_parts(
@@ -484,7 +651,12 @@ where
     ) {
         (
             self.axes.task,
-            self.axes.order,
+            match self.axes.order {
+                BluetoothLegacyAdvertisingOrder::Ready(order) => order,
+                BluetoothLegacyAdvertisingOrder::Detached => {
+                    unreachable!("a detached CPU owner cannot schedule another event")
+                }
+            },
             self.axes.scheduler_item_address,
             self.axes.hardware_list_index,
             self.completed,
@@ -501,7 +673,7 @@ where
         Self {
             axes: BluetoothLegacyAdvertisingActiveAxes {
                 task,
-                order,
+                order: BluetoothLegacyAdvertisingOrder::Ready(order),
                 scheduler_item_address,
                 hardware_list_index,
             },
@@ -523,7 +695,12 @@ where
                 hardware_list_index: axes.hardware_list_index,
                 completed,
             },
-            axes.order,
+            match axes.order {
+                BluetoothLegacyAdvertisingOrder::Ready(order) => order,
+                BluetoothLegacyAdvertisingOrder::Detached => {
+                    unreachable!("a detached CPU owner cannot accept another command")
+                }
+            },
         )
     }
 
@@ -534,11 +711,26 @@ where
         Self {
             axes: BluetoothLegacyAdvertisingActiveAxes {
                 task: radio.task,
-                order,
+                order: BluetoothLegacyAdvertisingOrder::Ready(order),
                 scheduler_item_address: radio.scheduler_item_address,
                 hardware_list_index: radio.hardware_list_index,
             },
             completed: radio.completed,
+        }
+    }
+
+    fn into_detached_radio(self) -> BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY> {
+        let Self { axes, completed } = self;
+        match axes.order {
+            BluetoothLegacyAdvertisingOrder::Detached => BluetoothLegacyAdvertisingCpuOwnedRadio {
+                task: axes.task,
+                scheduler_item_address: axes.scheduler_item_address,
+                hardware_list_index: axes.hardware_list_index,
+                completed,
+            },
+            BluetoothLegacyAdvertisingOrder::Ready(_) => {
+                unreachable!("a command-ready CPU owner cannot join detached HCI order")
+            }
         }
     }
 
@@ -690,6 +882,168 @@ where
                 pending: Self { transaction },
                 error,
             },
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub fn radio_wait(&self) -> Option<BluetoothLegacyAdvertisingActiveWait<'_>> {
+        self.transaction.owner().radio_wait()
+    }
+
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
+    pub fn try_publish<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothLegacyAdvertisingActiveResponsePublication<'runtime, S, CAPACITY> {
+        match self.transaction.try_publish(controller) {
+            LeControllerResponsePublication::Published(ready) => {
+                let (active, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingActiveResponsePublication::Published(
+                    active.attach_order(order),
+                )
+            }
+            LeControllerResponsePublication::Pending(transaction) => {
+                BluetoothLegacyAdvertisingActiveResponsePublication::Pending(Self { transaction })
+            }
+            LeControllerResponsePublication::EndpointMismatch(transaction) => {
+                BluetoothLegacyAdvertisingActiveResponsePublication::EndpointMismatch(Self {
+                    transaction,
+                })
+            }
+            LeControllerResponsePublication::Fault {
+                pending: transaction,
+                error,
+            } => BluetoothLegacyAdvertisingActiveResponsePublication::Fault {
+                pending: Self { transaction },
+                error,
+            },
+        }
+    }
+
+    pub fn step_radio(
+        self,
+    ) -> BluetoothLegacyAdvertisingActivePendingRadioStep<'runtime, S, CAPACITY> {
+        let (active, response) = self.transaction.into_parts();
+        match active.step_radio() {
+            BluetoothLegacyAdvertisingActiveStep::Continue(active) => {
+                BluetoothLegacyAdvertisingActivePendingRadioStep::Continue(Self {
+                    transaction: response.map_owner(|()| active),
+                })
+            }
+            BluetoothLegacyAdvertisingActiveStep::Waiting(active) => {
+                BluetoothLegacyAdvertisingActivePendingRadioStep::Waiting(Self {
+                    transaction: response.map_owner(|()| active),
+                })
+            }
+            BluetoothLegacyAdvertisingActiveStep::UnrelatedList { session, observed } => {
+                BluetoothLegacyAdvertisingActivePendingRadioStep::UnrelatedList {
+                    pending: Self {
+                        transaction: response.map_owner(|()| session),
+                    },
+                    observed,
+                }
+            }
+            BluetoothLegacyAdvertisingActiveStep::CpuOwned(completed) => {
+                BluetoothLegacyAdvertisingActivePendingRadioStep::CpuOwned(
+                    BluetoothLegacyAdvertisingCpuOwnedResponsePending {
+                        transaction: response.map_owner(|()| completed.into_detached_radio()),
+                    },
+                )
+            }
+            BluetoothLegacyAdvertisingActiveStep::Fault(fault) => {
+                BluetoothLegacyAdvertisingActivePendingRadioStep::Fault(
+                    BluetoothLegacyAdvertisingActivePendingFault {
+                        _fault: fault,
+                        _response: response,
+                    },
+                )
+            }
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize> BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub fn radio_wait(&self) -> Option<BluetoothLegacyAdvertisingActiveWait<'_>> {
+        self.active.radio_wait()
+    }
+
+    pub fn step(self) -> BluetoothLegacyAdvertisingStoppingStep<'runtime, S, CAPACITY> {
+        let Self { active, order } = self;
+        match active.step_radio() {
+            BluetoothLegacyAdvertisingActiveStep::Continue(active) => {
+                BluetoothLegacyAdvertisingStoppingStep::Continue(Self { active, order })
+            }
+            BluetoothLegacyAdvertisingActiveStep::Waiting(active) => {
+                BluetoothLegacyAdvertisingStoppingStep::Waiting(Self { active, order })
+            }
+            BluetoothLegacyAdvertisingActiveStep::UnrelatedList { session, observed } => {
+                BluetoothLegacyAdvertisingStoppingStep::UnrelatedList {
+                    stopping: Self {
+                        active: session,
+                        order,
+                    },
+                    observed,
+                }
+            }
+            BluetoothLegacyAdvertisingActiveStep::CpuOwned(completed) => {
+                let radio = completed.into_detached_radio();
+                match order {
+                    BluetoothLegacyAdvertisingStopOrder::Disable(deferred) => {
+                        BluetoothLegacyAdvertisingStoppingStep::DisableRestore(
+                            BluetoothLegacyAdvertisingDisableRestore { radio, deferred },
+                        )
+                    }
+                    BluetoothLegacyAdvertisingStopOrder::Reset(barrier) => {
+                        BluetoothLegacyAdvertisingStoppingStep::ResetRestore(
+                            BluetoothLegacyAdvertisingResetRestore { radio, barrier },
+                        )
+                    }
+                }
+            }
+            BluetoothLegacyAdvertisingActiveStep::Fault(fault) => {
+                BluetoothLegacyAdvertisingStoppingStep::Fault(
+                    BluetoothLegacyAdvertisingStoppingFault {
+                        _fault: fault,
+                        _order: order,
+                    },
+                )
+            }
         }
     }
 }
@@ -991,7 +1345,7 @@ where
         Self {
             axes: BluetoothLegacyAdvertisingActiveAxes {
                 task,
-                order,
+                order: BluetoothLegacyAdvertisingOrder::Ready(order),
                 scheduler_item_address,
                 hardware_list_index,
             },
@@ -1009,7 +1363,7 @@ where
                 scheduler_item_address: running.scheduler_item_address(),
                 hardware_list_index: running.hardware_list_index(),
                 task,
-                order,
+                order: BluetoothLegacyAdvertisingOrder::Ready(order),
             },
             phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
         }
@@ -1044,7 +1398,155 @@ where
             PACKET_CAPACITY,
         >,
     ) -> bool {
-        self.axes.order.accepts_endpoint(controller)
+        match &self.axes.order {
+            BluetoothLegacyAdvertisingOrder::Ready(order) => order.accepts_endpoint(controller),
+            BluetoothLegacyAdvertisingOrder::Detached => false,
+        }
+    }
+
+    /// Wait for Host command readiness while borrowing the complete active owner.
+    pub async fn wait_command_available<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        match &self.axes.order {
+            BluetoothLegacyAdvertisingOrder::Ready(order) => {
+                controller.wait_command_available(order).await
+            }
+            BluetoothLegacyAdvertisingOrder::Detached => {
+                Err(open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch)
+            }
+        }
+    }
+
+    fn detach_order(mut self) -> (Self, Order<'runtime>) {
+        let order = core::mem::replace(
+            &mut self.axes.order,
+            BluetoothLegacyAdvertisingOrder::Detached,
+        );
+        match order {
+            BluetoothLegacyAdvertisingOrder::Ready(order) => (self, order),
+            BluetoothLegacyAdvertisingOrder::Detached => {
+                unreachable!("an already-detached active owner cannot accept another command")
+            }
+        }
+    }
+
+    fn attach_order(mut self, order: Order<'runtime>) -> Self {
+        match self.axes.order {
+            BluetoothLegacyAdvertisingOrder::Detached => {
+                self.axes.order = BluetoothLegacyAdvertisingOrder::Ready(order);
+                self
+            }
+            BluetoothLegacyAdvertisingOrder::Ready(_) => {
+                unreachable!("an active owner cannot acquire a second command authority")
+            }
+        }
+    }
+
+    /// Consume and route at most one command without advancing the radio graph.
+    pub fn try_route_controller_command_with_buffer<
+        'command,
+        'buffer,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &mut LeControllerCommandEndpoint<
+            'command,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        buffer: &'buffer mut [u8],
+    ) -> BluetoothLegacyAdvertisingActiveCommandIntake<'runtime, 'command, 'buffer, S, CAPACITY>
+    {
+        let (active, order) = self.detach_order();
+        let ready = order.map_owner(|()| active);
+        match controller.try_receive_classified_command_with_buffer(ready, buffer) {
+            LeControllerCommandIntake::Command { command, buffer } => {
+                let route = match controller
+                    .route_active_legacy_advertising_classified_command(command)
+                {
+                    HciActiveLegacyAdvertisingCommandRoute::ResponsePending(transaction) => {
+                        BluetoothLegacyAdvertisingActiveCommandRoute::ResponsePending(
+                            BluetoothLegacyAdvertisingActiveResponsePending { transaction },
+                        )
+                    }
+                    HciActiveLegacyAdvertisingCommandRoute::Disable(deferred) => {
+                        let (active, deferred) = deferred.into_parts();
+                        BluetoothLegacyAdvertisingActiveCommandRoute::Stopping(
+                            BluetoothLegacyAdvertisingStopping {
+                                active,
+                                order: BluetoothLegacyAdvertisingStopOrder::Disable(deferred),
+                            },
+                        )
+                    }
+                    HciActiveLegacyAdvertisingCommandRoute::ResetBarrier(barrier) => {
+                        let (active, barrier) = barrier.into_parts();
+                        BluetoothLegacyAdvertisingActiveCommandRoute::Stopping(
+                            BluetoothLegacyAdvertisingStopping {
+                                active,
+                                order: BluetoothLegacyAdvertisingStopOrder::Reset(barrier),
+                            },
+                        )
+                    }
+                    HciActiveLegacyAdvertisingCommandRoute::EndpointMismatch(command) => {
+                        BluetoothLegacyAdvertisingActiveCommandRoute::EndpointMismatch(
+                            BluetoothLegacyAdvertisingActiveCommandMismatch { _command: command },
+                        )
+                    }
+                };
+                BluetoothLegacyAdvertisingActiveCommandIntake::Routed { route, buffer }
+            }
+            LeControllerCommandIntake::Empty { ready, buffer } => {
+                let (active, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingActiveCommandIntake::Empty {
+                    active: active.attach_order(order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::EndpointMismatch { ready, buffer } => {
+                let (active, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingActiveCommandIntake::EndpointMismatch {
+                    active: active.attach_order(order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::Channel {
+                ready,
+                buffer,
+                error,
+            } => {
+                let (active, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingActiveCommandIntake::Channel {
+                    active: active.attach_order(order),
+                    buffer,
+                    error,
+                }
+            }
+            LeControllerCommandIntake::NonCommand { ready, frame } => {
+                let (active, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingActiveCommandIntake::NonCommand {
+                    active: active.attach_order(order),
+                    frame,
+                }
+            }
+        }
     }
 
     pub fn radio_wait(&self) -> Option<BluetoothLegacyAdvertisingActiveWait<'_>> {

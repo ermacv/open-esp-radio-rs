@@ -352,9 +352,14 @@ pub use legacy_advertising::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_active::{
-    BluetoothLegacyAdvertisingActiveFault, BluetoothLegacyAdvertisingActiveFaultCause,
-    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingActiveStep,
-    BluetoothLegacyAdvertisingActiveWait, BluetoothLegacyAdvertisingCpuOwnedCommandIntake,
+    BluetoothLegacyAdvertisingActiveCommandIntake, BluetoothLegacyAdvertisingActiveCommandMismatch,
+    BluetoothLegacyAdvertisingActiveCommandRoute, BluetoothLegacyAdvertisingActiveFault,
+    BluetoothLegacyAdvertisingActiveFaultCause, BluetoothLegacyAdvertisingActivePendingFault,
+    BluetoothLegacyAdvertisingActivePendingRadioStep,
+    BluetoothLegacyAdvertisingActiveResponsePending,
+    BluetoothLegacyAdvertisingActiveResponsePublication, BluetoothLegacyAdvertisingActiveSession,
+    BluetoothLegacyAdvertisingActiveStep, BluetoothLegacyAdvertisingActiveWait,
+    BluetoothLegacyAdvertisingCpuOwnedCommandIntake,
     BluetoothLegacyAdvertisingCpuOwnedCommandMismatch,
     BluetoothLegacyAdvertisingCpuOwnedCommandRoute, BluetoothLegacyAdvertisingCpuOwnedResetBarrier,
     BluetoothLegacyAdvertisingCpuOwnedResponsePending,
@@ -366,7 +371,8 @@ pub use legacy_advertising_active::{
     BluetoothLegacyAdvertisingResetResponsePending,
     BluetoothLegacyAdvertisingResetResponsePublication, BluetoothLegacyAdvertisingResetRestore,
     BluetoothLegacyAdvertisingResetRestoreStep, BluetoothLegacyAdvertisingResponsePendingSession,
-    BluetoothLegacyAdvertisingResponsePublication,
+    BluetoothLegacyAdvertisingResponsePublication, BluetoothLegacyAdvertisingStopping,
+    BluetoothLegacyAdvertisingStoppingFault, BluetoothLegacyAdvertisingStoppingStep,
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_recurring::{

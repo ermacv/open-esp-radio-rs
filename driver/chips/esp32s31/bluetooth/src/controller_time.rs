@@ -39,6 +39,7 @@ impl BluetoothControllerTimeSample {
     ///
     /// This does not expose an integer image or duplicate scheduler-time
     /// authority. The returned PAC value can only enter a lower typed codec.
+    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn latched_time(&self) -> BluetoothControllerLatchedTime {
         self.latched_time
     }

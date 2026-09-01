@@ -95,6 +95,7 @@ pub(crate) struct BluetoothPassiveScanRuntimeRestoreFailure {
 #[must_use = "the scanner runtime retains the sole production graph"]
 pub struct BluetoothPassiveScanRuntimeResources {
     config: BluetoothPassiveScanRuntimeConfig,
+    #[cfg(any(target_arch = "riscv32", test))]
     graph_range: (u32, u32),
     idle: Option<BluetoothPassiveScanMemoryGraphCpuOwned>,
 }
@@ -104,9 +105,11 @@ impl BluetoothPassiveScanRuntimeResources {
         config: BluetoothPassiveScanRuntimeConfig,
         graph: BluetoothPassiveScanMemoryGraphCpuOwned,
     ) -> Self {
+        #[cfg(any(target_arch = "riscv32", test))]
         let graph_range = graph.range();
         Self {
             config,
+            #[cfg(any(target_arch = "riscv32", test))]
             graph_range,
             idle: Some(graph),
         }
@@ -150,6 +153,7 @@ impl BluetoothPassiveScanRuntimeResources {
         self.idle.is_some()
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn begin_event(
         &mut self,
     ) -> Result<BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanRuntimeBeginError>
@@ -159,6 +163,7 @@ impl BluetoothPassiveScanRuntimeResources {
             .ok_or(BluetoothPassiveScanRuntimeBeginError::EventActive)
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn restore_idle(
         &mut self,
         graph: BluetoothPassiveScanMemoryGraphCpuOwned,

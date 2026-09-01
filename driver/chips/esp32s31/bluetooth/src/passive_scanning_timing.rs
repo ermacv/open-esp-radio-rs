@@ -8,15 +8,18 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_bluetooth_ll::scanning::LegacyPassiveScanParameters;
+#[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanPrimaryChannel,
 };
+#[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::BluetoothControllerLatchedTime;
 
-use crate::{
-    BluetoothControllerSchedulerEpoch, BluetoothPassiveScanFirstEventCandidate,
-    BluetoothSchedulerInstant, BluetoothSchedulerRawWindow, BluetoothSchedulerSoftwareConfig,
-};
+#[cfg(target_arch = "riscv32")]
+use crate::BluetoothSchedulerRawWindow;
+#[cfg(target_arch = "riscv32")]
+use crate::{BluetoothControllerSchedulerEpoch, BluetoothPassiveScanFirstEventCandidate};
+use crate::{BluetoothSchedulerInstant, BluetoothSchedulerSoftwareConfig};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct BluetoothPassiveScanEventWindow {
@@ -78,6 +81,7 @@ impl BluetoothPassiveScanEventWindow {
         }
     }
 
+    #[cfg(target_arch = "riscv32")]
     const fn project_raw(
         self,
         epoch: BluetoothControllerSchedulerEpoch,
@@ -94,6 +98,7 @@ impl BluetoothPassiveScanEventWindow {
 }
 
 #[must_use = "consume the live scanner timing observation or retain it"]
+#[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothPassiveScanTimingObservation {
     pub(crate) current: BluetoothSchedulerInstant,
     pub(crate) radio_ready: BluetoothSchedulerInstant,
@@ -102,16 +107,19 @@ pub(crate) struct BluetoothPassiveScanTimingObservation {
 }
 
 #[must_use = "return the unchanged scanner graph to its production owner"]
+#[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothPassiveScanTimingFailure {
     graph: BluetoothPassiveScanMemoryGraphCpuOwned,
 }
 
+#[cfg(target_arch = "riscv32")]
 impl BluetoothPassiveScanTimingFailure {
     pub(crate) fn into_graph(self) -> BluetoothPassiveScanMemoryGraphCpuOwned {
         self.graph
     }
 }
 
+#[cfg(target_arch = "riscv32")]
 impl BluetoothPassiveScanTimingObservation {
     pub(crate) fn form_first_event_candidate(
         self,

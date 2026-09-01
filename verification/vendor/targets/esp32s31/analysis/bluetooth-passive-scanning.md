@@ -231,6 +231,18 @@ selector-one transaction through restricted PAC accessors.  The general
 allocator, reference counts, callbacks and `os_mbuf` conversion are
 deliberately excluded.
 
+Focused Blobray inspection of complete current
+`r_sym_ble_R2AW03Rf36LQ7NOPHFN6` closes the remaining vendor epoch check: when
+the global RX-link object is enabled, it compares packet `+0x18` with that
+object's halfword at `+0x18`; when the object is disabled it returns the
+separate unavailable result. This is stale-allocation protection for the
+vendor's dynamic manager, not another hardware descriptor input. The open
+scanner has one statically bound affine graph and therefore replaces the
+global manager epoch with stronger source-owned prerequisites: the completed
+header, both changed packet sentinels, the exact finished-list/head/removal
+proofs and the same non-reusable graph owner. No global vendor allocation
+object or epoch field is reproduced.
+
 ## Restricted passive-1M reset profile
 
 The complete current reset body and the named initial body are the same

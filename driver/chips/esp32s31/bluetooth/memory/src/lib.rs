@@ -129,12 +129,20 @@ pub use passive_scanning_memory::{
     BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
     BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, BluetoothPassiveScanMemoryGraphBindError,
     BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphCommandPublished,
-    BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphEventPrepared,
-    BluetoothPassiveScanMemoryGraphPublicationError,
+    BluetoothPassiveScanMemoryGraphCompletionObservation,
+    BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphCpuOwned,
+    BluetoothPassiveScanMemoryGraphEventPrepared, BluetoothPassiveScanMemoryGraphPublicationError,
     BluetoothPassiveScanMemoryGraphPublicationMismatch,
     BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
+    BluetoothPassiveScanMemoryGraphRecycleError, BluetoothPassiveScanMemoryGraphRecycleFailure,
+    BluetoothPassiveScanMemoryGraphRecyclePrepared, BluetoothPassiveScanMemoryGraphRecycled,
+    BluetoothPassiveScanMemoryGraphRunning, BluetoothPassiveScanMemoryGraphRxExtracted,
+    BluetoothPassiveScanMemoryGraphRxExtractionFailure,
     BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
-    BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanSchedulerAllocationConfig,
+    BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanReceivedBatch,
+    BluetoothPassiveScanReceivedPdu, BluetoothPassiveScanRxError,
+    BluetoothPassiveScanSchedulerAllocationConfig,
+    BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};

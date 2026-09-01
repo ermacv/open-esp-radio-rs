@@ -12,6 +12,8 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothControllerLatchedTime, BluetoothControllerSramAddress,
     BluetoothControllerSramAddressError, BluetoothMemoryListSelector,
     BluetoothRxMemoryListPublished, BluetoothScanStartPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerSoftwareListRemovalReady,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -110,6 +112,98 @@ impl BluetoothPassiveScanSchedulerAllocationConfig {
     }
 }
 
+/// One bounded Link Layer PDU copied from a completed scanner packet.
+///
+/// The vendor packet prefix, producer sentinel and receive epoch remain
+/// private. Callers receive only the on-air advertising-channel PDU and its
+/// signed receive-strength sample.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPassiveScanReceivedPdu {
+    bytes: [u8; BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2],
+    length: u16,
+    rssi_dbm: i8,
+}
+
+impl BluetoothPassiveScanReceivedPdu {
+    /// Complete two-byte advertising header and declared payload.
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.bytes.split_at(self.length as usize).0
+    }
+
+    /// Number of copied Link Layer PDU octets.
+    pub const fn len(&self) -> usize {
+        self.length as usize
+    }
+
+    /// Whether the copied PDU is empty. A valid hardware result is never empty.
+    pub const fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
+    /// Signed receive-strength byte supplied by the controller packet prefix.
+    pub const fn rssi_dbm(&self) -> i8 {
+        self.rssi_dbm
+    }
+}
+
+/// Up to two completed packets owned by one restricted scanner event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPassiveScanReceivedBatch {
+    packets: [Option<BluetoothPassiveScanReceivedPdu>; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
+    len: u8,
+}
+
+impl BluetoothPassiveScanReceivedBatch {
+    const fn empty() -> Self {
+        Self {
+            packets: [None; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, packet: BluetoothPassiveScanReceivedPdu) {
+        self.packets[self.len as usize] = Some(packet);
+        self.len += 1;
+    }
+
+    /// Number of completed packets copied from this event.
+    pub const fn len(self) -> usize {
+        self.len as usize
+    }
+
+    /// Whether this event completed without a received packet.
+    pub const fn is_empty(self) -> bool {
+        self.len == 0
+    }
+
+    /// Borrow one packet in hardware list order.
+    pub const fn packet(&self, index: usize) -> Option<&BluetoothPassiveScanReceivedPdu> {
+        if index < self.len as usize {
+            self.packets[index].as_ref()
+        } else {
+            None
+        }
+    }
+}
+
+/// Malformed hardware result rejected before scanner graph reclamation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPassiveScanRxError {
+    /// A completed header still points at an untouched producer sentinel.
+    ProducerSentinelRetained,
+    /// A completed header still points at an untouched receive-epoch sentinel.
+    EpochSentinelRetained,
+    /// A later node completed after an earlier incomplete node in the chain.
+    CompletionChainGap,
+}
+
+/// Semantic non-sentinel status written to the scanner scheduler item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPassiveScanSchedulerItemCompletionStatus {
+    Zero,
+    NonZero(core::num::NonZeroU32),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct BluetoothPassiveScanRxPacketAddress(BluetoothControllerSramAddress);
 
@@ -144,6 +238,7 @@ impl BluetoothPassiveScanRxBufferHeaderStorage {
     #[cfg(test)]
     const LINK_MASK: u32 = 0x000f_ffff;
     const ROTATION_MARKER: u32 = 1;
+    const COMPLETION_GATE: u32 = 1 << 31;
 
     const fn new() -> Self {
         Self {
@@ -176,6 +271,15 @@ impl BluetoothPassiveScanRxBufferHeaderStorage {
         for (cell, word) in self.words.iter().zip(image) {
             cell.set(word);
         }
+    }
+
+    fn completion_observed(&self) -> bool {
+        self.words[3].get() & Self::COMPLETION_GATE != 0
+    }
+
+    #[cfg(test)]
+    fn emulate_hardware_completion(&self) {
+        self.words[3].set(self.words[3].get() | Self::COMPLETION_GATE);
     }
 
     #[cfg(test)]
@@ -234,6 +338,62 @@ impl BluetoothPassiveScanRxPacketStorage {
             .set(self.words[Self::RESULT_WORD].get() | Self::RESULT_REARM_SENTINEL);
         self.words[Self::EPOCH_WORD]
             .set(self.words[Self::EPOCH_WORD].get() | Self::EPOCH_REARM_SENTINEL);
+    }
+
+    fn received_pdu(&self) -> Result<BluetoothPassiveScanReceivedPdu, BluetoothPassiveScanRxError> {
+        let result = self.words[Self::RESULT_WORD].get();
+        if result & Self::RESULT_REARM_SENTINEL == Self::RESULT_REARM_SENTINEL {
+            return Err(BluetoothPassiveScanRxError::ProducerSentinelRetained);
+        }
+        let epoch = self.words[Self::EPOCH_WORD].get();
+        if epoch & Self::EPOCH_REARM_SENTINEL == Self::EPOCH_REARM_SENTINEL {
+            return Err(BluetoothPassiveScanRxError::EpochSentinelRetained);
+        }
+
+        let payload_length = self.read_byte(BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 1);
+        let length = usize::from(payload_length) + 2;
+        let mut bytes = [0; BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2];
+        let mut index = 0;
+        while index < length {
+            bytes[index] =
+                self.read_byte(BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 2 + index);
+            index += 1;
+        }
+        Ok(BluetoothPassiveScanReceivedPdu {
+            bytes,
+            length: length as u16,
+            rssi_dbm: self.read_byte(BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 15) as i8,
+        })
+    }
+
+    fn read_byte(&self, offset: usize) -> u8 {
+        let word = self.words[offset / 4].get();
+        ((word >> ((offset % 4) * 8)) & 0xff) as u8
+    }
+
+    #[cfg(test)]
+    fn emulate_hardware_receive(&self, pdu: &[u8], rssi_dbm: i8) {
+        assert!((2..=BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY + 2).contains(&pdu.len()));
+        assert_eq!(usize::from(pdu[1]) + 2, pdu.len());
+        self.words[Self::RESULT_WORD].set(0);
+        self.words[Self::EPOCH_WORD].set(0);
+        for (offset, byte) in pdu.iter().copied().enumerate() {
+            self.write_byte(
+                BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 2 + offset,
+                byte,
+            );
+        }
+        self.write_byte(
+            BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES - 15,
+            rssi_dbm as u8,
+        );
+    }
+
+    #[cfg(test)]
+    fn write_byte(&self, offset: usize, value: u8) {
+        let shift = (offset % 4) * 8;
+        let word = self.words[offset / 4].get();
+        self.words[offset / 4].set((word & !(0xff << shift)) | (u32::from(value) << shift));
     }
 
     #[cfg(test)]
@@ -382,6 +542,28 @@ impl BluetoothPassiveScanSchedulerItemStorage {
     fn detach_hardware_predecessor(&self) {
         self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD]
             .set(self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get() & !SCHEDULER_ITEM_LINK_MASK);
+    }
+
+    fn mark_in_flight(&self) {
+        self.words[SCHEDULER_ITEM_WORD_38].set(u32::MAX);
+    }
+
+    fn restore_cpu_owned_status(&self) {
+        self.words[SCHEDULER_ITEM_WORD_38].set(0);
+    }
+
+    fn completion_status(&self) -> Option<BluetoothPassiveScanSchedulerItemCompletionStatus> {
+        let status = self.words[SCHEDULER_ITEM_WORD_38].get();
+        if status == u32::MAX {
+            None
+        } else if status == 0 {
+            Some(BluetoothPassiveScanSchedulerItemCompletionStatus::Zero)
+        } else {
+            Some(BluetoothPassiveScanSchedulerItemCompletionStatus::NonZero(
+                core::num::NonZeroU32::new(status)
+                    .expect("a nonzero scheduler status constructs a nonzero value"),
+            ))
+        }
     }
 
     fn restore_hardware_predecessor(&self, predecessor: BluetoothControllerSramLinkAddress) {
@@ -665,6 +847,7 @@ impl BluetoothPassiveScanMemoryGraphEventPrepared {
         let predecessor = self.binding.scheduler_items[selected_index - 1];
         let graph = self.storage.as_mut().project();
         graph.scheduler_items[selected_index].detach_hardware_predecessor();
+        graph.scheduler_items[selected_index].mark_in_flight();
         graph
             .link_state
             .install_scheduler_head(predecessor.controller_address());
@@ -700,6 +883,7 @@ impl BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
         let predecessor = self.binding.scheduler_items[selected_index - 1];
         let graph = self.storage.as_mut().project();
         graph.scheduler_items[selected_index].restore_hardware_predecessor(predecessor);
+        graph.scheduler_items[selected_index].restore_cpu_owned_status();
         graph
             .link_state
             .install_scheduler_head(selected.controller_address());
@@ -836,10 +1020,6 @@ impl core::fmt::Debug for BluetoothPassiveScanMemoryGraphPublicationMismatch {
 }
 
 /// Pinned scanner graph visible to and exclusively retained by hardware.
-///
-/// No completion or CPU-reclaim method exists yet. Those transitions require
-/// the next controller interrupt/fence proof and cannot be inferred from list
-/// publication alone.
 #[must_use = "the published scanner graph remains hardware-owned"]
 pub struct BluetoothPassiveScanMemoryGraphPublished {
     _storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
@@ -923,6 +1103,285 @@ impl BluetoothPassiveScanMemoryGraphCommandPublished {
     pub const fn window(&self) -> BluetoothPassiveScanSchedulerWindow {
         self.window
     }
+
+    /// Join the exact common RUN proof and retain hardware ownership.
+    pub fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothPassiveScanMemoryGraphRunning {
+        assert_eq!(
+            run.index(),
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            "the restricted scanner uses the primary scheduler list"
+        );
+        assert_eq!(
+            run.head().address(),
+            Some(self.scheduler_head()),
+            "the RUN proof must retain this scanner item"
+        );
+        BluetoothPassiveScanMemoryGraphRunning {
+            storage: self._storage,
+            binding: self.binding,
+            _rx_publication: self.rx_publication,
+            _command: self._command,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+}
+
+/// Hardware-owned scanner graph admitted through the common RUN transaction.
+#[must_use = "the running scanner graph must advance through fenced completion"]
+pub struct BluetoothPassiveScanMemoryGraphRunning {
+    storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
+    binding: BluetoothPassiveScanMemoryGraphBinding,
+    _rx_publication: BluetoothRxMemoryListPublished,
+    _command: BluetoothScanStartPublished,
+    channel: BluetoothPassiveScanPrimaryChannel,
+    window: BluetoothPassiveScanSchedulerWindow,
+}
+
+impl BluetoothPassiveScanMemoryGraphRunning {
+    /// Exact scanner item retained by the hardware-owned graph.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
+    /// Primary advertising channel retained by this event.
+    pub const fn channel(&self) -> BluetoothPassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Exact scheduler window retained by this event.
+    pub const fn window(&self) -> BluetoothPassiveScanSchedulerWindow {
+        self.window
+    }
+
+    /// Consume one fresh finished-list observation and inspect the item status.
+    pub fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothPassiveScanMemoryGraphCompletionObservation {
+        if observed.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            return BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
+                running: self,
+                observed,
+            };
+        }
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let Some(status) =
+            self.storage.as_ref().get_ref().scheduler_items[selected_index].completion_status()
+        else {
+            return BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(self);
+        };
+        BluetoothPassiveScanMemoryGraphCompletionObservation::CompletionObserved(
+            BluetoothPassiveScanMemoryGraphCompletionObserved {
+                running: self,
+                status,
+            },
+        )
+    }
+}
+
+/// One bounded observation of a running scanner graph.
+#[must_use = "the graph and any unrelated finished-list token remain owned"]
+pub enum BluetoothPassiveScanMemoryGraphCompletionObservation {
+    ListMismatch {
+        running: BluetoothPassiveScanMemoryGraphRunning,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothPassiveScanMemoryGraphRunning),
+    CompletionObserved(BluetoothPassiveScanMemoryGraphCompletionObserved),
+}
+
+/// Scanner graph after a non-sentinel scheduler status was observed.
+#[must_use = "the completed scanner graph must pass scheduler unlink before CPU access"]
+pub struct BluetoothPassiveScanMemoryGraphCompletionObserved {
+    running: BluetoothPassiveScanMemoryGraphRunning,
+    status: BluetoothPassiveScanSchedulerItemCompletionStatus,
+}
+
+impl BluetoothPassiveScanMemoryGraphCompletionObserved {
+    /// Exact item whose scheduler status left the in-flight sentinel.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.running.scheduler_item_address()
+    }
+
+    /// Semantic scheduler completion status retained for diagnostics.
+    pub const fn status(&self) -> BluetoothPassiveScanSchedulerItemCompletionStatus {
+        self.status
+    }
+
+    /// Bind the exact software-list removal proof before reading RX SRAM.
+    pub fn prepare_recycle_after_software_list_removal(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<
+        BluetoothPassiveScanMemoryGraphRecyclePrepared,
+        BluetoothPassiveScanMemoryGraphRecycleFailure,
+    > {
+        let error = if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(BluetoothPassiveScanMemoryGraphRecycleError::HardwareListMismatch)
+        } else if removal.completed_head().address() != Some(self.scheduler_item_address()) {
+            Some(BluetoothPassiveScanMemoryGraphRecycleError::SchedulerItemMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(BluetoothPassiveScanMemoryGraphRecycleFailure {
+                completed: self,
+                removal,
+                error,
+            });
+        }
+        Ok(BluetoothPassiveScanMemoryGraphRecyclePrepared {
+            completed: self,
+            _removal: removal,
+        })
+    }
+}
+
+/// Why a completed scanner graph rejected CPU-recycle authorization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPassiveScanMemoryGraphRecycleError {
+    HardwareListMismatch,
+    SchedulerItemMismatch,
+}
+
+/// Lossless recycle rejection retaining both affine owners.
+#[must_use = "the completed scanner graph and removal proof remain owned"]
+pub struct BluetoothPassiveScanMemoryGraphRecycleFailure {
+    completed: BluetoothPassiveScanMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+    error: BluetoothPassiveScanMemoryGraphRecycleError,
+}
+
+impl BluetoothPassiveScanMemoryGraphRecycleFailure {
+    pub const fn error(&self) -> BluetoothPassiveScanMemoryGraphRecycleError {
+        self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothPassiveScanMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+}
+
+/// Completed graph authorized for bounded RX extraction and reclamation.
+#[must_use = "the scanner graph must be extracted or retained unchanged"]
+pub struct BluetoothPassiveScanMemoryGraphRecyclePrepared {
+    completed: BluetoothPassiveScanMemoryGraphCompletionObserved,
+    _removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl BluetoothPassiveScanMemoryGraphRecyclePrepared {
+    /// Validate and copy every contiguous completed node without mutating SRAM.
+    pub fn extract_received(
+        self,
+    ) -> Result<
+        BluetoothPassiveScanMemoryGraphRxExtracted,
+        BluetoothPassiveScanMemoryGraphRxExtractionFailure,
+    > {
+        let batch = match self
+            .completed
+            .running
+            .storage
+            .as_ref()
+            .get_ref()
+            .extract_received_batch()
+        {
+            Ok(batch) => batch,
+            Err(error) => {
+                return Err(BluetoothPassiveScanMemoryGraphRxExtractionFailure {
+                    prepared: self,
+                    error,
+                });
+            }
+        };
+        Ok(BluetoothPassiveScanMemoryGraphRxExtracted {
+            prepared: self,
+            batch,
+        })
+    }
+}
+
+/// Malformed completed RX storage retaining the unchanged recycle owner.
+#[must_use = "the unchanged graph remains unavailable until fail-stop handling"]
+pub struct BluetoothPassiveScanMemoryGraphRxExtractionFailure {
+    prepared: BluetoothPassiveScanMemoryGraphRecyclePrepared,
+    error: BluetoothPassiveScanRxError,
+}
+
+impl BluetoothPassiveScanMemoryGraphRxExtractionFailure {
+    pub const fn error(&self) -> BluetoothPassiveScanRxError {
+        self.error
+    }
+
+    pub fn into_prepared(self) -> BluetoothPassiveScanMemoryGraphRecyclePrepared {
+        self.prepared
+    }
+}
+
+/// Validated RX batch paired with the sole reclaimable scanner graph.
+#[must_use = "commit reclamation before reusing the scanner graph"]
+pub struct BluetoothPassiveScanMemoryGraphRxExtracted {
+    prepared: BluetoothPassiveScanMemoryGraphRecyclePrepared,
+    batch: BluetoothPassiveScanReceivedBatch,
+}
+
+impl BluetoothPassiveScanMemoryGraphRxExtracted {
+    /// Copy of every completed Link Layer PDU in receive-list order.
+    pub const fn batch(&self) -> BluetoothPassiveScanReceivedBatch {
+        self.batch
+    }
+
+    /// Restore the private lists and return ordinary CPU ownership.
+    pub fn commit(self) -> BluetoothPassiveScanMemoryGraphRecycled {
+        let BluetoothPassiveScanMemoryGraphRecyclePrepared {
+            completed,
+            _removal: _,
+        } = self.prepared;
+        let BluetoothPassiveScanMemoryGraphCompletionObserved { running, status } = completed;
+        let BluetoothPassiveScanMemoryGraphRunning {
+            storage,
+            binding,
+            _rx_publication: _,
+            _command: _,
+            channel: _,
+            window: _,
+        } = running;
+        let mut owner = BluetoothPassiveScanMemoryGraphCpuOwned { storage, binding };
+        owner.restore_after_event();
+        BluetoothPassiveScanMemoryGraphRecycled {
+            owner,
+            batch: self.batch,
+            status,
+        }
+    }
+}
+
+/// Reusable CPU-owned scanner graph plus copied event results.
+#[must_use = "the graph and received batch must return to the scanner role owner"]
+pub struct BluetoothPassiveScanMemoryGraphRecycled {
+    owner: BluetoothPassiveScanMemoryGraphCpuOwned,
+    batch: BluetoothPassiveScanReceivedBatch,
+    status: BluetoothPassiveScanSchedulerItemCompletionStatus,
+}
+
+impl BluetoothPassiveScanMemoryGraphRecycled {
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothPassiveScanMemoryGraphCpuOwned,
+        BluetoothPassiveScanReceivedBatch,
+        BluetoothPassiveScanSchedulerItemCompletionStatus,
+    ) {
+        (self.owner, self.batch, self.status)
+    }
 }
 
 impl BluetoothPassiveScanMemoryGraphStorage {
@@ -939,6 +1398,24 @@ impl BluetoothPassiveScanMemoryGraphStorage {
             ],
             _pin: PhantomPinned,
         }
+    }
+
+    fn extract_received_batch(
+        &self,
+    ) -> Result<BluetoothPassiveScanReceivedBatch, BluetoothPassiveScanRxError> {
+        let mut batch = BluetoothPassiveScanReceivedBatch::empty();
+        let mut incomplete_observed = false;
+        for node in &self.nodes {
+            if !node.header.completion_observed() {
+                incomplete_observed = true;
+                continue;
+            }
+            if incomplete_observed {
+                return Err(BluetoothPassiveScanRxError::CompletionChainGap);
+            }
+            batch.push(node.packet.received_pdu()?);
+        }
+        Ok(batch)
     }
 
     /// Bind the real address of one unique static S31 allocation.
@@ -1024,6 +1501,36 @@ impl BluetoothPassiveScanMemoryGraphCpuOwned {
         storage.link_state.install_scheduler_head(
             scheduler_items[BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1].controller_address(),
         );
+        storage.link_state.install_receive_graph(
+            bindings[0].header.controller_address(),
+            bindings[1].header.controller_address(),
+        );
+        for (node, binding) in storage.nodes.iter().zip(bindings) {
+            node.packet.initialize();
+            node.header.install(binding.packet, None, None, false);
+        }
+        storage.nodes[0]
+            .header
+            .install(bindings[0].packet, Some(bindings[1].header), None, true);
+        storage.nodes[1].header.install(
+            bindings[1].packet,
+            None,
+            Some(bindings[0].header.controller_address()),
+            false,
+        );
+    }
+
+    fn restore_after_event(&mut self) {
+        let bindings = self.binding.nodes;
+        let scheduler_items = self.binding.scheduler_items;
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let storage = self.storage.as_mut().project();
+        storage.scheduler_items[selected_index]
+            .restore_hardware_predecessor(scheduler_items[selected_index - 1]);
+        storage.scheduler_items[selected_index].restore_cpu_owned_status();
+        storage
+            .link_state
+            .install_scheduler_head(scheduler_items[selected_index].controller_address());
         storage.link_state.install_receive_graph(
             bindings[0].header.controller_address(),
             bindings[1].header.controller_address(),
@@ -1217,6 +1724,39 @@ mod tests {
         );
         let (storage, _) = failure.into_parts();
         assert_eq!(core::ptr::addr_of!(*storage).addr(), identity);
+    }
+
+    #[test]
+    fn completed_receive_nodes_copy_only_bounded_pdu_and_signed_rssi() {
+        let owner = model_graph(0x2f00_1000);
+        let storage = owner.storage.as_ref().get_ref();
+        let pdu = [0x02, 6, 1, 2, 3, 4, 5, 6];
+        storage.nodes[0].packet.emulate_hardware_receive(&pdu, -47);
+        storage.nodes[0].header.emulate_hardware_completion();
+
+        let batch = storage
+            .extract_received_batch()
+            .expect("one completed prefix node is a valid receive batch");
+        assert_eq!(batch.len(), 1);
+        let packet = batch.packet(0).expect("the completed node is retained");
+        assert_eq!(packet.as_bytes(), &pdu);
+        assert_eq!(packet.rssi_dbm(), -47);
+        assert!(batch.packet(1).is_none());
+    }
+
+    #[test]
+    fn completed_receive_chain_rejects_a_gap_before_packet_access() {
+        let owner = model_graph(0x2f00_2000);
+        let storage = owner.storage.as_ref().get_ref();
+        storage.nodes[1]
+            .packet
+            .emulate_hardware_receive(&[0x02, 6, 1, 2, 3, 4, 5, 6], -20);
+        storage.nodes[1].header.emulate_hardware_completion();
+
+        assert_eq!(
+            storage.extract_received_batch(),
+            Err(super::BluetoothPassiveScanRxError::CompletionChainGap)
+        );
     }
 
     #[test]

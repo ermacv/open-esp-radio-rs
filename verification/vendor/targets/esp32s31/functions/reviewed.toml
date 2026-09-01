@@ -1131,6 +1131,70 @@ role = "ble.advertising.recycle-scheduler-item"
 summary = "Consumes one completed advertising scheduler item, processes role results and either recycles or reschedules its private graph."
 accept-incomplete = true
 
+# The response-capable advertising path crosses three current archive members.
+# Function-section correspondence with the named same-chip archive identifies
+# the roles; current linked call/data flow is the authority for the timestamp
+# and ownership facts recorded here.
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_JCW3xBO3VoZM1jvZVHin"
+status = "reviewed"
+name = "ble_lll_adv_rx_process"
+role = "ble.advertising.rx-process"
+summary = "Consumes one advertising RX packet descriptor, normalizes its captured time through the PHY helper and passes the exact advertising PDU plus receive metadata to upper packet dispatch."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_oTadGkcNzoRFY8JfdVJw"
+status = "reviewed"
+name = "ble_ll_adv_rx_pkt_in"
+role = "ble.advertising.rx-dispatch"
+summary = "Dispatches a received legacy advertising PDU by PDU type; the CONNECT_IND branch enters connection-request admission."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_qWmmMxppHhdB6LLNTjHe"
+status = "reviewed"
+name = "ble_ll_adv_conn_req_rxd"
+role = "ble.advertising.connection-request-admission"
+summary = "Applies advertiser-address, resolving-address and filter policy to one CONNECT_IND before transferring the exact PDU and receive metadata to peripheral connection start."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_yGsYADDrqjYziP9c5GNW"
+status = "reviewed"
+name = "ble_ll_conn_peripheral_start"
+role = "ble.connection.peripheral-start"
+summary = "Parses accepted CONNECT_IND fields into the upper connection owner and transfers that owner with receive metadata to connection creation."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_EhsfmEgcePNEwVjH4OHN"
+status = "reviewed"
+name = "ble_ll_conn_created"
+role = "ble.connection.first-anchor-create"
+summary = "Derives the peripheral first anchor from normalized packet-start time, CONNECT_IND airtime, transmit-window offset and the mandatory 1.25 ms delay before invoking lower connection creation."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_mVQi032HguLS2FtruQIm"
+status = "reviewed"
+name = "ble_phy_get_actual_tx_time"
+role = "ble.phy.packet-start-time-normalize"
+summary = "Converts one captured receive time word to controller microseconds and subtracts two PHY-mode-indexed calibration terms to recover the on-air packet-start time."
+accept-incomplete = true
+
 # Current linked ESP32-S31 libble_app.a member 51.o obscures the connection
 # function names but retains the ble_lll_conn.c source path.  The mappings below
 # are role-only facts established by matching function-section order, size and

@@ -42,6 +42,34 @@ power, CTE, PHY-policy and private configuration fields. Those writes are not
 yet assigned a source-owned connection-event contract and are deliberately not
 part of the Rust identity transition.
 
+The separate `ble-connectable-advertising-response` scope closes the causal
+path into that transition. Current `ble_lll_adv_rx_process` reads the received
+packet owner, passes its PDU at the reviewed advertising-packet boundary and
+converts the descriptor's captured time word with
+`ble_phy_get_actual_tx_time`. That helper first converts controller ticks to
+microseconds, then subtracts two PHY-mode-indexed calibration terms. The
+result is an on-air packet-start time, not a packet-end time and not an
+ordinary observation of controller `now()`.
+
+Current `ble_ll_adv_rx_pkt_in` routes PDU type 5 to
+`ble_ll_adv_conn_req_rxd`; after address/filter admission,
+`ble_ll_conn_peripheral_start` parses the request and reaches
+`ble_ll_conn_created`. For a legacy primary-channel `CONNECT_IND`, connection
+creation derives the first anchor as:
+
+```text
+normalized packet start
+  + CONNECT_IND on-air duration for the received PHY
+  + WinOffset * 1.25 ms
+  + 1.25 ms
+```
+
+The first receive-window width is `WinSize * 1.25 ms`. This proves that the
+portable LL may own PDU validation, address admission and transmit-window
+arithmetic, while the S31 backend must supply a typed, PHY-calibrated packet
+time. Exposing the raw descriptor time word or substituting a later live clock
+sample would move an unresolved hardware transform into protocol code.
+
 `r_sym_ble_DCD5eVhcHQ9ueSpewKn1`, reviewed as
 `ble_lll_conn_peripheral_new`, proves that the first event additionally depends
 on all of the following:
@@ -64,9 +92,10 @@ allocation.
 
 The shortest path to one real peripheral event is:
 
-1. recover the response-capable legacy advertising RX chain that yields one
-   exact `CONNECT_IND` and its packet-end controller timestamp;
-2. define the first-anchor and scheduler-window contract from that timestamp;
+1. publish a typed S31 PHY-calibrated packet-start observation from the
+   response-capable advertising RX owner;
+2. define the first-anchor and scheduler-window contract from that observation
+   plus the portable PDU-airtime and transmit-window calculation;
 3. close the remaining connection link-state and scheduler-item fields as
    semantic accessors inside the memory crate;
 4. join the prepared graph to the existing common scheduler admission,

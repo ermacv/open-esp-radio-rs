@@ -23,6 +23,7 @@ required-capabilities = [
   "hci-controller-endpoints",
   "packet-dataplane",
   "portable-legacy-advertising",
+  "portable-connectable-advertising",
   "portable-peripheral-connection",
   "legacy-passive-scanning",
   "le-link-layer",
@@ -402,6 +403,17 @@ hil-not-applicable = "hardware-independent-protocol-state"
 async-not-applicable = "pure-finite-state-transition"
 
 [[capabilities]]
+id = "portable-connectable-advertising"
+title = "Portable legacy connectable advertising response"
+scope = "Exact bounded ADV_IND encode and decode public or random TxAdd and channel-selection capability non-empty ordered primary channel event plan exact advertiser-address CONNECT_IND admission lossless malformed foreign-address and unsupported-CSA-two rejection transition into the portable peripheral connection owner and fresh bounded interval-plus-delay recurrence without a hardware or executor dependency"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
+vendor-not-applicable = "bluetooth-core-protocol-state"
+hil-not-applicable = "hardware-independent-protocol-state"
+async-not-applicable = "pure-finite-state-transition"
+
+[[capabilities]]
 id = "legacy-passive-scanning"
 title = "Legacy LE passive scanning"
 scope = "Restricted LE 1M passive scanner using a public own address and the unfiltered accept-all policy from standard bt-hci Set Scan Parameters and Enable commands through recurring ESP32-S31 scheduler windows to bounded legacy advertising reports optional exact duplicate suppression and quiescent Disable or Reset"
@@ -425,7 +437,7 @@ scope = "Production legacy advertising scanning and one peripheral connection fr
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-depends-on = ["packet-dataplane", "portable-legacy-advertising", "portable-peripheral-connection", "legacy-passive-scanning"]
+depends-on = ["packet-dataplane", "portable-legacy-advertising", "portable-connectable-advertising", "portable-peripheral-connection", "legacy-passive-scanning"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
   "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",

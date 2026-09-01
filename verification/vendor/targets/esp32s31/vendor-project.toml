@@ -985,6 +985,32 @@ roots = [
 ]
 include-reachable = true
 
+# Response-capable advertising is the causal bridge between the advertising
+# RX descriptor and the first peripheral connection event. Keep the upper
+# address/filter policy visible as evidence, but do not copy that architecture
+# into the Rust LL: the scope exists to prove the exact PDU and time provenance.
+[[review.scopes]]
+id = "ble-connectable-advertising-response"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    # RX descriptor -> normalized timestamp/PDU -> CONNECT_IND dispatch.
+    "ble-controller:r_sym_ble_JCW3xBO3VoZM1jvZVHin",
+    "ble-controller:r_sym_ble_oTadGkcNzoRFY8JfdVJw",
+    "ble-controller:r_sym_ble_qWmmMxppHhdB6LLNTjHe",
+    # Portable request parsing and first-anchor construction.
+    "ble-controller:r_sym_ble_yGsYADDrqjYziP9c5GNW",
+    "ble-controller:r_sym_ble_EhsfmEgcePNEwVjH4OHN",
+    "ble-controller:r_sym_ble_mVQi032HguLS2FtruQIm",
+    # Lower first-event construction plus callback-owned completion.
+    "ble-controller:r_sym_ble_DCD5eVhcHQ9ueSpewKn1",
+    "ble-controller:r_sym_ble_7LDXbnFJ4YehO5PIXaNN",
+    "ble-controller:r_sym_ble_vssfeWXnPIcnyOfdsX00",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
 [[review.scopes]]
 id = "ieee802154-baseband-leaves"
 protocols = ["ieee802154"]

@@ -606,6 +606,34 @@ where
         self.pending_event.is_some()
     }
 
+    /// Wait for a Host command without consuming this completed receive batch.
+    pub async fn wait_command_available<
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
+    ) -> Result<(), LeControllerEndpointMismatch> {
+        controller.wait_command_available(&self.order).await
+    }
+
+    /// Drop unpublished observations after hardware is already quiescent.
+    ///
+    /// This edge exists so Disable or Reset cannot be held hostage by a full
+    /// unsolicited-event queue. The retained scanner and HCI order remain
+    /// exact; only Host reports from the reclaimed batch are abandoned.
+    pub fn discard_remaining(
+        self,
+    ) -> BluetoothPassiveScanHciReportsComplete<'runtime, S, CAPACITY> {
+        BluetoothPassiveScanHciReportsComplete {
+            completed: self.completed,
+            order: self.order,
+            duplicate_filter: self.duplicate_filter,
+        }
+    }
+
     pub async fn wait_report_capacity<
         M: RawMutex,
         const H2C: usize,

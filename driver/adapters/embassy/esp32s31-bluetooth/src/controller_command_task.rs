@@ -1819,12 +1819,36 @@ where
                         else {
                             unreachable!("the selected scanner reports did not change")
                         };
-                        if reports.has_pending_event()
-                            && reports.wait_report_capacity(controller).await.is_err()
-                        {
-                            return self.retain_boundary(
-                                EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
-                            );
+                        if reports.has_pending_event() {
+                            match select(
+                                reports.wait_report_capacity(controller),
+                                reports.wait_command_available(controller),
+                            )
+                            .await
+                            {
+                                Either::First(Ok(())) => {}
+                                Either::Second(Ok(())) => {
+                                    let EmbassyBluetoothControllerCommandState::PassiveScanReports(
+                                        reports,
+                                    ) = self.owner.take()
+                                    else {
+                                        unreachable!(
+                                            "the command-ready scanner reports did not change"
+                                        )
+                                    };
+                                    self.owner.store(
+                                        EmbassyBluetoothControllerCommandState::PassiveScanComplete(
+                                            reports.discard_remaining(),
+                                        ),
+                                    );
+                                    continue;
+                                }
+                                Either::First(Err(_)) | Either::Second(Err(_)) => {
+                                    return self.retain_boundary(
+                                        EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                                    );
+                                }
+                            }
                         }
                         let EmbassyBluetoothControllerCommandState::PassiveScanReports(reports) =
                             self.owner.take()

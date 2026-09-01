@@ -1037,7 +1037,7 @@ mod tests {
         reduce_dtm_session_transition,
     };
 
-    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 16>;
+    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 45>;
 
     fn test_resources() -> TestResources {
         let config = LeControllerBootstrapConfig::new(
@@ -1170,7 +1170,7 @@ mod tests {
             panic!("the fresh test epoch exposes initial command authority")
         };
 
-        let mut storage = [0; 16];
+        let mut storage = [0; 45];
         let storage_address = storage.as_mut_ptr();
         let (command_ready, buffer) = match foreign
             .controller
@@ -1231,7 +1231,7 @@ mod tests {
         );
         block_on(endpoints.host.write(&acl)).unwrap();
 
-        let mut storage = [0; 16];
+        let mut storage = [0; 45];
         let frame = match endpoints
             .controller
             .try_receive_classified_command_with_buffer(command_ready, &mut storage)
@@ -1272,7 +1272,7 @@ mod tests {
         assert_eq!(
             error,
             HciChannelError::DestinationTooSmall {
-                required: 16,
+                required: 45,
                 available: 0,
             }
         );

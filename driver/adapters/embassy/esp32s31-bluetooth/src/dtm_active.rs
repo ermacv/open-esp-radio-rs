@@ -298,7 +298,7 @@ mod tests {
 
     use super::{EmbassyBluetoothDtmActiveRadioSignal, RadioFirst, select_radio_first};
 
-    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 16>;
+    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 45>;
 
     fn test_resources() -> TestResources {
         let config = LeControllerBootstrapConfig::new(
@@ -352,7 +352,7 @@ mod tests {
         ));
         assert!(matches!(second, RadioFirst::Other(Ok(()))));
 
-        let mut packet = [0; 16];
+        let mut packet = [0; 45];
         let command = match endpoints
             .controller
             .try_receive_classified_command_with_buffer(command_ready, &mut packet)
@@ -389,7 +389,7 @@ mod tests {
         ));
         assert!(matches!(selected, RadioFirst::Other(Ok(()))));
 
-        let mut packet = [0; 16];
+        let mut packet = [0; 45];
         let LeControllerCommandIntake::NonCommand { frame, .. } = endpoints
             .controller
             .try_receive_classified_command_with_buffer(command_ready, &mut packet)
@@ -434,7 +434,7 @@ mod tests {
             )),
             RadioFirst::Other(Ok(()))
         ));
-        let mut packet = [0; 16];
+        let mut packet = [0; 45];
         let command = match endpoints
             .controller
             .try_receive_classified_command_with_buffer(command_ready, &mut packet)

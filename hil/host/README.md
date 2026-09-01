@@ -9,7 +9,8 @@ Public commands:
 cargo hil doctor
 cargo hil scenario list
 cargo hil scenario validate [id]
-cargo hil image build|flash <boot-smoke|performance|correctness|diagnostic-mac-irq|diagnostic-task-poll|diagnostic-rx-delivery>
+cargo hil image build|flash <image-class>
+cargo hil image verify-rebuild <image-class>
 cargo hil image replay <run-id> <image-class>
 cargo hil device status
 cargo hil report rebuild

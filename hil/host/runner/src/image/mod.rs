@@ -3,6 +3,10 @@
 use crate::*;
 use open_esp_radio_hil_protocol::FeatureCapabilities;
 
+mod reproducibility;
+
+pub(crate) use reproducibility::verify_rebuild;
+
 pub(crate) const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 pub(crate) const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
@@ -229,7 +233,7 @@ pub(crate) fn build(root: &Path, class: qualification::scenario::ImageClass) -> 
     let local_embassy = local_embassy_override()?;
     let local_xarxa = local_xarxa_override()?;
     if local_esp_hal.is_none() && local_embassy.is_none() && local_xarxa.is_none() {
-        return build_resolved(root, class, None, None, None);
+        return build_resolved(root, class, None, None, None, None);
     }
 
     let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
@@ -240,6 +244,7 @@ pub(crate) fn build(root: &Path, class: qualification::scenario::ImageClass) -> 
         local_esp_hal.as_deref(),
         local_embassy.as_deref(),
         local_xarxa.as_deref(),
+        None,
     );
     let restore = snapshot.restore();
     match (result, restore) {
@@ -259,14 +264,20 @@ fn build_resolved(
     local_esp_hal: Option<&Path>,
     local_embassy: Option<&Path>,
     local_xarxa: Option<&Path>,
+    output_override: Option<&Path>,
 ) -> Result<Artifacts> {
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
-    let output = root.join("target/hil/esp32s31").join(format!(
-        "{}-{}",
-        class.runtime_profile(),
-        class.id()
-    ));
+    let output = output_override.map_or_else(
+        || {
+            root.join("target/hil/esp32s31").join(format!(
+                "{}-{}",
+                class.runtime_profile(),
+                class.id()
+            ))
+        },
+        Path::to_owned,
+    );
     let runtime_target = output.join("cargo/runtime");
     let bootstrap_target = output.join("cargo/bootstrap");
     fs::create_dir_all(&output)?;

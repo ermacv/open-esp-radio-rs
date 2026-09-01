@@ -142,6 +142,10 @@ enum ImageCommand {
     Build {
         class: qualification::scenario::ImageClass,
     },
+    /// Build one clean commit in two different checkout roots and compare every firmware subject.
+    VerifyRebuild {
+        class: qualification::scenario::ImageClass,
+    },
     Flash {
         class: qualification::scenario::ImageClass,
     },
@@ -210,6 +214,7 @@ fn run() -> Result<()> {
                 let artifacts = image::build(&root, class)?;
                 image::print_artifacts(class, &artifacts, false)
             }
+            ImageCommand::VerifyRebuild { class } => image::verify_rebuild(&root, class),
             ImageCommand::Flash { class } => {
                 let artifacts = image::build(&root, class)?;
                 let lab = transport::lab_config::LabConfig::load(&lab_path)?;
@@ -888,5 +893,17 @@ mod cli_tests {
             Cli::try_parse_from(["cargo-hil", "run-all", "--firmware-from", "sealed-run-1",])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn reproducible_rebuild_is_an_explicit_image_operation() {
+        let cli =
+            Cli::try_parse_from(["cargo-hil", "image", "verify-rebuild", "performance"]).unwrap();
+        match cli.command {
+            CliCommand::Image {
+                command: ImageCommand::VerifyRebuild { class },
+            } => assert_eq!(class, qualification::scenario::ImageClass::Performance),
+            _ => panic!("parsed the wrong HIL command"),
+        }
     }
 }

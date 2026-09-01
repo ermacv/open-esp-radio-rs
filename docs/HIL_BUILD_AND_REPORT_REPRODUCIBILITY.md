@@ -1,6 +1,6 @@
 # HIL build and report reproducibility
 
-Status: architecture and phase-one implementation, 2026-09-01. This document
+Status: architecture and phase-two implementation, 2026-09-01. This document
 defines both the implemented evidence contract and the remaining gates. It does
 not change qualification policy by itself.
 
@@ -276,11 +276,21 @@ Current implementation status:
 - all Git source/override identities are captured before the build and checked
   again before firmware provenance is published, so an ordinary edit during a
   build fails closed instead of creating a misleading record;
-- `reproducibility` remains explicitly `unverified`; the reader rejects a
-  `verified` claim until step 6 defines and retains its independent proof;
-- multi-image `run-all` replay, deterministic two-directory rebuilds and CAS garbage
-  collection remain pending and must not be inferred from exact artifact
-  replay.
+- `cargo hil image verify-rebuild <image-class>` now requires a clean commit,
+  rejects local path overrides, creates two detached worktrees with different
+  absolute path lengths, and builds into two isolated target roots. It retains
+  a typed comparison of all four firmware subjects, the effective embedded
+  lock file, and normalized full/allocated ELF section layouts under
+  `target/hil/esp32s31/reproducibility/`. A mismatch is emitted as evidence and
+  returns a failing exit status;
+- the verifier is deliberately opt-in and does not add flags or a second build
+  to ordinary HIL runs. Until a passing proof is bound to a firmware build,
+  run-bundle `reproducibility` remains explicitly `unverified` and the reader
+  rejects a `verified` claim;
+- multi-image `run-all` replay, binding a passing rebuild proof into build
+  provenance, deterministic normalization of any discovered path-sensitive
+  inputs, and CAS garbage collection remain pending and must not be inferred
+  from exact artifact replay.
 
 Acceptance criteria:
 

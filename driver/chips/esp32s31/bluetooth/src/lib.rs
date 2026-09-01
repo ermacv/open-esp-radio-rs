@@ -462,13 +462,15 @@ pub use passive_scanning_active::{
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_hci::{
     BluetoothPassiveScanHciActiveFault, BluetoothPassiveScanHciActiveSession,
-    BluetoothPassiveScanHciActiveStep, BluetoothPassiveScanHciFirstRunner,
-    BluetoothPassiveScanHciFirstRunnerFailure, BluetoothPassiveScanHciFirstRunnerStep,
-    BluetoothPassiveScanHciFirstRunning, BluetoothPassiveScanHciRecurringFailure,
-    BluetoothPassiveScanHciRecurringRunner, BluetoothPassiveScanHciRecurringRunnerStep,
-    BluetoothPassiveScanHciReportStep, BluetoothPassiveScanHciReportsComplete,
-    BluetoothPassiveScanHciReportsPending, BluetoothPassiveScanHciResponsePendingSession,
-    BluetoothPassiveScanHciResponsePublication,
+    BluetoothPassiveScanHciActiveStep, BluetoothPassiveScanHciCommandIntake,
+    BluetoothPassiveScanHciCommandMismatch, BluetoothPassiveScanHciCommandRoute,
+    BluetoothPassiveScanHciCpuResponsePending, BluetoothPassiveScanHciCpuResponsePublication,
+    BluetoothPassiveScanHciFirstRunner, BluetoothPassiveScanHciFirstRunnerFailure,
+    BluetoothPassiveScanHciFirstRunnerStep, BluetoothPassiveScanHciFirstRunning,
+    BluetoothPassiveScanHciRecurringFailure, BluetoothPassiveScanHciRecurringRunner,
+    BluetoothPassiveScanHciRecurringRunnerStep, BluetoothPassiveScanHciReportStep,
+    BluetoothPassiveScanHciReportsComplete, BluetoothPassiveScanHciReportsPending,
+    BluetoothPassiveScanHciResponsePendingSession, BluetoothPassiveScanHciResponsePublication,
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_runner::{

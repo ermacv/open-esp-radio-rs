@@ -8,11 +8,14 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, LeControllerCommandEndpoint, LeControllerCommandReady,
+    HciChannelError, HciEpochBound, HostToControllerFrame,
+    LeControllerActiveLegacyScanningCommandRoute as HciActiveLegacyScanningCommandRoute,
+    LeControllerClassifiedCommand, LeControllerCommandEndpoint, LeControllerCommandIntake,
+    LeControllerCommandReady, LeControllerDeferredLegacyScanningDisable,
     LeControllerDeferredLegacyScanningStart, LeControllerEndpointMismatch,
-    LeControllerResponsePending, LeControllerResponsePublication, LeLegacyAdvertisingReportEvent,
-    LeLegacyAdvertisingReportEventError, LeLegacyAdvertisingReportPublication,
-    LeLegacyScanningDuplicatePolicy,
+    LeControllerResetBarrier, LeControllerResponsePending, LeControllerResponsePublication,
+    LeLegacyAdvertisingReportEvent, LeLegacyAdvertisingReportEventError,
+    LeLegacyAdvertisingReportPublication, LeLegacyScanningDuplicatePolicy,
 };
 use open_esp_radio_bluetooth_ll::scanning::{
     LegacyAdvertisingDuplicateFilter, LegacyAdvertisingReport, LegacyAdvertisingReportKind,
@@ -21,12 +24,13 @@ use open_esp_radio_bluetooth_ll::scanning::{
 };
 
 use crate::{
-    BluetoothControllerIdleResponsePending, BluetoothControllerPublishedTaskService,
-    BluetoothPassiveScanActiveFault, BluetoothPassiveScanActiveSession,
-    BluetoothPassiveScanActiveStep, BluetoothPassiveScanActiveWait,
-    BluetoothPassiveScanEventCpuOwned, BluetoothPassiveScanFirstRunner,
-    BluetoothPassiveScanFirstRunnerFailure, BluetoothPassiveScanFirstRunnerRetryCause,
-    BluetoothPassiveScanFirstRunnerStep, BluetoothSchedulerRunInterruptStorage,
+    BluetoothControllerIdleResetBarrier, BluetoothControllerIdleResponsePending,
+    BluetoothControllerPublishedTaskService, BluetoothPassiveScanActiveFault,
+    BluetoothPassiveScanActiveSession, BluetoothPassiveScanActiveStep,
+    BluetoothPassiveScanActiveWait, BluetoothPassiveScanEventCpuOwned,
+    BluetoothPassiveScanFirstRunner, BluetoothPassiveScanFirstRunnerFailure,
+    BluetoothPassiveScanFirstRunnerRetryCause, BluetoothPassiveScanFirstRunnerStep,
+    BluetoothSchedulerRunInterruptStorage,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
@@ -410,6 +414,95 @@ where
     duplicate_filter: DuplicateFilter,
 }
 
+struct BluetoothPassiveScanHciCpuOwnedRadio<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    completed: BluetoothPassiveScanEventCpuOwned<'runtime, S, CAPACITY>,
+    duplicate_filter: DuplicateFilter,
+}
+
+/// One ordinary command response retained at the safe between-window boundary.
+#[must_use = "publish the response before beginning the next scan window"]
+pub struct BluetoothPassiveScanHciCpuResponsePending<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    transaction: LeControllerResponsePending<
+        'runtime,
+        BluetoothPassiveScanHciCpuOwnedRadio<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// Publication result for a response between passive scan windows.
+#[must_use = "retain response backpressure or the returned complete scanner"]
+pub enum BluetoothPassiveScanHciCpuResponsePublication<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Published(BluetoothPassiveScanHciReportsComplete<'runtime, S, CAPACITY>),
+    Pending(BluetoothPassiveScanHciCpuResponsePending<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothPassiveScanHciCpuResponsePending<'runtime, S, CAPACITY>),
+    Fault {
+        pending: BluetoothPassiveScanHciCpuResponsePending<'runtime, S, CAPACITY>,
+        error: HciChannelError,
+    },
+}
+
+/// Opaque owner for an impossible classified-command endpoint mismatch.
+#[must_use = "retain the command, completed scanner and exact HCI order"]
+pub struct BluetoothPassiveScanHciCommandMismatch<'runtime, 'command, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _command: LeControllerClassifiedCommand<
+        'runtime,
+        'command,
+        BluetoothPassiveScanHciCpuOwnedRadio<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// Typed command route between fully reclaimed passive scan windows.
+#[must_use = "publish, disable, reset, or retain the exact mismatch owner"]
+pub enum BluetoothPassiveScanHciCommandRoute<'runtime, 'command, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    ResponsePending(BluetoothPassiveScanHciCpuResponsePending<'runtime, S, CAPACITY>),
+    Disable(BluetoothControllerIdleResponsePending<'runtime, S, CAPACITY>),
+    Reset(BluetoothControllerIdleResetBarrier<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothPassiveScanHciCommandMismatch<'runtime, 'command, S, CAPACITY>),
+}
+
+/// One non-blocking HCI intake at the safe between-window boundary.
+#[must_use = "route a command or retain the exact complete scanner"]
+pub enum BluetoothPassiveScanHciCommandIntake<'runtime, 'command, 'buffer, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Routed {
+        route: BluetoothPassiveScanHciCommandRoute<'runtime, 'command, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Empty {
+        completed: BluetoothPassiveScanHciReportsComplete<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    EndpointMismatch {
+        completed: BluetoothPassiveScanHciReportsComplete<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Channel {
+        completed: BluetoothPassiveScanHciReportsComplete<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+        error: HciChannelError,
+    },
+    NonCommand {
+        completed: BluetoothPassiveScanHciReportsComplete<'runtime, S, CAPACITY>,
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
+    },
+}
+
 /// HCI order and duplicate history retained through recurring-window preparation.
 #[must_use = "step the recurring scanner until RUN or retain its exact failure"]
 pub struct BluetoothPassiveScanHciRecurringRunner<'runtime, S, const CAPACITY: usize>
@@ -602,6 +695,109 @@ impl<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
+    fn into_radio_and_order(
+        self,
+    ) -> (
+        BluetoothPassiveScanHciCpuOwnedRadio<'runtime, S, CAPACITY>,
+        LeControllerCommandReady<'runtime, ()>,
+    ) {
+        (
+            BluetoothPassiveScanHciCpuOwnedRadio {
+                completed: self.completed,
+                duplicate_filter: self.duplicate_filter,
+            },
+            self.order,
+        )
+    }
+
+    fn from_radio_and_order(
+        radio: BluetoothPassiveScanHciCpuOwnedRadio<'runtime, S, CAPACITY>,
+        order: LeControllerCommandReady<'runtime, ()>,
+    ) -> Self {
+        Self {
+            completed: radio.completed,
+            order,
+            duplicate_filter: radio.duplicate_filter,
+        }
+    }
+
+    /// Consume and classify at most one command before another window starts.
+    pub fn try_route_controller_command_with_buffer<
+        'command,
+        'buffer,
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        self,
+        controller: &mut LeControllerCommandEndpoint<'command, M, H2C, C2H, PACKET>,
+        buffer: &'buffer mut [u8],
+    ) -> BluetoothPassiveScanHciCommandIntake<'runtime, 'command, 'buffer, S, CAPACITY> {
+        let (radio, order) = self.into_radio_and_order();
+        let ready = order.map_owner(|()| radio);
+        match controller.try_receive_classified_command_with_buffer(ready, buffer) {
+            LeControllerCommandIntake::Command { command, buffer } => {
+                let route = match controller
+                    .route_active_legacy_scanning_classified_command(command)
+                {
+                    HciActiveLegacyScanningCommandRoute::ResponsePending(transaction) => {
+                        BluetoothPassiveScanHciCommandRoute::ResponsePending(
+                            BluetoothPassiveScanHciCpuResponsePending { transaction },
+                        )
+                    }
+                    HciActiveLegacyScanningCommandRoute::Disable(deferred) => {
+                        let (radio, deferred) = deferred.into_parts();
+                        BluetoothPassiveScanHciCommandRoute::Disable(stop_scanner(radio, deferred))
+                    }
+                    HciActiveLegacyScanningCommandRoute::ResetBarrier(barrier) => {
+                        let (radio, barrier) = barrier.into_parts();
+                        BluetoothPassiveScanHciCommandRoute::Reset(reset_scanner(radio, barrier))
+                    }
+                    HciActiveLegacyScanningCommandRoute::EndpointMismatch(command) => {
+                        BluetoothPassiveScanHciCommandRoute::EndpointMismatch(
+                            BluetoothPassiveScanHciCommandMismatch { _command: command },
+                        )
+                    }
+                };
+                BluetoothPassiveScanHciCommandIntake::Routed { route, buffer }
+            }
+            LeControllerCommandIntake::Empty { ready, buffer } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothPassiveScanHciCommandIntake::Empty {
+                    completed: Self::from_radio_and_order(radio, order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::EndpointMismatch { ready, buffer } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothPassiveScanHciCommandIntake::EndpointMismatch {
+                    completed: Self::from_radio_and_order(radio, order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::Channel {
+                ready,
+                buffer,
+                error,
+            } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothPassiveScanHciCommandIntake::Channel {
+                    completed: Self::from_radio_and_order(radio, order),
+                    buffer,
+                    error,
+                }
+            }
+            LeControllerCommandIntake::NonCommand { ready, frame } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothPassiveScanHciCommandIntake::NonCommand {
+                    completed: Self::from_radio_and_order(radio, order),
+                    frame,
+                }
+            }
+        }
+    }
+
     /// Begin the next interval-preserving receive window after report handling.
     #[expect(
         clippy::result_large_err,
@@ -632,6 +828,79 @@ where
             }),
         }
     }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothPassiveScanHciCpuResponsePending<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const H2C: usize,
+        const C2H: usize,
+        const PACKET: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
+    ) -> Result<(), LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
+    pub fn try_publish<M: RawMutex, const H2C: usize, const C2H: usize, const PACKET: usize>(
+        self,
+        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
+    ) -> BluetoothPassiveScanHciCpuResponsePublication<'runtime, S, CAPACITY> {
+        match self.transaction.try_publish(controller) {
+            LeControllerResponsePublication::Published(ready) => {
+                let (radio, order) = ready.into_parts();
+                BluetoothPassiveScanHciCpuResponsePublication::Published(
+                    BluetoothPassiveScanHciReportsComplete::from_radio_and_order(radio, order),
+                )
+            }
+            LeControllerResponsePublication::Pending(transaction) => {
+                BluetoothPassiveScanHciCpuResponsePublication::Pending(Self { transaction })
+            }
+            LeControllerResponsePublication::EndpointMismatch(transaction) => {
+                BluetoothPassiveScanHciCpuResponsePublication::EndpointMismatch(Self {
+                    transaction,
+                })
+            }
+            LeControllerResponsePublication::Fault {
+                pending: transaction,
+                error,
+            } => BluetoothPassiveScanHciCpuResponsePublication::Fault {
+                pending: Self { transaction },
+                error,
+            },
+        }
+    }
+}
+
+fn stop_scanner<'runtime, S, const CAPACITY: usize>(
+    radio: BluetoothPassiveScanHciCpuOwnedRadio<'runtime, S, CAPACITY>,
+    deferred: LeControllerDeferredLegacyScanningDisable<'runtime, ()>,
+) -> BluetoothControllerIdleResponsePending<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    let (task, scanner, _phase, _received, _status) = radio.completed.into_parts();
+    let _disabled = scanner.disable();
+    BluetoothControllerIdleResponsePending::new(
+        deferred.map_owner(|()| task).into_stopped_response(),
+    )
+}
+
+fn reset_scanner<'runtime, S, const CAPACITY: usize>(
+    radio: BluetoothPassiveScanHciCpuOwnedRadio<'runtime, S, CAPACITY>,
+    barrier: LeControllerResetBarrier<'runtime, ()>,
+) -> BluetoothControllerIdleResetBarrier<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    let (task, scanner, _phase, _received, _status) = radio.completed.into_parts();
+    let _disabled = scanner.disable();
+    BluetoothControllerIdleResetBarrier::new(barrier.map_owner(|()| task))
 }
 
 impl<'runtime, S, const CAPACITY: usize>

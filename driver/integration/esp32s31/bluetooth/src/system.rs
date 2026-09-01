@@ -266,6 +266,7 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActiveCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingRecurringCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::PassiveScanCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingFault(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingPendingFault(_)
         | EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingStoppingFault(_)

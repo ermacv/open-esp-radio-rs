@@ -42,6 +42,9 @@ const BUFFER_HEADER_WORDS: usize = BUFFER_HEADER_BYTES / 4;
 const RX_PACKET_WORDS: usize = BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES.div_ceil(4);
 const RX_PACKET_LAST_ALIGNED_OFFSET: u32 =
     ((BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES as u32 - 1) / 4) * 4;
+const LINK_STATE_RX_HEAD_WORD: usize = 0x68 / 4;
+const LINK_STATE_RX_TAIL_WORD: usize = 0x70 / 4;
+const LINK_STATE_RX_SWAP_RESERVE_WORD: usize = 0x78 / 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct BluetoothPassiveScanRxPacketAddress(BluetoothControllerSramAddress);
@@ -212,11 +215,41 @@ impl BluetoothPassiveScanLinkStateStorage {
         }
     }
 
+    fn install_receive_graph(
+        &self,
+        head: BluetoothControllerSramAddress,
+        tail: BluetoothControllerSramAddress,
+    ) {
+        self.words[LINK_STATE_RX_HEAD_WORD].set(head.address());
+        self.words[LINK_STATE_RX_TAIL_WORD].set(tail.address());
+        self.words[LINK_STATE_RX_SWAP_RESERVE_WORD].set(0);
+    }
+
     #[cfg(test)]
     fn image(&self) -> BluetoothPassiveScanLinkStateImage {
         BluetoothPassiveScanLinkStateImage::from_words(core::array::from_fn(|index| {
             self.words[index].get()
         }))
+    }
+
+    #[cfg(test)]
+    fn receive_graph(
+        &self,
+    ) -> (
+        BluetoothControllerSramAddress,
+        BluetoothControllerSramAddress,
+        Option<BluetoothControllerSramAddress>,
+    ) {
+        let address = |word: usize| {
+            BluetoothControllerSramAddress::new(self.words[word].get())
+                .expect("the installed scanner graph retains validated addresses")
+        };
+        let reserve = self.words[LINK_STATE_RX_SWAP_RESERVE_WORD].get();
+        (
+            address(LINK_STATE_RX_HEAD_WORD),
+            address(LINK_STATE_RX_TAIL_WORD),
+            (reserve != 0).then(|| address(LINK_STATE_RX_SWAP_RESERVE_WORD)),
+        )
     }
 }
 
@@ -594,6 +627,10 @@ impl BluetoothPassiveScanMemoryGraphCpuOwned {
         );
         let storage = self.storage.as_mut().project();
         storage.link_state.install(link_state);
+        storage.link_state.install_receive_graph(
+            bindings[0].header.controller_address(),
+            bindings[1].header.controller_address(),
+        );
         for (node, binding) in storage.nodes.iter().zip(bindings) {
             node.packet.initialize();
             node.header.install(binding.packet, None, None, false);
@@ -683,6 +720,14 @@ mod tests {
         assert_eq!(
             link_state.controller_time(),
             reset_config().controller_time().bits()
+        );
+        assert_eq!(
+            storage.link_state.receive_graph(),
+            (
+                bindings[0].header.controller_address(),
+                bindings[1].header.controller_address(),
+                None,
+            )
         );
 
         let link_state_address = owner.binding.link_state();

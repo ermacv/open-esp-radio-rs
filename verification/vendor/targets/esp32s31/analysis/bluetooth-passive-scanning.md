@@ -103,6 +103,13 @@ it.
 
 ## Proven allocation boundary
 
+The complete current common link-state allocator requests and clears exactly
+`0x84` bytes. The restricted reset body writes only the bounded prefix recorded
+below, while the same allocation retains the software RX head, tail and swap
+reserve at `+0x68`, `+0x70` and `+0x78`. The open memory graph must therefore
+reserve the complete `0x84`-byte allocation even though most trailing reset
+words remain zero.
+
 Complete current `r_sym_ble_ruvdJkUUpoEtaH2xv1jH` does not allocate an opaque
 vendor scan object.  It composes the common receive-memory primitives around
 one already allocated link state:

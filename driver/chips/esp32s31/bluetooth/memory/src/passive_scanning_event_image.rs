@@ -10,7 +10,7 @@ use crate::{
     sram_link::BluetoothControllerSramLinkAddress,
 };
 
-pub(super) const BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS: usize = 0x54 / 4;
+pub(super) const BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS: usize = 0x84 / 4;
 const RX_HEAD_MASK: u32 = 0x000f_ffff;
 const ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
 const WORD_00: usize = 0;

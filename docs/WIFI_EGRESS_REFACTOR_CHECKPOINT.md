@@ -757,6 +757,29 @@ not a wholesale stack rewrite.
 - keep the key observational until role-specific identity correspondence and
   completion accounting are proven.
 
+The clean task-residence A/B/A at commit
+`0f2b076967ba89e1ffae1f231837a48728d776ce` used one archived image on channel
+13. Source run `1788287669374-00170b6a` and replays
+`1788287881508-00170e1b` and `1788287969481-00170f78` all used build ID
+`ad451ada2ef8b367ab7f879775fa831927eb8ce5782c2194289308d475e09a07` and
+application SHA-256
+`7812302002db6c4153dd81798cd5a2ef2fdab41b4eee60bcd63e95f8d117ba1a`.
+All cycles negotiated MCS7/40 MHz and reported zero OpenWrt TX retries and
+failures.
+
+| Metric | enabled A/A | disabled B | difference |
+| --- | ---: | ---: | ---: |
+| throughput | 120.795 Mbit/s | 120.952 Mbit/s | -0.129% |
+| Core0 radio task residence | 37.715% | 37.767% | -0.051 pp |
+| Core1 `network + udp_tx` task residence | 75.971% | 76.292% | -0.321 pp |
+
+The switch controls the demand mirror, not sidecar publication, so this A/B
+confirms that the mirror remains neutral after the owner-identity change. It
+does **not** isolate the cost of retaining exact metadata because the sidecar
+is active in both modes. The absolute Core1 residence is also a first-class
+constraint: reducing Core0 work by transferring it to the network core would
+not satisfy the architectural goal.
+
 ### Phase 4: implement policy in shadow
 
 - hierarchical VIF then peer/TID weighted airtime DRR;

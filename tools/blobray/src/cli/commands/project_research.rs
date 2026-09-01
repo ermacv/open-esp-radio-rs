@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use crate::{
     Result,
     application::{generated_file, research},
-    cli::{ResearchNextArgs, ResearchRankingArg, output, table},
+    cli::{ResearchFocusArg, ResearchNextArgs, ResearchRankingArg, output, table},
 };
 
 const IMPACT_LEGEND: &str = "G = functions for which this is the sole observed blocker and analyzed dependencies are complete; O = optimistic reverse-call reachability within the current analyzed graph; M = directly affected functions counted after co-blockers close; Co = other observed blocker roots. Sets overlap; these estimates rank research and do not prove runtime behavior or completion.";
@@ -19,6 +19,10 @@ pub(super) fn run(
         ResearchRankingArg::QuickWins => research::ResearchRankingStrategy::QuickWins,
         ResearchRankingArg::Frontier => research::ResearchRankingStrategy::Frontier,
     };
+    let focus = match arguments.focus {
+        ResearchFocusArg::All => research::ResearchFocus::All,
+        ResearchFocusArg::HardwareAccess => research::ResearchFocus::HardwareAccess,
+    };
     let report = research::next(
         session,
         research::ResearchNextOptions {
@@ -26,6 +30,7 @@ pub(super) fn run(
             protocol: arguments.protocol.as_deref(),
             finding: arguments.finding.as_deref(),
             strategy,
+            focus,
             budget: arguments.budget,
             limit: usize::from(arguments.limit),
         },
@@ -76,7 +81,8 @@ fn render(report: &research::ResearchNextReport) {
         render_resolution_evidence(evidence);
     }
     outputln!(
-        "Filter: protocol {}; scope {}; budget {}.",
+        "Filter: focus {}; protocol {}; scope {}; budget {}.",
+        report.focus.label(),
         report.protocol.as_deref().unwrap_or("all"),
         report.scope.as_deref().unwrap_or("all"),
         report.selection.budget.map_or_else(
@@ -1020,6 +1026,7 @@ mod tests {
             subject: research::ResearchSubject::AnalysisRoot {
                 root_id: id.to_owned(),
             },
+            reviewed_memory_access: None,
             consumers: Vec::new(),
             blocker_resolution_route: None,
             resolution_owner: crate::BlockerResolutionOwner::Unsupported,

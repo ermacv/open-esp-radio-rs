@@ -181,6 +181,15 @@ pub struct StructuralPointerContext {
     /// uniquely linked relocation target.
     pub reviewed_internal_calls: BTreeMap<StructuralCallSite, u32>,
     pub reviewed_internal_slots: BTreeMap<(String, u32), u32>,
+    /// Reviewed integer encodings which reconstruct one byte-addressable
+    /// pointer from a field read out of ordinary memory.
+    ///
+    /// Structural analysis does not infer these encodings from integer
+    /// arithmetic. An encoding must be supplied by the active harness, and a
+    /// reconstructed value must preserve every declared source bit from one
+    /// non-inverted memory-read token before it can authorize a dynamic RAM
+    /// access.
+    pub reviewed_compressed_pointer_encodings: Vec<ReviewedCompressedPointerEncoding>,
     pub summary_hooks: Option<&'static RiscvSummaryHooks>,
 }
 
@@ -189,6 +198,7 @@ impl StructuralPointerContext {
         let contracts = harness.contracts;
         let mut context = Self {
             semantic_cache_domain: harness.semantic_cache_domain,
+            reviewed_compressed_pointer_encodings: harness.compressed_pointer_encodings.to_vec(),
             ..Self::default()
         };
         context.diagnostic_calls.extend(
@@ -199,5 +209,103 @@ impl StructuralPointerContext {
         );
         context.summary_hooks = Some(harness.summaries);
         context
+    }
+}
+
+/// Exact reviewed reconstruction of a compressed pointer field.
+///
+/// The encoded value is interpreted as
+/// `address_base | ((field & ((1 << field_bits) - 1)) << address_shift)`.
+/// Matching is bit-provenance based, so equivalent instruction lowerings are
+/// accepted while truncated, widened, shifted or mixed-source values fail
+/// closed.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ReviewedCompressedPointerEncoding {
+    id: &'static str,
+    address_base: u32,
+    field_bits: u8,
+    address_shift: u8,
+}
+
+impl ReviewedCompressedPointerEncoding {
+    pub const fn new(
+        id: &'static str,
+        address_base: u32,
+        field_bits: u8,
+        address_shift: u8,
+    ) -> Self {
+        Self {
+            id,
+            address_base,
+            field_bits,
+            address_shift,
+        }
+    }
+
+    fn field_mask(self) -> Option<u32> {
+        match self.field_bits {
+            0 => None,
+            32 => Some(u32::MAX),
+            bits if bits < 32 => Some((1_u32 << bits) - 1),
+            _ => None,
+        }
+    }
+
+    fn shifted_field_mask(self) -> Option<u32> {
+        let end = self.field_bits.checked_add(self.address_shift)?;
+        if end > 32 {
+            return None;
+        }
+        self.field_mask()?
+            .checked_shl(u32::from(self.address_shift))
+    }
+
+    fn recognizes(self, value: &SymbolicValue) -> bool {
+        if self.id.is_empty() {
+            return false;
+        }
+        let Some(shifted_field_mask) = self.shifted_field_mask() else {
+            return false;
+        };
+        if self.address_base & shifted_field_mask != 0 {
+            return false;
+        }
+
+        let bits = value.bits();
+        let mut source_token = None;
+        for (destination, source) in bits.iter().enumerate() {
+            let source_bit = destination.checked_sub(usize::from(self.address_shift));
+            if source_bit.is_some_and(|bit| bit < usize::from(self.field_bits)) {
+                let BitSource::Memory {
+                    read_token,
+                    bit,
+                    inverted: false,
+                } = source
+                else {
+                    return false;
+                };
+                if usize::from(*bit) != source_bit.unwrap() {
+                    return false;
+                }
+                match source_token {
+                    Some(existing) if existing != *read_token => return false,
+                    Some(_) => {}
+                    None => source_token = Some(*read_token),
+                }
+            } else if *source
+                != BitSource::Constant(self.address_base & (1_u32 << destination) != 0)
+            {
+                return false;
+            }
+        }
+        source_token.is_some()
+    }
+}
+
+impl StructuralPointerContext {
+    pub(super) fn recognizes_reviewed_compressed_pointer(&self, value: &SymbolicValue) -> bool {
+        self.reviewed_compressed_pointer_encodings
+            .iter()
+            .any(|encoding| encoding.recognizes(value))
     }
 }

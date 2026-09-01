@@ -33,7 +33,7 @@ const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 // The project-stage cache fingerprints this domain as well as the per-function
 // store, so a semantic cut cannot leave a previously generated linked-IR
 // bundle looking current.
-pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v22\0";
+pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v25\0";
 
 mod model;
 
@@ -164,6 +164,43 @@ fn add_lossless_relocation_calls(
         .iter()
         .filter(|(site, _)| site.belongs_to(owner) && !existing_sites.contains(&site.address()))
     {
+        if resolver
+            .pointer_context
+            .diagnostic_calls
+            .contains_key(symbol)
+        {
+            calls.insert(LinkedCall {
+                kind: "diagnostic",
+                target: symbol.clone(),
+                site: Some(site.address()),
+                direct: true,
+                tail: artifact::relocated_call_is_tail(owner, site.address()).unwrap_or(false),
+                result_modeled: false,
+                result_provenance: None,
+                execution_model: None,
+                semantics: Some("diagnostic/logging boundary".to_owned()),
+                semantic_operation: Some("diagnostic.emit".to_owned()),
+                semantic_contract: Some(LinkedSemanticContract {
+                    source: "registered-diagnostic-symbol",
+                    id: symbol.clone(),
+                    evidence: "relocated-symbol-and-reviewed-arity".to_owned(),
+                    body_policy: "opaque-boundary",
+                    event_dispatch: None,
+                }),
+                replacement_hint: Some("Rust logging/assertion boundary".to_owned()),
+                project_symbol: None,
+                project_candidates: Vec::new(),
+                trampoline: None,
+                argument_shapes: 0,
+                arguments: Vec::new(),
+                argument_exact: Vec::new(),
+                argument_result_provenance: Vec::new(),
+                argument_bindings: Vec::new(),
+                typed_arguments: Vec::new(),
+                guard_paths: None,
+            });
+            continue;
+        }
         calls.insert(LinkedCall {
             kind: "structural-relocation",
             target: target.map_or_else(|| symbol.clone(), |target| identities.target(target)),

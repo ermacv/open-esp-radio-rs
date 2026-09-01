@@ -12,72 +12,37 @@
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::BluetoothDtmTxSchedulerTiming;
 
-#[cfg(any(target_arch = "riscv32", test))]
-const INITIAL_ANCHOR_BASE_LEAD_TICKS: u32 = 440 + 500;
-#[cfg(any(target_arch = "riscv32", test))]
-const RX_RECURRING_ANCHOR_EXTRA_LEAD_TICKS: u32 = 15;
-#[cfg(any(target_arch = "riscv32", test))]
-const RX_EVENT_WINDOW_TICKS: u32 = 1_000;
-
-/// One positional instant in the BLE software-scheduler domain.
-///
-/// This type is retained for internal DTM arithmetic; external callers cannot
-/// manufacture an instant from a detached integer image.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmSchedulerInstant(u32);
-
-impl BluetoothDtmSchedulerInstant {
-    /// Preserve one complete positional scheduler-time image.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn from_image(image: u32) -> Self {
-        Self(image)
-    }
-
-    /// Return the complete positional scheduler-time image.
-    pub(crate) const fn image(self) -> u32 {
-        self.0
-    }
-}
-
-/// The one-byte scheduler lead subtracted from a DTM event anchor.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) struct BluetoothDtmSchedulerMargin(u8);
+use crate::BluetoothSchedulerInstant;
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl BluetoothDtmSchedulerMargin {
-    /// Construct the exact margin initialized by the reviewed standalone LLL.
-    pub(crate) const fn reviewed_standalone() -> Self {
-        Self(107)
-    }
+const INITIAL_ANCHOR_BASE_LEAD_MICROS: u32 = 440 + 500;
+#[cfg(any(target_arch = "riscv32", test))]
+const RX_RECURRING_ANCHOR_EXTRA_LEAD_MICROS: u32 = 15;
+#[cfg(any(target_arch = "riscv32", test))]
+const RX_EVENT_WINDOW_MICROS: u32 = 1_000;
 
-    const fn scheduler_delta(self) -> u32 {
-        self.0 as u32
-    }
-}
-
-/// One pure DTM transmitter window before scheduler-time-to-raw projection.
+/// One pure DTM transmitter window before microsecond-to-raw-tick projection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmTxEventWindow {
-    anchor: BluetoothDtmSchedulerInstant,
-    start: BluetoothDtmSchedulerInstant,
-    end: BluetoothDtmSchedulerInstant,
+    anchor: BluetoothSchedulerInstant,
+    start: BluetoothSchedulerInstant,
+    end: BluetoothSchedulerInstant,
 }
 
 impl BluetoothDtmTxEventWindow {
     /// Return the phase anchor retained for the next transmitter event.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn anchor(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn anchor(self) -> BluetoothSchedulerInstant {
         self.anchor
     }
 
-    /// Return the scheduler window start before raw-time projection.
-    pub(crate) const fn start(self) -> BluetoothDtmSchedulerInstant {
+    /// Return the microsecond window start before raw-tick projection.
+    pub(crate) const fn start(self) -> BluetoothSchedulerInstant {
         self.start
     }
 
-    /// Return the scheduler window end before raw-time projection.
-    pub(crate) const fn end(self) -> BluetoothDtmSchedulerInstant {
+    /// Return the microsecond window end before raw-tick projection.
+    pub(crate) const fn end(self) -> BluetoothSchedulerInstant {
         self.end
     }
 }
@@ -107,28 +72,24 @@ impl BluetoothDtmTxEventAdvance {
 /// Shared private scheduler positions carried by each distinct RX phase.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct BluetoothDtmRxEventWindowData {
-    anchor: BluetoothDtmSchedulerInstant,
-    start: BluetoothDtmSchedulerInstant,
-    end: BluetoothDtmSchedulerInstant,
+    anchor: BluetoothSchedulerInstant,
+    start: BluetoothSchedulerInstant,
+    end: BluetoothSchedulerInstant,
 }
 
 impl BluetoothDtmRxEventWindowData {
     #[cfg(any(target_arch = "riscv32", test))]
     const fn at(anchor: u32, config: crate::BluetoothSchedulerSoftwareConfig) -> Self {
-        let margin = config.dtm_scheduler_margin();
+        let margin = config.preparation_lead_micros();
         Self {
-            anchor: BluetoothDtmSchedulerInstant::from_image(anchor),
-            start: BluetoothDtmSchedulerInstant::from_image(
-                anchor.wrapping_sub(margin.scheduler_delta()),
-            ),
-            end: BluetoothDtmSchedulerInstant::from_image(
-                anchor.wrapping_add(RX_EVENT_WINDOW_TICKS),
-            ),
+            anchor: BluetoothSchedulerInstant::from_image(anchor),
+            start: BluetoothSchedulerInstant::from_image(anchor.wrapping_sub(margin)),
+            end: BluetoothSchedulerInstant::from_image(anchor.wrapping_add(RX_EVENT_WINDOW_MICROS)),
         }
     }
 }
 
-/// First DTM receiver window before scheduler-time-to-raw projection.
+/// First DTM receiver window before microsecond-to-raw-tick projection.
 ///
 /// This type cannot represent a recurring receiver event. Its distinct type
 /// makes the first-event admission edge phase-correct without a runtime test.
@@ -136,117 +97,119 @@ impl BluetoothDtmRxEventWindowData {
 pub struct BluetoothDtmRxInitialEventWindow(BluetoothDtmRxEventWindowData);
 
 impl BluetoothDtmRxInitialEventWindow {
-    /// Form the first RX window from ordered current-time and RF-ready images.
+    /// Form the first RX window from ordered current-time and post-enable images.
     ///
-    /// The first receiver event shares the reviewed 940-tick base lead with
+    /// The first receiver event shares the reviewed 940-microsecond base lead with
     /// initial TX scheduling. This transform does not establish sample
     /// freshness.
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn new(
         config: crate::BluetoothSchedulerSoftwareConfig,
-        current: BluetoothDtmSchedulerInstant,
-        rf_ready: BluetoothDtmSchedulerInstant,
+        current: BluetoothSchedulerInstant,
+        timing_ready: BluetoothSchedulerInstant,
     ) -> Self {
-        let margin = config.dtm_scheduler_margin();
+        let margin = config.preparation_lead_micros();
         let nominal_anchor = current
             .image()
-            .wrapping_add(INITIAL_ANCHOR_BASE_LEAD_TICKS)
-            .wrapping_add(margin.scheduler_delta());
-        let anchor = later(nominal_anchor, rf_ready.image());
+            .wrapping_add(INITIAL_ANCHOR_BASE_LEAD_MICROS)
+            .wrapping_add(margin);
+        let anchor = BluetoothSchedulerInstant::from_image(nominal_anchor)
+            .later(timing_ready)
+            .image();
 
         Self(BluetoothDtmRxEventWindowData::at(anchor, config))
     }
 
     /// Return the first receiver phase anchor retained for publication.
     #[cfg(test)]
-    pub(crate) const fn anchor(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn anchor(self) -> BluetoothSchedulerInstant {
         self.0.anchor
     }
 
-    /// Return the scheduler window start before raw-time projection.
-    pub(crate) const fn start(self) -> BluetoothDtmSchedulerInstant {
+    /// Return the microsecond window start before raw-tick projection.
+    pub(crate) const fn start(self) -> BluetoothSchedulerInstant {
         self.0.start
     }
 
-    /// Return the scheduler window end before raw-time projection.
-    pub(crate) const fn end(self) -> BluetoothDtmSchedulerInstant {
+    /// Return the microsecond window end before raw-tick projection.
+    pub(crate) const fn end(self) -> BluetoothSchedulerInstant {
         self.0.end
     }
 }
 
-/// Recurring DTM receiver window before scheduler-time-to-raw projection.
+/// Recurring DTM receiver window before microsecond-to-raw-tick projection.
 ///
-/// RX recurrence samples a new clock and RF-ready instant instead of deriving
+/// RX recurrence samples a new clock and post-enable timing instant instead of deriving
 /// its phase from the preceding event. This type cannot cross the first-event
 /// admission edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmRxRecurringEventWindow(BluetoothDtmRxEventWindowData);
 
 impl BluetoothDtmRxRecurringEventWindow {
-    /// Form one recurring RX window from ordered current-time and RF-ready images.
+    /// Form one recurring RX window from ordered current-time and post-enable images.
     ///
     /// The nominal anchor adds the common late-start guard, scheduler margin
     /// and the reviewed RX recurrence lead to a fresh current-time sample. A
-    /// later fresh RF-ready image wins under the complete signed wrapping
+    /// later fresh post-enable timing image wins under the complete signed wrapping
     /// comparison. This pure transform does not establish sample freshness.
     #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn new(
         config: crate::BluetoothSchedulerSoftwareConfig,
-        current: BluetoothDtmSchedulerInstant,
-        rf_ready: BluetoothDtmSchedulerInstant,
+        current: BluetoothSchedulerInstant,
+        timing_ready: BluetoothSchedulerInstant,
     ) -> Self {
-        let margin = config.dtm_scheduler_margin();
+        let margin = config.preparation_lead_micros();
         let nominal_anchor = current
             .image()
-            .wrapping_add(config.late_start_guard_scheduler_delta())
-            .wrapping_add(margin.scheduler_delta())
-            .wrapping_add(RX_RECURRING_ANCHOR_EXTRA_LEAD_TICKS);
-        let anchor = later(nominal_anchor, rf_ready.image());
+            .wrapping_add(config.late_start_guard_micros())
+            .wrapping_add(margin)
+            .wrapping_add(RX_RECURRING_ANCHOR_EXTRA_LEAD_MICROS);
+        let anchor = BluetoothSchedulerInstant::from_image(nominal_anchor)
+            .later(timing_ready)
+            .image();
 
         Self(BluetoothDtmRxEventWindowData::at(anchor, config))
     }
 
     /// Return the recurring receiver phase anchor retained for publication.
     #[cfg(test)]
-    pub(crate) const fn anchor(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn anchor(self) -> BluetoothSchedulerInstant {
         self.0.anchor
     }
 
-    /// Return the scheduler window start before raw-time projection.
-    pub(crate) const fn start(self) -> BluetoothDtmSchedulerInstant {
+    /// Return the microsecond window start before raw-tick projection.
+    pub(crate) const fn start(self) -> BluetoothSchedulerInstant {
         self.0.start
     }
 
-    /// Return the scheduler window end before raw-time projection.
-    pub(crate) const fn end(self) -> BluetoothDtmSchedulerInstant {
+    /// Return the microsecond window end before raw-tick projection.
+    pub(crate) const fn end(self) -> BluetoothSchedulerInstant {
         self.0.end
     }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmTxSchedulerTiming {
-    /// Form the first TX window from ordered current-time and RF-ready images.
+    /// Form the first TX window from ordered current-time and post-enable images.
     ///
     /// The nominal anchor leads the sampled scheduler time by the source-owned
-    /// 440-tick LLL setup image, the DTM body's literal 500 ticks and the
-    /// scheduler margin. A later RF-ready image wins under the complete signed
-    /// wrapping comparison.
+    /// 440-microsecond LLL setup image, the DTM body's literal 500 microseconds
+    /// and the scheduler margin. A later post-enable timing image wins under
+    /// the complete signed wrapping comparison.
     pub(crate) const fn initial_event_window(
         self,
         config: crate::BluetoothSchedulerSoftwareConfig,
-        current: BluetoothDtmSchedulerInstant,
-        rf_ready: BluetoothDtmSchedulerInstant,
+        current: BluetoothSchedulerInstant,
+        timing_ready: BluetoothSchedulerInstant,
     ) -> BluetoothDtmTxEventWindow {
-        let margin = config.dtm_scheduler_margin();
+        let margin = config.preparation_lead_micros();
         let nominal_anchor = current
             .image()
-            .wrapping_add(INITIAL_ANCHOR_BASE_LEAD_TICKS)
-            .wrapping_add(margin.scheduler_delta());
-        let anchor = if is_before(nominal_anchor, rf_ready.image()) {
-            rf_ready.image()
-        } else {
-            nominal_anchor
-        };
+            .wrapping_add(INITIAL_ANCHOR_BASE_LEAD_MICROS)
+            .wrapping_add(margin);
+        let anchor = BluetoothSchedulerInstant::from_image(nominal_anchor)
+            .later(timing_ready)
+            .image();
 
         self.window_at(config, anchor)
     }
@@ -260,12 +223,12 @@ impl BluetoothDtmTxSchedulerTiming {
         self,
         config: crate::BluetoothSchedulerSoftwareConfig,
         previous: BluetoothDtmTxEventWindow,
-        current: BluetoothDtmSchedulerInstant,
+        current: BluetoothSchedulerInstant,
     ) -> BluetoothDtmTxEventAdvance {
-        let margin = config.dtm_scheduler_margin();
-        let interval = self.interval_ticks();
+        let margin = config.preparation_lead_micros();
+        let interval = self.interval_micros();
         let first_anchor = previous.anchor().image().wrapping_add(interval);
-        let first_start = first_anchor.wrapping_sub(margin.scheduler_delta());
+        let first_start = first_anchor.wrapping_sub(margin);
         let delta = first_start.wrapping_sub(current.image()) as i32;
         let extra_intervals = if delta < 0 {
             (delta.wrapping_neg() as u32).div_ceil(interval)
@@ -285,38 +248,26 @@ impl BluetoothDtmTxSchedulerTiming {
         config: crate::BluetoothSchedulerSoftwareConfig,
         anchor: u32,
     ) -> BluetoothDtmTxEventWindow {
-        let margin = config.dtm_scheduler_margin();
+        let margin = config.preparation_lead_micros();
         BluetoothDtmTxEventWindow {
-            anchor: BluetoothDtmSchedulerInstant::from_image(anchor),
-            start: BluetoothDtmSchedulerInstant::from_image(
-                anchor.wrapping_sub(margin.scheduler_delta()),
-            ),
-            end: BluetoothDtmSchedulerInstant::from_image(
-                anchor.wrapping_add(self.packet_window_ticks()),
+            anchor: BluetoothSchedulerInstant::from_image(anchor),
+            start: BluetoothSchedulerInstant::from_image(anchor.wrapping_sub(margin)),
+            end: BluetoothSchedulerInstant::from_image(
+                anchor.wrapping_add(self.packet_window_micros()),
             ),
         }
     }
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-const fn is_before(lhs: u32, rhs: u32) -> bool {
-    (lhs.wrapping_sub(rhs) as i32) < 0
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-const fn later(lhs: u32, rhs: u32) -> u32 {
-    if is_before(lhs, rhs) { rhs } else { lhs }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmTxEventWindow,
+        BluetoothDtmTxEventWindow,
     };
     use crate::{
         BluetoothDtmPayloadLength, BluetoothDtmPhy, BluetoothDtmTxTimingMicros,
-        BluetoothSchedulerSoftwareConfig,
+        BluetoothSchedulerInstant, BluetoothSchedulerSoftwareConfig,
     };
 
     fn timing(
@@ -332,8 +283,8 @@ mod tests {
         .scheduler_timing()
     }
 
-    fn instant(image: u32) -> BluetoothDtmSchedulerInstant {
-        BluetoothDtmSchedulerInstant::from_image(image)
+    fn instant(image: u32) -> BluetoothSchedulerInstant {
+        BluetoothSchedulerInstant::from_image(image)
     }
 
     const fn config() -> BluetoothSchedulerSoftwareConfig {
@@ -401,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn initial_window_selects_the_later_nominal_or_rf_ready_anchor() {
+    fn initial_window_selects_the_later_nominal_or_post_enable_anchor() {
         let timing = timing(0, BluetoothDtmPhy::Le1M, 0);
 
         let nominal = timing.initial_event_window(config(), instant(1_000), instant(2_045));
@@ -457,7 +408,7 @@ mod tests {
                         start: instant(0),
                         end: instant(0),
                     };
-                    let margin = config().dtm_scheduler_margin().scheduler_delta();
+                    let margin = config().preparation_lead_micros();
                     for offset in current_offsets {
                         let current = instant(previous.anchor().image().wrapping_add(offset));
                         let actual = timing.advance_event_window(config(), previous, current);
@@ -465,14 +416,15 @@ mod tests {
                         let mut expected_anchor = previous
                             .anchor()
                             .image()
-                            .wrapping_add(timing.interval_ticks());
+                            .wrapping_add(timing.interval_micros());
                         let mut intervals = 1;
                         while (expected_anchor
                             .wrapping_sub(margin)
                             .wrapping_sub(current.image()) as i32)
                             < 0
                         {
-                            expected_anchor = expected_anchor.wrapping_add(timing.interval_ticks());
+                            expected_anchor =
+                                expected_anchor.wrapping_add(timing.interval_micros());
                             intervals += 1;
                         }
 

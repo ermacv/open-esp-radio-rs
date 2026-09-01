@@ -4,7 +4,7 @@ Verdict: **INCOMPLETE**. The complete ESP32-S31 DTM command bodies, their path
 into the common scheduler, the conditional lock/modify transaction, the
 insertion-begin/end outcomes and the later scheduler-item recycle callback are
 now identified. The exact
-eight-word reset region of its link-state image and the nine-word event update
+eight-word reset region of its link-state image and the eleven-word event update
 of its scheduler item are also modeled without the vendor allocator. The
 bounded allocation footprints, private RX/TX chain anchors, returned-buffer
 accounting and append-decision entry are now recovered as well. The exact forty-channel
@@ -19,19 +19,22 @@ now explicit. First and recurring TX/RX preparation retain immutable command
 identity and committed phase, and feed the same typed publication, RUN,
 completion and recycle chain. The reviewed standalone scheduler margin is now
 owned by the Rust scheduler policy. The terminal powered BLE-PHY owner also
-combines its retained always-awake selection with a later completed
-generation-keyed time request into one opaque non-copyable RF-ready authority.
-Initial TX/RX consume current before RF-ready, recurring RX consumes RF-ready
-before current, and recurring TX consumes current without an RF-ready phase.
+combines its retained standalone always-awake DTM profile with a later completed
+generation-keyed time request into one opaque non-copyable post-enable timing
+authority. This is not an RF-readiness proof. Initial TX/RX consume current
+before post-enable timing, recurring RX consumes post-enable timing before
+current, and recurring TX consumes current without that phase.
 Software unlink and the globally identity-branded capacity-one return mailbox
 are now armed atomically;
 primary capture, both ordinary publications and mailbox routing share that
 serialization boundary, and only the exact first post-arm event can join the
 unlinked owner. No-work and command-pending outcomes re-arm the same mailbox
 identity and generation before returning.
-This still does not provide the sleep-enabled RF wake branch, proven source-124
-command-ready causality, unrelated finished-list dispatch, a source-127
-expiration consumer or the remaining hardware-consumed descriptor semantics.
+This still does not provide the sleep-enabled RF wake branch, independent
+source-124 command-ready causality, unrelated finished-list dispatch, a
+source-127 expiration consumer or the remaining hardware-consumed descriptor
+semantics. Bounded DTM post-unlink progress does not depend on that unproven
+interrupt causality because the runtime owns an absolute direct recheck.
 The open implementation does now have a concrete affine session loop, deferred
 in-flight Test End, exact-once response publication and a target-only command
 actor. Production cold start composes those pieces into a Wi-Fi-shaped
@@ -67,13 +70,18 @@ registry, allocator or RTOS event model into the Rust architecture.
   `78fd88e769ee48bf290bae3684df9ec8ea5c2f939396e4e50eb8a69f134ea6aa`.
 
 All current-revision S31 behavioral claims below come from complete current
-S31 bodies. The initial public S31 archive retains descriptive scheduler and
-DTM symbols; its role names are accepted only where control flow, call order
-and instruction extent agree with the current body. The C61 archive is used
-under the same stricter role-only rule for BLE functions whose S31 history is
-obfuscated. Neither older S31 code nor C61 supplies current register behavior
-or ABI evidence. Object files and disassembly products remain temporary review
-inputs and are not repository artifacts.
+linked S31 instruction extents and are limited to the locally recovered
+effects; a complete extent does not imply complete symbolic semantics. One
+explicitly labelled dead-stripped raw-archive body is
+retained only as corroboration of a positional transform already present in
+the linked DTM recycle callback. The initial public S31 archive retains
+descriptive scheduler and DTM symbols; its role names are accepted only where
+control flow, call order and instruction extent agree with the current body.
+The C61 archive is used under the same stricter role-only rule for BLE
+functions whose S31 history is obfuscated. Neither older S31 code nor C61
+supplies current register behavior or ABI evidence. Object files and
+disassembly products remain temporary review inputs and are not repository
+artifacts.
 
 ## Recovered DTM component
 
@@ -88,29 +96,68 @@ following useful map:
 | `r_sym_ble_VikJlxpO0kioDchKDFeI` | 278 | Reset one DTM controller-SRAM link-state image. It installs the compressed private TX head at `+0x00`, private RX tail at `+0x08`, a complete `0x71764129` access-address word, low 24-bit `0x555555` state and a rounded-power field. |
 | `r_sym_ble_G4zC4UNjJYmyjOsZ3vNq` | 618 | Construct and schedule one DTM event. It accepts only role values one and two, wakes the common RF owner, writes the reviewed frequency/rate/role/timing scheduler-item images, begins a scheduler transaction and completes that transaction. |
 | `r_sym_ble_XaQTq1AjtothrIFLgEeJ` | 362 | Construct TX context and payload. It accepts the reviewed payload-pattern selector domain, stores channel, length and PHY inputs, calculates the interval and repeatedly schedules TX role one until accepted. |
-| `r_sym_ble_odiPxxFv9QenApESv5qy` | 166 | Validate and start a transmitter test, including channel `0..=39`, payload selector `0..=7` and PHY-dependent parameter checks before creating the TX context. A nonzero active-graph pointer at environment offset `+0x08` returns standardized `Controller Busy` (`0x3a`) before parameter validation or allocation. |
+| `r_sym_ble_odiPxxFv9QenApESv5qy` | 166 | Validate and start a transmitter test, including channel `0..=39`, payload selector `0..=7` and PHY-dependent parameter checks before creating the TX context. A nonzero active image at environment offset `+0x08` returns standardized `Controller Busy` (`0x3a`) before parameter validation or allocation. |
 | `r_sym_ble_x4t8591NiUiinayCMpjZ` | 116 | Construct RX context, store the channel/PHY inputs and repeatedly schedule RX role two until accepted. |
-| `r_sym_ble_ssKOV2juzhIVJk3r8x6R` | 112 | Validate and start a receiver test, including channel `0..=39` and the accepted PHY selector domain. A nonzero active-graph pointer at environment offset `+0x08` returns standardized `Controller Busy` (`0x3a`) before parameter validation or allocation. |
-| `r_sym_ble_eTAd...` | 502 | Pop one completed RX buffer from the private link-state chain. Its complete control flow agrees with named `r_ble_lll_get_rxed_buffer` (496 bytes): it follows the full RX-head pointer, checks the volatile completion flag, validates that packet result and metadata no longer retain their re-arm sentinels and advances a packetless predecessor only when its successor is complete. |
+| `r_sym_ble_ssKOV2juzhIVJk3r8x6R` | 112 | Validate and start a receiver test, including channel `0..=39` and the accepted PHY selector domain. A nonzero active image at environment offset `+0x08` returns standardized `Controller Busy` (`0x3a`) before parameter validation or allocation. |
+| `r_sym_ble_eTAd...` | 502 | Pop one completed RX buffer from the private link-state chain. Its complete control flow agrees with named `r_ble_lll_get_rxed_buffer` (496 bytes): it follows the full RX-head pointer, checks the volatile completion flag, validates that the packet result and positional auxiliary halfword no longer retain their re-arm sentinels and advances a packetless predecessor only when its successor is complete. |
 | `r_sym_ble_9Hls...` | 456 | Append one returned RX buffer. Its complete control flow agrees with named `r_ble_lll_append_rx_buffer` (452 bytes): a terminal tail is copied into the detached reserve, its original header becomes the packetless predecessor, the copied header becomes the armed tail and the two fixed slots alternate on later completions. |
-| `r_sym_ble_PptSRbXfefQwMVyO5jxP` | 52 | Process one received DTM buffer. From third argument offset `+0x04` it reconstructs a `0x2f00_0000 | (low20 << 2)` address. A zero compressed pointer takes the vendor fail-stop edge. The body returns `-1` when any low-24 bit of the word at returned-buffer offset `+0x0c` is nonzero; otherwise it copies the high byte at `+0x0f` into DTM link-state byte `+0x24` and returns zero. The byte meaning remains positional. |
-| `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` | 336 | Recycle one completed DTM scheduler item. Complete control flow agrees with same-chip named `r_ble_lll_dtm_recycle_sch_item` (324 bytes). The callback returns the item to the private chain first. Status zero enables role accounting: TX role one increments the DTM result count, while RX role two drains returned buffers; a result word with zero low 24 bits additionally updates the positional high byte and increments the wrapping 16-bit receive count. When the environment remains active, both zero and nonzero item status may continue into the next-event reschedule path; nonzero status skips accounting rather than suppressing rescheduling. With DTM capacity one, the first returned tail is terminal and necessarily takes the two-header swap rotation; the detached original remains inside the fixed graph as the packetless predecessor and becomes the next reserve. An unexpected role takes the vendor fail-stop edge. |
-| `r_sym_ble_9DFKLYZzjaztWMiPU4NR` | 168 | End the test and return success. The body first serializes the shared 16-bit DTM count as the two-byte Test End result; a zero active-graph pointer then returns zero without entering teardown. When a test is active, it removes queued kind-five items, synchronously stops the common scheduler, clears DTM active/count state, frees the private graph, restores the default length state and also returns zero. Because the recycle callback increments this same count for successful TX events, the current vendor path can expose a nonzero transmitter result. Bluetooth Core requires the packet count ending a transmitter test to be zero, so the open HCI policy deliberately does not copy that vendor behavior. |
+| `r_sym_ble_PptSRbXfefQwMVyO5jxP` | 52 | Dead-stripped raw-archive corroboration only, not a linked effect authority. From third argument offset `+0x04` its complete raw body reconstructs a `0x2f00_0000 | (low20 << 2)` address. A zero compressed pointer takes the vendor fail-stop edge. It returns `-1` when any low-24 bit of the word at returned-buffer offset `+0x0c` is nonzero; otherwise it copies the high byte at `+0x0f` into DTM environment byte `+0x24` and returns zero. |
+| `esp_ble_get_dtm_rx_rssi` / `r_sym_ble_CLEB51J8jgSOcX50XteR` | 8 / 20 | The public getter is a direct tail call. Its complete current target loads the active DTM environment and returns byte `+0x24` with signed `lb`, proving that the accepted packet-result high byte copied there is the DTM RSSI value. The signed controller value is exact; its physical unit and calibration are not inferred. |
+| `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` | 312 | Current linked effect authority for recycling one completed DTM scheduler item. Its complete linked instruction extent contains the exact local RX-result edge; whole-function symbolic semantics remain incomplete. Its control-flow shape agrees with same-chip named `r_ble_lll_dtm_recycle_sch_item` (324 bytes). The callback returns the item to the private chain first. Status zero enables role accounting: TX role one increments the DTM result count, while RX role two drains returned buffers; it directly rejects a result word whose low 24 bits are nonzero, otherwise updates the positional high byte and increments the wrapping 16-bit receive count. When the environment remains active, both zero and nonzero item status may continue into the next-event reschedule path; nonzero status skips accounting rather than suppressing rescheduling. With DTM capacity one, the first returned tail is terminal and necessarily takes the two-header swap rotation; the detached original remains inside the fixed graph as the packetless predecessor and becomes the next reserve. An unexpected role takes the vendor fail-stop edge. |
+| `r_sym_ble_9DFKLYZzjaztWMiPU4NR` | 168 | End the test and return success. The body first serializes the shared 16-bit DTM count as the two-byte Test End result; a zero active image at environment offset `+0x08` then returns zero without entering teardown. When a test is active, it removes queued kind-five items, synchronously stops the common scheduler, clears DTM active/count state, frees the private graph, restores the default length state and also returns zero. Because the recycle callback increments this same count for successful TX events, the current vendor path can expose a nonzero transmitter result. Bluetooth Core requires the packet count ending a transmitter test to be zero, so the open HCI policy deliberately does not copy that vendor behavior. |
 
-The fixed `0x71764129` word agrees with the standardized DTM access address,
-but its descriptor offset is still recorded positionally. Likewise, the
-`0x555555` low-24-bit image is not promoted into a public `CRC_INIT` field
-until an independent packet-engine consumer proves that field boundary.
+The current linked writers distinguish the CPU-owned DTM environment state
+from the private controller-SRAM graph:
+
+| Environment offset | Current linked meaning |
+| --- | --- |
+| `+0x08` | Active image. TX and RX context construction clear it before setup and store exactly one after setup; command admission and Test End test it for zero/nonzero state. It is not a graph pointer. |
+| `+0x14` | Full link-state pointer installed by graph allocation and consumed by event construction. This is the environment's private-graph root. |
+
+The fixed `0x71764129` word is now retained by a private protocol-level LE
+access-address type. Bluetooth Core 6.1 [Vol 6, Part F,
+Section 4.1.2](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/direct-test-mode.html)
+specifies the DTM synchronization word in transmission order. Applying the
+Core [little-endian Link Layer bit-order
+rules](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/link-layer-specification.html)
+produces the controller image `0x71764129`. Independent current-linked legacy
+advertising reset `r_sym_ble_fxKAT8in6cXLv0gLB2W5` writes `0x8e89bed6` to the
+same positional word; Core 6.1 [Vol 6, Part B, Section
+2.1.2](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/link-layer-specification.html)
+specifies that value as the Access Address for the applicable advertising
+physical channel packets. This cross-role evidence supports the private
+protocol value and SRAM codec only: it does not import advertising flow or
+claim a traced hardware consumer.
+
+The fixed low-24-bit `0x555555` image is now retained by a private
+protocol-level LE CRC-initialization type while the containing word's high byte
+remains opaque. Bluetooth Core 6.1 [Vol 6, Part F, Section
+4.1.3](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/direct-test-mode.html)
+requires the CRC shift register to be preset with `0x555555` for every LE test
+packet. Independent current-linked legacy advertising reset
+`r_sym_ble_fxKAT8in6cXLv0gLB2W5` preserves the same high-byte boundary and
+installs the same low-24-bit image. Core 6.1 [Vol 6, Part B, Section
+3.1.1](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/link-layer-specification.html)
+requires the same CRC preset for non-periodic Advertising Physical Channel
+PDUs. This is sufficient to name the private protocol value and its low-24-bit
+SRAM codec, but it does not identify or grant ownership of the hardware
+consumer and does not import advertising control flow.
 
 The reset transaction itself is now reproduced as a non-publishable reviewed
 region in the Bluetooth crate. It retains the exact low-twenty-bit compressed
 TX head at `+0x00` and RX tail at `+0x08`, including the overlapping `+0x02`
-halfword transform; five-bit rounded-power image at `+0x04`; high control bits at
-`+0x14`; high-byte-preserving `0x555555` image at `+0x2c`; RX-only zero at
+halfword transform; five-bit rounded-power image at `+0x04`; the exact
+`+0x14[27:26] = 0b11` reset profile; high-byte-preserving `0x555555` image at `+0x2c`; RX-only zero at
 `+0x34`; complete `0x71764129` word at `+0x38`; and six-bit configuration image
 at `+0x50`. Bounded inputs are rejected before any transform. The type exposes
 no controller address, storage publication or hardware-ownership transition,
 because the omitted descriptor words and their hardware consumer remain open.
+Complete current linked IR at `0x10054d44` applies write mask `0x0c000000` on
+every path; the complete current archive body and same-chip named
+`r_ble_lll_dtm_reset_link_state` independently set bit 27 followed by bit 26.
+The Rust memory codec therefore treats the pair as one DTM reset selection and
+does not invent separate hardware names for the two bits. This corrects the
+previous transcription that selected bits 31:30 instead.
 
 Receiver event construction subsequently replaces link-state word `+0x34`
 with `r_sched_timer_convertTimeToTicks(0)`, using the same retained
@@ -121,9 +168,9 @@ than a named packet-engine field.
 
 The scheduler-item update is now a second non-publishable reviewed region.
 It reproduces the role byte at `+0x02`, bit-31 publication prerequisite at
-`+0x04`, four-bit clear at `+0x08`, repeated two-bit rate image at `+0x14`,
+`+0x04`, four-bit clear at `+0x08`, repeated two-bit PHY image at `+0x14`,
 seven-bit frequency plus low-nibble image at `+0x18`, RX-only complete
-`0x000f0001` at `+0x2c`, two epoch-projected raw-time words at `+0x44/+0x48`
+`0x000f0001` at `+0x2c`, two epoch-projected raw-tick words at `+0x44/+0x48`
 and the low-byte clear at `+0x4c`. Complete common
 `r_btdm_sched_calc_seq_time` additionally stores raw start plus its dynamic
 scheduler-environment lead at `+0x0c` and the wrapping raw window length at
@@ -226,7 +273,12 @@ one, two, three and zero to positional rate images zero, one, two and three.
 Consequently 1M/2M map to zero/one for both roles, selector-three Coded maps to
 two for TX and three for RX, and Coded S=2 selector four maps to three for TX
 but is unrepresentable for RX. The Rust event now enforces this asymmetry and
-cannot accept an odd frequency image or an arbitrary two-bit rate. These
+cannot accept an odd frequency image or an arbitrary two-bit PHY image. The
+memory boundary receives role-specific PHY variants and privately replicates
+the selected code into both lanes; no raw rate integer crosses that boundary.
+The two lane roles remain unnamed because the reviewed bodies prove identical
+producer writes and preservation through overlap insertion, not independent
+hardware meanings. These
 remain descriptor images rather than a packet-engine readiness claim; the
 scheduler-item type still cannot insert itself or produce a hardware-owned
 token.
@@ -237,7 +289,14 @@ The TX payload construction has no allocator requirement. Complete current
 selectors 1, 2, 4, 5, 6 and 7 fill `0x0f`, `0x55`, `0xff`, `0x00`, `0xf0`
 and `0xaa`, while selectors 0 and 3 copy PRBS9 and PRBS15 respectively. The
 body stores the selector and eight-bit length directly before the payload and
-copies exactly that many bytes.
+copies exactly that many bytes. The TX header independently points to this
+selector byte at packet `+0x10`. Bluetooth Core 6.1 [Vol 6, Part F, Section
+4.1.4](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/low-energy-controller/direct-test-mode.html)
+defines the LE Test PDU as an eight-bit header, an eight-bit payload-length
+field, an optional CTEInfo field and the payload. Its low-four-bit Type values
+zero through seven exactly match these producer selectors. The current body
+therefore produces a no-CTE standard LE Test PDU header at `+0x10`, its payload
+length at `+0x11` and payload at `+0x12`.
 
 The current and initial 255-byte PRBS tables are byte-identical. PRBS9 has
 SHA-256 `e2a8f5102484eb3bda6e3b5ebb6917bdf31920d3351d68d8b46a645e57356678`;
@@ -249,10 +308,15 @@ at most 255 bytes in caller-owned storage, rejects a short destination before
 mutation and returns an affine read-only payload view. Production composition
 instead consumes the bound graph owner, copies every declared payload byte and
 returns a typed packet-ready graph retaining the validated pattern and length.
+The lower packet codec now validates the standard Type domain before its first
+write and retains a private no-CTE PDU-header value in that ready state. An
+unsupported raw lower selector returns the byte-unchanged graph owner and
+cannot claim packet readiness.
 Only that state can enter a transmitter event plan; the receiver plan accepts
 the ordinary graph. The TX proof survives the positional-event and scheduler-
 bookkeeping transitions. All of these states remain CPU-owned: no packet
-header publication, fence or hardware ownership is implied.
+header publication, fence, hardware ownership or hardware-consumer identity is
+implied.
 
 The generic TX-buffer/header allocator is narrow enough to replace as well.
 Current `r_sym_ble_4FZFpypyQDtGoyqc084f` is instruction-identical to named
@@ -265,6 +329,17 @@ installs compressed buffer-base and `buffer+0x10` pointers in header words
 header words after zero-initialization are `[0, base, 0x80a00000 | payload, 0,
 0x000007f8, 0]`, where both pointers are the reviewed low-twenty-bit compressed
 images.
+
+The raw header-image constructors are no longer part of the open API. The
+pinned memory graph initializes all three headers through private codecs and,
+before invoking any positional-event builder, verifies that the selected TX
+header still names both this graph's packet base and its `+0x10` LE Test PDU,
+that its full-capacity allocation profile is retained, and that the selected
+RX-tail header still names this graph's RX packet. A mismatch returns the same
+byte-unchanged CPU owner and cannot reach HEAD or RUN. The ordinary producer
+and named predecessor establish the TX PDU target and profile; no independent
+packet-engine reader has yet established names for the opaque header lanes or
+the physical interpretation of the allocation extent.
 
 The open packet slot consequently owns `0x12 + 0xff = 0x111` bytes with
 four-byte alignment and validates the final aligned word as well as its base
@@ -295,8 +370,9 @@ stored at controller environment offset `+0x24` comes directly from current
 one. Current `r_sym_ble_xHIFihMabllBUXiMYYoN` and
 `r_sym_ble_GzLO7QvWzB8FTsdGLaBt`, mapped to the named initial usec-to-tick and
 tick-to-usec leaves, are both identity returns. The DTM body consequently
-stores `interval_ticks = interval_usecs`, computes a zero one-byte remainder
-and never takes its `remainder == unit` correction branch.
+stores the interval unchanged in its microsecond-domain environment field,
+computes a zero one-byte remainder and never takes its `remainder == unit`
+correction branch.
 
 The scheduler-margin source is closed for the reviewed standalone profile.
 Current member `66.o` function `r_sym_ble_TtdgZbQxHLEPeNfBtjqO` is
@@ -316,7 +392,7 @@ Current member `64.o` wrapper `r_sym_ble_4QeP6vZAoSzLLHdFgwD0` calls
 `r_btdm_sleep_enable_now` followed by `r_sched_timer_convertTimeToUs`. The null
 or disabled sleep-environment branch performs no RF MMIO and obtains a fresh
 controller tick; the sleep-enabled branch first crosses still-open wake helpers
-and then also obtains a fresh tick. RF-ready is therefore the scheduler-domain
+and then also obtains a fresh tick. RF-ready is therefore the microsecond-domain
 instant returned after synchronous RF-enable-now policy, not a PHY status bit
 or caller timestamp. Complete initial TX/RX bodies acquire current before
 RF-ready; recurring RX acquires RF-ready before current; recurring TX has no
@@ -324,15 +400,17 @@ RF-ready call. The reviewed always-awake branch can be composed without new
 register access, while the sleep-enabled wake branch remains outside the
 current implementation.
 
-The open standalone composition follows that exact boundary. The affine
-always-awake marker remains nested with the settled Bluetooth PHY client and
-completed BLE-PHY transaction. A completed request through that combined owner
-projects its private sample into the retained scheduler epoch and mints one
-opaque non-`Copy` RF-ready token. The token has no public constructor, image or
-decomposition edge and is consumed by the same Controller-bound preparation.
-It does not reanchor the epoch: only a completed fresh-current observation does
-that. Cancellation or Drop abandons the exact keyed request into the existing
-sample-discarding orphan drain and cannot turn a late sample into RF-ready.
+The open standalone composition follows only the disabled-sleep boundary. The
+affine always-awake DTM profile remains nested with the settled Bluetooth PHY
+client and completed BLE-PHY transaction. A completed request through that
+combined owner projects its private sample into the retained scheduler epoch
+and mints one opaque non-`Copy` post-enable timing token. The token has no public
+constructor, image or decomposition edge and is consumed by the same
+Controller-bound preparation. It deliberately does not claim RF wake or analog
+readiness. It does not reanchor the epoch: only a completed fresh-current
+observation does that. Cancellation or Drop abandons the exact keyed request
+into the existing sample-discarding orphan drain and cannot turn a late sample
+into a timing proof for another operation.
 
 The source-owned standalone scheduler policy now retains the exact margin 107;
 its type, construction and image are private, and public DTM preparation has no
@@ -369,20 +447,23 @@ same signed wrapping comparison, and the end again adds literal 1000. The
 window privately retains `Initial` or `Recurring`, and the
 memory codec selects the corresponding full-initial or reuse configuration.
 Distinct Rust window types prevent either phase from entering the other's
-Controller edge. Controller-time RF-ready, admission and sequence samples are
-now non-public affine phases. The Controller typestate enforces initial current
-then RF-ready, recurring RX RF-ready then current and recurring TX current only
-before the matching reservation/sequence edge. The recurrence core consumes
-the opaque result and cannot accept a detached caller instant.
+Controller edge. Controller-time post-enable timing, admission and sequence
+samples are now non-public affine phases. The Controller typestate enforces
+initial current then post-enable timing, recurring RX post-enable timing then
+current and recurring TX current only before the matching reservation/sequence
+edge. The recurrence core consumes the opaque result and cannot accept a
+detached caller instant.
 
 The RX callback signature and result projection are also narrower than the
 vendor memory manager. Complete S31 allocation and RX bodies, plus the named
 C61 role comparison, establish that the callback's third argument is a buffer
 header carrying a compressed returned-buffer pointer. The callback consumes
 only the result word at `+0x0c`: low 24 bits form a fail-closed condition and
-the byte at `+0x0f` is the only value copied into DTM state. This exact split is
+the byte at `+0x0f` is the only value copied into DTM state. Current public
+`esp_ble_get_dtm_rx_rssi` tail-calls a complete target that returns that same
+state byte with a signed load. This closes the high-byte role as DTM RSSI and is
 published above the PAC boundary as `BluetoothDtmRxResultProjection`; no
-semantic name is assigned to the high byte. The complete recycle body proves
+physical unit or calibration is claimed. The complete recycle body proves
 the next layer: an accepted word updates that byte and increments the DTM
 environment's 16-bit counter with wrapping arithmetic, while a rejected word
 changes neither value. Test End serializes that same counter. Every result
@@ -415,6 +496,9 @@ revision and initializes its positional byte `+0x24` to `0x7f`.
 
 The complete allocation order is link state, scheduler context, scheduler
 item, bound RX packet/header, unbound swap header and bound TX packet/header.
+The production API exposes only this affine graph-level packet preparation;
+the former standalone packet-slot and raw header/address façades were removed
+because they could not carry graph identity into hardware publication.
 The finite failure results are `-1` for link-state allocation, zero for the
 separate context and `2`, `3`, `4`, `5` for scheduler, RX, swap-header and TX
 stages. Every partial failure walks the same graph-free path before releasing
@@ -599,12 +683,19 @@ formed. The later interrupt-preparation and RUN suffix must consume that exact
 head before the graph can enter its distinct running state.
 
 The controller-memory layer now implements the item half of that first merge
-as a separate cancellable typestate. It clears the submitted item's compressed
-hardware-next link while preserving the allocation image and clears the
-source software-next link. The Rust scheduler epoch intentionally replaces the
-three vendor manager pointers instead of materializing their private ABI. At
-this controller-memory boundary alone, the state performs neither a visibility
-fence nor an MMIO publication.
+as a separate cancellable typestate. Complete current
+`r_sym_bt_YRnBzKlWCjsIbotqvNyS` proves that scheduler-item word `+0x00[19:0]`
+is the compressed hardware-next link: its non-null path installs the compressed
+successor while preserving bits `31:20`, and its null path clears only that
+link field. The singleton DTM graph uses a private complete-word SRAM codec to
+terminate the chain; neither the mask nor a forgeable successor escapes the
+memory crate. Before publication, cancellation restores the exact captured
+field-containing word. Recycle performs the same terminal transition only
+after consuming completion and software-list-removal proofs. The source
+software-next link is cleared separately. The Rust scheduler epoch
+intentionally replaces the three vendor manager pointers instead of
+materializing their private ABI. At this controller-memory boundary alone, the
+state performs neither a visibility fence nor an MMIO publication.
 
 The initialized scheduler now supplies that consuming join. It advances its
 exclusive list from `Empty` to the exact prepared item identity at the same
@@ -800,13 +891,12 @@ and then conditional command-one reads. `NoSchedulerWork` and command-pending
 outcomes re-arm the same mailbox identity and generation before leaving the
 critical section; a foreign Controller mailbox cannot take, cancel or re-arm
 the owner even when its numeric generation matches. Ready advances the same
-identity without returning descriptor ownership. This closes
-temporal pairing and owner retention, not retry liveness. A later command-ready
-edge can be returned by a full mailbox while the first retained event is still
-pending, then precede the re-arm and fail to become the next DTM event. Selector-6
-recovery still blocks this path fail-closed, and neither vendor evidence nor the
-current open runtime proves command-ready-to-source-124 causality or a
-guaranteed retry wake.
+identity without returning descriptor ownership. The current open runtime also
+performs one finite direct read-only recheck immediately after arming, after an
+event-derived pending result and at a caller-owned absolute deadline. A pending
+direct result re-arms the same mailbox identity and generation. This closes
+retry progress without claiming command-ready-to-source-124 causality or
+speculatively replaying primary acknowledgement.
 
 The reviewed register model consequently promotes `0x2010_125c` to
 `SCHEDULER_FINISHED_LIST_STATUS.FINISHED_LIST_MASK` and retains `0x2010_1260`
@@ -818,9 +908,20 @@ token instead of a freely constructible positional index. The Bluetooth layer
 drains one lowest-numbered list per finite step, allowing the future async
 bottom half to yield between lists without a loop or RTOS. The generic token
 proves only one selection from that captured transfer. The DTM Controller
-supplies the next layer for list zero and can continue any retained mask one
-affine observation per call without recapturing hardware; other-role mapping
-and dispatch remain outside this closure.
+supplies the next layer for list zero. A fresh transfer consumes exactly one
+non-copyable scheduler batch dequeued from the source-124 handoff. Both an
+ordinary and a marked batch are valid: named same-chip
+`r_btdm_recycle_in_task` always invokes the scheduler drain, while the marker
+only adds buffer recycle work. A retained multi-list mask continues one affine
+observation per call without a second batch or another MMIO transfer; once it
+is exhausted, the running owner returns to the wake-gated state. A missing
+batch preserves the complete DTM owner and performs no STATUS or REPORT access.
+List-zero authority comes only from bit zero of the fresh finished-list
+status, not from any raw IRQ class. Individual source 27/28 roles, the mapping
+from all dynamic raw sources to the finished mask and the REPORT clear/ack
+rule are still unresolved, so the write-bearing transfer is deliberately not
+used as a timer-driven polling primitive. Other-role mapping and dispatch
+remain outside this closure.
 
 The always-awake time-read prefix is now exact. Complete
 `r_sym_bt_KrvfcwDw4eZoaTPVdFj5` sets `SLEEP_TIMER_CONTROL.LATCH_REQUEST` at
@@ -829,22 +930,26 @@ The always-awake time-read prefix is now exact. Complete
 comparison names that function `r_btdm_sleep_timer_ticks_get`; it also maps
 the two conversion helpers below without importing a historical address or
 ABI claim. Complete
-`r_sym_ble_3ISuZaEAZjklAjtGLFxW` converts the delta from an owned raw-time
-anchor into the BLE scheduler epoch, handling either side of the anchor and
-rounding the negative side by one when a discarded remainder is nonzero. For
-the reviewed standalone HAL profile, the signed scale image is three: the
-complete conversion helper shifts a positive raw-time delta left by two and
-the inverse helper shifts a scheduler delta right by two. This proves the
-arithmetic used by DTM, but not a public time unit or the wrap width of the raw
-counter. The restricted PAC now exposes only fresh-read OR publication,
+`r_sym_ble_3ISuZaEAZjklAjtGLFxW` converts the delta from an owned raw-tick
+anchor into the BLE scheduler's microsecond epoch, handling either side of the
+anchor and rounding the negative side by one when a discarded remainder is
+nonzero. For the reviewed standalone HAL profile, the signed scale image is
+three: the complete `r_btdm_hal_util_ticks_to_us` body shifts a positive raw
+tick delta left by two and the inverse helper shifts a microsecond delta right
+by two. The unit is closed by the direct DTM composition: the converted value
+is combined with independently established 500/1000-microsecond literals,
+preparation time and packet airtime, then both descriptor boundaries pass
+through named `r_sched_timer_convertTimeToTicks`. One standalone raw tick is
+therefore four microseconds. Effective counter width remains unproven. The
+restricted PAC now exposes only fresh-read OR publication,
 pending-bit observation and the complete latched word. The Bluetooth layer
 owns affine `publication -> in flight -> read ready -> sample` phases and a
 pure wrapping scheduler-epoch projection. Every pending observation returns
 control immediately. The same powered Controller owner now exposes request,
 generation-scoped abandon and one-observation recheck operations; PAC
 publication includes its device fence. A registered wake or proven bounded
-recheck source, effective counter width and physical unit remain absent, so
-this is not yet a deadline-ready production time source.
+recheck source and effective counter width remain absent, so HIL is still
+required to qualify latch wrap and wake behavior.
 
 The scheduler's first live reference update is exact as well. Its initializer
 zeroes both raw and scheduler reference images, and its task-enable leaf is a
@@ -852,10 +957,10 @@ no-op. The first task-run tail-calls the reference update, which samples raw
 time, converts the wrapping delta from the prior raw reference, stores sampled
 raw time minus the conversion remainder and advances the scheduler reference
 by the converted quotient. Every accepted ESP32-S31 scale image is positive,
-so this first update has zero remainder. It therefore establishes
-`raw_anchor = sample` and
-`scheduler_anchor = sample << (shift_image - 1)` with 32-bit wrapping; the
-standalone shift image three produces `scheduler_anchor = sample << 2`.
+so this first update has zero remainder. It therefore establishes a raw-tick
+anchor equal to the sample and a microsecond anchor equal to
+`sample << (shift_image - 1)` with 32-bit wrapping; the standalone shift image
+three produces `micros_anchor = sample << 2`.
 Every later completed Rust scheduler-current observation applies the same
 reference-update geometry to the retained epoch: it projects the fresh raw
 sample through the prior epoch, stores that projected scheduler image beside
@@ -869,12 +974,12 @@ equivalent execution point or that its software recheck latency is bounded.
 
 | Layer | DTM responsibility | Current publication gate |
 | --- | --- | --- |
-| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify, insertion execution-lock/modify, always-awake time-latch and software-list-removal fields, exact publications, wait predicates and finite live MMIO are present. Command-zero accepts only a typed item/list request; command-one accepts a typed list and constructs its one-hot field inside the PAC. The Controller-owned mailbox retains the exact first primary disposition after atomic unlink-and-arm; its globally unique opaque identity and checked generation prevent cross-Controller affinity, while exhaustion rejects before unlink. Its internal graph/event pair has no public constructor and consumption repeats no ISR operation or wake disposition. The stored scheduler observation conservatively drives each finite PAC task step: BUSY skips all task-side command reads, idle permits command zero, a clear ready field skips command one and only a ready command one exposes its result. This preserves split ownership but does not establish vendor source-124 causality or guarantee that a later ready edge survives while the slot is full. Terminal values reduce to pending/retained/reconcile/rejected dispositions without exposing register images. The later interrupt-time scheduler snapshot also returns the typed current hardware-list index. That snapshot is affine; its removal projection yields either Pending or a single-use idle capability required by the HAL task owner. The task owner then preserves command-zero before conditional command-one without a polling loop. At Controller composition, no-work and command-pending retain the exact unlinked awaiting owner and re-arm its identity and generation before returning; Ready binds that same owner to the complete removal predicate, so another mailbox epoch cannot be cross-wired at the memory boundary. Scheduler-head publication now orders every prior CPU descriptor write before its generated MMIO field update and retains the trailing device fence. BTMAC source 14 is modeled as one generated W1C clear field plus one interrupt-enable field; the affine run suffix consumes the published head and dynamic-interrupt proof, performs the exact synchronous clear/enable/fence transaction and admits RUN only by consuming that result. A distinct affine post-completion transaction consumes the RUN provenance into a fresh fenced hardware-head observation and advances only on empty. Per-event recycle and the lower `CpuOwned -> Reclaimed -> reinitialize` edge are present; quiescing an in-flight Test End request remains an upper session responsibility. |
-| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The HAL forwards the finite insertion execution publications and observations without exposing raw PAC access. It also forwards the safe typed scheduler run-event and RUN chain; no upper layer passes an address, mask or register image. The powered Controller retains the unique repeatable live latch owner and exposes finite generation-keyed request/recheck operations with cancellation drain. The first completed observation initializes the scheduler epoch; later borrowed current observations reanchor the same epoch. At the terminal powered BLE-PHY boundary, the retained always-awake selection plus a completed later request projects one opaque RF-ready token without RF MMIO; that token is consumed in the exact role/phase order and never reanchors the epoch. The sleep-enabled wake branch, a proven wake/recheck source, physical counter contract, live-route lifecycle, autonomous completion dispatcher and powered rollback remain absent. |
-| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | DTM list zero now has an exclusive empty epoch, exact first-item merge and terminal pre-route publication transition. The Controller rejects a merge from another epoch before head MMIO and retains the unchanged graph on failure. Success immediately consumes every memory rollback image against the exact affine PAC head token and records both scheduler and memory epochs as head-published. That state has identity only and cannot observe completion. The exact head is then consumed through stable-owner dynamic interrupt preparation, synchronous source-14 event publication and RUN as one typed suffix, moving both epochs to their distinct running phases. Storage rejection returns the unchanged head-published owner before suffix MMIO; success returns an affine running graph and no CPU mutation surface. Only that running graph can join a fresh finished-list transfer, read volatile status and advance a non-sentinel list-zero result without granting CPU ownership. Retained remainders use opaque bounded continuations without recapture or MMIO. After fenced empty-head retirement, atomic unlink-and-arm returns one mailbox-identity-and-generation-bound awaiting owner. Public primary service serializes capture, both ordinary publications and mailbox routing; no standalone unlink, bypass service or pair constructor remains. Wake dispositions are emitted only by that immediate service result. No-work and command-pending consumption re-arm before unlock, while Ready advances the same graph without duplicating those wakes. Temporal order and cross-mailbox affinity are closed, but vendor evidence does not connect command readiness to source 124 and a full slot can pass a later ready edge before re-arm, so retry liveness remains open. Ready TX and RX nonzero-status paths consume the exact reservation and return the exclusive list to Empty only after memory recycle succeeds. Zero-status RX enters a specialized fail-closed drain/account/re-arm transaction and returns the same non-copyable session only after memory, timeline and source-list release. Recurring TX and RX consume their active owners, derive the next phase, prepare a new affine merge and feed the same head/RUN path; every rejection returns the prior owner without committing the candidate phase. The production actor owns this list-zero session driver; unrelated hardware lists remain outside its dispatcher. |
+| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify, insertion execution-lock/modify, always-awake time-latch and software-list-removal fields, exact publications, wait predicates and finite live MMIO are present. Command-zero accepts only a typed item/list request; command-one accepts a typed list and constructs its one-hot field inside the PAC. The Controller-owned mailbox retains the exact first primary disposition after atomic unlink-and-arm; its globally unique opaque identity and checked generation prevent cross-Controller affinity, while exhaustion rejects before unlink. Its internal graph/event pair has no public constructor and consumption repeats no ISR operation or wake disposition. The stored scheduler observation conservatively drives each finite PAC task step: BUSY skips all task-side command reads, idle permits command zero, a clear ready field skips command one and only a ready command one exposes its result. This preserves split ownership without claiming vendor source-124 command-ready causality; bounded DTM progress instead comes from the caller-owned absolute direct recheck after any retained event. Terminal values reduce to pending/retained/reconcile/rejected dispositions without exposing register images. The later interrupt-time scheduler snapshot also returns the typed current hardware-list index. That snapshot is affine; its removal projection yields either Pending or a single-use idle capability required by the HAL task owner. The task owner then preserves command-zero before conditional command-one without a polling loop. At Controller composition, no-work and command-pending retain the exact unlinked awaiting owner and re-arm its identity and generation before returning; Ready binds that same owner to the complete removal predicate, so another mailbox epoch cannot be cross-wired at the memory boundary. Scheduler-head publication now orders every prior CPU descriptor write before its generated MMIO field update and retains the trailing device fence. BTMAC source 14 is modeled as one generated W1C clear field plus one interrupt-enable field; the affine run suffix consumes the published head and dynamic-interrupt proof, performs the exact synchronous clear/enable/fence transaction and admits RUN only by consuming that result. A distinct affine post-completion transaction consumes the RUN provenance into a fresh fenced hardware-head observation and advances only on empty. Per-event recycle and the lower `CpuOwned -> Reclaimed -> reinitialize` edge are present; quiescing an in-flight Test End request remains an upper session responsibility. |
+| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The HAL forwards the finite insertion execution publications and observations without exposing raw PAC access. It also forwards the safe typed scheduler run-event and RUN chain; no upper layer passes an address, mask or register image. The powered Controller retains the unique repeatable live latch owner and exposes finite generation-keyed request/recheck operations with cancellation drain. The first completed observation initializes the scheduler epoch; later borrowed current observations reanchor the same epoch. At the terminal powered BLE-PHY boundary, the retained standalone always-awake DTM profile plus a completed later request projects one opaque post-enable timing token without RF MMIO; that token is consumed in the exact role/phase order, never reanchors the epoch and makes no RF-readiness claim. The sleep-enabled wake branch, physical counter width, general all-role completion dispatcher and powered rollback remain absent; the live DTM route and its bounded recheck are composed. |
+| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | DTM list zero now has an exclusive empty epoch, exact first-item merge and terminal pre-route publication transition. The Controller rejects a merge from another epoch before head MMIO and retains the unchanged graph on failure. Success immediately consumes every memory rollback image against the exact affine PAC head token and records both scheduler and memory epochs as head-published. That state has identity only and cannot observe completion. The exact head is then consumed through stable-owner dynamic interrupt preparation, synchronous source-14 event publication and RUN as one typed suffix, moving both epochs to their distinct running phases. Storage rejection returns the unchanged head-published owner before suffix MMIO; success returns an affine running graph and no CPU mutation surface. Only that running graph can join a fresh finished-list transfer, read volatile status and advance a non-sentinel list-zero result without granting CPU ownership. Retained remainders use opaque bounded continuations without recapture or MMIO. After fenced empty-head retirement, atomic unlink-and-arm returns one mailbox-identity-and-generation-bound awaiting owner. Public primary service serializes capture, both ordinary publications and mailbox routing; no standalone unlink, bypass service or pair constructor remains. Wake dispositions are emitted only by that immediate service result. No-work and command-pending consumption re-arm before unlock, while Ready advances the same graph without duplicating those wakes. Temporal order, cross-mailbox affinity and bounded retry liveness are closed: vendor evidence still does not connect command readiness to source 124, but a full slot cannot prevent the absolute direct recheck from observing the complete return predicate. Ready TX and RX nonzero-status paths consume the exact reservation and return the exclusive list to Empty only after memory recycle succeeds. Zero-status RX enters a specialized fail-closed drain/account/re-arm transaction and returns the same non-copyable session only after memory, timeline and source-list release. Recurring TX and RX consume their active owners, derive the next phase, prepare a new affine merge and feed the same head/RUN path; every rejection returns the prior owner without committing the candidate phase. The production actor owns this list-zero session driver; unrelated hardware lists remain outside its dispatcher. |
 | Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> head-published -> running -> completion-observed -> CPU -> reclaimed` ownership | A no-heap memory crate owns the complete 936-byte DTM graph, validates physical placement and installs full private software-list pointers separately from compressed hardware links. TX readiness and role-specific event/bookkeeping transforms remain affine through first and recurring merges. The exact list-zero PAC publication token consumes CPU rollback authority into `HeadPublished`, which exposes identity only. The matching RUN token alone advances it to `Running`; only that state accepts a fenced finished-list observation. Scheduler items, link-state, RX headers and hardware-written RX packet words use volatile semantic accessors. The direct internal DMA-RAM aperture and trailing PAC device fence establish visibility. The lower recycle transition consumes exact empty-head/removal proofs; zero-status RX validates the deterministic two-header topology, accounts the typed result and commits append/re-arm before returning an active owner that recurrence can consume. Only an ordinary CPU owner can enter `Reclaimed`; it retains the same pinned graph and its inseparable allocation configuration, exposes no event preparation and can reinitialize a fresh CPU-owned epoch without caller-supplied configuration. No equivalent edge exists on an intermediate owner. |
-| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and RX accounting transition are typed. Active TX/RX owners retain immutable command identity, committed phase and, for RX, the non-copyable accounting session across recurrence and its lossless failure paths. First and repeated scheduler-current acquisition is Controller-bound and affine. The source-owned standalone RF-ready producer and private phase states enforce initial current-before-RF, recurring-RX RF-before-current and recurring-TX current-only order. Initial admission and sequence are private generation-keyed requests separated by reservation; recurring paths reserve before their sole sequence request. The reviewed standalone margin 107 is held only by the source-owned scheduler policy. The active-session and stopping runners preserve continuity through prepared and in-flight ownership, close recurrence, finish or cancel the accepted event and retain the reclaimed graph through response backpressure. Sleep-enabled RF wake, remaining hardware field meanings, unrelated-list dispatch and powered all-role abort remain incomplete. |
-| HCI | LE Receiver/Transmitter Test v1 and v2 plus LE Test End command/event semantics | A closed generic codec validates exact versioned bodies and normalizes them into one receiver token and one transmitter token. The token retains its exact ingress opcode, typed channel, PHY, pattern and receiver modulation-index assumption through deferred hardware ownership, RUN/failure, busy rejection and response backpressure. Reserved PHY selects return `Unsupported Feature or Parameter Value`; other malformed parameters fail closed as `Invalid HCI Command Parameters`. The S31 projection opens the reviewed 1M/2M/Coded rate modes without version-specific runners; both valid modulation-index assumptions share the reviewed channel/PHY-only RX context because Bluetooth permits, but does not require, a receiver optimization. The source-owned session policy retains idle starts and active Test End for the hardware owner, completes idle Test End with success and zero packets, and rejects a repeated active start with `Controller Busy`; no caller supplies those statuses. The target command actor publishes exact-once responses through the standard `bt-hci::ExternalController` transport. The pinned `bt-hci` release still lacks correct typed Host-side Receiver/Transmitter Test coverage for the board example, so no raw Host command path is added. |
+| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and RX accounting transition are typed. Active TX/RX owners retain immutable command identity, committed phase and, for RX, the non-copyable accounting session across recurrence and its lossless failure paths. First and repeated scheduler-current acquisition is Controller-bound and affine. The source-owned standalone post-enable timing producer and private phase states enforce initial current-before-post-enable, recurring-RX post-enable-before-current and recurring-TX current-only order. Initial admission and sequence are private generation-keyed requests separated by reservation; recurring paths reserve before their sole sequence request. The reviewed standalone margin 107 is held only by the source-owned scheduler policy. The active-session and stopping runners preserve continuity through prepared and in-flight ownership, close recurrence, finish or cancel the accepted event and retain the reclaimed graph through response backpressure. Sleep-enabled RF wake, remaining hardware field meanings, unrelated-list dispatch and powered all-role abort remain incomplete. |
+| HCI | LE Receiver/Transmitter Test v1 and v2 plus LE Test End command/event semantics | A closed generic codec validates exact versioned bodies and normalizes them into one receiver token and one transmitter token. The token retains its exact ingress opcode, typed channel, PHY, pattern and receiver modulation-index assumption through deferred hardware ownership, RUN/failure, busy rejection and response backpressure. Reserved PHY selects return `Unsupported Feature or Parameter Value`; other malformed parameters fail closed as `Invalid HCI Command Parameters`. The S31 projection opens the reviewed 1M/2M/Coded rate modes without version-specific runners; both valid modulation-index assumptions share the reviewed channel/PHY-only RX context because Bluetooth permits, but does not require, a receiver optimization. The source-owned session policy retains idle starts and active Test End for the hardware owner, completes idle Test End with success and zero packets, and rejects a repeated active start with `Controller Busy`; no caller supplies those statuses. The target command actor publishes exact-once responses through the standard `bt-hci::ExternalController` transport. Pinned `bt-hci` 0.10.1 supplies the typed v2 Host commands used by the board example; no raw Host command path is present. |
 
 No ULL advertising, scanning, connection, ACL or LLCP implementation is
 needed for DTM. Trouble is not part of this slice: Trouble is a Host above HCI
@@ -917,9 +1022,10 @@ it must not be read as claiming on-air validation.
    reanchor that epoch before one role/phase preparation consumes the private
    current. The terminal powered BLE-PHY owner now composes the retained
    always-awake selection and a completed later time request into a private
-   RF-ready token. Initial TX/RX consume current before that token, recurring RX
-   consumes the token before fresh current, and recurring TX remains
-   current-only. Initial admission and later sequence acquisition are distinct
+   post-enable timing token that makes no RF-readiness claim. Initial TX/RX
+   consume current before that token, recurring RX consumes the token before
+   fresh current, and recurring TX remains current-only. Initial admission and
+   later sequence acquisition are distinct
    private requests separated by reservation; recurring preparation reserves
    before its sequence request. The concrete session/HCI pump now retains these
    owners through response backpressure. General LL role dispatch remains
@@ -927,19 +1033,23 @@ it must not be read as claiming on-air validation.
 2. **Close the controller timebase source.** The latch address/order,
    standalone scale arithmetic, affine nonblocking request phases, pure
    wrapping epoch projection and sole powered task-side MMIO owner now exist.
-   Add a lost-wake-safe registered event or proven bounded timer recheck and
-   establish the effective counter width and physical unit before scheduler
-   deadlines become live. Compose the now-exact DTM
-   microsecond interval with the recovered environment remainder only after
-   that value has a source-owned initialization path.
-3. **Close the hardware-consumed descriptor.** Eight link-state reset words,
-   eleven scheduler-item event words, every allocation footprint, chain anchor,
-   TX/RX header image and RX re-arm transform are now exact. Trace every
-   additional word read by hardware for one TX-role event and prove the
-   complete field masks for access address, CRC, whitening, power and next
-   link. The complete event body proves there is no separate software latch;
-   retain the published `item -> link state -> private links` chain and trace
-   only the undocumented hardware interpretation still needed for completion.
+   The final runner already supplies a bounded absolute recheck. Establish the
+   effective counter width and a hardware wake source before claiming a
+   sleep-enabled timebase; the always-awake raw-tick-to-microsecond conversion
+   is now exact. Compose the DTM microsecond interval with the recovered
+   environment remainder only after that value has a source-owned
+   initialization path.
+3. **Use the complete CPU-produced descriptor and keep hardware-reader research
+   independent.** Eight link-state reset words, eleven scheduler-item event
+   words, every zero-based allocation footprint, allocation prefix, chain
+   anchor, TX/RX header image and RX re-arm transform account for every write
+   in the complete allocation/reset/event producer path. The resulting
+   `item -> link state -> private links` graph is therefore an implementation
+   input to controller work now; unknown field-specific names inside the
+   hardware reader do not justify inventing additional writes or keeping the
+   producer implementation open. Continue tracing hardware readers to qualify
+   access-address, CRC, whitening, power, packet-result and completion
+   semantics, and use a concrete divergence to reopen the producer contract.
 4. **Maintain the concrete executor-neutral DTM pump and Test End.** Completion and
    recycle already return active TX/RX identity only after exact list and
    Timeline release, and a rejected recurrence preserves the committed phase.
@@ -952,16 +1062,17 @@ it must not be read as claiming on-air validation.
    suppresses recurrence after Test End and either cancels before publication
    or joins the accepted event through recycle. BUSY-clear alone remains
    insufficient evidence for whole-session quiescence.
-5. **Complete the open scheduler wake model.** The fixed-capacity Timeline,
+5. **Complete the general scheduler wake model.** The fixed-capacity Timeline,
    explicit prepared/running/completed/recycled owners and globally
    identity-branded atomic unlink-and-arm mailbox now exist. The exact first
    post-arm event is retained
    without a public constructor or service bypass, and no-work/command-pending
    consumption re-arms the same identity and generation before returning. ISR
    wake dispositions are delivered once by primary service, not repeated by
-   late consumption. Add a proven command-ready wake and a
-   bounded policy that cannot miss a later ready edge while that capacity-one
-   slot holds an earlier event. The vendor selector-6 callback validates only
+   late consumption. The bounded absolute read-only recheck closes DTM progress
+   even if a later command-ready event arrives while the capacity-one slot
+   retains an older event; independently determine its hardware interrupt
+   source for general scheduler qualification. The vendor selector-6 callback validates only
    its private intrusive transaction container and has no open-driver runtime
    equivalent; keep scan resume outside the DTM feature graph.
 6. **Preserve the composed ISR epoch and session owner.** The level-3 hard handler
@@ -998,21 +1109,26 @@ now-classified scan-resume path.
   already explicit;
 - exact multi-item ordering within a finished hardware list; DTM's capacity-one
   list-zero relation does not establish that rule for other roles;
-- exact controller-time raw width, wrap and physical unit;
+- exact effective controller-time width and hardware wrap behavior;
 - complete S31 descriptor field boundaries, all hardware-read words and the
-  internal latch that consumes DTM's private link-state RX pointer;
+  hardware interpretation of DTM's published private link-state RX pointer;
 - exact hardware current/next rotation for the normal scan/non-scan global
   lists; DTM deliberately bypasses those selector pairs;
 - exact primary/NRT bits for TX done, RX done, timeout and abort in the DTM
   feature configuration, including their mapping to finished-list indices;
 - whether any command-ready transition in the post-unlink return predicate
   raises source 124 or another hardware wake at all;
-- meaning of the validated RX result high byte, plus length/CRC/RSSI extraction;
+- physical unit/calibration of the signed RX RSSI, plus length/CRC and low-24
+  result-status extraction;
 - bounded abort plus powered quiescence when an event is scheduled or running.
 
-The operational blockers are the physical controller-time width/unit contract,
-guaranteed post-unlink progress when the mailbox is full, unrelated finished-list
-routing, source-127 expiration ownership, remaining hardware-consumed descriptor
-semantics, sleep-enabled RF wake and target on-air evidence. The DTM session loop,
+The operational blockers are unrelated finished-list routing, source-127
+expiration ownership, sleep-enabled RF wake and target on-air evidence. The
+effective controller-time width/wrap contract limits sleep and long-duration
+qualification, but not the bounded always-awake DTM path. Post-unlink progress
+is bounded by the absolute direct recheck even when the mailbox is full.
+Hardware-reader descriptor semantics remain a qualification gap, but
+the complete CPU producer no longer blocks controller/LL/DTM implementation in
+the absence of a concrete conflicting observation. The DTM session loop,
 in-flight Test End join and backpressured Controller-side HCI publication exist.
 Trouble integration and an RTOS abstraction are not prerequisites.

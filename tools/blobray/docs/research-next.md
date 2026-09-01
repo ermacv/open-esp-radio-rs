@@ -31,7 +31,7 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 16. It separates the complete backlog from the
+The machine report uses schema 17. It separates the complete backlog from the
 bounded recommendation and exposes reviewed labels for referenced functions:
 
 - `inventory.findings` contains every typed finding exactly once;
@@ -43,6 +43,11 @@ bounded recommendation and exposes reviewed labels for referenced functions:
   roles and summaries without replacing generated behavior or completeness;
 - `selection.steps` is the only ranked list. Its typed prerequisite/action
   references are bounded by `--limit` and `--budget`.
+- `focus` is always explicit. `all` keeps the complete ranking, while
+  `hardware-access` makes only typed MMIO/register subjects and explicitly
+  reviewed hardware-shared memory accesses eligible. A memory classification
+  is bound to an exact source artifact SHA-256 plus function and instruction
+  site; unclassified RAM and reviewed software-only state remain inventory.
 - `finding_query` is always present. It distinguishes `all`, `open`,
   `condition-satisfied`, `input-not-observed`, `filtered-out`, and
   `not-present`. Correlated register states include typed current observation,
@@ -156,6 +161,18 @@ Scores are stable prioritization signals, not elapsed-time estimates.
 
 ## Filters, budget and limit
 
+`--focus hardware-access` narrows only selection eligibility. It does not
+remove interface, call-result, control-flow, or other findings from the
+inventory, and it does not change exact-finding resolution. Generic call and
+control-flow blockers are not admitted merely because they transitively reach
+hardware work. A prerequisite is eligible only when it directly satisfies an
+eligible finding; an unrelated interface anchor therefore cannot displace an
+SRAM or MMIO action. The default is `--focus all`.
+
+Reviewed memory classification is ranking evidence only. It does not resolve
+the underlying analysis blocker or claim that the object's address, lifetime,
+layout, ownership, or hardware behavior has been modeled.
+
 `--scope ID` selects one exact configured review scope. `--protocol NAME`
 selects scopes by their mandatory, explicit `protocols` membership in
 `vendor-project.toml`; scope IDs and symbols are never interpreted as protocol
@@ -179,6 +196,10 @@ strategy-eligible counts and ordered typed step references make the bounded
 selection auditable without dropping hidden findings.
 
 ```console
+cargo blobray project research next \
+  --focus hardware-access --protocol ble --limit 20 \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
 cargo blobray project research next \
   --strategy quick-wins --protocol wifi --budget 20 --limit 8 \
   --project verification/vendor/targets/esp32s31/vendor-project.toml

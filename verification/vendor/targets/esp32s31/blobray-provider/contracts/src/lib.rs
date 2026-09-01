@@ -17,6 +17,17 @@ const EXTERNAL_CALL_MODEL_SETS: &[open_radio_vendor_contracts::ExternalCallModel
     external_abi::BLE_EXTERNAL_FUNCTION_MODELS_20250819,
 ];
 const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
+    // The BLE hardware-state dump exports one opaque binary record identified
+    // by a channel, a byte slice and its length. The payload is observation
+    // output, not a controller input or an operational memory effect.
+    DiagnosticCallSpec {
+        symbol: "r_ble_log_raw_export",
+        argument_count: 3,
+    },
+    DiagnosticCallSpec {
+        symbol: "wr_btdm_log_raw_export",
+        argument_count: 3,
+    },
     // The complete BLE log wrappers only filter, timestamp and publish one
     // diagnostic record through the separately reviewed BLE logging ABI.
     // Keep their stable payload arity visible without importing the private
@@ -39,6 +50,22 @@ const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
     },
     DiagnosticCallSpec {
         symbol: "r_ble_log_internal_x3",
+        argument_count: 4,
+    },
+    DiagnosticCallSpec {
+        symbol: "wr_btdm_log_internal_x0",
+        argument_count: 1,
+    },
+    DiagnosticCallSpec {
+        symbol: "wr_btdm_log_internal_x1",
+        argument_count: 2,
+    },
+    DiagnosticCallSpec {
+        symbol: "wr_btdm_log_internal_x2",
+        argument_count: 3,
+    },
+    DiagnosticCallSpec {
+        symbol: "wr_btdm_log_internal_x3",
         argument_count: 4,
     },
     DiagnosticCallSpec {
@@ -98,6 +125,8 @@ mod tests {
                 .find(|call| call.symbol == symbol)
                 .expect("reviewed diagnostic call")
         };
+        assert_eq!(call("r_ble_log_raw_export").argument_count, 3);
+        assert_eq!(call("wr_btdm_log_raw_export").argument_count, 3);
         assert_eq!(call("wifi_log").argument_count, 6);
         assert_eq!(call("wifi_assert").argument_count, 4);
         assert_eq!(call("phy_printf").argument_count, 1);
@@ -106,6 +135,10 @@ mod tests {
         assert_eq!(call("r_ble_log_internal_x1").argument_count, 2);
         assert_eq!(call("r_ble_log_internal_x2").argument_count, 3);
         assert_eq!(call("r_ble_log_internal_x3").argument_count, 4);
+        assert_eq!(call("wr_btdm_log_internal_x0").argument_count, 1);
+        assert_eq!(call("wr_btdm_log_internal_x1").argument_count, 2);
+        assert_eq!(call("wr_btdm_log_internal_x2").argument_count, 3);
+        assert_eq!(call("wr_btdm_log_internal_x3").argument_count, 4);
         assert!(
             [
                 "pp_printf",

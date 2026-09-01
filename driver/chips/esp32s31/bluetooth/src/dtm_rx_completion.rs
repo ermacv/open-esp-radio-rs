@@ -11,24 +11,25 @@
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmRxResultProjection;
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmRxResultProjectionError;
-
-/// Initial positional byte installed by the complete current DTM environment
-/// initializer.
-pub const BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE: u8 = 0x7f;
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmRxRssi;
 
 /// Pure receive-count state retained across one active DTM receiver test.
 #[derive(Debug, Eq, PartialEq)]
 pub struct BluetoothDtmReceiverSession {
     received_packet_count: u16,
-    last_returned_byte: u8,
+    last_rssi: Option<BluetoothDtmRxRssi>,
 }
 
 impl BluetoothDtmReceiverSession {
-    /// Construct the exact initial count and positional-byte image.
+    /// Construct an empty semantic session.
+    ///
+    /// The vendor environment stores `0x7f` before the first accepted packet.
+    /// Rust retains absence as `None` instead of exposing that storage sentinel
+    /// as a measured RSSI sample.
     pub const fn new() -> Self {
         Self {
             received_packet_count: 0,
-            last_returned_byte: BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE,
+            last_rssi: None,
         }
     }
 
@@ -40,11 +41,11 @@ impl BluetoothDtmReceiverSession {
     ) -> BluetoothDtmRxCompletionOutcome {
         match projection {
             Ok(result) => {
-                self.last_returned_byte = result.returned_byte();
+                self.last_rssi = Some(result.rssi());
                 self.received_packet_count = self.received_packet_count.wrapping_add(1);
                 BluetoothDtmRxCompletionOutcome::Counted {
                     received_packet_count: self.received_packet_count,
-                    returned_byte: self.last_returned_byte,
+                    rssi: result.rssi(),
                 }
             }
             Err(error) => BluetoothDtmRxCompletionOutcome::NotCounted { error },
@@ -56,9 +57,9 @@ impl BluetoothDtmReceiverSession {
         self.received_packet_count
     }
 
-    /// Return the last accepted positional byte without assigning semantics.
-    pub const fn last_returned_byte(&self) -> u8 {
-        self.last_returned_byte
+    /// Return the last accepted signed RSSI, if one packet has been counted.
+    pub const fn last_rssi(&self) -> Option<BluetoothDtmRxRssi> {
+        self.last_rssi
     }
 }
 
@@ -74,12 +75,12 @@ impl Default for BluetoothDtmReceiverSession {
 pub enum BluetoothDtmRxCompletionOutcome {
     /// The scheduler event returned no completed packet.
     NoReturnedPacket,
-    /// The result word updated the positional byte and wrapping packet count.
+    /// The result word updated the signed RSSI and wrapping packet count.
     Counted {
         /// Count after this buffer was accepted.
         received_packet_count: u16,
-        /// Positional byte copied from packet-buffer offset `+0x0f`.
-        returned_byte: u8,
+        /// Signed controller RSSI copied from packet-buffer offset `+0x0f`.
+        rssi: BluetoothDtmRxRssi,
     },
     /// The low 24 bits prevented this buffer from changing DTM result state.
     NotCounted {
@@ -91,38 +92,52 @@ pub enum BluetoothDtmRxCompletionOutcome {
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
-        BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
+        BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi,
     };
 
-    use super::{
-        BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,
-        BluetoothDtmRxCompletionOutcome,
-    };
+    use super::{BluetoothDtmReceiverSession, BluetoothDtmRxCompletionOutcome};
 
     #[test]
-    fn initial_state_matches_the_complete_current_environment_initializer() {
+    fn initial_state_has_no_accepted_rssi_sample() {
         let state = BluetoothDtmReceiverSession::new();
 
         assert_eq!(state.received_packet_count(), 0);
-        assert_eq!(
-            state.last_returned_byte(),
-            BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE
-        );
+        assert_eq!(state.last_rssi(), None);
     }
 
     #[test]
-    fn accepted_word_updates_byte_and_count_once() {
+    fn accepted_word_updates_signed_rssi_and_count_once() {
         let mut state = BluetoothDtmReceiverSession::new();
 
         assert_eq!(
             state.account_projection(BluetoothDtmRxResultProjection::from_word(0xa500_0000)),
             BluetoothDtmRxCompletionOutcome::Counted {
                 received_packet_count: 1,
-                returned_byte: 0xa5,
+                rssi: BluetoothDtmRxRssi::from_controller_value(-91),
             }
         );
         assert_eq!(state.received_packet_count(), 1);
-        assert_eq!(state.last_returned_byte(), 0xa5);
+        assert_eq!(
+            state.last_rssi().map(BluetoothDtmRxRssi::controller_value),
+            Some(-91)
+        );
+    }
+
+    #[test]
+    fn accepted_rssi_preserves_the_signed_controller_domain() {
+        let mut state = BluetoothDtmReceiverSession::new();
+
+        assert_eq!(
+            state.account_projection(BluetoothDtmRxResultProjection::from_word(0xff00_0000)),
+            BluetoothDtmRxCompletionOutcome::Counted {
+                received_packet_count: 1,
+                rssi: BluetoothDtmRxRssi::from_controller_value(-1),
+            }
+        );
+        assert_eq!(
+            state.last_rssi().map(BluetoothDtmRxRssi::controller_value),
+            Some(-1)
+        );
     }
 
     #[test]
@@ -144,7 +159,10 @@ mod tests {
             }
         );
         assert_eq!(state.received_packet_count(), 1);
-        assert_eq!(state.last_returned_byte(), 0x31);
+        assert_eq!(
+            state.last_rssi().map(BluetoothDtmRxRssi::controller_value),
+            Some(49)
+        );
     }
 
     #[test]
@@ -160,6 +178,9 @@ mod tests {
         }
 
         assert_eq!(state.received_packet_count(), 0);
-        assert_eq!(state.last_returned_byte(), 0);
+        assert_eq!(
+            state.last_rssi().map(BluetoothDtmRxRssi::controller_value),
+            Some(0)
+        );
     }
 }

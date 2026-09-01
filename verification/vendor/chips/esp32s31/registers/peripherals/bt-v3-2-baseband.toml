@@ -13,13 +13,14 @@ baseAddress = 0x20102000
 
 [peripherals.registers.register]
 name = "RX_SETUP_CONTROL_0"
-description = "bt_bb_rx_set sets one independently observed control bit."
+description = "Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown."
 addressOffset = 0x0
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE"
+name = "SET_BY_RX_SETUP_BIT_0"
+description = "Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."
 bitOffset = 0
 bitWidth = 1
 
@@ -114,13 +115,14 @@ bitWidth = 5
 
 [peripherals.registers.register]
 name = "RX_SETUP_CONTROL_1"
-description = "bt_bb_rx_set sets one independently observed control bit."
+description = "Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown."
 addressOffset = 0x4C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE"
+name = "SET_BY_RX_SETUP_BIT_2"
+description = "Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."
 bitOffset = 2
 bitWidth = 1
 
@@ -1389,7 +1391,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0.ENABLE"
+entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0.SET_BY_RX_SETUP_BIT_0"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1417,7 +1419,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1.ENABLE"
+entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1.SET_BY_RX_SETUP_BIT_2"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"

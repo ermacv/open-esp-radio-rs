@@ -78,6 +78,8 @@ pub(super) static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
     semantic_cache_domain: "blobray/riscv-harness/neutral/v1",
     contracts: &CONTRACTS,
     summaries: &SUMMARIES,
+    compressed_pointer_encodings: &[],
+    reviewed_memory_accesses: &[],
 };
 
 pub(super) fn entry_contract(id: &str) -> crate::Result<EntryContractRef> {

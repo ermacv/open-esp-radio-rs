@@ -85,13 +85,6 @@ impl BluetoothControllerTimeLatchOwnership {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub(crate) fn begin_without_mmio_for_test(
-        &mut self,
-    ) -> Result<(), BluetoothControllerTimeLatchBeginError> {
-        self.begin()
-    }
-
     fn require_in_flight(&self) -> Result<(), BluetoothControllerTimeLatchStepError> {
         if self.in_flight {
             Ok(())

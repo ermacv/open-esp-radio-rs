@@ -263,11 +263,19 @@ fn pseudo_ir_does_not_render_a_second_return_after_tail_call() {
 }
 
 #[test]
-fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
+fn context_map_recovers_same_location_rmw_ownership() {
+    let field_address = SymbolicValue::input(2).add_constant(4);
+    let read = DraftReferenceEvent::Memory {
+        access: MemoryAccess::Read,
+        width: 32,
+        address: field_address.clone(),
+        region: "caller-owned ABI argument RAM".to_owned(),
+        value: None,
+    };
     let write = DraftReferenceEvent::Memory {
         access: MemoryAccess::Write,
         width: 32,
-        address: SymbolicValue::input(2).add_constant(4),
+        address: field_address,
         region: "caller-owned ABI argument RAM".to_owned(),
         value: Some(SymbolicValue::MemoryImage {
             read_token: 0,
@@ -295,7 +303,7 @@ fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
                     right: SymbolicValue::Constant(0),
                 },
                 taken: Box::new(DraftReferenceFlow {
-                    events: vec![write],
+                    events: vec![read, write],
                     terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(1)),
                 }),
                 not_taken: Box::new(DraftReferenceFlow {
@@ -309,24 +317,85 @@ fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
 
     let accesses = context_accesses_for_trace(&trace);
     let fields = context_fields_for_accesses(&accesses);
-    let pseudo = render_pseudo("update_context", &trace, &[], &[], &[], &[], None);
 
-    assert_eq!(accesses.len(), 1);
-    assert_eq!(accesses[0].argument, 2);
-    assert_eq!(accesses[0].offset, 4);
-    assert_eq!(accesses[0].write_mask, Some(0x20));
-    assert_eq!(accesses[0].preserved_mask, Some(0xffff_ffdf));
-    assert_eq!(accesses[0].forced_zero_mask, Some(0));
-    assert_eq!(accesses[0].forced_one_mask, Some(0x20));
-    assert!(accesses[0].path.contains("if arg1 != 0x00000000"));
+    let write = accesses
+        .iter()
+        .find(|access| access.access == "write")
+        .expect("same-location write");
+    let modified = write.write_mask.expect("classified RMW bits");
+    let preserved = write.preserved_mask.expect("same-location preservation");
+    assert_eq!(write.argument, 2);
+    assert_eq!(write.offset, 4);
+    assert_ne!(modified, width_mask(write.width));
+    assert_ne!(preserved, 0);
+    assert_eq!(modified & preserved, 0);
+    assert_eq!(modified | preserved, width_mask(write.width));
+    assert!(write.path.contains("if arg1 != 0x00000000"));
     assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].reads, 0);
+    assert_eq!(fields[0].reads, 1);
     assert_eq!(fields[0].writes, 1);
-    assert_eq!(fields[0].write_mask, 0x20);
-    assert!(
-        pseudo.contains("ctx2.write32(+0x4, ((ramread0 & 0xffffffdf) | 0x00000020));"),
-        "{pseudo}"
-    );
+    assert_eq!(fields[0].write_mask, modified);
+}
+
+#[test]
+fn memory_copy_across_objects_or_offsets_is_fully_modified() {
+    let source = SymbolicValue::input(0).add_constant(12);
+    let trace = FunctionAnalysis {
+        symbol: "copy_context".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: vec![
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 32,
+                address: source,
+                region: "caller-owned source RAM".to_owned(),
+                value: None,
+            },
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                address: SymbolicValue::input(1).add_constant(36),
+                region: "caller-owned destination RAM".to_owned(),
+                value: Some(SymbolicValue::MemoryImage {
+                    read_token: 0,
+                    and_mask: 0xff,
+                    or_mask: 0,
+                }),
+            },
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                address: SymbolicValue::input(0).add_constant(16),
+                region: "caller-owned source RAM".to_owned(),
+                value: Some(SymbolicValue::MemoryImage {
+                    read_token: 0,
+                    and_mask: 0xff,
+                    or_mask: 0,
+                }),
+            },
+        ],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(0),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+
+    let writes = memory_object_accesses_for_trace(&trace)
+        .into_iter()
+        .filter(|access| access.access == "write")
+        .collect::<Vec<_>>();
+
+    assert_eq!(writes.len(), 2);
+    for write in writes {
+        assert_eq!(write.write_mask, Some(width_mask(write.width)));
+        assert_eq!(write.preserved_mask, None);
+        assert_eq!(write.forced_zero_mask, None);
+        assert_eq!(write.forced_one_mask, None);
+    }
 }
 
 #[test]

@@ -25,14 +25,23 @@ impl BluetoothControllerTimeSample {
     }
 
     #[cfg(test)]
-    pub(crate) const fn for_validation(raw_time: u32) -> Self {
-        Self::from_live_latch(BluetoothControllerLatchedTime::from_bits(raw_time))
+    pub(crate) const fn for_validation(raw_ticks: u32) -> Self {
+        Self::from_live_latch(BluetoothControllerLatchedTime::from_bits(raw_ticks))
     }
 
-    /// Return the complete wrapping raw-time image.
+    /// Return the complete wrapping raw controller-tick image.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn raw_time(&self) -> u32 {
+    pub(crate) const fn raw_ticks(&self) -> u32 {
         self.latched_time.bits()
+    }
+
+    /// Borrow the typed hardware sample for one private descriptor update.
+    ///
+    /// This does not expose an integer image or duplicate scheduler-time
+    /// authority. The returned PAC value can only enter a lower typed codec.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn latched_time(&self) -> BluetoothControllerLatchedTime {
+        self.latched_time
     }
 }
 
@@ -549,7 +558,7 @@ pub(crate) fn drain_controller_time_orphan(
     owner.drain_orphan_controller_time()
 }
 
-/// Raw-time anchor paired with the BLE scheduler's positional epoch.
+/// Raw-tick anchor paired with the BLE scheduler's microsecond epoch.
 ///
 /// The projection exactly retains the current `r_sched_timer_convertTimeToUs`
 /// branch geometry. Every reviewed S31 HAL configuration has a positive scale
@@ -557,14 +566,14 @@ pub(crate) fn drain_controller_time_orphan(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothControllerSchedulerEpoch {
-    raw_anchor: u32,
-    scheduler_anchor: u32,
+    raw_tick_anchor: u32,
+    micros_anchor: u32,
     scale: BluetoothControllerTimeScale,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothControllerSchedulerEpoch {
-    /// Establish the source-owned epoch from its first live raw-time update.
+    /// Establish the source-owned epoch from its first live raw-tick update.
     ///
     /// Scheduler initialization starts both reference images at zero. Every
     /// reviewed ESP32-S31 time scale is positive, so the forward conversion's
@@ -577,10 +586,10 @@ impl BluetoothControllerSchedulerEpoch {
         sample: &BluetoothControllerTimeSample,
         scale: BluetoothControllerTimeScale,
     ) -> Self {
-        let raw_anchor = sample.raw_time();
+        let raw_tick_anchor = sample.raw_ticks();
         Self {
-            raw_anchor,
-            scheduler_anchor: scale.scheduler_delta_from_raw(raw_anchor),
+            raw_tick_anchor,
+            micros_anchor: scale.micros_from_raw_ticks(raw_tick_anchor),
             scale,
         }
     }
@@ -590,12 +599,12 @@ impl BluetoothControllerSchedulerEpoch {
     #[cfg(test)]
     pub(crate) const fn new(
         sample: BluetoothControllerTimeSample,
-        scheduler_anchor: u32,
+        micros_anchor: u32,
         scale: BluetoothControllerTimeScale,
     ) -> Self {
         Self {
-            raw_anchor: sample.raw_time(),
-            scheduler_anchor,
+            raw_tick_anchor: sample.raw_ticks(),
+            micros_anchor,
             scale,
         }
     }
@@ -608,14 +617,14 @@ impl BluetoothControllerSchedulerEpoch {
 
     /// Project one completed live sample while retaining the exact epoch.
     ///
-    /// RF-ready observation is a separate scheduler-time read in the reviewed
-    /// standalone flow. It must use the retained epoch, but unlike a task-run
-    /// current-time update it does not advance either epoch anchor.
+    /// The post-enable timing observation is a separate scheduler-time read in
+    /// the reviewed standalone flow. It must use the retained epoch, but unlike
+    /// a task-run current-time update it does not advance either epoch anchor.
     pub(crate) const fn project_without_reanchor(
         self,
         sample: &BluetoothControllerTimeSample,
     ) -> u32 {
-        self.project_raw_time(sample.raw_time())
+        self.project_raw_ticks(sample.raw_ticks())
     }
 
     /// Advance the raw anchor while preserving this sample's scheduler image.
@@ -625,40 +634,40 @@ impl BluetoothControllerSchedulerEpoch {
     /// shifting scales have wrapping aliases that the inverse projection can
     /// distinguish only through the latest raw anchor.
     pub(crate) const fn reanchor(self, sample: &BluetoothControllerTimeSample) -> Self {
-        let raw_anchor = sample.raw_time();
+        let raw_tick_anchor = sample.raw_ticks();
         Self {
-            raw_anchor,
-            scheduler_anchor: self.project_raw_time(raw_anchor),
+            raw_tick_anchor,
+            micros_anchor: self.project_raw_ticks(raw_tick_anchor),
             scale: self.scale,
         }
     }
 
-    const fn project_raw_time(self, raw_time: u32) -> u32 {
-        let delta = raw_time.wrapping_sub(self.raw_anchor);
+    const fn project_raw_ticks(self, raw_ticks: u32) -> u32 {
+        let delta = raw_ticks.wrapping_sub(self.raw_tick_anchor);
         if delta as i32 >= 0 {
-            self.scheduler_anchor
-                .wrapping_add(self.scale.scheduler_delta_from_raw(delta))
+            self.micros_anchor
+                .wrapping_add(self.scale.micros_from_raw_ticks(delta))
         } else {
-            self.scheduler_anchor
-                .wrapping_sub(self.scale.scheduler_delta_from_raw(delta.wrapping_neg()))
+            self.micros_anchor
+                .wrapping_sub(self.scale.micros_from_raw_ticks(delta.wrapping_neg()))
         }
     }
 
-    /// Project one scheduler-domain position back into raw controller time.
+    /// Project one scheduler microsecond position back into raw controller ticks.
     ///
     /// This retains the complete `r_sched_timer_convertTimeToTicks` branch
     /// geometry. Discarded low scheduler bits are truncated toward the epoch
     /// anchor on both sides, matching the reviewed inverse helper.
-    pub const fn raw_time_for_scheduler_time(self, scheduler_time: u32) -> u32 {
-        let delta = scheduler_time.wrapping_sub(self.scheduler_anchor);
+    pub const fn raw_ticks_for_micros(self, micros: u32) -> u32 {
+        let delta = micros.wrapping_sub(self.micros_anchor);
         if delta as i32 >= 0 {
-            self.raw_anchor
-                .wrapping_add(self.scale.raw_delta_from_scheduler(delta).whole)
+            self.raw_tick_anchor
+                .wrapping_add(self.scale.raw_ticks_from_micros(delta).whole_ticks)
         } else {
-            self.raw_anchor.wrapping_sub(
+            self.raw_tick_anchor.wrapping_sub(
                 self.scale
-                    .raw_delta_from_scheduler(delta.wrapping_neg())
-                    .whole,
+                    .raw_ticks_from_micros(delta.wrapping_neg())
+                    .whole_ticks,
             )
         }
     }
@@ -698,9 +707,9 @@ impl BluetoothControllerSchedulerNow {
         &self.sample
     }
 
-    /// Scheduler-domain image projected from the retained sample and epoch.
-    pub(crate) const fn scheduler_image(&self) -> u32 {
-        self.epoch.project_raw_time(self.sample.raw_time())
+    /// Wrapping microsecond image projected from the retained sample and epoch.
+    pub(crate) const fn micros(&self) -> u32 {
+        self.epoch.project_raw_ticks(self.sample.raw_ticks())
     }
 }
 
@@ -891,7 +900,7 @@ mod tests {
         };
         let (identity, observed) = match waiting.recheck().expect("second recheck completes") {
             BluetoothControllerTimePendingCoreStep::Ready { owner, sample } => {
-                (owner.identity, sample.raw_time())
+                (owner.identity, sample.raw_ticks())
             }
             BluetoothControllerTimePendingCoreStep::Waiting(_) => {
                 panic!("second recheck unexpectedly waited")
@@ -923,7 +932,7 @@ mod tests {
                     owner: returned,
                     sample,
                 } => {
-                    assert_eq!(sample.raw_time(), 9);
+                    assert_eq!(sample.raw_ticks(), 9);
                     let _ = returned;
                 }
                 BluetoothControllerTimePendingCoreStep::Waiting(_) => {
@@ -1013,7 +1022,7 @@ mod tests {
             }
             other => panic!("unexpected event step: {other:?}"),
         };
-        assert_eq!(sample.raw_time(), 0x1234_5678);
+        assert_eq!(sample.raw_ticks(), 0x1234_5678);
         assert_eq!(
             hardware.operations,
             [Operation::Begin, Operation::Step, Operation::Step]
@@ -1059,7 +1068,7 @@ mod tests {
             }
             other => panic!("unexpected event step: {other:?}"),
         };
-        assert_eq!(sample.raw_time(), 0x2222_2222);
+        assert_eq!(sample.raw_ticks(), 0x2222_2222);
         assert_eq!(
             hardware.operations,
             [
@@ -1233,17 +1242,14 @@ mod tests {
             BluetoothControllerSchedulerEpoch::new(sample(1), 1_000, scale);
         assert_eq!(reverse_wrapping_epoch.project(sample(0xffff_fffe)), 988);
 
-        assert_eq!(epoch.raw_time_for_scheduler_time(1_012), 103);
-        assert_eq!(epoch.raw_time_for_scheduler_time(1_015), 103);
-        assert_eq!(epoch.raw_time_for_scheduler_time(988), 97);
-        assert_eq!(epoch.raw_time_for_scheduler_time(985), 97);
+        assert_eq!(epoch.raw_ticks_for_micros(1_012), 103);
+        assert_eq!(epoch.raw_ticks_for_micros(1_015), 103);
+        assert_eq!(epoch.raw_ticks_for_micros(988), 97);
+        assert_eq!(epoch.raw_ticks_for_micros(985), 97);
 
         let scheduler_wrapping_epoch =
             BluetoothControllerSchedulerEpoch::new(sample(100), 0xffff_fffe, scale);
-        assert_eq!(
-            scheduler_wrapping_epoch.raw_time_for_scheduler_time(10),
-            103
-        );
+        assert_eq!(scheduler_wrapping_epoch.raw_ticks_for_micros(10), 103);
     }
 
     #[test]
@@ -1274,20 +1280,20 @@ mod tests {
                 BluetoothHalInitPeriod::Image500,
             ),
         ];
-        let raw_anchor = 0x1234_5678;
+        let raw_tick_anchor = 0x1234_5678;
 
         for (hal_scale, period) in cases {
             let scale = BluetoothControllerHalInitConfig::new(hal_scale, 11, 33, period)
                 .controller_time_scale();
-            let first_sample = sample(raw_anchor);
+            let first_sample = sample(raw_tick_anchor);
             let epoch =
                 BluetoothControllerSchedulerEpoch::from_first_live_update(&first_sample, scale);
-            let expected = scale.scheduler_delta_from_raw(raw_anchor);
+            let expected = scale.micros_from_raw_ticks(raw_tick_anchor);
 
-            assert_eq!(epoch.project(sample(raw_anchor)), expected);
+            assert_eq!(epoch.project(sample(raw_tick_anchor)), expected);
             assert_eq!(
-                epoch.project(sample(raw_anchor.wrapping_add(3))),
-                expected.wrapping_add(scale.scheduler_delta_from_raw(3))
+                epoch.project(sample(raw_tick_anchor.wrapping_add(3))),
+                expected.wrapping_add(scale.micros_from_raw_ticks(3))
             );
         }
     }
@@ -1300,8 +1306,8 @@ mod tests {
         let now = BluetoothControllerSchedulerNow::from_retained_epoch(epoch, first_sample);
 
         assert_eq!(now.epoch(), epoch);
-        assert_eq!(now.sample().raw_time(), 0x4000_0000);
-        assert_eq!(now.scheduler_image(), 0);
+        assert_eq!(now.sample().raw_ticks(), 0x4000_0000);
+        assert_eq!(now.micros(), 0);
     }
 
     #[test]
@@ -1311,24 +1317,24 @@ mod tests {
         let first_epoch =
             BluetoothControllerSchedulerEpoch::from_first_live_update(&first_sample, scale);
         let later_sample = sample(0x4000_0000);
-        let later_scheduler_image = first_epoch.project_raw_time(later_sample.raw_time());
+        let later_scheduler_image = first_epoch.project_raw_ticks(later_sample.raw_ticks());
         let reanchored = first_epoch.reanchor(&later_sample);
 
         assert_eq!(
-            reanchored.project_raw_time(later_sample.raw_time()),
+            reanchored.project_raw_ticks(later_sample.raw_ticks()),
             later_scheduler_image
         );
-        assert_eq!(first_epoch.raw_time_for_scheduler_time(4), 1);
-        assert_eq!(reanchored.raw_time_for_scheduler_time(4), 0x4000_0001);
+        assert_eq!(first_epoch.raw_ticks_for_micros(4), 1);
+        assert_eq!(reanchored.raw_ticks_for_micros(4), 0x4000_0001);
     }
 
     #[test]
-    fn rf_ready_projection_retains_the_existing_scheduler_epoch() {
+    fn post_enable_projection_retains_the_existing_scheduler_epoch() {
         let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
         let epoch = BluetoothControllerSchedulerEpoch::new(sample(100), 1_000, scale);
-        let rf_ready_sample = sample(103);
+        let post_enable_sample = sample(103);
 
-        assert_eq!(epoch.project_without_reanchor(&rf_ready_sample), 1_012);
-        assert_eq!(epoch.raw_time_for_scheduler_time(1_012), 103);
+        assert_eq!(epoch.project_without_reanchor(&post_enable_sample), 1_012);
+        assert_eq!(epoch.raw_ticks_for_micros(1_012), 103);
     }
 }

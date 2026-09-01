@@ -40111,22 +40111,24 @@ pub mod btmac_ble_phy_init {
         pub type R = crate::R<InitBranchControl0470Spec>;
         #[doc = "Register `INIT_BRANCH_CONTROL_0470` writer"]
         pub type W = crate::W<InitBranchControl0470Spec>;
-        #[doc = "Field `INIT_ENABLE_18` reader - "]
-        pub type InitEnable18R = crate::BitReader;
-        #[doc = "Field `INIT_ENABLE_18` writer - "]
-        pub type InitEnable18W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` reader - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+        pub type SetByPhyInitBranchBit18R = crate::BitReader;
+        #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` writer - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+        pub type SetByPhyInitBranchBit18W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 18"]
+            #[doc = "Bit 18 - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
-            pub fn init_enable_18(&self) -> InitEnable18R {
-                InitEnable18R::new(((self.bits >> 18) & 1) != 0)
+            pub fn set_by_phy_init_branch_bit_18(&self) -> SetByPhyInitBranchBit18R {
+                SetByPhyInitBranchBit18R::new(((self.bits >> 18) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 18"]
+            #[doc = "Bit 18 - The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
-            pub fn init_enable_18(&mut self) -> InitEnable18W<'_, InitBranchControl0470Spec> {
-                InitEnable18W::new(self, 18)
+            pub fn set_by_phy_init_branch_bit_18(
+                &mut self,
+            ) -> SetByPhyInitBranchBit18W<'_, InitBranchControl0470Spec> {
+                SetByPhyInitBranchBit18W::new(self, 18)
             }
         }
         #[doc = "One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_branch_control_0470::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_branch_control_0470::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -40784,7 +40786,7 @@ pub mod bluetooth_controller_core {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         scheduler_control: SchedulerControl,
-        scheduler_disable_command: SchedulerDisableCommand,
+        scheduler_lifecycle_request: SchedulerLifecycleRequest,
         _reserved2: [u8; 0x6c],
         scheduler_sram_pointer_prefix: SchedulerSramPointerPrefix,
         _reserved3: [u8; 0x08],
@@ -40860,10 +40862,10 @@ pub mod bluetooth_controller_core {
         pub const fn scheduler_control(&self) -> &SchedulerControl {
             &self.scheduler_control
         }
-        #[doc = "0x04 - The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown."]
+        #[doc = "0x04 - The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown."]
         #[inline(always)]
-        pub const fn scheduler_disable_command(&self) -> &SchedulerDisableCommand {
-            &self.scheduler_disable_command
+        pub const fn scheduler_lifecycle_request(&self) -> &SchedulerLifecycleRequest {
+            &self.scheduler_lifecycle_request
         }
         #[doc = "0x74 - Hardware initialization publishes bits 22..31 from an SRAM configuration address; scheduler list users OR this prefix with compressed 20-bit pointer values shifted left by two."]
         #[inline(always)]
@@ -41186,58 +41188,30 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_DISABLE_COMMAND (w) register accessor: The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_disable_command::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_disable_command`] module"]
-    #[doc(alias = "SCHEDULER_DISABLE_COMMAND")]
-    pub type SchedulerDisableCommand =
-        crate::Reg<scheduler_disable_command::SchedulerDisableCommandSpec>;
-    #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown."]
-    pub mod scheduler_disable_command {
-        #[doc = "Register `SCHEDULER_DISABLE_COMMAND` writer"]
-        pub type W = crate::W<SchedulerDisableCommandSpec>;
-        #[doc = "Complete scheduler-stop command image."]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #[repr(u32)]
-        pub enum Command {
-            #[doc = "1: Request scheduler stop before observing the scheduler busy state."]
-            Stop = 1,
-        }
-        impl From<Command> for u32 {
-            #[inline(always)]
-            fn from(variant: Command) -> Self {
-                variant as _
-            }
-        }
-        impl crate::FieldSpec for Command {
-            type Ux = u32;
-        }
-        impl crate::IsEnum for Command {}
-        #[doc = "Field `COMMAND` writer - Complete scheduler-stop command image."]
-        pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, Command>;
-        impl<'a, REG> CommandW<'a, REG>
-        where
-            REG: crate::Writable + crate::RegisterSpec,
-            REG::Ux: From<u32>,
-        {
-            #[doc = "Request scheduler stop before observing the scheduler busy state."]
-            #[inline(always)]
-            pub fn stop(self) -> &'a mut crate::W<REG> {
-                self.variant(Command::Stop)
-            }
-        }
+    #[doc = "SCHEDULER_LIFECYCLE_REQUEST (w) register accessor: The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_lifecycle_request`] module"]
+    #[doc(alias = "SCHEDULER_LIFECYCLE_REQUEST")]
+    pub type SchedulerLifecycleRequest =
+        crate::Reg<scheduler_lifecycle_request::SchedulerLifecycleRequestSpec>;
+    #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown."]
+    pub mod scheduler_lifecycle_request {
+        #[doc = "Register `SCHEDULER_LIFECYCLE_REQUEST` writer"]
+        pub type W = crate::W<SchedulerLifecycleRequestSpec>;
+        #[doc = "Field `IMAGE` writer - Complete lifecycle-request image."]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Complete scheduler-stop command image."]
+            #[doc = "Bits 0:31 - Complete lifecycle-request image."]
             #[inline(always)]
-            pub fn command(&mut self) -> CommandW<'_, SchedulerDisableCommandSpec> {
-                CommandW::new(self, 0)
+            pub fn image(&mut self) -> ImageW<'_, SchedulerLifecycleRequestSpec> {
+                ImageW::new(self, 0)
             }
         }
-        #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_disable_command::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerDisableCommandSpec;
-        impl crate::RegisterSpec for SchedulerDisableCommandSpec {
+        #[doc = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerLifecycleRequestSpec;
+        impl crate::RegisterSpec for SchedulerLifecycleRequestSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`scheduler_disable_command::W`](W) writer structure"]
-        impl crate::Writable for SchedulerDisableCommandSpec {
+        #[doc = "`write(|w| ..)` method takes [`scheduler_lifecycle_request::W`](W) writer structure"]
+        impl crate::Writable for SchedulerLifecycleRequestSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -45124,7 +45098,7 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub const fn scheduler_reference(&self) -> &SchedulerReference {
             &self.scheduler_reference
         }
-        #[doc = "0x7c - The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
+        #[doc = "0x7c - The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
         #[inline(always)]
         pub const fn scheduler_state(&self) -> &SchedulerState {
             &self.scheduler_state
@@ -45183,10 +45157,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_STATE (rw) register accessor: The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
+    #[doc = "SCHEDULER_STATE (rw) register accessor: The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
     #[doc(alias = "SCHEDULER_STATE")]
     pub type SchedulerState = crate::Reg<scheduler_state::SchedulerStateSpec>;
-    #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
+    #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
     pub mod scheduler_state {
         #[doc = "Register `SCHEDULER_STATE` reader"]
         pub type R = crate::R<SchedulerStateSpec>;
@@ -45204,10 +45178,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub type OpaqueState24_28R = crate::FieldReader;
         #[doc = "Field `OPAQUE_STATE_24_28` writer - "]
         pub type OpaqueState24_28W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
-        #[doc = "Field `REFERENCE_PATH_STATE` reader - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
-        pub type ReferencePathStateR = crate::BitReader;
-        #[doc = "Field `REFERENCE_PATH_STATE` writer - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
-        pub type ReferencePathStateW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STATE_29` reader - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
+        pub type State29R = crate::BitReader;
+        #[doc = "Field `STATE_29` writer - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
+        pub type State29W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `OPAQUE_STATE_30` reader - "]
         pub type OpaqueState30R = crate::BitReader;
         #[doc = "Field `OPAQUE_STATE_30` writer - "]
@@ -45232,10 +45206,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn opaque_state_24_28(&self) -> OpaqueState24_28R {
                 OpaqueState24_28R::new(((self.bits >> 24) & 0x1f) as u8)
             }
-            #[doc = "Bit 29 - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
+            #[doc = "Bit 29 - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
             #[inline(always)]
-            pub fn reference_path_state(&self) -> ReferencePathStateR {
-                ReferencePathStateR::new(((self.bits >> 29) & 1) != 0)
+            pub fn state_29(&self) -> State29R {
+                State29R::new(((self.bits >> 29) & 1) != 0)
             }
             #[doc = "Bit 30"]
             #[inline(always)]
@@ -45264,10 +45238,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn opaque_state_24_28(&mut self) -> OpaqueState24_28W<'_, SchedulerStateSpec> {
                 OpaqueState24_28W::new(self, 24)
             }
-            #[doc = "Bit 29 - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
+            #[doc = "Bit 29 - Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
             #[inline(always)]
-            pub fn reference_path_state(&mut self) -> ReferencePathStateW<'_, SchedulerStateSpec> {
-                ReferencePathStateW::new(self, 29)
+            pub fn state_29(&mut self) -> State29W<'_, SchedulerStateSpec> {
+                State29W::new(self, 29)
             }
             #[doc = "Bit 30"]
             #[inline(always)]
@@ -45280,7 +45254,7 @@ pub mod bluetooth_scheduler_interrupt_runtime {
                 BusyW::new(self, 31)
             }
         }
-        #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerStateSpec;
         impl crate::RegisterSpec for SchedulerStateSpec {
             type Ux = u32;
@@ -46523,98 +46497,100 @@ pub mod btdm_runtime_control {
         }
     }
 }
-#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes zero and then one before touching any other radio register. The same ordered operation appears at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves that this word belongs to the adjacent BTMAC dump range. No wider peripheral extent or reset/enable interpretation is claimed."]
-pub type BlePhyInitToggle = crate::Periph<ble_phy_init_toggle::RegisterBlock, 0x2010_1ff0>;
-impl core::fmt::Debug for BlePhyInitToggle {
+#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes complete image zero followed by complete image one before touching any other radio register. The same ordered writes appear at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves this word's hardware action or membership in the adjacent BTMAC dump range. No wider peripheral extent is claimed."]
+pub type BleHwPositionalWord1ff0 =
+    crate::Periph<ble_hw_positional_word_1ff0::RegisterBlock, 0x2010_1ff0>;
+impl core::fmt::Debug for BleHwPositionalWord1ff0 {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BlePhyInitToggle").finish()
+        f.debug_struct("BleHwPositionalWord1ff0").finish()
     }
 }
-#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes zero and then one before touching any other radio register. The same ordered operation appears at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves that this word belongs to the adjacent BTMAC dump range. No wider peripheral extent or reset/enable interpretation is claimed."]
-pub mod ble_phy_init_toggle {
+#[doc = "Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete ESP32-S31 BLE PHY initialization writes complete image zero followed by complete image one before touching any other radio register. The same ordered writes appear at the same block offset in the named ESP32-C61 counterpart, but neither artifact proves this word's hardware action or membership in the adjacent BTMAC dump range. No wider peripheral extent is claimed."]
+pub mod ble_hw_positional_word_1ff0 {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        init_toggle: InitToggle,
+        value: Value,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Complete ordered images 0 then 1 at BLE PHY register-initialization entry."]
+        #[doc = "0x00 - Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown."]
         #[inline(always)]
-        pub const fn init_toggle(&self) -> &InitToggle {
-            &self.init_toggle
+        pub const fn value(&self) -> &Value {
+            &self.value
         }
     }
-    #[doc = "INIT_TOGGLE (w) register accessor: Complete ordered images 0 then 1 at BLE PHY register-initialization entry.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_toggle::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_toggle`] module"]
-    #[doc(alias = "INIT_TOGGLE")]
-    pub type InitToggle = crate::Reg<init_toggle::InitToggleSpec>;
-    #[doc = "Complete ordered images 0 then 1 at BLE PHY register-initialization entry."]
-    pub mod init_toggle {
-        #[doc = "Register `INIT_TOGGLE` writer"]
-        pub type W = crate::W<InitToggleSpec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "VALUE (w) register accessor: Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value`] module"]
+    #[doc(alias = "VALUE")]
+    pub type Value = crate::Reg<value::ValueSpec>;
+    #[doc = "Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown."]
+    pub mod value {
+        #[doc = "Register `VALUE` writer"]
+        pub type W = crate::W<ValueSpec>;
+        #[doc = "Field `POSITIONAL_IMAGE` writer - Complete positional image; only the ordered zero-then-one publications are proven."]
+        pub type PositionalImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:31 - Complete positional image; only the ordered zero-then-one publications are proven."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitToggleSpec> {
-                ImageW::new(self, 0)
+            pub fn positional_image(&mut self) -> PositionalImageW<'_, ValueSpec> {
+                PositionalImageW::new(self, 0)
             }
         }
-        #[doc = "Complete ordered images 0 then 1 at BLE PHY register-initialization entry.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_toggle::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitToggleSpec;
-        impl crate::RegisterSpec for InitToggleSpec {
+        #[doc = "Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueSpec;
+        impl crate::RegisterSpec for ValueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`init_toggle::W`](W) writer structure"]
-        impl crate::Writable for InitToggleSpec {
+        #[doc = "`write(|w| ..)` method takes [`value::W`](W) writer structure"]
+        impl crate::Writable for ValueSpec {
             type Safety = crate::Unsafe;
         }
     }
 }
-#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes phase image 0x20 before initializing the BLE hardware accelerator and image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block and the meanings of the two phases remain unproved, so no neighboring 0x201088xx words are absorbed."]
-pub type BlePhyInitPhase = crate::Periph<ble_phy_init_phase::RegisterBlock, 0x2010_891c>;
-impl core::fmt::Debug for BlePhyInitPhase {
+#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes complete image 0x20 before initializing the BLE hardware accelerator and complete image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block, hardware action and the meanings of the two images remain unproved, so no neighboring 0x201088xx words are absorbed."]
+pub type BleHwPositionalWord891c =
+    crate::Periph<ble_hw_positional_word_891c::RegisterBlock, 0x2010_891c>;
+impl core::fmt::Debug for BleHwPositionalWord891c {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BlePhyInitPhase").finish()
+        f.debug_struct("BleHwPositionalWord891c").finish()
     }
 }
-#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes phase image 0x20 before initializing the BLE hardware accelerator and image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block and the meanings of the two phases remain unproved, so no neighboring 0x201088xx words are absorbed."]
-pub mod ble_phy_init_phase {
+#[doc = "Narrow owner for the otherwise isolated word at 0x2010891C. Complete ESP32-S31 BLE PHY initialization writes complete image 0x20 before initializing the BLE hardware accelerator and complete image 0x40 after the surrounding BTMAC and accelerator sequence. The register's physical block, hardware action and the meanings of the two images remain unproved, so no neighboring 0x201088xx words are absorbed."]
+pub mod ble_hw_positional_word_891c {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        init_phase: InitPhase,
+        value: Value,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Complete ordered images 0x20 then 0x40 around BLE accelerator initialization."]
+        #[doc = "0x00 - Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown."]
         #[inline(always)]
-        pub const fn init_phase(&self) -> &InitPhase {
-            &self.init_phase
+        pub const fn value(&self) -> &Value {
+            &self.value
         }
     }
-    #[doc = "INIT_PHASE (w) register accessor: Complete ordered images 0x20 then 0x40 around BLE accelerator initialization.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_phase::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_phase`] module"]
-    #[doc(alias = "INIT_PHASE")]
-    pub type InitPhase = crate::Reg<init_phase::InitPhaseSpec>;
-    #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization."]
-    pub mod init_phase {
-        #[doc = "Register `INIT_PHASE` writer"]
-        pub type W = crate::W<InitPhaseSpec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "VALUE (w) register accessor: Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value`] module"]
+    #[doc(alias = "VALUE")]
+    pub type Value = crate::Reg<value::ValueSpec>;
+    #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown."]
+    pub mod value {
+        #[doc = "Register `VALUE` writer"]
+        pub type W = crate::W<ValueSpec>;
+        #[doc = "Field `POSITIONAL_IMAGE` writer - Complete positional image; only the ordered 0x20-then-0x40 publications are proven."]
+        pub type PositionalImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:31 - Complete positional image; only the ordered 0x20-then-0x40 publications are proven."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitPhaseSpec> {
-                ImageW::new(self, 0)
+            pub fn positional_image(&mut self) -> PositionalImageW<'_, ValueSpec> {
+                PositionalImageW::new(self, 0)
             }
         }
-        #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_phase::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitPhaseSpec;
-        impl crate::RegisterSpec for InitPhaseSpec {
+        #[doc = "Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueSpec;
+        impl crate::RegisterSpec for ValueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`init_phase::W`](W) writer structure"]
-        impl crate::Writable for InitPhaseSpec {
+        #[doc = "`write(|w| ..)` method takes [`value::W`](W) writer structure"]
+        impl crate::Writable for ValueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -46760,16 +46736,16 @@ pub mod ble_controller_address_slots {
         }
     }
 }
-#[doc = "Narrow positional owner for one controller word written by six ble_hw.c paths. The software source context is a useful ownership hint, while neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
-pub type BleControllerPointerPublication =
-    crate::Periph<ble_controller_pointer_publication::RegisterBlock, 0x2010_1874>;
-impl core::fmt::Debug for BleControllerPointerPublication {
+#[doc = "Narrow positional owner for one word at 0x20101874 written by six complete ble_hw.c paths. Neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
+pub type BleHwPositionalWord1874 =
+    crate::Periph<ble_hw_positional_word_1874::RegisterBlock, 0x2010_1874>;
+impl core::fmt::Debug for BleHwPositionalWord1874 {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BleControllerPointerPublication").finish()
+        f.debug_struct("BleHwPositionalWord1874").finish()
     }
 }
-#[doc = "Narrow positional owner for one controller word written by six ble_hw.c paths. The software source context is a useful ownership hint, while neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
-pub mod ble_controller_pointer_publication {
+#[doc = "Narrow positional owner for one word at 0x20101874 written by six complete ble_hw.c paths. Neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
+pub mod ble_hw_positional_word_1874 {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
@@ -46789,13 +46765,13 @@ pub mod ble_controller_pointer_publication {
     pub mod value {
         #[doc = "Register `VALUE` writer"]
         pub type W = crate::W<ValueSpec>;
-        #[doc = "Field `IMAGE_LOW_20` writer - Dynamic low-twenty-bit image; its pointer or index semantics are not established."]
-        pub type ImageLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `DYNAMIC_LOW_20_IMAGE` writer - Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established."]
+        pub type DynamicLow20ImageW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
         impl W {
-            #[doc = "Bits 0:19 - Dynamic low-twenty-bit image; its pointer or index semantics are not established."]
+            #[doc = "Bits 0:19 - Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established."]
             #[inline(always)]
-            pub fn image_low_20(&mut self) -> ImageLow20W<'_, ValueSpec> {
-                ImageLow20W::new(self, 0)
+            pub fn dynamic_low_20_image(&mut self) -> DynamicLow20ImageW<'_, ValueSpec> {
+                DynamicLow20ImageW::new(self, 0)
             }
         }
         #[doc = "Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -47856,7 +47832,7 @@ pub mod ble_hw_runtime_control {
         clear: [Clear; 8],
         _reserved2: [u8; 0x04],
         phy_init_configuration: PhyInitConfiguration,
-        phy_init_configuration_latch: PhyInitConfigurationLatch,
+        phy_init_configuration_followup: PhyInitConfigurationFollowup,
         _reserved4: [u8; 0x0c],
         config_0088: Config0088,
         _reserved5: [u8; 0x04],
@@ -47891,10 +47867,10 @@ pub mod ble_hw_runtime_control {
         pub const fn phy_init_configuration(&self) -> &PhyInitConfiguration {
             &self.phy_init_configuration
         }
-        #[doc = "0x78 - Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."]
+        #[doc = "0x78 - Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown."]
         #[inline(always)]
-        pub const fn phy_init_configuration_latch(&self) -> &PhyInitConfigurationLatch {
-            &self.phy_init_configuration_latch
+        pub const fn phy_init_configuration_followup(&self) -> &PhyInitConfigurationFollowup {
+            &self.phy_init_configuration_followup
         }
         #[doc = "0x88 - Complete image formed from the low five bits of one controller configuration byte."]
         #[inline(always)]
@@ -47995,30 +47971,30 @@ pub mod ble_hw_runtime_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PHY_INIT_CONFIGURATION_LATCH (w) register accessor: Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_latch::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_configuration_latch`] module"]
-    #[doc(alias = "PHY_INIT_CONFIGURATION_LATCH")]
-    pub type PhyInitConfigurationLatch =
-        crate::Reg<phy_init_configuration_latch::PhyInitConfigurationLatchSpec>;
-    #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."]
-    pub mod phy_init_configuration_latch {
-        #[doc = "Register `PHY_INIT_CONFIGURATION_LATCH` writer"]
-        pub type W = crate::W<PhyInitConfigurationLatchSpec>;
+    #[doc = "PHY_INIT_CONFIGURATION_FOLLOWUP (w) register accessor: Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_followup::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_configuration_followup`] module"]
+    #[doc(alias = "PHY_INIT_CONFIGURATION_FOLLOWUP")]
+    pub type PhyInitConfigurationFollowup =
+        crate::Reg<phy_init_configuration_followup::PhyInitConfigurationFollowupSpec>;
+    #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown."]
+    pub mod phy_init_configuration_followup {
+        #[doc = "Register `PHY_INIT_CONFIGURATION_FOLLOWUP` writer"]
+        pub type W = crate::W<PhyInitConfigurationFollowupSpec>;
         #[doc = "Field `IMAGE` writer - "]
         pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, PhyInitConfigurationLatchSpec> {
+            pub fn image(&mut self) -> ImageW<'_, PhyInitConfigurationFollowupSpec> {
                 ImageW::new(self, 0)
             }
         }
-        #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_latch::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PhyInitConfigurationLatchSpec;
-        impl crate::RegisterSpec for PhyInitConfigurationLatchSpec {
+        #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_followup::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitConfigurationFollowupSpec;
+        impl crate::RegisterSpec for PhyInitConfigurationFollowupSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`phy_init_configuration_latch::W`](W) writer structure"]
-        impl crate::Writable for PhyInitConfigurationLatchSpec {
+        #[doc = "`write(|w| ..)` method takes [`phy_init_configuration_followup::W`](W) writer structure"]
+        impl crate::Writable for PhyInitConfigurationFollowupSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -48343,7 +48319,7 @@ pub mod bt_v3_2_baseband {
         rx_dpo_control: RxDpoControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - bt_bb_rx_set sets one independently observed control bit."]
+        #[doc = "0x00 - Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
         #[inline(always)]
         pub const fn rx_setup_control_0(&self) -> &RxSetupControl0 {
             &self.rx_setup_control_0
@@ -48368,7 +48344,7 @@ pub mod bt_v3_2_baseband {
         pub const fn tx_config_check_value(&self) -> &TxConfigCheckValue {
             &self.tx_config_check_value
         }
-        #[doc = "0x4c - bt_bb_rx_set sets one independently observed control bit."]
+        #[doc = "0x4c - Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
         #[inline(always)]
         pub const fn rx_setup_control_1(&self) -> &RxSetupControl1 {
             &self.rx_setup_control_1
@@ -48496,34 +48472,34 @@ pub mod bt_v3_2_baseband {
             &self.rx_dpo_control
         }
     }
-    #[doc = "RX_SETUP_CONTROL_0 (rw) register accessor: bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_0`] module"]
+    #[doc = "RX_SETUP_CONTROL_0 (rw) register accessor: Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_0`] module"]
     #[doc(alias = "RX_SETUP_CONTROL_0")]
     pub type RxSetupControl0 = crate::Reg<rx_setup_control_0::RxSetupControl0Spec>;
-    #[doc = "bt_bb_rx_set sets one independently observed control bit."]
+    #[doc = "Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
     pub mod rx_setup_control_0 {
         #[doc = "Register `RX_SETUP_CONTROL_0` reader"]
         pub type R = crate::R<RxSetupControl0Spec>;
         #[doc = "Register `RX_SETUP_CONTROL_0` writer"]
         pub type W = crate::W<RxSetupControl0Spec>;
-        #[doc = "Field `ENABLE` reader - "]
-        pub type EnableR = crate::BitReader;
-        #[doc = "Field `ENABLE` writer - "]
-        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_0` reader - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit0R = crate::BitReader;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_0` writer - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit0W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&self) -> EnableR {
-                EnableR::new((self.bits & 1) != 0)
+            pub fn set_by_rx_setup_bit_0(&self) -> SetByRxSetupBit0R {
+                SetByRxSetupBit0R::new((self.bits & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&mut self) -> EnableW<'_, RxSetupControl0Spec> {
-                EnableW::new(self, 0)
+            pub fn set_by_rx_setup_bit_0(&mut self) -> SetByRxSetupBit0W<'_, RxSetupControl0Spec> {
+                SetByRxSetupBit0W::new(self, 0)
             }
         }
-        #[doc = "bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSetupControl0Spec;
         impl crate::RegisterSpec for RxSetupControl0Spec {
             type Ux = u32;
@@ -48706,34 +48682,34 @@ pub mod bt_v3_2_baseband {
         #[doc = "`read()` method returns [`tx_config_check_value::R`](R) reader structure"]
         impl crate::Readable for TxConfigCheckValueSpec {}
     }
-    #[doc = "RX_SETUP_CONTROL_1 (rw) register accessor: bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_1`] module"]
+    #[doc = "RX_SETUP_CONTROL_1 (rw) register accessor: Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_control_1`] module"]
     #[doc(alias = "RX_SETUP_CONTROL_1")]
     pub type RxSetupControl1 = crate::Reg<rx_setup_control_1::RxSetupControl1Spec>;
-    #[doc = "bt_bb_rx_set sets one independently observed control bit."]
+    #[doc = "Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown."]
     pub mod rx_setup_control_1 {
         #[doc = "Register `RX_SETUP_CONTROL_1` reader"]
         pub type R = crate::R<RxSetupControl1Spec>;
         #[doc = "Register `RX_SETUP_CONTROL_1` writer"]
         pub type W = crate::W<RxSetupControl1Spec>;
-        #[doc = "Field `ENABLE` reader - "]
-        pub type EnableR = crate::BitReader;
-        #[doc = "Field `ENABLE` writer - "]
-        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_2` reader - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit2R = crate::BitReader;
+        #[doc = "Field `SET_BY_RX_SETUP_BIT_2` writer - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type SetByRxSetupBit2W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&self) -> EnableR {
-                EnableR::new(((self.bits >> 2) & 1) != 0)
+            pub fn set_by_rx_setup_bit_2(&self) -> SetByRxSetupBit2R {
+                SetByRxSetupBit2R::new(((self.bits >> 2) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 2"]
+            #[doc = "Bit 2 - Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn enable(&mut self) -> EnableW<'_, RxSetupControl1Spec> {
-                EnableW::new(self, 2)
+            pub fn set_by_rx_setup_bit_2(&mut self) -> SetByRxSetupBit2W<'_, RxSetupControl1Spec> {
+                SetByRxSetupBit2W::new(self, 2)
             }
         }
-        #[doc = "bt_bb_rx_set sets one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSetupControl1Spec;
         impl crate::RegisterSpec for RxSetupControl1Spec {
             type Ux = u32;
@@ -56970,14 +56946,14 @@ pub struct Peripherals {
     pub btdm_low_power_config: BtdmLowPowerConfig,
     #[doc = "BTDM_RUNTIME_CONTROL"]
     pub btdm_runtime_control: BtdmRuntimeControl,
-    #[doc = "BLE_PHY_INIT_TOGGLE"]
-    pub ble_phy_init_toggle: BlePhyInitToggle,
-    #[doc = "BLE_PHY_INIT_PHASE"]
-    pub ble_phy_init_phase: BlePhyInitPhase,
+    #[doc = "BLE_HW_POSITIONAL_WORD_1FF0"]
+    pub ble_hw_positional_word_1ff0: BleHwPositionalWord1ff0,
+    #[doc = "BLE_HW_POSITIONAL_WORD_891C"]
+    pub ble_hw_positional_word_891c: BleHwPositionalWord891c,
     #[doc = "BLE_CONTROLLER_ADDRESS_SLOTS"]
     pub ble_controller_address_slots: BleControllerAddressSlots,
-    #[doc = "BLE_CONTROLLER_POINTER_PUBLICATION"]
-    pub ble_controller_pointer_publication: BleControllerPointerPublication,
+    #[doc = "BLE_HW_POSITIONAL_WORD_1874"]
+    pub ble_hw_positional_word_1874: BleHwPositionalWord1874,
     #[doc = "BLE_SYNC_PUBLICATION"]
     pub ble_sync_publication: BleSyncPublication,
     #[doc = "BLE_SCAN_CONTROL"]
@@ -57124,10 +57100,10 @@ impl Peripherals {
             btdm_scheduler_table: unsafe { BtdmSchedulerTable::steal() },
             btdm_low_power_config: unsafe { BtdmLowPowerConfig::steal() },
             btdm_runtime_control: unsafe { BtdmRuntimeControl::steal() },
-            ble_phy_init_toggle: unsafe { BlePhyInitToggle::steal() },
-            ble_phy_init_phase: unsafe { BlePhyInitPhase::steal() },
+            ble_hw_positional_word_1ff0: unsafe { BleHwPositionalWord1ff0::steal() },
+            ble_hw_positional_word_891c: unsafe { BleHwPositionalWord891c::steal() },
             ble_controller_address_slots: unsafe { BleControllerAddressSlots::steal() },
-            ble_controller_pointer_publication: unsafe { BleControllerPointerPublication::steal() },
+            ble_hw_positional_word_1874: unsafe { BleHwPositionalWord1874::steal() },
             ble_sync_publication: unsafe { BleSyncPublication::steal() },
             ble_scan_control: unsafe { BleScanControl::steal() },
             ble_hw_accelerator: unsafe { BleHwAccelerator::steal() },
@@ -57763,14 +57739,14 @@ pub mod peripheral_ownership {
     /// Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle.
     pub struct BluetoothControllerPeripherals {
         pub ble_controller_address_slots: crate::BleControllerAddressSlots,
-        pub ble_controller_pointer_publication: crate::BleControllerPointerPublication,
+        pub ble_hw_positional_word_1874: crate::BleHwPositionalWord1874,
         pub ble_hw_accelerator: crate::BleHwAccelerator,
         pub ble_hw_cte_ring_control: crate::BleHwCteRingControl,
         pub ble_hw_resolving_list: crate::BleHwResolvingList,
         pub ble_hw_runtime_control: crate::BleHwRuntimeControl,
         pub ble_iso_scheduler_notify: crate::BleIsoSchedulerNotify,
-        pub ble_phy_init_phase: crate::BlePhyInitPhase,
-        pub ble_phy_init_toggle: crate::BlePhyInitToggle,
+        pub ble_hw_positional_word_1ff0: crate::BleHwPositionalWord1ff0,
+        pub ble_hw_positional_word_891c: crate::BleHwPositionalWord891c,
         pub ble_scan_control: crate::BleScanControl,
         pub ble_sync_publication: crate::BleSyncPublication,
         pub bluetooth_controller_core: crate::BluetoothControllerCore,
@@ -57923,10 +57899,10 @@ pub mod peripheral_ownership {
             btdm_scheduler_table,
             btdm_low_power_config,
             btdm_runtime_control,
-            ble_phy_init_toggle,
-            ble_phy_init_phase,
+            ble_hw_positional_word_1ff0,
+            ble_hw_positional_word_891c,
             ble_controller_address_slots,
-            ble_controller_pointer_publication,
+            ble_hw_positional_word_1874,
             ble_sync_publication,
             ble_scan_control,
             ble_hw_accelerator,
@@ -58038,14 +58014,14 @@ pub mod peripheral_ownership {
             },
             bluetooth: BluetoothControllerPeripherals {
                 ble_controller_address_slots,
-                ble_controller_pointer_publication,
+                ble_hw_positional_word_1874,
                 ble_hw_accelerator,
                 ble_hw_cte_ring_control,
                 ble_hw_resolving_list,
                 ble_hw_runtime_control,
                 ble_iso_scheduler_notify,
-                ble_phy_init_phase,
-                ble_phy_init_toggle,
+                ble_hw_positional_word_1ff0,
+                ble_hw_positional_word_891c,
                 ble_scan_control,
                 ble_sync_publication,
                 bluetooth_controller_core,
@@ -58442,6 +58418,14 @@ pub mod field_read {
         registers.sleep_timer_latched_time_0().read().image().bits()
     }
 
+    /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_software_list_busy(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) -> bool {
+        registers.scheduler_state().read().busy().bit()
+    }
+
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`STATUS_24` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_execution_lock_ready(
@@ -58528,14 +58512,6 @@ pub mod field_read {
         registers: &crate::BluetoothInterruptBank,
     ) -> u32 {
         registers.irq_diagnostic_state().read().image().bits()
-    }
-
-    /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
-    #[inline]
-    pub fn observe_bluetooth_interrupt_output_scheduler_busy(
-        registers: &crate::BluetoothSchedulerInterruptRuntime,
-    ) -> bool {
-        registers.scheduler_state().read().busy().bit()
     }
 
     /// Read `BTDM_RUNTIME_CONTROL`.`STATUS_0038`.`IMAGE` without exposing its register block.
@@ -59024,7 +59000,7 @@ pub mod field_read {
 /// Safe same-sample observations through reviewed SVD fields.
 pub mod field_snapshot_read {
 
-    /// Read `BUSY`, `REFERENCE_PATH_STATE`, `CURRENT_LINK_INDEX` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
+    /// Read `BUSY`, `STATE_29`, `CURRENT_LINK_INDEX` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
     #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_scheduler_interrupt_state(
@@ -59033,7 +59009,7 @@ pub mod field_snapshot_read {
         let sample = registers.scheduler_state().read();
         (
             sample.busy().bit(),
-            sample.reference_path_state().bit(),
+            sample.state_29().bit(),
             sample.current_link_index().bits(),
         )
     }
@@ -59421,18 +59397,6 @@ pub mod fixed_register_write {
         }
     }
 
-    /// Write the `STOP` variant to every bit of `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_DISABLE_COMMAND`.
-    #[inline]
-    pub fn publish_bluetooth_scheduler_stop_command(registers: &crate::BluetoothControllerCore) {
-        // SAFETY: generator validation proves that the sole field covers
-        // all 32 bits and the named writable variant exists in the SVD.
-        unsafe {
-            registers
-                .scheduler_disable_command()
-                .write_with_zero(|writer| writer.command().stop());
-        }
-    }
-
     /// Write the `START` variant to every bit of `BTDM_RUNTIME_CONTROL`.`RUNTIME_TIMER_START_COMMAND`.
     #[inline]
     pub fn start_bluetooth_runtime_timer(registers: &crate::BtdmRuntimeControl) {
@@ -59485,6 +59449,45 @@ pub mod fixed_register_image {
             registers
                 .irq_clear_1()
                 .write_with_zero(|writer| writer.bits(0x00001300));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_2`.
+    #[inline]
+    pub fn publish_bluetooth_scan_command_2_image_1(registers: &crate::BleScanControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_2()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_1`.
+    #[inline]
+    pub fn publish_bluetooth_scan_command_1_image_1(registers: &crate::BleScanControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_1()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000100` to `BLE_SCAN_CONTROL`.`COMMAND_0`.
+    #[inline]
+    pub fn publish_bluetooth_scan_standard_backoff(registers: &crate::BleScanControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0()
+                .write_with_zero(|writer| writer.bits(0x00000100));
         }
     }
 
@@ -59594,15 +59597,15 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BLE_PHY_INIT_TOGGLE`.`INIT_TOGGLE`.
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_HW_POSITIONAL_WORD_1FF0`.`VALUE`.
     #[inline]
-    pub fn latch_ble_phy_register_initialization_entry(registers: &crate::BlePhyInitToggle) {
+    pub fn publish_ble_positional_word_1ff0_image_1(registers: &crate::BleHwPositionalWord1ff0) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_toggle()
+                .value()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
@@ -59698,15 +59701,15 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000020` to `BLE_PHY_INIT_PHASE`.`INIT_PHASE`.
+    /// Publish the SVD-qualified image `0x00000020` to `BLE_HW_POSITIONAL_WORD_891C`.`VALUE`.
     #[inline]
-    pub fn publish_ble_phy_init_phase_20(registers: &crate::BlePhyInitPhase) {
+    pub fn publish_ble_positional_word_891c_image_20(registers: &crate::BleHwPositionalWord891c) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_phase()
+                .value()
                 .write_with_zero(|writer| writer.bits(0x00000020));
         }
     }
@@ -59776,28 +59779,28 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000040` to `BLE_PHY_INIT_PHASE`.`INIT_PHASE`.
+    /// Publish the SVD-qualified image `0x00000040` to `BLE_HW_POSITIONAL_WORD_891C`.`VALUE`.
     #[inline]
-    pub fn publish_ble_phy_init_phase_40(registers: &crate::BlePhyInitPhase) {
+    pub fn publish_ble_positional_word_891c_image_40(registers: &crate::BleHwPositionalWord891c) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_phase()
+                .value()
                 .write_with_zero(|writer| writer.bits(0x00000040));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BLE_HW_RUNTIME_CONTROL`.`PHY_INIT_CONFIGURATION_LATCH`.
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_HW_RUNTIME_CONTROL`.`PHY_INIT_CONFIGURATION_FOLLOWUP`.
     #[inline]
-    pub fn latch_ble_phy_runtime_configuration(registers: &crate::BleHwRuntimeControl) {
+    pub fn publish_ble_phy_init_followup_image_1(registers: &crate::BleHwRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .phy_init_configuration_latch()
+                .phy_init_configuration_followup()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
@@ -62105,13 +62108,13 @@ pub mod zero_register_write {
         }
     }
 
-    /// Publish zero to every bit of `BLE_PHY_INIT_TOGGLE`.`INIT_TOGGLE`.
+    /// Publish zero to every bit of `BLE_HW_POSITIONAL_WORD_1FF0`.`VALUE`.
     #[inline]
-    pub fn begin_ble_phy_register_initialization(registers: &crate::BlePhyInitToggle) {
+    pub fn publish_ble_positional_word_1ff0_image_0(registers: &crate::BleHwPositionalWord1ff0) {
         // SAFETY: the SVD extension and its provenance explicitly
         // qualify a complete zero write to this ordinary register.
         unsafe {
-            registers.init_toggle().write_with_zero(|writer| writer);
+            registers.value().write_with_zero(|writer| writer);
         }
     }
 
@@ -62729,9 +62732,9 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields [INIT_ENABLE_18] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields [SET_BY_PHY_INIT_BRANCH_BIT_18] while preserving the fresh register observation.
     #[inline]
-    pub fn enable_ble_phy_init_branch_control_0470(registers: &crate::BtmacBlePhyInit) {
+    pub fn set_ble_phy_init_branch_control_0470_bit_18(registers: &crate::BtmacBlePhyInit) {
         registers
             .init_branch_control_0470()
             .modify(|reader, writer| {
@@ -62739,8 +62742,8 @@ pub mod field_or_modify {
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
                 writer
-                    .init_enable_18()
-                    .bit(reader.init_enable_18().bit() || (input & 0x00000001) != 0)
+                    .set_by_phy_init_branch_bit_18()
+                    .bit(reader.set_by_phy_init_branch_bit_18().bit() || (input & 0x00000001) != 0)
             });
     }
 
@@ -65793,14 +65796,16 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields [SET_BY_RX_SETUP_BIT_2] from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn initialize_bluetooth_receive_setup_control_1(registers: &crate::BtV3_2Baseband) {
+    pub fn set_bluetooth_receive_setup_control_1_bit_2(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_1().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.enable().bit((input & 0x00000001) != 0)
+            writer
+                .set_by_rx_setup_bit_2()
+                .bit((input & 0x00000001) != 0)
         });
     }
 
@@ -65951,14 +65956,16 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields [SET_BY_RX_SETUP_BIT_0] from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn initialize_bluetooth_receive_setup_control_0(registers: &crate::BtV3_2Baseband) {
+    pub fn set_bluetooth_receive_setup_control_0_bit_0(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_0().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.enable().bit((input & 0x00000001) != 0)
+            writer
+                .set_by_rx_setup_bit_0()
+                .bit((input & 0x00000001) != 0)
         });
     }
 

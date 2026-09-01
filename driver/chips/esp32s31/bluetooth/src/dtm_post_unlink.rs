@@ -127,7 +127,13 @@ impl<Event> BluetoothDtmPostUnlinkMailboxState<Event> {
         expected: BluetoothDtmPostUnlinkArmKey,
     ) -> BluetoothDtmPostUnlinkMailboxTake<Event> {
         match self {
-            Self::Armed { key } if *key == expected => BluetoothDtmPostUnlinkMailboxTake::Waiting,
+            Self::Armed { key } if *key == expected => {
+                *self = Self::Idle {
+                    identity: expected.identity,
+                    generation: expected.generation,
+                };
+                BluetoothDtmPostUnlinkMailboxTake::Recheck { key: expected }
+            }
             Self::Ready { key, .. } if *key == expected => {
                 let Self::Ready { key, event } = core::mem::replace(
                     self,
@@ -201,7 +207,9 @@ enum BluetoothDtmPostUnlinkMailboxPublish<Event> {
 
 #[cfg(any(target_arch = "riscv32", test))]
 enum BluetoothDtmPostUnlinkMailboxTake<Event> {
-    Waiting,
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+    },
     Ready {
         key: BluetoothDtmPostUnlinkArmKey,
         event: Event,
@@ -422,8 +430,11 @@ impl BluetoothDtmPostUnlinkMailbox {
             .borrow_mut()
             .take(awaiting.key)
         {
-            BluetoothDtmPostUnlinkMailboxTake::Waiting => {
-                BluetoothDtmPostUnlinkTake::Waiting(awaiting)
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key } => {
+                BluetoothDtmPostUnlinkTake::Recheck {
+                    key,
+                    unlinked: awaiting.unlinked,
+                }
             }
             BluetoothDtmPostUnlinkMailboxTake::Ready { key, event } => {
                 let _ = self.wake.close();
@@ -475,6 +486,149 @@ impl BluetoothDtmPostUnlinkMailbox {
             }
             BluetoothDtmPostUnlinkMailboxCancel::AffinityMismatch => {
                 BluetoothDtmPostUnlinkCancelStep::AffinityMismatch(awaiting)
+            }
+        }
+    }
+
+    pub(crate) fn take_legacy_advertising<'a>(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    ) -> BluetoothLegacyAdvertisingPostUnlinkTake<'a> {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .take(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key } => {
+                BluetoothLegacyAdvertisingPostUnlinkTake::Recheck {
+                    key,
+                    unlinked: awaiting.unlinked,
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::Ready { key, event } => {
+                let _ = self.wake.close();
+                BluetoothLegacyAdvertisingPostUnlinkTake::Ready {
+                    key,
+                    event: BluetoothLegacyAdvertisingPostUnlinkPublishedEvent {
+                        unlinked: awaiting.unlinked,
+                        published: event,
+                    },
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::AffinityMismatch => {
+                BluetoothLegacyAdvertisingPostUnlinkTake::AffinityMismatch(awaiting)
+            }
+        }
+    }
+
+    pub(crate) fn rearm_legacy_advertising<'a>(
+        &self,
+        critical_section: CriticalSection<'_>,
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    ) -> BluetoothLegacyAdvertisingPostUnlinkRearm<'a> {
+        if self.state.borrow(critical_section).borrow_mut().rearm(key) {
+            BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(
+                BluetoothLegacyAdvertisingPostUnlinkAwaiting { unlinked, key },
+            )
+        } else {
+            BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked)
+        }
+    }
+
+    pub(crate) fn cancel_legacy_advertising<'a>(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
+    ) -> BluetoothLegacyAdvertisingPostUnlinkCancelStep<'a> {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .cancel(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxCancel::Cancelled => {
+                BluetoothLegacyAdvertisingPostUnlinkCancelStep::Cancelled(awaiting.unlinked)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::EventReady => {
+                BluetoothLegacyAdvertisingPostUnlinkCancelStep::EventReady(awaiting)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::AffinityMismatch => {
+                BluetoothLegacyAdvertisingPostUnlinkCancelStep::AffinityMismatch(awaiting)
+            }
+        }
+    }
+
+    pub(crate) fn take_passive_scan(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothPassiveScanPostUnlinkAwaiting,
+    ) -> BluetoothPassiveScanPostUnlinkTake {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .take(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key } => {
+                BluetoothPassiveScanPostUnlinkTake::Recheck {
+                    key,
+                    unlinked: awaiting.unlinked,
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::Ready { key, event } => {
+                let _ = self.wake.close();
+                BluetoothPassiveScanPostUnlinkTake::Ready {
+                    key,
+                    event: BluetoothPassiveScanPostUnlinkPublishedEvent {
+                        unlinked: awaiting.unlinked,
+                        published: event,
+                    },
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::AffinityMismatch => {
+                BluetoothPassiveScanPostUnlinkTake::AffinityMismatch(awaiting)
+            }
+        }
+    }
+
+    pub(crate) fn rearm_passive_scan(
+        &self,
+        critical_section: CriticalSection<'_>,
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    ) -> BluetoothPassiveScanPostUnlinkRearm {
+        if self.state.borrow(critical_section).borrow_mut().rearm(key) {
+            BluetoothPassiveScanPostUnlinkRearm::Armed(BluetoothPassiveScanPostUnlinkAwaiting {
+                unlinked,
+                key,
+            })
+        } else {
+            BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked)
+        }
+    }
+
+    pub(crate) fn cancel_passive_scan(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothPassiveScanPostUnlinkAwaiting,
+    ) -> BluetoothPassiveScanPostUnlinkCancelStep {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .cancel(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxCancel::Cancelled => {
+                BluetoothPassiveScanPostUnlinkCancelStep::Cancelled(awaiting.unlinked)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::EventReady => {
+                BluetoothPassiveScanPostUnlinkCancelStep::EventReady(awaiting)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::AffinityMismatch => {
+                BluetoothPassiveScanPostUnlinkCancelStep::AffinityMismatch(awaiting)
             }
         }
     }
@@ -530,7 +684,10 @@ impl<Role> BluetoothDtmSoftwareListRemovalPublishedEvent<Role> {
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) enum BluetoothDtmPostUnlinkTake<Role> {
-    Waiting(BluetoothDtmPostUnlinkAwaiting<Role>),
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+    },
     Ready {
         key: BluetoothDtmPostUnlinkArmKey,
         event: BluetoothDtmSoftwareListRemovalPublishedEvent<Role>,
@@ -551,6 +708,142 @@ pub enum BluetoothDtmPostUnlinkCancelStep<Role> {
     Cancelled(crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
     EventReady(BluetoothDtmPostUnlinkAwaiting<Role>),
     AffinityMismatch(BluetoothDtmPostUnlinkAwaiting<Role>),
+}
+
+/// Advertising owner tied to one exact protocol-neutral mailbox arm.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the armed advertising owner must consume an event or cancel"]
+pub struct BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a> {
+    unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    key: BluetoothDtmPostUnlinkArmKey,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a> {
+    pub(crate) const fn new(
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+        key: BluetoothDtmPostUnlinkArmKey,
+    ) -> Self {
+        Self { unlinked, key }
+    }
+
+    pub const fn generation(&self) -> u32 {
+        self.key.generation
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothLegacyAdvertisingPostUnlinkPublishedEvent<'a> {
+    unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    published: BluetoothPrimaryPublishedInterruptStep,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a> BluetoothLegacyAdvertisingPostUnlinkPublishedEvent<'a> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+        BluetoothPrimaryPublishedInterruptStep,
+    ) {
+        (self.unlinked, self.published)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingPostUnlinkTake<'a> {
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
+    },
+    Ready {
+        key: BluetoothDtmPostUnlinkArmKey,
+        event: BluetoothLegacyAdvertisingPostUnlinkPublishedEvent<'a>,
+    },
+    AffinityMismatch(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingPostUnlinkRearm<'a> {
+    Armed(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+    AffinityMismatch(crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
+}
+
+/// Lossless cancellation result for an advertising post-unlink wait.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retain the unlinked owner or consume the ready event"]
+pub enum BluetoothLegacyAdvertisingPostUnlinkCancelStep<'a> {
+    Cancelled(crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
+    EventReady(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+    AffinityMismatch(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
+}
+
+/// Scanner owner tied to one exact protocol-neutral mailbox arm.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the armed scanner owner must consume an event or cancel"]
+pub struct BluetoothPassiveScanPostUnlinkAwaiting {
+    unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    key: BluetoothDtmPostUnlinkArmKey,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanPostUnlinkAwaiting {
+    pub(crate) const fn new(
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+        key: BluetoothDtmPostUnlinkArmKey,
+    ) -> Self {
+        Self { unlinked, key }
+    }
+
+    pub const fn generation(&self) -> u32 {
+        self.key.generation
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothPassiveScanPostUnlinkPublishedEvent {
+    unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    published: BluetoothPrimaryPublishedInterruptStep,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPassiveScanPostUnlinkPublishedEvent {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+        BluetoothPrimaryPublishedInterruptStep,
+    ) {
+        (self.unlinked, self.published)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPassiveScanPostUnlinkTake {
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    },
+    Ready {
+        key: BluetoothDtmPostUnlinkArmKey,
+        event: BluetoothPassiveScanPostUnlinkPublishedEvent,
+    },
+    AffinityMismatch(BluetoothPassiveScanPostUnlinkAwaiting),
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPassiveScanPostUnlinkRearm {
+    Armed(BluetoothPassiveScanPostUnlinkAwaiting),
+    AffinityMismatch(crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+}
+
+/// Lossless cancellation result for a scanner post-unlink wait.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retain the unlinked scanner owner or consume the ready event"]
+pub enum BluetoothPassiveScanPostUnlinkCancelStep {
+    Cancelled(crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked),
+    EventReady(BluetoothPassiveScanPostUnlinkAwaiting),
+    AffinityMismatch(BluetoothPassiveScanPostUnlinkAwaiting),
 }
 
 #[cfg(test)]
@@ -590,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    fn one_armed_event_is_durable_and_the_next_is_returned_losslessly() {
+    fn full_slot_preserves_old_event_then_exposes_direct_recheck() {
         let mut mailbox = BluetoothDtmPostUnlinkMailboxState::new();
         let next_identity = Cell::new(0);
         let key = prepare(&mut mailbox, &next_identity);
@@ -614,18 +907,24 @@ mod tests {
         };
         assert_eq!(observed_key, key);
         assert_eq!(event, Event(3));
+        assert!(mailbox.rearm(key));
+        assert!(matches!(
+            mailbox.take(key),
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key: observed } if observed == key
+        ));
     }
 
     #[test]
-    fn waiting_recheck_and_same_identity_generation_rearm_close_the_wake_epoch() {
+    fn direct_recheck_and_same_identity_generation_rearm_preserve_publication() {
         let mut mailbox = BluetoothDtmPostUnlinkMailboxState::<Event>::new();
         let next_identity = Cell::new(0);
         let key = prepare(&mut mailbox, &next_identity);
         assert!(mailbox.commit_arm(key));
         assert!(matches!(
             mailbox.take(key),
-            BluetoothDtmPostUnlinkMailboxTake::Waiting
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key: observed } if observed == key
         ));
+        assert!(mailbox.rearm(key));
         assert!(matches!(
             mailbox.publish(Event(9)),
             BluetoothDtmPostUnlinkMailboxPublish::Stored
@@ -637,7 +936,7 @@ mod tests {
         assert!(mailbox.rearm(key));
         assert!(matches!(
             mailbox.take(key),
-            BluetoothDtmPostUnlinkMailboxTake::Waiting
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key: observed } if observed == key
         ));
     }
 

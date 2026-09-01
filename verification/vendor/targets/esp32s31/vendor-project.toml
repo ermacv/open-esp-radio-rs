@@ -118,6 +118,48 @@ include-reachable = true
 entry-contract = "none"
 output = "generated/findings/ble-controller-all.ir"
 
+# Diagnostic bodies are dead-stripped from the operational linked controller.
+# Analyze their authenticated archive members directly instead of retaining
+# debug code in the controller image or rebuilding an oracle application.
+[[analysis.ir]]
+id = "ble-phy-state-diagnostic"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_phy_hw_state_dump"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-phy-state-diagnostic.ir"
+
+[[analysis.ir]]
+id = "ble-coex-register-diagnostic"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_sym_ble_uPvbSnU52H5Jo6zGRBEO"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-coex-register-diagnostic.ir"
+
+# The public DTM RSSI getter and its current internal target are dead-stripped
+# from the operational controller image. Keep their exact archive call chain
+# as generated evidence; the reviewed pack separately owns the signed load.
+[[analysis.ir]]
+id = "ble-dtm-rssi"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "esp_ble_get_dtm_rx_rssi"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ble-dtm-rssi.ir"
+
+[[analysis.ir]]
+id = "btdm-scheduler-diagnostic"
+sources = ["btdm-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_btdm_sched_list_details_dump"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/btdm-scheduler-diagnostic.ir"
+
 # Canonical BR/EDR controller image. The authenticated Classic controller,
 # shared BTDM, baseband and PHY archives remain the provenance authority; this
 # linked view only restores cross-archive call identity for generated analysis.
@@ -285,6 +327,9 @@ linked-ir = [
     "generated/findings/coex-all.ir",
     "generated/findings/btbb-all.ir",
     "generated/findings/ble-controller-all.ir",
+    "generated/findings/ble-phy-state-diagnostic.ir",
+    "generated/findings/ble-coex-register-diagnostic.ir",
+    "generated/findings/btdm-scheduler-diagnostic.ir",
     "generated/findings/bredr-controller-all.ir",
     "generated/findings/ble-controller-lifecycle.ir",
     "generated/findings/ble-hci-transport.ir",
@@ -370,6 +415,10 @@ profiles = [
     "coex-all",
     "btbb-all",
     "ble-controller-all",
+    "ble-phy-state-diagnostic",
+    "ble-coex-register-diagnostic",
+    "ble-dtm-rssi",
+    "btdm-scheduler-diagnostic",
 ]
 
 [functions.review]
@@ -650,6 +699,33 @@ profiles = ["btbb-all"]
 roots = ["btbb:coex_pti_v2"]
 include-reachable = true
 
+# Navigation-only diagnostic surfaces. They intentionally remain outside
+# operational publication debt while exposing the vendor's own block/offset
+# map and binary BLE state inventory for focused human review.
+[[review.scopes]]
+id = "shared-phy-register-diagnostics"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "shared"]
+profiles = ["archive-all"]
+roots = ["archive:phy_reg_check"]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-register-diagnostics"
+protocols = ["ble"]
+profiles = ["ble-phy-state-diagnostic", "ble-coex-register-diagnostic"]
+roots = [
+    "ble-diagnostics:r_ble_phy_hw_state_dump",
+    "ble-diagnostics:r_sym_ble_uPvbSnU52H5Jo6zGRBEO",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "btdm-scheduler-diagnostics"
+protocols = ["bluetooth", "ble", "shared"]
+profiles = ["btdm-scheduler-diagnostic"]
+roots = ["btdm-diagnostics:r_btdm_sched_list_details_dump"]
+include-reachable = false
+
 [[review.scopes]]
 id = "ble-controller-lifecycle"
 protocols = ["ble"]
@@ -763,7 +839,7 @@ include-reachable = true
 [[review.scopes]]
 id = "ble-direct-test-mode"
 protocols = ["ble"]
-profiles = ["ble-controller-all"]
+profiles = ["ble-controller-all", "ble-dtm-rssi"]
 roots = [
     # Complete transmitter and receiver command bodies reach allocation,
     # packet construction, event preparation and common scheduler insertion.
@@ -774,6 +850,9 @@ roots = [
     # so an ordinary direct-call traversal cannot prove that edge.
     "ble-controller:r_sym_ble_9DFKLYZzjaztWMiPU4NR",
     "ble-controller:r_sym_ble_kdHGLPeGDJlAvxmbjQ6e",
+    # Archive-only public getter closes packet-result high byte -> signed RSSI
+    # without retaining diagnostic/application glue in the controller image.
+    "ble-diagnostics:esp_ble_get_dtm_rx_rssi",
     # The common worker publishes the finished-list mask through the broker,
     # and the BLE scheduler consumes it through another stored callback. Both
     # asynchronous ingress edges must be explicit or the scope loses the
@@ -812,6 +891,74 @@ roots = [
     "ble-controller:r_sym_ble_77zgK6v8rbStzf0ReBjv",
     "ble-controller:r_sym_ble_pfcv0QVYrNS6KoQetydw",
     # Asynchronous hardware-finished ingress and BLE scheduler consumption.
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Minimum hardware-admission slice for the first open Link Layer role. Root the
+# actual packet producer, link-state producer and first-event producer instead
+# of the broad all-feature start routine. Recycling is callback-owned, and the
+# two common roots close the asynchronous hardware-finished edge, so all six
+# must remain explicit. Broad allocation/start/reset and next-event policy stay
+# in the larger investigation scope above; this slice answers only whether one
+# prepared ADV_NONCONN_IND can cross CPU -> hardware -> CPU ownership without
+# importing scan/connection policy.
+[[review.scopes]]
+id = "ble-legacy-nonconnectable-admission"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_MrW1ZaJZqsHzi3wwRhsn",
+    "ble-controller:r_sym_ble_fxKAT8in6cXLv0gLB2W5",
+    "ble-controller:r_sym_ble_mqh4OXzoN59kvnkKFMA1",
+    "ble-controller:r_sym_ble_pfcv0QVYrNS6KoQetydw",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Minimum receive-only frontier for the next open Link Layer role.  The roots
+# deliberately stop at legacy passive 1M scanning: parameter validation and
+# HCI packet syntax are portable policy, while extended/active scanning,
+# initiator state and the vendor's ULL object graph are outside this hardware
+# investigation.  Start/reset close CPU -> hardware ownership.  RX processing,
+# scheduler recycling and selector-4 resume are callback-owned and therefore
+# remain explicit roots.  The common worker and BLE scheduler close the
+# asynchronous finished-list edge just as they do for DTM and advertising.
+[[review.scopes]]
+id = "ble-legacy-passive-scanning"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_znMr0TnKK4lkFEsrathq",
+    "ble-controller:r_sym_ble_XwMfMguyw9lccbIeVsvN",
+    "ble-controller:r_sym_ble_FI34eU2bYuxQYjeVS51T",
+    "ble-controller:r_sym_ble_jMEoTs6F9eIXRCc3ssv4",
+    "ble-controller:r_sym_ble_GUS6jpjPpQlTJuvOrYMV",
+    "ble-controller:r_sym_ble_XYr0jejHXj4ULilAqOsG",
+    "ble-controller:r_sym_ble_h1CfV40z3TOeYWAmKSQ9",
+    "ble-controller:r_sym_ble_q4hMJ7XLGGCzxwmAKSge",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Hardware-admission subset of the passive-scanning investigation above.
+# Allocation/start/reset own CPU -> controller publication, scheduler recycling
+# is callback-owned, and the two common roots close the asynchronous finished
+# edge.  Upper packet parsing and HCI reporting deliberately remain in the
+# larger scope: this slice ranks only facts needed to publish and reclaim one
+# receive window.
+[[review.scopes]]
+id = "ble-legacy-passive-scan-admission"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_znMr0TnKK4lkFEsrathq",
+    "ble-controller:r_sym_ble_XwMfMguyw9lccbIeVsvN",
+    "ble-controller:r_sym_ble_FI34eU2bYuxQYjeVS51T",
+    "ble-controller:r_sym_ble_h1CfV40z3TOeYWAmKSQ9",
     "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
     "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
 ]

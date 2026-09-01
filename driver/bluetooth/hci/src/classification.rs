@@ -4,18 +4,22 @@ use bt_hci::cmd::Opcode;
 
 use crate::{
     BootstrapCommandCompleteEvent, HciCommandPacket, HciEpochBound, LeDtmCommand,
-    LeDtmCommandCompleteEvent, LeTestEndCommand, OwnedBootstrapCommand,
-    UnknownCommandCompleteEvent,
+    LeDtmCommandCompleteEvent, LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
+    LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfigurationCommand,
+    LeLegacyAdvertisingEnableCommand, LeLegacyScanningCommand,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand, LeTestEndCommand,
+    OwnedBootstrapCommand, UnknownCommandCompleteEvent,
     bootstrap::{BootstrapCommandDecodeError, invalid_parameters},
 };
 
 /// One finite result of classifying a validated HCI command packet.
 ///
-/// Bootstrap and valid DTM commands are owned semantic tokens that may be
-/// retained across asynchronous session transitions. Malformed responses are
-/// complete owned packets that may be retained across Controller-to-Host
-/// backpressure. An opcode outside the closed table becomes an owned Unknown
-/// Command response, so no classification result borrows receive storage.
+/// Bootstrap, DTM and software-only role configuration commands are
+/// owned semantic tokens. Malformed responses are complete owned packets that
+/// may be retained across Controller-to-Host backpressure. An opcode outside
+/// the closed table becomes an owned Unknown Command response, so no
+/// classification result borrows receive storage.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "a classified HCI command must be routed or answered exactly once"]
 pub enum LeControllerCommandClassification {
@@ -27,6 +31,18 @@ pub enum LeControllerCommandClassification {
     Dtm(LeDtmCommand),
     /// A known DTM opcode had malformed parameters and produced this response.
     MalformedDtm(LeDtmCommandCompleteEvent),
+    /// A validated software-only legacy advertising configuration command.
+    LegacyAdvertisingConfiguration(LeLegacyAdvertisingConfigurationCommand),
+    /// A validated Enable command awaits radio-lifecycle policy.
+    LegacyAdvertisingEnable(LeLegacyAdvertisingEnableCommand),
+    /// A claimed legacy advertising opcode was malformed.
+    MalformedLegacyAdvertising(LeLegacyAdvertisingCommandCompleteEvent),
+    /// A validated software-only legacy scanning configuration command.
+    LegacyScanningConfiguration(LeLegacyScanningConfigurationCommand),
+    /// A validated Set Scan Enable command awaits radio-lifecycle policy.
+    LegacyScanningEnable(LeLegacyScanningEnableCommand),
+    /// A claimed legacy scanning opcode was malformed or unsupported.
+    MalformedLegacyScanning(LeLegacyScanningCommandCompleteEvent),
     /// This closed Controller command table did not claim the opcode.
     Unsupported(UnknownCommandCompleteEvent),
 }
@@ -39,6 +55,14 @@ impl LeControllerCommandClassification {
             Self::MalformedBootstrap(response) => response.opcode(),
             Self::Dtm(command) => command.kind().opcode(),
             Self::MalformedDtm(response) => response.opcode(),
+            Self::LegacyAdvertisingConfiguration(command) => command.kind().opcode(),
+            Self::LegacyAdvertisingEnable(_) => LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
+            Self::MalformedLegacyAdvertising(response) => response.opcode(),
+            Self::LegacyScanningConfiguration(_) => {
+                LeLegacyScanningCommandKind::SetParameters.opcode()
+            }
+            Self::LegacyScanningEnable(_) => LeLegacyScanningCommandKind::SetEnable.opcode(),
+            Self::MalformedLegacyScanning(response) => response.opcode(),
             Self::Unsupported(response) => response.opcode(),
         }
     }
@@ -75,6 +99,46 @@ impl<'epoch> HciEpochBound<'epoch, LeDtmCommand> {
 pub fn classify_le_controller_command(
     command: HciCommandPacket<'_>,
 ) -> LeControllerCommandClassification {
+    if LeLegacyAdvertisingCommandKind::from_opcode(command.opcode()).is_some() {
+        return match LeLegacyAdvertisingCommand::decode(command) {
+            Ok(command) => match LeLegacyAdvertisingConfigurationCommand::from_command(command) {
+                Ok(command) => {
+                    LeControllerCommandClassification::LegacyAdvertisingConfiguration(command)
+                }
+                Err(command) => LeControllerCommandClassification::LegacyAdvertisingEnable(
+                    LeLegacyAdvertisingEnableCommand::from_command(command)
+                        .expect("the non-configuration advertising command is Enable"),
+                ),
+            },
+            Err(error) => LeControllerCommandClassification::MalformedLegacyAdvertising(
+                error
+                    .into_command_complete()
+                    .expect("a claimed advertising opcode must build an exact completion"),
+            ),
+        };
+    }
+
+    if LeLegacyScanningCommandKind::from_opcode(command.opcode()).is_some() {
+        return match LeLegacyScanningCommand::decode(command) {
+            Ok(command) => match LeLegacyScanningConfigurationCommand::from_command(command) {
+                Ok(command) => {
+                    LeControllerCommandClassification::LegacyScanningConfiguration(command)
+                }
+                Err(LeLegacyScanningCommand::SetEnable(command)) => {
+                    LeControllerCommandClassification::LegacyScanningEnable(command)
+                }
+                Err(LeLegacyScanningCommand::SetParameters(_)) => {
+                    unreachable!("Set Parameters refines into scanning configuration")
+                }
+            },
+            Err(error) => LeControllerCommandClassification::MalformedLegacyScanning(
+                error
+                    .into_command_complete()
+                    .expect("a claimed scanning opcode must build an exact completion"),
+            ),
+        };
+    }
+
     match LeDtmCommand::decode(command) {
         Ok(command) => LeControllerCommandClassification::Dtm(command),
         Err(error) => match error.into_command_complete() {
@@ -102,7 +166,7 @@ mod tests {
         cmd::{
             Cmd, Opcode, OpcodeGroup,
             controller_baseband::{Reset, SetEventMask},
-            le::{LeSetAdvEnable, LeSetRandomAddr},
+            le::{LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr},
         },
         param::{BdAddr, Error as HciError, EventMask, Status},
     };
@@ -112,7 +176,8 @@ mod tests {
         BluetoothPublicDeviceAddress, BootstrapCommand, BootstrapPhase, HciCommandPacket,
         LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE, LE_TEST_END_OPCODE,
         LE_TRANSMITTER_TEST_V1_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE, LeControllerBootstrap,
-        LeControllerBootstrapConfig, LeDtmCommand, OwnedBootstrapCommand,
+        LeControllerBootstrapConfig, LeDtmCommand, LeLegacyAdvertisingConfigurationCommand,
+        OwnedBootstrapCommand,
     };
 
     #[test]
@@ -231,6 +296,59 @@ mod tests {
     }
 
     #[test]
+    fn advertising_configuration_and_enable_are_owned() {
+        let parameters = classify_le_controller_command(HciCommandPacket::for_test(
+            LeSetAdvParams::OPCODE,
+            &[
+                0x20, 0x00, 0x40, 0x00, 0x03, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0x07, 0x00,
+            ],
+        ));
+        assert!(matches!(
+            parameters,
+            LeControllerCommandClassification::LegacyAdvertisingConfiguration(
+                LeLegacyAdvertisingConfigurationCommand::SetParameters(_)
+            )
+        ));
+
+        let data = classify_le_controller_command(HciCommandPacket::for_test(
+            LeSetAdvData::OPCODE,
+            &[0; 32],
+        ));
+        assert!(matches!(
+            data,
+            LeControllerCommandClassification::LegacyAdvertisingConfiguration(
+                LeLegacyAdvertisingConfigurationCommand::SetData(_)
+            )
+        ));
+
+        let enable = classify_le_controller_command(HciCommandPacket::for_test(
+            LeSetAdvEnable::OPCODE,
+            &[1],
+        ));
+        assert!(matches!(
+            enable,
+            LeControllerCommandClassification::LegacyAdvertisingEnable(_)
+        ));
+    }
+
+    #[test]
+    fn malformed_claimed_advertising_configuration_has_exact_status() {
+        let classified = classify_le_controller_command(HciCommandPacket::for_test(
+            LeSetAdvData::OPCODE,
+            &[32; 32],
+        ));
+        let LeControllerCommandClassification::MalformedLegacyAdvertising(response) = classified
+        else {
+            panic!("invalid Set Advertising Data escaped its claimed family");
+        };
+        assert_eq!(response.opcode(), LeSetAdvData::OPCODE);
+        assert_eq!(
+            response.status(),
+            HciError::INVALID_HCI_PARAMETERS.to_status()
+        );
+    }
+
+    #[test]
     fn known_dtm_rejections_retain_their_required_status() {
         for (opcode, parameters, status) in [
             (
@@ -270,8 +388,8 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_response_is_owned_across_receive_storage_reuse() {
-        let mut parameters = [1];
+    fn malformed_enable_response_is_owned_across_receive_storage_reuse() {
+        let mut parameters = [2];
         let classified = classify_le_controller_command(HciCommandPacket::for_test(
             LeSetAdvEnable::OPCODE,
             &parameters,
@@ -279,11 +397,15 @@ mod tests {
         parameters.fill(0);
 
         assert_eq!(classified.opcode(), LeSetAdvEnable::OPCODE);
-        let LeControllerCommandClassification::Unsupported(response) = classified else {
-            panic!("an unsupported command did not produce its owned response");
+        let LeControllerCommandClassification::MalformedLegacyAdvertising(response) = classified
+        else {
+            panic!("malformed Enable did not produce its owned response");
         };
         assert_eq!(response.opcode(), LeSetAdvEnable::OPCODE);
-        assert_eq!(response.status(), HciError::UNKNOWN_CMD.to_status());
+        assert_eq!(
+            response.status(),
+            HciError::INVALID_HCI_PARAMETERS.to_status()
+        );
     }
 
     #[test]

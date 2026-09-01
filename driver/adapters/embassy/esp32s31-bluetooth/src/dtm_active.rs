@@ -21,7 +21,7 @@ use open_esp_radio_esp32s31_bluetooth::{
 };
 
 #[cfg(target_arch = "riscv32")]
-use crate::EmbassyBluetoothRuntimeWakers;
+use crate::{EmbassyBluetoothPostUnlinkSignal, EmbassyBluetoothRuntimeWakers};
 
 /// Exact radio-side reason an active-session wait completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,8 +112,18 @@ where
                 EmbassyBluetoothDtmActiveRadioSignal::Scheduler
             }
             BluetoothDtmActiveRadioWait::PostUnlink(wake) => {
-                self.wakers.wait_post_unlink_ready(wake).await;
-                EmbassyBluetoothDtmActiveRadioSignal::PostUnlink
+                match self
+                    .wakers
+                    .wait_post_unlink_or_recheck(wake, controller_time_recheck)
+                    .await
+                {
+                    EmbassyBluetoothPostUnlinkSignal::Mailbox => {
+                        EmbassyBluetoothDtmActiveRadioSignal::PostUnlink
+                    }
+                    EmbassyBluetoothPostUnlinkSignal::Recheck => {
+                        EmbassyBluetoothDtmActiveRadioSignal::ControllerTime
+                    }
+                }
             }
             BluetoothDtmActiveRadioWait::ControllerTime => {
                 controller_time_recheck.await;
@@ -288,7 +298,7 @@ mod tests {
 
     use super::{EmbassyBluetoothDtmActiveRadioSignal, RadioFirst, select_radio_first};
 
-    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 16>;
+    type TestResources = LeControllerHciResources<NoopRawMutex, 2, 1, 45>;
 
     fn test_resources() -> TestResources {
         let config = LeControllerBootstrapConfig::new(
@@ -342,7 +352,7 @@ mod tests {
         ));
         assert!(matches!(second, RadioFirst::Other(Ok(()))));
 
-        let mut packet = [0; 16];
+        let mut packet = [0; 45];
         let command = match endpoints
             .controller
             .try_receive_classified_command_with_buffer(command_ready, &mut packet)
@@ -379,7 +389,7 @@ mod tests {
         ));
         assert!(matches!(selected, RadioFirst::Other(Ok(()))));
 
-        let mut packet = [0; 16];
+        let mut packet = [0; 45];
         let LeControllerCommandIntake::NonCommand { frame, .. } = endpoints
             .controller
             .try_receive_classified_command_with_buffer(command_ready, &mut packet)
@@ -424,7 +434,7 @@ mod tests {
             )),
             RadioFirst::Other(Ok(()))
         ));
-        let mut packet = [0; 16];
+        let mut packet = [0; 45];
         let command = match endpoints
             .controller
             .try_receive_classified_command_with_buffer(command_ready, &mut packet)

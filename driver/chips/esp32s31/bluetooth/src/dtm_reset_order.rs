@@ -76,6 +76,7 @@ mod tests {
         LeControllerCommandReadyClaim, LeControllerHciResources,
         LeControllerIdleClassifiedCommandRoute, LeControllerResponsePublication,
         bt_hci::{
+            ControllerToHostPacket,
             cmd::{controller_baseband::Reset, le::LeTestEnd},
             transport::Transport,
         },
@@ -86,7 +87,7 @@ mod tests {
     #[derive(Debug, Eq, PartialEq)]
     struct RestoredOwner(u32);
 
-    type Resources = LeControllerHciResources<NoopRawMutex, 1, 1, 16>;
+    type Resources = LeControllerHciResources<NoopRawMutex, 1, 1, 45>;
 
     fn resources() -> Resources {
         Resources::new(
@@ -111,7 +112,7 @@ mod tests {
         };
         block_on(first.host.write(&LeTestEnd::new()))
             .expect("idle Test End enters its origin queue");
-        let mut command_buffer = [0; 16];
+        let mut command_buffer = [0; 45];
         let LeControllerCommandIntake::Command { command, .. } = first
             .controller
             .try_receive_classified_command_with_buffer(ready, &mut command_buffer)
@@ -177,8 +178,13 @@ mod tests {
         };
         assert_eq!(pending.owner(), &RestoredOwner(41));
 
-        let mut response_buffer = [0; 16];
-        block_on(first.host.read(&mut response_buffer)).expect("Host drains the preceding event");
+        let mut response_buffer = [0; 45];
+        block_on(
+            first
+                .host
+                .read::<ControllerToHostPacket<'_>>(&mut response_buffer),
+        )
+        .expect("Host drains the preceding event");
         let LeControllerResponsePublication::Published(published) =
             pending.try_publish(&first.controller)
         else {
@@ -187,6 +193,11 @@ mod tests {
         let (owner, ready) = published.into_parts();
         assert_eq!(owner, RestoredOwner(41));
         assert!(ready.accepts_endpoint(&first.controller));
-        block_on(first.host.read(&mut response_buffer)).expect("Host receives Reset completion");
+        block_on(
+            first
+                .host
+                .read::<ControllerToHostPacket<'_>>(&mut response_buffer),
+        )
+        .expect("Host receives Reset completion");
     }
 }

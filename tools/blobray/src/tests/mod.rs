@@ -390,6 +390,8 @@ static TEST_RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
     semantic_cache_domain: "blobray/riscv-harness/test/v1",
     contracts: &TEST_CONTRACTS,
     summaries: &TEST_SUMMARIES,
+    compressed_pointer_encodings: &[],
+    reviewed_memory_accesses: &[],
 };
 
 fn synthetic_delay_pointer_context() -> StructuralPointerContext {

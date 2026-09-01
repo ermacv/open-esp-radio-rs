@@ -93,7 +93,7 @@ fragments = [
     "peripherals/btdm-runtime-control.toml",
     "peripherals/ble-phy-init-aux.toml",
     "peripherals/ble-controller-address-slots.toml",
-    "peripherals/ble-controller-pointer-publication.toml",
+    "peripherals/ble-hw-positional-word-1874.toml",
     "peripherals/ble-sync-publication.toml",
     "peripherals/ble-scan-control.toml",
     "peripherals/ble-hw-accelerator.toml",

@@ -23,6 +23,18 @@ metadata_for() {
         "$@" >"$output"
 }
 
+metadata_without_dependencies_for() {
+    local manifest="$1"
+    local output="$2"
+
+    cargo metadata \
+        --format-version 1 \
+        --locked \
+        --offline \
+        --no-deps \
+        --manifest-path "$manifest" >"$output"
+}
+
 package_id_for_manifest() {
     local metadata="$1"
     local manifest
@@ -144,44 +156,53 @@ assert_graph_lacks_features() {
 
 # Every Cargo package below driver/ ships or composes production behavior.
 # Discover manifests so a new package is compiled in all supported feature
-# modes and its resolved dependency closure is checked structurally.
+# modes. Every non-development local dependency declaration must stay under
+# `driver/`; this feature-independent rule is stricter than inspecting only the
+# dependencies selected by one resolved feature graph.
 mapfile -t production_manifests < <(find driver -name Cargo.toml -print | sort)
 test "${#production_manifests[@]}" -gt 0
 
+workspace_packages="$audit_dir/workspace-packages.json"
+metadata_without_dependencies_for Cargo.toml "$workspace_packages"
+driver_root="$(realpath driver)/"
+isolated_profile_count=0
+
 for manifest in "${production_manifests[@]}"; do
+    manifest_absolute="$(realpath "$manifest")"
+    package="$(jq -r --arg manifest "$manifest_absolute" '
+        [.packages[] | select(.manifest_path == $manifest) | .name]
+        | if length == 0 then "" elif length == 1 then .[0] else error("manifest identifies multiple packages") end
+    ' "$workspace_packages")"
+    package_metadata="$workspace_packages"
+    if [[ -z "$package" ]]; then
+        package_metadata="$audit_dir/package-$(basename "${manifest%/Cargo.toml}").json"
+        metadata_without_dependencies_for "$manifest" "$package_metadata"
+        package="$(package_name_for_manifest "$package_metadata" "$manifest")"
+    fi
+
+    violations="$(jq -r \
+        --arg manifest "$manifest_absolute" \
+        --arg driver_root "$driver_root" '
+        .packages[]
+        | select(.manifest_path == $manifest)
+        | .dependencies[]
+        | select(.kind != "dev" and .path != null)
+        | select(((.path + "/") | startswith($driver_root)) | not)
+        | .path
+    ' "$package_metadata")"
+    if [[ -n "$violations" ]]; then
+        echo "production package declares a local dependency outside driver/: $package" >&2
+        echo "$violations" >&2
+        exit 1
+    fi
+
     for mode in no-default-features default-features all-features; do
-        metadata_arguments=()
         check_arguments=()
         case "$mode" in
-            no-default-features)
-                metadata_arguments+=(--no-default-features)
-                check_arguments+=(--no-default-features)
-                ;;
+            no-default-features) check_arguments+=(--no-default-features) ;;
             default-features) ;;
-            all-features)
-                metadata_arguments+=(--all-features)
-                check_arguments+=(--all-features)
-                ;;
+            all-features) check_arguments+=(--all-features) ;;
         esac
-
-        graph="$audit_dir/$(basename "${manifest%/Cargo.toml}")-$mode.json"
-        metadata_for "$manifest" "$graph" "${metadata_arguments[@]}"
-        package="$(package_name_for_manifest "$graph" "$manifest")"
-        root_id="$(package_id_for_manifest "$graph" "$manifest")"
-
-        violations="$(resolved_packages_with_forbidden_roots \
-            "$graph" \
-            "$root_id" \
-            "$repo_root/hil/" \
-            "$repo_root/qualification/" \
-            "$repo_root/verification/" \
-            "$repo_root/tools/")"
-        if [[ -n "$violations" ]]; then
-            echo "non-production dependency survived in $package ($mode):" >&2
-            echo "$violations" >&2
-            exit 1
-        fi
-
         cargo check \
             --quiet \
             --locked \
@@ -190,8 +211,10 @@ for manifest in "${production_manifests[@]}"; do
             --package "$package" \
             --target "$target_triple" \
             "${check_arguments[@]}"
+        isolated_profile_count=$((isolated_profile_count + 1))
     done
 done
+echo "driver architecture compilation: $isolated_profile_count isolated feature profiles"
 
 workspace_graph="$audit_dir/workspace.json"
 metadata_for Cargo.toml "$workspace_graph"

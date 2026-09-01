@@ -18,8 +18,10 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothControllerLowPowerHardwareInitializationFailure,
     BluetoothControllerPhyClientAcquireFailure, BluetoothControllerPhyInitializationFailure,
     BluetoothControllerPhyTrackingFailure, BluetoothControllerRuntimeResources,
-    BluetoothDtmRuntimeConfig, BluetoothPhyInitializationConfig, BluetoothPhyInitializationReport,
-    BluetoothRadioHardware, BluetoothStopped,
+    BluetoothDtmRuntimeConfig, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    BluetoothLegacyAdvertisingRuntimeResources, BluetoothPassiveScanRuntimeConfig,
+    BluetoothPassiveScanRuntimeResources, BluetoothPhyInitializationConfig,
+    BluetoothPhyInitializationReport, BluetoothRadioHardware, BluetoothStopped,
 };
 use open_esp_radio_esp32s31_bluetooth_embassy::{
     EmbassyBluetoothDtmAbsoluteRecheck, EmbassyBluetoothDtmRecheckPeriod,
@@ -36,10 +38,12 @@ use open_esp_radio_esp32s31_radio_platform_esp_hal::{
 
 use crate::{
     EmbassyEsp32s31PhyTime, EmbassyEsp32s31PhyTimeError, Esp32s31BluetoothBlePhyMemoryClaimError,
-    Esp32s31BluetoothDtmMemoryClaimError, Esp32s31BluetoothSystem,
+    Esp32s31BluetoothDtmMemoryClaimError, Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
+    Esp32s31BluetoothPassiveScanMemoryClaimError, Esp32s31BluetoothSystem,
     Esp32s31BluetoothSystemBuildError, Esp32s31BluetoothSystemSlot, Esp32s31BluetoothSystemStorage,
     Esp32s31BluetoothSystemStorageInUse, claim_production_ble_phy_memory,
-    claim_production_dtm_runtime,
+    claim_production_dtm_runtime, claim_production_legacy_advertising_runtime,
+    claim_production_passive_scan_runtime,
 };
 
 type Platform = EspHalBluetoothPlatform<'static>;
@@ -164,6 +168,7 @@ pub struct Esp32s31BluetoothColdStartConfig {
     total_num_le_acl_data_packets: u8,
     retained_calibration: Option<PhyCalibrationSnapshot>,
     dtm: BluetoothDtmRuntimeConfig,
+    passive_scan: BluetoothPassiveScanRuntimeConfig,
     recheck_period: EmbassyBluetoothDtmRecheckPeriod,
 }
 
@@ -174,6 +179,7 @@ impl Esp32s31BluetoothColdStartConfig {
         total_num_le_acl_data_packets: u8,
         retained_calibration: Option<PhyCalibrationSnapshot>,
         dtm: BluetoothDtmRuntimeConfig,
+        passive_scan: BluetoothPassiveScanRuntimeConfig,
         recheck_period: EmbassyBluetoothDtmRecheckPeriod,
     ) -> Self {
         Self {
@@ -181,6 +187,7 @@ impl Esp32s31BluetoothColdStartConfig {
             total_num_le_acl_data_packets,
             retained_calibration,
             dtm,
+            passive_scan,
             recheck_period,
         }
     }
@@ -200,11 +207,13 @@ impl Esp32s31BluetoothUnpoweredOwners {
     }
 }
 
-/// Both permanent SRAM owners before they are consumed into Controller state.
+/// All four permanent SRAM owners before they enter Controller state.
 #[must_use = "claimed static memory belongs to the retained cold-start epoch"]
 pub struct Esp32s31BluetoothClaimedMemory {
     ble_phy: BluetoothBlePhyEngineCpuOwned,
     dtm: open_esp_radio_esp32s31_bluetooth::BluetoothDtmRuntimeResources,
+    legacy_advertising: BluetoothLegacyAdvertisingRuntimeResources,
+    passive_scan: BluetoothPassiveScanRuntimeResources,
 }
 
 impl Esp32s31BluetoothClaimedMemory {
@@ -213,8 +222,15 @@ impl Esp32s31BluetoothClaimedMemory {
     ) -> (
         BluetoothBlePhyEngineCpuOwned,
         open_esp_radio_esp32s31_bluetooth::BluetoothDtmRuntimeResources,
+        BluetoothLegacyAdvertisingRuntimeResources,
+        BluetoothPassiveScanRuntimeResources,
     ) {
-        (self.ble_phy, self.dtm)
+        (
+            self.ble_phy,
+            self.dtm,
+            self.legacy_advertising,
+            self.passive_scan,
+        )
     }
 }
 
@@ -277,6 +293,23 @@ pub struct Esp32s31BluetoothDtmMemoryFailure {
     pub ble_phy: BluetoothBlePhyEngineCpuOwned,
 }
 
+/// Rejected advertising graph claim retaining both preceding graph claims.
+pub struct Esp32s31BluetoothLegacyAdvertisingMemoryFailure {
+    pub error: Esp32s31BluetoothLegacyAdvertisingMemoryClaimError,
+    pub owners: Esp32s31BluetoothUnpoweredOwners,
+    pub ble_phy: BluetoothBlePhyEngineCpuOwned,
+    pub dtm: open_esp_radio_esp32s31_bluetooth::BluetoothDtmRuntimeResources,
+}
+
+/// Rejected passive-scanner graph claim retaining all preceding graph claims.
+pub struct Esp32s31BluetoothPassiveScanMemoryFailure {
+    pub error: Esp32s31BluetoothPassiveScanMemoryClaimError,
+    pub owners: Esp32s31BluetoothUnpoweredOwners,
+    pub ble_phy: BluetoothBlePhyEngineCpuOwned,
+    pub dtm: open_esp_radio_esp32s31_bluetooth::BluetoothDtmRuntimeResources,
+    pub legacy_advertising: BluetoothLegacyAdvertisingRuntimeResources,
+}
+
 /// Absolute-recheck anchoring failed after hardware initialization.
 #[must_use = "the pre-route Controller and DTM graph remain one fail-stop epoch"]
 pub struct Esp32s31BluetoothRecheckStartFailure<
@@ -289,6 +322,8 @@ pub struct Esp32s31BluetoothRecheckStartFailure<
     error: EmbassyBluetoothDtmRecheckStartError,
     _controller: InterruptOwnersReady<MT, SC, H2C, C2H, PC>,
     _dtm: open_esp_radio_esp32s31_bluetooth::BluetoothDtmRuntimeResources,
+    _legacy_advertising: BluetoothLegacyAdvertisingRuntimeResources,
+    _passive_scan: BluetoothPassiveScanRuntimeResources,
 }
 
 impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
@@ -395,6 +430,28 @@ pub enum Esp32s31BluetoothColdStartError<
     /// The permanent DTM arena was rejected after BLE-PHY placement.
     DtmMemory(
         Esp32s31BluetoothReservedFailure<Esp32s31BluetoothDtmMemoryFailure, MT, SC, H2C, C2H, PC>,
+    ),
+    /// The permanent advertising arena was rejected after BLE-PHY and DTM placement.
+    LegacyAdvertisingMemory(
+        Esp32s31BluetoothReservedFailure<
+            Esp32s31BluetoothLegacyAdvertisingMemoryFailure,
+            MT,
+            SC,
+            H2C,
+            C2H,
+            PC,
+        >,
+    ),
+    /// The permanent passive-scanner arena was rejected after the preceding claims.
+    PassiveScanMemory(
+        Esp32s31BluetoothReservedFailure<
+            Esp32s31BluetoothPassiveScanMemoryFailure,
+            MT,
+            SC,
+            H2C,
+            C2H,
+            PC,
+        >,
     ),
     /// Clock/reset setup failed and completed its verified rollback.
     Clock(
@@ -506,7 +563,7 @@ fn reserved_powered<
 /// Cold-start one complete production Controller and publish its task runners.
 ///
 /// Preflight returns the supplied radio root unchanged. After final-slot
-/// reservation, both static memory graphs are claimed before `enable_clocks`
+/// reservation, all four static memory graphs are claimed before `enable_clocks`
 /// begins MMIO. Once the first MMIO future is polled this operation is
 /// deliberately non-cancellable: the hardware typestate has no implicit or
 /// legacy teardown path.
@@ -530,6 +587,7 @@ pub async fn start_esp32s31_bluetooth<
         total_num_le_acl_data_packets,
         retained_calibration,
         dtm,
+        passive_scan,
         recheck_period,
     } = config;
 
@@ -605,9 +663,46 @@ pub async fn start_esp32s31_bluetooth<
             ));
         }
     };
+    let legacy_advertising_runtime = match claim_production_legacy_advertising_runtime(
+        BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(dtm.default_tx_power_dbm().dbm()),
+    ) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            return Err(Esp32s31BluetoothColdStartError::LegacyAdvertisingMemory(
+                Esp32s31BluetoothReservedFailure::new(
+                    Esp32s31BluetoothLegacyAdvertisingMemoryFailure {
+                        error,
+                        owners,
+                        ble_phy: ble_phy_memory,
+                        dtm: dtm_runtime,
+                    },
+                    slot,
+                ),
+            ));
+        }
+    };
+    let passive_scan_runtime = match claim_production_passive_scan_runtime(passive_scan) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            return Err(Esp32s31BluetoothColdStartError::PassiveScanMemory(
+                Esp32s31BluetoothReservedFailure::new(
+                    Esp32s31BluetoothPassiveScanMemoryFailure {
+                        error,
+                        owners,
+                        ble_phy: ble_phy_memory,
+                        dtm: dtm_runtime,
+                        legacy_advertising: legacy_advertising_runtime,
+                    },
+                    slot,
+                ),
+            ));
+        }
+    };
     let memory = Esp32s31BluetoothClaimedMemory {
         ble_phy: ble_phy_memory,
         dtm: dtm_runtime,
+        legacy_advertising: legacy_advertising_runtime,
+        passive_scan: passive_scan_runtime,
     };
     let (platform, hardware) = owners.into_parts();
 
@@ -691,7 +786,8 @@ pub async fn start_esp32s31_bluetooth<
         .map(|cache| *cache.snapshot());
     let baseband_initialized = initialized.initialize_baseband();
     let baseband = baseband_initialized.baseband_report();
-    let (ble_phy_memory, dtm_runtime) = memory.into_parts();
+    let (ble_phy_memory, dtm_runtime, legacy_advertising_runtime, passive_scan_runtime) =
+        memory.into_parts();
     let ble_phy_initialized = baseband_initialized.initialize_ble_phy_engine(ble_phy_memory);
     let ble_phy = ble_phy_initialized.report();
     let ready = ble_phy_initialized
@@ -706,21 +802,27 @@ pub async fn start_esp32s31_bluetooth<
                         error,
                         _controller: ready,
                         _dtm: dtm_runtime,
+                        _legacy_advertising: legacy_advertising_runtime,
+                        _passive_scan: passive_scan_runtime,
                     },
                     slot,
                 ),
             ));
         }
     };
-    let published =
-        match ready.publish_interrupt_owners(EspHalBluetoothInterruptStorage::new(), dtm_runtime) {
-            Ok(published) => published,
-            Err(failure) => {
-                return Err(Esp32s31BluetoothColdStartError::InterruptPublication(
-                    Esp32s31BluetoothReservedFailure::new(failure, slot),
-                ));
-            }
-        };
+    let published = match ready.publish_interrupt_owners(
+        EspHalBluetoothInterruptStorage::new(),
+        dtm_runtime,
+        legacy_advertising_runtime,
+        passive_scan_runtime,
+    ) {
+        Ok(published) => published,
+        Err(failure) => {
+            return Err(Esp32s31BluetoothColdStartError::InterruptPublication(
+                Esp32s31BluetoothReservedFailure::new(failure, slot),
+            ));
+        }
+    };
     let system = slot
         .compose(published, recheck)
         .map_err(Esp32s31BluetoothColdStartError::SystemBuild)?;

@@ -88,6 +88,8 @@ pub use interface_discovery::{
 };
 pub use reference_analysis::{ReferenceAnalysisMemo, ReferenceResolver, ReferenceSymbolKey};
 pub use static_analysis::{
+    ReviewedCompressedPointerEncoding, ReviewedMemoryAccessClassification,
+    ReviewedMemoryAccessOccurrence, ReviewedMemoryAccessOperation, ReviewedMemoryAccessRole,
     ReviewedMemoryValueDomain, RiscvHarnessSpec, RiscvSummaryHooks, StructuralCallSite,
     StructuralPointerContext, StructuralProjectedRelocation, SymbolicStack, trace_binary_symbol,
 };

@@ -27,10 +27,10 @@ pub fn clear_scheduler_hardware_list_heads() {
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
-    task.clear_scheduler_hardware_list_heads();
+    let cleared_lists = task.clear_scheduler_hardware_list_heads();
     // The comparison image deliberately retains the mutated partitions; it
     // must not reconstruct cold ownership without the missing rollback.
-    let _powered_owners = (task, interrupts);
+    let _powered_owners = (task, interrupts, cleared_lists);
 }
 
 /// Execute the production PHY-I2C host selection through the standalone
@@ -134,24 +134,6 @@ pub unsafe fn prepare_modem_lp_timer_registers() {
     let _terminal_owners = (task, prepared, interrupts);
 }
 
-/// Publish the scheduler-disable command and perform one bounded BUSY sample
-/// through the exact production PAC transaction.
-///
-/// # Safety
-///
-/// The caller must be an isolated compiled-production probe modeling a
-/// powered task-stopping controller and a post-route observation point.
-#[allow(
-    unsafe_code,
-    reason = "the validation-only API preserves the powered scheduler prerequisite"
-)]
-#[inline(always)]
-pub unsafe fn disable_scheduler_and_sample_once() -> bool {
-    unsafe {
-        open_esp_radio_esp32s31_pac::validation::disable_bluetooth_scheduler_and_sample_once()
-    }
-}
-
 /// Execute one exact production memory-list pointer publication in an
 /// isolated comparison image.
 ///
@@ -197,8 +179,8 @@ pub unsafe fn initialize_phy_registers(
     private_timing_source_byte: u8,
     environment_address: u32,
     resolving_list_address: u32,
-    ignore_allowlist_for_directed_advertising: bool,
-    backoff_rssi_dbm: i8,
+    set_branch_control_0470_bit_18: bool,
+    runtime_configuration_low_byte: u8,
 ) -> bool {
     let Ok(resolving_list) = BluetoothControllerSramAddress::new(resolving_list_address) else {
         return false;
@@ -208,8 +190,8 @@ pub unsafe fn initialize_phy_registers(
             private_timing_source_byte,
             environment_address,
             resolving_list,
-            ignore_allowlist_for_directed_advertising,
-            backoff_rssi_dbm,
+            set_branch_control_0470_bit_18,
+            runtime_configuration_low_byte,
         )
     }
 }

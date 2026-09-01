@@ -10,10 +10,12 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmBoundSramLinkAddress;
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmRxHeaderTailProjection, BluetoothDtmTxHeaderHeadProjection,
 };
 
 /// Source-level default transmit power consumed by the S31 DTM profile.
@@ -56,35 +58,14 @@ impl BluetoothDtmHardwareProfile {
             default_tx_power_dbm,
         }
     }
-
-    /// Reproduce the complete signed-byte conversion used by the current S31
-    /// controller. The result is private to the controller-memory codec.
-    const fn rounded_power(self) -> u8 {
-        match self.default_tx_power_dbm.dbm() {
-            i8::MIN..=-16 => 0,
-            -15..=-13 => 3,
-            -12..=-10 => 4,
-            -9..=-7 => 5,
-            -6..=-4 => 6,
-            -3..=-1 => 7,
-            0..=2 => 8,
-            3..=5 => 9,
-            6..=8 => 10,
-            9..=11 => 11,
-            12..=14 => 12,
-            15..=17 => 13,
-            18..=19 => 14,
-            20..=i8::MAX => 15,
-        }
-    }
 }
 
 /// Typed dynamic inputs to one DTM link-state reset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothDtmLinkStateReset {
-    tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
-    rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
+    tx_header_head: Option<BluetoothDtmTxHeaderHeadProjection>,
+    rx_header_tail: Option<BluetoothDtmRxHeaderTailProjection>,
     hardware_profile: BluetoothDtmHardwareProfile,
     role: BluetoothDtmRole,
 }
@@ -96,14 +77,12 @@ impl BluetoothDtmLinkStateReset {
     /// Callers cannot supply either the private rounded-power image or the
     /// positional configuration image.
     pub(crate) const fn new(
-        tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
-        rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
         default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm,
         role: BluetoothDtmRole,
     ) -> Self {
         Self {
-            tx_head,
-            rx_tail,
+            tx_header_head: None,
+            rx_header_tail: None,
             hardware_profile: BluetoothDtmHardwareProfile::reviewed_esp32s31(default_tx_power_dbm),
             role,
         }
@@ -120,9 +99,9 @@ impl BluetoothDtmLinkStateReset {
         current: BluetoothDtmLinkStateReviewedWords,
     ) -> BluetoothDtmLinkStateReviewedWords {
         current.apply_reset(
-            self.tx_head,
-            self.rx_tail,
-            self.hardware_profile.rounded_power(),
+            self.tx_header_head,
+            self.rx_header_tail,
+            self.hardware_profile.default_tx_power_dbm.dbm(),
             BluetoothDtmHardwareProfile::REVIEWED_CONFIG,
             self.role,
         )
@@ -140,63 +119,13 @@ impl BluetoothDtmLinkStateReset {
     /// earlier event or another graph.
     pub(crate) const fn with_private_links(
         self,
-        tx_head: BluetoothDtmBoundSramLinkAddress,
-        rx_tail: BluetoothDtmBoundSramLinkAddress,
+        tx_header_head: BluetoothDtmTxHeaderHeadProjection,
+        rx_header_tail: BluetoothDtmRxHeaderTailProjection,
     ) -> Self {
         Self {
-            tx_head: Some(tx_head),
-            rx_tail: Some(rx_tail),
+            tx_header_head: Some(tx_header_head),
+            rx_header_tail: Some(rx_header_tail),
             ..self
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{BluetoothDtmDefaultTxPowerDbm, BluetoothDtmHardwareProfile};
-
-    #[test]
-    fn reviewed_profile_preserves_the_complete_signed_dbm_bucketing() {
-        let cases = [
-            (i8::MIN, 0),
-            (-16, 0),
-            (-15, 3),
-            (-13, 3),
-            (-12, 4),
-            (-10, 4),
-            (-9, 5),
-            (-7, 5),
-            (-6, 6),
-            (-4, 6),
-            (-3, 7),
-            (-1, 7),
-            (0, 8),
-            (2, 8),
-            (3, 9),
-            (5, 9),
-            (6, 10),
-            (8, 10),
-            (9, 11),
-            (11, 11),
-            (12, 12),
-            (14, 12),
-            (15, 13),
-            (17, 13),
-            (18, 14),
-            (19, 14),
-            (20, 15),
-            (i8::MAX, 15),
-        ];
-
-        for (dbm, expected_bucket) in cases {
-            assert_eq!(
-                BluetoothDtmHardwareProfile::reviewed_esp32s31(BluetoothDtmDefaultTxPowerDbm::new(
-                    dbm
-                ),)
-                .rounded_power(),
-                expected_bucket,
-                "unexpected reviewed S31 power bucket for {dbm} dBm",
-            );
         }
     }
 }

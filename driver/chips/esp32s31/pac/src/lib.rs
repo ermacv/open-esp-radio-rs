@@ -14,11 +14,11 @@ mod bluetooth_interrupt;
 mod bluetooth_memory_lists;
 mod bluetooth_modem_lp_timer;
 mod bluetooth_phy_init;
+mod bluetooth_scan;
 mod bluetooth_scheduler;
 mod bluetooth_scheduler_insertion;
 mod bluetooth_scheduler_lock_modify;
 mod bluetooth_scheduler_runtime;
-mod bluetooth_scheduler_stop;
 mod cfr;
 pub mod clock;
 mod coex;
@@ -87,7 +87,7 @@ pub use baseband::{
 };
 pub use bluetooth_controller_hal_init::{
     BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
-    BluetoothHalInitScale, BluetoothRawTimeDeltaProjection,
+    BluetoothHalInitScale, BluetoothRawTickDeltaProjection,
 };
 pub use bluetooth_controller_time::{
     BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
@@ -118,6 +118,7 @@ pub use bluetooth_phy_init::{
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
     BluetoothPhyRegisterInitInputs,
 };
+pub use bluetooth_scan::BluetoothScanStartPublished;
 pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
     BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
@@ -143,11 +144,6 @@ pub use bluetooth_scheduler_runtime::{
     BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalInterruptStep,
     BluetoothSchedulerSoftwareListRemovalJoin, BluetoothSchedulerSoftwareListRemovalReady,
     BluetoothSchedulerWorkObservation,
-};
-pub use bluetooth_scheduler_stop::{
-    BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisableBeginFailure,
-    BluetoothSchedulerDisableBusyObserved, BluetoothSchedulerDisableIdleObserved,
-    BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableStep,
 };
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};

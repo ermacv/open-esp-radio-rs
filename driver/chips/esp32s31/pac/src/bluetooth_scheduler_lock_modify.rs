@@ -129,7 +129,7 @@ impl BluetoothSchedulerLockModifyObservation {
         }
     }
 
-    /// Whether the reference path would continue waiting.
+    /// Whether the reviewed wait predicate remains active.
     ///
     /// Progress is blocked only while both scheduler BUSY and request START
     /// remain set.

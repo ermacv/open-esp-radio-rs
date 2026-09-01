@@ -1,5 +1,280 @@
 use super::super::*;
 
+const TEST_CONTROLLER_SRAM_ENCODING: ReviewedCompressedPointerEncoding =
+    ReviewedCompressedPointerEncoding::new(
+        "test-controller-sram-low20-word-address-v1",
+        0x2f00_0000,
+        20,
+        2,
+    );
+
+fn compressed_pointer_context() -> StructuralPointerContext {
+    let mut context = synthetic_delay_pointer_context();
+    context
+        .reviewed_compressed_pointer_encodings
+        .push(TEST_CONTROLLER_SRAM_ENCODING);
+    context
+}
+
+fn compressed_pointer_trace(name: &str, instructions: &[u32]) -> FunctionAnalysis {
+    compressed_pointer_trace_with_context(name, instructions, &compressed_pointer_context())
+}
+
+fn compressed_pointer_trace_with_context(
+    name: &str,
+    instructions: &[u32],
+    pointer_context: &StructuralPointerContext,
+) -> FunctionAnalysis {
+    const CALL_PREFIX: [u32; 3] = [
+        0x0040_0513, // li a0, 4
+        0x0000_0317, // auipc t1, 0
+        0x0003_00e7, // jalr ra, 0(t1)
+    ];
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: Some("compressed_pointer.o".to_owned()),
+        name: name.to_owned(),
+        address: 0x1000_0000,
+        bytes: CALL_PREFIX
+            .iter()
+            .chain(instructions)
+            .copied()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let relocated_calls = direct::StructuralRelocatedCalls::from([(
+        StructuralCallSite::new(&symbol, symbol.address as u32 + 4),
+        ("test_opaque_pointer".to_owned(), None),
+    )]);
+    trace_binary_symbol(&symbol, &map(), &relocated_calls, pointer_context, None).unwrap()
+}
+
+const LW_A5_4_A0: u32 = 0x0045_2783;
+const LUI_A4_LOW20_CEILING: u32 = 0x0010_0737;
+const ADDI_A4_A4_NEGATIVE_ONE: u32 = 0xfff7_0713;
+const AND_A5_A5_A4: u32 = 0x00e7_f7b3;
+const SLLI_A5_A5_2: u32 = 0x0027_9793;
+const LUI_A4_CONTROLLER_SRAM: u32 = 0x2f00_0737;
+const OR_A5_A5_A4: u32 = 0x00e7_e7b3;
+const LW_A0_12_A5: u32 = 0x00c7_a503;
+const RET: u32 = 0x0000_8067;
+
+#[test]
+fn reviewed_low20_word_address_recovers_dynamic_ram_provenance() {
+    let trace = compressed_pointer_trace(
+        "reviewed_low20_word_address",
+        &[
+            LW_A5_4_A0,
+            LUI_A4_LOW20_CEILING,
+            ADDI_A4_A4_NEGATIVE_ONE,
+            AND_A5_A5_A4,
+            SLLI_A5_A5_2,
+            LUI_A4_CONTROLLER_SRAM,
+            OR_A5_A5_A4,
+            LW_A0_12_A5,
+            RET,
+        ],
+    );
+
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    let memory_reads = trace
+        .reference_events
+        .iter()
+        .filter_map(|event| match event {
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width,
+                region,
+                ..
+            } => Some((*width, region.as_str())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        memory_reads,
+        vec![(32, "dynamic RAM address"), (32, "dynamic RAM address")]
+    );
+}
+
+#[test]
+fn equivalent_shift_pair_recovers_the_same_reviewed_pointer_provenance() {
+    let trace = compressed_pointer_trace(
+        "reviewed_low20_word_address_shift_pair",
+        &[
+            LW_A5_4_A0,
+            0x00c7_9793, // slli a5, a5, 12
+            0x00a7_d793, // srli a5, a5, 10
+            LUI_A4_CONTROLLER_SRAM,
+            OR_A5_A5_A4,
+            LW_A0_12_A5,
+            RET,
+        ],
+    );
+
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    assert_eq!(
+        trace
+            .reference_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DraftReferenceEvent::Memory { region, .. } if region == "dynamic RAM address"
+            ))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn reviewed_compressed_pointer_rejects_wrong_base_shift_mask_and_source() {
+    let cases = [
+        (
+            "wrong_base",
+            vec![
+                LW_A5_4_A0,
+                LUI_A4_LOW20_CEILING,
+                ADDI_A4_A4_NEGATIVE_ONE,
+                AND_A5_A5_A4,
+                SLLI_A5_A5_2,
+                0x2e00_0737, // lui a4, 0x2e000
+                OR_A5_A5_A4,
+                LW_A0_12_A5,
+                RET,
+            ],
+            1,
+        ),
+        (
+            "wrong_shift",
+            vec![
+                LW_A5_4_A0,
+                LUI_A4_LOW20_CEILING,
+                ADDI_A4_A4_NEGATIVE_ONE,
+                AND_A5_A5_A4,
+                0x0037_9793, // slli a5, a5, 3
+                LUI_A4_CONTROLLER_SRAM,
+                OR_A5_A5_A4,
+                LW_A0_12_A5,
+                RET,
+            ],
+            1,
+        ),
+        (
+            "wrong_mask",
+            vec![
+                LW_A5_4_A0,
+                0x0008_0737, // lui a4, 0x80
+                ADDI_A4_A4_NEGATIVE_ONE,
+                AND_A5_A5_A4,
+                SLLI_A5_A5_2,
+                LUI_A4_CONTROLLER_SRAM,
+                OR_A5_A5_A4,
+                LW_A0_12_A5,
+                RET,
+            ],
+            1,
+        ),
+        (
+            "mixed_memory_read_tokens",
+            vec![
+                LW_A5_4_A0,
+                0x0085_2683, // lw a3, 8(a0)
+                0x3ff0_0713, // li a4, 0x3ff
+                AND_A5_A5_A4,
+                0x0010_0737, // lui a4, 0x100
+                0xc007_0713, // addi a4, a4, -0x400
+                0x00e6_f6b3, // and a3, a3, a4
+                0x00d7_e7b3, // or a5, a5, a3
+                SLLI_A5_A5_2,
+                LUI_A4_CONTROLLER_SRAM,
+                OR_A5_A5_A4,
+                LW_A0_12_A5,
+                RET,
+            ],
+            2,
+        ),
+        (
+            "missing_memory_provenance",
+            vec![
+                0x0005_0793, // mv a5, a0
+                LUI_A4_LOW20_CEILING,
+                ADDI_A4_A4_NEGATIVE_ONE,
+                AND_A5_A5_A4,
+                SLLI_A5_A5_2,
+                LUI_A4_CONTROLLER_SRAM,
+                OR_A5_A5_A4,
+                LW_A0_12_A5,
+                RET,
+            ],
+            0,
+        ),
+    ];
+
+    for (name, instructions, source_reads) in cases {
+        let trace = compressed_pointer_trace(name, &instructions);
+        assert!(
+            trace
+                .reference_blockers
+                .iter()
+                .any(|blocker| blocker.contains("unmodeled-memory-load")),
+            "{name} unexpectedly gained pointer provenance: {trace:#?}"
+        );
+        let dynamic_reads = trace
+            .reference_events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    DraftReferenceEvent::Memory { region, .. } if region == "dynamic RAM address"
+                )
+            })
+            .count();
+        assert!(
+            dynamic_reads <= source_reads,
+            "{name} unexpectedly emitted the reconstructed-pointer access: {trace:#?}"
+        );
+    }
+}
+
+#[test]
+fn invalid_reviewed_compressed_pointer_encodings_fail_closed() {
+    let instructions = [
+        LW_A5_4_A0,
+        LUI_A4_LOW20_CEILING,
+        ADDI_A4_A4_NEGATIVE_ONE,
+        AND_A5_A5_A4,
+        SLLI_A5_A5_2,
+        LUI_A4_CONTROLLER_SRAM,
+        OR_A5_A5_A4,
+        LW_A0_12_A5,
+        RET,
+    ];
+    let cases = [
+        ReviewedCompressedPointerEncoding::new("", 0x2f00_0000, 20, 2),
+        ReviewedCompressedPointerEncoding::new("overlapping-base", 0x2f00_0004, 20, 2),
+        ReviewedCompressedPointerEncoding::new("overflowing-field", 0x2f00_0000, 31, 2),
+        ReviewedCompressedPointerEncoding::new("empty-field", 0x2f00_0000, 0, 2),
+    ];
+
+    for encoding in cases {
+        let mut context = synthetic_delay_pointer_context();
+        context.reviewed_compressed_pointer_encodings.push(encoding);
+        let trace = compressed_pointer_trace_with_context(
+            "invalid_reviewed_compressed_pointer_encoding",
+            &instructions,
+            &context,
+        );
+        assert!(
+            trace
+                .reference_blockers
+                .iter()
+                .any(|blocker| blocker.contains("unmodeled-memory-load")),
+            "invalid encoding unexpectedly granted pointer provenance: {trace:#?}"
+        );
+    }
+}
+
 #[test]
 fn indexed_absolute_ram_preserves_argument_stride_and_field_offset() {
     let symbol = artifact::ArtifactSymbolDefinition {

@@ -18,10 +18,21 @@
 //! session policy retains start/Test End ownership for a hardware runner and
 //! builds only the exact no-test success or active-start busy responses; it
 //! does not dispatch commands or claim radio work.
-//! [`classify_le_controller_command`] joins those two portable policies at a
-//! finite command boundary: valid bootstrap and DTM commands become owned
-//! semantic tokens, malformed known commands become owned error responses,
-//! and every other opcode becomes an owned Unknown Command completion.
+//! The legacy advertising codec separately decodes the standard Set
+//! Parameters, Set Data and Set Enable commands into owned semantic values for
+//! the currently supported non-connectable role. Set Parameters and Set Data
+//! enter the common classifier and update one reset-scoped configuration owner
+//! under exact response order. Set Enable remains unclaimed until the outer
+//! Link Layer router can retain it through hardware start/stop.
+//! Legacy passive scanning follows the same boundary: standard Set Scan
+//! Parameters and Set Scan Enable commands become owned timing and duplicate
+//! policy, while affine start/disable continuations delay success until a chip
+//! runner proves hardware `RUN` or quiescence.
+//! [`classify_le_controller_command`] joins these portable policies at a finite
+//! command boundary: valid bootstrap, DTM and Link Layer configuration commands
+//! become owned semantic tokens, malformed known commands become owned error
+//! responses, and every other opcode becomes an owned Unknown Command
+//! completion.
 //! Classification never advances bootstrap state, leaves no result borrowing
 //! receive scratch storage, and keeps Reset plus other bootstrap commands
 //! available to session-aware policy before explicit dispatch.
@@ -48,6 +59,8 @@ mod channel;
 mod classification;
 mod dtm;
 mod dtm_order;
+mod legacy_advertising;
+mod legacy_scanning;
 mod resources;
 mod response;
 
@@ -74,16 +87,38 @@ pub use dtm::{
     LeTransmitterTestCommand,
 };
 pub use dtm_order::{
-    LeControllerActiveDtmCommandRoute, LeControllerClassifiedCommand,
+    LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
+    LeControllerActiveLegacyScanningCommandRoute, LeControllerClassifiedCommand,
     LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
-    LeControllerDeferredDtmCommand, LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
-    LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
-    LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
-    LeControllerResponsePending, LeControllerResponsePublication,
+    LeControllerDeferredDtmCommand, LeControllerDeferredLegacyAdvertisingDisable,
+    LeControllerDeferredLegacyAdvertisingStart, LeControllerDeferredLegacyScanningDisable,
+    LeControllerDeferredLegacyScanningStart, LeControllerDeferredReceiverStart,
+    LeControllerDeferredTestEnd, LeControllerDeferredTransmitterStart,
+    LeControllerEndpointMismatch, LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier,
+    LeControllerResetCompletion, LeControllerResponsePending, LeControllerResponsePublication,
+};
+pub(crate) use legacy_advertising::LeLegacyAdvertisingIdleEnableDisposition;
+pub use legacy_advertising::{
+    LE_LEGACY_ADVERTISING_COMMAND_COMPLETE_EVENT_CAPACITY, LE_LEGACY_ADVERTISING_DATA_CAPACITY,
+    LeLegacyAdvertisingAddress, LeLegacyAdvertisingCommand,
+    LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingCommandKind,
+    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingData,
+    LeLegacyAdvertisingDecodeError, LeLegacyAdvertisingEnableCommand,
+    LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingIntervalRange,
+    LeLegacyAdvertisingOwnAddressKind, LeLegacyAdvertisingPrimaryChannels,
+    LeLegacyNonconnectableAdvertisingParameters,
+};
+pub use legacy_scanning::{
+    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
+    LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyAdvertisingReportEvent,
+    LeLegacyAdvertisingReportEventError, LeLegacyPassiveScanParameters, LeLegacyScanningCommand,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningDecodeError,
+    LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
 };
 pub use resources::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,
-    LeControllerHciResources, LeControllerHciResourcesError,
+    LeControllerHciResources, LeControllerHciResourcesError, LeLegacyAdvertisingReportPublication,
 };
 pub use response::{
     HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,
@@ -91,7 +126,7 @@ pub use response::{
 
 use bt_hci::{ControllerToHostPacket, FromHciBytesError, PacketKind};
 
-/// Maximum packet body accepted by the pinned `bt-hci` 0.9 Host contract.
+/// Maximum packet body accepted by the in-process HCI Host contract.
 ///
 /// The packet indicator used by UART/H4 is not retained because the direct
 /// in-process boundary carries [`PacketKind`] separately. Future ISO or larger
@@ -462,7 +497,7 @@ mod tests {
     fn requires_trouble_controller<C: trouble_host::Controller>() {}
 
     #[test]
-    fn pinned_bt_hci_release_matches_trouble_controller_contract() {
+    fn bt_hci_and_trouble_share_one_controller_contract() {
         type ContractTransport = InProcessHciHostTransport<'static, NoopRawMutex, 1, 1, 16>;
         requires_trouble_controller::<ExternalController<ContractTransport, 1>>();
     }

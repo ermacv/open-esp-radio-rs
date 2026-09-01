@@ -121,45 +121,6 @@ pub unsafe fn initialize_bluetooth_controller_hal(config: BluetoothControllerHal
     let _powered_owners = (task, interrupts);
 }
 
-/// Publish the exact scheduler-disable command and perform one bounded status
-/// observation inside an isolated comparison image.
-///
-/// `true` means the single fresh read observed the positional BUSY bit set.
-/// Both terminal ownership states and the post-route interrupt bank remain
-/// retained; this function does not manufacture teardown or a repeatable poll.
-///
-/// # Safety
-///
-/// The caller must model a powered controller in its task-stopping lifecycle,
-/// and the status observation must occur after CPU routes and shared ISR access
-/// have ended. No later radio operation may execute in this image.
-#[allow(
-    unsafe_code,
-    reason = "the isolated validation entry assumes the powered scheduler prerequisite"
-)]
-#[inline(always)]
-pub unsafe fn disable_bluetooth_scheduler_and_sample_once() -> bool {
-    let cold = RadioHardware::for_validation().into_bluetooth();
-    let (task, interrupts) = cold.separate_interrupt_owner();
-    let mut post_routes =
-        unsafe { interrupts.assume_output_prepared_after_routes_for_validation() };
-    let request = match task.begin_scheduler_disable() {
-        Ok(request) => request,
-        Err(_) => unreachable!("a fresh validation task has no controller-time request"),
-    };
-
-    match request.step_after_cpu_routes_disabled(&mut post_routes) {
-        crate::BluetoothSchedulerDisableStep::BusyObserved(observation) => {
-            let _retained_owners = (observation, post_routes);
-            true
-        }
-        crate::BluetoothSchedulerDisableStep::IdleObserved(observation) => {
-            let _retained_owners = (observation, post_routes);
-            false
-        }
-    }
-}
-
 /// Execute one exact controller memory-list pointer publication inside an
 /// isolated comparison image.
 ///
@@ -215,8 +176,8 @@ pub unsafe fn initialize_bluetooth_phy_registers(
     private_timing_source_byte: u8,
     environment_address: u32,
     resolving_list: crate::BluetoothControllerSramAddress,
-    ignore_allowlist_for_directed_advertising: bool,
-    backoff_rssi_dbm: i8,
+    set_branch_control_0470_bit_18: bool,
+    runtime_configuration_low_byte: u8,
 ) -> bool {
     let Ok(environment) = BluetoothPhyEnvironmentAddress::new(environment_address) else {
         return false;
@@ -225,8 +186,8 @@ pub unsafe fn initialize_bluetooth_phy_registers(
         private_timing_source_byte,
         environment,
         resolving_list,
-        ignore_allowlist_for_directed_advertising,
-        backoff_rssi_dbm,
+        set_branch_control_0470_bit_18,
+        runtime_configuration_low_byte,
     );
     let cold = RadioHardware::for_validation().into_bluetooth();
     let (mut task, interrupts) = cold.separate_interrupt_owner();

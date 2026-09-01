@@ -8,9 +8,7 @@ repository.workspace = true
 description = "Allocation-free HCI boundary for open ESP radio Bluetooth controllers"
 
 [dependencies]
-# Trouble 0.7.0 depends on the 0.9 HCI contract. Keep this exact until an
-# explicit compatibility migration moves both sides together.
-bt-hci = "=0.9.0"
+bt-hci = "=0.10.1"
 embassy-sync = "0.8.0"
 embedded-io = "0.7.1"
 
@@ -18,7 +16,7 @@ embedded-io = "0.7.1"
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-futures = "0.1.2"
 embedded-io-async = "0.7.0"
-trouble-host = { version = "=0.7.0", default-features = false, features = ["peripheral"] }
+trouble-host = { version = "=0.8.0", default-features = false, features = ["peripheral"] }
 
 [lints]
 workspace = true

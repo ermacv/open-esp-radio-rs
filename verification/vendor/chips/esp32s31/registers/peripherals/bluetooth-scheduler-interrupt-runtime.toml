@@ -30,7 +30,7 @@ bitWidth = 12
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "SCHEDULER_STATE"
-description = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."
+description = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."
 addressOffset = 0x7C
 size = 32
 access = "read-write"
@@ -48,8 +48,8 @@ name = "OPAQUE_STATE_24_28"
 bitOffset = 24
 bitWidth = 5
 [[peripherals.registers.register.fields]]
-name = "REFERENCE_PATH_STATE"
-description = "State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."
+name = "STATE_29"
+description = "Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."
 bitOffset = 29
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -111,7 +111,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.REFERENCE_PATH_STATE"
+entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.STATE_29"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"

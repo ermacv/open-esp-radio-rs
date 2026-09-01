@@ -206,6 +206,9 @@ pub(crate) struct ResearchNextArgs {
     /// Rank by overall impact, low-cost quick wins, or the benefit/effort frontier.
     #[arg(long, value_enum, default_value_t)]
     pub(crate) strategy: ResearchRankingArg,
+    /// Select all research or only direct hardware-access research.
+    #[arg(long, value_enum, default_value_t)]
+    pub(crate) focus: ResearchFocusArg,
     /// Restrict prioritization to an explicit review-scope protocol tag.
     #[arg(long, value_name = "NAME")]
     pub(crate) protocol: Option<String>,
@@ -239,6 +242,15 @@ pub(crate) enum ResearchRankingArg {
     /// Return only actions not dominated on both benefit and effort.
     #[value(alias = "pareto")]
     Frontier,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub(crate) enum ResearchFocusArg {
+    /// Consider every derived research action.
+    #[default]
+    All,
+    /// Consider MMIO models, MMIO write semantics, and SRAM memory blockers.
+    HardwareAccess,
 }
 
 #[derive(Clone, Debug, Default, Args)]

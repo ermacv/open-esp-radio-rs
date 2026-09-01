@@ -105,12 +105,27 @@ package_has_direct_dependency() {
 mapfile -t manifests < <(find driver -name Cargo.toml -not -path '*/target/*' -print | sort)
 test "${#manifests[@]}" -gt 0
 
+workspace_metadata="$audit_dir/workspace.json"
+metadata_for_manifest Cargo.toml "$workspace_metadata"
+safe_workspace_arguments=()
+unsafe_workspace_arguments=()
+generated_workspace_arguments=()
 safe_package_count=0
 unsafe_package_count=0
 for manifest in "${manifests[@]}"; do
-    metadata="$audit_dir/package-$(basename "${manifest%/Cargo.toml}").json"
-    metadata_for_manifest "$manifest" "$metadata"
-    package="$(package_name_for_manifest "$metadata" "$manifest")"
+    manifest_absolute="$(realpath "$manifest")"
+    package="$(jq -r --arg manifest "$manifest_absolute" \
+        '[.packages[] | select(.manifest_path == $manifest) | .name]
+        | if length == 0 then "" elif length == 1 then .[0] else error("manifest identifies multiple packages") end' \
+        "$workspace_metadata")"
+    metadata="$workspace_metadata"
+    workspace_member=true
+    if [[ -z "$package" ]]; then
+        metadata="$audit_dir/package-$(basename "${manifest%/Cargo.toml}").json"
+        metadata_for_manifest "$manifest" "$metadata"
+        package="$(package_name_for_manifest "$metadata" "$manifest")"
+        workspace_member=false
+    fi
 
     if ! package_has_library_target "$metadata" "$manifest"; then
         echo "driver package has no library target: $package" >&2
@@ -127,38 +142,93 @@ for manifest in "${manifests[@]}"; do
         exit 1
     fi
 
-    common_clippy_arguments=(
-        --quiet
-        --locked
-        --offline
-        --manifest-path "$manifest"
-        --package "$package"
-        --target "$target_triple"
-        --lib
-        --all-features
-        --no-deps
-    )
-
     if [[ "$package" == "$generated_unsafe_package" ]]; then
-        cargo check \
-            --quiet \
-            --locked \
-            --offline \
-            --manifest-path "$manifest" \
-            --package "$package" \
-            --target "$target_triple" \
-            --lib \
-            --all-features
+        if $workspace_member; then
+            generated_workspace_arguments+=(--package "$package")
+        else
+            cargo check \
+                --quiet \
+                --locked \
+                --offline \
+                --manifest-path "$manifest" \
+                --package "$package" \
+                --target "$target_triple" \
+                --lib \
+                --all-features
+        fi
     elif contains_exactly "$package" "${audited_unsafe_packages[@]}"; then
-        cargo clippy "${common_clippy_arguments[@]}" -- \
-            -D unsafe-code \
-            -D unsafe-op-in-unsafe-fn
+        if $workspace_member; then
+            unsafe_workspace_arguments+=(--package "$package")
+        else
+            cargo clippy \
+                --quiet \
+                --locked \
+                --offline \
+                --manifest-path "$manifest" \
+                --package "$package" \
+                --target "$target_triple" \
+                --lib \
+                --all-features \
+                --no-deps \
+                -- \
+                -D unsafe-code \
+                -D unsafe-op-in-unsafe-fn
+        fi
         unsafe_package_count=$((unsafe_package_count + 1))
     else
-        cargo clippy "${common_clippy_arguments[@]}" -- -F unsafe-code
+        if $workspace_member; then
+            safe_workspace_arguments+=(--package "$package")
+        else
+            cargo clippy \
+                --quiet \
+                --locked \
+                --offline \
+                --manifest-path "$manifest" \
+                --package "$package" \
+                --target "$target_triple" \
+                --lib \
+                --all-features \
+                --no-deps \
+                -- \
+                -F unsafe-code
+        fi
         safe_package_count=$((safe_package_count + 1))
     fi
 done
+
+# Maximal all-feature lint modes can share one Cargo traversal per policy
+# class. `--no-deps` keeps each lint scoped to the selected production crates.
+cargo check \
+    --quiet \
+    --locked \
+    --offline \
+    "${generated_workspace_arguments[@]}" \
+    --target "$target_triple" \
+    --lib \
+    --all-features
+cargo clippy \
+    --quiet \
+    --locked \
+    --offline \
+    "${unsafe_workspace_arguments[@]}" \
+    --target "$target_triple" \
+    --lib \
+    --all-features \
+    --no-deps \
+    -- \
+    -D unsafe-code \
+    -D unsafe-op-in-unsafe-fn
+cargo clippy \
+    --quiet \
+    --locked \
+    --offline \
+    "${safe_workspace_arguments[@]}" \
+    --target "$target_triple" \
+    --lib \
+    --all-features \
+    --no-deps \
+    -- \
+    -F unsafe-code
 
 # Execute behavioral tests for the ownership foundations. Test discovery and
 # selection remain Cargo/Rust responsibilities; the audit does not inspect or

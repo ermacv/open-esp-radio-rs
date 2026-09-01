@@ -7,8 +7,10 @@
 #![deny(unsafe_code)]
 
 use open_esp_radio_esp32s31_pac::{
-    BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothInterruptRegisters,
-    BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothLowPowerClockObservation,
+    BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothControllerSramAddress,
+    BluetoothInterruptRegisters, BluetoothInterruptSetup as PacBluetoothInterruptSetup,
+    BluetoothLowPowerClockObservation, BluetoothMemoryListPointerImage,
+    BluetoothMemoryListSelector, BluetoothMemoryListSlot,
     BluetoothModemLpTimerCounterStarted as PacBluetoothModemLpTimerCounterStarted,
     BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
     BluetoothModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
@@ -17,12 +19,7 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerLowPowerHardwareInitialized as PacBluetoothModemLpTimerLowPowerHardwareInitialized,
     BluetoothModemLpTimerRegistersPrepared as PacBluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending as PacBluetoothModemLpTimerSoftwarePending,
-    BluetoothPrimaryInterruptEpoch,
-    BluetoothSchedulerDisableBusyObserved as PacSchedulerDisableBusyObserved,
-    BluetoothSchedulerDisableIdleObserved as PacSchedulerDisableIdleObserved,
-    BluetoothSchedulerDisableRequest as PacSchedulerDisableRequest,
-    BluetoothSchedulerDisableStep as PacSchedulerDisableStep,
-    BluetoothTaskRegisters as PacBluetoothTaskRegisters,
+    BluetoothPrimaryInterruptEpoch, BluetoothTaskRegisters as PacBluetoothTaskRegisters,
     BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, ModemSysconBluetoothObservation,
     PlatformClockPowerObservation, RadioHardware, RadioPhyReleaseError,
     SharedModemClockObservation,
@@ -36,8 +33,7 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
     BluetoothModemLpTimerOwnerError, BluetoothNrtInterruptAcknowledged,
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
-    BluetoothPhyRegisterInitInputs,
-    BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
+    BluetoothPhyRegisterInitInputs, BluetoothScanStartPublished,
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
     BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
     BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
@@ -299,7 +295,7 @@ impl BluetoothTaskOwner {
             .initialize_baseband_v2_arg_one(gain_parameter);
     }
 
-    /// Execute the complete reviewed BLE PHY register-initialization body.
+    /// Execute the complete reviewed BLE base-stack task-enable hardware transaction.
     ///
     /// # Safety
     ///
@@ -311,10 +307,13 @@ impl BluetoothTaskOwner {
         unsafe_code,
         reason = "the caller must retain external lifecycle and pointed-storage owners"
     )]
-    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+    pub unsafe fn enable_ble_base_stack_hardware(
+        &mut self,
+        inputs: BluetoothPhyRegisterInitInputs,
+    ) {
         self.reunitable = false;
         unsafe {
-            self.registers.initialize_ble_phy_registers(inputs);
+            self.registers.enable_ble_base_stack_hardware(inputs);
         }
     }
 
@@ -760,7 +759,7 @@ impl BluetoothInterruptRegistersOwner {
     /// Link-Layer sources still need their own quiescence proof.
     pub fn deactivate(self) -> BluetoothInterruptOutputAfterRoutesOwner {
         BluetoothInterruptOutputAfterRoutesOwner {
-            registers: self.registers.deactivate(),
+            _registers: self.registers.deactivate(),
         }
     }
 }
@@ -772,148 +771,7 @@ impl BluetoothInterruptRegistersOwner {
 /// so this state deliberately has no conversion back to setup or cold owners.
 #[must_use = "post-route interrupt ownership awaits dynamic-source quiescence"]
 pub struct BluetoothInterruptOutputAfterRoutesOwner {
-    registers: open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPrepared,
-}
-
-/// HAL-owned scheduler disable after its single hardware command was published.
-///
-/// The task owner cannot be recovered while this value exists. Each
-/// [`Self::step`] consumes the state and performs exactly one status
-/// observation, which makes cancellation fail-stop and leaves no hidden
-/// spin-loop or RTOS dependency.
-#[must_use = "the disable command admits one bounded status observation"]
-pub struct BluetoothControllerSchedulerDisabling {
-    request: PacSchedulerDisableRequest,
-}
-
-/// Result of one bounded HAL scheduler-disable observation.
-#[must_use = "retain the resulting busy or idle terminal observation"]
-pub enum BluetoothControllerSchedulerDisableStep {
-    /// One fresh read observed BUSY set. No repeatable polling state escapes.
-    BusyObserved(BluetoothControllerSchedulerDisableBusyObserved),
-    /// A fresh status read observed the scheduler idle.
-    IdleObserved(BluetoothControllerSchedulerDisableIdleObserved),
-}
-
-/// HAL ownership after one fresh read observed the BUSY bit set.
-///
-/// This retains the task without a public escape or another `step`; a later
-/// event source must provide an affine recheck permit before it can progress.
-#[must_use = "the busy observation retains hardware until a proven recheck edge exists"]
-pub struct BluetoothControllerSchedulerDisableBusyObserved {
-    _observation: PacSchedulerDisableBusyObserved,
-}
-
-/// HAL ownership after one fresh read observed the BUSY bit clear.
-///
-/// IRQ routing, packet reclamation, BTBB, PHY and clock teardown remain later
-/// mandatory edges. This state deliberately claims none of them.
-#[must_use = "the idle-bit observation must continue through verified teardown"]
-pub struct BluetoothControllerSchedulerDisableIdleObserved {
-    _observation: PacSchedulerDisableIdleObserved,
-}
-
-/// Failed pre-MMIO scheduler-disable admission retaining the task owner.
-#[must_use = "a failed Controller scheduler disable still owns the HAL task owner"]
-pub struct BluetoothControllerSchedulerDisableBeginFailure {
-    task: BluetoothTaskOwner,
-    error: BluetoothControllerSchedulerDisableBeginError,
-}
-
-impl BluetoothControllerSchedulerDisableBeginFailure {
-    /// Return the exact finite admission failure reason.
-    pub const fn error(&self) -> BluetoothControllerSchedulerDisableBeginError {
-        self.error
-    }
-
-    /// Recover the unchanged HAL task owner and rejection reason.
-    pub fn into_parts(
-        self,
-    ) -> (
-        BluetoothTaskOwner,
-        BluetoothControllerSchedulerDisableBeginError,
-    ) {
-        (self.task, self.error)
-    }
-}
-
-impl core::fmt::Debug for BluetoothControllerSchedulerDisableBeginFailure {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("BluetoothControllerSchedulerDisableBeginFailure")
-            .field("error", &self.error())
-            .finish_non_exhaustive()
-    }
-}
-
-impl BluetoothControllerSchedulerDisabling {
-    /// Begin the reviewed scheduler-disable command while the caller retains
-    /// the separate interrupt route epoch for later quiescence.
-    ///
-    /// A controller-time latch still in flight is rejected before the command
-    /// write and returns the task owner unchanged. Powered task-stopping
-    /// lifecycle ownership remains an upper controller-layer requirement.
-    ///
-    /// # Safety
-    ///
-    /// `task` must belong to the unique powered controller in its stopping
-    /// lifecycle. No new scheduler work may be admitted after this call.
-    #[allow(
-        unsafe_code,
-        reason = "the caller must retain the unique powered task-stopping lifecycle"
-    )]
-    pub unsafe fn begin(
-        task: BluetoothTaskOwner,
-    ) -> Result<Self, BluetoothControllerSchedulerDisableBeginFailure> {
-        let BluetoothTaskOwner {
-            registers,
-            reunitable,
-        } = task;
-        match registers.begin_scheduler_disable() {
-            Ok(request) => Ok(Self { request }),
-            Err(failure) => {
-                let (task, error) = failure.into_parts();
-                Err(BluetoothControllerSchedulerDisableBeginFailure {
-                    task: BluetoothTaskOwner {
-                        registers: task,
-                        reunitable,
-                    },
-                    error,
-                })
-            }
-        }
-    }
-
-    /// Perform one fresh status observation after both CPU routes and shared
-    /// ISR access have ended, then return immediately.
-    ///
-    /// No active-route overload exists: current evidence does not establish a
-    /// race-free borrow of storage shared with a live ISR. A future route epoch
-    /// must supply either quiescence or a value-only ISR observation first.
-    pub fn step(
-        self,
-        interrupts: &mut BluetoothInterruptOutputAfterRoutesOwner,
-    ) -> BluetoothControllerSchedulerDisableStep {
-        match self
-            .request
-            .step_after_cpu_routes_disabled(&mut interrupts.registers)
-        {
-            PacSchedulerDisableStep::BusyObserved(observation) => {
-                BluetoothControllerSchedulerDisableStep::BusyObserved(
-                    BluetoothControllerSchedulerDisableBusyObserved {
-                        _observation: observation,
-                    },
-                )
-            }
-            PacSchedulerDisableStep::IdleObserved(observation) => {
-                BluetoothControllerSchedulerDisableStep::IdleObserved(
-                    BluetoothControllerSchedulerDisableIdleObserved {
-                        _observation: observation,
-                    },
-                )
-            }
-        }
-    }
+    _registers: open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPrepared,
 }
 
 /// Exclusive finite borrow of the Bluetooth controller task-side registers.
@@ -925,7 +783,128 @@ pub struct BluetoothControllerHal<'registers> {
     registers: &'registers mut PacBluetoothTaskRegisters,
 }
 
+/// One initialized receive-memory list published to the controller.
+///
+/// The token is intentionally affine. It records the positional list and its
+/// validated head without granting access to either memory or MMIO. The
+/// memory owner must retain the complete pinned graph until a later verified
+/// retirement transaction consumes this publication.
+#[must_use = "the published receive list remains owned by the controller"]
+pub struct BluetoothRxMemoryListPublished {
+    selector: BluetoothMemoryListSelector,
+    head: BluetoothControllerSramAddress,
+}
+
+impl BluetoothRxMemoryListPublished {
+    /// Return the positional hardware-list selector chosen by the memory
+    /// layer.
+    pub const fn selector(&self) -> BluetoothMemoryListSelector {
+        self.selector
+    }
+
+    /// Return the validated first-node address without granting dereference
+    /// access.
+    pub const fn head(&self) -> BluetoothControllerSramAddress {
+        self.head
+    }
+}
+
+trait BluetoothRxMemoryListInitialPublication {
+    fn publish_current_head(&mut self);
+    fn clear_next_head(&mut self);
+}
+
+fn execute_rx_memory_list_initial_publication(
+    transaction: &mut impl BluetoothRxMemoryListInitialPublication,
+) {
+    transaction.publish_current_head();
+    transaction.clear_next_head();
+}
+
+struct PacBluetoothRxMemoryListInitialPublication<'registers> {
+    registers: &'registers mut PacBluetoothTaskRegisters,
+    selector: BluetoothMemoryListSelector,
+    head: BluetoothControllerSramAddress,
+}
+
+impl BluetoothRxMemoryListInitialPublication for PacBluetoothRxMemoryListInitialPublication<'_> {
+    #[allow(
+        unsafe_code,
+        reason = "the enclosing HAL operation retains list lifetime and controller-lifecycle prerequisites"
+    )]
+    fn publish_current_head(&mut self) {
+        unsafe {
+            self.registers.program_memory_list_pointer(
+                self.selector,
+                BluetoothMemoryListSlot::CurrentRx,
+                BluetoothMemoryListPointerImage::Address(self.head),
+            );
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the enclosing HAL operation retains list lifetime and controller-lifecycle prerequisites"
+    )]
+    fn clear_next_head(&mut self) {
+        unsafe {
+            self.registers.program_memory_list_pointer(
+                self.selector,
+                BluetoothMemoryListSlot::NextRx,
+                BluetoothMemoryListPointerImage::Zero,
+            );
+        }
+    }
+}
+
 impl BluetoothControllerHal<'_> {
+    /// Publish one initialized receive-memory list in the reviewed cold order.
+    ///
+    /// The memory layer owns the semantic mapping from a controller role to
+    /// the positional `selector`. HAL publishes the initialized current head
+    /// first and only then clears the matching next head. Neither positional
+    /// slot nor its register representation crosses this boundary.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the selected powered-controller lifecycle epoch,
+    /// must retain the complete initialized pinned memory graph, and must
+    /// serialize all task and interrupt access to this list until a later
+    /// verified retirement transaction consumes the returned token.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains pinned-list lifetime and controller-lifecycle prerequisites"
+    )]
+    pub unsafe fn publish_rx_memory_list_initial_head(
+        &mut self,
+        selector: BluetoothMemoryListSelector,
+        head: BluetoothControllerSramAddress,
+    ) -> BluetoothRxMemoryListPublished {
+        let mut transaction = PacBluetoothRxMemoryListInitialPublication {
+            registers: self.registers,
+            selector,
+            head,
+        };
+        execute_rx_memory_list_initial_publication(&mut transaction);
+        BluetoothRxMemoryListPublished { selector, head }
+    }
+
+    /// Publish one complete reviewed scanner command transaction.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the initialized pinned scanner graph, its
+    /// matching RX-list publication and an exclusive powered controller epoch.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains scanner graph lifetime and controller-lifecycle prerequisites"
+    )]
+    pub unsafe fn publish_scan_start(&mut self) -> BluetoothScanStartPublished {
+        unsafe { self.registers.publish_scan_start() }
+    }
+
     /// Remove every published scheduler hardware-list head.
     ///
     /// This is only the reviewed controller-initialization prefix. It does not
@@ -1091,6 +1070,22 @@ impl BluetoothControllerHal<'_> {
             .finish_scheduler_software_list_removal(idle, head)
     }
 
+    /// Perform one finite direct recheck of the complete post-unlink return
+    /// predicate through both disjoint register owners.
+    ///
+    /// The PAC preserves the reviewed fresh-read order and short-circuiting:
+    /// scheduler BUSY, command-zero status 26, then command-one status 18.
+    /// `Pending` retains the affine empty-head proof for a later authorized
+    /// recheck; `Ready` consumes it into the removal-complete proof.
+    pub fn recheck_scheduler_software_list_removal(
+        &mut self,
+        interrupts: &mut BluetoothInterruptRegistersOwner,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> BluetoothSchedulerSoftwareListRemovalJoin {
+        self.registers
+            .recheck_scheduler_software_list_removal(&mut interrupts.registers, head)
+    }
+
     /// Transfer one fresh hardware finished-list observation to its reviewed
     /// report register and return the typed sixteen-list projection.
     ///
@@ -1218,7 +1213,46 @@ impl BluetoothControllerHalBorrow for BluetoothTaskOwner {}
 mod tests {
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
-    use super::{BluetoothColdOwner, BluetoothControllerHalBorrow, BluetoothTaskOwnerReuniteError};
+    use super::{
+        BluetoothColdOwner, BluetoothControllerHalBorrow, BluetoothRxMemoryListInitialPublication,
+        BluetoothTaskOwnerReuniteError, execute_rx_memory_list_initial_publication,
+    };
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RxListPublicationStep {
+        CurrentHead,
+        NextHeadCleared,
+    }
+
+    #[derive(Default)]
+    struct RecordingRxListPublication {
+        steps: std::vec::Vec<RxListPublicationStep>,
+    }
+
+    impl BluetoothRxMemoryListInitialPublication for RecordingRxListPublication {
+        fn publish_current_head(&mut self) {
+            self.steps.push(RxListPublicationStep::CurrentHead);
+        }
+
+        fn clear_next_head(&mut self) {
+            self.steps.push(RxListPublicationStep::NextHeadCleared);
+        }
+    }
+
+    #[test]
+    fn receive_list_publication_finishes_the_current_head_before_clearing_next() {
+        let mut transaction = RecordingRxListPublication::default();
+
+        execute_rx_memory_list_initial_publication(&mut transaction);
+
+        assert_eq!(
+            transaction.steps,
+            [
+                RxListPublicationStep::CurrentHead,
+                RxListPublicationStep::NextHeadCleared,
+            ]
+        );
+    }
 
     #[test]
     fn untouched_task_owner_reconstructs_the_neutral_root() {

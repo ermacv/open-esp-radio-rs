@@ -156,7 +156,7 @@ impl BluetoothBasebandV2Transaction<'_> {
         super::generated::initialize_bluetooth_receive_setup_shared_control(
             &self.shared_radio.shared_radio_init_control,
         );
-        super::generated::initialize_bluetooth_receive_setup_control_1(baseband);
+        super::generated::set_bluetooth_receive_setup_control_1_bit_2(baseband);
 
         let btagc = &self.radio_phy.phy_btagc_recovered;
         super::generated::initialize_bluetooth_receive_setup_agc_00d0_high(btagc);
@@ -172,7 +172,7 @@ impl BluetoothBasebandV2Transaction<'_> {
         super::generated::initialize_bluetooth_receive_setup_cca_2_enable(baseband);
         super::generated::initialize_bluetooth_receive_setup_004c_bit_26(btagc);
         super::generated::initialize_bluetooth_receive_setup_008c_bit_29_final(btagc);
-        super::generated::initialize_bluetooth_receive_setup_control_0(baseband);
+        super::generated::set_bluetooth_receive_setup_control_0_bit_0(baseband);
 
         let shared = &self.shared_radio.zbbb_radio_control;
         super::generated::initialize_bluetooth_receive_setup_zbbb_bit_8(shared);

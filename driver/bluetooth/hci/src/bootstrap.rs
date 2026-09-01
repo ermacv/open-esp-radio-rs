@@ -64,9 +64,13 @@ impl BluetoothPublicDeviceAddress {
         self.0
     }
 
-    fn hci_wire_address(self) -> BdAddr {
+    pub(crate) const fn hci_wire_bytes(self) -> [u8; 6] {
         let [byte_0, byte_1, byte_2, byte_3, byte_4, byte_5] = self.0;
-        BdAddr::new([byte_5, byte_4, byte_3, byte_2, byte_1, byte_0])
+        [byte_5, byte_4, byte_3, byte_2, byte_1, byte_0]
+    }
+
+    fn hci_wire_address(self) -> BdAddr {
+        BdAddr::new(self.hci_wire_bytes())
     }
 }
 
@@ -592,7 +596,7 @@ pub(crate) fn invalid_parameters(opcode: Opcode) -> BootstrapCommandCompleteEven
 #[cfg(test)]
 mod tests {
     use bt_hci::{
-        ControllerToHostPacket, FromHciBytes, HostToControllerPacket,
+        ControllerToHostPacket, FromHciBytes,
         cmd::{
             Cmd, Opcode, OpcodeGroup, SyncCmd,
             controller_baseband::{
@@ -602,7 +606,7 @@ mod tests {
             info::ReadBdAddr,
             le::{
                 LeReadBufferSize, LeReadFilterAcceptListSize, LeReadLocalSupportedFeatures,
-                LeSetAdvEnable, LeSetEventMask, LeSetRandomAddr,
+                LeSetAdvEnable, LeSetEventMask, LeSetRandomAddr, LeSetScanEnable, LeSetScanParams,
             },
         },
         controller::{Controller, ExternalController},
@@ -611,7 +615,7 @@ mod tests {
             BdAddr, ControllerToHostFlowControl, Error as HciError, EventMask, EventMaskPage2,
             LeEventMask, Status,
         },
-        transport::Transport,
+        transport::{PacketToController, Transport},
     };
     use embassy_futures::{
         block_on,
@@ -864,7 +868,7 @@ mod tests {
 
         block_on(async {
             let reset = Reset::new();
-            let mut event_buffer = [0; 32];
+            let mut event_buffer = external.alloc_buf().unwrap();
             let worker = async {
                 let mut command_buffer = [0; 32];
                 let HostToControllerFrame::Command(command) =
@@ -910,7 +914,7 @@ mod tests {
         let (host, controller) = channel.split();
         let mut bootstrap = LeControllerBootstrap::new(config);
         let external = ExternalController::<_, 2>::new(host);
-        let mut resources = HostResources::<_, TestPacketPool, 1, 1>::new();
+        let mut resources = HostResources::<TestPacketPool, 1, 1>::new();
         let stack = trouble_host::new(external, &mut resources).build();
         let mut runner = stack.runner();
         let mut peripheral = stack.peripheral();
@@ -1107,7 +1111,7 @@ mod tests {
         }
     }
 
-    async fn round_trip<T: HostToControllerPacket>(
+    async fn round_trip<T: PacketToController>(
         host: &TestHost<'_>,
         controller: &TestController<'_>,
         bootstrap: &mut LeControllerBootstrap,
@@ -1162,6 +1166,24 @@ mod tests {
                 command_error(command.kind().opcode(), HciError::UNKNOWN_CMD)
             }
             LeControllerCommandClassification::MalformedDtm(response) => {
+                command_error(response.opcode(), HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::LegacyAdvertisingConfiguration(command) => {
+                command_error(command.kind().opcode(), HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::LegacyAdvertisingEnable(_) => {
+                command_error(LeSetAdvEnable::OPCODE, HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                command_error(response.opcode(), HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::LegacyScanningConfiguration(_) => {
+                command_error(LeSetScanParams::OPCODE, HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::LegacyScanningEnable(_) => {
+                command_error(LeSetScanEnable::OPCODE, HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::MalformedLegacyScanning(response) => {
                 command_error(response.opcode(), HciError::UNKNOWN_CMD)
             }
             LeControllerCommandClassification::Unsupported(response) => {

@@ -23,16 +23,16 @@ use crate::resources::BluetoothInterruptBankOwner;
 #[cfg(any(target_arch = "riscv32", test))]
 struct BluetoothBlePhyInitializationProfile {
     private_timing_source_byte: u8,
-    ignore_allowlist_for_directed_advertising: bool,
-    backoff_rssi_dbm: i8,
+    set_branch_control_0470_bit_18: bool,
+    runtime_configuration_low_byte: u8,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothBlePhyInitializationProfile {
     const NORMAL: Self = Self {
         private_timing_source_byte: 61,
-        ignore_allowlist_for_directed_advertising: false,
-        backoff_rssi_dbm: -100,
+        set_branch_control_0470_bit_18: false,
+        runtime_configuration_low_byte: 0x9c,
     };
 
     const fn register_inputs(
@@ -44,8 +44,8 @@ impl BluetoothBlePhyInitializationProfile {
             self.private_timing_source_byte,
             binding.environment_address(),
             binding.resolving_list_address(),
-            self.ignore_allowlist_for_directed_advertising,
-            self.backoff_rssi_dbm,
+            self.set_branch_control_0470_bit_18,
+            self.runtime_configuration_low_byte,
         )
     }
 }
@@ -54,49 +54,52 @@ impl BluetoothBlePhyInitializationProfile {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothBlePhyInitializationReport;
 
-/// One standalone RF-ready observation in the retained scheduler epoch.
+/// One post-enable timing observation in the retained always-awake epoch.
 ///
 /// Only a completed generation-keyed controller-time request owned by an
 /// initialized BLE PHY can create this affine token. It deliberately cannot be
-/// copied or manufactured from a detached scheduler image.
-#[must_use = "the RF-ready observation must be consumed by DTM scheduling"]
+/// copied or manufactured from a detached scheduler image. It proves no RF
+/// wake or analog readiness; the supported profile keeps those transitions
+/// outside the DTM event path.
+#[must_use = "the always-awake timing observation must be consumed by DTM scheduling"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothDtmRfReady {
-    scheduler_instant: crate::BluetoothDtmSchedulerInstant,
+pub(crate) struct BluetoothAlwaysAwakeTimingReady {
+    scheduler_instant: crate::BluetoothSchedulerInstant,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothDtmRfReady {
+impl BluetoothAlwaysAwakeTimingReady {
     fn from_completed_sample(
         epoch: crate::BluetoothControllerSchedulerEpoch,
         sample: crate::BluetoothControllerTimeSample,
     ) -> Self {
         Self {
-            scheduler_instant: crate::BluetoothDtmSchedulerInstant::from_image(
+            scheduler_instant: crate::BluetoothSchedulerInstant::from_image(
                 epoch.project_without_reanchor(&sample),
             ),
         }
     }
 
-    /// Consume the RF-ready proof into its scheduler-domain instant.
-    pub(crate) const fn into_scheduler_instant(self) -> crate::BluetoothDtmSchedulerInstant {
+    /// Consume the post-enable timing proof into its microsecond-domain instant.
+    pub(crate) const fn into_scheduler_instant(self) -> crate::BluetoothSchedulerInstant {
         self.scheduler_instant
     }
 }
 
-/// Exclusive BLE-PHY authority for completing standalone RF-ready samples.
+/// Exclusive BLE-PHY authority for completing always-awake timing samples.
 ///
 /// This capability is created only while splitting a fully initialized BLE-PHY
 /// owner. It remains private inside the published task service, so a scheduler
-/// or detached controller-time sample cannot manufacture RF readiness.
-#[must_use = "the RF-ready authority must remain owned by the BLE-PHY task service"]
+/// or detached controller-time sample cannot manufacture this ordered timing
+/// observation. The authority makes no RF-readiness claim.
+#[must_use = "the timing authority must remain owned by the BLE-PHY task service"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothDtmRfReadyAuthority {
+pub(crate) struct BluetoothAlwaysAwakeTimingAuthority {
     _private: (),
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothDtmRfReadyAuthority {
+impl BluetoothAlwaysAwakeTimingAuthority {
     const fn new() -> Self {
         Self { _private: () }
     }
@@ -105,8 +108,8 @@ impl BluetoothDtmRfReadyAuthority {
         &mut self,
         epoch: crate::BluetoothControllerSchedulerEpoch,
         sample: crate::BluetoothControllerTimeSample,
-    ) -> BluetoothDtmRfReady {
-        BluetoothDtmRfReady::from_completed_sample(epoch, sample)
+    ) -> BluetoothAlwaysAwakeTimingReady {
+        BluetoothAlwaysAwakeTimingReady::from_completed_sample(epoch, sample)
     }
 }
 
@@ -207,11 +210,11 @@ where
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-        BluetoothDtmRfReadyAuthority,
+        BluetoothAlwaysAwakeTimingAuthority,
     ) {
         (
             self.initialized.initialized.controller.split_runtime(),
-            BluetoothDtmRfReadyAuthority::new(),
+            BluetoothAlwaysAwakeTimingAuthority::new(),
         )
     }
 }
@@ -269,7 +272,7 @@ where
                 self.initialized
                     .controller
                     .task_mut()
-                    .initialize_ble_phy_registers(inputs);
+                    .enable_ble_base_stack_hardware(inputs);
             }
         });
 

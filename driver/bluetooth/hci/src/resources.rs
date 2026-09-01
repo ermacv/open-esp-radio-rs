@@ -2,14 +2,32 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
+use crate::legacy_advertising::LeLegacyAdvertisingConfiguration;
+use crate::legacy_scanning::{
+    LeLegacyScanningConfiguration, LeLegacyScanningIdleEnableDisposition,
+};
 use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
-    InProcessHciChannel, InProcessHciControllerEndpoint, InProcessHciHostTransport,
-    LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap, LeControllerBootstrapConfig,
-    LeControllerCommandReady, OwnedBootstrapCommand,
+    HciControllerResponse, InProcessHciChannel, InProcessHciControllerEndpoint,
+    InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY,
+    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY, LeControllerBootstrap,
+    LeControllerBootstrapConfig, LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
+    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
+    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyAdvertisingReportEvent,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningConfigurationCommand,
+    LeLegacyScanningEnableCommand, OwnedBootstrapCommand,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
+
+/// Result of attempting one unsolicited legacy advertising report publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyAdvertisingReportPublication {
+    /// The complete event entered the bounded Controller-to-Host queue.
+    Published,
+    /// The Host currently masks either LE Meta or LE Advertising Report events.
+    Masked,
+}
 
 /// Why an HCI runtime profile cannot represent its advertised LE resources.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -67,6 +85,8 @@ pub struct LeControllerCommandEndpoint<
         PACKET_CAPACITY,
     >,
     bootstrap: &'resources mut LeControllerBootstrap,
+    legacy_advertising: &'resources mut LeLegacyAdvertisingConfiguration,
+    legacy_scanning: &'resources mut LeLegacyScanningConfiguration,
     initial_ready_available: &'resources mut bool,
 }
 
@@ -136,7 +156,96 @@ where
         &mut self,
         command: OwnedBootstrapCommand,
     ) -> BootstrapCommandCompleteEvent {
-        self.bootstrap.dispatch_owned(command)
+        let reset = command.is_reset();
+        let response = self.bootstrap.dispatch_owned(command);
+        if reset {
+            self.legacy_advertising.reset();
+            self.legacy_scanning.reset();
+        }
+        response
+    }
+
+    pub(crate) fn dispatch_legacy_advertising_configuration(
+        &mut self,
+        command: LeLegacyAdvertisingConfigurationCommand,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        self.legacy_advertising
+            .dispatch(self.bootstrap.phase(), command)
+    }
+
+    pub(crate) fn dispatch_idle_legacy_advertising_enable(
+        &self,
+        command: LeLegacyAdvertisingEnableCommand,
+    ) -> LeLegacyAdvertisingIdleEnableDisposition {
+        self.legacy_advertising.dispatch_idle_enable(
+            self.bootstrap.phase(),
+            command,
+            self.bootstrap.config().public_address(),
+            self.bootstrap.requested_random_address(),
+        )
+    }
+
+    pub(crate) fn complete_legacy_advertising_enable_while_radio_unavailable(
+        &self,
+        command: LeLegacyAdvertisingEnableCommand,
+    ) -> LeLegacyAdvertisingCommandCompleteEvent {
+        LeLegacyAdvertisingConfiguration::complete_enable_while_radio_unavailable(
+            self.bootstrap.phase(),
+            command,
+        )
+    }
+
+    pub(crate) fn dispatch_legacy_scanning_configuration(
+        &mut self,
+        command: LeLegacyScanningConfigurationCommand,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        self.legacy_scanning
+            .dispatch(self.bootstrap.phase(), command)
+    }
+
+    pub(crate) fn dispatch_idle_legacy_scanning_enable(
+        &self,
+        command: LeLegacyScanningEnableCommand,
+    ) -> LeLegacyScanningIdleEnableDisposition {
+        self.legacy_scanning
+            .dispatch_idle_enable(self.bootstrap.phase(), command)
+    }
+
+    pub(crate) fn complete_legacy_scanning_enable_while_radio_unavailable(
+        &self,
+        command: LeLegacyScanningEnableCommand,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        LeLegacyScanningConfiguration::complete_enable_while_radio_unavailable(
+            self.bootstrap.phase(),
+            command,
+        )
+    }
+
+    /// Wait until Controller-to-Host capacity may accept a scan report.
+    ///
+    /// This readiness hint borrows no report and reserves no slot. The caller
+    /// must retain the exact event and retry publication after cancellation or
+    /// a competing Controller response.
+    pub async fn wait_legacy_advertising_report_capacity(&self) {
+        self.transport().wait_publish_ready().await;
+    }
+
+    /// Publish one standard LE Advertising Report if enabled by the Host masks.
+    ///
+    /// The event does not consume or mint command-order authority. A full queue
+    /// returns the unchanged borrowed event to caller policy through the error.
+    pub fn try_publish_legacy_advertising_report(
+        &self,
+        event: &LeLegacyAdvertisingReportEvent,
+    ) -> Result<LeLegacyAdvertisingReportPublication, crate::HciChannelError> {
+        if !self.bootstrap.event_mask().is_le_meta_enabled()
+            || !self.bootstrap.le_event_mask().is_le_adv_report_enabled()
+        {
+            return Ok(LeLegacyAdvertisingReportPublication::Masked);
+        }
+        self.transport()
+            .try_publish(event.kind(), event.as_bytes())?;
+        Ok(LeLegacyAdvertisingReportPublication::Published)
     }
 }
 
@@ -191,6 +300,8 @@ pub struct LeControllerHciResources<
     channel:
         InProcessHciChannel<M, HOST_TO_CONTROLLER_DEPTH, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
     bootstrap: LeControllerBootstrap,
+    legacy_advertising: LeLegacyAdvertisingConfiguration,
+    legacy_scanning: LeLegacyScanningConfiguration,
     initial_ready_available: bool,
 }
 
@@ -210,7 +321,8 @@ where
             usize::from(config.le_acl_data_packet_length()).saturating_add(HCI_ACL_HEADER_BYTES);
         let required = acl_packet_capacity
             .max(BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY)
-            .max(LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY);
+            .max(LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY)
+            .max(LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY);
         if PACKET_CAPACITY < required {
             return Err(LeControllerHciResourcesError::PacketCapacityTooSmall {
                 required,
@@ -229,6 +341,8 @@ where
         Ok(Self {
             channel: InProcessHciChannel::new(),
             bootstrap: LeControllerBootstrap::new(config),
+            legacy_advertising: LeLegacyAdvertisingConfiguration::new(),
+            legacy_scanning: LeLegacyScanningConfiguration::new(),
             initial_ready_available: true,
         })
     }
@@ -260,6 +374,8 @@ where
             controller: LeControllerCommandEndpoint {
                 transport,
                 bootstrap: &mut self.bootstrap,
+                legacy_advertising: &mut self.legacy_advertising,
+                legacy_scanning: &mut self.legacy_scanning,
                 initial_ready_available: &mut self.initial_ready_available,
             },
         }
@@ -275,7 +391,7 @@ mod tests {
             controller_baseband::{Reset, SetEventMask},
         },
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
-        param::{EventMask, Status},
+        param::{AddrKind, BdAddr, EventMask, LeAdvEventKind, LeEventMask, Status},
         transport::Transport,
     };
     use embassy_futures::block_on;
@@ -283,12 +399,13 @@ mod tests {
 
     use super::{
         LeControllerCommandReadyClaim, LeControllerHciResources, LeControllerHciResourcesError,
+        LeLegacyAdvertisingReportPublication,
     };
     use crate::{
-        BluetoothPublicDeviceAddress, BootstrapPhase, LeControllerBootstrapConfig,
+        BluetoothPublicDeviceAddress, BootstrapPhase, HciChannelError, LeControllerBootstrapConfig,
         LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
         LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
-        LeControllerResponsePublication,
+        LeControllerResponsePublication, LeLegacyAdvertisingReportEvent, OwnedBootstrapCommand,
     };
 
     fn config(payload: u16, credits: u8) -> LeControllerBootstrapConfig {
@@ -305,12 +422,12 @@ mod tests {
         assert!(matches!(
             LeControllerHciResources::<NoopRawMutex, 2, 1, 30>::new(config(27, 1)),
             Err(LeControllerHciResourcesError::PacketCapacityTooSmall {
-                required: 31,
+                required: 45,
                 available: 30,
             })
         ));
         assert!(matches!(
-            LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 2)),
+            LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 2)),
             Err(LeControllerHciResourcesError::AclCreditsExceedHostQueue {
                 credits: 2,
                 slots: 1,
@@ -319,8 +436,83 @@ mod tests {
     }
 
     #[test]
+    fn advertising_reports_honor_masks_and_retain_backpressure() {
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
+            .expect("the report event fits this transport profile");
+        assert_eq!(
+            resources
+                .bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::Reset)
+                .status(),
+            Status::SUCCESS
+        );
+        let event = LeLegacyAdvertisingReportEvent::new(
+            LeAdvEventKind::AdvNonconnInd,
+            AddrKind::PUBLIC,
+            BdAddr::new([1, 2, 3, 4, 5, 6]),
+            &[2, 1, 6],
+            -60,
+        )
+        .expect("the report is representable");
+
+        let endpoints = resources.split();
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Ok(LeLegacyAdvertisingReportPublication::Masked)
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::SetEventMask(
+                    EventMask::new().enable_le_meta(true),
+                ))
+                .status(),
+            Status::SUCCESS
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::LeSetEventMask(
+                    LeEventMask::new().enable_le_adv_report(true),
+                ))
+                .status(),
+            Status::SUCCESS
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Ok(LeLegacyAdvertisingReportPublication::Published)
+        );
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Err(HciChannelError::Full)
+        );
+
+        let mut packet = [0; 45];
+        let received = block_on(endpoints.host.read(&mut packet))
+            .expect("the Host drains the retained first event");
+        let ControllerToHostPacket::Event(received) = received else {
+            panic!("the report changed packet kind");
+        };
+        assert_eq!(received.kind, EventKind::Le);
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish_legacy_advertising_report(&event),
+            Ok(LeLegacyAdvertisingReportPublication::Published)
+        );
+    }
+
+    #[test]
     fn one_split_exposes_host_and_the_matching_combined_command_endpoint() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
         assert!(resources.is_pristine());
 
@@ -337,7 +529,7 @@ mod tests {
                     .write(&Reset::new())
                     .await
                     .expect("Reset enters the bounded queue");
-                let mut command_buffer = [0; 31];
+                let mut command_buffer = [0; 45];
                 let LeControllerCommandReadyClaim::Ready(ready) =
                     endpoints.controller.claim_initial_command_ready(())
                 else {
@@ -375,7 +567,7 @@ mod tests {
                     panic!("the combined endpoint publishes the ordered completion");
                 };
 
-                let mut event_buffer = [0; 31];
+                let mut event_buffer = [0; 45];
                 let packet = endpoints
                     .host
                     .read(&mut event_buffer)
@@ -390,7 +582,7 @@ mod tests {
 
     #[test]
     fn initial_command_ready_can_be_claimed_only_once_across_resplits() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
 
         {
@@ -422,13 +614,13 @@ mod tests {
 
     #[test]
     fn draining_a_command_cannot_reclassify_the_epoch_as_pristine() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
 
         {
             let mut endpoints = resources.split();
             block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the input queue");
-            let mut command_buffer = [0; 31];
+            let mut command_buffer = [0; 45];
             let LeControllerCommandReadyClaim::Ready(ready) =
                 endpoints.controller.claim_initial_command_ready(())
             else {
@@ -447,13 +639,13 @@ mod tests {
 
     #[test]
     fn combined_router_dispatches_non_reset_once_before_ordered_backpressure() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
         let mut endpoints = resources.split();
 
         block_on(endpoints.host.write(&Reset::new()))
             .expect("Reset enters the real Host transport");
-        let mut reset_buffer = [0; 31];
+        let mut reset_buffer = [0; 45];
         let LeControllerCommandReadyClaim::Ready(initial) =
             endpoints.controller.claim_initial_command_ready(())
         else {
@@ -489,7 +681,7 @@ mod tests {
         let requested_mask = EventMask::new().enable_hardware_error(true);
         block_on(endpoints.host.write(&SetEventMask::new(requested_mask)))
             .expect("Set Event Mask enters the real Host transport");
-        let mut command_buffer = [0; 31];
+        let mut command_buffer = [0; 45];
         let LeControllerCommandIntake::Command {
             command: classified,
             ..
@@ -513,7 +705,7 @@ mod tests {
         };
         assert_eq!(endpoints.controller.bootstrap.event_mask(), requested_mask);
 
-        let mut event_buffer = [0; 31];
+        let mut event_buffer = [0; 45];
         assert_command_complete(
             block_on(endpoints.host.read(&mut event_buffer))
                 .expect("Host drains the older Reset completion"),

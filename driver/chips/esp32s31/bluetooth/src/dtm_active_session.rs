@@ -572,10 +572,13 @@ where
             BluetoothDtmActiveRadio::Completion(completion) => {
                 step_completion(self.order, completion)
             }
-            BluetoothDtmActiveRadio::SchedulerWait(wait) => {
-                let _observed = wait.wake().take();
-                step_completion(self.order, wait.resume())
-            }
+            BluetoothDtmActiveRadio::SchedulerWait(wait) => match wait.wake().take() {
+                Some(wake) => step_completion(self.order, wait.resume(wake)),
+                None => BluetoothDtmActiveSessionRadioStep::Waiting(BluetoothDtmActiveSession {
+                    radio: BluetoothDtmActiveRadio::SchedulerWait(wait),
+                    order: self.order,
+                }),
+            },
             BluetoothDtmActiveRadio::PostUnlinkWait(wait) => {
                 step_completion(self.order, wait.resume())
             }

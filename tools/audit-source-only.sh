@@ -4,12 +4,22 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target_triple="riscv32imafc-unknown-none-elf"
 audit_dir="$(mktemp -d)"
-trap 'rm -rf -- "$audit_dir"' EXIT
+image_pid=""
+
+cleanup() {
+    if [[ -n "$image_pid" ]] && kill -0 "$image_pid" 2>/dev/null; then
+        kill -- "-$image_pid" 2>/dev/null || true
+        wait "$image_pid" 2>/dev/null || true
+    fi
+    rm -rf -- "$audit_dir"
+}
+trap cleanup EXIT
 
 cd "$repo_root"
 command -v jq >/dev/null
 command -v llvm-nm >/dev/null
 command -v llvm-cxxfilt >/dev/null
+command -v setsid >/dev/null
 
 # Every tracked Cargo package must resolve through a checked-in lockfile at its
 # actual workspace boundary. This also covers the independently buildable HIL,
@@ -22,6 +32,22 @@ tools/audit-cargo-metadata.sh
 # example against the real target before accepting a source-only checkout.
 tools/check-esp32s31-examples.sh
 
+# The optimized final-image link is the longest mostly independent stage. Build
+# the Host runner once, then let its isolated runtime/bootstrap target trees use
+# the machine while the root-workspace audits run. A failing foreground gate
+# terminates this background owner through the EXIT trap.
+cargo build \
+    --quiet \
+    --locked \
+    --offline \
+    -p open-esp-radio-hil-runner
+image_build_log="$audit_dir/final-image-build.log"
+setsid env -u ESP_HAL_ROOT \
+    "$repo_root/target/debug/open-esp-radio-hil-runner" \
+    image build performance >"$image_build_log" 2>&1 &
+image_pid="$!"
+echo "source-only audit: final HIL image build running concurrently (pid=$image_pid)"
+
 # Research resumes only from a warning-free workspace. Keep this fail-closed:
 # adding a new target or crate automatically subjects it to the same budget.
 # The driver-only disallowed-method policy is compiled separately below because
@@ -33,21 +59,56 @@ cargo clippy --workspace --all-targets -- -D warnings -A clippy::disallowed-meth
 # does not depend on source spelling or aliases.
 mapfile -t production_manifests < <(find driver -name Cargo.toml -print | sort)
 test "${#production_manifests[@]}" -gt 0
+workspace_packages="$audit_dir/workspace-packages.json"
+cargo metadata \
+    --format-version 1 \
+    --locked \
+    --offline \
+    --no-deps >"$workspace_packages"
+workspace_package_arguments=()
+standalone_manifests=()
 for manifest in "${production_manifests[@]}"; do
-    metadata="$audit_dir/clippy-$(basename "${manifest%/Cargo.toml}").json"
+    manifest_absolute="$(realpath "$manifest")"
+    package="$(jq -r --arg manifest "$manifest_absolute" \
+        '[.packages[] | select(.manifest_path == $manifest) | .name]
+        | if length == 0 then "" elif length == 1 then .[0] else error("manifest identifies multiple packages") end' \
+        "$workspace_packages")"
+    if [[ -n "$package" ]]; then
+        workspace_package_arguments+=(--package "$package")
+    else
+        standalone_manifests+=("$manifest")
+    fi
+done
+
+# All-features is already the maximal feature union, so Cargo can lint every
+# root-workspace driver library in one dependency-graph traversal without
+# weakening an individual package check.
+cargo clippy \
+    --quiet \
+    --locked \
+    --offline \
+    "${workspace_package_arguments[@]}" \
+    --target "$target_triple" \
+    --lib \
+    --all-features \
+    --no-deps \
+    -- \
+    -D clippy::disallowed-methods
+
+# Excluded/independent driver workspaces cannot share a Cargo invocation with
+# the root workspace, but remain discovered automatically and checked exactly.
+for manifest in "${standalone_manifests[@]}"; do
+    metadata="$audit_dir/standalone-$(basename "${manifest%/Cargo.toml}").json"
     cargo metadata \
         --format-version 1 \
         --locked \
         --offline \
         --no-deps \
         --manifest-path "$manifest" >"$metadata"
-    manifest_absolute="$(realpath "$manifest")"
-    package="$(
-        jq -er --arg manifest "$manifest_absolute" '
-            [.packages[] | select(.manifest_path == $manifest) | .name]
-            | if length == 1 then .[0] else error("manifest does not identify exactly one package") end
-        ' "$metadata"
-    )"
+    package="$(jq -er --arg manifest "$(realpath "$manifest")" '
+        [.packages[] | select(.manifest_path == $manifest) | .name]
+        | if length == 1 then .[0] else error("manifest does not identify exactly one package") end
+    ' "$metadata")"
     cargo clippy \
         --quiet \
         --locked \
@@ -66,15 +127,15 @@ tools/audit-driver-safety.sh
 tools/audit-driver-architecture.sh
 
 # Validate the checked-in register sources without requiring disposable vendor
-# analysis output. The review-scope report is produced by `project analyze`, is
-# gitignored, and may depend on authenticated local inputs; a clean source-only
-# checkout must therefore not require it.
+# analysis output. Unreviewed observations are the explicit research backlog,
+# not invalid source: this gate validates their schema, ownership, evidence and
+# publication boundaries without turning incomplete research into a build
+# failure. Completion claims use the stricter `--deny-unreviewed` policy.
 cargo blobray project configure \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
 cargo blobray registers validate \
-    --project verification/vendor/targets/esp32s31/vendor-project.toml \
-    --deny-unreviewed
+    --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 # When the optional analysis report is already available, also prove that the
 # complete generated SVD/PAC/binding publication is reproducible. Its absence
@@ -263,10 +324,17 @@ if [[ -n "$unexpected_packages" ]]; then
     exit 1
 fi
 
-# Build the exact final image from the locked dependencies. A sibling esp-hal
-# checkout is a useful HIL development override, but using it here would both
-# mutate the embedded lockfile and make this policy gate machine-dependent.
-env -u ESP_HAL_ROOT cargo hil image build performance
+# Join the exact final-image build started above. A sibling esp-hal checkout is
+# a useful HIL development override, but using it here would both mutate the
+# embedded lockfile and make this policy gate machine-dependent.
+if ! wait "$image_pid"; then
+    image_pid=""
+    cat "$image_build_log" >&2
+    echo "source-only audit: final HIL image build failed" >&2
+    exit 1
+fi
+image_pid=""
+cat "$image_build_log"
 
 runtime_elf="target/hil/esp32s31/psram-code-psram-data-psram-stack-performance/cargo/runtime/$target_triple/release/open-esp-radio-hil-esp32s31-runtime"
 test -f "$runtime_elf"

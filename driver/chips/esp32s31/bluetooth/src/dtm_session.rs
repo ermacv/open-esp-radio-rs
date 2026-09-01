@@ -276,17 +276,19 @@ impl BluetoothDtmSessionStopping {
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
-        BLUETOOTH_DTM_MAX_PACKET_CAPACITY, BluetoothDtmMemoryGraphCpuOwned,
-        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphStorage,
-        BluetoothDtmSchedulerAllocationConfig,
+        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphModelAddress,
+        BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
     };
 
     use super::{
         BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources,
         BluetoothDtmRuntimeSessionBeginError, BluetoothDtmSessionIdle,
     };
-    use crate::BluetoothDtmDefaultTxPowerDbm;
     use crate::dtm_event_prepare::BluetoothDtmQuiescedCpuOwned;
+    use crate::{
+        BluetoothDtmDefaultTxPowerDbm, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
+        BluetoothDtmTxGraphPrepare,
+    };
 
     const fn runtime_config() -> BluetoothDtmRuntimeConfig {
         BluetoothDtmRuntimeConfig::new(
@@ -311,24 +313,32 @@ mod tests {
 
     #[test]
     fn idle_reinitializes_the_same_graph_for_each_cpu_owned_epoch() {
-        let payload = [0xa5; BLUETOOTH_DTM_MAX_PACKET_CAPACITY];
         let prepared = BluetoothDtmSessionIdle::new(graph())
             .begin_epoch()
             .into_graph()
-            .prepare_tx_packet(3, 5, &payload);
+            .prepare_dtm_tx_packet(
+                BluetoothDtmPayloadPattern::Prbs15,
+                BluetoothDtmPayloadLength::from_hci_image(5),
+            );
 
-        assert_eq!(prepared.pattern_selector(), 3);
-        assert_eq!(prepared.payload_length(), 5);
+        assert_eq!(prepared.pattern(), BluetoothDtmPayloadPattern::Prbs15);
+        assert_eq!(prepared.length().hci_image(), 5);
 
-        let prepared = BluetoothDtmSessionIdle::new(prepared.discard_packet_readiness())
+        let prepared = BluetoothDtmSessionIdle::new(prepared.discard())
             .begin_epoch()
             .into_graph()
-            .prepare_tx_packet(6, 2, &payload);
+            .prepare_dtm_tx_packet(
+                BluetoothDtmPayloadPattern::Repeated00001111,
+                BluetoothDtmPayloadLength::from_hci_image(2),
+            );
 
-        assert_eq!(prepared.pattern_selector(), 6);
-        assert_eq!(prepared.payload_length(), 2);
+        assert_eq!(
+            prepared.pattern(),
+            BluetoothDtmPayloadPattern::Repeated00001111
+        );
+        assert_eq!(prepared.length().hci_image(), 2);
 
-        let _idle = BluetoothDtmSessionIdle::new(prepared.discard_packet_readiness());
+        let _idle = BluetoothDtmSessionIdle::new(prepared.discard());
     }
 
     #[test]

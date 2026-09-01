@@ -1,12 +1,12 @@
-//! Exact Direct Test Mode transmitter timing through scheduler tick conversion.
+//! Exact Direct Test Mode transmitter timing in the software microsecond domain.
 //!
 //! Current `r_sym_ble_bWydXXPAXzjyon1EdAMg` and named same-chip
 //! `r_ble_lll_dtm_calculate_itvl` use the complete PHY duration helper and
 //! byte-identical four-entry header-time table modeled below. Current
 //! `r_sym_ble_E4auD6oVVomYiG2Pm144` initializes the environment conversion
 //! unit to one, while both current conversion leaves are identities. The
-//! resulting scheduler tick image therefore equals the selected microsecond
-//! interval and its remainder is always zero on ESP32-S31.
+//! resulting scheduler microsecond image equals the selected interval and its
+//! conversion remainder is always zero on ESP32-S31.
 
 #![forbid(unsafe_code)]
 
@@ -23,19 +23,19 @@ pub struct BluetoothDtmTxTimingMicros {
     interval: u32,
 }
 
-/// One DTM interval after the complete ESP32-S31 scheduler tick conversion.
+/// One DTM interval after the complete ESP32-S31 LLL unit conversion.
 ///
 /// This is a positional software-scheduler image. It neither samples a live
 /// clock nor establishes an absolute deadline or hardware-publication right.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmTxSchedulerTiming {
-    interval_ticks: u32,
-    packet_window_ticks: u32,
+    interval_micros: u32,
+    packet_window_micros: u32,
     remainder_micros: u8,
 }
 
 impl BluetoothDtmTxTimingMicros {
-    /// Derive the packet duration and interval selected before tick conversion.
+    /// Derive the packet duration and interval selected before raw-tick projection.
     ///
     /// The vendor helper rounds only its calculated minimum to the 625-usec
     /// DTM quantum, then takes the larger of that value and the caller's
@@ -76,22 +76,22 @@ impl BluetoothDtmTxTimingMicros {
         self.packet_duration
     }
 
-    /// Return the selected interval before controller tick conversion.
+    /// Return the selected microsecond interval before raw-tick projection.
     pub const fn interval(self) -> u32 {
         self.interval
     }
 
-    /// Convert through the complete reviewed S31 tick/remainder tail.
+    /// Convert through the complete reviewed S31 LLL unit/remainder tail.
     ///
-    /// The source-owned conversion unit is one microsecond per scheduler tick.
+    /// The source-owned LLL conversion unit is one microsecond.
     /// Both conversion directions are identity functions, so the vendor's
     /// one-byte remainder is zero and cannot equal the unit. Consequently its
-    /// conditional tick increment is unreachable for every representable DTM
+    /// conditional unit increment is unreachable for every representable DTM
     /// interval.
     pub const fn scheduler_timing(self) -> BluetoothDtmTxSchedulerTiming {
         BluetoothDtmTxSchedulerTiming {
-            interval_ticks: self.interval,
-            packet_window_ticks: self.packet_window_duration,
+            interval_micros: self.interval,
+            packet_window_micros: self.packet_window_duration,
             remainder_micros: 0,
         }
     }
@@ -99,19 +99,19 @@ impl BluetoothDtmTxTimingMicros {
 
 impl BluetoothDtmTxSchedulerTiming {
     /// Return the complete positional interval image stored by the DTM body.
-    pub const fn interval_ticks(self) -> u32 {
-        self.interval_ticks
+    pub const fn interval_micros(self) -> u32 {
+        self.interval_micros
     }
 
     /// Return the scheduler window reserved for one TX event.
     ///
     /// The complete DTM scheduler body deliberately uses the maximum
     /// eight-bit packet length here, independently of the requested payload.
-    pub const fn packet_window_ticks(self) -> u32 {
-        self.packet_window_ticks
+    pub const fn packet_window_micros(self) -> u32 {
+        self.packet_window_micros
     }
 
-    /// Return the sub-tick remainder stored next to the interval image.
+    /// Return the sub-unit microsecond remainder stored next to the interval image.
     pub const fn remainder_micros(self) -> u8 {
         self.remainder_micros
     }
@@ -226,7 +226,7 @@ mod tests {
                     );
                     let scheduler = micros.scheduler_timing();
 
-                    assert_eq!(scheduler.interval_ticks(), micros.interval());
+                    assert_eq!(scheduler.interval_micros(), micros.interval());
                     assert_eq!(scheduler.remainder_micros(), 0);
                     assert_ne!(scheduler.remainder_micros(), 1);
                 }
@@ -246,7 +246,7 @@ mod tests {
         for (phy, expected_window) in expected {
             for length in 0..=u8::MAX {
                 let timing = timing(length, phy).scheduler_timing();
-                assert_eq!(timing.packet_window_ticks(), expected_window);
+                assert_eq!(timing.packet_window_micros(), expected_window);
             }
         }
     }

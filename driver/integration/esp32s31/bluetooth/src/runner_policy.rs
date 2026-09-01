@@ -3,6 +3,7 @@
 /// Semantic class of one complete command-actor boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CommandBoundaryClass {
+    Progress,
     IdleRestored,
     Retryable,
     UnownedFinishedList,
@@ -19,7 +20,9 @@ pub(crate) enum CommandBoundaryAction {
 
 pub(crate) const fn reduce_command_boundary(class: CommandBoundaryClass) -> CommandBoundaryAction {
     match class {
-        CommandBoundaryClass::IdleRestored => CommandBoundaryAction::Continue,
+        CommandBoundaryClass::Progress | CommandBoundaryClass::IdleRestored => {
+            CommandBoundaryAction::Continue
+        }
         CommandBoundaryClass::Retryable => CommandBoundaryAction::GateRetry,
         CommandBoundaryClass::UnownedFinishedList => CommandBoundaryAction::Quarantine,
         CommandBoundaryClass::Terminal => CommandBoundaryAction::Quarantine,
@@ -95,6 +98,10 @@ mod tests {
 
     #[test]
     fn only_idle_completion_continues_and_retry_arms_a_gate() {
+        assert_eq!(
+            reduce_command_boundary(CommandBoundaryClass::Progress),
+            CommandBoundaryAction::Continue
+        );
         assert_eq!(
             reduce_command_boundary(CommandBoundaryClass::IdleRestored),
             CommandBoundaryAction::Continue

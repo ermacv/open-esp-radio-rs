@@ -23,6 +23,7 @@ required-capabilities = [
   "hci-controller-endpoints",
   "packet-dataplane",
   "portable-legacy-advertising",
+  "legacy-passive-scanning",
   "le-link-layer",
   "typed-hci-controller",
   "async-controller-runtime",
@@ -89,7 +90,7 @@ gaps = [
 [[capabilities]]
 id = "controller-timebase"
 title = "Event-driven controller scheduler timebase"
-scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone RF-ready projection exact initial current-before-RF recurring-RX RF-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
+scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone post-enable timing projection without an RF-readiness claim exact initial current-before-post-enable recurring-RX post-enable-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -99,7 +100,7 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "source-127-expiration-consumer-and-periodic-phy-tracking-missing" },
-  { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
+  { axis = "vendor", id = "effective-counter-width-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "physical-counter-wake-causality-and-timeline-exhaustion-recovery-missing" },
 ]
@@ -183,8 +184,8 @@ gaps = [
 [[capabilities]]
 id = "dtm-memory-graph"
 title = "Static DTM controller-memory graph"
-scope = "One-time production SRAM ownership and non-movable no-heap storage for every reviewed per-event DTM allocation with target-address binding composition-owned allocator and default-power configuration exact-pinned-storage identity-checked exclusive session checkout and restore distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph"
-implementation = "incomplete"
+scope = "Complete CPU-produced one-time SRAM graph and non-movable no-heap storage for every vendor-written per-event DTM allocation with target-address binding composition-owned allocator and default-power configuration exact-pinned-storage identity-checked exclusive session checkout and restore distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph; undocumented hardware-reader field names remain a vendor and HIL qualification question rather than an omitted producer write"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["controller-memory-lists"]
@@ -192,7 +193,6 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -201,8 +201,8 @@ async-not-applicable = "bounded-affine-memory-and-ownership-transitions"
 [[capabilities]]
 id = "dtm-rx-accounting"
 title = "DTM returned-buffer accounting"
-scope = "Affine returned-header validation low-24/high-byte classification wrapping receive-count transition deterministic capacity-one append/re-arm rotation active-session return and role-typed Test End count handoff with the reclaimed graph"
-implementation = "incomplete"
+scope = "Affine returned-header validation exact positional low-24/high-byte classification wrapping receive-count transition deterministic capacity-one append/re-arm rotation active-session return and role-typed Test End count handoff with the reclaimed graph, without assigning unsupported meanings to the rejected low twenty-four bits"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-memory-graph"]
@@ -210,8 +210,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "rx-result-crc-rssi-and-live-packet-engine-semantics-missing" },
-  { axis = "vendor", id = "rx-result-high-byte-length-crc-and-rssi-semantics-missing" },
+  { axis = "vendor", id = "rx-result-low-twenty-four-physical-meanings-missing" },
   { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
 ]
 async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
@@ -219,8 +218,8 @@ async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
 [[capabilities]]
 id = "dtm-link-state-reset"
 title = "DTM controller-SRAM link-state reset region"
-scope = "Exact positional transforms for the eight completely reviewed words with chip-private reset construction from one composition-owned physical default-power request and typed role without allocator layout or publication claims"
-implementation = "incomplete"
+scope = "Complete CPU-produced DTM link-state reset over a zero-based allocation: exact positional transforms for every vendor-written reset word with chip-private construction from one composition-owned physical default-power request bound private links and typed role without publication claims; field-specific hardware-reader names remain outside the producer contract"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-memory-graph"]
@@ -229,7 +228,6 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "remaining-hardware-consumed-link-state-fields-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-words-and-field-semantics-missing" },
   { axis = "hil", id = "dtm-link-state-reset-register-and-memory-trace-missing" },
 ]
@@ -237,8 +235,8 @@ gaps = [
 [[capabilities]]
 id = "dtm-scheduler-item"
 title = "DTM scheduler-item event region"
-scope = "Exact positional pre-insert transforms for nine reviewed words with typed channel role PHY images and bidirectional scheduler epoch projection"
-implementation = "incomplete"
+scope = "Complete CPU-produced scheduler item over a zero-based allocation: exact allocation event sequence overlap-power bookkeeping and empty-list linkage transforms with typed channel role PHY images and bidirectional scheduler epoch projection; field-specific hardware-reader names remain outside the producer contract"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["controller-timebase", "dtm-link-state-reset"]
@@ -247,7 +245,6 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "remaining-hardware-consumed-scheduler-item-fields-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-words-and-packet-field-semantics-missing" },
   { axis = "hil", id = "dtm-scheduler-item-memory-and-insert-trace-missing" },
 ]
@@ -256,7 +253,7 @@ gaps = [
 id = "dtm-tx-payload"
 title = "Bounded DTM transmitter packet preparation"
 scope = "Full static packet allocation header image all eight HCI test patterns affine active-TX retention across first and recurring events and Test End transition into the reusable reclaimed graph epoch"
-implementation = "incomplete"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
@@ -264,16 +261,15 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "live-packet-engine-header-consumer-missing" },
-  { axis = "vendor", id = "packet-engine-header-consumer-and-publication-order-missing" },
+  { axis = "vendor", id = "packet-engine-header-field-reader-and-meaning-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
 ]
 
 [[capabilities]]
 id = "dtm-tx-timing"
 title = "DTM transmitter interval and scheduler timing"
-scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone RF-ready projection initial-TX current-before-RF and recurring-TX current-only acquisition order"
-implementation = "incomplete"
+scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone post-enable timing projection initial-TX current-before-post-enable and recurring-TX current-only acquisition order"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-tx-payload"]
@@ -282,7 +278,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "physical-counter-contract-and-on-air-timing-validation-missing" },
+  { axis = "vendor", id = "effective-controller-counter-width-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]
@@ -346,7 +342,7 @@ gaps = [
 [[capabilities]]
 id = "scheduler-finished-list-drain"
 title = "Bounded scheduler finished-list event drain"
-scope = "Typed sixteen-list hardware mask transfer, one-list-per-step source-owned continuation retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, and finite removal-ready observation"
+scope = "Typed sixteen-list hardware mask transfer admitted by exactly one non-copyable dequeued scheduler batch, one-list-per-step source-owned continuation without repeated MMIO retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, caller-owned absolute retry deadline, direct read-only removal rechecks independent of command-ready interrupt causality, and finite removal-ready observation"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -385,7 +381,7 @@ gaps = [
 [[capabilities]]
 id = "portable-legacy-advertising"
 title = "Portable legacy non-connectable advertising"
-scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty primary channel selection affine enable generation event and channel identity stale-completion retention in-flight disable join and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
+scope = "Exact bounded ADV_NONCONN_IND encode and decode public or random TxAdd semantics non-empty ordered primary channel event plan affine enable generation and event identity stale-completion retention in-flight disable join and fresh bounded interval-plus-delay scheduling without a hardware or executor dependency"
 implementation = "complete"
 host = "covered"
 async = "not-applicable"
@@ -394,20 +390,39 @@ hil-not-applicable = "hardware-independent-protocol-state"
 async-not-applicable = "pure-finite-state-transition"
 
 [[capabilities]]
+id = "legacy-passive-scanning"
+title = "Legacy LE passive scanning"
+scope = "Restricted LE 1M passive scanner using a public own address and the unfiltered accept-all policy from standard bt-hci Set Scan Parameters and Enable commands through recurring ESP32-S31 scheduler windows to bounded legacy advertising reports optional exact duplicate suppression and quiescent Disable or Reset"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
+depends-on = ["controller-timebase", "scheduler-finished-list-drain", "hci-controller-endpoints", "packet-dataplane"]
+vendor-anchors = [
+  "verification/vendor/targets/esp32s31/vendor-project.toml",
+]
+gaps = [
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-in-flight-stop-preemption-missing" },
+  { axis = "vendor", id = "scanner-descriptor-engine-physical-contract-missing" },
+  { axis = "hil", id = "passive-scanning-on-air-cell-missing" },
+  { axis = "async", id = "in-flight-disable-command-deferred-until-window-quiescence" },
+]
+
+[[capabilities]]
 id = "le-link-layer"
 title = "Bluetooth LE Link Layer"
 scope = "Production legacy advertising scanning one peripheral connection reliability supervision and minimum LL control procedures"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-depends-on = ["packet-dataplane", "portable-legacy-advertising"]
+depends-on = ["packet-dataplane", "portable-legacy-advertising", "legacy-passive-scanning"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
+  "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",
 ]
 gaps = [
-  { axis = "implementation", id = "legacy-advertising-hardware-ticket-scanning-connection-and-llcp-missing" },
-  { axis = "host", id = "virtual-clock-link-layer-tests-missing" },
-  { axis = "vendor", id = "link-layer-production-contracts-missing" },
+  { axis = "implementation", id = "peripheral-connection-reliability-and-llcp-missing" },
+  { axis = "host", id = "virtual-clock-connection-link-layer-tests-missing" },
+  { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
   { axis = "async", id = "connection-event-deadline-contract-missing" },
 ]
@@ -415,7 +430,7 @@ gaps = [
 [[capabilities]]
 id = "typed-hci-controller"
 title = "Typed bt-hci Controller implementation"
-scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection and portable opaque deferred DTM RX and TX completion domain plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified idle-graph recovery whose neutral shutdown cancellation owners expose no HCI completion edge whose prepared-cancellation-rejected and head-published runners become opaque non-runnable fail-stop owners and which retains fail-stop ownership for invariant orphan identity list ownership and post-HEAD failures exhaustive active-command classification ordered terminal busy and bootstrap responses chip-private Reset quiescence and restoration Test End progression and one target-only sole command actor whose successful response publication returns one opaque ESP32-S31 IdleCommandTask"
+scope = "HCI command event ACL credit and error semantics plus full endpoint-bound idle classification one-shot CommandReady ownership normalized version-retaining Receiver and Transmitter Test v1/v2 tokens exact invalid-parameter versus unsupported-PHY status selection and portable opaque deferred DTM RX and TX completion domain plus an ESP32-S31 composition whose Success edge follows hardware RUN whose finite Hardware Failure edge follows chip-classified idle-graph recovery whose neutral shutdown cancellation owners expose no HCI completion edge whose unchanged pre-RUN HEAD-publication and scheduler-start rejections remain actor-owned explicit retries and whose prepared-cancellation-rejected and head-published shutdown runners become opaque non-runnable fail-stop owners and which retains fail-stop ownership for invariant orphan identity list ownership and post-HEAD failures exhaustive active-command classification ordered terminal busy and bootstrap responses chip-private Reset quiescence and restoration Test End progression and one target-only sole command actor whose successful response publication returns one opaque ESP32-S31 IdleCommandTask"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"

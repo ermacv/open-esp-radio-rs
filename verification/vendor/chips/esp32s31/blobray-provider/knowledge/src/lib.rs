@@ -1,7 +1,8 @@
 //! Reusable ESP32-S31 rev0 lifting knowledge.
 
 pub use open_radio_vendor_backend_riscv::{
-    RiscvHarnessSpec, RiscvSummaryHooks, Rv32CallArguments, StructuralPointerContext, artifact,
+    ReviewedCompressedPointerEncoding, RiscvHarnessSpec, RiscvSummaryHooks, Rv32CallArguments,
+    StructuralPointerContext, artifact,
 };
 pub use open_radio_vendor_chip_contracts_esp32s31_rev0::{CONTRACTS, entry_contract};
 pub use open_radio_vendor_semantics::*;
@@ -73,9 +74,16 @@ pub static SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
 };
 
 pub static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
-    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-chip/v1",
+    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-chip/v2",
     contracts: &CONTRACTS,
     summaries: &SUMMARIES,
+    compressed_pointer_encodings: &[ReviewedCompressedPointerEncoding::new(
+        "esp32s31-controller-sram-low20-word-address-v1",
+        0x2f00_0000,
+        20,
+        2,
+    )],
+    reviewed_memory_accesses: &[],
 };
 
 #[cfg(test)]

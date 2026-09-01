@@ -17080,7 +17080,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_ENABLE_18</name>
+              <name>SET_BY_PHY_INIT_BRANCH_BIT_18</name>
+              <description>The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven.</description>
               <bitOffset>18</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -17352,28 +17353,17 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SCHEDULER_DISABLE_COMMAND</name>
-          <description>The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown.</description>
+          <name>SCHEDULER_LIFECYCLE_REQUEST</name>
+          <description>The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>COMMAND</name>
-              <description>Complete scheduler-stop command image.</description>
+              <name>IMAGE</name>
+              <description>Complete lifecycle-request image.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
-              <writeConstraint>
-                <useEnumeratedValues>true</useEnumeratedValues>
-              </writeConstraint>
-              <enumeratedValues>
-                <usage>write</usage>
-                <enumeratedValue>
-                  <name>STOP</name>
-                  <description>Request scheduler stop before observing the scheduler busy state.</description>
-                  <value>1</value>
-                </enumeratedValue>
-              </enumeratedValues>
             </field>
           </fields>
         </register>
@@ -19111,7 +19101,7 @@ controller partition prevents either owner from manufacturing an MMIO alias.
         </register>
         <register>
           <name>SCHEDULER_STATE</name>
-          <description>The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.</description>
+          <description>The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both STATE_29 and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.</description>
           <addressOffset>0x7C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -19133,8 +19123,8 @@ controller partition prevents either owner from manufacturing an MMIO alias.
               <bitWidth>5</bitWidth>
             </field>
             <field>
-              <name>REFERENCE_PATH_STATE</name>
-              <description>State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified.</description>
+              <name>STATE_29</name>
+              <description>Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -19661,25 +19651,26 @@ avoid assigning undocumented peripheral semantics.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BLE_PHY_INIT_TOGGLE</name>
+      <name>BLE_HW_POSITIONAL_WORD_1FF0</name>
       <description>Narrow owner for the otherwise unbounded word at 0x20101FF0. Complete
-ESP32-S31 BLE PHY initialization writes zero and then one before touching any
-other radio register. The same ordered operation appears at the same block
-offset in the named ESP32-C61 counterpart, but neither artifact proves that
-this word belongs to the adjacent BTMAC dump range. No wider peripheral extent
-or reset/enable interpretation is claimed.
+ESP32-S31 BLE PHY initialization writes complete image zero followed by
+complete image one before touching any other radio register. The same ordered
+writes appear at the same block offset in the named ESP32-C61 counterpart, but
+neither artifact proves this word's hardware action or membership in the
+adjacent BTMAC dump range. No wider peripheral extent is claimed.
 </description>
       <baseAddress>0x20101FF0</baseAddress>
       <registers>
         <register>
-          <name>INIT_TOGGLE</name>
-          <description>Complete ordered images 0 then 1 at BLE PHY register-initialization entry.</description>
+          <name>VALUE</name>
+          <description>Complete ordered images zero then one at BLE PHY register-initialization entry; their hardware meaning remains unknown.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>POSITIONAL_IMAGE</name>
+              <description>Complete positional image; only the ordered zero-then-one publications are proven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -19688,24 +19679,26 @@ or reset/enable interpretation is claimed.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BLE_PHY_INIT_PHASE</name>
+      <name>BLE_HW_POSITIONAL_WORD_891C</name>
       <description>Narrow owner for the otherwise isolated word at 0x2010891C. Complete
-ESP32-S31 BLE PHY initialization writes phase image 0x20 before initializing
-the BLE hardware accelerator and image 0x40 after the surrounding BTMAC and
-accelerator sequence. The register's physical block and the meanings of the
-two phases remain unproved, so no neighboring 0x201088xx words are absorbed.
+ESP32-S31 BLE PHY initialization writes complete image 0x20 before initializing
+the BLE hardware accelerator and complete image 0x40 after the surrounding
+BTMAC and accelerator sequence. The register's physical block, hardware action
+and the meanings of the two images remain unproved, so no neighboring
+0x201088xx words are absorbed.
 </description>
       <baseAddress>0x2010891C</baseAddress>
       <registers>
         <register>
-          <name>INIT_PHASE</name>
-          <description>Complete ordered images 0x20 then 0x40 around BLE accelerator initialization.</description>
+          <name>VALUE</name>
+          <description>Complete ordered images 0x20 then 0x40 around BLE accelerator initialization; their hardware meaning remains unknown.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>POSITIONAL_IMAGE</name>
+              <description>Complete positional image; only the ordered 0x20-then-0x40 publications are proven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -19761,11 +19754,10 @@ random-address use of slot one; slot two remains intentionally unnamed.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BLE_CONTROLLER_POINTER_PUBLICATION</name>
-      <description>Narrow positional owner for one controller word written by six ble_hw.c
-paths. The software source context is a useful ownership hint, while neither
-the destination's hardware action nor the dynamic value's inner meaning is
-claimed.
+      <name>BLE_HW_POSITIONAL_WORD_1874</name>
+      <description>Narrow positional owner for one word at 0x20101874 written by six complete
+ble_hw.c paths. Neither the destination's hardware action nor the dynamic
+value's inner meaning is claimed.
 </description>
       <baseAddress>0x20101874</baseAddress>
       <registers>
@@ -19777,8 +19769,8 @@ claimed.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE_LOW_20</name>
-              <description>Dynamic low-twenty-bit image; its pointer or index semantics are not established.</description>
+              <name>DYNAMIC_LOW_20_IMAGE</name>
+              <description>Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
             </field>
@@ -20292,8 +20284,8 @@ semantics instead of promoting diagnostic strings to hardware truth.
           </fields>
         </register>
         <register>
-          <name>PHY_INIT_CONFIGURATION_LATCH</name>
-          <description>Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown.</description>
+          <name>PHY_INIT_CONFIGURATION_FOLLOWUP</name>
+          <description>Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown.</description>
           <addressOffset>0x78</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -20449,13 +20441,14 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
       <registers>
         <register>
           <name>RX_SETUP_CONTROL_0</name>
-          <description>bt_bb_rx_set sets one independently observed control bit.</description>
+          <description>Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ENABLE</name>
+              <name>SET_BY_RX_SETUP_BIT_0</name>
+              <description>Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -20558,13 +20551,14 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
         </register>
         <register>
           <name>RX_SETUP_CONTROL_1</name>
-          <description>bt_bb_rx_set sets one independently observed control bit.</description>
+          <description>Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown.</description>
           <addressOffset>0x4C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ENABLE</name>
+              <name>SET_BY_RX_SETUP_BIT_2</name>
+              <description>Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>

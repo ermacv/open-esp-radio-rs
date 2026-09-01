@@ -38,9 +38,16 @@ impl BleBaseStackOnTaskEnableHardwareTransaction
         );
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "the composed transaction retains the exact PHY leaf prerequisites"
+    )]
     fn initialize_ble_phy_registers(&mut self) {
-        self.registers
-            .initialize_ble_phy_registers_leaf(self.inputs);
+        // SAFETY: the enclosing composed transaction carries the same
+        // lifecycle and pointed-storage prerequisites as the exact PHY leaf.
+        unsafe {
+            self.registers.initialize_ble_phy_registers(self.inputs);
+        }
     }
 }
 
@@ -85,16 +92,15 @@ impl BluetoothPhyEnvironmentAddress {
 
 /// Complete external inputs read by the recovered BLE PHY init body.
 ///
-/// The timing source remains private Controller policy. The two public BLE
-/// configuration values retain their recovered semantic names rather than the
-/// offsets at which one vendor implementation happened to store them.
+/// The timing source remains private Controller policy. Values whose hardware
+/// meaning is not proven retain positional configuration names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPhyRegisterInitInputs {
     private_timing_source_byte: u8,
     environment: BluetoothPhyEnvironmentAddress,
     resolving_list: BluetoothControllerSramAddress,
-    ignore_allowlist_for_directed_advertising: bool,
-    backoff_rssi_dbm: i8,
+    set_branch_control_0470_bit_18: bool,
+    runtime_configuration_low_byte: u8,
 }
 
 impl BluetoothPhyRegisterInitInputs {
@@ -106,15 +112,15 @@ impl BluetoothPhyRegisterInitInputs {
         private_timing_source_byte: u8,
         environment: BluetoothPhyEnvironmentAddress,
         resolving_list: BluetoothControllerSramAddress,
-        ignore_allowlist_for_directed_advertising: bool,
-        backoff_rssi_dbm: i8,
+        set_branch_control_0470_bit_18: bool,
+        runtime_configuration_low_byte: u8,
     ) -> Self {
         Self {
             private_timing_source_byte,
             environment,
             resolving_list,
-            ignore_allowlist_for_directed_advertising,
-            backoff_rssi_dbm,
+            set_branch_control_0470_bit_18,
+            runtime_configuration_low_byte,
         }
     }
 }
@@ -152,7 +158,10 @@ impl BluetoothTaskRegisters {
         dead_code,
         reason = "the unsafe signature retains unmodeled lifecycle and pointed-storage prerequisites"
     )]
-    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+    pub unsafe fn enable_ble_base_stack_hardware(
+        &mut self,
+        inputs: BluetoothPhyRegisterInitInputs,
+    ) {
         let mut transaction = HardwareBleBaseStackOnTaskEnableTransaction {
             registers: self,
             inputs,
@@ -160,7 +169,26 @@ impl BluetoothTaskRegisters {
         execute_base_stack_on_task_enable_hardware(&mut transaction);
     }
 
-    fn initialize_ble_phy_registers_leaf(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+    /// Execute the exact bounded BLE PHY register-initialization body.
+    ///
+    /// This leaf starts with the ordered positional-word publications. It does
+    /// not perform the preceding base-stack access-address correlation update;
+    /// [`Self::enable_ble_base_stack_hardware`] owns that composition.
+    ///
+    /// # Safety
+    ///
+    /// The caller must prove completed common PHY and Bluetooth baseband
+    /// initialization, the registered external-baseband table used by this
+    /// body, inactive IRQ ownership, and live exclusive ownership of both
+    /// pointed-to SRAM objects for every hardware consumer. After the first
+    /// MMIO write, failure must be treated as fail-stop until a complete
+    /// controller teardown is independently recovered and verified.
+    #[allow(
+        unsafe_code,
+        dead_code,
+        reason = "the unsafe signature retains the exact PHY leaf lifecycle and storage prerequisites"
+    )]
+    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
         let timing_byte = inputs.private_timing_source_byte.wrapping_sub(1);
         let environment = inputs.environment.address();
         let environment_member = inputs.environment.compressed_member(0x2c);
@@ -170,12 +198,12 @@ impl BluetoothTaskRegisters {
         let bluetooth = &self.bluetooth;
         let btmac = &bluetooth.btmac_ble_phy_init;
 
-        // Entry toggle and BTMAC prefix.
-        super::svd::zero_register_write::begin_ble_phy_register_initialization(
-            &bluetooth.ble_phy_init_toggle,
+        // Ordered positional images and BTMAC prefix.
+        super::svd::zero_register_write::publish_ble_positional_word_1ff0_image_0(
+            &bluetooth.ble_hw_positional_word_1ff0,
         );
-        super::svd::fixed_register_image::latch_ble_phy_register_initialization_entry(
-            &bluetooth.ble_phy_init_toggle,
+        super::svd::fixed_register_image::publish_ble_positional_word_1ff0_image_1(
+            &bluetooth.ble_hw_positional_word_1ff0,
         );
         super::svd::sampled_bit_zero_write::preserve_ble_phy_interrupt_source_17(btmac);
         super::svd::fixed_register_image::clear_all_ble_base_stack_interrupt_sources(btmac);
@@ -214,8 +242,8 @@ impl BluetoothTaskRegisters {
         super::generated::or_ble_phy_init_byte_2(btmac);
 
         super::svd::zero_register_write::clear_ble_phy_init_zero_0074(btmac);
-        super::svd::fixed_register_image::publish_ble_phy_init_phase_20(
-            &bluetooth.ble_phy_init_phase,
+        super::svd::fixed_register_image::publish_ble_positional_word_891c_image_20(
+            &bluetooth.ble_hw_positional_word_891c,
         );
         super::svd::fixed_register_image::publish_ble_phy_accelerator_config(
             &bluetooth.ble_hw_accelerator,
@@ -257,20 +285,20 @@ impl BluetoothTaskRegisters {
 
         super::generated::publish_ble_phy_init_high_half_0458(btmac);
         super::generated::publish_ble_phy_init_low_5_054c(btmac);
-        super::svd::fixed_register_image::publish_ble_phy_init_phase_40(
-            &bluetooth.ble_phy_init_phase,
+        super::svd::fixed_register_image::publish_ble_positional_word_891c_image_40(
+            &bluetooth.ble_hw_positional_word_891c,
         );
 
-        if inputs.ignore_allowlist_for_directed_advertising {
-            super::generated::enable_ble_phy_init_branch_control_0470(btmac);
+        if inputs.set_branch_control_0470_bit_18 {
+            super::generated::set_ble_phy_init_branch_control_0470_bit_18(btmac);
         }
 
         super::svd::zero_based_field_write::publish_ble_phy_runtime_configuration(
             &bluetooth.ble_hw_runtime_control,
-            inputs.backoff_rssi_dbm as u8,
+            inputs.runtime_configuration_low_byte,
             true,
         );
-        super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(
+        super::svd::fixed_register_image::publish_ble_phy_init_followup_image_1(
             &bluetooth.ble_hw_runtime_control,
         );
         super::generated::enable_ble_phy_interrupt_sources_11_15_20_24(btmac);

@@ -176,8 +176,18 @@ path = "/path/to/esp32s31_rev0_rom.elf"
 role = "source-inventory:ble"
 path = "/path/to/libble_app.a"
 
+# Archive-backed diagnostic profiles keep dead-stripped dump helpers out of
+# the operational linked controller while preserving member provenance.
+[[inputs]]
+role = "source-artifact:ble-diagnostics"
+path = "/path/to/libble_app.a"
+
 [[inputs]]
 role = "source-inventory:btdm"
+path = "/path/to/libbtdm_common.a"
+
+[[inputs]]
+role = "source-artifact:btdm-diagnostics"
 path = "/path/to/libbtdm_common.a"
 
 [[inputs]]

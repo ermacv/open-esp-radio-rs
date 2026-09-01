@@ -575,7 +575,7 @@ mod tests {
         bt_hci::{cmd::controller_baseband::Reset, transport::Transport},
     };
 
-    type TestHciResources = LeControllerHciResources<NoopRawMutex, 1, 1, 31>;
+    type TestHciResources = LeControllerHciResources<NoopRawMutex, 1, 1, 45>;
 
     fn scheduler() -> BluetoothSchedulerInitialized<(), 4, 3> {
         let stopped = BluetoothStopped::from_hardware((), BluetoothRadioHardware::for_validation());

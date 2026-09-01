@@ -24,7 +24,15 @@ mod ble_phy_engine;
 mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
+mod le_phy_packet;
+mod le_tx_packet;
+mod le_tx_power;
+mod legacy_advertising_event_image;
+mod legacy_advertising_storage;
+mod passive_scanning_event_image;
+mod passive_scanning_memory;
 mod rx_memory_list;
+mod scheduler_context;
 mod sram_link;
 
 #[cfg(not(target_arch = "riscv32"))]
@@ -37,19 +45,20 @@ pub use ble_phy_engine::{
 
 pub use dtm_event_image::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
-    BluetoothDtmReceiverEventPhase, BluetoothDtmRole, BluetoothDtmSchedulerItemEventType,
-    BluetoothDtmSchedulerItemReviewedWords,
+    BluetoothDtmReceiverEventPhase, BluetoothDtmRole, BluetoothDtmRxHeaderTailProjection,
+    BluetoothDtmSchedulerItemEventType, BluetoothDtmSchedulerItemReviewedWords,
+    BluetoothDtmSchedulerReceiverPhy, BluetoothDtmSchedulerTransmitterPhy,
+    BluetoothDtmTxHeaderHeadProjection,
 };
-pub use dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError};
+pub use dtm_rx_result::{
+    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError, BluetoothDtmRxRssi,
+};
 #[cfg(not(target_arch = "riscv32"))]
 pub use dtm_storage::BluetoothDtmMemoryGraphModelAddress;
 pub use dtm_storage::{
-    BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
-    BLUETOOTH_DTM_BUFFER_HEADER_BYTES, BLUETOOTH_DTM_LINK_STATE_BYTES,
-    BLUETOOTH_DTM_MAX_PACKET_CAPACITY, BLUETOOTH_DTM_RX_PACKET_BYTES,
-    BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES, BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES,
+    BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
+    BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES,
     BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
-    BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES, BluetoothDtmBufferHeaderStorage,
     BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
@@ -64,13 +73,80 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphRxSuccessRecycleFailure,
     BluetoothDtmMemoryGraphRxSuccessRecyclePrepared,
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
-    BluetoothDtmMemoryGraphTxPacketPrepared, BluetoothDtmPositionalEventSeed,
-    BluetoothDtmPreparedTxPacketStorage, BluetoothDtmRxBufferHeaderImage,
-    BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage,
-    BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
+    BluetoothDtmMemoryGraphTxPacketPrepareFailure, BluetoothDtmMemoryGraphTxPacketPrepared,
+    BluetoothDtmPositionalEventSeed, BluetoothDtmSchedulerAllocationConfig,
     BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
-    BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
-    BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
+    BluetoothDtmTxPacketPrepareError,
+};
+pub use le_tx_packet::{
+    BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
+    BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
+};
+pub use legacy_advertising_event_image::{
+    BluetoothLegacyAdvertisingPduError, BluetoothLegacyAdvertisingPrimaryChannel,
+    BluetoothLegacyAdvertisingPrimaryChannelPlan,
+};
+#[cfg(not(target_arch = "riscv32"))]
+pub use legacy_advertising_storage::BluetoothLegacyAdvertisingMemoryGraphModelAddress;
+pub use legacy_advertising_storage::{
+    BLUETOOTH_LEGACY_ADVERTISING_LINK_STATE_BYTES, BLUETOOTH_LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES,
+    BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_BYTES,
+    BLUETOOTH_LEGACY_ADVERTISING_SCHEDULER_ITEM_CAPACITY,
+    BLUETOOTH_LEGACY_ADVERTISING_TX_PACKET_BYTES,
+    BluetoothLegacyAdvertisingEventCompletionStatuses,
+    BluetoothLegacyAdvertisingMemoryGraphBindError,
+    BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphBinding,
+    BluetoothLegacyAdvertisingMemoryGraphCompletionObservation,
+    BluetoothLegacyAdvertisingMemoryGraphCompletionObserved,
+    BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+    BluetoothLegacyAdvertisingMemoryGraphEmptyListLinkPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphEventPrepareError,
+    BluetoothLegacyAdvertisingMemoryGraphEventPrepareFailure,
+    BluetoothLegacyAdvertisingMemoryGraphEventPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphHeadPublished,
+    BluetoothLegacyAdvertisingMemoryGraphIdentity,
+    BluetoothLegacyAdvertisingMemoryGraphLinkStateReset,
+    BluetoothLegacyAdvertisingMemoryGraphLinkStateResetFailure,
+    BluetoothLegacyAdvertisingMemoryGraphPacketPrepareFailure,
+    BluetoothLegacyAdvertisingMemoryGraphPacketPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphRecycleError,
+    BluetoothLegacyAdvertisingMemoryGraphRecycleFailure,
+    BluetoothLegacyAdvertisingMemoryGraphRecyclePrepared,
+    BluetoothLegacyAdvertisingMemoryGraphRecycled, BluetoothLegacyAdvertisingMemoryGraphRunning,
+    BluetoothLegacyAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
+    BluetoothLegacyAdvertisingMemoryGraphStorage,
+    BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
+};
+pub use passive_scanning_event_image::{
+    BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanPrimaryChannel,
+    BluetoothPassiveScanResetConfig, BluetoothPassiveScanSchedulerWindow,
+    BluetoothPassiveScanStartSelection,
+};
+#[cfg(not(target_arch = "riscv32"))]
+pub use passive_scanning_memory::BluetoothPassiveScanMemoryGraphModelAddress;
+pub use passive_scanning_memory::{
+    BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT, BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES,
+    BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
+    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, BluetoothPassiveScanMemoryGraphBindError,
+    BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphCommandPublished,
+    BluetoothPassiveScanMemoryGraphCompletionObservation,
+    BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphCpuOwned,
+    BluetoothPassiveScanMemoryGraphEventPrepared, BluetoothPassiveScanMemoryGraphPublicationError,
+    BluetoothPassiveScanMemoryGraphPublicationMismatch,
+    BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
+    BluetoothPassiveScanMemoryGraphRecycleError, BluetoothPassiveScanMemoryGraphRecycleFailure,
+    BluetoothPassiveScanMemoryGraphRecyclePrepared, BluetoothPassiveScanMemoryGraphRecycled,
+    BluetoothPassiveScanMemoryGraphRunning, BluetoothPassiveScanMemoryGraphRxExtracted,
+    BluetoothPassiveScanMemoryGraphRxExtractionFailure,
+    BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
+    BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanReceivedBatch,
+    BluetoothPassiveScanReceivedPdu, BluetoothPassiveScanRxError,
+    BluetoothPassiveScanSchedulerAllocationConfig,
+    BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
-pub use sram_link::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};
+pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};
+pub use sram_link::{
+    BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
+    BluetoothControllerSramLinkAddress, BluetoothControllerSramLinkAddressError,
+};

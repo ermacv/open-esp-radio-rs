@@ -245,12 +245,6 @@ impl BluetoothInterruptSetup {
 }
 
 impl BluetoothInterruptOutputPrepared {
-    pub(super) fn scheduler_busy_after_routes(&self) -> bool {
-        field_read::observe_bluetooth_interrupt_output_scheduler_busy(
-            &self.peripherals.bluetooth_scheduler_interrupt_runtime,
-        )
-    }
-
     /// Release a prepared controller output after any CPU route has been
     /// removed.
     ///
@@ -278,27 +272,6 @@ impl BluetoothInterruptOutputPrepared {
     /// and recover it only after both routes have been disabled.
     pub fn stage_for_cpu_routes(self) -> BluetoothInterruptRegisters {
         BluetoothInterruptRegisters {
-            peripherals: self.peripherals,
-        }
-    }
-}
-
-#[cfg(feature = "validation-probes")]
-impl BluetoothInterruptSetup {
-    /// Forge the post-route state for one isolated terminal comparison image.
-    ///
-    /// # Safety
-    ///
-    /// CPU routes and shared ISR access must be absent, and the image must not
-    /// perform any later radio operation or reconstruct neutral ownership.
-    #[allow(
-        unsafe_code,
-        reason = "the isolated validation image explicitly assumes post-route ownership"
-    )]
-    pub(super) unsafe fn assume_output_prepared_after_routes_for_validation(
-        self,
-    ) -> BluetoothInterruptOutputPrepared {
-        BluetoothInterruptOutputPrepared {
             peripherals: self.peripherals,
         }
     }

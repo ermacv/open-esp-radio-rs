@@ -52,6 +52,46 @@ profile = "ble-controller-all"
 source = "ble-controller"
 artifact-sha256 = "5dbd91c45d13a2afc99e5414732aaffe1230737b471ddcf0bbe7e17a9d98e225"
 
+[[inputs]]
+profile = "ble-phy-state-diagnostic"
+source = "ble-diagnostics"
+artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[inputs]]
+profile = "ble-coex-register-diagnostic"
+source = "ble-diagnostics"
+artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[inputs]]
+profile = "ble-dtm-rssi"
+source = "ble-diagnostics"
+artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[inputs]]
+profile = "btdm-scheduler-diagnostic"
+source = "btdm-diagnostics"
+artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099"
+
+[[functions]]
+profile = "ble-dtm-rssi"
+source = "ble-diagnostics"
+identity = "ble-diagnostics::94.o:esp_ble_get_dtm_rx_rssi"
+status = "reviewed"
+name = "esp_ble_get_dtm_rx_rssi"
+role = "ble.dtm.rx-rssi-get"
+summary = "Public archive entry that tail-calls the current internal DTM RSSI getter."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-dtm-rssi"
+source = "ble-diagnostics"
+identity = "ble-diagnostics::55.o:r_sym_ble_CLEB51J8jgSOcX50XteR"
+status = "reviewed"
+name = "read_dtm_rx_rssi"
+role = "ble.dtm.rx-rssi-read"
+summary = "Loads DTM environment byte +0x24 with signed lb; the RX recycle path independently supplies that byte from an accepted packet result."
+accept-incomplete = true
+
 # Sparse review overlay: add only reviewed or ignored functions, contexts, fields, and logical types.
 # All omitted generated observations remain part of the computed unreviewed backlog.
 
@@ -210,7 +250,7 @@ run-event-argument = 0
 callback-profile = "ble-controller-all"
 callback-source = "ble-controller"
 callback-function = "ble-controller::r_sym_bt_uNi9OHmE7XdXfGqTelU5"
-rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, the scheduler-init binding to the exact callback, direct generic eventq_get/event.run sites, typed direct receive-result provenance into event.run, and same-basic-block CFG ordering from receive to run. The R9-to-controller-source-124 association and callback semantics are reviewed knowledge; the concrete enqueue-to-receive queue identity and execution replay remain unresolved."
+rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, the scheduler-init binding to the exact callback, direct generic eventq_get/event.run sites, typed direct receive-result provenance into event.run, and same-basic-block CFG ordering from receive to run. Same-chip named bodies map this path to radio ISR, recycle ISR and recycle task roles; ordinary and marked batches both execute scheduler drain while the marker adds only buffer recycle. The R9-to-controller-source-124 association and callback semantics are reviewed knowledge; the concrete enqueue-to-receive queue identity, execution replay and raw-source-to-finished-mask relation remain unresolved."
 
 # Finished-list publication uses broker source zero. Scheduler init attaches
 # that exact source object, while base-stack enable contains the reviewed
@@ -994,3 +1034,99 @@ status = "reviewed"
 name = "station_policy_variant"
 display-type = "u32"
 description = "Observed word used on paths that select receive-policy transactions. Direct evidence shows zero writes during ieee80211_ifattach and ieee80211_mesh_quick_deinit, but no nonzero writer; values zero and one therefore remain Mode1/Mode2 and are not identified as an AP+STA lifecycle state."
+
+# Current linked ESP32-S31 libble_app.a member 50.o has obfuscated symbol
+# names. The mappings below are limited to function roles established by
+# current-body control/data flow and structural comparison with the public
+# same-chip named archive at commit 31c30949541a5d3abd4043a1cb66d55aa55577dd.
+# Generated linked IR remains the authority for current behavior and layouts;
+# the older names do not import old implementation details.
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_MrW1ZaJZqsHzi3wwRhsn"
+status = "reviewed"
+name = "ble_lll_adv_legacy_primary_channel_pdu_make"
+role = "ble.advertising.legacy-primary-pdu-build"
+summary = "Builds the primary-channel legacy advertising PDU into caller-owned packet storage; generated current-artifact evidence owns its exact branches and memory effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_c9Zmr2aWmPOsZoITHDe9"
+status = "reviewed"
+name = "ble_lll_adv_legacy_pdu_make"
+role = "ble.advertising.legacy-pdu-build"
+summary = "Validates the supplied packet owner and delegates legacy PDU construction to the primary-channel builder with a fixed zero fourth argument; the argument's semantic name remains intentionally unclaimed."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_fxKAT8in6cXLv0gLB2W5"
+status = "reviewed"
+name = "ble_lll_adv_reset_link_state"
+role = "ble.advertising.link-state-reset"
+summary = "Resets the private advertising link-state graph; generated current-artifact evidence owns every positional SRAM effect."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_fiiv8hEPVagnOAVa7EM2"
+status = "reviewed"
+name = "ble_lll_adv_reset"
+role = "ble.advertising.role-reset"
+summary = "Resets one advertising role environment and its owned subordinate state; generated current-artifact evidence owns the finite branches and cleanup effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_cfILxLFIWftw22I0zQab"
+status = "reviewed"
+name = "ble_lll_adv_alloc_memory"
+role = "ble.advertising.memory-allocate"
+summary = "Allocates the private advertising graph and performs bounded rollback on failure; generated current-artifact evidence owns its exact allocation edges."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_8UzoZYkzYu9MXbM1vyWN"
+status = "reviewed"
+name = "ble_lll_adv_start"
+role = "ble.advertising.start"
+summary = "Starts one advertising role by allocating and resetting its graph before scheduling the first primary event; generated current-artifact evidence owns current ordering and failure paths."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_mqh4OXzoN59kvnkKFMA1"
+status = "reviewed"
+name = "ble_lll_adv_schedule_first_primary_event"
+role = "ble.advertising.schedule-first-primary"
+summary = "Constructs and admits the first primary advertising event from the role's private link-state and scheduler-item graph."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_77zgK6v8rbStzf0ReBjv"
+status = "reviewed"
+name = "ble_lll_adv_schedule_next_primary_event"
+role = "ble.advertising.schedule-next-primary"
+summary = "Rewrites and admits the next primary advertising event from the completed role graph; generated current-artifact evidence owns its exact recurrence policy."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_pfcv0QVYrNS6KoQetydw"
+status = "reviewed"
+name = "ble_lll_adv_recycle_scheduler_item"
+role = "ble.advertising.recycle-scheduler-item"
+summary = "Consumes one completed advertising scheduler item, processes role results and either recycles or reschedules its private graph."
+accept-incomplete = true

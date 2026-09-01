@@ -31,8 +31,8 @@ use crate::{
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmControllerRxPreparationFailure,
     BluetoothDtmControllerTxPreparationFailure, BluetoothDtmEmptySchedulerMergePrepared,
     BluetoothDtmInitialSchedulerItemPhase, BluetoothDtmReceiverEvent,
-    BluetoothDtmSchedulerHeadPublicationError, BluetoothDtmSchedulerHeadPublished,
-    BluetoothDtmSchedulerRunning, BluetoothDtmSessionIdle, BluetoothDtmTransmitterEvent,
+    BluetoothDtmSchedulerHeadPublished, BluetoothDtmSchedulerRunning, BluetoothDtmSessionIdle,
+    BluetoothDtmTransmitterEvent, BluetoothSchedulerHeadPublicationError,
     BluetoothSchedulerRunInterruptStorage,
 };
 
@@ -354,8 +354,12 @@ impl<S, const SCHEDULER_CAPACITY: usize>
 /// Task ownership, classification and next-command authority cannot be
 /// decomposed through this chip API.
 #[must_use = "retain the complete post-intake mismatch owner"]
-pub struct BluetoothDtmIdleCommandMismatch<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
-where
+pub struct BluetoothControllerIdleCommandMismatch<
+    'runtime,
+    'command,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     _command: LeControllerClassifiedCommand<
@@ -366,7 +370,7 @@ where
 }
 
 impl<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothDtmIdleCommandMismatch<'runtime, 'command, S, SCHEDULER_CAPACITY>
+    BluetoothControllerIdleCommandMismatch<'runtime, 'command, S, SCHEDULER_CAPACITY>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
@@ -381,20 +385,36 @@ where
     }
 }
 
-/// Endpoint-checked disposition of one DTM command while the chip graph is idle.
+/// Endpoint-checked disposition of one Controller command while both radios are idle.
 ///
 /// Every branch retains the sole task service: a start moves it into the first
 /// runner (or that runner's lossless begin failure), while immediate responses
 /// and Reset retain their exact affine HCI order.
 #[must_use = "start the first event, publish idle Test End, or retain the mismatch"]
-pub enum BluetoothDtmIdleCommandRoute<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
+pub enum BluetoothControllerIdleCommandRoute<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     /// A validated RX/TX command entered the sole first-event runner.
     Start(BluetoothDtmFirstRunner<'runtime, S, SCHEDULER_CAPACITY>),
+    /// A validated non-connectable Enable entered the advertising runner.
+    StartLegacyAdvertising(
+        crate::BluetoothLegacyAdvertisingFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    /// A validated passive scanner Enable entered the HCI-composed first runner.
+    StartPassiveScanning(
+        crate::BluetoothPassiveScanHciFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
     /// Initial Controller-time acquisition failed without losing any owner.
     StartFailed(BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>),
+    /// Advertising current acquisition failed without losing HCI order.
+    LegacyAdvertisingStartFailed(
+        crate::BluetoothLegacyAdvertisingFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    /// Passive scanner start failed without losing HCI order or lower ownership.
+    PassiveScanStartFailed(
+        crate::BluetoothPassiveScanHciFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
     /// Idle Test End became an ordered standard zero-count response.
     ResponsePending(crate::BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>),
     /// Idle Reset retains its exact command/order until lifecycle completion.
@@ -402,7 +422,9 @@ where
     /// Defensive fail-stop owner for an impossible post-intake epoch mismatch.
     ///
     /// Classification, task ownership and command authority remain inseparable.
-    EndpointMismatch(BluetoothDtmIdleCommandMismatch<'runtime, 'command, S, SCHEDULER_CAPACITY>),
+    EndpointMismatch(
+        BluetoothControllerIdleCommandMismatch<'runtime, 'command, S, SCHEDULER_CAPACITY>,
+    ),
 }
 
 /// Bounded first-event Controller runner.
@@ -568,7 +590,7 @@ where
 #[must_use = "the retry cause should be inspected before advancing the retained runner"]
 pub enum BluetoothDtmFirstRunnerRetryCause<E> {
     /// The CPU-owned graph could not become the scheduler hardware-list head.
-    HeadPublication(BluetoothDtmSchedulerHeadPublicationError),
+    HeadPublication(BluetoothSchedulerHeadPublicationError),
     /// Dynamic scheduler interrupt preparation rejected the published head.
     SchedulerStart(E),
 }

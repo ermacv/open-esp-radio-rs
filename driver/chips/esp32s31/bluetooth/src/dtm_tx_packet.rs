@@ -4,21 +4,20 @@
 //! `r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr` construct the complete 24-byte
 //! allocation-time header now owned by the controller-memory layer. The DTM
 //! allocator always requests the full eight-bit payload capacity. Current and
-//! named `dtm_tx_create_ctx` bodies then write the four positional packet bytes
-//! and bounded payload modeled by this LLL extension. Both layers remain
-//! CPU-only and expose no hardware publication token.
+//! named `dtm_tx_create_ctx` bodies then write the standard no-CTE PDU header,
+//! payload length, two positional allocator bytes and bounded payload modeled
+//! by this LLL extension. Both layers remain CPU-only and expose no hardware
+//! publication token.
 
 #![forbid(unsafe_code)]
 
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BLUETOOTH_DTM_MAX_PACKET_CAPACITY as BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES,
     BLUETOOTH_DTM_TX_PACKET_BYTES as BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES,
-    BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES, BluetoothDtmTxBufferHeaderImage,
-    BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage,
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphTxPacketPrepared,
-    BluetoothDtmPreparedTxPacketStorage,
 };
 
 use crate::{BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern};
@@ -41,7 +40,13 @@ impl BluetoothDtmTxGraphPrepare for BluetoothDtmMemoryGraphCpuOwned {
     ) -> BluetoothDtmPreparedTxGraph {
         let mut payload = [0; BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES];
         pattern.fill_reviewed(&mut payload[..usize::from(length.hci_image())]);
-        let memory = self.prepare_tx_packet(pattern.hci_selector(), length.hci_image(), &payload);
+        let memory =
+            match self.prepare_tx_packet(pattern.hci_selector(), length.hci_image(), &payload) {
+                Ok(memory) => memory,
+                Err(_) => {
+                    unreachable!("a typed DTM payload pattern always has a standard PDU Type")
+                }
+            };
         BluetoothDtmPreparedTxGraph {
             memory,
             pattern,
@@ -94,73 +99,6 @@ impl BluetoothDtmPreparedTxGraph {
     }
 }
 
-/// LLL extension that fills standard DTM pattern bytes in the sole memory-layer
-/// TX backing slot.
-pub trait BluetoothDtmTxPacketPrepare {
-    /// Apply every complete packet-buffer write performed before scheduling.
-    fn prepare(
-        &mut self,
-        pattern: BluetoothDtmPayloadPattern,
-        length: BluetoothDtmPayloadLength,
-    ) -> BluetoothDtmPreparedTxPacket<'_>;
-}
-
-impl BluetoothDtmTxPacketPrepare for BluetoothDtmTxPacketStorage {
-    fn prepare(
-        &mut self,
-        pattern: BluetoothDtmPayloadPattern,
-        length: BluetoothDtmPayloadLength,
-    ) -> BluetoothDtmPreparedTxPacket<'_> {
-        let mut preparation = self.begin_prepare(pattern.hci_selector(), length.hci_image());
-        pattern.fill_reviewed(preparation.payload_mut());
-        BluetoothDtmPreparedTxPacket {
-            pattern,
-            length,
-            storage: preparation.finish(),
-        }
-    }
-}
-
-/// Affine CPU-owned view of one prepared DTM TX packet.
-///
-/// It exposes the reviewed prefix and declared payload only. No hardware state
-/// can be reached from this value.
-pub struct BluetoothDtmPreparedTxPacket<'storage> {
-    pattern: BluetoothDtmPayloadPattern,
-    length: BluetoothDtmPayloadLength,
-    storage: BluetoothDtmPreparedTxPacketStorage<'storage>,
-}
-
-impl<'storage> BluetoothDtmPreparedTxPacket<'storage> {
-    /// Return the selected HCI test pattern.
-    pub const fn pattern(&self) -> BluetoothDtmPayloadPattern {
-        self.pattern
-    }
-
-    /// Return the declared eight-bit HCI length.
-    pub const fn length(&self) -> BluetoothDtmPayloadLength {
-        self.length
-    }
-
-    /// Borrow the open packet prefix and declared payload.
-    ///
-    /// Only bytes `+0x05`, `+0x06`, `+0x10` and `+0x11` have reviewed writes;
-    /// the other prefix bytes retain their CPU-owned slot images.
-    pub fn prepared_bytes(&self) -> &[u8] {
-        self.storage.prepared_bytes()
-    }
-
-    /// Borrow only the declared payload bytes.
-    pub fn payload(&self) -> &[u8] {
-        self.storage.payload()
-    }
-
-    /// Return the CPU-owned slot for reuse or later verified composition.
-    pub fn release(self) -> &'storage mut BluetoothDtmTxPacketStorage {
-        self.storage.release()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -168,26 +106,8 @@ mod tests {
         BluetoothDtmSchedulerAllocationConfig,
     };
 
-    use super::{
-        BluetoothDtmTxGraphPrepare, BluetoothDtmTxPacketPrepare, BluetoothDtmTxPacketStorage,
-    };
+    use super::BluetoothDtmTxGraphPrepare;
     use crate::{BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern};
-
-    #[test]
-    fn packet_preparation_retains_the_command_and_fills_the_declared_payload() {
-        let mut storage = BluetoothDtmTxPacketStorage::new();
-        let prepared = storage.prepare(
-            BluetoothDtmPayloadPattern::Repeated11110000,
-            BluetoothDtmPayloadLength::from_hci_image(3),
-        );
-
-        assert_eq!(
-            prepared.pattern(),
-            BluetoothDtmPayloadPattern::Repeated11110000
-        );
-        assert_eq!(prepared.length().hci_image(), 3);
-        assert_eq!(prepared.payload(), [0x0f; 3]);
-    }
 
     #[test]
     fn bound_graph_preparation_retains_the_typed_packet_identity() {

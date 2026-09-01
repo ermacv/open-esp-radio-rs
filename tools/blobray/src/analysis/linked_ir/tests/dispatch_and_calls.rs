@@ -942,6 +942,48 @@ fn lossless_relocation_call_survives_an_earlier_semantic_stop() {
 }
 
 #[test]
+fn lossless_resolved_archive_call_keeps_reviewed_diagnostic_semantics() {
+    let parent = symbol(
+        "vendor_parent",
+        0,
+        vec![
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0x67, 0x00, 0x03, 0x00, // jalr zero, 0(t1)
+        ],
+    );
+    let diagnostic = symbol("vendor_log", 0, vec![0x67, 0x80, 0, 0]);
+    let diagnostic_id = 0x8000_0000;
+    let mut resolver = empty_resolver();
+    resolver.symbols = vec![parent.clone(), diagnostic.clone()];
+    resolver
+        .symbols_by_address
+        .insert(diagnostic_id, diagnostic);
+    resolver.relocated_calls.insert(
+        direct::StructuralCallSite::new(&parent, 0),
+        ("vendor_log".to_owned(), Some(diagnostic_id)),
+    );
+    resolver
+        .pointer_context
+        .diagnostic_calls
+        .insert("vendor_log".to_owned(), 3);
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let mut calls = BTreeSet::new();
+
+    add_lossless_relocation_calls(&mut calls, &parent, &resolver, &identities);
+
+    assert_eq!(calls.len(), 1);
+    let call = calls.first().unwrap();
+    assert_eq!(call.kind, "diagnostic");
+    assert_eq!(call.target, "vendor_log");
+    assert_eq!(call.site, Some(0));
+    assert!(call.direct);
+    assert!(call.tail);
+    assert_eq!(call.semantic_operation.as_deref(), Some("diagnostic.emit"));
+    assert_eq!(call.argument_shapes, 0);
+    assert!(call.guard_paths.is_none());
+}
+
+#[test]
 fn archive_call_projects_through_relaxed_instruction_correspondence() {
     let runtime = artifact::ArtifactSymbolDefinition {
         member: None,

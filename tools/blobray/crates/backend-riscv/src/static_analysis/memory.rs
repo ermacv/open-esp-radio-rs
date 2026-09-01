@@ -18,6 +18,7 @@ pub(super) enum StructuralAddress {
 pub(super) fn structural_effective_address(
     values: &[SymbolicValue; 32],
     memory_read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+    pointer_context: &StructuralPointerContext,
     base: Reg,
     offset: i32,
 ) -> Option<StructuralAddress> {
@@ -43,6 +44,9 @@ pub(super) fn structural_effective_address(
         _ if base.caller_memory_address() => Some(StructuralAddress::CallerMemory(
             base.clone().add_constant(offset as u32),
         )),
+        _ if pointer_context.recognizes_reviewed_compressed_pointer(base) => Some(
+            StructuralAddress::DynamicMemory(base.clone().add_constant(offset as u32)),
+        ),
         _ => {
             let address = base.clone().add_constant(offset as u32);
             if let Some(location) = address.memory_object_location_with_reads(memory_read_sources) {

@@ -231,7 +231,7 @@ mod tests {
             source_3_pending: bool,
             gate_busy: bool,
             work_busy: bool,
-            work_reference_state_29: bool,
+            work_state_29: bool,
         ) -> Self {
             Self {
                 epoch: Some(BluetoothPrimaryInterruptEpoch::for_dynamic_validation(
@@ -245,7 +245,7 @@ mod tests {
                 work: Some(
                     BluetoothSchedulerWorkObservation::from_fields_for_validation(
                         work_busy,
-                        work_reference_state_29,
+                        work_state_29,
                         7,
                     ),
                 ),
@@ -303,7 +303,7 @@ mod tests {
             event.wake().class(),
             BluetoothSchedulerWorkerWakeClass::Ordinary
         );
-        assert_eq!(event.wake().reference_state_publication(), Some(true));
+        assert_eq!(event.wake().deferred_work_publication(), Some(true));
         assert!(event.lock_modify_observation().is_busy());
         assert_eq!(event.current_hardware_list().get(), 7);
         assert_eq!(

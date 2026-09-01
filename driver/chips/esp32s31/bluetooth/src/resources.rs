@@ -14,10 +14,11 @@ use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
     BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
-    BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
-    BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalJoin,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerRunEventPublished,
+    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalIdle,
+    BluetoothSchedulerSoftwareListRemovalJoin,
 };
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
@@ -39,6 +40,11 @@ use crate::controller_time::BluetoothControllerTimeWorkerPhase;
 use crate::controller_time::{
     BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothPassiveScanMemoryGraphCommandPublished,
+    BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
 };
 
 /// Opaque singleton root for one standalone Bluetooth lifecycle.
@@ -218,6 +224,58 @@ pub(crate) struct BluetoothTaskResources {
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 impl BluetoothTaskResources {
+    /// Publish selector-one RX memory for the exact prepared scanner graph.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the pinned graph and the sole powered task
+    /// epoch, and must guarantee that scanner MMIO is not visible through an
+    /// interrupt owner during this transaction.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper scanner lifecycle retains graph lifetime and exclusive task MMIO"
+    )]
+    pub(crate) unsafe fn publish_passive_scan_rx_memory(
+        &mut self,
+        prepared: BluetoothPassiveScanMemoryGraphPublicationPrepared,
+    ) -> BluetoothPassiveScanMemoryGraphPublished {
+        let selector = prepared.selector();
+        let head = prepared.head();
+        let publication = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_rx_memory_list_initial_head(selector, head)
+        };
+        match prepared.into_published(publication) {
+            Ok(published) => published,
+            Err(_) => unreachable!("the publication was built from this exact scanner graph"),
+        }
+    }
+
+    /// Publish the restricted standard-backoff scanner command after RX memory.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the exact RX-published graph and the sole
+    /// powered scanner epoch through the returned state.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper scanner lifecycle retains RX graph and powered command prerequisites"
+    )]
+    pub(crate) unsafe fn publish_passive_scan_command(
+        &mut self,
+        published: BluetoothPassiveScanMemoryGraphPublished,
+    ) -> BluetoothPassiveScanMemoryGraphCommandPublished {
+        let command = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_scan_start()
+        };
+        published.into_scan_command_published(command)
+    }
+
     /// Execute the source-127 register prefix and following complete low-power
     /// hardware component while the upper lifecycle retains initialized
     /// Controller software and an inactive route.
@@ -378,9 +436,10 @@ impl BluetoothTaskResources {
     pub(crate) fn capture_scheduler_finished_lists(
         &mut self,
         worker: &mut crate::BluetoothSchedulerFinishedListWorker,
+        wake: crate::BluetoothSchedulerWakeBatch,
     ) -> Result<(), crate::BluetoothSchedulerFinishedListCaptureError> {
         let mut controller = self.registers.borrow_bluetooth_controller();
-        worker.capture(&mut controller)
+        worker.capture(&mut controller, wake)
     }
 
     /// Perform one fresh fenced hardware-head retirement observation.
@@ -405,6 +464,21 @@ impl BluetoothTaskResources {
         self.registers
             .borrow_bluetooth_controller()
             .finish_scheduler_software_list_removal(idle, head)
+    }
+
+    /// Recheck the complete post-unlink predicate through the task and stable
+    /// interrupt register owners without exporting either owner.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_scheduler_software_list_removal(
+        &mut self,
+        storage: &impl crate::BluetoothSchedulerRunInterruptStorage,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        BluetoothSchedulerSoftwareListRemovalJoin,
+        BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        storage.recheck_scheduler_software_list_removal(&mut controller, head)
     }
 
     /// Execute the complete reviewed controller HAL-init component.
@@ -468,8 +542,8 @@ impl BluetoothTaskResources {
         }
     }
 
-    /// Publish the complete BLE PHY register-init transaction for a lifecycle
-    /// that retains both address-bound storage objects.
+    /// Execute the complete BLE base-stack task-enable hardware transaction
+    /// for a lifecycle that retains both address-bound storage objects.
     ///
     /// # Safety
     ///
@@ -481,12 +555,12 @@ impl BluetoothTaskResources {
         unsafe_code,
         reason = "the upper typestate retains the complete PAC lifecycle and storage prerequisites"
     )]
-    pub(crate) unsafe fn initialize_ble_phy_registers(
+    pub(crate) unsafe fn enable_ble_base_stack_hardware(
         &mut self,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
         unsafe {
-            self.registers.initialize_ble_phy_registers(inputs);
+            self.registers.enable_ble_base_stack_hardware(inputs);
         }
     }
 

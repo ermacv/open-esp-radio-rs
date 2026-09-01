@@ -91,10 +91,21 @@ where
             backend.wait_scheduler(wake).await;
             Some(EmbassyBluetoothDtmStoppingSignal::Scheduler)
         }
-        StoppingWaitRef::PostUnlink(wake) => {
-            backend.wait_post_unlink(wake).await;
-            Some(EmbassyBluetoothDtmStoppingSignal::PostUnlink)
-        }
+        StoppingWaitRef::PostUnlink(wake) => Some(
+            match crate::select_post_unlink_first(
+                backend.wait_post_unlink(wake),
+                controller_time_recheck,
+            )
+            .await
+            {
+                crate::EmbassyBluetoothPostUnlinkSignal::Mailbox => {
+                    EmbassyBluetoothDtmStoppingSignal::PostUnlink
+                }
+                crate::EmbassyBluetoothPostUnlinkSignal::Recheck => {
+                    EmbassyBluetoothDtmStoppingSignal::ControllerTime
+                }
+            },
+        ),
         StoppingWaitRef::ControllerTime => {
             controller_time_recheck.await;
             Some(EmbassyBluetoothDtmStoppingSignal::ControllerTime)
@@ -453,7 +464,7 @@ mod tests {
         }
     }
 
-    type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 16>;
+    type ControllerResources = LeControllerHciResources<NoopRawMutex, 1, 1, 45>;
 
     fn controller_resources() -> ControllerResources {
         LeControllerHciResources::new(
@@ -468,12 +479,12 @@ mod tests {
     }
 
     fn test_end_pending_with_ready<'epoch>(
-        endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 16>,
+        endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 45>,
         ready: LeControllerCommandReady<'epoch, ()>,
     ) -> LeControllerResponsePending<'epoch, ()> {
         block_on(endpoints.host.write(&LeTestEnd::new()))
             .expect("Test End enters the real Host queue");
-        let mut command_buffer = [0; 16];
+        let mut command_buffer = [0; 45];
         let LeControllerCommandIntake::Command {
             command: classified,
             ..
@@ -493,7 +504,7 @@ mod tests {
     }
 
     fn initial_test_end_pending<'epoch>(
-        endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 16>,
+        endpoints: &mut LeControllerHciEndpoints<'epoch, NoopRawMutex, 1, 1, 45>,
     ) -> LeControllerResponsePending<'epoch, ()> {
         let LeControllerCommandReadyClaim::Ready(ready) =
             endpoints.controller.claim_initial_command_ready(())

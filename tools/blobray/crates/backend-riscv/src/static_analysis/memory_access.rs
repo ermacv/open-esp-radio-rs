@@ -254,6 +254,7 @@ pub(super) fn apply_memory_instruction(
                 && let Some(address) = structural_effective_address(
                     &state.values,
                     &state.memory_read_sources,
+                    pointer_context,
                     base,
                     offset.as_i32(),
                 )
@@ -290,6 +291,7 @@ pub(super) fn apply_memory_instruction(
                     Ok(None) => structural_effective_address(
                         &state.values,
                         &state.memory_read_sources,
+                        pointer_context,
                         base,
                         offset.as_i32(),
                     ),
@@ -705,6 +707,7 @@ pub(super) fn apply_memory_instruction(
                     Ok(None) => structural_effective_address(
                         &state.values,
                         &state.memory_read_sources,
+                        pointer_context,
                         base,
                         offset.as_i32(),
                     ),

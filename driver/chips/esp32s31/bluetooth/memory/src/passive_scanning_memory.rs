@@ -11,7 +11,7 @@ use core::{marker::PhantomPinned, pin::Pin};
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerLatchedTime, BluetoothControllerSramAddress,
     BluetoothControllerSramAddressError, BluetoothMemoryListSelector,
-    BluetoothRxMemoryListPublished,
+    BluetoothRxMemoryListPublished, BluetoothScanStartPublished,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -72,6 +72,7 @@ const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0x0fdf_ffff;
 const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
 const SCHEDULER_ITEM_EVENT_CLASS_IMAGE: u32 = 1;
 const SCHEDULER_ITEM_ALLOCATION_CONFIG_MAX: u32 = 0x0fff;
+const SCHEDULER_ITEM_LINK_MASK: u32 = 0x000f_ffff;
 
 /// Product-owned limits consumed by the passive-scanner item allocator.
 ///
@@ -378,6 +379,17 @@ impl BluetoothPassiveScanSchedulerItemStorage {
         }
     }
 
+    fn detach_hardware_predecessor(&self) {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD]
+            .set(self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get() & !SCHEDULER_ITEM_LINK_MASK);
+    }
+
+    fn restore_hardware_predecessor(&self, predecessor: BluetoothControllerSramLinkAddress) {
+        let image = self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get();
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD]
+            .set((image & !SCHEDULER_ITEM_LINK_MASK) | predecessor.compressed_image());
+    }
+
     fn write_reviewed_words(&self, words: BluetoothPassiveScanSchedulerItemWords) {
         self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].set(words.word_00);
         self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(words.word_04);
@@ -641,8 +653,60 @@ impl BluetoothPassiveScanMemoryGraphEventPrepared {
         self.window
     }
 
+    /// Detach the prepared item from the private free chain before admission.
+    ///
+    /// This transition remains CPU-only and is cancellable. It advances the
+    /// private free head to the retained predecessor while clearing the
+    /// selected item's hardware-next link.
+    pub fn prepare_scheduler_admission(
+        mut self,
+    ) -> BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let predecessor = self.binding.scheduler_items[selected_index - 1];
+        let graph = self.storage.as_mut().project();
+        graph.scheduler_items[selected_index].detach_hardware_predecessor();
+        graph
+            .link_state
+            .install_scheduler_head(predecessor.controller_address());
+        BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+}
+
+/// CPU-owned scanner graph whose selected item is detached from its free chain.
+#[must_use = "the detached scanner item must be published or restored"]
+pub struct BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
+    storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
+    binding: BluetoothPassiveScanMemoryGraphBinding,
+    channel: BluetoothPassiveScanPrimaryChannel,
+    window: BluetoothPassiveScanSchedulerWindow,
+}
+
+impl BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared {
+    /// Restore the exact private chain before any MMIO publication.
+    pub fn cancel(mut self) -> BluetoothPassiveScanMemoryGraphEventPrepared {
+        let selected_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let selected = self.binding.scheduler_items[selected_index];
+        let predecessor = self.binding.scheduler_items[selected_index - 1];
+        let graph = self.storage.as_mut().project();
+        graph.scheduler_items[selected_index].restore_hardware_predecessor(predecessor);
+        graph
+            .link_state
+            .install_scheduler_head(selected.controller_address());
+        BluetoothPassiveScanMemoryGraphEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+
     /// Freeze CPU initialization before an upper controller owner performs the
-    /// ordered MMIO publication.
+    /// ordered RX-list publication.
     pub fn prepare_publication(self) -> BluetoothPassiveScanMemoryGraphPublicationPrepared {
         BluetoothPassiveScanMemoryGraphPublicationPrepared {
             storage: self.storage,
@@ -797,6 +861,59 @@ impl BluetoothPassiveScanMemoryGraphPublished {
     }
 
     /// Scheduler window retained by the hardware-owned event.
+    pub const fn window(&self) -> BluetoothPassiveScanSchedulerWindow {
+        self.window
+    }
+
+    /// Join the matching restricted scan command while retaining the graph.
+    pub fn into_scan_command_published(
+        self,
+        command: BluetoothScanStartPublished,
+    ) -> BluetoothPassiveScanMemoryGraphCommandPublished {
+        BluetoothPassiveScanMemoryGraphCommandPublished {
+            _storage: self._storage,
+            binding: self.binding,
+            rx_publication: self.publication,
+            _command: command,
+            channel: self.channel,
+            window: self.window,
+        }
+    }
+}
+
+/// Scanner graph whose RX list and standard-backoff command are hardware-visible.
+///
+/// The scheduler item remains outside a hardware list until the common
+/// scheduler epoch consumes this state.
+#[must_use = "the command-published scanner graph must enter the common scheduler"]
+pub struct BluetoothPassiveScanMemoryGraphCommandPublished {
+    _storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
+    binding: BluetoothPassiveScanMemoryGraphBinding,
+    rx_publication: BluetoothRxMemoryListPublished,
+    _command: BluetoothScanStartPublished,
+    channel: BluetoothPassiveScanPrimaryChannel,
+    window: BluetoothPassiveScanSchedulerWindow,
+}
+
+impl BluetoothPassiveScanMemoryGraphCommandPublished {
+    /// Exact detached scheduler item prepared by this graph.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
+    /// Borrow the retained selector-one RX-list publication.
+    #[doc(hidden)]
+    pub const fn rx_publication(&self) -> &BluetoothRxMemoryListPublished {
+        &self.rx_publication
+    }
+
+    /// Primary channel retained by the hardware-visible event.
+    pub const fn channel(&self) -> BluetoothPassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Scheduler window retained by the hardware-visible event.
     pub const fn window(&self) -> BluetoothPassiveScanSchedulerWindow {
         self.window
     }
@@ -1055,7 +1172,8 @@ mod tests {
                 .controller_time(),
             0x2345_6789
         );
-        let prepared = event.prepare_publication();
+        let event = event.prepare_scheduler_admission().cancel();
+        let prepared = event.prepare_scheduler_admission().prepare_publication();
         assert_eq!(prepared.head(), bindings[0].header.controller_address());
         assert_eq!(prepared.link_state(), link_state_address);
         assert_eq!(prepared.scheduler_head(), scheduler_head);

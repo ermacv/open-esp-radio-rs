@@ -128,10 +128,12 @@ pub use passive_scanning_memory::{
     BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT, BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES,
     BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
     BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, BluetoothPassiveScanMemoryGraphBindError,
-    BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphCpuOwned,
-    BluetoothPassiveScanMemoryGraphEventPrepared, BluetoothPassiveScanMemoryGraphPublicationError,
+    BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphCommandPublished,
+    BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphEventPrepared,
+    BluetoothPassiveScanMemoryGraphPublicationError,
     BluetoothPassiveScanMemoryGraphPublicationMismatch,
     BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
+    BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
     BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanSchedulerAllocationConfig,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;

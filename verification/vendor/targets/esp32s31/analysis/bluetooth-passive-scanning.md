@@ -333,6 +333,17 @@ the additional extended-scan-only `+0x1c` transform is absent. These fields
 are installed by the private graph codec from a checked semantic allocation
 configuration; callers cannot provide any positional word.
 
+The selected-item ownership edge is also explicit. `r_ble_lll_scan_restart`
+loads the full scheduler free head from link state `+0x64`, derives its
+compressed predecessor from item `+0x00`, and leaves both links unchanged when
+common insertion reports the retryable collision result `-2`. Only a successful
+insertion advances link state `+0x64` to that predecessor and retains the
+selected item as active. The open graph performs the equivalent detach before
+MMIO as a cancellable CPU transition: cancellation restores both links, while
+RX-list and scan-command publication make the detached state irreversible.
+This avoids exposing a vendor intrusive-list ABI and guarantees that RUN never
+sees the active item still reachable through the private free chain.
+
 ## Open architecture
 
 The first implementation should contain these owners, in this order:

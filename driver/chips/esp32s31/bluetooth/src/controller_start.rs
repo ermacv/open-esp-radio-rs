@@ -773,6 +773,7 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     dtm_resources: crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
+    peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
 }
 
 /// Disjoint runtime endpoints borrowed from one statically placed final
@@ -1400,6 +1401,8 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: &'runtime mut crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: &'runtime mut crate::BluetoothPassiveScanRuntimeResources,
+    _peripheral_connection_resources:
+        &'runtime mut crate::BluetoothPeripheralConnectionRuntimeResources,
     always_awake_timing: crate::ble_phy::BluetoothAlwaysAwakeTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
@@ -3959,7 +3962,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     }
 }
 
-/// Failed stable publication retaining the Controller, storage and DTM runtime.
+/// Failed stable publication retaining the Controller, storage and role runtimes.
 #[must_use = "failed ISR publication returns every affine owner for inspection or retry"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnerPublicationFailure<
@@ -3988,6 +3991,7 @@ pub struct BluetoothControllerInterruptOwnerPublicationFailure<
     dtm_resources: crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
+    peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
     error: S::Error,
 }
 
@@ -4085,6 +4089,7 @@ where
             dtm_resources,
             legacy_advertising_resources,
             passive_scan_resources,
+            peripheral_connection_resources,
             ..
         } = self;
         let (
@@ -4108,6 +4113,7 @@ where
             dtm_resources,
             legacy_advertising_resources,
             passive_scan_resources,
+            _peripheral_connection_resources: peripheral_connection_resources,
             always_awake_timing,
             scheduler_epoch,
         };
@@ -5353,7 +5359,7 @@ where
         &self.error
     }
 
-    /// Recover the complete pre-publication Controller, storage and DTM runtime.
+    /// Recover the complete pre-publication Controller, storage and role runtimes.
     pub fn into_parts(
         self,
     ) -> (
@@ -5370,6 +5376,7 @@ where
         crate::BluetoothDtmRuntimeResources,
         crate::BluetoothLegacyAdvertisingRuntimeResources,
         crate::BluetoothPassiveScanRuntimeResources,
+        crate::BluetoothPeripheralConnectionRuntimeResources,
         S::Error,
     ) {
         (
@@ -5378,6 +5385,7 @@ where
             self.dtm_resources,
             self.legacy_advertising_resources,
             self.passive_scan_resources,
+            self.peripheral_connection_resources,
             self.error,
         )
     }
@@ -5428,7 +5436,7 @@ where
     /// Atomically publish both owners in caller-selected stable ISR storage.
     ///
     /// Rejection occurs before publication and returns this exact state plus
-    /// the storage capability and unmodified DTM runtime. Success still leaves
+    /// the storage capability and unmodified role runtimes. Success still leaves
     /// every CPU route inactive.
     #[expect(
         clippy::result_large_err,
@@ -5444,6 +5452,7 @@ where
         dtm_resources: crate::BluetoothDtmRuntimeResources,
         legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
         passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
+        peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
     ) -> Result<
         BluetoothControllerInterruptOwnersPublished<
             P,
@@ -5485,6 +5494,7 @@ where
                 dtm_resources,
                 legacy_advertising_resources,
                 passive_scan_resources,
+                peripheral_connection_resources,
             }),
             Err((error, storage, interrupts, timer)) => {
                 Err(BluetoothControllerInterruptOwnerPublicationFailure {
@@ -5498,6 +5508,7 @@ where
                     dtm_resources,
                     legacy_advertising_resources,
                     passive_scan_resources,
+                    peripheral_connection_resources,
                     error,
                 })
             }

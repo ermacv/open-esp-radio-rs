@@ -20,36 +20,78 @@ const ADV_NONCONN_IND_TYPE: u8 = 0b0010;
 const TX_ADD_RANDOM: u8 = 1 << 6;
 const ADV_NONCONN_IND_RESERVED_HEADER_BITS: u8 = (1 << 4) | (1 << 5) | (1 << 7);
 
-/// Borrowed legacy advertising data with the 31-octet limit already checked.
+/// Borrowed or internally owned legacy advertising data with a checked limit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LegacyAdvertisingData<'a> {
-    bytes: &'a [u8],
+    storage: LegacyAdvertisingDataStorage<'a>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LegacyAdvertisingDataStorage<'a> {
+    Borrowed(&'a [u8]),
+    Owned {
+        bytes: [u8; LEGACY_ADVERTISING_DATA_CAPACITY],
+        length: u8,
+    },
 }
 
 impl<'a> LegacyAdvertisingData<'a> {
-    /// Validate one Host-provided legacy advertising-data value.
+    /// Validate one caller-owned advertising-data value without copying it.
     pub const fn new(bytes: &'a [u8]) -> Result<Self, LegacyAdvertisingDataError> {
         if bytes.len() > LEGACY_ADVERTISING_DATA_CAPACITY {
             return Err(LegacyAdvertisingDataError::TooLong {
                 length: bytes.len(),
             });
         }
-        Ok(Self { bytes })
+        Ok(Self {
+            storage: LegacyAdvertisingDataStorage::Borrowed(bytes),
+        })
     }
 
     /// Borrow the validated bytes.
-    pub const fn as_bytes(self) -> &'a [u8] {
-        self.bytes
+    pub const fn as_bytes(&self) -> &[u8] {
+        match &self.storage {
+            LegacyAdvertisingDataStorage::Borrowed(bytes) => bytes,
+            LegacyAdvertisingDataStorage::Owned { bytes, length } => {
+                bytes.split_at(*length as usize).0
+            }
+        }
     }
 
     /// Number of advertising-data octets.
     pub const fn len(self) -> usize {
-        self.bytes.len()
+        match self.storage {
+            LegacyAdvertisingDataStorage::Borrowed(bytes) => bytes.len(),
+            LegacyAdvertisingDataStorage::Owned { length, .. } => length as usize,
+        }
     }
 
     /// Whether the advertising-data field is empty.
     pub const fn is_empty(self) -> bool {
-        self.bytes.is_empty()
+        self.len() == 0
+    }
+}
+
+impl LegacyAdvertisingData<'static> {
+    /// Copy one ephemeral Host value into a self-contained async-safe owner.
+    pub const fn new_owned(bytes: &[u8]) -> Result<Self, LegacyAdvertisingDataError> {
+        if bytes.len() > LEGACY_ADVERTISING_DATA_CAPACITY {
+            return Err(LegacyAdvertisingDataError::TooLong {
+                length: bytes.len(),
+            });
+        }
+        let mut owned = [0; LEGACY_ADVERTISING_DATA_CAPACITY];
+        let mut index = 0;
+        while index < bytes.len() {
+            owned[index] = bytes[index];
+            index += 1;
+        }
+        Ok(Self {
+            storage: LegacyAdvertisingDataStorage::Owned {
+                bytes: owned,
+                length: bytes.len() as u8,
+            },
+        })
     }
 }
 
@@ -504,6 +546,15 @@ mod tests {
             LegacyNonconnectableAdvertisement::decode(&encoded[..length]),
             Ok(advertisement)
         );
+    }
+
+    #[test]
+    fn owned_data_survives_ephemeral_source_reuse() {
+        let mut source = [2, 1, 6];
+        let owned = LegacyAdvertisingData::new_owned(&source).expect("the data fits");
+        source.fill(0xff);
+        assert_eq!(owned.as_bytes(), &[2, 1, 6]);
+        assert_eq!(owned, LegacyAdvertisingData::new_owned(&[2, 1, 6]).unwrap());
     }
 
     #[test]

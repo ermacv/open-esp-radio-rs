@@ -7,8 +7,10 @@
 #![deny(unsafe_code)]
 
 use open_esp_radio_esp32s31_pac::{
-    BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothInterruptRegisters,
-    BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothLowPowerClockObservation,
+    BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothControllerSramAddress,
+    BluetoothInterruptRegisters, BluetoothInterruptSetup as PacBluetoothInterruptSetup,
+    BluetoothLowPowerClockObservation, BluetoothMemoryListPointerImage,
+    BluetoothMemoryListSelector, BluetoothMemoryListSlot,
     BluetoothModemLpTimerCounterStarted as PacBluetoothModemLpTimerCounterStarted,
     BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
     BluetoothModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
@@ -781,7 +783,113 @@ pub struct BluetoothControllerHal<'registers> {
     registers: &'registers mut PacBluetoothTaskRegisters,
 }
 
+/// One initialized receive-memory list published to the controller.
+///
+/// The token is intentionally affine. It records the positional list and its
+/// validated head without granting access to either memory or MMIO. The
+/// memory owner must retain the complete pinned graph until a later verified
+/// retirement transaction consumes this publication.
+#[must_use = "the published receive list remains owned by the controller"]
+pub struct BluetoothRxMemoryListPublished {
+    selector: BluetoothMemoryListSelector,
+    head: BluetoothControllerSramAddress,
+}
+
+impl BluetoothRxMemoryListPublished {
+    /// Return the positional hardware-list selector chosen by the memory
+    /// layer.
+    pub const fn selector(&self) -> BluetoothMemoryListSelector {
+        self.selector
+    }
+
+    /// Return the validated first-node address without granting dereference
+    /// access.
+    pub const fn head(&self) -> BluetoothControllerSramAddress {
+        self.head
+    }
+}
+
+trait BluetoothRxMemoryListInitialPublication {
+    fn publish_current_head(&mut self);
+    fn clear_next_head(&mut self);
+}
+
+fn execute_rx_memory_list_initial_publication(
+    transaction: &mut impl BluetoothRxMemoryListInitialPublication,
+) {
+    transaction.publish_current_head();
+    transaction.clear_next_head();
+}
+
+struct PacBluetoothRxMemoryListInitialPublication<'registers> {
+    registers: &'registers mut PacBluetoothTaskRegisters,
+    selector: BluetoothMemoryListSelector,
+    head: BluetoothControllerSramAddress,
+}
+
+impl BluetoothRxMemoryListInitialPublication for PacBluetoothRxMemoryListInitialPublication<'_> {
+    #[allow(
+        unsafe_code,
+        reason = "the enclosing HAL operation retains list lifetime and controller-lifecycle prerequisites"
+    )]
+    fn publish_current_head(&mut self) {
+        unsafe {
+            self.registers.program_memory_list_pointer(
+                self.selector,
+                BluetoothMemoryListSlot::CurrentRx,
+                BluetoothMemoryListPointerImage::Address(self.head),
+            );
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the enclosing HAL operation retains list lifetime and controller-lifecycle prerequisites"
+    )]
+    fn clear_next_head(&mut self) {
+        unsafe {
+            self.registers.program_memory_list_pointer(
+                self.selector,
+                BluetoothMemoryListSlot::NextRx,
+                BluetoothMemoryListPointerImage::Zero,
+            );
+        }
+    }
+}
+
 impl BluetoothControllerHal<'_> {
+    /// Publish one initialized receive-memory list in the reviewed cold order.
+    ///
+    /// The memory layer owns the semantic mapping from a controller role to
+    /// the positional `selector`. HAL publishes the initialized current head
+    /// first and only then clears the matching next head. Neither positional
+    /// slot nor its register representation crosses this boundary.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the selected powered-controller lifecycle epoch,
+    /// must retain the complete initialized pinned memory graph, and must
+    /// serialize all task and interrupt access to this list until a later
+    /// verified retirement transaction consumes the returned token.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains pinned-list lifetime and controller-lifecycle prerequisites"
+    )]
+    pub unsafe fn publish_rx_memory_list_initial_head(
+        &mut self,
+        selector: BluetoothMemoryListSelector,
+        head: BluetoothControllerSramAddress,
+    ) -> BluetoothRxMemoryListPublished {
+        let mut transaction = PacBluetoothRxMemoryListInitialPublication {
+            registers: self.registers,
+            selector,
+            head,
+        };
+        execute_rx_memory_list_initial_publication(&mut transaction);
+        BluetoothRxMemoryListPublished { selector, head }
+    }
+
     /// Remove every published scheduler hardware-list head.
     ///
     /// This is only the reviewed controller-initialization prefix. It does not
@@ -1090,7 +1198,46 @@ impl BluetoothControllerHalBorrow for BluetoothTaskOwner {}
 mod tests {
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
-    use super::{BluetoothColdOwner, BluetoothControllerHalBorrow, BluetoothTaskOwnerReuniteError};
+    use super::{
+        BluetoothColdOwner, BluetoothControllerHalBorrow, BluetoothRxMemoryListInitialPublication,
+        BluetoothTaskOwnerReuniteError, execute_rx_memory_list_initial_publication,
+    };
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RxListPublicationStep {
+        CurrentHead,
+        NextHeadCleared,
+    }
+
+    #[derive(Default)]
+    struct RecordingRxListPublication {
+        steps: std::vec::Vec<RxListPublicationStep>,
+    }
+
+    impl BluetoothRxMemoryListInitialPublication for RecordingRxListPublication {
+        fn publish_current_head(&mut self) {
+            self.steps.push(RxListPublicationStep::CurrentHead);
+        }
+
+        fn clear_next_head(&mut self) {
+            self.steps.push(RxListPublicationStep::NextHeadCleared);
+        }
+    }
+
+    #[test]
+    fn receive_list_publication_finishes_the_current_head_before_clearing_next() {
+        let mut transaction = RecordingRxListPublication::default();
+
+        execute_rx_memory_list_initial_publication(&mut transaction);
+
+        assert_eq!(
+            transaction.steps,
+            [
+                RxListPublicationStep::CurrentHead,
+                RxListPublicationStep::NextHeadCleared,
+            ]
+        );
+    }
 
     #[test]
     fn untouched_task_owner_reconstructs_the_neutral_root() {

@@ -159,6 +159,14 @@ cargo blobray inspect flow ble-controller:r_sym_bt_DPWY0umixzmXEaFuUyCI \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --publication register:BLUETOOTH_CONTROLLER_CORE.SCHEDULER_CONTROL
 
+cargo blobray inspect function \
+  ble-controller:function:esp-idf/ble/controller/scheduler-run \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo blobray inspect object \
+  ble-controller:memory-object:esp-idf/ble/controller/scheduler-state \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
 cargo blobray project browse \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
@@ -186,6 +194,13 @@ register and address selectors match MMIO writes only. `selector_exact` and
 retained with its modes and guards, but returns `INCOMPLETE` rather than being
 promoted to an exact publication. Persisted paths and guards are navigation
 hints only and never participate in CFG ordering or completeness claims.
+
+Once a correspondence candidate is manually accepted as reviewed knowledge,
+`inspect function`, `inspect flow`, and `inspect object` accept its canonical
+semantic identity directly. Blobray resolves that identity through generated
+Linked IR and always prints the underlying raw symbol/member as provenance;
+semantic names therefore remain useful after a vendor-only rename without
+hiding which exact artifact occurrence was inspected.
 
 The report computes reaching SRAM definitions from the authenticated function
 CFG and distinguishes a mandatory last local write, closed branch/loop

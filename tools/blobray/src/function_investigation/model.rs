@@ -127,6 +127,8 @@ pub struct OriginInstructionCorrespondence {
 pub struct SemanticFunctionEvidence {
     pub profile: String,
     pub report: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic: Option<String>,
     pub complete: bool,
     pub exact: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

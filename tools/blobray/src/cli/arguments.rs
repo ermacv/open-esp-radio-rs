@@ -588,8 +588,8 @@ pub(crate) struct InspectAnalyzeArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectFunctionArgs {
-    /// Project source and exact function symbol (`SOURCE:SYMBOL`).
-    #[arg(value_name = "SOURCE:SYMBOL")]
+    /// Project source plus a raw symbol or reviewed function identity.
+    #[arg(value_name = "SOURCE:SYMBOL|SOURCE:function:PATH")]
     pub(crate) selector: String,
     /// Authoritative linked image for the selected source.
     #[arg(long)]
@@ -646,8 +646,8 @@ pub(crate) enum InspectFlowEffectKind {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectFlowArgs {
-    /// Project source and root function (`SOURCE:SYMBOL`).
-    #[arg(value_name = "SOURCE:SYMBOL")]
+    /// Project source plus a raw symbol or reviewed function identity.
+    #[arg(value_name = "SOURCE:SYMBOL|SOURCE:function:PATH")]
     pub(crate) selector: Option<String>,
     /// Stop at a function identity or symbol.
     #[arg(long, value_name = "[SOURCE::]SYMBOL")]
@@ -677,8 +677,8 @@ pub(crate) struct InspectFlowArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectObjectArgs {
-    /// Project source and exact data-object symbol (`SOURCE:SYMBOL`).
-    #[arg(value_name = "SOURCE:SYMBOL")]
+    /// Project source plus a raw symbol or reviewed memory-object identity.
+    #[arg(value_name = "SOURCE:SYMBOL|SOURCE:memory-object:PATH")]
     pub(crate) selector: String,
     /// Restrict memory evidence to one signed byte offset (for example `0x74`).
     #[arg(long, value_name = "OFFSET")]

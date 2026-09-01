@@ -373,6 +373,25 @@ stays unchanged; changed behavior under the same reviewed identity remains a
 modification. Snapshot creation rejects stale generated semantics and requires
 the Linked-IR to be rebuilt after any accepted pin change.
 
+After rebuilding Linked IR, use reviewed identities directly instead of
+copying obfuscated names from generated files:
+
+```console
+cargo blobray inspect function \
+  ble:function:esp-idf/ble/controller/advertising-start \
+  --project radio-project/vendor-project.toml
+cargo blobray inspect flow \
+  ble:function:esp-idf/ble/controller/advertising-start \
+  --effects memory --project radio-project/vendor-project.toml
+cargo blobray inspect object \
+  ble:memory-object:esp-idf/ble/controller/advertising-state \
+  --project radio-project/vendor-project.toml
+```
+
+The generated reports retain both the semantic identity and the exact raw
+symbol/member. A missing or conflicting resolution fails closed and asks for
+a fresh IR build; Blobray never guesses a raw occurrence from a semantic path.
+
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and
 generated evidence, but does not write a snapshot or advance the state. This

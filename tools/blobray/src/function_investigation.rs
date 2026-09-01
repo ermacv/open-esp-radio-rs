@@ -87,7 +87,7 @@ pub(crate) fn investigate(
         }
     };
     let report = FunctionInvestigationReport {
-        schema_version: 17,
+        schema_version: 18,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -143,7 +143,7 @@ pub(crate) fn investigate(
 }
 
 fn validate_report(report: &FunctionInvestigationReport) -> Result<()> {
-    if report.schema_version != 17 || report.command != "inspect function" {
+    if report.schema_version != 18 || report.command != "inspect function" {
         return Err(crate::Error::invalid(
             "function investigation report uses an unsupported schema or command",
         ));
@@ -529,6 +529,7 @@ fn semantic_evidence(
         evidence.push(SemanticFunctionEvidence {
             profile: profile.id.clone(),
             report: profile.output.display().to_string(),
+            semantic: function.semantic.clone(),
             complete,
             exact,
             reviewed_function,

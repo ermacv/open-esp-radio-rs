@@ -79,10 +79,24 @@ fn parse_selector(value: &str) -> Result<(&str, &str)> {
     let (source, root_symbol) = value
         .split_once(':')
         .ok_or_else(|| crate::Error::invalid("flow root must be SOURCE:SYMBOL"))?;
-    if source.is_empty() || root_symbol.is_empty() || root_symbol.contains(':') {
+    if source.is_empty() || root_symbol.is_empty() {
         return Err(crate::Error::invalid(
             "flow root must contain one non-empty SOURCE and SYMBOL",
         ));
+    }
+    if root_symbol.contains(':') {
+        let semantic = root_symbol
+            .parse::<open_radio_vendor_contracts::SemanticEntityId>()
+            .map_err(|error| {
+                crate::Error::invalid(format!(
+                    "flow root after SOURCE is neither a raw symbol nor a canonical semantic identity: {error}"
+                ))
+            })?;
+        if semantic.domain() != open_radio_vendor_contracts::EntityDomain::Function {
+            return Err(crate::Error::invalid(format!(
+                "flow root requires a function semantic identity, got {semantic}"
+            )));
+        }
     }
     Ok((source, root_symbol))
 }
@@ -529,8 +543,23 @@ mod tests {
     };
 
     use super::{
-        argument_location, exact_values, parse_publication_selector, render_memory_values,
+        argument_location, exact_values, parse_publication_selector, parse_selector,
+        render_memory_values,
     };
+
+    #[test]
+    fn root_selector_accepts_raw_and_reviewed_function_identities() {
+        assert_eq!(
+            parse_selector("ble:raw_symbol").unwrap(),
+            ("ble", "raw_symbol")
+        );
+        assert_eq!(
+            parse_selector("ble:function:esp-idf/ble/controller/start").unwrap(),
+            ("ble", "function:esp-idf/ble/controller/start")
+        );
+        assert!(parse_selector("ble:memory-object:esp-idf/ble/state").is_err());
+        assert!(parse_selector("ble:function:").is_err());
+    }
 
     #[test]
     fn publication_selector_parses_each_exact_kind() {

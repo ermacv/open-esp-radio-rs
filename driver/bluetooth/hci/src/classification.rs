@@ -6,14 +6,16 @@ use crate::{
     BootstrapCommandCompleteEvent, HciCommandPacket, HciEpochBound, LeDtmCommand,
     LeDtmCommandCompleteEvent, LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
     LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfigurationCommand,
-    LeLegacyAdvertisingEnableCommand, LeTestEndCommand, OwnedBootstrapCommand,
-    UnknownCommandCompleteEvent,
+    LeLegacyAdvertisingEnableCommand, LeLegacyScanningCommand,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand, LeTestEndCommand,
+    OwnedBootstrapCommand, UnknownCommandCompleteEvent,
     bootstrap::{BootstrapCommandDecodeError, invalid_parameters},
 };
 
 /// One finite result of classifying a validated HCI command packet.
 ///
-/// Bootstrap, DTM and software-only advertising configuration commands are
+/// Bootstrap, DTM and software-only role configuration commands are
 /// owned semantic tokens. Malformed responses are complete owned packets that
 /// may be retained across Controller-to-Host backpressure. An opcode outside
 /// the closed table becomes an owned Unknown Command response, so no
@@ -35,6 +37,12 @@ pub enum LeControllerCommandClassification {
     LegacyAdvertisingEnable(LeLegacyAdvertisingEnableCommand),
     /// A claimed legacy advertising opcode was malformed.
     MalformedLegacyAdvertising(LeLegacyAdvertisingCommandCompleteEvent),
+    /// A validated software-only legacy scanning configuration command.
+    LegacyScanningConfiguration(LeLegacyScanningConfigurationCommand),
+    /// A validated Set Scan Enable command awaits radio-lifecycle policy.
+    LegacyScanningEnable(LeLegacyScanningEnableCommand),
+    /// A claimed legacy scanning opcode was malformed or unsupported.
+    MalformedLegacyScanning(LeLegacyScanningCommandCompleteEvent),
     /// This closed Controller command table did not claim the opcode.
     Unsupported(UnknownCommandCompleteEvent),
 }
@@ -50,6 +58,11 @@ impl LeControllerCommandClassification {
             Self::LegacyAdvertisingConfiguration(command) => command.kind().opcode(),
             Self::LegacyAdvertisingEnable(_) => LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
             Self::MalformedLegacyAdvertising(response) => response.opcode(),
+            Self::LegacyScanningConfiguration(_) => {
+                LeLegacyScanningCommandKind::SetParameters.opcode()
+            }
+            Self::LegacyScanningEnable(_) => LeLegacyScanningCommandKind::SetEnable.opcode(),
+            Self::MalformedLegacyScanning(response) => response.opcode(),
             Self::Unsupported(response) => response.opcode(),
         }
     }
@@ -101,6 +114,27 @@ pub fn classify_le_controller_command(
                 error
                     .into_command_complete()
                     .expect("a claimed advertising opcode must build an exact completion"),
+            ),
+        };
+    }
+
+    if LeLegacyScanningCommandKind::from_opcode(command.opcode()).is_some() {
+        return match LeLegacyScanningCommand::decode(command) {
+            Ok(command) => match LeLegacyScanningConfigurationCommand::from_command(command) {
+                Ok(command) => {
+                    LeControllerCommandClassification::LegacyScanningConfiguration(command)
+                }
+                Err(LeLegacyScanningCommand::SetEnable(command)) => {
+                    LeControllerCommandClassification::LegacyScanningEnable(command)
+                }
+                Err(LeLegacyScanningCommand::SetParameters(_)) => {
+                    unreachable!("Set Parameters refines into scanning configuration")
+                }
+            },
+            Err(error) => LeControllerCommandClassification::MalformedLegacyScanning(
+                error
+                    .into_command_complete()
+                    .expect("a claimed scanning opcode must build an exact completion"),
             ),
         };
     }

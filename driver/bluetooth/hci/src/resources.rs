@@ -3,13 +3,17 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::legacy_advertising::LeLegacyAdvertisingConfiguration;
+use crate::legacy_scanning::{
+    LeLegacyScanningConfiguration, LeLegacyScanningIdleEnableDisposition,
+};
 use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
     InProcessHciChannel, InProcessHciControllerEndpoint, InProcessHciHostTransport,
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap, LeControllerBootstrapConfig,
     LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
     LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
-    LeLegacyAdvertisingIdleEnableDisposition, OwnedBootstrapCommand,
+    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyScanningCommandCompleteEvent,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningEnableCommand, OwnedBootstrapCommand,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
@@ -71,6 +75,7 @@ pub struct LeControllerCommandEndpoint<
     >,
     bootstrap: &'resources mut LeControllerBootstrap,
     legacy_advertising: &'resources mut LeLegacyAdvertisingConfiguration,
+    legacy_scanning: &'resources mut LeLegacyScanningConfiguration,
     initial_ready_available: &'resources mut bool,
 }
 
@@ -144,6 +149,7 @@ where
         let response = self.bootstrap.dispatch_owned(command);
         if reset {
             self.legacy_advertising.reset();
+            self.legacy_scanning.reset();
         }
         response
     }
@@ -173,6 +179,32 @@ where
         command: LeLegacyAdvertisingEnableCommand,
     ) -> LeLegacyAdvertisingCommandCompleteEvent {
         LeLegacyAdvertisingConfiguration::complete_enable_while_radio_unavailable(
+            self.bootstrap.phase(),
+            command,
+        )
+    }
+
+    pub(crate) fn dispatch_legacy_scanning_configuration(
+        &mut self,
+        command: LeLegacyScanningConfigurationCommand,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        self.legacy_scanning
+            .dispatch(self.bootstrap.phase(), command)
+    }
+
+    pub(crate) fn dispatch_idle_legacy_scanning_enable(
+        &self,
+        command: LeLegacyScanningEnableCommand,
+    ) -> LeLegacyScanningIdleEnableDisposition {
+        self.legacy_scanning
+            .dispatch_idle_enable(self.bootstrap.phase(), command)
+    }
+
+    pub(crate) fn complete_legacy_scanning_enable_while_radio_unavailable(
+        &self,
+        command: LeLegacyScanningEnableCommand,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        LeLegacyScanningConfiguration::complete_enable_while_radio_unavailable(
             self.bootstrap.phase(),
             command,
         )
@@ -231,6 +263,7 @@ pub struct LeControllerHciResources<
         InProcessHciChannel<M, HOST_TO_CONTROLLER_DEPTH, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
     bootstrap: LeControllerBootstrap,
     legacy_advertising: LeLegacyAdvertisingConfiguration,
+    legacy_scanning: LeLegacyScanningConfiguration,
     initial_ready_available: bool,
 }
 
@@ -270,6 +303,7 @@ where
             channel: InProcessHciChannel::new(),
             bootstrap: LeControllerBootstrap::new(config),
             legacy_advertising: LeLegacyAdvertisingConfiguration::new(),
+            legacy_scanning: LeLegacyScanningConfiguration::new(),
             initial_ready_available: true,
         })
     }
@@ -302,6 +336,7 @@ where
                 transport,
                 bootstrap: &mut self.bootstrap,
                 legacy_advertising: &mut self.legacy_advertising,
+                legacy_scanning: &mut self.legacy_scanning,
                 initial_ready_available: &mut self.initial_ready_available,
             },
         }

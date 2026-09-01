@@ -606,7 +606,7 @@ mod tests {
             info::ReadBdAddr,
             le::{
                 LeReadBufferSize, LeReadFilterAcceptListSize, LeReadLocalSupportedFeatures,
-                LeSetAdvEnable, LeSetEventMask, LeSetRandomAddr,
+                LeSetAdvEnable, LeSetEventMask, LeSetRandomAddr, LeSetScanEnable, LeSetScanParams,
             },
         },
         controller::{Controller, ExternalController},
@@ -1175,6 +1175,15 @@ mod tests {
                 command_error(LeSetAdvEnable::OPCODE, HciError::UNKNOWN_CMD)
             }
             LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                command_error(response.opcode(), HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::LegacyScanningConfiguration(_) => {
+                command_error(LeSetScanParams::OPCODE, HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::LegacyScanningEnable(_) => {
+                command_error(LeSetScanEnable::OPCODE, HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::MalformedLegacyScanning(response) => {
                 command_error(response.opcode(), HciError::UNKNOWN_CMD)
             }
             LeControllerCommandClassification::Unsupported(response) => {

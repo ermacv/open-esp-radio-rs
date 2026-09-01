@@ -13,7 +13,7 @@ use bt_hci::{
     param::{AddrKind, Error as HciError, LeScanKind, ScanningFilterPolicy, Status},
 };
 
-use crate::{HciCommandPacket, HciControllerResponse};
+use crate::{BootstrapPhase, HciCommandPacket, HciControllerResponse};
 
 /// Complete Command Complete event size for this command family.
 pub const LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 6;
@@ -106,6 +106,194 @@ pub enum LeLegacyScanningCommand {
     SetParameters(LeLegacyPassiveScanParameters),
     /// Start or stop passive scanning.
     SetEnable(LeLegacyScanningEnableCommand),
+}
+
+/// Configuration-only command which can complete without starting hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyScanningConfigurationCommand {
+    parameters: LeLegacyPassiveScanParameters,
+}
+
+impl LeLegacyScanningConfigurationCommand {
+    /// Extract Set Parameters from the full scanning command family.
+    pub fn from_command(command: LeLegacyScanningCommand) -> Result<Self, LeLegacyScanningCommand> {
+        match command {
+            LeLegacyScanningCommand::SetParameters(parameters) => Ok(Self { parameters }),
+            command => Err(command),
+        }
+    }
+
+    /// Validated parameter value retained by this command.
+    pub const fn parameters(self) -> LeLegacyPassiveScanParameters {
+        self.parameters
+    }
+
+    pub(crate) fn into_active_session_command_complete(
+        self,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        LeLegacyScanningCommandCompleteEvent::new(
+            LeLegacyScanningCommandKind::SetParameters.opcode(),
+            HciError::CMD_DISALLOWED.to_status(),
+        )
+    }
+}
+
+/// Immutable Host configuration snapshot retained from Enable until radio start.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyScanningEnableRequest {
+    parameters: LeLegacyPassiveScanParameters,
+    duplicate_policy: LeLegacyScanningDuplicatePolicy,
+}
+
+impl LeLegacyScanningEnableRequest {
+    /// Exact accepted passive scan timing.
+    pub const fn parameters(self) -> LeLegacyPassiveScanParameters {
+        self.parameters
+    }
+
+    /// Duplicate policy selected by the accepted Enable command.
+    pub const fn duplicate_policy(self) -> LeLegacyScanningDuplicatePolicy {
+        self.duplicate_policy
+    }
+}
+
+pub(crate) enum LeLegacyScanningIdleEnableDisposition {
+    Start(LeLegacyScanningEnableRequest),
+    Complete(LeLegacyScanningCommandCompleteEvent),
+}
+
+pub(crate) enum LeLegacyScanningActiveEnableDisposition {
+    Disable(LeLegacyScanningEnableCommand),
+    Complete(LeLegacyScanningCommandCompleteEvent),
+}
+
+impl LeLegacyScanningEnableCommand {
+    pub(crate) fn into_started_command_complete(self) -> LeLegacyScanningCommandCompleteEvent {
+        debug_assert!(self.enable);
+        LeLegacyScanningCommandCompleteEvent::new(
+            LeLegacyScanningCommandKind::SetEnable.opcode(),
+            Status::SUCCESS,
+        )
+    }
+
+    pub(crate) fn into_hardware_failure_command_complete(
+        self,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        debug_assert!(self.enable);
+        LeLegacyScanningCommandCompleteEvent::new(
+            LeLegacyScanningCommandKind::SetEnable.opcode(),
+            HciError::HARDWARE_FAILURE.to_status(),
+        )
+    }
+
+    pub(crate) fn into_active_session_disposition(self) -> LeLegacyScanningActiveEnableDisposition {
+        if self.enable {
+            LeLegacyScanningActiveEnableDisposition::Complete(
+                LeLegacyScanningCommandCompleteEvent::new(
+                    LeLegacyScanningCommandKind::SetEnable.opcode(),
+                    HciError::CMD_DISALLOWED.to_status(),
+                ),
+            )
+        } else {
+            LeLegacyScanningActiveEnableDisposition::Disable(self)
+        }
+    }
+
+    pub(crate) fn into_stopped_command_complete(self) -> LeLegacyScanningCommandCompleteEvent {
+        debug_assert!(!self.enable);
+        LeLegacyScanningCommandCompleteEvent::new(
+            LeLegacyScanningCommandKind::SetEnable.opcode(),
+            Status::SUCCESS,
+        )
+    }
+}
+
+/// Reset-scoped software configuration for the passive scanner.
+pub(crate) struct LeLegacyScanningConfiguration {
+    parameters: Option<LeLegacyPassiveScanParameters>,
+}
+
+impl LeLegacyScanningConfiguration {
+    pub(crate) const fn new() -> Self {
+        Self { parameters: None }
+    }
+
+    pub(crate) fn dispatch(
+        &mut self,
+        phase: BootstrapPhase,
+        command: LeLegacyScanningConfigurationCommand,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        if phase == BootstrapPhase::AwaitingReset {
+            return LeLegacyScanningCommandCompleteEvent::new(
+                LeLegacyScanningCommandKind::SetParameters.opcode(),
+                HciError::CMD_DISALLOWED.to_status(),
+            );
+        }
+        self.parameters = Some(command.parameters());
+        LeLegacyScanningCommandCompleteEvent::new(
+            LeLegacyScanningCommandKind::SetParameters.opcode(),
+            Status::SUCCESS,
+        )
+    }
+
+    pub(crate) fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    pub(crate) fn dispatch_idle_enable(
+        &self,
+        phase: BootstrapPhase,
+        command: LeLegacyScanningEnableCommand,
+    ) -> LeLegacyScanningIdleEnableDisposition {
+        if phase == BootstrapPhase::AwaitingReset {
+            return LeLegacyScanningIdleEnableDisposition::Complete(
+                LeLegacyScanningCommandCompleteEvent::new(
+                    LeLegacyScanningCommandKind::SetEnable.opcode(),
+                    HciError::CMD_DISALLOWED.to_status(),
+                ),
+            );
+        }
+        if !command.enable() {
+            return LeLegacyScanningIdleEnableDisposition::Complete(
+                LeLegacyScanningCommandCompleteEvent::new(
+                    LeLegacyScanningCommandKind::SetEnable.opcode(),
+                    Status::SUCCESS,
+                ),
+            );
+        }
+        let Some(parameters) = self.parameters else {
+            return LeLegacyScanningIdleEnableDisposition::Complete(
+                LeLegacyScanningCommandCompleteEvent::new(
+                    LeLegacyScanningCommandKind::SetEnable.opcode(),
+                    HciError::CMD_DISALLOWED.to_status(),
+                ),
+            );
+        };
+        LeLegacyScanningIdleEnableDisposition::Start(LeLegacyScanningEnableRequest {
+            parameters,
+            duplicate_policy: command.duplicate_policy(),
+        })
+    }
+
+    pub(crate) fn complete_enable_while_radio_unavailable(
+        phase: BootstrapPhase,
+        command: LeLegacyScanningEnableCommand,
+    ) -> LeLegacyScanningCommandCompleteEvent {
+        let status = if phase == BootstrapPhase::AwaitingReset || command.enable() {
+            HciError::CMD_DISALLOWED.to_status()
+        } else {
+            Status::SUCCESS
+        };
+        LeLegacyScanningCommandCompleteEvent::new(
+            LeLegacyScanningCommandKind::SetEnable.opcode(),
+            status,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn parameters(&self) -> Option<LeLegacyPassiveScanParameters> {
+        self.parameters
+    }
 }
 
 impl LeLegacyScanningCommand {
@@ -287,13 +475,16 @@ mod tests {
             le::{LeSetScanEnable, LeSetScanParams},
         },
         event::{CommandComplete, CommandCompleteWithStatus},
-        param::{AddrKind, Duration, Error as HciError, LeScanKind, ScanningFilterPolicy},
+        param::{AddrKind, Duration, Error as HciError, LeScanKind, ScanningFilterPolicy, Status},
     };
 
     use super::{
-        LeLegacyScanningCommand, LeLegacyScanningDecodeError, LeLegacyScanningDuplicatePolicy,
+        LeLegacyScanningCommand, LeLegacyScanningConfiguration,
+        LeLegacyScanningConfigurationCommand, LeLegacyScanningDecodeError,
+        LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand,
+        LeLegacyScanningIdleEnableDisposition,
     };
-    use crate::HciCommandPacket;
+    use crate::{BootstrapPhase, HciCommandPacket};
 
     fn decode<C>(command: &C) -> Result<LeLegacyScanningCommand, LeLegacyScanningDecodeError>
     where
@@ -438,5 +629,52 @@ mod tests {
             HciError::INVALID_HCI_PARAMETERS.to_status()
         );
         assert_eq!(response.status(), complete.status);
+    }
+
+    #[test]
+    fn reset_scoped_configuration_freezes_an_enable_snapshot() {
+        let parameters = decode(&LeSetScanParams::new(
+            LeScanKind::Passive,
+            Duration::from_u16(0x20),
+            Duration::from_u16(0x10),
+            AddrKind::PUBLIC,
+            ScanningFilterPolicy::BasicUnfiltered,
+        ))
+        .expect("the fixture parameters decode");
+        let parameters = LeLegacyScanningConfigurationCommand::from_command(parameters)
+            .expect("Set Parameters is configuration");
+        let mut configuration = LeLegacyScanningConfiguration::new();
+
+        assert_eq!(
+            configuration
+                .dispatch(BootstrapPhase::AwaitingReset, parameters)
+                .status(),
+            HciError::CMD_DISALLOWED.to_status()
+        );
+        assert_eq!(configuration.parameters(), None);
+        assert_eq!(
+            configuration
+                .dispatch(BootstrapPhase::Configuring, parameters)
+                .status(),
+            Status::SUCCESS
+        );
+
+        let enable = LeLegacyScanningEnableCommand {
+            enable: true,
+            duplicate_policy: LeLegacyScanningDuplicatePolicy::FilterDuplicates,
+        };
+        let LeLegacyScanningIdleEnableDisposition::Start(request) =
+            configuration.dispatch_idle_enable(BootstrapPhase::Configuring, enable)
+        else {
+            panic!("configured Enable must retain a hardware start");
+        };
+        assert_eq!(request.parameters(), parameters.parameters());
+        assert_eq!(
+            request.duplicate_policy(),
+            LeLegacyScanningDuplicatePolicy::FilterDuplicates
+        );
+
+        configuration.reset();
+        assert_eq!(configuration.parameters(), None);
     }
 }

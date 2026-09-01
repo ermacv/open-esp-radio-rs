@@ -24,11 +24,15 @@
 //! enter the common classifier and update one reset-scoped configuration owner
 //! under exact response order. Set Enable remains unclaimed until the outer
 //! Link Layer router can retain it through hardware start/stop.
-//! [`classify_le_controller_command`] joins those two portable policies at a
-//! finite command boundary: valid bootstrap, DTM and advertising configuration
-//! commands become owned semantic tokens, malformed known commands become
-//! owned error responses, and every other opcode becomes an owned Unknown
-//! Command completion.
+//! Legacy passive scanning follows the same boundary: standard Set Scan
+//! Parameters and Set Scan Enable commands become owned timing and duplicate
+//! policy, while affine start/disable continuations delay success until a chip
+//! runner proves hardware `RUN` or quiescence.
+//! [`classify_le_controller_command`] joins these portable policies at a finite
+//! command boundary: valid bootstrap, DTM and Link Layer configuration commands
+//! become owned semantic tokens, malformed known commands become owned error
+//! responses, and every other opcode becomes an owned Unknown Command
+//! completion.
 //! Classification never advances bootstrap state, leaves no result borrowing
 //! receive scratch storage, and keeps Reset plus other bootstrap commands
 //! available to session-aware policy before explicit dispatch.
@@ -84,13 +88,14 @@ pub use dtm::{
 };
 pub use dtm_order::{
     LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
-    LeControllerClassifiedCommand, LeControllerClassifiedCommandRoute, LeControllerCommandIntake,
-    LeControllerCommandReady, LeControllerDeferredDtmCommand,
-    LeControllerDeferredLegacyAdvertisingDisable, LeControllerDeferredLegacyAdvertisingStart,
-    LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
-    LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
-    LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
-    LeControllerResponsePending, LeControllerResponsePublication,
+    LeControllerActiveLegacyScanningCommandRoute, LeControllerClassifiedCommand,
+    LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
+    LeControllerDeferredDtmCommand, LeControllerDeferredLegacyAdvertisingDisable,
+    LeControllerDeferredLegacyAdvertisingStart, LeControllerDeferredLegacyScanningDisable,
+    LeControllerDeferredLegacyScanningStart, LeControllerDeferredReceiverStart,
+    LeControllerDeferredTestEnd, LeControllerDeferredTransmitterStart,
+    LeControllerEndpointMismatch, LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier,
+    LeControllerResetCompletion, LeControllerResponsePending, LeControllerResponsePublication,
 };
 pub(crate) use legacy_advertising::LeLegacyAdvertisingIdleEnableDisposition;
 pub use legacy_advertising::{
@@ -106,7 +111,8 @@ pub use legacy_advertising::{
 pub use legacy_scanning::{
     LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyPassiveScanParameters,
     LeLegacyScanningCommand, LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
-    LeLegacyScanningDecodeError, LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningDecodeError,
+    LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
 };
 pub use resources::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,

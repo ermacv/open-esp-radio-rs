@@ -11,13 +11,17 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::legacy_advertising::LeLegacyAdvertisingActiveEnableDisposition;
+use crate::legacy_scanning::{
+    LeLegacyScanningActiveEnableDisposition, LeLegacyScanningIdleEnableDisposition,
+};
 use crate::{
     HciChannelError, HciClassifiedCommandIntake, HciControllerResponse, HciEpochBound,
     HciEpochIdentity, HostToControllerFrame, LeControllerCommandClassification,
     LeControllerCommandComplete, LeControllerCommandEndpoint, LeDtmActiveSessionDisposition,
     LeDtmCommand, LeDtmIdleSessionDisposition, LeLegacyAdvertisingEnableCommand,
     LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingIdleEnableDisposition,
-    LeReceiverTestCommand, LeTestEndCommand, LeTransmitterTestCommand, OwnedBootstrapCommand,
+    LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest, LeReceiverTestCommand,
+    LeTestEndCommand, LeTransmitterTestCommand, OwnedBootstrapCommand,
 };
 
 /// A combined Controller endpoint does not match retained affine HCI authority.
@@ -331,6 +335,106 @@ impl<'epoch, Owner> LeControllerDeferredLegacyAdvertisingStart<'epoch, Owner> {
     }
 }
 
+/// One endpoint-validated passive scanning Enable retaining response order.
+#[must_use = "retain the deferred scanner start until hardware starts or rejects it"]
+pub struct LeControllerDeferredLegacyScanningStart<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeLegacyScanningEnableCommand,
+    request: LeLegacyScanningEnableRequest,
+}
+
+impl<'epoch, Owner> LeControllerDeferredLegacyScanningStart<'epoch, Owner> {
+    /// Borrow the independently progressing lifecycle owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Immutable passive scanner configuration captured at Enable order.
+    pub const fn request(&self) -> LeLegacyScanningEnableRequest {
+        self.request
+    }
+
+    /// Transform only the independently progressing hardware owner.
+    pub fn map_owner<Next>(
+        self,
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerDeferredLegacyScanningStart<'epoch, Next> {
+        LeControllerDeferredLegacyScanningStart {
+            ready: self.ready.map_owner(map),
+            command: self.command,
+            request: self.request,
+        }
+    }
+
+    /// Separate the lifecycle owner from the opaque Enable/order continuation.
+    pub fn into_parts(self) -> (Owner, LeControllerDeferredLegacyScanningStart<'epoch, ()>) {
+        let (owner, ready) = self.ready.into_parts();
+        (
+            owner,
+            LeControllerDeferredLegacyScanningStart {
+                ready,
+                command: self.command,
+                request: self.request,
+            },
+        )
+    }
+
+    /// Complete Enable only after hardware proves entry into `RUN`.
+    pub fn into_started_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_started_command_complete())
+    }
+
+    /// Reject Enable after a failed start and recovered hardware owner.
+    pub fn into_hardware_failure_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_hardware_failure_command_complete())
+    }
+}
+
+/// One endpoint-validated passive scanning Disable retaining response order.
+#[must_use = "retain scanner Disable until hardware is quiescent"]
+pub struct LeControllerDeferredLegacyScanningDisable<'epoch, Owner> {
+    ready: LeControllerCommandReady<'epoch, Owner>,
+    command: LeLegacyScanningEnableCommand,
+}
+
+impl<'epoch, Owner> LeControllerDeferredLegacyScanningDisable<'epoch, Owner> {
+    /// Borrow the independently progressing lifecycle owner.
+    pub const fn owner(&self) -> &Owner {
+        self.ready.owner()
+    }
+
+    /// Transform only the independently progressing hardware owner.
+    pub fn map_owner<Next>(
+        self,
+        map: impl FnOnce(Owner) -> Next,
+    ) -> LeControllerDeferredLegacyScanningDisable<'epoch, Next> {
+        LeControllerDeferredLegacyScanningDisable {
+            ready: self.ready.map_owner(map),
+            command: self.command,
+        }
+    }
+
+    /// Separate the lifecycle owner from the opaque Disable/order continuation.
+    pub fn into_parts(self) -> (Owner, LeControllerDeferredLegacyScanningDisable<'epoch, ()>) {
+        let (owner, ready) = self.ready.into_parts();
+        (
+            owner,
+            LeControllerDeferredLegacyScanningDisable {
+                ready,
+                command: self.command,
+            },
+        )
+    }
+
+    /// Complete Disable only after scanner publication and hardware are quiescent.
+    pub fn into_stopped_response(self) -> LeControllerResponsePending<'epoch, Owner> {
+        self.ready
+            .begin_next_response(self.command.into_stopped_command_complete())
+    }
+}
+
 /// One endpoint-validated DTM command retaining next-command authority.
 ///
 /// The command is intentionally not exposed separately. Active-session policy
@@ -382,6 +486,19 @@ pub enum LeControllerActiveLegacyAdvertisingCommandRoute<'epoch, 'command, Owner
     ResponsePending(LeControllerResponsePending<'epoch, Owner>),
     /// Disable remains ordered until the exact active graph becomes CPU-owned.
     Disable(LeControllerDeferredLegacyAdvertisingDisable<'epoch, Owner>),
+    /// Reset remains ordered and undispatched until the active graph is quiescent.
+    ResetBarrier(LeControllerResetBarrier<'epoch, Owner>),
+    /// The aggregate belongs to another endpoint and remains inseparable.
+    EndpointMismatch(LeControllerClassifiedCommand<'epoch, 'command, Owner>),
+}
+
+/// Portable command policy while passive scanning owns the radio lifecycle.
+#[must_use = "publish the response or retain Disable/Reset through hardware quiescence"]
+pub enum LeControllerActiveLegacyScanningCommandRoute<'epoch, 'command, Owner> {
+    /// A command completed without changing the active scanning lifecycle.
+    ResponsePending(LeControllerResponsePending<'epoch, Owner>),
+    /// Disable remains ordered until publication stops and hardware is quiescent.
+    Disable(LeControllerDeferredLegacyScanningDisable<'epoch, Owner>),
     /// Reset remains ordered and undispatched until the active graph is quiescent.
     ResetBarrier(LeControllerResetBarrier<'epoch, Owner>),
     /// The aggregate belongs to another endpoint and remains inseparable.
@@ -444,6 +561,8 @@ pub enum LeControllerIdleClassifiedCommandRoute<'epoch, 'command, Owner> {
     StartTransmitter(LeControllerDeferredTransmitterStart<'epoch, Owner>),
     /// Advertising Enable retains one immutable configuration and response order.
     StartLegacyAdvertising(LeControllerDeferredLegacyAdvertisingStart<'epoch, Owner>),
+    /// Passive scanning Enable retains one immutable configuration and response order.
+    StartLegacyScanning(LeControllerDeferredLegacyScanningStart<'epoch, Owner>),
     /// The classification completed synchronously into one ordered response.
     ResponsePending(LeControllerResponsePending<'epoch, Owner>),
     /// Reset remains ordered but undispatched until lifecycle quiescence.
@@ -833,6 +952,35 @@ where
                     ready.begin_next_response(response),
                 )
             }
+            LeControllerCommandClassification::LegacyScanningConfiguration(command) => {
+                let response = self.dispatch_legacy_scanning_configuration(command);
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::LegacyScanningEnable(command) => {
+                match self.dispatch_idle_legacy_scanning_enable(command) {
+                    LeLegacyScanningIdleEnableDisposition::Start(request) => {
+                        LeControllerIdleClassifiedCommandRoute::StartLegacyScanning(
+                            LeControllerDeferredLegacyScanningStart {
+                                ready,
+                                command,
+                                request,
+                            },
+                        )
+                    }
+                    LeLegacyScanningIdleEnableDisposition::Complete(response) => {
+                        LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                            ready.begin_next_response(response),
+                        )
+                    }
+                }
+            }
+            LeControllerCommandClassification::MalformedLegacyScanning(response) => {
+                LeControllerIdleClassifiedCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::Unsupported(response) => {
                 LeControllerIdleClassifiedCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
@@ -902,6 +1050,24 @@ where
                     )
                 }
                 LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::LegacyScanningConfiguration(command) => {
+                    let response = self.dispatch_legacy_scanning_configuration(command);
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::LegacyScanningEnable(command) => {
+                    let response =
+                        self.complete_legacy_scanning_enable_while_radio_unavailable(command);
+                    LeControllerClassifiedCommandRoute::ResponsePending(
+                        ready.begin_next_response(response),
+                    )
+                }
+                LeControllerCommandClassification::MalformedLegacyScanning(response) => {
                     LeControllerClassifiedCommandRoute::ResponsePending(
                         ready.begin_next_response(response),
                     )
@@ -995,8 +1161,131 @@ where
                     ready.begin_next_response(response),
                 )
             }
+            LeControllerCommandClassification::LegacyScanningConfiguration(command) => {
+                let response = self.dispatch_legacy_scanning_configuration(command);
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::LegacyScanningEnable(command) => {
+                let response =
+                    self.complete_legacy_scanning_enable_while_radio_unavailable(command);
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::MalformedLegacyScanning(response) => {
+                LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
             LeControllerCommandClassification::Unsupported(response) => {
                 LeControllerActiveLegacyAdvertisingCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+        }
+    }
+
+    /// Route one command while passive scanning owns the radio lifecycle.
+    ///
+    /// Scan parameters are immutable from accepted Enable through completed
+    /// Disable. Repeated Enable is rejected, while Disable and Reset retain
+    /// their exact command-order tokens until scanner quiescence.
+    pub fn route_active_legacy_scanning_classified_command<'epoch, 'command, Owner>(
+        &mut self,
+        command: LeControllerClassifiedCommand<'epoch, 'command, Owner>,
+    ) -> LeControllerActiveLegacyScanningCommandRoute<'epoch, 'command, Owner> {
+        if !command.ready.accepts_endpoint(self)
+            || !command.command.originates_from(self.transport())
+        {
+            return LeControllerActiveLegacyScanningCommandRoute::EndpointMismatch(command);
+        }
+        let LeControllerClassifiedCommand { ready, command } = command;
+        let classification = command
+            .try_into_for_endpoint(self.transport())
+            .unwrap_or_else(|_| unreachable!("aggregate affinity was checked above"));
+
+        match classification {
+            LeControllerCommandClassification::Bootstrap(command) if command.is_reset() => {
+                LeControllerActiveLegacyScanningCommandRoute::ResetBarrier(
+                    LeControllerResetBarrier { ready, command },
+                )
+            }
+            LeControllerCommandClassification::Bootstrap(command) => {
+                let response = self.dispatch_bootstrap_command(command);
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::MalformedBootstrap(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::Dtm(command) => {
+                let response = match command.into_idle_session_disposition() {
+                    LeDtmIdleSessionDisposition::CompleteNoTest(response) => response,
+                    LeDtmIdleSessionDisposition::StartReceiver(command) => {
+                        command.into_radio_unavailable_command_complete()
+                    }
+                    LeDtmIdleSessionDisposition::StartTransmitter(command) => {
+                        command.into_radio_unavailable_command_complete()
+                    }
+                };
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::MalformedDtm(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::LegacyAdvertisingConfiguration(command) => {
+                let response = self.dispatch_legacy_advertising_configuration(command);
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::LegacyAdvertisingEnable(command) => {
+                let response =
+                    self.complete_legacy_advertising_enable_while_radio_unavailable(command);
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::MalformedLegacyAdvertising(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::LegacyScanningConfiguration(command) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(command.into_active_session_command_complete()),
+                )
+            }
+            LeControllerCommandClassification::LegacyScanningEnable(command) => {
+                match command.into_active_session_disposition() {
+                    LeLegacyScanningActiveEnableDisposition::Disable(command) => {
+                        LeControllerActiveLegacyScanningCommandRoute::Disable(
+                            LeControllerDeferredLegacyScanningDisable { ready, command },
+                        )
+                    }
+                    LeLegacyScanningActiveEnableDisposition::Complete(response) => {
+                        LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                            ready.begin_next_response(response),
+                        )
+                    }
+                }
+            }
+            LeControllerCommandClassification::MalformedLegacyScanning(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
+                    ready.begin_next_response(response),
+                )
+            }
+            LeControllerCommandClassification::Unsupported(response) => {
+                LeControllerActiveLegacyScanningCommandRoute::ResponsePending(
                     ready.begin_next_response(response),
                 )
             }
@@ -1137,12 +1426,12 @@ mod tests {
             Cmd, Opcode, OpcodeGroup,
             controller_baseband::{Reset, SetEventMask},
             le::{
-                LeReceiverTest, LeReceiverTestV2, LeSetAdvEnable, LeSetAdvParams, LeTestEnd,
-                LeTransmitterTestV2,
+                LeReceiverTest, LeReceiverTestV2, LeSetAdvEnable, LeSetAdvParams, LeSetScanEnable,
+                LeSetScanParams, LeTestEnd, LeTransmitterTestV2,
             },
         },
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
-        param::{Error as HciError, Status},
+        param::{AddrKind, Duration, Error as HciError, LeScanKind, ScanningFilterPolicy, Status},
         transport::{PacketToController, Transport},
     };
     use embassy_futures::{
@@ -1153,7 +1442,8 @@ mod tests {
 
     use super::{
         LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
-        LeControllerClassifiedCommand, LeControllerCommandIntake, LeControllerCommandReady,
+        LeControllerActiveLegacyScanningCommandRoute, LeControllerClassifiedCommand,
+        LeControllerCommandIntake, LeControllerCommandReady,
         LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
         LeControllerResponsePending, LeControllerResponsePublication,
     };
@@ -1873,6 +2163,138 @@ mod tests {
         assert_command_status(
             block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
             LeSetAdvEnable::OPCODE,
+            Status::SUCCESS,
+        );
+    }
+
+    #[test]
+    fn passive_scanner_enable_and_disable_follow_hardware_lifecycle() {
+        let mut resources = controller_resources();
+        let mut endpoints = resources.split();
+        let ready = claim_initial_ready(&mut endpoints.controller, RadioOwner(111));
+        let mut command_buffer = [0; 16];
+        let mut response_buffer = [0; 16];
+
+        block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the Host queue");
+        let reset = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) =
+            endpoints.controller.route_idle_classified_command(reset)
+        else {
+            panic!("Reset must preserve lifecycle order");
+        };
+        let LeControllerResetCompletion::ResponsePending(pending) = endpoints
+            .controller
+            .complete_reset_after_quiescence(barrier)
+        else {
+            panic!("the matching endpoint completes Reset");
+        };
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the empty response queue accepts Reset");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            Reset::OPCODE,
+            Status::SUCCESS,
+        );
+
+        let parameters = LeSetScanParams::new(
+            LeScanKind::Passive,
+            Duration::from_u16(0x20),
+            Duration::from_u16(0x10),
+            AddrKind::PUBLIC,
+            ScanningFilterPolicy::BasicUnfiltered,
+        );
+        block_on(endpoints.host.write(&parameters))
+            .expect("Set Scan Parameters enters the Host queue");
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("accepted scan parameters complete in software");
+        };
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the parameter response publishes");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            LeSetScanParams::OPCODE,
+            Status::SUCCESS,
+        );
+
+        block_on(endpoints.host.write(&LeSetScanEnable::new(true, true)))
+            .expect("Enable enters the Host queue");
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerIdleClassifiedCommandRoute::StartLegacyScanning(start) =
+            endpoints.controller.route_idle_classified_command(command)
+        else {
+            panic!("Enable must remain deferred until scanner hardware starts");
+        };
+        assert_eq!(start.owner(), &RadioOwner(111));
+        assert_eq!(start.request().parameters().interval_units_625_us(), 0x20);
+        assert_eq!(start.request().parameters().window_units_625_us(), 0x10);
+        assert_eq!(
+            start.request().duplicate_policy(),
+            crate::LeLegacyScanningDuplicatePolicy::FilterDuplicates
+        );
+        let pending = start
+            .map_owner(|RadioOwner(owner)| RadioOwner(owner + 1))
+            .into_started_response();
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the started response publishes exactly once");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            LeSetScanEnable::OPCODE,
+            Status::SUCCESS,
+        );
+
+        block_on(endpoints.host.write(&LeSetScanEnable::new(true, false)))
+            .expect("repeated Enable enters the Host queue");
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerActiveLegacyScanningCommandRoute::ResponsePending(pending) = endpoints
+            .controller
+            .route_active_legacy_scanning_classified_command(command)
+        else {
+            panic!("repeated Enable must not create a second scanner owner");
+        };
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the repeated Enable response publishes");
+        };
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            LeSetScanEnable::OPCODE,
+            HciError::CMD_DISALLOWED.to_status(),
+        );
+
+        block_on(endpoints.host.write(&LeSetScanEnable::new(false, false)))
+            .expect("Disable enters the Host queue");
+        let command = intake_command(&endpoints.controller, ready, &mut command_buffer);
+        let LeControllerActiveLegacyScanningCommandRoute::Disable(disable) = endpoints
+            .controller
+            .route_active_legacy_scanning_classified_command(command)
+        else {
+            panic!("Disable must remain deferred until scanner quiescence");
+        };
+        let pending = disable
+            .map_owner(|RadioOwner(owner)| RadioOwner(owner + 1))
+            .into_stopped_response();
+        let LeControllerResponsePublication::Published(ready) =
+            pending.try_publish(&endpoints.controller)
+        else {
+            panic!("the stopped response publishes exactly once");
+        };
+        assert_eq!(ready.owner(), &RadioOwner(113));
+        assert_command_status(
+            block_on(endpoints.host.read(&mut response_buffer)).unwrap(),
+            LeSetScanEnable::OPCODE,
             Status::SUCCESS,
         );
     }

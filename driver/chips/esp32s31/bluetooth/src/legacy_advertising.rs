@@ -49,11 +49,10 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 /// already checked these domains. Keeping the failure typed prevents future
 /// command expansion from silently reaching descriptor preparation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothLegacyAdvertisingProgramError {
+pub enum BluetoothLegacyAdvertisingSetError {
     Data(LegacyAdvertisingDataError),
     Channels(PrimaryAdvertisingChannelMapError),
     Interval,
-    GenerationExhausted,
 }
 
 /// Project one immutable HCI Enable snapshot into the portable LL lifecycle.
@@ -62,9 +61,9 @@ pub enum BluetoothLegacyAdvertisingProgramError {
 /// the accepted range and minimizes first-event latency. Advertising data is
 /// copied into a self-contained LL owner so the async actor is not
 /// self-referential and does not borrow the HCI configuration store.
-pub fn prepare_legacy_advertising_program(
+pub fn prepare_legacy_advertising_set(
     request: open_esp_radio_bluetooth_hci::LeLegacyAdvertisingEnableRequest,
-) -> Result<LegacyAdvertiserEnabled<'static>, BluetoothLegacyAdvertisingProgramError> {
+) -> Result<LegacyNonconnectableAdvertisingSet<'static>, BluetoothLegacyAdvertisingSetError> {
     let parameters = request.parameters();
     let address_kind = match request.advertiser().kind() {
         open_esp_radio_bluetooth_hci::LeLegacyAdvertisingOwnAddressKind::Public => {
@@ -77,25 +76,22 @@ pub fn prepare_legacy_advertising_program(
     let advertisement = LegacyNonconnectableAdvertisement::new(
         LeDeviceAddress::from_wire_bytes(request.advertiser().wire_bytes(), address_kind),
         LegacyAdvertisingData::new_owned(request.data().as_bytes())
-            .map_err(BluetoothLegacyAdvertisingProgramError::Data)?,
+            .map_err(BluetoothLegacyAdvertisingSetError::Data)?,
     );
     let channels = PrimaryAdvertisingChannelMap::new(
         parameters.channels().channel_37(),
         parameters.channels().channel_38(),
         parameters.channels().channel_39(),
     )
-    .map_err(BluetoothLegacyAdvertisingProgramError::Channels)?;
+    .map_err(BluetoothLegacyAdvertisingSetError::Channels)?;
     let interval =
         AdvertisingInterval::new(u32::from(parameters.interval().minimum_units_625_us()))
-            .map_err(|_| BluetoothLegacyAdvertisingProgramError::Interval)?;
-    LegacyAdvertiserStandby::new()
-        .configure(LegacyNonconnectableAdvertisingSet::new(
-            advertisement,
-            channels,
-            interval,
-        ))
-        .enable()
-        .map_err(|_| BluetoothLegacyAdvertisingProgramError::GenerationExhausted)
+            .map_err(|_| BluetoothLegacyAdvertisingSetError::Interval)?;
+    Ok(LegacyNonconnectableAdvertisingSet::new(
+        advertisement,
+        channels,
+        interval,
+    ))
 }
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -150,6 +146,8 @@ impl BluetoothLegacyAdvertisingDefaultTxPowerDbm {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothLegacyAdvertisingRuntimeBeginError {
     EventActive,
+    GenerationExhausted,
+    Preparation(BluetoothLegacyAdvertisingPreparationErrorKind),
 }
 
 /// Composition-owned graph and physical power policy for legacy advertising.
@@ -160,15 +158,29 @@ pub enum BluetoothLegacyAdvertisingRuntimeBeginError {
 pub struct BluetoothLegacyAdvertisingRuntimeResources {
     default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        expect(
-            dead_code,
-            reason = "identity becomes live with the next production Enable actor iteration"
-        )
-    )]
     graph_identity: BluetoothLegacyAdvertisingMemoryGraphIdentity,
+    standby: Option<LegacyAdvertiserStandby>,
     idle: Option<BluetoothLegacyAdvertisingMemoryGraphCpuOwned>,
+}
+
+/// One runtime-owned event with its physical policy retained atomically.
+#[must_use = "prepare the checked-out advertising event or return it to its runtime"]
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothLegacyAdvertisingRuntimeEvent {
+    prepared: BluetoothLegacyAdvertisingPrepared<'static>,
+    default_tx_power_dbm: BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothLegacyAdvertisingRuntimeEvent {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingPrepared<'static>,
+        BluetoothLegacyAdvertisingDefaultTxPowerDbm,
+    ) {
+        (self.prepared, self.default_tx_power_dbm)
+    }
 }
 
 impl BluetoothLegacyAdvertisingRuntimeResources {
@@ -182,6 +194,7 @@ impl BluetoothLegacyAdvertisingRuntimeResources {
             default_tx_power_dbm,
             #[cfg(any(target_arch = "riscv32", test))]
             graph_identity,
+            standby: Some(LegacyAdvertiserStandby::new()),
             idle: Some(graph),
         }
     }
@@ -214,46 +227,70 @@ impl BluetoothLegacyAdvertisingRuntimeResources {
 
     /// Whether no advertising event currently owns the graph.
     pub const fn event_is_idle(&self) -> bool {
-        self.idle.is_some()
+        self.standby.is_some() && self.idle.is_some()
     }
 
-    /// Check out the unique graph for one advertising lifecycle.
+    /// Begin one event from the retained generation and unique SRAM graph.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        expect(
-            dead_code,
-            reason = "production checkout becomes live with the next Enable actor iteration"
-        )
-    )]
     pub(crate) fn begin_event(
         &mut self,
-    ) -> Result<
-        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
-        BluetoothLegacyAdvertisingRuntimeBeginError,
-    > {
-        self.idle
+        set: LegacyNonconnectableAdvertisingSet<'static>,
+    ) -> Result<BluetoothLegacyAdvertisingRuntimeEvent, BluetoothLegacyAdvertisingRuntimeBeginError>
+    {
+        if self.standby.is_none() || self.idle.is_none() {
+            return Err(BluetoothLegacyAdvertisingRuntimeBeginError::EventActive);
+        }
+        let standby = self
+            .standby
             .take()
-            .ok_or(BluetoothLegacyAdvertisingRuntimeBeginError::EventActive)
+            .expect("the complete idle runtime retains its advertiser generation");
+        let memory = self
+            .idle
+            .take()
+            .expect("the complete idle runtime retains its SRAM graph");
+        let enabled = match standby.configure(set).enable() {
+            Ok(enabled) => enabled,
+            Err(failure) => {
+                self.standby = Some(failure.into_configured().into_standby());
+                self.idle = Some(memory);
+                return Err(BluetoothLegacyAdvertisingRuntimeBeginError::GenerationExhausted);
+            }
+        };
+        match BluetoothLegacyAdvertisingPrepared::prepare(enabled, memory) {
+            Ok(prepared) => Ok(BluetoothLegacyAdvertisingRuntimeEvent {
+                prepared,
+                default_tx_power_dbm: self.default_tx_power_dbm,
+            }),
+            Err(failure) => {
+                let (enabled, memory, error) = failure.into_parts();
+                self.standby = Some(enabled.disable().into_standby());
+                self.idle = Some(memory);
+                Err(BluetoothLegacyAdvertisingRuntimeBeginError::Preparation(
+                    error,
+                ))
+            }
+        }
     }
 
-    /// Return a cancelled or completed graph to this exact runtime.
+    /// Return one pre-publication cancellation to this exact runtime.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        expect(
-            dead_code,
-            reason = "production restore becomes live with the next Enable actor iteration"
-        )
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection must return both exact affine owners"
     )]
-    pub(crate) fn restore_idle(
+    pub(crate) fn restore_cancelled(
         &mut self,
-        graph: BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
-    ) -> Result<(), BluetoothLegacyAdvertisingMemoryGraphCpuOwned> {
-        if self.idle.is_some() || graph.binding().identity() != self.graph_identity {
-            return Err(graph);
+        cancelled: BluetoothLegacyAdvertisingCancelled<'static>,
+    ) -> Result<(), BluetoothLegacyAdvertisingCancelled<'static>> {
+        let (enabled, memory) = cancelled.into_parts();
+        if self.standby.is_some()
+            || self.idle.is_some()
+            || memory.binding().identity() != self.graph_identity
+        {
+            return Err(BluetoothLegacyAdvertisingCancelled { enabled, memory });
         }
-        self.idle = Some(graph);
+        self.standby = Some(enabled.disable().into_standby());
+        self.idle = Some(memory);
         Ok(())
     }
 }
@@ -1502,20 +1539,26 @@ mod tests {
         BluetoothSchedulerSoftwareConfig,
     };
 
-    fn enabled(
+    fn advertising_set(
         channels: PrimaryAdvertisingChannelMap,
-    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertiserEnabled<'static> {
+    ) -> LegacyNonconnectableAdvertisingSet<'static> {
         let advertisement = LegacyNonconnectableAdvertisement::new(
             LeDeviceAddress::from_wire_bytes([6, 5, 4, 3, 2, 1], LeDeviceAddressKind::Public),
             LegacyAdvertisingData::new(&[2, 1, 6]).expect("the fixed data fits legacy advertising"),
         );
+        LegacyNonconnectableAdvertisingSet::new(
+            advertisement,
+            channels,
+            AdvertisingInterval::new(AdvertisingInterval::MIN_UNITS)
+                .expect("the minimum interval is valid"),
+        )
+    }
+
+    fn enabled(
+        channels: PrimaryAdvertisingChannelMap,
+    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertiserEnabled<'static> {
         LegacyAdvertiserStandby::new()
-            .configure(LegacyNonconnectableAdvertisingSet::new(
-                advertisement,
-                channels,
-                AdvertisingInterval::new(AdvertisingInterval::MIN_UNITS)
-                    .expect("the minimum interval is valid"),
-            ))
+            .configure(advertising_set(channels))
             .enable()
             .expect("the first generation is available")
     }
@@ -1549,22 +1592,35 @@ mod tests {
         let mut runtime = runtime_at(0x2f00_1000);
         assert_eq!(runtime.default_tx_power_dbm().dbm(), 6);
         assert!(runtime.event_is_idle());
-        let graph = runtime
-            .begin_event()
-            .expect("the idle graph checks out once");
+        let event = runtime
+            .begin_event(advertising_set(PrimaryAdvertisingChannelMap::all()))
+            .expect("the idle advertiser and graph check out once");
+        let (prepared, power) = event.into_parts();
+        assert_eq!(power.dbm(), 6);
+        assert_eq!(prepared.identity().generation().get(), 1);
         assert!(matches!(
-            runtime.begin_event(),
+            runtime.begin_event(advertising_set(PrimaryAdvertisingChannelMap::all())),
             Err(BluetoothLegacyAdvertisingRuntimeBeginError::EventActive)
         ));
-        assert!(runtime.restore_idle(graph).is_ok());
+        assert!(runtime.restore_cancelled(prepared.cancel()).is_ok());
         assert!(runtime.event_is_idle());
 
+        let event = runtime
+            .begin_event(advertising_set(PrimaryAdvertisingChannelMap::all()))
+            .expect("the restored advertiser starts the next generation");
+        let (prepared, _) = event.into_parts();
+        assert_eq!(prepared.identity().generation().get(), 2);
+        assert!(runtime.restore_cancelled(prepared.cancel()).is_ok());
+
         let mut foreign = runtime_at(0x2f00_2000);
-        let foreign_graph = foreign.begin_event().expect("the foreign graph checks out");
-        let foreign_graph = runtime
-            .restore_idle(foreign_graph)
+        let foreign_event = foreign
+            .begin_event(advertising_set(PrimaryAdvertisingChannelMap::all()))
+            .expect("the foreign runtime checks out");
+        let (foreign_prepared, _) = foreign_event.into_parts();
+        let foreign_cancelled = runtime
+            .restore_cancelled(foreign_prepared.cancel())
             .expect_err("a different graph identity cannot enter this runtime");
-        assert!(foreign.restore_idle(foreign_graph).is_ok());
+        assert!(foreign.restore_cancelled(foreign_cancelled).is_ok());
     }
 
     #[test]

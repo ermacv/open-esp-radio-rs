@@ -44,7 +44,7 @@ pub struct StackBudget {
 pub struct ReviewedStackFrame {
     pub function_contains: String,
     #[serde(default)]
-    pub source_ends_with: Option<String>,
+    pub source_ends_with: Vec<String>,
     pub max_bytes: u64,
     pub reason: String,
 }
@@ -64,9 +64,9 @@ impl StackBudget {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 2 {
+        if self.schema != 3 {
             return Err(Error::InvalidPolicy(format!(
-                "unsupported stack policy schema {}; expected 2",
+                "unsupported stack policy schema {}; expected 3",
                 self.schema
             )));
         }
@@ -101,11 +101,7 @@ impl StackBudget {
                     "reviewed stack frames require a selector and reason".into(),
                 ));
             }
-            if reviewed
-                .source_ends_with
-                .as_ref()
-                .is_some_and(String::is_empty)
-            {
+            if reviewed.source_ends_with.iter().any(String::is_empty) {
                 return Err(Error::InvalidPolicy(
                     "reviewed stack frame source suffix must not be empty".into(),
                 ));
@@ -247,18 +243,10 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
         .iter()
         .filter(|frame| frame.size > budget.warn_frame_bytes)
     {
-        let reviewed = budget.reviewed_frames.iter().find(|reviewed| {
-            frame
-                .functions
-                .iter()
-                .any(|function| function.contains(&reviewed.function_contains))
-                && reviewed.source_ends_with.as_ref().is_none_or(|suffix| {
-                    frame
-                        .source
-                        .as_ref()
-                        .is_some_and(|source| source.file.ends_with(suffix))
-                })
-        });
+        let reviewed = budget
+            .reviewed_frames
+            .iter()
+            .find(|reviewed| reviewed_frame_matches(frame, reviewed));
         let error = if frame.size > budget.max_frame_bytes {
             Some(format!(
                 "frame {} is {} bytes, exceeding the {}-byte hard budget",
@@ -316,6 +304,20 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
         violations,
         audit,
     })
+}
+
+fn reviewed_frame_matches(frame: &StackFrame, reviewed: &ReviewedStackFrame) -> bool {
+    frame
+        .functions
+        .iter()
+        .any(|function| function.contains(&reviewed.function_contains))
+        && (reviewed.source_ends_with.is_empty()
+            || frame.source.as_ref().is_some_and(|source| {
+                reviewed
+                    .source_ends_with
+                    .iter()
+                    .any(|suffix| source.file.ends_with(suffix))
+            }))
 }
 
 pub fn audit_stack(report: &StackReport) -> Result<()> {
@@ -501,14 +503,15 @@ mod tests {
     };
 
     use super::{
-        ReviewedStackFrame, StackBudget, StackFrame, analyze_stack, audit_stack, decode_stack_sizes,
+        ReviewedStackFrame, StackBudget, StackFrame, StackSourceLocation, analyze_stack,
+        audit_stack, decode_stack_sizes, reviewed_frame_matches,
     };
 
     static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
     fn budget() -> StackBudget {
         StackBudget {
-            schema: 2,
+            schema: 3,
             stack_start_symbol: "_stack_start".into(),
             stack_end_symbol: "_stack_end".into(),
             warn_frame_bytes: 8 * 1024,
@@ -519,7 +522,7 @@ mod tests {
             reported_frame_count: 30,
             reviewed_frames: vec![ReviewedStackFrame {
                 function_contains: "<unknown function at".into(),
-                source_ends_with: None,
+                source_ends_with: Vec::new(),
                 max_bytes: 32 * 1024,
                 reason: "synthetic fixture".into(),
             }],
@@ -589,7 +592,7 @@ mod tests {
 
         policy.reviewed_frames.push(ReviewedStackFrame {
             function_contains: "<unknown function at".into(),
-            source_ends_with: None,
+            source_ends_with: Vec::new(),
             max_bytes: 8 * 1024 + 512,
             reason: "synthetic fixture".into(),
         });
@@ -597,6 +600,42 @@ mod tests {
         assert!(report.audit.errors[0].contains("reviewed frame"));
         assert!(audit_stack(&report).is_err());
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn reviewed_source_accepts_repository_and_cargo_trimmed_identities() {
+        let reviewed = ReviewedStackFrame {
+            function_contains: "::supervisor::run".into(),
+            source_ends_with: vec![
+                "driver/integration/esp32s31/embassy-wifi/src/supervisor.rs".into(),
+                "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor.rs".into(),
+            ],
+            max_bytes: 16 * 1024,
+            reason: "fixture".into(),
+        };
+        let frame = |file: &str| StackFrame {
+            address: 0,
+            size: 9 * 1024,
+            functions: vec!["crate::supervisor::run::{closure#0}".into()],
+            source: Some(StackSourceLocation {
+                file: file.into(),
+                line: Some(1),
+                column: Some(1),
+            }),
+        };
+
+        assert!(reviewed_frame_matches(
+            &frame("/checkout/driver/integration/esp32s31/embassy-wifi/src/supervisor.rs"),
+            &reviewed
+        ));
+        assert!(reviewed_frame_matches(
+            &frame("./open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor.rs"),
+            &reviewed
+        ));
+        assert!(!reviewed_frame_matches(
+            &frame("./another-package-0.1.0/src/supervisor.rs"),
+            &reviewed
+        ));
     }
 
     #[test]

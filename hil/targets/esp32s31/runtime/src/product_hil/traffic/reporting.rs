@@ -1135,22 +1135,12 @@ pub(in crate::product_hil) async fn log_open_radio_egress_control_interval(
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 async fn log_open_radio_egress_control_vif(vif: &str, control: EgressControlSnapshot) {
     runtime_log_reliably(format_args!(
-        "ONTXC vif={} demands={} demand_full={} radio_demands={} radio_demand_rejected={} candidates={} candidate_full={} radio_candidates={} grants={} grant_full={} received={} accepted={} rejected={} credits_spent={} admissions_without_grant={} radio_wakes={} radio_service_calls={} radio_service_progressed={} radio_service_cycles={} radio_service_instret={}",
+        "ONTXC vif={} demands={} demand_full={} radio_demands={} radio_demand_rejected={} radio_wakes={} radio_service_calls={} radio_service_progressed={} radio_service_cycles={} radio_service_instret={}",
         vif,
         control.demand_publications,
         control.demand_full,
         control.radio_demand_updates,
         control.radio_demand_rejected,
-        control.candidate_publications,
-        control.candidate_full,
-        control.radio_candidates,
-        control.grant_publications,
-        control.grant_full,
-        control.grants_received,
-        control.grants_accepted,
-        control.grants_rejected,
-        control.grant_credits_spent,
-        control.admissions_without_grant,
         control.radio_wakes,
         control.radio_service_calls,
         control.radio_service_progressed,

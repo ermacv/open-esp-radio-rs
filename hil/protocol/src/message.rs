@@ -970,7 +970,7 @@ pub enum WifiTxBufferPolicy {
     /// multi-packet socket dispatch.
     DirectDmaSingleDispatchControlDiagnostic,
     /// Keep the complete keyed direct-SRAM path but disable only the affine
-    /// candidate/grant control plane. This is a same-ELF CPU-cost control.
+    /// lifecycle-demand mirror. This is a same-ELF CPU-cost control.
     DirectDmaEgressControlDisabledDiagnostic,
     /// Keep direct DMA backing, but have the HIL producer publish one bounded
     /// destination-homogeneous burst at a time. This isolates packet-selection

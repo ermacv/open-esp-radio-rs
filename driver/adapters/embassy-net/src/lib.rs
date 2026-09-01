@@ -66,10 +66,10 @@ pub use egress_control::{
     DefaultDualEgressRadioOwner, DefaultEgressControlPlane, DefaultEgressControlledNetwork,
     DefaultEgressNetworkPort, DefaultEgressNetworkScheduler, DefaultEgressNetworkState,
     DefaultEgressRadioOwner, DefaultEgressRadioPort, DefaultEgressRadioScheduler,
-    DefaultEgressRadioWake, DualEgressRadioOwner, EgressCandidate, EgressCandidateFull,
-    EgressControlPlane, EgressControlledNetwork, EgressGrant, EgressGrantFull, EgressNetworkPort,
-    EgressNetworkScheduler, EgressNetworkState, EgressRadioControlOwner, EgressRadioOwner,
-    EgressRadioPort, EgressRadioScheduler, EgressRadioWake, EgressSharedRadioWake,
+    DefaultEgressRadioWake, DualEgressRadioOwner, EgressControlPlane, EgressControlledNetwork,
+    EgressNetworkPort, EgressNetworkScheduler, EgressNetworkState, EgressRadioControlOwner,
+    EgressRadioOwner, EgressRadioPort, EgressRadioScheduler, EgressRadioWake,
+    EgressSharedRadioWake,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use egress_grant::{EgressShadowGrant, EgressShadowGrantError, EgressShadowGrantSnapshot};

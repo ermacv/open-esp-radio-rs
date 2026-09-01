@@ -31,12 +31,14 @@ use open_esp_radio_dma::{
     RxNetworkLease, RxRadioLease, TaggedStableDmaBacking,
 };
 
+#[cfg(feature = "tx-egress-scheduling")]
+use crate::DefaultEgressNetworkScheduler;
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+use crate::EgressGrantKey;
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::EgressShadowGrant;
 #[cfg(feature = "tx-egress-scheduling")]
-use crate::egress_control::{EgressBurstLease, egress_control_enabled};
-#[cfg(feature = "tx-egress-scheduling")]
-use crate::{DefaultEgressNetworkScheduler, EgressGrantKey};
+use crate::egress_control::egress_control_enabled;
 use crate::{
     ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
 };
@@ -265,7 +267,7 @@ impl<'registry> NetworkEndpointConfig<'registry> {
         }
     }
 
-    #[cfg(feature = "tx-egress-scheduling")]
+    #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     fn grant_key(self, key: EgressKey) -> Option<EgressGrantKey> {
         let [header, _, generation, slot] = key.words();
         if self.egress_topology != EgressQueueTopology::AssociatedPeer
@@ -1111,8 +1113,6 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 #[cfg(feature = "tx-egress-scheduling")]
                 keyed_run_length: 0,
                 #[cfg(feature = "tx-egress-scheduling")]
-                active_egress_lease: EgressBurstLease::new(),
-                #[cfg(feature = "tx-egress-scheduling")]
                 observed_link_epoch: 0,
                 #[cfg(feature = "tx-egress-scheduling")]
                 observed_peer_revision: 0,
@@ -1123,7 +1123,6 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 #[cfg(feature = "tx-egress-scheduling")]
                 egress_demand_active: false,
                 #[cfg(feature = "tx-egress-scheduling")]
-                egress_grant_echo_active: false,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
                 shadow_grant_serial: 0,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1293,8 +1292,6 @@ pub struct SplitPinnedDevice<
     #[cfg(feature = "tx-egress-scheduling")]
     keyed_run_length: u8,
     #[cfg(feature = "tx-egress-scheduling")]
-    active_egress_lease: EgressBurstLease,
-    #[cfg(feature = "tx-egress-scheduling")]
     observed_link_epoch: u32,
     #[cfg(feature = "tx-egress-scheduling")]
     observed_peer_revision: u32,
@@ -1305,7 +1302,6 @@ pub struct SplitPinnedDevice<
     #[cfg(feature = "tx-egress-scheduling")]
     egress_demand_active: bool,
     #[cfg(feature = "tx-egress-scheduling")]
-    egress_grant_echo_active: bool,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     shadow_grant_serial: u32,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1350,8 +1346,8 @@ impl<
     /// Attach the sole stack-side endpoint of the radio egress control plane.
     ///
     /// The port is non-`Copy`; moving it into the permanent network device
-    /// proves that only this Core1 driver instance can publish candidates or
-    /// consume grants for the endpoint.
+    /// proves that only this Core1 driver instance can publish the endpoint's
+    /// lifecycle demand.
     #[cfg(feature = "tx-egress-scheduling")]
     pub fn with_egress_control(
         mut self,
@@ -1366,8 +1362,6 @@ impl<
         // in every packet admission while preserving same-ELF enabled/disabled
         // comparison.
         self.egress_demand_active = egress_control_enabled();
-        self.egress_grant_echo_active = self.egress_demand_active
-            && self.endpoint.egress_topology() == EgressQueueTopology::AssociatedPeer;
         self.egress_control = Some(control);
         self
     }
@@ -1546,11 +1540,6 @@ impl<
                 .expect("network scheduling epoch is not reusable");
             self.keyed_egress = None;
             self.keyed_run_length = 0;
-            if self.egress_grant_echo_active
-                && let Some(control) = self.egress_control.as_mut()
-            {
-                control.reset_epoch(&mut self.active_egress_lease);
-            }
         }
         self.scheduling_epoch
     }
@@ -2466,26 +2455,12 @@ impl<
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
             return EgressAdmission::KeyDeferred;
         }
-        let egress_grant_echo_is_enabled = self.egress_grant_echo_active;
         let run_changed = self.keyed_egress != Some(egress);
         if run_changed {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_egress_run(self.keyed_run_length);
             self.keyed_egress = Some(egress);
             self.keyed_run_length = 0;
-            if egress_grant_echo_is_enabled && let Some(control) = self.egress_control.as_mut() {
-                match self.endpoint.grant_key(egress) {
-                    Some(grant_key) => {
-                        control.begin_active_run(
-                            &mut self.active_egress_lease,
-                            cx,
-                            grant_key,
-                            NonZeroU8::new(32).unwrap(),
-                        );
-                    }
-                    None => control.end_active_run(&mut self.active_egress_lease),
-                }
-            }
         }
 
         if !self.poll_reserve_application_tx(cx) {
@@ -2499,12 +2474,6 @@ impl<
             .expect("keyed application admission reserves one TX credit");
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
-        if egress_grant_echo_is_enabled {
-            let needs_maintenance = self.active_egress_lease.commit_admission();
-            if needs_maintenance && let Some(control) = self.egress_control.as_mut() {
-                control.maintain_active_run(&mut self.active_egress_lease, cx);
-            }
-        }
         #[cfg(feature = "tx-phase-telemetry")]
         self.observe_successful_shadow_grant(egress);
         self.keyed_run_length = self.keyed_run_length.saturating_add(1);

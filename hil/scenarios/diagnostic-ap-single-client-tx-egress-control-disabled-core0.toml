@@ -1,6 +1,6 @@
 schema = 4
 id = "diagnostic-ap-single-client-tx-egress-control-disabled-core0"
-description = "Same-ELF AP TX control with only the affine egress candidate/grant plane disabled"
+description = "Same-ELF AP TX control with only the affine egress lifecycle mirror disabled"
 repetitions = 1
 image = "diagnostic-core0-rx-coarse"
 isolation = "reset"

@@ -4,7 +4,7 @@ use core::num::{NonZeroU8, NonZeroU32};
 ///
 /// The generic network stack retains only its opaque `EgressKey`. The open
 /// radio adapter validates and translates that value before it enters the
-/// radio-owned candidate/grant control plane.
+/// radio-owned scheduling and diagnostic grant state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EgressGrantKey {
     interface: u8,

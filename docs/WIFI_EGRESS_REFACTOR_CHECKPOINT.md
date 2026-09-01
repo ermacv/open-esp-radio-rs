@@ -16,15 +16,17 @@ The useful architecture is already visible:
 - the network driver revalidates that key and emits the frame directly into
   the fixed internal-SRAM TX pool;
 - Core0 is the sole owner of radio policy and hardware feedback;
-- Core1 and Core0 exchange bounded demand and burst-grant values, never packet
-  payloads or DMA owners.
+- Core1 publishes bounded demand lifecycle values to Core0, never packet
+  payloads or DMA owners; the future return path will carry burst/airtime
+  grants, but no grant protocol is currently authoritative or retained.
 
 The missing part is not another packet-copy mechanism. It is a physical-radio
-wide demand catalog and an actual Core0 airtime/admission policy which covers
-both STA and AP virtual interfaces. The present control plane is AP-only and
-only echoes each candidate. It proves ownership, identity, bounded service and
-same-ELF measurement, but it does not yet provide fairness or `KeyDeferred`
-authority.
+wide policy over the demand catalogs already mirrored for both STA and AP.
+The former AP-only candidate/grant echo was measured, rejected and removed:
+it added packet-path work without expressing BA, power-save, rate, AQL or
+airtime policy. The retained mirror proves lifecycle identity, bounded service
+and physical-radio ownership, but it does not yet provide fairness or
+`KeyDeferred` authority.
 
 An authoritative cutover now would introduce policy before these lifecycle
 and radio-wide contracts are complete. A full rewrite of Xarxa's RX path,
@@ -125,9 +127,9 @@ The implementation deliberately remains shadow-only:
   ordinary TX;
 - TCP, raw, ICMP and generated control traffic do not yet claim provider
   coverage and continue through the existing synchronous path;
-- Embassy forwards the lifecycle exactly, but the open-radio network device
-  does not yet consume it. The old run/refill candidate protocol therefore
-  remains isolated until Phase 3 replaces it with radio-wide demand state.
+- Embassy forwards the lifecycle exactly. At this historical Phase 2 boundary
+  the open-radio network device did not yet consume it; Phase 3 now mirrors it
+  into the physical Core0 radio owner.
 
 Host tests cover same-key aggregation across two independent UDP sockets,
 BA32 horizon crossing, socket removal, route rekey, epoch reset, stale handle
@@ -141,7 +143,7 @@ that architectural mistake. The aggregate-only redesign removes provider-sized
 state and carries a regression assertion that the 16-key catalog remains at or
 below 1,024 bytes; increasing the stack threshold was explicitly rejected.
 
-## Phase 3 radio-mirror work in progress
+## Phase 3 radio-mirror checkpoint
 
 The next evolutionary step now transports the Phase 2 lifecycle into Core0
 without making it authoritative. It deliberately does not enqueue an
@@ -162,7 +164,7 @@ maximum distinct radio keys, not to event rate or stall duration. A finite
 four-update Core1 turn self-wakes when a successful turn leaves more diff; a
 full transport is woken only when Core0 actually frees capacity.
 
-STA and AP own independent SPSC streams, outboxes, grants and telemetry. Their
+STA and AP own independent SPSC streams, outboxes and telemetry. Their
 Core0 endpoints share one level-triggered physical-radio wake and are held by
 one affine dual-VIF owner. Every physical service turn gives each VIF its own
 finite budget and alternates which VIF is serviced first. This is the required
@@ -173,19 +175,19 @@ publishes its single-radio-peer lifecycle through this path as well.
 This remains a shadow mirror:
 
 - `transmit_for` still admits valid keys from the shared 67-slot SRAM pool
-  regardless of mirrored demand or grant availability;
-- the existing AP run/refill echo remains temporarily in place as the
-  same-ELF semantic/performance oracle;
+  regardless of mirrored demand;
+- the rejected AP run/refill candidate/grant echo has been removed rather than
+  retained as dead compatibility machinery;
 - Core0 only validates and stores lifecycle ordering. It does not yet select a
   VIF/key, charge airtime, inspect BA/power-save state, or return an
-  authoritative burst grant;
+  authoritative burst/airtime grant;
 - HIL telemetry reports the STA and AP control streams separately (`ONTXC
   vif=sta` and `ONTXC vif=ap`) so future STA+AP accounting cannot hide work by
   folding both interfaces into one counter set;
 - the complete source-only audit, including all 117 isolated feature profiles,
   the final performance image, placement and stack-frame checks, passes with
   this ownership shape. The next gate is same-ELF HIL CPU accounting. Only
-  then can the old run/refill publisher be replaced.
+  The next gate is an AP same-ELF HIL run after removal of the old echo.
 
 ### Phase 3 same-ELF result
 
@@ -224,9 +226,10 @@ candidate/grant oracle is the expensive component that must be removed.
 
 The A/B also exposed one unnecessary implementation coupling: attaching the
 control endpoint made STA execute the AP-only empty burst-lease check on every
-admission. The subsequent source fix separates `egress_demand_active` from
-`egress_grant_echo_active`; only `AssociatedPeer` AP endpoints enter the old
-echo, while both STA and AP retain the lifecycle mirror.
+admission. Commit `24730873` separated demand from the AP echo. The subsequent
+cut removed `EgressCandidate`, `EgressGrant`, `EgressBurstLease`, both echo
+queues and all packet-path maintenance; both STA and AP retain only the
+lifecycle mirror.
 
 ## Current data path
 
@@ -329,62 +332,53 @@ service; the size must be measured from queue residence and radio starvation.
 
 ## Current cross-core control plane
 
-The current implementation is not a per-packet request/reply protocol.
-
-Core1 publishes an `EgressCandidate` containing an exact serial, opaque radio
-grant key and a non-zero requested frame count. Core0 returns an `EgressGrant`
-for that exact candidate. Core1 stores the result in a local
-`EgressBurstLease` and spends credits in the synchronous SRAM-admission path.
-The normal packet path neither traverses the two SPSC queues nor performs a
-cross-core atomic allocation for every packet.
+The current implementation contains no packet-frequency request/reply
+protocol. Core1 maintains the latest desired lifecycle state and the state
+already accepted by its affine SPSC. It publishes only the minimal ordered
+`Reset`, `Inactive` and `Active` suffix. Core0 validates those updates into one
+bounded radio-side view per VIF.
 
 Current constants are:
 
 ```text
-candidate SPSC depth:        16
-grant SPSC depth:            16
-requested burst:             32 frames
-Core0 service budget:         4 candidates per turn
-Core1 maintenance budget:     4 grants per call
-refill threshold:             8 remaining frames
+demand SPSC depth per VIF:    16
+Core0 service budget:          4 updates per VIF/turn
+Core1 publication budget:      4 updates per callback
 ```
 
-The finite Core0 budget is a correctness property. Draining until empty can
-livelock even with bounded queues: each echoed grant can let Core1 publish a
-successor before Core0 observes an empty frontier. The owner must yield after
-a finite amount of work and leave a level-latched pending flag for the next
-turn.
+The finite Core0 budget is a correctness property: the radio owner must not
+turn a continuously changing control stream into an unbounded synchronous
+turn. Exhausting a budget leaves a level-latched pending flag for the next
+turn. STA and AP have independent demand queues but share one physical wake;
+the dual owner alternates first service so one VIF cannot starve the other.
 
 `EgressWaitOr` uses check, arm, recheck, then sleep. This closes the usual
 producer-publication versus waiter-arming lost-wake window. The unique mutable
 `EgressRadioOwner` travels with the connected Core0 datapath owner; the shared
 network side only holds a small wake capability.
 
-The radio implementation is nevertheless still a shadow echo:
+The mirror is observational:
 
 ```text
-candidate(key, 32)
-    -> Core0 service_shadow()
-    -> grant(same key, same serial, 32)
+Xarxa demand lifecycle
+    -> bounded Core1 outbox
+    -> affine SPSC
+    -> Core0 demand view
 ```
 
-It does not inspect BA availability, power-save state, rate, outstanding
-airtime, VIF deficit or peer deficit. Packet admission continues even when no
-grant is available, and the grant is used only for accounting. This is why the
-control plane is safe to measure but is not yet a scheduler.
+It does not yet inspect BA availability, power-save state, rate, pending
+airtime, VIF deficit or peer deficit, and it returns no grant. Packet admission
+therefore remains under the existing direct-SRAM arbiter. This is intentional:
+the next policy must select an active demand and issue an affine quantum from
+real Core0 state, not resurrect an echo of a Core1 packet request.
 
-It is also AP-only. The AP endpoint is wrapped with egress control and maps an
-associated peer to `interface + peer slot + association generation + TID`.
-The STA endpoint uses `SingleRadioPeer` and currently receives no such grant
-key. Consequently STA+AP radio fairness cannot be implemented by the current
-owner.
+## Rejected candidate/grant experiment
 
-## Same-ELF control cost
-
-`enabled` and `disabled` select only the current AP candidate/grant shadow
-control at startup. Both modes retain the same Xarxa indexed queue selection,
-route classification, 67-slot SRAM pool, MAC, radio, firmware and ELF layout.
-Disabled mode does not restore the old global FIFO and does not disable AP TX.
+The following measurements describe the now-deleted AP candidate/grant echo,
+not the current demand-only control plane. `enabled` and `disabled` selected
+that shadow protocol at startup while retaining the same Xarxa indexed queue
+selection, route classification, 67-slot SRAM pool, MAC, radio, firmware and
+ELF layout. Disabled mode did not restore the old global FIFO or disable AP TX.
 
 Clean A/B/A used the same runtime ELF at commit `deaf5d6f`:
 
@@ -404,10 +398,10 @@ Enabled mode added approximately:
 - 3,854 explicit Core0 control cycles per granted burst, or about 120 cycles
   per frame when amortized over BA32.
 
-The last value is important: cross-core policy transport is already
-burst-granular. Most of the current measured overhead is still in Core1 lease
-maintenance/instrumentation and in the extra owner/wake/control path, not in a
-per-packet Core0 round trip.
+The result established that even an aggregate-refill echo was the wrong
+production abstraction: it paid Core1 lease maintenance and extra Core0
+service while encoding no radio decision. The implementation was removed
+instead of optimized.
 
 These absolute throughput and task-time values are not the production ceiling.
 The image contains intrusive phase and coarse Core0 instrumentation. The clean
@@ -606,30 +600,29 @@ not a wholesale stack rewrite.
 
 ## Known gaps and risks
 
-1. **Radio-wide scope.** Current control covers only the AP endpoint; STA+AP
-   fairness is structurally impossible until STA demand enters the same Core0
-   owner.
-2. **Echo policy.** Core0 currently grants every candidate and has no airtime,
-   AQL, BA, PS or rate decision.
-3. **Demand lifecycle.** The candidate/refill protocol has exact serials but
-   no explicit empty/deactivation or unused-quantum expiry contract.
-4. **Grant horizon.** Refilling at eight remaining credits with another 32 can
-   leave a local permission horizon larger than one BA32. That is harmless in
-   shadow mode but must be explicitly bounded before authority.
-5. **Protocol coverage.** UDP has the required removable queue geometry;
+1. **Radio policy.** STA and AP demand now reach the same Core0 owner, but no
+   VIF/peer/TID airtime, AQL, BA, PS or rate policy consumes that state yet.
+2. **Grant contract.** The rejected echo deliberately left no compatibility
+   API. A real grant still needs key/lifecycle identity, bounded frame and
+   airtime horizons, unused-quantum return/expiry, and completion accounting.
+3. **Completion identity.** Final SRAM frames retain their VIF tag, while
+   exact peer/TID accounting is reconstructed later from frame/radio state.
+   Authority needs an explicit proof that stale association generations and
+   per-TID completion cannot be mischarged.
+4. **Protocol coverage.** UDP has the required removable queue geometry;
    TCP/raw/control paths need a deliberate provider or bypass contract.
-6. **Pre-classification lifetime.** Current packet storage cannot distinguish
+5. **Pre-classification lifetime.** Current packet storage cannot distinguish
    traffic intentionally preserved across reassociation from traffic which
    policy should revoke.
-7. **TID/AC.** Generic route priority is currently always zero and the AP
+6. **TID/AC.** Generic route priority is currently always zero and the AP
    grant/data path is best-effort TID 0 only. Early classification, AP
    per-TID BA/sequence state and role-specific WMM policy are all missing.
-8. **Wake proof.** Sparse HIL passed, but the dedicated control-only wake edge
+7. **Wake proof.** Sparse HIL passed, but the dedicated control-only wake edge
    has not been isolated on hardware.
-9. **CPU accounting.** The next design must reduce total work, not merely move
+8. **CPU accounting.** The next design must reduce total work, not merely move
    Core0 work to Core1. Both cores and normalized cycles/frame/burst must be
    reported together.
-10. **Absolute ceiling reproducibility.** Historical 123--124 Mbit/s results
+9. **Absolute ceiling reproducibility.** Historical 123--124 Mbit/s results
     need a fixed channel, route, OpenWrt state, source archive and same-ELF
     control before they become a regression gate.
 
@@ -665,13 +658,14 @@ not a wholesale stack rewrite.
 - preserve `GlobalExhausted` versus `KeyDeferred` and direct SRAM emission;
 - measure observer-free single-peer and two-peer paths before proceeding.
 
-### Phase 3: make control physical-radio-wide
+### Phase 3: make control physical-radio-wide — shadow mirror complete
 
 - generalize the AP-only control plane to STA and AP VIF demand;
 - keep exactly one affine Core0 scheduler owner;
-- replace echo-candidate semantics with activation/demand state and bounded
-  burst/airtime grants;
-- retain a same-ELF shadow/off switch and finite work budgets.
+- replace echo-candidate semantics with activation/demand state;
+- delete the rejected echo queues and packet-path lease machinery;
+- retain a same-ELF shadow/off switch and finite work budgets;
+- measure AP after echo removal before adding a new return path.
 
 ### Phase 4: implement policy in shadow
 
@@ -705,7 +699,7 @@ not a wholesale stack rewrite.
 Correctness gates:
 
 - no stale-generation admission, duplicate owner, leak or within-key reorder;
-- no candidate/grant overflow in supported saturation;
+- no demand/grant overflow in supported saturation;
 - bounded progress when every data key is deferred;
 - control traffic progresses under bulk saturation;
 - fixed SRAM ownership remains independent of associated-peer count;
@@ -741,7 +735,7 @@ Performance gates:
   scheduler regression;
 - no authoritative fairness claim from throughput alone.
 
-The next code change completes Phase 2 protocol coverage and measures the UDP
-publisher cost. Only after that boundary is stable should Phase 3 replace the
-AP-only Core0 echo with physical-radio-wide demand state and real burst/airtime
-grants.
+The immediate gate is AP same-ELF HIL on the demand-only Core0 mirror. After
+that, extend protocol-provider coverage and specify a real proactive grant
+around active demand plus Core0 BA/AQL/airtime state. No new packet-frequency
+request/reply API should be introduced.

@@ -2,20 +2,30 @@
 
 use std::{
     ffi::OsString,
-    fmt::Write as _,
     fs::{self, File, OpenOptions},
-    io::{Read as _, Write as _},
+    io::Write as _,
     path::{Path, PathBuf},
     process::Command,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::AtomicU64,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
-use super::build::{self, BuildSubject, BuildSubjectRole, SourceMaterial};
+#[cfg(test)]
+use std::sync::atomic::Ordering;
+
+use super::build::{self, SourceMaterial};
 use crate::{Result, qualification::scenario::ImageClass};
+
+mod archive;
+mod integrity;
+mod render;
+
+pub(crate) use integrity::{atomic_json, collect_attachments};
+pub(super) use integrity::{
+    atomic_write, collect_integrity_files, sha256_file, write_integrity_index,
+};
 
 pub(crate) const RUN_SCHEMA: u16 = 2;
 static UNIQUE_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -647,223 +657,6 @@ impl RunSession {
         Ok(())
     }
 
-    pub(crate) fn record_firmware(
-        &mut self,
-        image: ImageClass,
-        application: &Path,
-        runtime_elf: &Path,
-        runtime_bin: &Path,
-        bootstrap_elf: &Path,
-        effective_embedded_lock: &Path,
-    ) -> Result<PathBuf> {
-        build::verify_sources_unchanged(&self.repository_root, &self.source_materials)?;
-        let firmware_directory = PathBuf::from("firmware").join(image.id());
-        let application_path = firmware_directory.join("application.bin");
-        let archived_application = self.directory.join(&application_path);
-        let runtime_elf_path = firmware_directory.join("runtime.elf");
-        let runtime_bin_path = firmware_directory.join("runtime.bin");
-        let bootstrap_elf_path = firmware_directory.join("bootstrap.elf");
-        let effective_embedded_lock_path = firmware_directory.join("effective-Cargo.lock");
-        let application = build::archive_content_addressed(
-            application,
-            &archived_application,
-            &self.target_directory,
-        )?;
-        let runtime_elf = build::archive_content_addressed(
-            runtime_elf,
-            &self.directory.join(&runtime_elf_path),
-            &self.target_directory,
-        )?;
-        let runtime_bin = build::archive_content_addressed(
-            runtime_bin,
-            &self.directory.join(&runtime_bin_path),
-            &self.target_directory,
-        )?;
-        let bootstrap_elf = build::archive_content_addressed(
-            bootstrap_elf,
-            &self.directory.join(&bootstrap_elf_path),
-            &self.target_directory,
-        )?;
-        let effective_embedded_lock = build::archive_content_addressed(
-            effective_embedded_lock,
-            &self.directory.join(&effective_embedded_lock_path),
-            &self.target_directory,
-        )?;
-        let subjects = vec![
-            BuildSubject {
-                role: BuildSubjectRole::Application,
-                path: application_path.clone(),
-                size_bytes: application.size_bytes,
-                sha256: application.sha256.clone(),
-            },
-            BuildSubject {
-                role: BuildSubjectRole::BootstrapElf,
-                path: bootstrap_elf_path.clone(),
-                size_bytes: bootstrap_elf.size_bytes,
-                sha256: bootstrap_elf.sha256.clone(),
-            },
-            BuildSubject {
-                role: BuildSubjectRole::RuntimeBin,
-                path: runtime_bin_path.clone(),
-                size_bytes: runtime_bin.size_bytes,
-                sha256: runtime_bin.sha256.clone(),
-            },
-            BuildSubject {
-                role: BuildSubjectRole::RuntimeElf,
-                path: runtime_elf_path.clone(),
-                size_bytes: runtime_elf.size_bytes,
-                sha256: runtime_elf.sha256.clone(),
-            },
-        ];
-        let build_id = build::build_id(&subjects);
-        let build_provenance_path = firmware_directory.join("build-provenance.json");
-        let provenance = build::create_provenance(
-            &self.repository_root,
-            image,
-            build_id.clone(),
-            self.source_materials.clone(),
-            subjects,
-            build::archived_file_material(
-                "embedded-lock",
-                Path::new("hil/targets/esp32s31/Cargo.lock"),
-                effective_embedded_lock_path,
-                &effective_embedded_lock,
-            ),
-        )?;
-        atomic_json(&self.directory.join(&build_provenance_path), &provenance)?;
-        let artifact = FirmwareArtifact {
-            image,
-            replayed_from: None,
-            build_id: Some(build_id),
-            build_provenance_path: Some(build_provenance_path),
-            application_path,
-            application_size_bytes: application.size_bytes,
-            application_sha256: application.sha256,
-            runtime_elf_path: Some(runtime_elf_path),
-            runtime_elf_size_bytes: Some(runtime_elf.size_bytes),
-            runtime_elf_sha256: runtime_elf.sha256,
-            runtime_bin_path: Some(runtime_bin_path),
-            runtime_bin_size_bytes: Some(runtime_bin.size_bytes),
-            runtime_bin_sha256: runtime_bin.sha256,
-            bootstrap_elf_path: Some(bootstrap_elf_path),
-            bootstrap_elf_size_bytes: Some(bootstrap_elf.size_bytes),
-            bootstrap_elf_sha256: bootstrap_elf.sha256,
-        };
-        self.manifest.firmware.retain(|entry| entry.image != image);
-        self.manifest.firmware.push(artifact);
-        atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
-        Ok(archived_application)
-    }
-
-    pub(crate) fn record_replayed_firmware(
-        &mut self,
-        archived: &super::verification::ArchivedFirmware,
-    ) -> Result<PathBuf> {
-        build::verify_sources_unchanged(&self.repository_root, &self.source_materials)?;
-        let source = &archived.artifact;
-        let firmware_directory = PathBuf::from("firmware").join(source.image.id());
-        let application_path = firmware_directory.join("application.bin");
-        validate_replayed_source_path(&source.application_path)?;
-        archive_expected_file(
-            &archived.source_directory.join(&source.application_path),
-            &self.directory.join(&application_path),
-            &self.target_directory,
-            source.application_size_bytes,
-            &source.application_sha256,
-        )?;
-
-        import_optional_firmware_subject(
-            &archived.source_directory,
-            &self.directory,
-            &self.target_directory,
-            source.runtime_elf_path.as_deref(),
-            source.runtime_elf_size_bytes,
-            &source.runtime_elf_sha256,
-        )?;
-        import_optional_firmware_subject(
-            &archived.source_directory,
-            &self.directory,
-            &self.target_directory,
-            source.runtime_bin_path.as_deref(),
-            source.runtime_bin_size_bytes,
-            &source.runtime_bin_sha256,
-        )?;
-        import_optional_firmware_subject(
-            &archived.source_directory,
-            &self.directory,
-            &self.target_directory,
-            source.bootstrap_elf_path.as_deref(),
-            source.bootstrap_elf_size_bytes,
-            &source.bootstrap_elf_sha256,
-        )?;
-
-        let mut artifact = source.clone();
-        artifact.replayed_from = Some(FirmwareReplayOrigin {
-            source_run_id: archived.run_id.clone(),
-            source_integrity_sha256: archived.integrity_sha256.clone(),
-            firmware_repository: source
-                .replayed_from
-                .as_ref()
-                .map(|origin| origin.firmware_repository.clone())
-                .unwrap_or_else(|| archived.repository.clone()),
-            source_build_id: source.build_id.clone(),
-        });
-        if let Some(mut provenance) = archived.build_provenance.clone() {
-            for (index, source_material) in provenance.sources.iter_mut().enumerate() {
-                let Some(source_path) = source_material.tracked_patch_path.clone() else {
-                    continue;
-                };
-                validate_replayed_source_path(&source_path)?;
-                let destination = firmware_directory
-                    .join("source-patches")
-                    .join(format!("{index:02}.patch"));
-                archive_expected_file(
-                    &archived.source_directory.join(source_path),
-                    &self.directory.join(&destination),
-                    &self.target_directory,
-                    source_material
-                        .tracked_patch_size_bytes
-                        .ok_or("replayed source patch has no size")?,
-                    source_material
-                        .tracked_patch_sha256
-                        .as_deref()
-                        .ok_or("replayed source patch has no digest")?,
-                )?;
-                source_material.tracked_patch_path = Some(destination);
-            }
-            for (index, file) in provenance.files.iter_mut().enumerate() {
-                let Some(source_path) = file.archive_path.clone() else {
-                    continue;
-                };
-                validate_replayed_source_path(&source_path)?;
-                let destination = if file.name == "embedded-lock" {
-                    firmware_directory.join("effective-Cargo.lock")
-                } else {
-                    firmware_directory
-                        .join("build-materials")
-                        .join(format!("{index:02}"))
-                };
-                archive_expected_file(
-                    &archived.source_directory.join(source_path),
-                    &self.directory.join(&destination),
-                    &self.target_directory,
-                    file.size_bytes,
-                    &file.sha256,
-                )?;
-                file.archive_path = Some(destination);
-            }
-            let provenance_path = firmware_directory.join("build-provenance.json");
-            atomic_json(&self.directory.join(&provenance_path), &provenance)?;
-            artifact.build_provenance_path = Some(provenance_path);
-        }
-        self.manifest
-            .firmware
-            .retain(|entry| entry.image != artifact.image);
-        self.manifest.firmware.push(artifact);
-        atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
-        Ok(self.directory.join(application_path))
-    }
-
     pub(crate) fn finish(
         mut self,
         scenarios: Vec<ScenarioResult>,
@@ -890,11 +683,11 @@ impl RunSession {
         atomic_json(&self.directory.join("suite.json"), &suite)?;
         atomic_write(
             &self.directory.join("junit.xml"),
-            render_junit(&suite, &self.manifest).as_bytes(),
+            render::junit(&suite, &self.manifest).as_bytes(),
         )?;
         atomic_write(
             &self.directory.join("report.html"),
-            render_html(&suite, &self.manifest).as_bytes(),
+            render::html(&suite, &self.manifest).as_bytes(),
         )?;
         self.record_event("run-finished", None, None, Some(outcome))?;
         self.manifest.state = RunState::Completed;
@@ -920,63 +713,6 @@ impl RunSession {
     }
 }
 
-fn archive_expected_file(
-    source: &Path,
-    destination: &Path,
-    target_directory: &Path,
-    expected_size: u64,
-    expected_sha256: &str,
-) -> Result<()> {
-    let archived = build::archive_content_addressed(source, destination, target_directory)?;
-    if archived.size_bytes != expected_size || archived.sha256 != expected_sha256 {
-        return Err(format!(
-            "replayed firmware input changed after bundle verification: {}",
-            source.display()
-        )
-        .into());
-    }
-    Ok(())
-}
-
-fn import_optional_firmware_subject(
-    source_directory: &Path,
-    destination_directory: &Path,
-    target_directory: &Path,
-    path: Option<&Path>,
-    size_bytes: Option<u64>,
-    sha256: &str,
-) -> Result<()> {
-    match (path, size_bytes) {
-        (None, None) => Ok(()),
-        (Some(path), Some(size_bytes)) => {
-            validate_replayed_source_path(path)?;
-            archive_expected_file(
-                &source_directory.join(path),
-                &destination_directory.join(path),
-                target_directory,
-                size_bytes,
-                sha256,
-            )
-        }
-        _ => Err("replayed firmware subject has incomplete archive provenance".into()),
-    }
-}
-
-fn validate_replayed_source_path(path: &Path) -> Result<()> {
-    if path.as_os_str().is_empty()
-        || path
-            .components()
-            .any(|component| !matches!(component, std::path::Component::Normal(_)))
-    {
-        return Err(format!(
-            "replayed firmware references an unsafe bundle path: {}",
-            path.display()
-        )
-        .into());
-    }
-    Ok(())
-}
-
 impl Drop for RunSession {
     fn drop(&mut self) {
         if self.finished {
@@ -991,12 +727,6 @@ impl Drop for RunSession {
     }
 }
 
-pub(crate) fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
-    let mut bytes = serde_json::to_vec_pretty(value)?;
-    bytes.push(b'\n');
-    atomic_write(path, &bytes)
-}
-
 pub(crate) fn unix_millis() -> Result<u64> {
     let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
     u64::try_from(millis).map_err(|_| "host timestamp exceeds the HIL report range".into())
@@ -1004,64 +734,6 @@ pub(crate) fn unix_millis() -> Result<u64> {
 
 pub(crate) fn duration_millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-}
-
-pub(crate) fn collect_attachments(
-    output: &Path,
-    artifact_directory: &Path,
-) -> Result<Vec<Attachment>> {
-    let mut attachments = Vec::new();
-    collect_attachments_below(output, Path::new(""), artifact_directory, &mut attachments)?;
-    Ok(attachments)
-}
-
-fn collect_attachments_below(
-    directory: &Path,
-    relative: &Path,
-    artifact_directory: &Path,
-    attachments: &mut Vec<Attachment>,
-) -> Result<()> {
-    let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    for entry in entries {
-        let file_type = entry.file_type()?;
-        let child_relative = relative.join(entry.file_name());
-        if file_type.is_dir() {
-            collect_attachments_below(
-                &entry.path(),
-                &child_relative,
-                artifact_directory,
-                attachments,
-            )?;
-        } else if file_type.is_file() {
-            let metadata = entry.metadata()?;
-            attachments.push(Attachment {
-                path: artifact_directory.join(&child_relative),
-                media_type: attachment_media_type(&child_relative).to_owned(),
-                size_bytes: metadata.len(),
-                sha256: sha256_file(&entry.path())?,
-            });
-        } else {
-            return Err(format!(
-                "HIL artifact is neither a regular file nor a directory: {}",
-                entry.path().display()
-            )
-            .into());
-        }
-    }
-    Ok(())
-}
-
-fn attachment_media_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|extension| extension.to_str()) {
-        Some("json") => "application/json",
-        Some("jsonl") => "application/x-ndjson",
-        Some("pcap") | Some("pcapng") => "application/vnd.tcpdump.pcap",
-        Some("html") => "text/html",
-        Some("md") => "text/markdown",
-        Some("log") | Some("txt") => "text/plain",
-        _ => "application/octet-stream",
-    }
 }
 
 fn create_run_id(started_unix_millis: u64) -> String {
@@ -1083,85 +755,6 @@ fn create_unique_directory(parent: &Path, base: &str) -> Result<PathBuf> {
         }
     }
     Err("cannot allocate a unique HIL run directory".into())
-}
-
-pub(super) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("report path has no parent: {}", path.display()))?;
-    fs::create_dir_all(parent)?;
-    let counter = UNIQUE_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| format!("report path has no file name: {}", path.display()))?
-        .to_string_lossy();
-    let temporary = parent.join(format!(".{file_name}.tmp-{}-{counter}", std::process::id()));
-    let result = (|| -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary)?;
-        file.write_all(bytes)?;
-        file.flush()?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)?;
-        File::open(parent)?.sync_all()?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-pub(super) fn write_integrity_index(directory: &Path, run_id: &str) -> Result<PathBuf> {
-    let path = directory.join("integrity.json");
-    let index = IntegrityIndex {
-        schema: RUN_SCHEMA,
-        run_id: run_id.to_owned(),
-        files: collect_integrity_files(directory)?,
-    };
-    atomic_json(&path, &index)?;
-    Ok(path)
-}
-
-pub(super) fn collect_integrity_files(directory: &Path) -> Result<Vec<IntegrityFile>> {
-    let mut files = Vec::new();
-    collect_integrity_files_below(directory, Path::new(""), &mut files)?;
-    files.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(files)
-}
-
-fn collect_integrity_files_below(
-    directory: &Path,
-    relative: &Path,
-    files: &mut Vec<IntegrityFile>,
-) -> Result<()> {
-    let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    for entry in entries {
-        let file_type = entry.file_type()?;
-        let child_relative = relative.join(entry.file_name());
-        if file_type.is_dir() {
-            collect_integrity_files_below(&entry.path(), &child_relative, files)?;
-        } else if file_type.is_file() {
-            if child_relative == Path::new("integrity.json") {
-                continue;
-            }
-            files.push(IntegrityFile {
-                path: child_relative,
-                size_bytes: entry.metadata()?.len(),
-                sha256: sha256_file(&entry.path())?,
-            });
-        } else {
-            return Err(format!(
-                "HIL run bundle contains neither a regular file nor a directory: {}",
-                entry.path().display()
-            )
-            .into());
-        }
-    }
-    Ok(())
 }
 
 fn runner_provenance() -> RunnerProvenance {
@@ -1187,345 +780,6 @@ fn command_version(program: &str) -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
-pub(super) fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", digest.finalize()))
-}
-
-fn render_junit(suite: &SuiteResult, manifest: &RunManifest) -> String {
-    let mut tests = 0_usize;
-    let mut failures = 0_usize;
-    let mut errors = 0_usize;
-    let mut skipped = 0_usize;
-    for scenario in &suite.scenarios {
-        if scenario.repetitions.is_empty() {
-            tests += 1;
-            match scenario.outcome {
-                Outcome::Failed => failures += 1,
-                Outcome::Broken | Outcome::Blocked | Outcome::Interrupted => errors += 1,
-                Outcome::Skipped => skipped += 1,
-                Outcome::Passed => {}
-            }
-            continue;
-        }
-        for repetition in &scenario.repetitions {
-            tests += 1;
-            match repetition.outcome {
-                Outcome::Failed => failures += 1,
-                Outcome::Broken | Outcome::Blocked | Outcome::Interrupted => errors += 1,
-                Outcome::Skipped => skipped += 1,
-                Outcome::Passed => {}
-            }
-        }
-    }
-
-    let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    let _ = writeln!(
-        xml,
-        "<testsuites name=\"open-esp-radio-hil\" tests=\"{tests}\" failures=\"{failures}\" errors=\"{errors}\" skipped=\"{skipped}\" time=\"{:.3}\">",
-        suite.duration_millis as f64 / 1_000.0
-    );
-    let _ = writeln!(
-        xml,
-        "  <testsuite name=\"{}\" tests=\"{tests}\" failures=\"{failures}\" errors=\"{errors}\" skipped=\"{skipped}\" time=\"{:.3}\">",
-        xml_escape(&suite.target),
-        suite.duration_millis as f64 / 1_000.0
-    );
-    xml.push_str("    <properties>\n");
-    let _ = writeln!(
-        xml,
-        "      <property name=\"run_id\" value=\"{}\"/>",
-        xml_escape(&suite.run_id)
-    );
-    let _ = writeln!(
-        xml,
-        "      <property name=\"git_commit\" value=\"{}\"/>",
-        xml_escape(&manifest.repository.commit)
-    );
-    let _ = writeln!(
-        xml,
-        "      <property name=\"git_dirty\" value=\"{}\"/>",
-        manifest.repository.dirty
-    );
-    let _ = writeln!(
-        xml,
-        "      <property name=\"workspace_sha256\" value=\"{}\"/>",
-        manifest.repository.workspace_sha256
-    );
-    let _ = writeln!(
-        xml,
-        "      <property name=\"firmware_replayed_from\" value=\"{}\"/>",
-        xml_escape(&firmware_replay_summary(manifest))
-    );
-    let _ = writeln!(
-        xml,
-        "      <property name=\"cell_id\" value=\"{}\"/>",
-        xml_escape(&manifest.cell.cell_id)
-    );
-    let _ = writeln!(
-        xml,
-        "      <property name=\"device_id\" value=\"{}\"/>",
-        xml_escape(&manifest.cell.device_id)
-    );
-    xml.push_str("    </properties>\n");
-    for scenario in &suite.scenarios {
-        if scenario.repetitions.is_empty() {
-            render_junit_case(&mut xml, scenario, None);
-            continue;
-        }
-        for repetition in &scenario.repetitions {
-            render_junit_case(&mut xml, scenario, Some(repetition));
-        }
-    }
-    xml.push_str("  </testsuite>\n</testsuites>\n");
-    xml
-}
-
-fn render_junit_case(
-    xml: &mut String,
-    scenario: &ScenarioResult,
-    repetition: Option<&RepetitionResult>,
-) {
-    let name = repetition.map_or_else(
-        || scenario.scenario.clone(),
-        |repetition| {
-            format!(
-                "{}[repetition-{:03}]",
-                scenario.scenario, repetition.repetition
-            )
-        },
-    );
-    let outcome = repetition.map_or(scenario.outcome, |repetition| repetition.outcome);
-    let duration_millis = repetition.map_or(0, |repetition| repetition.duration_millis);
-    let failure = repetition.map_or(scenario.failure.as_ref(), |repetition| {
-        repetition.failure.as_ref()
-    });
-    let _ = writeln!(
-        xml,
-        "    <testcase classname=\"hil.{}\" name=\"{}\" time=\"{:.3}\">",
-        scenario.image.id(),
-        xml_escape(&name),
-        duration_millis as f64 / 1_000.0
-    );
-    let message = failure.map_or("", |failure| failure.message.as_str());
-    match outcome {
-        Outcome::Passed => {}
-        Outcome::Failed => {
-            let kind = failure.map_or("scenario", |failure| failure.kind.id());
-            let _ = writeln!(
-                xml,
-                "      <failure type=\"{}\" message=\"{}\">{}</failure>",
-                xml_escape(kind),
-                xml_escape(message),
-                xml_escape(message)
-            );
-        }
-        Outcome::Broken | Outcome::Blocked | Outcome::Interrupted => {
-            let kind = failure.map_or("infrastructure", |failure| failure.kind.id());
-            let _ = writeln!(
-                xml,
-                "      <error type=\"{}\" message=\"{}\">{}</error>",
-                xml_escape(kind),
-                xml_escape(message),
-                xml_escape(message)
-            );
-        }
-        Outcome::Skipped => {
-            let _ = writeln!(xml, "      <skipped message=\"{}\"/>", xml_escape(message));
-        }
-    }
-    let mut system_output = String::new();
-    if let Some(repetition) = repetition {
-        let _ = writeln!(
-            system_output,
-            "artifacts={}",
-            repetition.artifact_directory.display()
-        );
-        for measurement in &repetition.measurements {
-            let _ = writeln!(
-                system_output,
-                "measurement.{}={} {}",
-                measurement.name,
-                measurement.value,
-                measurement.unit.id(),
-            );
-        }
-    }
-    if !system_output.is_empty() {
-        let _ = writeln!(
-            xml,
-            "      <system-out>{}</system-out>",
-            xml_escape(system_output.trim_end())
-        );
-    }
-    xml.push_str("    </testcase>\n");
-}
-
-fn render_html(suite: &SuiteResult, manifest: &RunManifest) -> String {
-    let mut rows = String::new();
-    for scenario in &suite.scenarios {
-        let detail = scenario.failure.as_ref().map_or_else(
-            || {
-                let failures = scenario
-                    .repetitions
-                    .iter()
-                    .filter_map(|entry| entry.failure.as_ref())
-                    .map(|failure| failure.message.as_str())
-                    .collect::<Vec<_>>();
-                failures.join("; ")
-            },
-            |failure| failure.message.clone(),
-        );
-        let attachments = scenario
-            .repetitions
-            .iter()
-            .flat_map(|repetition| repetition.attachments.iter())
-            .map(|attachment| {
-                let path = attachment.path.display().to_string();
-                format!(
-                    "<a href=\"{}\">{}</a>",
-                    html_escape(&path),
-                    html_escape(
-                        &attachment
-                            .path
-                            .file_name()
-                            .unwrap_or(attachment.path.as_os_str())
-                            .to_string_lossy(),
-                    )
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(" · ");
-        let measurements = scenario
-            .repetitions
-            .iter()
-            .flat_map(|repetition| {
-                repetition.measurements.iter().map(move |measurement| {
-                    let threshold = measurement.threshold.map_or_else(String::new, |threshold| {
-                        format!(
-                            " ({} {} {})",
-                            threshold.comparison.symbol(),
-                            threshold.value,
-                            measurement.unit.id(),
-                        )
-                    });
-                    let class = if measurement.verdict == Some(MeasurementVerdict::Failed) {
-                        "fail"
-                    } else {
-                        ""
-                    };
-                    format!(
-                        "<span class=\"{class}\"><code>{}</code>={} {}{threshold}</span>",
-                        html_escape(&measurement.name),
-                        measurement.value,
-                        measurement.unit.id(),
-                    )
-                })
-            })
-            .collect::<Vec<_>>()
-            .join("<br>");
-        let _ = writeln!(
-            rows,
-            "<tr><td>{}</td><td>{}</td><td class=\"{}\">{:?}</td><td>{}/{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            html_escape(&scenario.scenario),
-            scenario.image.id(),
-            if scenario.outcome.is_passed() {
-                "pass"
-            } else {
-                "fail"
-            },
-            scenario.outcome,
-            scenario
-                .repetitions
-                .iter()
-                .filter(|entry| entry.outcome.is_passed())
-                .count(),
-            scenario.required_repetitions,
-            html_escape(&detail),
-            if attachments.is_empty() {
-                "&mdash;"
-            } else {
-                &attachments
-            },
-            if measurements.is_empty() {
-                "&mdash;"
-            } else {
-                &measurements
-            },
-        );
-    }
-    format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><title>HIL {run}</title>\
-         <style>body{{font:14px system-ui,sans-serif;margin:2rem;max-width:1200px}}\
-         table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #bbb;padding:.45rem;text-align:left}}\
-         .pass{{color:#087830;font-weight:700}}.fail{{color:#b42318;font-weight:700}}code{{background:#eee;padding:.1rem .25rem}}</style>\
-         </head><body><h1>Open ESP radio HIL</h1>\
-         <p>Run <code>{run}</code> · cell <code>{cell}</code> · device <code>{device}</code> · commit <code>{commit}</code>{dirty} · firmware {firmware}</p>\
-         <p>Outcome: <strong class=\"{class}\">{outcome:?}</strong> · {passed}/{total} scenarios passed · {duration:.3} s</p>\
-         <table><thead><tr><th>Scenario</th><th>Image</th><th>Outcome</th><th>Repetitions</th><th>Failure</th><th>Artifacts</th><th>Measurements</th></tr></thead>\
-         <tbody>{rows}</tbody></table></body></html>\n",
-        run = html_escape(&suite.run_id),
-        cell = html_escape(&manifest.cell.cell_id),
-        device = html_escape(&manifest.cell.device_id),
-        commit = html_escape(&manifest.repository.commit),
-        dirty = if manifest.repository.dirty {
-            " · dirty workspace"
-        } else {
-            ""
-        },
-        firmware = html_escape(&firmware_replay_summary(manifest)),
-        class = if suite.outcome.is_passed() {
-            "pass"
-        } else {
-            "fail"
-        },
-        outcome = suite.outcome,
-        passed = suite.counts.passed,
-        total = suite.counts.scenarios,
-        duration = suite.duration_millis as f64 / 1_000.0,
-    )
-}
-
-fn firmware_replay_summary(manifest: &RunManifest) -> String {
-    let origins = manifest
-        .firmware
-        .iter()
-        .filter_map(|artifact| {
-            artifact
-                .replayed_from
-                .as_ref()
-                .map(|origin| format!("{}:{}", artifact.image.id(), origin.source_run_id))
-        })
-        .collect::<Vec<_>>();
-    if origins.is_empty() {
-        String::from("current-build")
-    } else {
-        format!("replay({})", origins.join(","))
-    }
-}
-
-fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-fn html_escape(value: &str) -> String {
-    xml_escape(value)
 }
 
 #[cfg(test)]
@@ -1686,7 +940,7 @@ mod tests {
 
     #[test]
     fn junit_preserves_failure_and_escapes_xml() {
-        let xml = render_junit(&failed_suite(), &manifest());
+        let xml = render::junit(&failed_suite(), &manifest());
         roxmltree::Document::parse(&xml).expect("valid JUnit XML");
         assert!(xml.contains("tests=\"1\" failures=\"1\""));
         assert!(xml.contains("bad &lt;frame&gt; &amp; timeout"));
@@ -1697,7 +951,7 @@ mod tests {
 
     #[test]
     fn html_is_derived_from_the_same_suite_record() {
-        let html = render_html(&failed_suite(), &manifest());
+        let html = render::html(&failed_suite(), &manifest());
         assert!(html.contains("udp-rx"));
         assert!(html.contains("bad &lt;frame&gt; &amp; timeout"));
         assert!(html.contains("0/1 scenarios passed"));
@@ -2034,9 +1288,9 @@ mod tests {
 
     #[test]
     fn replay_import_rejects_paths_outside_the_sealed_bundle() {
-        assert!(validate_replayed_source_path(Path::new("../application.bin")).is_err());
-        assert!(validate_replayed_source_path(Path::new("/tmp/application.bin")).is_err());
-        assert!(validate_replayed_source_path(Path::new("firmware/runtime.elf")).is_ok());
+        assert!(archive::validate_replayed_source_path(Path::new("../application.bin")).is_err());
+        assert!(archive::validate_replayed_source_path(Path::new("/tmp/application.bin")).is_err());
+        assert!(archive::validate_replayed_source_path(Path::new("firmware/runtime.elf")).is_ok());
     }
 
     #[test]

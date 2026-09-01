@@ -362,6 +362,13 @@ and descriptor field meanings are role-specific observations. The advertising
 scope follows current linked PDU builders, role reset/start, first/next primary
 event scheduling, recycling and asynchronous finished-list delivery.
 
+The following scanning frontier is now bounded independently as
+`ble-legacy-passive-scanning`; its role map, lower transaction, open ownership
+model and exact return gate are recorded in
+[`bluetooth-passive-scanning.md`](bluetooth-passive-scanning.md).  The first
+slice is receive-only legacy 1M scanning.  It does not inherit DTM's private RX
+graph and does not wait for active or extended scanning.
+
 The public `esp_ble_adv_aa_setting` entry is present only in raw
 `libble_app.a(94.o)` for the pinned input. It combines its two 16-bit arguments
 and stores the result at offset `0x30` of a software environment. This proves a

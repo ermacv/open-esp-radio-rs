@@ -918,6 +918,32 @@ roots = [
 ]
 include-reachable = true
 
+# Minimum receive-only frontier for the next open Link Layer role.  The roots
+# deliberately stop at legacy passive 1M scanning: parameter validation and
+# HCI packet syntax are portable policy, while extended/active scanning,
+# initiator state and the vendor's ULL object graph are outside this hardware
+# investigation.  Start/reset close CPU -> hardware ownership.  RX processing,
+# scheduler recycling and selector-4 resume are callback-owned and therefore
+# remain explicit roots.  The common worker and BLE scheduler close the
+# asynchronous finished-list edge just as they do for DTM and advertising.
+[[review.scopes]]
+id = "ble-legacy-passive-scanning"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_znMr0TnKK4lkFEsrathq",
+    "ble-controller:r_sym_ble_XwMfMguyw9lccbIeVsvN",
+    "ble-controller:r_sym_ble_FI34eU2bYuxQYjeVS51T",
+    "ble-controller:r_sym_ble_jMEoTs6F9eIXRCc3ssv4",
+    "ble-controller:r_sym_ble_GUS6jpjPpQlTJuvOrYMV",
+    "ble-controller:r_sym_ble_XYr0jejHXj4ULilAqOsG",
+    "ble-controller:r_sym_ble_h1CfV40z3TOeYWAmKSQ9",
+    "ble-controller:r_sym_ble_q4hMJ7XLGGCzxwmAKSge",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
 [[review.scopes]]
 id = "ieee802154-baseband-leaves"
 protocols = ["ieee802154"]

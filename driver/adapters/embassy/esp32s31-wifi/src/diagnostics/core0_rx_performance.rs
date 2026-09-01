@@ -170,6 +170,11 @@ pub struct Core0PerformanceSnapshot {
     pub tx_ap_terminal_identity_current_frames: u32,
     pub tx_ap_terminal_identity_stale_aggregates: u32,
     pub tx_ap_terminal_identity_stale_frames: u32,
+    pub tx_ap_airtime_aggregates: u32,
+    pub tx_ap_airtime_identity_bound: u32,
+    pub tx_ap_airtime_terminal_mismatch: u32,
+    pub tx_ap_airtime_publications: u32,
+    pub tx_ap_airtime_modeled_hundred_ns: u32,
     pub rx_progress_drained: u32,
     pub rx_progress_probe_pending: u32,
     pub rx_progress_protocol_tx_blocked: u32,
@@ -432,6 +437,21 @@ impl Core0PerformanceSnapshot {
             tx_ap_terminal_identity_stale_frames: self
                 .tx_ap_terminal_identity_stale_frames
                 .wrapping_sub(earlier.tx_ap_terminal_identity_stale_frames),
+            tx_ap_airtime_aggregates: self
+                .tx_ap_airtime_aggregates
+                .wrapping_sub(earlier.tx_ap_airtime_aggregates),
+            tx_ap_airtime_identity_bound: self
+                .tx_ap_airtime_identity_bound
+                .wrapping_sub(earlier.tx_ap_airtime_identity_bound),
+            tx_ap_airtime_terminal_mismatch: self
+                .tx_ap_airtime_terminal_mismatch
+                .wrapping_sub(earlier.tx_ap_airtime_terminal_mismatch),
+            tx_ap_airtime_publications: self
+                .tx_ap_airtime_publications
+                .wrapping_sub(earlier.tx_ap_airtime_publications),
+            tx_ap_airtime_modeled_hundred_ns: self
+                .tx_ap_airtime_modeled_hundred_ns
+                .wrapping_sub(earlier.tx_ap_airtime_modeled_hundred_ns),
             rx_progress_drained: self
                 .rx_progress_drained
                 .wrapping_sub(earlier.rx_progress_drained),
@@ -622,6 +642,11 @@ pub struct Core0PerformanceCounters {
     tx_ap_terminal_identity_current_frames: AtomicU32,
     tx_ap_terminal_identity_stale_aggregates: AtomicU32,
     tx_ap_terminal_identity_stale_frames: AtomicU32,
+    tx_ap_airtime_aggregates: AtomicU32,
+    tx_ap_airtime_identity_bound: AtomicU32,
+    tx_ap_airtime_terminal_mismatch: AtomicU32,
+    tx_ap_airtime_publications: AtomicU32,
+    tx_ap_airtime_modeled_hundred_ns: AtomicU32,
     active_radio_cycles: AtomicU32,
     active_radio_instructions: AtomicU32,
     active_radio_saw_runner: AtomicU32,
@@ -759,6 +784,11 @@ impl Core0PerformanceCounters {
             tx_ap_terminal_identity_current_frames: AtomicU32::new(0),
             tx_ap_terminal_identity_stale_aggregates: AtomicU32::new(0),
             tx_ap_terminal_identity_stale_frames: AtomicU32::new(0),
+            tx_ap_airtime_aggregates: AtomicU32::new(0),
+            tx_ap_airtime_identity_bound: AtomicU32::new(0),
+            tx_ap_airtime_terminal_mismatch: AtomicU32::new(0),
+            tx_ap_airtime_publications: AtomicU32::new(0),
+            tx_ap_airtime_modeled_hundred_ns: AtomicU32::new(0),
             active_radio_cycles: AtomicU32::new(0),
             active_radio_instructions: AtomicU32::new(0),
             active_radio_saw_runner: AtomicU32::new(0),
@@ -1306,6 +1336,33 @@ impl Core0PerformanceCounters {
         frame_counter.fetch_add(u32::try_from(frames).unwrap_or(u32::MAX), Ordering::Relaxed);
     }
 
+    /// Record one terminal protocol-derived AP data-PPDU model. The duration
+    /// is deliberately named by its 100 ns unit and is never reported as a
+    /// hardware measurement.
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_ap_modeled_airtime(
+        &self,
+        identity_bound: bool,
+        terminal_matches: bool,
+        publications: u8,
+        modeled_hundred_ns: u32,
+    ) {
+        self.tx_ap_airtime_aggregates
+            .fetch_add(1, Ordering::Relaxed);
+        if identity_bound {
+            self.tx_ap_airtime_identity_bound
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        if identity_bound && !terminal_matches {
+            self.tx_ap_airtime_terminal_mismatch
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        self.tx_ap_airtime_publications
+            .fetch_add(u32::from(publications), Ordering::Relaxed);
+        self.tx_ap_airtime_modeled_hundred_ns
+            .fetch_add(modeled_hundred_ns, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> Core0PerformanceSnapshot {
         Core0PerformanceSnapshot {
             rx_interrupt_posts: self.rx_interrupt_posts.load(Ordering::Relaxed),
@@ -1438,6 +1495,15 @@ impl Core0PerformanceCounters {
                 .load(Ordering::Relaxed),
             tx_ap_terminal_identity_stale_frames: self
                 .tx_ap_terminal_identity_stale_frames
+                .load(Ordering::Relaxed),
+            tx_ap_airtime_aggregates: self.tx_ap_airtime_aggregates.load(Ordering::Relaxed),
+            tx_ap_airtime_identity_bound: self.tx_ap_airtime_identity_bound.load(Ordering::Relaxed),
+            tx_ap_airtime_terminal_mismatch: self
+                .tx_ap_airtime_terminal_mismatch
+                .load(Ordering::Relaxed),
+            tx_ap_airtime_publications: self.tx_ap_airtime_publications.load(Ordering::Relaxed),
+            tx_ap_airtime_modeled_hundred_ns: self
+                .tx_ap_airtime_modeled_hundred_ns
                 .load(Ordering::Relaxed),
             rx_progress_drained: self.rx_progress_drained.load(Ordering::Relaxed),
             rx_progress_probe_pending: self.rx_progress_probe_pending.load(Ordering::Relaxed),
@@ -1624,6 +1690,22 @@ mod tests {
         assert_eq!(snapshot.tx_ap_terminal_identity_current_frames, 39);
         assert_eq!(snapshot.tx_ap_terminal_identity_stale_aggregates, 1);
         assert_eq!(snapshot.tx_ap_terminal_identity_stale_frames, 3);
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[test]
+    fn modeled_ap_airtime_never_implies_hardware_measurement() {
+        let counters = Core0PerformanceCounters::new();
+        counters.record_ap_modeled_airtime(true, true, 2, 36_760);
+        counters.record_ap_modeled_airtime(false, false, 1, 1_320);
+        counters.record_ap_modeled_airtime(true, false, 1, 2_280);
+
+        let snapshot = counters.snapshot();
+        assert_eq!(snapshot.tx_ap_airtime_aggregates, 3);
+        assert_eq!(snapshot.tx_ap_airtime_identity_bound, 2);
+        assert_eq!(snapshot.tx_ap_airtime_terminal_mismatch, 1);
+        assert_eq!(snapshot.tx_ap_airtime_publications, 4);
+        assert_eq!(snapshot.tx_ap_airtime_modeled_hundred_ns, 40_360);
     }
 
     #[cfg(feature = "core0-rx-coarse-telemetry")]

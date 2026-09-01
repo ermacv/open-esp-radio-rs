@@ -405,6 +405,7 @@ pub(crate) fn run(
                 core0_coarse: Core0CoarseEvidence::from_log(&log),
                 tx_phases: TxPhaseEvidence::from_log(&log),
                 ap_egress_identity: ApEgressIdentityEvidence::from_log(&log),
+                ap_modeled_airtime: ApModeledAirtimeEvidence::from_log(&log),
                 failure: throughput_failure.as_deref(),
             },
         )?;
@@ -789,6 +790,7 @@ struct TxPerformanceReport<'a> {
     core0_coarse: Option<Core0CoarseEvidence>,
     tx_phases: Option<TxPhaseEvidence>,
     ap_egress_identity: Option<ApEgressIdentityEvidence>,
+    ap_modeled_airtime: Option<ApModeledAirtimeEvidence>,
     failure: Option<&'a str>,
 }
 
@@ -882,6 +884,54 @@ impl ApEgressIdentityEvidence {
             self.peer_slot_mismatch,
             self.peer_generation_mismatch,
             self.traffic_class_mismatch,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ApModeledAirtimeEvidence {
+    modeled_aggregates: u64,
+    identity_bound: u64,
+    terminal_mismatch: u64,
+    publications: u64,
+    modeled_hundred_ns: u64,
+}
+
+impl ApModeledAirtimeEvidence {
+    fn from_log(log: &str) -> Option<Self> {
+        let line = log
+            .lines()
+            .find(|line| line.starts_with("ORC0TXA ") || line.contains(" ORC0TXA "))?;
+        if text_field(line, "hardware_measurement")? != "unavailable" {
+            return None;
+        }
+        Some(Self {
+            modeled_aggregates: numeric_field(line, "modeled_aggregates")?,
+            identity_bound: numeric_field(line, "identity_bound")?,
+            terminal_mismatch: numeric_field(line, "terminal_mismatch")?,
+            publications: numeric_field(line, "publications")?,
+            modeled_hundred_ns: numeric_field(line, "modeled_hundred_ns")?,
+        })
+    }
+
+    fn markdown(self) -> String {
+        let modeled_millis = self.modeled_hundred_ns as f64 / 10_000.0;
+        let modeled_micros_per_aggregate =
+            self.modeled_hundred_ns as f64 / self.modeled_aggregates.max(1) as f64 / 10.0;
+        let publications_per_aggregate =
+            self.publications as f64 / self.modeled_aggregates.max(1) as f64;
+        format!(
+            "## AP submitted-PPDU duration model\n\n\
+             This sums the HT data-PPDU durations modeled from the exact initial and retry A-MPDU publication vectors observed by Core0. It excludes contention, protection, SIFS and BlockAck time and is not a hardware measurement of on-air airtime.\n\n\
+             - Terminal aggregates / identity-bound / terminal mismatch: `{}` / `{}` / `{}`\n\
+             - A-MPDU publications: `{}` ({publications_per_aggregate:.3} per terminal aggregate)\n\
+             - Modeled submitted data-PPDU duration: `{}` × 100 ns ({modeled_millis:.3} ms total; {modeled_micros_per_aggregate:.3} us per terminal aggregate)\n\
+             - Hardware airtime measurement: `unavailable`\n\n",
+            self.modeled_aggregates,
+            self.identity_bound,
+            self.terminal_mismatch,
+            self.publications,
+            self.modeled_hundred_ns,
         )
     }
 }
@@ -1039,6 +1089,13 @@ fn numeric_field(line: &str, key: &str) -> Option<u64> {
     })
 }
 
+fn text_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    line.split_ascii_whitespace().find_map(|token| {
+        let (candidate, value) = token.split_once('=')?;
+        (candidate == key).then_some(value)
+    })
+}
+
 fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> Result<()> {
     let TxPerformanceReport {
         options,
@@ -1054,6 +1111,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         core0_coarse,
         tx_phases,
         ap_egress_identity,
+        ap_modeled_airtime,
         failure,
     } = report;
     let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
@@ -1086,6 +1144,9 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
     let ap_egress_identity_report = ap_egress_identity
         .map(ApEgressIdentityEvidence::markdown)
         .unwrap_or_default();
+    let ap_modeled_airtime_report = ap_modeled_airtime
+        .map(ApModeledAirtimeEvidence::markdown)
+        .unwrap_or_default();
     fs::write(
         output.join("report.md"),
         format!(
@@ -1108,6 +1169,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
              {core0_report}\
              {tx_phase_report}\
              {ap_egress_identity_report}\
+             {ap_modeled_airtime_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.device,
             bursts.len(),
@@ -1397,6 +1459,31 @@ mod tests {
         let markdown = evidence.markdown();
         assert!(markdown.contains("AP role admission remains authoritative"));
         assert!(markdown.contains("Total role-identity mismatches: `30`"));
+    }
+
+    #[test]
+    fn parses_ap_modeled_airtime_with_explicit_hardware_provenance() {
+        let evidence = ApModeledAirtimeEvidence::from_log(
+            "ORC0TXA modeled_aggregates=10 identity_bound=10 terminal_mismatch=0 publications=12 modeled_hundred_ns=350000 hardware_measurement=unavailable",
+        )
+        .unwrap();
+        assert_eq!(evidence.modeled_aggregates, 10);
+        assert_eq!(evidence.publications, 12);
+        let markdown = evidence.markdown();
+        assert!(markdown.contains("1.200 per terminal aggregate"));
+        assert!(markdown.contains("35.000 ms total"));
+        assert!(markdown.contains("Hardware airtime measurement: `unavailable`"));
+    }
+
+    #[test]
+    fn rejects_ap_modeled_airtime_that_claims_unavailable_hardware_data() {
+        assert!(
+            ApModeledAirtimeEvidence::from_log(
+                "ORC0TXA modeled_aggregates=1 identity_bound=1 terminal_mismatch=0 publications=1 modeled_hundred_ns=29160 hardware_measurement=measured",
+            )
+            .is_none()
+        );
+        assert!(ApModeledAirtimeEvidence::from_log("unrelated").is_none());
     }
 
     #[test]

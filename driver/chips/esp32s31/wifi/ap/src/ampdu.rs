@@ -169,9 +169,10 @@ pub struct Esp32s31ApAmpduCompletion {
 
 /// Role identity returned exactly once with terminal backing release.
 ///
-/// Keeping this metadata out of [`Esp32s31ApAmpduProgress`] preserves the
-/// compact hot completion ABI while still binding later airtime accounting to
-/// the exact association generation and PHY rate owned by the transaction.
+/// Keeping association identity out of every intermediate progress result
+/// avoids copying role state on each poll while still binding terminal
+/// accounting to the exact association generation and PHY rate owned by the
+/// transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApAmpduTerminal {
     pub association: ApAssociationIdentity,
@@ -181,7 +182,10 @@ pub struct Esp32s31ApAmpduTerminal {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApAmpduProgress {
     Pending,
-    Republished(Esp32s31ApAmpduCompletion),
+    Republished {
+        completion: Esp32s31ApAmpduCompletion,
+        publication: Esp32s31ApPreparedAmpdu,
+    },
     /// Hardware/BlockAck processing is terminal, while the detached DMA
     /// backing remains retained until the caller performs the explicit
     /// release edge.
@@ -385,6 +389,14 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
+        let retry = AmpduRetryState::new(
+            prepared.first_sequence,
+            prepared.subframes,
+            AmpduRetryPolicy {
+                attempt_limit: self.attempt_limit,
+                retain_single_mpdu: true,
+            },
+        )?;
         self.inner
             .submit(hardware, cookie, LegacyTxQueue::BestEffort, config)?;
         self.state = ApAmpduState::Hardware {
@@ -392,14 +404,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             association,
             rate: prepared.rate,
             hardware_key_selector: prepared.hardware_key_selector,
-            retry: AmpduRetryState::new(
-                prepared.first_sequence,
-                prepared.subframes,
-                AmpduRetryPolicy {
-                    attempt_limit: self.attempt_limit,
-                    retain_single_mpdu: true,
-                },
-            )?,
+            retry,
         };
         Ok(prepared)
     }
@@ -465,6 +470,13 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                     hardware_key_selector,
                 )
                 .ok_or(Esp32s31ApAmpduError::Geometry)?;
+            let publication = Esp32s31ApPreparedAmpdu {
+                rate,
+                first_sequence: retry.current_first_sequence(),
+                subframes: aggregate.subframes,
+                aggregate_length: aggregate.bytes,
+                hardware_key_selector,
+            };
             self.inner
                 .submit(hardware, cookie, LegacyTxQueue::BestEffort, refreshed)?;
             self.state = ApAmpduState::Hardware {
@@ -474,7 +486,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 hardware_key_selector,
                 retry,
             };
-            return Ok(Esp32s31ApAmpduProgress::Republished(observation));
+            return Ok(Esp32s31ApAmpduProgress::Republished {
+                completion: observation,
+                publication,
+            });
         }
         if decision.missing() == 0 {
             ordinary.record_aggregate_success();
@@ -528,28 +543,38 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     pub fn finish_timeout_abort<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<(), Esp32s31ApAmpduError> {
-        let ApAmpduState::Hardware { cookie, .. } =
-            core::mem::replace(&mut self.state, ApAmpduState::Idle)
+    ) -> Result<Esp32s31ApAmpduTerminal, Esp32s31ApAmpduError> {
+        let ApAmpduState::Hardware {
+            cookie,
+            association,
+            rate,
+            ..
+        } = core::mem::replace(&mut self.state, ApAmpduState::Idle)
         else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
         self.inner.finish_timeout_abort(hardware, cookie)?;
-        Ok(())
+        Ok(Esp32s31ApAmpduTerminal { association, rate })
     }
 
     pub fn abort_collision<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<bool, Esp32s31ApAmpduError> {
-        let ApAmpduState::Hardware { cookie, .. } = self.state else {
+    ) -> Result<Option<Esp32s31ApAmpduTerminal>, Esp32s31ApAmpduError> {
+        let ApAmpduState::Hardware {
+            cookie,
+            association,
+            rate,
+            ..
+        } = self.state
+        else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
         if !self.inner.abort_collision(hardware, cookie)? {
-            return Ok(false);
+            return Ok(None);
         }
         self.state = ApAmpduState::Idle;
-        Ok(true)
+        Ok(Some(Esp32s31ApAmpduTerminal { association, rate }))
     }
 
     #[allow(clippy::result_large_err)]
@@ -586,6 +611,11 @@ mod tests {
 
     const ASSOCIATION: ApAssociationIdentity =
         ApAssociationIdentity::new([0x02, 0, 0, 0, 0, 1], 1, 7).unwrap();
+
+    #[test]
+    fn progress_result_remains_a_compact_transient_value() {
+        assert!(core::mem::size_of::<Esp32s31ApAmpduProgress>() <= 32);
+    }
 
     #[test]
     fn every_owned_ampdu_phase_retains_the_exact_association_generation() {

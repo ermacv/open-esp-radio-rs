@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 6;
+pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 7;
 
 #[derive(Serialize)]
 pub(super) struct AccessPointReport {
@@ -47,6 +47,68 @@ pub(super) struct CycleReport {
     /// independently admitted peer identity. This never changes admission.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) egress_identity: Option<ApEgressIdentityReport>,
+    /// Diagnostic-only duration model for the exact AP A-MPDU publication
+    /// vectors observed by Core0. This is explicitly not an on-air hardware
+    /// measurement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) modeled_airtime: Option<ApModeledAirtimeReport>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum ApHardwareAirtimeMeasurement {
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct ApModeledAirtimeReport {
+    pub(super) modeled_aggregates: u64,
+    pub(super) identity_bound: u64,
+    pub(super) terminal_mismatch: u64,
+    pub(super) publications: u64,
+    pub(super) modeled_hundred_ns: u64,
+    pub(super) hardware_measurement: ApHardwareAirtimeMeasurement,
+}
+
+impl ApModeledAirtimeReport {
+    pub(super) fn all_from_log(log: &str) -> Result<Vec<Self>, String> {
+        log.lines()
+            .filter(|line| line.starts_with("ORC0TXA ") || line.contains(" ORC0TXA "))
+            .map(Self::from_line)
+            .collect()
+    }
+
+    fn from_line(line: &str) -> Result<Self, String> {
+        let hardware_measurement = text_field(line, "hardware_measurement")?;
+        if hardware_measurement != "unavailable" {
+            return Err(format!(
+                "ORC0TXA hardware_measurement must be \"unavailable\", got {hardware_measurement:?} in {line:?}"
+            ));
+        }
+        Ok(Self {
+            modeled_aggregates: airtime_numeric_field(line, "modeled_aggregates")?,
+            identity_bound: airtime_numeric_field(line, "identity_bound")?,
+            terminal_mismatch: airtime_numeric_field(line, "terminal_mismatch")?,
+            publications: airtime_numeric_field(line, "publications")?,
+            modeled_hundred_ns: airtime_numeric_field(line, "modeled_hundred_ns")?,
+            hardware_measurement: ApHardwareAirtimeMeasurement::Unavailable,
+        })
+    }
+}
+
+fn airtime_numeric_field(line: &str, key: &str) -> Result<u64, String> {
+    text_field(line, key)?
+        .parse()
+        .map_err(|error| format!("invalid ORC0TXA field {key:?} in {line:?}: {error}"))
+}
+
+fn text_field<'a>(line: &'a str, key: &str) -> Result<&'a str, String> {
+    line.split_ascii_whitespace()
+        .find_map(|token| {
+            let (candidate, value) = token.split_once('=')?;
+            (candidate == key).then_some(value)
+        })
+        .ok_or_else(|| format!("ORC0TXA field {key:?} is missing in {line:?}"))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

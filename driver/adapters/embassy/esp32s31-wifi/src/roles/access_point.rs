@@ -29,6 +29,8 @@ use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::{WifiTxProgress, WifiTxWake},
 };
+#[cfg(feature = "tx-phase-telemetry")]
+use open_esp_radio_esp32s31_wifi_ap::ampdu::{Esp32s31ApAmpduTerminal, Esp32s31ApPreparedAmpdu};
 #[cfg(any(feature = "diagnostics", test))]
 use open_esp_radio_esp32s31_wifi_ap::mac::Esp32s31ApMacObservation;
 use open_esp_radio_esp32s31_wifi_ap::protocol::{
@@ -57,6 +59,8 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
 use open_esp_radio_esp32s31_wifi_mac::tx::HtMcs;
 #[cfg(any(feature = "diagnostics", test))]
 use open_esp_radio_esp32s31_wifi_mac::tx::{HtChannelWidth, HtRate};
+#[cfg(feature = "tx-phase-telemetry")]
+use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{HtAmpduLength, ModeledHtAmpduPpduDuration};
 use open_esp_radio_esp32s31_wifi_mac::{
     MacInterface,
     init::MAC_COLD_RX_INTERRUPT_MASK,

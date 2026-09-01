@@ -360,9 +360,77 @@ struct PreparedStandby {
     policy: HtAmpduTxRolePolicy,
     admitted: usize,
     #[cfg(feature = "tx-phase-telemetry")]
+    egress_identity: Option<AssociatedEgressIdentity>,
+    #[cfg(feature = "tx-phase-telemetry")]
     mismatch_claims: usize,
     #[cfg(any(feature = "diagnostics", test))]
     preparation_micros: u64,
+}
+
+/// Core0-owned shadow of the exact vectors submitted for one active A-MPDU
+/// transaction.
+///
+/// This deliberately lives outside both physical aggregate arenas. The arena
+/// pair is a DMA ownership mechanism, while identity and fairness accounting
+/// belong to the one radio owner and must not be multiplied by current and
+/// standby storage.
+#[cfg(feature = "tx-phase-telemetry")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ApAggregateAirtimeShadow {
+    egress_identity: Option<AssociatedEgressIdentity>,
+    modeled_published_ppdu_duration: ModeledHtAmpduPpduDuration,
+    aggregate_publications: u8,
+}
+
+#[cfg(feature = "tx-phase-telemetry")]
+impl ApAggregateAirtimeShadow {
+    fn first(
+        egress_identity: Option<AssociatedEgressIdentity>,
+        publication: Esp32s31ApPreparedAmpdu,
+    ) -> Self {
+        let modeled_published_ppdu_duration = ModeledHtAmpduPpduDuration::from_published_ampdu(
+            publication.rate,
+            HtAmpduLength {
+                bytes: publication.aggregate_length,
+                subframes: publication.subframes,
+            },
+        )
+        .expect("a published AP A-MPDU has nonempty validated geometry");
+        Self {
+            egress_identity,
+            modeled_published_ppdu_duration,
+            aggregate_publications: 1,
+        }
+    }
+
+    fn record_publication(&mut self, publication: Esp32s31ApPreparedAmpdu) {
+        let duration = ModeledHtAmpduPpduDuration::from_published_ampdu(
+            publication.rate,
+            HtAmpduLength {
+                bytes: publication.aggregate_length,
+                subframes: publication.subframes,
+            },
+        )
+        .expect("a republished AP A-MPDU has nonempty validated geometry");
+        self.modeled_published_ppdu_duration = self
+            .modeled_published_ppdu_duration
+            .checked_add(duration)
+            .expect("the finite AP aggregate attempt limit bounds modeled duration");
+        self.aggregate_publications = self
+            .aggregate_publications
+            .checked_add(1)
+            .expect("the AP aggregate attempt count is byte-sized");
+    }
+
+    fn terminal_matches(self, terminal: Esp32s31ApAmpduTerminal) -> bool {
+        self.egress_identity.is_some_and(|identity| {
+            compare_ap_associated_identity(
+                true,
+                Some(identity),
+                ApTxFlowKey::associated(terminal.association),
+            ) == Core0ApEgressIdentityObservation::Exact
+        })
+    }
 }
 
 pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
@@ -395,6 +463,8 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
     /// retained after that beacon can never join this release window.
     dtim_group_release_remaining: u16,
     last_started_frames: usize,
+    #[cfg(feature = "tx-phase-telemetry")]
+    active_airtime_shadow: Option<ApAggregateAirtimeShadow>,
 }
 
 impl<'observer, B, N> Esp32s31AccessPointNetworkTx<'observer, B, N>
@@ -434,6 +504,8 @@ where
             active_group_release: None,
             dtim_group_release_remaining: 0,
             last_started_frames: 1,
+            #[cfg(feature = "tx-phase-telemetry")]
+            active_airtime_shadow: None,
         }
     }
 
@@ -472,6 +544,91 @@ where
         super::access_point_egress_shadow_grant()
             .clear()
             .expect("the Core0 shadow-grant publication is single-owner and non-reusable");
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn bind_aggregate_egress_identity<
+        'resources,
+        M: RawMutex,
+        const FRAME_CAPACITY: usize,
+        const HEADROOM: usize,
+        const TRAILER: usize,
+        const TX_QUEUE_DEPTH: usize,
+    >(
+        &self,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+        frame: &PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+        role_key: ApTxFlowKey,
+    ) -> Option<AssociatedEgressIdentity> {
+        if !crate::diagnostics::core0_rx_performance::ap_terminal_identity_diagnostics_enabled() {
+            return None;
+        }
+        let metadata = network.metadata(frame);
+        let identity = metadata.associated_peer_identity();
+        (compare_ap_associated_identity(metadata.egress_key().is_some(), identity, role_key)
+            == Core0ApEgressIdentityObservation::Exact)
+            .then_some(identity)
+            .flatten()
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn begin_airtime_shadow(
+        &mut self,
+        egress_identity: Option<AssociatedEgressIdentity>,
+        publication: Esp32s31ApPreparedAmpdu,
+    ) {
+        if !crate::diagnostics::core0_rx_performance::ap_terminal_identity_diagnostics_enabled() {
+            return;
+        }
+        debug_assert!(
+            self.active_airtime_shadow.is_none(),
+            "one AP radio owner cannot publish two active aggregates"
+        );
+        self.active_airtime_shadow = Some(ApAggregateAirtimeShadow::first(
+            egress_identity,
+            publication,
+        ));
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn record_airtime_republication(&mut self, publication: Esp32s31ApPreparedAmpdu) {
+        if let Some(shadow) = self.active_airtime_shadow.as_mut() {
+            shadow.record_publication(publication);
+        }
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn finish_airtime_shadow(
+        &mut self,
+        terminal: Esp32s31ApAmpduTerminal,
+    ) -> Option<ApAggregateAirtimeShadow> {
+        let shadow = self.active_airtime_shadow.take()?;
+        let terminal_matches = shadow.terminal_matches(terminal);
+        debug_assert!(
+            shadow.egress_identity.is_none() || terminal_matches,
+            "stack and radio terminal aggregate identities must correspond"
+        );
+        CORE0_PERFORMANCE.record_ap_modeled_airtime(
+            shadow.egress_identity.is_some(),
+            terminal_matches,
+            shadow.aggregate_publications,
+            shadow.modeled_published_ppdu_duration.hundred_nanoseconds(),
+        );
+        Some(shadow)
     }
 
     pub(super) fn has_prepared(&self) -> bool {
@@ -1736,6 +1893,8 @@ where
             debug_assert!(admission.accepts_ethernet(second.as_slice()));
 
             let association = admission.association();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let egress_identity = self.bind_aggregate_egress_identity(network, &frame, flow_key);
             let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
                     error,
@@ -1848,9 +2007,13 @@ where
             }
             #[cfg(any(feature = "diagnostics", test))]
             let publication_started = self.observer.map(AggregateTxObserver::now_micros);
-            active
+            let publication = active
                 .publish(ordinary, hardware)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.begin_airtime_shadow(egress_identity, publication);
+            #[cfg(not(feature = "tx-phase-telemetry"))]
+            let _ = publication;
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 let finished = observer.now_micros();
@@ -2349,6 +2512,8 @@ where
             return Ok(true);
         };
         let association = admission.association();
+        #[cfg(feature = "tx-phase-telemetry")]
+        let egress_identity = self.bind_aggregate_egress_identity(network, &first, first_key);
         {
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
@@ -2437,6 +2602,8 @@ where
             admission,
             policy,
             admitted: 2,
+            #[cfg(feature = "tx-phase-telemetry")]
+            egress_identity,
             #[cfg(feature = "tx-phase-telemetry")]
             mismatch_claims: 0,
             #[cfg(any(feature = "diagnostics", test))]
@@ -2543,9 +2710,13 @@ where
         let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
             Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(error))
         })?;
-        aggregate
+        let publication = aggregate
             .publish_standby(ordinary, hardware)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.begin_airtime_shadow(batch.egress_identity, publication);
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        let _ = publication;
         self.last_started_frames = batch.admitted;
         let now = ordinary.now_micros();
         self.deadline_micros = Some(now.saturating_add(ordinary.publication_timeout_micros()));
@@ -2774,31 +2945,31 @@ where
             )
         })?;
         if service_event == AggregateTxServiceEvent::Collision {
-            #[cfg(feature = "tx-phase-telemetry")]
-            let association = aggregate.active_mut().association().ok_or(
-                Esp32s31AccessPointDatapathError::Aggregate(Esp32s31ApAmpduError::Idle),
-            )?;
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
                     error,
                 ))
             })?;
-            if !aggregate
+            let Some(terminal) = aggregate
                 .active_mut()
                 .abort_collision(hardware)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?
-            {
+            else {
                 return Err(Esp32s31AccessPointDatapathError::Aggregate(
                     Esp32s31ApAmpduError::HardwareDidNotDetach,
                 ));
-            }
+            };
             ordinary.reset_aggregate_contention();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let _ = self.finish_airtime_shadow(terminal);
             #[cfg(feature = "tx-phase-telemetry")]
             self.observe_terminal_egress_identity(
                 control.mac.engine(),
-                association,
+                terminal.association,
                 self.last_started_frames,
             );
+            #[cfg(not(feature = "tx-phase-telemetry"))]
+            let _ = terminal;
             self.deadline_micros = None;
             #[cfg(any(feature = "diagnostics", test))]
             {
@@ -2814,10 +2985,6 @@ where
             service_event,
             AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
         ) {
-            #[cfg(feature = "tx-phase-telemetry")]
-            let association = aggregate.active_mut().association().ok_or(
-                Esp32s31AccessPointDatapathError::Aggregate(Esp32s31ApAmpduError::Idle),
-            )?;
             if !aggregate
                 .active_mut()
                 .begin_timeout_abort(hardware)
@@ -2833,17 +3000,21 @@ where
                 ))
             })?;
             ordinary.after_micros(16).await;
-            aggregate
+            let terminal = aggregate
                 .active_mut()
                 .finish_timeout_abort(hardware)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             ordinary.reset_aggregate_contention();
             #[cfg(feature = "tx-phase-telemetry")]
+            let _ = self.finish_airtime_shadow(terminal);
+            #[cfg(feature = "tx-phase-telemetry")]
             self.observe_terminal_egress_identity(
                 control.mac.engine(),
-                association,
+                terminal.association,
                 self.last_started_frames,
             );
+            #[cfg(not(feature = "tx-phase-telemetry"))]
+            let _ = terminal;
             self.deadline_micros = None;
             #[cfg(any(feature = "diagnostics", test))]
             {
@@ -2873,7 +3044,7 @@ where
                 let finished = observer.now_micros();
                 let started = completion_started.unwrap_or(finished);
                 match progress {
-                    Esp32s31ApAmpduProgress::Republished(_) => {
+                    Esp32s31ApAmpduProgress::Republished { .. } => {
                         observer.observe(AggregateTxObservation::Published {
                             at_micros: started,
                             program_micros: finished.saturating_sub(started),
@@ -2902,6 +3073,8 @@ where
                     .release_completed()
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
                 #[cfg(feature = "tx-phase-telemetry")]
+                let _ = self.finish_airtime_shadow(terminal);
+                #[cfg(feature = "tx-phase-telemetry")]
                 self.observe_terminal_egress_identity(
                     control.mac.engine(),
                     terminal.association,
@@ -2928,7 +3101,14 @@ where
                 }
                 Ok(WifiTxProgress::Complete)
             }
-            Esp32s31ApAmpduProgress::Republished(completion) => {
+            Esp32s31ApAmpduProgress::Republished {
+                completion,
+                publication,
+            } => {
+                #[cfg(feature = "tx-phase-telemetry")]
+                self.record_airtime_republication(publication);
+                #[cfg(not(feature = "tx-phase-telemetry"))]
+                let _ = publication;
                 #[cfg(any(feature = "diagnostics", test))]
                 self.observe_completion_details(completion, true);
                 #[cfg(not(any(feature = "diagnostics", test)))]
@@ -3094,9 +3274,17 @@ mod tests {
         ApTxFlowKey, aggregate_adapter_available,
     };
     #[cfg(feature = "tx-phase-telemetry")]
-    use super::{AssociatedEgressIdentity, compare_ap_associated_identity};
+    use super::{
+        ApAggregateAirtimeShadow, AssociatedEgressIdentity, compare_ap_associated_identity,
+    };
     #[cfg(feature = "tx-phase-telemetry")]
     use crate::diagnostics::core0_rx_performance::Core0ApEgressIdentityObservation;
+    #[cfg(feature = "tx-phase-telemetry")]
+    use open_esp_radio_esp32s31_wifi_ap::ampdu::{
+        Esp32s31ApAmpduTerminal, Esp32s31ApPreparedAmpdu,
+    };
+    #[cfg(feature = "tx-phase-telemetry")]
+    use open_esp_radio_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
 
     struct TestActiveArena<B> {
         leases: ApFrameLeaseArena<B>,
@@ -3214,6 +3402,60 @@ mod tests {
             compare_ap_associated_identity(true, None, FLOW_A),
             Core0ApEgressIdentityObservation::NonAssociated
         );
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[test]
+    fn aggregate_shadow_keeps_schedule_identity_and_sums_exact_retry_vectors() {
+        let identity = AssociatedEgressIdentity::new(
+            crate::roles::concurrent::AP_NETWORK_INTERFACE_ID.value(),
+            37,
+            core::num::NonZeroU8::new(1).unwrap(),
+            core::num::NonZeroU32::new(10).unwrap(),
+            0,
+        );
+        let rate = HtRate::new(
+            HtMcs::Mcs7,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz40,
+        );
+        let mut shadow = ApAggregateAirtimeShadow::first(
+            Some(identity),
+            Esp32s31ApPreparedAmpdu {
+                rate,
+                first_sequence: 10,
+                subframes: 32,
+                aggregate_length: 48_512,
+                hardware_key_selector: 8,
+            },
+        );
+        shadow.record_publication(Esp32s31ApPreparedAmpdu {
+            rate,
+            first_sequence: 18,
+            subframes: 8,
+            aggregate_length: 12_128,
+            hardware_key_selector: 8,
+        });
+
+        assert_eq!(
+            shadow
+                .egress_identity
+                .map(|identity| identity.schedule_epoch()),
+            Some(37)
+        );
+        assert_eq!(shadow.aggregate_publications, 2);
+        assert_eq!(
+            shadow.modeled_published_ppdu_duration.hundred_nanoseconds(),
+            36_760
+        );
+        assert!(shadow.terminal_matches(Esp32s31ApAmpduTerminal {
+            association: FLOW_A.association().unwrap(),
+            rate,
+        }));
+        assert!(!shadow.terminal_matches(Esp32s31ApAmpduTerminal {
+            association: FLOW_A_REASSOCIATED.association().unwrap(),
+            rate,
+        }));
     }
 
     #[test]

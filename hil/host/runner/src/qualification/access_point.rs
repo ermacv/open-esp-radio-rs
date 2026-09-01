@@ -42,10 +42,12 @@ use multi_client::validate_multi_client_fairness;
 #[cfg(test)]
 use open_esp_radio_hil_protocol::Ipv4Endpoint;
 #[cfg(test)]
+use report::ApHardwareAirtimeMeasurement;
+#[cfg(test)]
 use report::MultiClientFlowReport;
 use report::{
-    ACCESS_POINT_REPORT_SCHEMA, AccessPointReport, ApEgressIdentityReport, BootReport, CycleReport,
-    SessionReport, TrafficReport,
+    ACCESS_POINT_REPORT_SCHEMA, AccessPointReport, ApEgressIdentityReport, ApModeledAirtimeReport,
+    BootReport, CycleReport, SessionReport, TrafficReport,
 };
 #[cfg(test)]
 use std::net::Ipv4Addr;
@@ -131,6 +133,8 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
         let uart = capture_result?;
         let identities = ApEgressIdentityReport::all_from_log(&uart)
             .map_err(|error| format!("invalid AP egress identity evidence: {error}"))?;
+        let modeled_airtimes = ApModeledAirtimeReport::all_from_log(&uart)
+            .map_err(|error| format!("invalid AP modeled airtime evidence: {error}"))?;
         if !identities.is_empty() && identities.len() != cycles.len() {
             return Err(format!(
                 "AP egress identity evidence count {} does not match cycle count {}",
@@ -139,8 +143,19 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
             )
             .into());
         }
+        if !modeled_airtimes.is_empty() && modeled_airtimes.len() != cycles.len() {
+            return Err(format!(
+                "AP modeled airtime evidence count {} does not match cycle count {}",
+                modeled_airtimes.len(),
+                cycles.len(),
+            )
+            .into());
+        }
         for (cycle, identity) in cycles.iter_mut().zip(identities) {
             cycle.egress_identity = Some(identity);
+        }
+        for (cycle, modeled_airtime) in cycles.iter_mut().zip(modeled_airtimes) {
+            cycle.modeled_airtime = Some(modeled_airtime);
         }
         report.boots.push(BootReport { boot, cycles });
     }
@@ -463,6 +478,7 @@ fn qualify(
             independent_air,
             access_point,
             egress_identity: None,
+            modeled_airtime: None,
         });
     }
     Ok(cycles)
@@ -1408,6 +1424,7 @@ mod tests {
                     independent_air: None,
                     access_point: None,
                     egress_identity: None,
+                    modeled_airtime: None,
                 }],
             }],
         };
@@ -1425,6 +1442,11 @@ mod tests {
         assert!(
             json["boots"][0]["cycles"][0]
                 .get("egress_identity")
+                .is_none()
+        );
+        assert!(
+            json["boots"][0]["cycles"][0]
+                .get("modeled_airtime")
                 .is_none()
         );
     }
@@ -1483,5 +1505,57 @@ uart: ORC0TXI exact=32 unclassified=0 non_associated=0 role_unbound=0 interface_
         )
         .unwrap_err();
         assert!(error.contains("all present or all absent"));
+    }
+
+    #[test]
+    fn parses_ap_modeled_airtime_without_claiming_hardware_measurement() {
+        let log = "\
+ORC0TXA modeled_aggregates=17 identity_bound=17 terminal_mismatch=0 publications=19 modeled_hundred_ns=495720 hardware_measurement=unavailable\n\
+uart: ORC0TXA modeled_aggregates=18 identity_bound=18 terminal_mismatch=0 publications=18 modeled_hundred_ns=524880 hardware_measurement=unavailable\n";
+
+        let parsed = ApModeledAirtimeReport::all_from_log(log).unwrap();
+
+        assert_eq!(
+            parsed,
+            vec![
+                ApModeledAirtimeReport {
+                    modeled_aggregates: 17,
+                    identity_bound: 17,
+                    terminal_mismatch: 0,
+                    publications: 19,
+                    modeled_hundred_ns: 495_720,
+                    hardware_measurement: ApHardwareAirtimeMeasurement::Unavailable,
+                },
+                ApModeledAirtimeReport {
+                    modeled_aggregates: 18,
+                    identity_bound: 18,
+                    terminal_mismatch: 0,
+                    publications: 18,
+                    modeled_hundred_ns: 524_880,
+                    hardware_measurement: ApHardwareAirtimeMeasurement::Unavailable,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn ap_modeled_airtime_is_optional_but_must_preserve_provenance_when_present() {
+        assert!(
+            ApModeledAirtimeReport::all_from_log("unrelated")
+                .unwrap()
+                .is_empty()
+        );
+
+        let error = ApModeledAirtimeReport::all_from_log(
+            "ORC0TXA modeled_aggregates=1 identity_bound=1 terminal_mismatch=0 publications=1 modeled_hundred_ns=29160 hardware_measurement=measured",
+        )
+        .unwrap_err();
+        assert!(error.contains("must be \"unavailable\""));
+
+        let error = ApModeledAirtimeReport::all_from_log(
+            "ORC0TXA modeled_aggregates=1 identity_bound=1 terminal_mismatch=0 publications=1 hardware_measurement=unavailable",
+        )
+        .unwrap_err();
+        assert!(error.contains("modeled_hundred_ns"));
     }
 }

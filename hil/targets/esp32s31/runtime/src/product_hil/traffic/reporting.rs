@@ -1012,6 +1012,16 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "ORC0TXA modeled_aggregates={} identity_bound={} terminal_mismatch={} publications={} modeled_hundred_ns={} hardware_measurement=unavailable",
+        performance.tx_ap_airtime_aggregates,
+        performance.tx_ap_airtime_identity_bound,
+        performance.tx_ap_airtime_terminal_mismatch,
+        performance.tx_ap_airtime_publications,
+        performance.tx_ap_airtime_modeled_hundred_ns,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "ORC0P drained={} probe={} protocol_tx_blocked={} recycled_append={} budget={} stage_blocked={} network_blocked={} droppable={}",
         performance.rx_progress_drained,
         performance.rx_progress_probe_pending,

@@ -461,16 +461,21 @@ pub use passive_scanning_active::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_hci::{
-    BluetoothPassiveScanHciActiveFault, BluetoothPassiveScanHciActiveSession,
-    BluetoothPassiveScanHciActiveStep, BluetoothPassiveScanHciCommandIntake,
-    BluetoothPassiveScanHciCommandMismatch, BluetoothPassiveScanHciCommandRoute,
-    BluetoothPassiveScanHciCpuResponsePending, BluetoothPassiveScanHciCpuResponsePublication,
-    BluetoothPassiveScanHciFirstRunner, BluetoothPassiveScanHciFirstRunnerFailure,
-    BluetoothPassiveScanHciFirstRunnerStep, BluetoothPassiveScanHciFirstRunning,
-    BluetoothPassiveScanHciRecurringFailure, BluetoothPassiveScanHciRecurringRunner,
-    BluetoothPassiveScanHciRecurringRunnerStep, BluetoothPassiveScanHciReportStep,
-    BluetoothPassiveScanHciReportsComplete, BluetoothPassiveScanHciReportsPending,
-    BluetoothPassiveScanHciResponsePendingSession, BluetoothPassiveScanHciResponsePublication,
+    BluetoothPassiveScanHciActiveCommandIntake, BluetoothPassiveScanHciActiveCommandMismatch,
+    BluetoothPassiveScanHciActiveCommandRoute, BluetoothPassiveScanHciActiveFault,
+    BluetoothPassiveScanHciActivePendingFault, BluetoothPassiveScanHciActivePendingRadioStep,
+    BluetoothPassiveScanHciActiveResponsePending, BluetoothPassiveScanHciActiveResponsePublication,
+    BluetoothPassiveScanHciActiveSession, BluetoothPassiveScanHciActiveStep,
+    BluetoothPassiveScanHciCommandIntake, BluetoothPassiveScanHciCommandMismatch,
+    BluetoothPassiveScanHciCommandRoute, BluetoothPassiveScanHciCpuResponsePending,
+    BluetoothPassiveScanHciCpuResponsePublication, BluetoothPassiveScanHciFirstRunner,
+    BluetoothPassiveScanHciFirstRunnerFailure, BluetoothPassiveScanHciFirstRunnerStep,
+    BluetoothPassiveScanHciFirstRunning, BluetoothPassiveScanHciRecurringFailure,
+    BluetoothPassiveScanHciRecurringRunner, BluetoothPassiveScanHciRecurringRunnerStep,
+    BluetoothPassiveScanHciReportStep, BluetoothPassiveScanHciReportsComplete,
+    BluetoothPassiveScanHciReportsPending, BluetoothPassiveScanHciResponsePendingSession,
+    BluetoothPassiveScanHciResponsePublication, BluetoothPassiveScanHciStopping,
+    BluetoothPassiveScanHciStoppingFault, BluetoothPassiveScanHciStoppingStep,
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_runner::{

@@ -17,7 +17,7 @@ use crate::{
     Result,
     registers::{
         ProjectRegisterWorkspace, RegisterPublicationOwnership, classify_register_publication,
-        reviewed_register_identities,
+        observation_is_reviewed, reviewed_register_identities,
     },
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
@@ -3109,7 +3109,7 @@ fn add_registers(
     let address_space = model.address_space().to_owned();
     let reviewed_identities = reviewed_register_identities(model)?;
     for fact in &facts.registers {
-        if reviewed_identities.contains_key(&(u64::from(fact.address), u32::from(fact.width))) {
+        if register_access_is_reviewed(&reviewed_identities, fact.address, fact.width) {
             continue;
         }
         let ownership =
@@ -3147,6 +3147,14 @@ fn add_registers(
         )?;
     }
     Ok(())
+}
+
+fn register_access_is_reviewed(
+    reviewed_identities: &BTreeMap<(u64, u32), String>,
+    address: u32,
+    width: u8,
+) -> bool {
+    observation_is_reviewed(reviewed_identities, &(u64::from(address), u32::from(width)))
 }
 
 struct SeedTemplate {
@@ -6959,6 +6967,15 @@ locator = "RADIO.STATUS"
                 ResearchFindingQueryState::NotPresent
             );
         }
+    }
+
+    #[test]
+    fn reviewed_physical_register_satisfies_subword_research_access() {
+        let reviewed = BTreeMap::from([((0x2010_199c, 32), "BLE_HW_CTE.RING_CONTROL".to_owned())]);
+
+        assert!(register_access_is_reviewed(&reviewed, 0x2010_199c, 16));
+        assert!(register_access_is_reviewed(&reviewed, 0x2010_199e, 16));
+        assert!(!register_access_is_reviewed(&reviewed, 0x2010_199d, 32));
     }
 
     #[test]

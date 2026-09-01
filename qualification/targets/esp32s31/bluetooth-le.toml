@@ -395,16 +395,15 @@ title = "Legacy LE passive scanning"
 scope = "Restricted LE 1M passive scanner using a public own address and the unfiltered accept-all policy from standard bt-hci Set Scan Parameters and Enable commands through recurring ESP32-S31 scheduler windows to bounded legacy advertising reports optional exact duplicate suppression and quiescent Disable or Reset"
 implementation = "incomplete"
 host = "covered"
-async = "incomplete"
+async = "bounded"
 depends-on = ["controller-timebase", "scheduler-finished-list-drain", "hci-controller-endpoints", "packet-dataplane"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-in-flight-stop-preemption-missing" },
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
   { axis = "vendor", id = "scanner-descriptor-engine-physical-contract-missing" },
   { axis = "hil", id = "passive-scanning-on-air-cell-missing" },
-  { axis = "async", id = "in-flight-disable-command-deferred-until-window-quiescence" },
 ]
 
 [[capabilities]]

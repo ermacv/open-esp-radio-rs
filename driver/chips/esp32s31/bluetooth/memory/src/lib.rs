@@ -31,6 +31,7 @@ mod legacy_advertising_event_image;
 mod legacy_advertising_storage;
 mod passive_scanning_event_image;
 mod passive_scanning_memory;
+mod peripheral_connection_memory;
 mod rx_memory_list;
 mod scheduler_context;
 mod sram_link;
@@ -143,6 +144,19 @@ pub use passive_scanning_memory::{
     BluetoothPassiveScanReceivedPdu, BluetoothPassiveScanRxError,
     BluetoothPassiveScanSchedulerAllocationConfig,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
+};
+#[cfg(not(target_arch = "riscv32"))]
+pub use peripheral_connection_memory::BluetoothPeripheralConnectionMemoryGraphModelAddress;
+pub use peripheral_connection_memory::{
+    BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES,
+    BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
+    BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
+    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
+    BluetoothPeripheralConnectionMemoryGraphBindError,
+    BluetoothPeripheralConnectionMemoryGraphBindFailure,
+    BluetoothPeripheralConnectionMemoryGraphBinding,
+    BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+    BluetoothPeripheralConnectionMemoryGraphStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};

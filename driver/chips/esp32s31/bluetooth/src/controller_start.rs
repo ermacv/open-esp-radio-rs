@@ -2800,6 +2800,18 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         self.dtm_resources.restore_idle(idle)
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection returns the complete affine advertising event"
+    )]
+    pub(crate) fn restore_legacy_advertising_completed_disabled(
+        &mut self,
+        completed: crate::BluetoothLegacyAdvertisingEventCompleted<'static>,
+    ) -> Result<(), crate::BluetoothLegacyAdvertisingEventCompleted<'static>> {
+        self.legacy_advertising_resources
+            .restore_completed_disabled(completed)
+    }
+
     fn new_dtm_link_state_reset(
         &self,
         role: crate::BluetoothDtmRole,

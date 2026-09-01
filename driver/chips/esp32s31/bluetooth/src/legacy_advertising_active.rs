@@ -3,6 +3,13 @@
 #![forbid(unsafe_code)]
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use open_esp_radio_bluetooth_hci::{
+    HciChannelError, HciEpochBound, HostToControllerFrame,
+    LeControllerActiveLegacyAdvertisingCommandRoute as HciActiveLegacyAdvertisingCommandRoute,
+    LeControllerClassifiedCommand, LeControllerCommandEndpoint, LeControllerCommandIntake,
+    LeControllerDeferredLegacyAdvertisingDisable, LeControllerResetBarrier,
+    LeControllerResetCompletion, LeControllerResponsePending, LeControllerResponsePublication,
+};
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingEventCompletionStatuses;
 
 use crate::{
@@ -200,6 +207,231 @@ where
     completed: BluetoothLegacyAdvertisingEventCompleted<'static>,
 }
 
+struct BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    task: Task<'runtime, S, CAPACITY>,
+    scheduler_item_address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
+    hardware_list_index: BluetoothSchedulerHardwareListIndex,
+    completed: BluetoothLegacyAdvertisingEventCompleted<'static>,
+}
+
+/// One response retained at a CPU-owned boundary before the next event is scheduled.
+#[must_use = "publish the response while retaining the complete advertising continuation"]
+pub struct BluetoothLegacyAdvertisingCpuOwnedResponsePending<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    transaction: LeControllerResponsePending<
+        'runtime,
+        BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// Result of publishing a command response at the between-event boundary.
+#[must_use = "retain the pending response or the returned CPU-owned continuation"]
+pub enum BluetoothLegacyAdvertisingCpuOwnedResponsePublication<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Published(BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>),
+    Pending(BluetoothLegacyAdvertisingCpuOwnedResponsePending<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothLegacyAdvertisingCpuOwnedResponsePending<'runtime, S, CAPACITY>),
+    Fault {
+        pending: BluetoothLegacyAdvertisingCpuOwnedResponsePending<'runtime, S, CAPACITY>,
+        error: HciChannelError,
+    },
+}
+
+/// Accepted Disable after the hardware graph is CPU-owned but before runtime restore.
+#[must_use = "restore the advertising graph before completing Disable"]
+pub struct BluetoothLegacyAdvertisingDisableRestore<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    radio: BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY>,
+    deferred: LeControllerDeferredLegacyAdvertisingDisable<'runtime, ()>,
+}
+
+/// Successful runtime restore with the exact Disable response still pending.
+#[must_use = "publish Disable before returning the idle command owner"]
+pub struct BluetoothLegacyAdvertisingDisableResponsePending<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    transaction: LeControllerResponsePending<'runtime, Task<'runtime, S, CAPACITY>>,
+}
+
+/// One exact Disable runtime-restore attempt.
+#[must_use = "publish the response or retain the unchanged restore owner"]
+pub enum BluetoothLegacyAdvertisingDisableRestoreStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    ResponsePending(BluetoothLegacyAdvertisingDisableResponsePending<'runtime, S, CAPACITY>),
+    Rejected(BluetoothLegacyAdvertisingDisableRestore<'runtime, S, CAPACITY>),
+}
+
+/// Result of publishing the exact successful Disable response.
+#[must_use = "retain backpressure/fault or return the sole idle command owner"]
+pub enum BluetoothLegacyAdvertisingDisableResponsePublication<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Completed(BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY>),
+    Pending(BluetoothLegacyAdvertisingDisableResponsePending<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothLegacyAdvertisingDisableResponsePending<'runtime, S, CAPACITY>),
+    Fault {
+        pending: BluetoothLegacyAdvertisingDisableResponsePending<'runtime, S, CAPACITY>,
+        error: HciChannelError,
+    },
+}
+
+/// Reset retained with the exact CPU-owned advertising graph.
+#[must_use = "restore the graph and apply Reset only after quiescence"]
+pub struct BluetoothLegacyAdvertisingCpuOwnedResetBarrier<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    barrier: LeControllerResetBarrier<
+        'runtime,
+        BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// CPU-owned advertising graph and opaque Reset order before runtime restore.
+#[must_use = "restore the exact graph before applying Reset"]
+pub struct BluetoothLegacyAdvertisingResetRestore<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    radio: BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY>,
+    barrier: LeControllerResetBarrier<'runtime, ()>,
+}
+
+/// One advertising Reset graph-restore attempt.
+#[must_use = "apply Reset or retain the unchanged restore owner"]
+pub enum BluetoothLegacyAdvertisingResetRestoreStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    CompletionReady(BluetoothLegacyAdvertisingResetCompletionReady<'runtime, S, CAPACITY>),
+    Rejected(BluetoothLegacyAdvertisingResetRestore<'runtime, S, CAPACITY>),
+}
+
+/// Restored advertising runtime with Reset still undispatched.
+#[must_use = "apply Reset once through the matching endpoint"]
+pub struct BluetoothLegacyAdvertisingResetCompletionReady<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    barrier: LeControllerResetBarrier<'runtime, Task<'runtime, S, CAPACITY>>,
+}
+
+/// Result of applying the retained Reset after advertising quiescence.
+#[must_use = "publish Reset or retain the endpoint mismatch"]
+pub enum BluetoothLegacyAdvertisingResetCompletion<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    ResponsePending(BluetoothLegacyAdvertisingResetResponsePending<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothLegacyAdvertisingResetCompletionReady<'runtime, S, CAPACITY>),
+}
+
+/// Applied Reset response retaining the already-restored Controller task.
+#[must_use = "publish Reset before returning the idle command owner"]
+pub struct BluetoothLegacyAdvertisingResetResponsePending<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    transaction: LeControllerResponsePending<'runtime, Task<'runtime, S, CAPACITY>>,
+}
+
+/// Result of publishing Reset after advertising quiescence.
+#[must_use = "retain backpressure/fault or return the sole idle command owner"]
+pub enum BluetoothLegacyAdvertisingResetResponsePublication<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Completed(BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY>),
+    Pending(BluetoothLegacyAdvertisingResetResponsePending<'runtime, S, CAPACITY>),
+    EndpointMismatch(BluetoothLegacyAdvertisingResetResponsePending<'runtime, S, CAPACITY>),
+    Fault {
+        pending: BluetoothLegacyAdvertisingResetResponsePending<'runtime, S, CAPACITY>,
+        error: HciChannelError,
+    },
+}
+
+/// Opaque owner for an impossible endpoint mismatch after CPU-boundary intake.
+#[must_use = "retain the complete command, order and advertising continuation"]
+pub struct BluetoothLegacyAdvertisingCpuOwnedCommandMismatch<
+    'runtime,
+    'command,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _command: LeControllerClassifiedCommand<
+        'runtime,
+        'command,
+        BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY>,
+    >,
+}
+
+/// Typed command route at the safe boundary between advertising events.
+#[must_use = "publish, disable, reset, or retain the exact mismatch owner"]
+pub enum BluetoothLegacyAdvertisingCpuOwnedCommandRoute<
+    'runtime,
+    'command,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    ResponsePending(BluetoothLegacyAdvertisingCpuOwnedResponsePending<'runtime, S, CAPACITY>),
+    Disable(BluetoothLegacyAdvertisingDisableRestore<'runtime, S, CAPACITY>),
+    ResetBarrier(BluetoothLegacyAdvertisingCpuOwnedResetBarrier<'runtime, S, CAPACITY>),
+    EndpointMismatch(
+        BluetoothLegacyAdvertisingCpuOwnedCommandMismatch<'runtime, 'command, S, CAPACITY>,
+    ),
+}
+
+/// One non-blocking command intake while no advertising event is published.
+#[must_use = "route a command or retain the exact CPU-owned continuation"]
+pub enum BluetoothLegacyAdvertisingCpuOwnedCommandIntake<
+    'runtime,
+    'command,
+    'buffer,
+    S,
+    const CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Routed {
+        route: BluetoothLegacyAdvertisingCpuOwnedCommandRoute<'runtime, 'command, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Empty {
+        completed: BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    EndpointMismatch {
+        completed: BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+    },
+    Channel {
+        completed: BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>,
+        buffer: &'buffer mut [u8],
+        error: HciChannelError,
+    },
+    NonCommand {
+        completed: BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>,
+        frame: HciEpochBound<'command, HostToControllerFrame<'buffer>>,
+    },
+}
+
 impl<'runtime, S, const CAPACITY: usize>
     BluetoothLegacyAdvertisingEventCpuOwned<'runtime, S, CAPACITY>
 where
@@ -274,6 +506,414 @@ where
                 hardware_list_index,
             },
             completed,
+        }
+    }
+
+    fn into_radio(
+        self,
+    ) -> (
+        BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY>,
+        Order<'runtime>,
+    ) {
+        let Self { axes, completed } = self;
+        (
+            BluetoothLegacyAdvertisingCpuOwnedRadio {
+                task: axes.task,
+                scheduler_item_address: axes.scheduler_item_address,
+                hardware_list_index: axes.hardware_list_index,
+                completed,
+            },
+            axes.order,
+        )
+    }
+
+    fn from_radio(
+        radio: BluetoothLegacyAdvertisingCpuOwnedRadio<'runtime, S, CAPACITY>,
+        order: Order<'runtime>,
+    ) -> Self {
+        Self {
+            axes: BluetoothLegacyAdvertisingActiveAxes {
+                task: radio.task,
+                order,
+                scheduler_item_address: radio.scheduler_item_address,
+                hardware_list_index: radio.hardware_list_index,
+            },
+            completed: radio.completed,
+        }
+    }
+
+    /// Consume and route at most one command before scheduling the successor event.
+    pub fn try_route_controller_command_with_buffer<
+        'command,
+        'buffer,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &mut LeControllerCommandEndpoint<
+            'command,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        buffer: &'buffer mut [u8],
+    ) -> BluetoothLegacyAdvertisingCpuOwnedCommandIntake<'runtime, 'command, 'buffer, S, CAPACITY>
+    {
+        let (radio, order) = self.into_radio();
+        let ready = order.map_owner(|()| radio);
+        match controller.try_receive_classified_command_with_buffer(ready, buffer) {
+            LeControllerCommandIntake::Command { command, buffer } => {
+                let route = match controller
+                    .route_active_legacy_advertising_classified_command(command)
+                {
+                    HciActiveLegacyAdvertisingCommandRoute::ResponsePending(transaction) => {
+                        BluetoothLegacyAdvertisingCpuOwnedCommandRoute::ResponsePending(
+                            BluetoothLegacyAdvertisingCpuOwnedResponsePending { transaction },
+                        )
+                    }
+                    HciActiveLegacyAdvertisingCommandRoute::Disable(deferred) => {
+                        let (radio, deferred) = deferred.into_parts();
+                        BluetoothLegacyAdvertisingCpuOwnedCommandRoute::Disable(
+                            BluetoothLegacyAdvertisingDisableRestore { radio, deferred },
+                        )
+                    }
+                    HciActiveLegacyAdvertisingCommandRoute::ResetBarrier(barrier) => {
+                        BluetoothLegacyAdvertisingCpuOwnedCommandRoute::ResetBarrier(
+                            BluetoothLegacyAdvertisingCpuOwnedResetBarrier { barrier },
+                        )
+                    }
+                    HciActiveLegacyAdvertisingCommandRoute::EndpointMismatch(command) => {
+                        BluetoothLegacyAdvertisingCpuOwnedCommandRoute::EndpointMismatch(
+                            BluetoothLegacyAdvertisingCpuOwnedCommandMismatch { _command: command },
+                        )
+                    }
+                };
+                BluetoothLegacyAdvertisingCpuOwnedCommandIntake::Routed { route, buffer }
+            }
+            LeControllerCommandIntake::Empty { ready, buffer } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingCpuOwnedCommandIntake::Empty {
+                    completed: Self::from_radio(radio, order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::EndpointMismatch { ready, buffer } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingCpuOwnedCommandIntake::EndpointMismatch {
+                    completed: Self::from_radio(radio, order),
+                    buffer,
+                }
+            }
+            LeControllerCommandIntake::Channel {
+                ready,
+                buffer,
+                error,
+            } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingCpuOwnedCommandIntake::Channel {
+                    completed: Self::from_radio(radio, order),
+                    buffer,
+                    error,
+                }
+            }
+            LeControllerCommandIntake::NonCommand { ready, frame } => {
+                let (radio, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingCpuOwnedCommandIntake::NonCommand {
+                    completed: Self::from_radio(radio, order),
+                    frame,
+                }
+            }
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingCpuOwnedResponsePending<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
+    pub fn try_publish<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothLegacyAdvertisingCpuOwnedResponsePublication<'runtime, S, CAPACITY> {
+        match self.transaction.try_publish(controller) {
+            LeControllerResponsePublication::Published(ready) => {
+                let (radio, order) = ready.into_parts();
+                BluetoothLegacyAdvertisingCpuOwnedResponsePublication::Published(
+                    BluetoothLegacyAdvertisingEventCpuOwned::from_radio(radio, order),
+                )
+            }
+            LeControllerResponsePublication::Pending(transaction) => {
+                BluetoothLegacyAdvertisingCpuOwnedResponsePublication::Pending(Self { transaction })
+            }
+            LeControllerResponsePublication::EndpointMismatch(transaction) => {
+                BluetoothLegacyAdvertisingCpuOwnedResponsePublication::EndpointMismatch(Self {
+                    transaction,
+                })
+            }
+            LeControllerResponsePublication::Fault {
+                pending: transaction,
+                error,
+            } => BluetoothLegacyAdvertisingCpuOwnedResponsePublication::Fault {
+                pending: Self { transaction },
+                error,
+            },
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingDisableRestore<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Restore the exact graph and only then construct successful Disable.
+    pub fn restore(
+        mut self,
+    ) -> BluetoothLegacyAdvertisingDisableRestoreStep<'runtime, S, CAPACITY> {
+        match self
+            .radio
+            .task
+            .restore_legacy_advertising_completed_disabled(self.radio.completed)
+        {
+            Ok(()) => BluetoothLegacyAdvertisingDisableRestoreStep::ResponsePending(
+                BluetoothLegacyAdvertisingDisableResponsePending {
+                    transaction: self
+                        .deferred
+                        .map_owner(|()| self.radio.task)
+                        .into_stopped_response(),
+                },
+            ),
+            Err(completed) => {
+                self.radio.completed = completed;
+                BluetoothLegacyAdvertisingDisableRestoreStep::Rejected(self)
+            }
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingDisableResponsePending<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
+    pub fn try_publish<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothLegacyAdvertisingDisableResponsePublication<'runtime, S, CAPACITY> {
+        match self.transaction.try_publish(controller) {
+            LeControllerResponsePublication::Published(ready) => {
+                BluetoothLegacyAdvertisingDisableResponsePublication::Completed(
+                    BluetoothControllerIdleCommandTask::from_ready(ready),
+                )
+            }
+            LeControllerResponsePublication::Pending(transaction) => {
+                BluetoothLegacyAdvertisingDisableResponsePublication::Pending(Self { transaction })
+            }
+            LeControllerResponsePublication::EndpointMismatch(transaction) => {
+                BluetoothLegacyAdvertisingDisableResponsePublication::EndpointMismatch(Self {
+                    transaction,
+                })
+            }
+            LeControllerResponsePublication::Fault {
+                pending: transaction,
+                error,
+            } => BluetoothLegacyAdvertisingDisableResponsePublication::Fault {
+                pending: Self { transaction },
+                error,
+            },
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingCpuOwnedResetBarrier<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub fn begin_restore(self) -> BluetoothLegacyAdvertisingResetRestore<'runtime, S, CAPACITY> {
+        let (radio, barrier) = self.barrier.into_parts();
+        BluetoothLegacyAdvertisingResetRestore { radio, barrier }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingResetRestore<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub fn restore(mut self) -> BluetoothLegacyAdvertisingResetRestoreStep<'runtime, S, CAPACITY> {
+        match self
+            .radio
+            .task
+            .restore_legacy_advertising_completed_disabled(self.radio.completed)
+        {
+            Ok(()) => BluetoothLegacyAdvertisingResetRestoreStep::CompletionReady(
+                BluetoothLegacyAdvertisingResetCompletionReady {
+                    barrier: self.barrier.map_owner(|()| self.radio.task),
+                },
+            ),
+            Err(completed) => {
+                self.radio.completed = completed;
+                BluetoothLegacyAdvertisingResetRestoreStep::Rejected(self)
+            }
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingResetCompletionReady<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub fn complete<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &mut LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothLegacyAdvertisingResetCompletion<'runtime, S, CAPACITY> {
+        match controller.complete_reset_after_quiescence(self.barrier) {
+            LeControllerResetCompletion::ResponsePending(transaction) => {
+                BluetoothLegacyAdvertisingResetCompletion::ResponsePending(
+                    BluetoothLegacyAdvertisingResetResponsePending { transaction },
+                )
+            }
+            LeControllerResetCompletion::EndpointMismatch(barrier) => {
+                BluetoothLegacyAdvertisingResetCompletion::EndpointMismatch(Self { barrier })
+            }
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingResetResponsePending<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub async fn wait_response_capacity<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<(), open_esp_radio_bluetooth_hci::LeControllerEndpointMismatch> {
+        controller.wait_response_capacity(&self.transaction).await
+    }
+
+    pub fn try_publish<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &LeControllerCommandEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> BluetoothLegacyAdvertisingResetResponsePublication<'runtime, S, CAPACITY> {
+        match self.transaction.try_publish(controller) {
+            LeControllerResponsePublication::Published(ready) => {
+                BluetoothLegacyAdvertisingResetResponsePublication::Completed(
+                    BluetoothControllerIdleCommandTask::from_ready(ready),
+                )
+            }
+            LeControllerResponsePublication::Pending(transaction) => {
+                BluetoothLegacyAdvertisingResetResponsePublication::Pending(Self { transaction })
+            }
+            LeControllerResponsePublication::EndpointMismatch(transaction) => {
+                BluetoothLegacyAdvertisingResetResponsePublication::EndpointMismatch(Self {
+                    transaction,
+                })
+            }
+            LeControllerResponsePublication::Fault {
+                pending: transaction,
+                error,
+            } => BluetoothLegacyAdvertisingResetResponsePublication::Fault {
+                pending: Self { transaction },
+                error,
+            },
         }
     }
 }

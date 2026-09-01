@@ -295,6 +295,38 @@ impl BluetoothLegacyAdvertisingRuntimeResources {
         self.idle = Some(memory);
         Ok(())
     }
+
+    /// Disable a completed Link Layer event and return its exact graph to this runtime.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection returns the complete affine event owner"
+    )]
+    pub(crate) fn restore_completed_disabled(
+        &mut self,
+        completed: BluetoothLegacyAdvertisingEventCompleted<'static>,
+    ) -> Result<(), BluetoothLegacyAdvertisingEventCompleted<'static>> {
+        let BluetoothLegacyAdvertisingEventCompleted {
+            complete,
+            memory,
+            statuses,
+            phase,
+        } = completed;
+        if self.standby.is_some()
+            || self.idle.is_some()
+            || memory.binding().identity() != self.graph_identity
+        {
+            return Err(BluetoothLegacyAdvertisingEventCompleted {
+                complete,
+                memory,
+                statuses,
+                phase,
+            });
+        }
+        self.standby = Some(complete.disable().into_standby());
+        self.idle = Some(memory);
+        Ok(())
+    }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]

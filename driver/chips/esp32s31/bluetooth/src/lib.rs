@@ -354,8 +354,18 @@ pub use legacy_advertising::{
 pub use legacy_advertising_active::{
     BluetoothLegacyAdvertisingActiveFault, BluetoothLegacyAdvertisingActiveFaultCause,
     BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingActiveStep,
-    BluetoothLegacyAdvertisingActiveWait, BluetoothLegacyAdvertisingEventCpuOwned,
-    BluetoothLegacyAdvertisingResponsePendingSession,
+    BluetoothLegacyAdvertisingActiveWait, BluetoothLegacyAdvertisingCpuOwnedCommandIntake,
+    BluetoothLegacyAdvertisingCpuOwnedCommandMismatch,
+    BluetoothLegacyAdvertisingCpuOwnedCommandRoute, BluetoothLegacyAdvertisingCpuOwnedResetBarrier,
+    BluetoothLegacyAdvertisingCpuOwnedResponsePending,
+    BluetoothLegacyAdvertisingCpuOwnedResponsePublication,
+    BluetoothLegacyAdvertisingDisableResponsePending,
+    BluetoothLegacyAdvertisingDisableResponsePublication, BluetoothLegacyAdvertisingDisableRestore,
+    BluetoothLegacyAdvertisingDisableRestoreStep, BluetoothLegacyAdvertisingEventCpuOwned,
+    BluetoothLegacyAdvertisingResetCompletion, BluetoothLegacyAdvertisingResetCompletionReady,
+    BluetoothLegacyAdvertisingResetResponsePending,
+    BluetoothLegacyAdvertisingResetResponsePublication, BluetoothLegacyAdvertisingResetRestore,
+    BluetoothLegacyAdvertisingResetRestoreStep, BluetoothLegacyAdvertisingResponsePendingSession,
     BluetoothLegacyAdvertisingResponsePublication,
 };
 #[cfg(target_arch = "riscv32")]

@@ -2008,6 +2008,20 @@ impl<const SCHEDULER_CAPACITY: usize>
         image.cancel()
     }
 
+    /// Release an admitted first event before its sequence sample arrives.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel_legacy_advertising_first_pre_sequence<'a>(
+        &mut self,
+        admitted: BluetoothLegacyAdvertisingFirstPreSequence<'a>,
+    ) -> crate::BluetoothLegacyAdvertisingCancelled<'a> {
+        let BluetoothLegacyAdvertisingFirstPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        self.release_scheduler_reservation(reservation);
+        candidate.cancel()
+    }
+
     /// Join one prepared advertising item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
     #[cfg_attr(
@@ -4601,6 +4615,38 @@ mod tests {
                 },
             )
             .expect("the first guarded deadline remains open");
+        let (enabled, memory) = task
+            .cancel_legacy_advertising_first_pre_sequence(admitted)
+            .into_parts();
+        let reset = crate::BluetoothLegacyAdvertisingPrepared::prepare(enabled, memory)
+            .expect("the cancelled portable packet remains bounded")
+            .reset_link_state(crate::BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(0))
+            .expect("the cancelled packet retains the restricted reset");
+        let candidate = reset
+            .form_first_event_candidate(
+                crate::BluetoothLegacyAdvertisingTimingObservation {
+                    current: BluetoothSchedulerInstant::from_image(10_000),
+                    radio_ready: BluetoothSchedulerInstant::from_image(11_999),
+                    epoch: BluetoothControllerSchedulerEpoch::new(
+                        BluetoothControllerTimeSample::for_validation(100),
+                        1_000,
+                        scale,
+                    ),
+                },
+                config,
+            )
+            .expect("the restored first event projects into the same epoch");
+        let raw_start = candidate.raw_window().start();
+        let admitted = task
+            .admit_legacy_advertising_first_event(
+                candidate,
+                super::BluetoothLegacyAdvertisingAdmissionObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(
+                        raw_start.wrapping_sub(100),
+                    ),
+                },
+            )
+            .expect("cancellation released the first guarded reservation");
         let prepared = task
             .prepare_legacy_advertising_first_event(
                 admitted,

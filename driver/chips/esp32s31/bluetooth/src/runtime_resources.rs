@@ -226,6 +226,12 @@ impl<const SCHEDULER_CAPACITY: usize>
         self.time_scale
     }
 
+    /// Source-owned scheduler policy retained by this powered epoch.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn scheduler_config(&self) -> crate::BluetoothSchedulerSoftwareConfig {
+        self.config
+    }
+
     /// Durable general scheduler handoff for this epoch.
     pub const fn scheduler_wake(&self) -> &BluetoothSchedulerWakeCell {
         self.runtime.scheduler_wake()

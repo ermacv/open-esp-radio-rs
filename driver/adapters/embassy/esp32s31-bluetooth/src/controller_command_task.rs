@@ -1,8 +1,8 @@
 //! Sole Embassy owner for the ESP32-S31 LE Controller command lifecycle.
 //!
 //! This actor composes the chip-owned idle command transaction, the bounded
-//! first-event runner and the active-session actor. It does not interpret HCI
-//! commands or reproduce radio policy. Every awaited future borrows an owner
+//! DTM/advertising first-event runners and the active-session actors. It does
+//! not interpret HCI commands or reproduce radio policy. Every awaited future borrows an owner
 //! retained in the actor's affine state slot; cancellation therefore leaves
 //! the exact lower transaction available to the next `run` call.
 
@@ -18,19 +18,21 @@ use open_esp_radio_bluetooth_hci::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothControllerIdleCommandIntake, BluetoothControllerIdleCommandTask,
+    BluetoothControllerIdleCommandIntake, BluetoothControllerIdleCommandMismatch,
+    BluetoothControllerIdleCommandRoute, BluetoothControllerIdleCommandTask,
     BluetoothControllerIdleResetBarrier, BluetoothControllerIdleResetCompletion,
     BluetoothControllerIdleResponsePending, BluetoothControllerIdleResponsePublication,
     BluetoothControllerSchedulerCurrentError, BluetoothDtmActiveCommandMismatch,
     BluetoothDtmActiveSessionFault, BluetoothDtmFirstPreparationCleanup,
     BluetoothDtmFirstPreparationCleanupStep, BluetoothDtmFirstPreparationCompletion,
     BluetoothDtmFirstPreparationFailStop, BluetoothDtmFirstRunnerFailure,
-    BluetoothDtmFirstRunnerRetry, BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute,
-    BluetoothDtmOrderReady, BluetoothDtmResetCompletionReady, BluetoothDtmResetCompletionStart,
-    BluetoothDtmResetResponsePending, BluetoothDtmResetResponsePublication,
-    BluetoothDtmResetRestoreFailure, BluetoothDtmResetRestoreStep, BluetoothDtmResetStoppingFault,
-    BluetoothDtmResetStoppingRunner, BluetoothDtmResetStoppingStep, BluetoothDtmResetStoppingWait,
-    BluetoothDtmResponsePending, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothDtmFirstRunnerRetry, BluetoothDtmOrderReady, BluetoothDtmResetCompletionReady,
+    BluetoothDtmResetCompletionStart, BluetoothDtmResetResponsePending,
+    BluetoothDtmResetResponsePublication, BluetoothDtmResetRestoreFailure,
+    BluetoothDtmResetRestoreStep, BluetoothDtmResetStoppingFault, BluetoothDtmResetStoppingRunner,
+    BluetoothDtmResetStoppingStep, BluetoothDtmResetStoppingWait, BluetoothDtmResponsePending,
+    BluetoothLegacyAdvertisingFirstRunnerFailure, BluetoothLegacyAdvertisingFirstRunnerRetry,
+    BluetoothLegacyAdvertisingSchedulerRunning, BluetoothSchedulerFinishedHardwareListObserved,
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerRunInterruptStorage,
 };
 
@@ -39,7 +41,9 @@ use crate::{
     EmbassyBluetoothDtmControllerTimeRecheck, EmbassyBluetoothDtmControllerTimeRecheckStatus,
     EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
     EmbassyBluetoothDtmFirstResume, EmbassyBluetoothDtmSessionBoundary,
-    EmbassyBluetoothDtmSessionTask, EmbassyBluetoothRuntimeWakers, drive_dtm_first_ready,
+    EmbassyBluetoothDtmSessionTask, EmbassyBluetoothLegacyAdvertisingFirstControllerTimeWait,
+    EmbassyBluetoothLegacyAdvertisingFirstDrive, EmbassyBluetoothLegacyAdvertisingFirstResume,
+    EmbassyBluetoothRuntimeWakers, drive_dtm_first_ready, drive_legacy_advertising_first_ready,
 };
 
 /// Observable phase of the sole Controller command actor.
@@ -49,6 +53,9 @@ pub enum EmbassyBluetoothControllerCommandPhase {
     IdleReset,
     IdleResponse,
     FirstEvent,
+    LegacyAdvertisingFirst,
+    LegacyAdvertisingResponse,
+    LegacyAdvertisingActive,
     Active,
     ResetStopping,
     ResetRestore,
@@ -70,6 +77,9 @@ enum ControllerCommandStimulus {
     IdleReset,
     IdleResponse,
     FirstEvent,
+    LegacyAdvertisingFirst,
+    LegacyAdvertisingResponse,
+    LegacyAdvertisingActive,
     Active,
     ResetStopping,
     ResetRestore,
@@ -107,14 +117,18 @@ const fn reduce_controller_command_transition(
 ) -> ControllerCommandAction {
     use ControllerCommandAction::{Advance, Retain, Terminal};
     use ControllerCommandStimulus::{
-        Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, ResetCompletion, ResetResponse,
+        Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, LegacyAdvertisingActive,
+        LegacyAdvertisingFirst, LegacyAdvertisingResponse, ResetCompletion, ResetResponse,
         ResetRestore, ResetStopping, UnownedFinishedList,
     };
     use EmbassyBluetoothControllerCommandPhase::{
         Active as ActivePhase, FirstEvent as FirstEventPhase, Idle, IdleReset as IdleResetPhase,
-        IdleResponse as IdleResponsePhase, ResetCompletion as ResetCompletionPhase,
-        ResetResponse as ResetResponsePhase, ResetRestore as ResetRestorePhase,
-        ResetStopping as ResetStoppingPhase, UnownedFinishedList as UnownedFinishedListPhase,
+        IdleResponse as IdleResponsePhase, LegacyAdvertisingActive as LegacyAdvertisingActivePhase,
+        LegacyAdvertisingFirst as LegacyAdvertisingFirstPhase,
+        LegacyAdvertisingResponse as LegacyAdvertisingResponsePhase,
+        ResetCompletion as ResetCompletionPhase, ResetResponse as ResetResponsePhase,
+        ResetRestore as ResetRestorePhase, ResetStopping as ResetStoppingPhase,
+        UnownedFinishedList as UnownedFinishedListPhase,
     };
 
     match (phase, stimulus) {
@@ -122,6 +136,14 @@ const fn reduce_controller_command_transition(
         (Idle, IdleReset) => Advance(IdleResetPhase),
         (Idle, IdleResponse) => Advance(IdleResponsePhase),
         (Idle, FirstEvent) => Advance(FirstEventPhase),
+        (Idle, LegacyAdvertisingFirst) => Advance(LegacyAdvertisingFirstPhase),
+        (LegacyAdvertisingFirstPhase, LegacyAdvertisingResponse) => {
+            Advance(LegacyAdvertisingResponsePhase)
+        }
+        (LegacyAdvertisingResponsePhase, LegacyAdvertisingActive) => {
+            Advance(LegacyAdvertisingActivePhase)
+        }
+        (LegacyAdvertisingFirstPhase, IdleResponse) => Advance(IdleResponsePhase),
         (Idle | FirstEventPhase, Active) => Advance(ActivePhase),
         (IdleResetPhase, IdleResponse) => Advance(IdleResponsePhase),
         (FirstEventPhase, IdleResponse) => Advance(IdleResponsePhase),
@@ -135,7 +157,12 @@ const fn reduce_controller_command_transition(
         (ResetCompletionPhase, ResetResponse) => Advance(ResetResponsePhase),
         (IdleResponsePhase | ActivePhase | ResetResponsePhase, IdleRestored) => Advance(Idle),
         (
-            Idle | FirstEventPhase | ActivePhase | ResetStoppingPhase,
+            Idle
+            | FirstEventPhase
+            | LegacyAdvertisingFirstPhase
+            | LegacyAdvertisingActivePhase
+            | ActivePhase
+            | ResetStoppingPhase,
             ControllerCommandStimulus::Terminal,
         ) => Terminal,
         _ => panic!("invalid Controller command actor transition"),
@@ -194,6 +221,18 @@ where
         cleanup: BluetoothDtmFirstPreparationCleanup<'runtime, S, CAPACITY>,
         readiness: FirstCleanupReadiness,
     },
+    LegacyAdvertisingFirst(
+        EmbassyBluetoothLegacyAdvertisingFirstControllerTimeWait<'runtime, S, CAPACITY>,
+    ),
+    LegacyAdvertisingRetry(BluetoothLegacyAdvertisingFirstRunnerRetry<'runtime, S, CAPACITY>),
+    LegacyAdvertisingResponse {
+        pending: BluetoothControllerIdleResponsePending<'runtime, S, CAPACITY>,
+        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+    },
+    LegacyAdvertisingActive {
+        _task: BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY>,
+        _running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+    },
     Active(EmbassyBluetoothDtmSessionTask<'runtime, S, CAPACITY>),
     ResetStopping(BluetoothDtmResetStoppingRunner<'runtime, S, CAPACITY>),
     ResetRestore(BluetoothDtmResetRestoreFailure<'runtime, S, CAPACITY>),
@@ -215,6 +254,15 @@ where
             Self::FirstEvent(_) | Self::FirstRetry(_) | Self::FirstCleanup { .. } => {
                 EmbassyBluetoothControllerCommandPhase::FirstEvent
             }
+            Self::LegacyAdvertisingFirst(_) | Self::LegacyAdvertisingRetry(_) => {
+                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingFirst
+            }
+            Self::LegacyAdvertisingResponse { .. } => {
+                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingResponse
+            }
+            Self::LegacyAdvertisingActive { .. } => {
+                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive
+            }
             Self::Active(_) => EmbassyBluetoothControllerCommandPhase::Active,
             Self::ResetStopping(_) => EmbassyBluetoothControllerCommandPhase::ResetStopping,
             Self::ResetRestore(_) => EmbassyBluetoothControllerCommandPhase::ResetRestore,
@@ -232,6 +280,7 @@ where
 pub enum EmbassyBluetoothControllerIdleCompletion {
     ImmediateResponse,
     DtmStartRejected,
+    LegacyAdvertisingStartRejected,
     TestEnd,
     Reset,
 }
@@ -240,6 +289,7 @@ pub enum EmbassyBluetoothControllerIdleCompletion {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmbassyBluetoothControllerRetry {
     FirstEvent,
+    LegacyAdvertisingFirst,
     Active(EmbassyBluetoothDtmSessionRetry),
     ResetStopping,
     ResetRestore,
@@ -269,6 +319,8 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     Retryable(EmbassyBluetoothControllerRetry),
     /// The absolute Controller-time schedule is exhausted; the actor retains its owner.
     ControllerTimeExhausted,
+    /// The accepted advertising Enable reached scheduler `RUN` and its response was published.
+    LegacyAdvertisingActive,
     /// No installed role owns this scheduler list; its exact owner is quarantined in the actor.
     UnownedFinishedList(BluetoothSchedulerHardwareListIndex),
     /// A non-retryable initial transition failed before scheduler `RUN`.
@@ -288,7 +340,9 @@ pub enum EmbassyBluetoothControllerCommandBoundary<
     /// Chip policy classified the restored failure as poisoned and forbade reuse.
     FirstPreparationFailStop(BluetoothDtmFirstPreparationFailStop<'runtime, S, CAPACITY>),
     /// Idle intake found an impossible post-classification endpoint mismatch.
-    IdleCommandEndpointMismatch(BluetoothDtmIdleCommandMismatch<'runtime, 'epoch, S, CAPACITY>),
+    IdleCommandEndpointMismatch(
+        BluetoothControllerIdleCommandMismatch<'runtime, 'epoch, S, CAPACITY>,
+    ),
     /// Active intake found an impossible post-classification endpoint mismatch.
     ActiveCommandEndpointMismatch(BluetoothDtmActiveCommandMismatch<'runtime, 'epoch, S, CAPACITY>),
     /// Active radio failed while its response axis was still pending.
@@ -353,7 +407,7 @@ impl<State> ControllerOwnerSlot<State> {
     }
 }
 
-/// Sole executor-side owner of the idle, first-event and active DTM lifecycle.
+/// Sole executor-side owner of the idle and active radio lifecycles.
 #[cfg(target_arch = "riscv32")]
 #[must_use = "run the Controller actor until it returns a terminal lower owner"]
 pub struct EmbassyBluetoothControllerCommandTask<'runtime, S, const CAPACITY: usize>
@@ -536,6 +590,84 @@ where
         }
     }
 
+    fn store_legacy_advertising_failure<'epoch, 'packet>(
+        &mut self,
+        from: EmbassyBluetoothControllerCommandPhase,
+        failure: BluetoothLegacyAdvertisingFirstRunnerFailure<'runtime, S, CAPACITY>,
+    ) -> Option<EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY>>
+    {
+        match failure.into_hardware_failure_response() {
+            Ok(pending) => {
+                self.store_transition(
+                    from,
+                    ControllerCommandStimulus::IdleResponse,
+                    EmbassyBluetoothControllerCommandState::IdleResponse {
+                        pending,
+                        completion:
+                            EmbassyBluetoothControllerIdleCompletion::LegacyAdvertisingStartRejected,
+                    },
+                );
+                None
+            }
+            Err(BluetoothLegacyAdvertisingFirstRunnerFailure::Retryable(retry)) => {
+                let state = EmbassyBluetoothControllerCommandState::LegacyAdvertisingRetry(retry);
+                if from == EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingFirst {
+                    self.store_retained_state(from, state);
+                } else {
+                    self.store_transition(
+                        from,
+                        ControllerCommandStimulus::LegacyAdvertisingFirst,
+                        state,
+                    );
+                }
+                Some(
+                    self.retain_boundary(EmbassyBluetoothControllerCommandBoundary::Retryable(
+                        EmbassyBluetoothControllerRetry::LegacyAdvertisingFirst,
+                    )),
+                )
+            }
+            Err(_) => unreachable!("only a pre-RUN retry lacks recovered idle ownership"),
+        }
+    }
+
+    fn store_legacy_advertising_drive<'epoch, 'packet>(
+        &mut self,
+        from: EmbassyBluetoothControllerCommandPhase,
+        drive: EmbassyBluetoothLegacyAdvertisingFirstDrive<'runtime, S, CAPACITY>,
+    ) -> Option<EmbassyBluetoothControllerCommandBoundary<'runtime, 'epoch, 'packet, S, CAPACITY>>
+    {
+        match drive {
+            EmbassyBluetoothLegacyAdvertisingFirstDrive::Wait(wait) => {
+                let state = EmbassyBluetoothControllerCommandState::LegacyAdvertisingFirst(wait);
+                if from == EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingFirst {
+                    self.store_retained_state(from, state);
+                } else {
+                    self.store_transition(
+                        from,
+                        ControllerCommandStimulus::LegacyAdvertisingFirst,
+                        state,
+                    );
+                }
+                None
+            }
+            EmbassyBluetoothLegacyAdvertisingFirstDrive::Running(running) => {
+                let (pending, running) = running.into_parts();
+                self.store_transition(
+                    from,
+                    ControllerCommandStimulus::LegacyAdvertisingResponse,
+                    EmbassyBluetoothControllerCommandState::LegacyAdvertisingResponse {
+                        pending,
+                        running,
+                    },
+                );
+                None
+            }
+            EmbassyBluetoothLegacyAdvertisingFirstDrive::Failed(failure) => {
+                self.store_legacy_advertising_failure(from, failure)
+            }
+        }
+    }
+
     async fn wait_reset_stopping<WakeMutex, Recheck>(
         &mut self,
         wakers: &EmbassyBluetoothRuntimeWakers<WakeMutex>,
@@ -623,7 +755,7 @@ where
                         BluetoothControllerIdleCommandIntake::Routed { route, buffer } => {
                             packet = Some(buffer);
                             match route {
-                                BluetoothDtmIdleCommandRoute::Start(runner) => {
+                                BluetoothControllerIdleCommandRoute::Start(runner) => {
                                     match drive_dtm_first_ready(runner) {
                                         EmbassyBluetoothDtmFirstDrive::Wait(wait) => {
                                             self.store_transition(
@@ -653,7 +785,15 @@ where
                                         }
                                     }
                                 }
-                                BluetoothDtmIdleCommandRoute::StartFailed(failure) => {
+                                BluetoothControllerIdleCommandRoute::StartLegacyAdvertising(runner) => {
+                                    if let Some(boundary) = self.store_legacy_advertising_drive(
+                                        EmbassyBluetoothControllerCommandPhase::Idle,
+                                        drive_legacy_advertising_first_ready(runner),
+                                    ) {
+                                        return boundary;
+                                    }
+                                }
+                                BluetoothControllerIdleCommandRoute::StartFailed(failure) => {
                                     if let Some(boundary) = self.store_first_failure(
                                         EmbassyBluetoothControllerCommandPhase::Idle,
                                         failure,
@@ -661,7 +801,17 @@ where
                                         return boundary;
                                     }
                                 }
-                                BluetoothDtmIdleCommandRoute::ResponsePending(pending) => {
+                                BluetoothControllerIdleCommandRoute::LegacyAdvertisingStartFailed(
+                                    failure,
+                                ) => {
+                                    if let Some(boundary) = self.store_legacy_advertising_failure(
+                                        EmbassyBluetoothControllerCommandPhase::Idle,
+                                        failure,
+                                    ) {
+                                        return boundary;
+                                    }
+                                }
+                                BluetoothControllerIdleCommandRoute::ResponsePending(pending) => {
                                     self.store_transition(
                                         EmbassyBluetoothControllerCommandPhase::Idle,
                                         ControllerCommandStimulus::IdleResponse,
@@ -671,14 +821,14 @@ where
                                         },
                                     );
                                 }
-                                BluetoothDtmIdleCommandRoute::ResetBarrier(barrier) => {
+                                BluetoothControllerIdleCommandRoute::ResetBarrier(barrier) => {
                                     self.store_transition(
                                         EmbassyBluetoothControllerCommandPhase::Idle,
                                         ControllerCommandStimulus::IdleReset,
                                         EmbassyBluetoothControllerCommandState::IdleReset(barrier),
                                     );
                                 }
-                                BluetoothDtmIdleCommandRoute::EndpointMismatch(mismatch) => {
+                                BluetoothControllerIdleCommandRoute::EndpointMismatch(mismatch) => {
                                     return self.terminal_boundary(
                                         EmbassyBluetoothControllerCommandPhase::Idle,
                                         EmbassyBluetoothControllerCommandBoundary::IdleCommandEndpointMismatch(mismatch),
@@ -807,6 +957,127 @@ where
                             );
                         }
                     }
+                }
+                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingFirst => {
+                    if matches!(
+                        self.owner.current(),
+                        EmbassyBluetoothControllerCommandState::LegacyAdvertisingRetry(_)
+                    ) {
+                        let EmbassyBluetoothControllerCommandState::LegacyAdvertisingRetry(retry) =
+                            self.owner.take()
+                        else {
+                            unreachable!("the selected advertising retry did not change")
+                        };
+                        if let Some(boundary) = self.store_legacy_advertising_drive(
+                            EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingFirst,
+                            drive_legacy_advertising_first_ready(retry.retry()),
+                        ) {
+                            return boundary;
+                        }
+                        continue;
+                    }
+                    let EmbassyBluetoothControllerCommandState::LegacyAdvertisingFirst(wait) =
+                        self.owner.current_mut()
+                    else {
+                        unreachable!("the selected advertising wait did not change")
+                    };
+                    wait.wait_for_recheck(recheck.wait_until_absolute_recheck())
+                        .await;
+                    let EmbassyBluetoothControllerCommandState::LegacyAdvertisingFirst(wait) =
+                        self.owner.take()
+                    else {
+                        unreachable!("the awaited advertising wait did not change")
+                    };
+                    match wait.resume() {
+                        EmbassyBluetoothLegacyAdvertisingFirstResume::Ready(drive) => {
+                            if let Some(boundary) = self.store_legacy_advertising_drive(
+                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingFirst,
+                                drive,
+                            ) {
+                                return boundary;
+                            }
+                        }
+                        EmbassyBluetoothLegacyAdvertisingFirstResume::NotReady(wait) => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingFirst,
+                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingFirst(
+                                    wait,
+                                ),
+                            );
+                        }
+                    }
+                }
+                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingResponse => {
+                    let EmbassyBluetoothControllerCommandState::LegacyAdvertisingResponse {
+                        pending,
+                        ..
+                    } = self.owner.current()
+                    else {
+                        unreachable!("the selected advertising response did not change")
+                    };
+                    if pending.wait_response_capacity(controller).await.is_err() {
+                        return self.retain_boundary(
+                            EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                        );
+                    }
+                    let EmbassyBluetoothControllerCommandState::LegacyAdvertisingResponse {
+                        pending,
+                        running,
+                    } = self.owner.take()
+                    else {
+                        unreachable!("the awaited advertising response did not change")
+                    };
+                    match pending.try_publish(controller) {
+                        BluetoothControllerIdleResponsePublication::Published(task) => {
+                            self.store_transition(
+                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingResponse,
+                                ControllerCommandStimulus::LegacyAdvertisingActive,
+                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingActive {
+                                    _task: task,
+                                    _running: running,
+                                },
+                            );
+                            return EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActive;
+                        }
+                        BluetoothControllerIdleResponsePublication::Pending(pending) => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingResponse,
+                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingResponse {
+                                    pending,
+                                    running,
+                                },
+                            );
+                        }
+                        BluetoothControllerIdleResponsePublication::EndpointMismatch(pending) => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingResponse,
+                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingResponse {
+                                    pending,
+                                    running,
+                                },
+                            );
+                            return self.retain_boundary(
+                                EmbassyBluetoothControllerCommandBoundary::EndpointMismatch,
+                            );
+                        }
+                        BluetoothControllerIdleResponsePublication::Fault { pending, error } => {
+                            self.store_retained_state(
+                                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingResponse,
+                                EmbassyBluetoothControllerCommandState::LegacyAdvertisingResponse {
+                                    pending,
+                                    running,
+                                },
+                            );
+                            return self.retain_boundary(
+                                EmbassyBluetoothControllerCommandBoundary::HciFault(error),
+                            );
+                        }
+                    }
+                }
+                EmbassyBluetoothControllerCommandPhase::LegacyAdvertisingActive => {
+                    return self.retain_boundary(
+                        EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActive,
+                    );
                 }
                 EmbassyBluetoothControllerCommandPhase::FirstEvent => {
                     if matches!(
@@ -1228,12 +1499,16 @@ mod tests {
     fn reducer_closes_start_test_end_and_reset_paths_back_to_idle() {
         use ControllerCommandAction::{Advance, Retain, Terminal};
         use ControllerCommandStimulus::{
-            Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, ResetCompletion,
-            ResetResponse, ResetRestore, ResetStopping, UnownedFinishedList,
+            Active, FirstEvent, IdleReset, IdleResponse, IdleRestored, LegacyAdvertisingActive,
+            LegacyAdvertisingFirst, LegacyAdvertisingResponse, ResetCompletion, ResetResponse,
+            ResetRestore, ResetStopping, UnownedFinishedList,
         };
         use EmbassyBluetoothControllerCommandPhase::{
             Active as ActivePhase, FirstEvent as FirstEventPhase, Idle,
             IdleReset as IdleResetPhase, IdleResponse as IdleResponsePhase,
+            LegacyAdvertisingActive as LegacyAdvertisingActivePhase,
+            LegacyAdvertisingFirst as LegacyAdvertisingFirstPhase,
+            LegacyAdvertisingResponse as LegacyAdvertisingResponsePhase,
             ResetCompletion as ResetCompletionPhase, ResetResponse as ResetResponsePhase,
             ResetRestore as ResetRestorePhase, ResetStopping as ResetStoppingPhase,
             UnownedFinishedList as UnownedFinishedListPhase,
@@ -1270,6 +1545,28 @@ mod tests {
         );
         assert_eq!(
             reduce_controller_command_transition(FirstEventPhase, IdleResponse),
+            Advance(IdleResponsePhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(Idle, LegacyAdvertisingFirst),
+            Advance(LegacyAdvertisingFirstPhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(
+                LegacyAdvertisingFirstPhase,
+                LegacyAdvertisingResponse,
+            ),
+            Advance(LegacyAdvertisingResponsePhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(
+                LegacyAdvertisingResponsePhase,
+                LegacyAdvertisingActive,
+            ),
+            Advance(LegacyAdvertisingActivePhase)
+        );
+        assert_eq!(
+            reduce_controller_command_transition(LegacyAdvertisingFirstPhase, IdleResponse),
             Advance(IdleResponsePhase)
         );
         assert_eq!(

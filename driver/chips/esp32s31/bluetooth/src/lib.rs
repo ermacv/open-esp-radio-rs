@@ -113,6 +113,8 @@ mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
 mod legacy_advertising;
+#[cfg(target_arch = "riscv32")]
+mod legacy_advertising_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod legacy_advertising_timing;
 mod modem_lp_timer_queue;
@@ -179,8 +181,12 @@ pub use controller_start::{
     BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmPostUnlinkArmStep,
     BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedStep,
-    BluetoothInterruptOwnerStorage, BluetoothLegacyAdvertisingPostUnlinkArmStep,
-    BluetoothLegacyAdvertisingSchedulerStartFailure,
+    BluetoothInterruptOwnerStorage, BluetoothLegacyAdvertisingControllerPreparationError,
+    BluetoothLegacyAdvertisingControllerPreparationOutcome,
+    BluetoothLegacyAdvertisingControllerPreparationPending,
+    BluetoothLegacyAdvertisingControllerPreparationStep,
+    BluetoothLegacyAdvertisingControllerPreparationTerminal,
+    BluetoothLegacyAdvertisingPostUnlinkArmStep, BluetoothLegacyAdvertisingSchedulerStartFailure,
     BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
@@ -256,6 +262,7 @@ pub use dtm_reset::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_runner::{
+    BluetoothControllerIdleCommandMismatch, BluetoothControllerIdleCommandRoute,
     BluetoothDtmDeferredStart, BluetoothDtmFirstAcceptedFailure,
     BluetoothDtmFirstCancellationCleanTask, BluetoothDtmFirstCancellationEpoch,
     BluetoothDtmFirstCancellationFailStop, BluetoothDtmFirstCancellationFailStopReason,
@@ -269,7 +276,6 @@ pub use dtm_runner::{
     BluetoothDtmFirstRunnerFailure, BluetoothDtmFirstRunnerRetry,
     BluetoothDtmFirstRunnerRetryCause, BluetoothDtmFirstRunnerStep, BluetoothDtmFirstRunning,
     BluetoothDtmFirstWarmTimeDrain, BluetoothDtmFirstWarmTimeDrainStep,
-    BluetoothDtmIdleCommandMismatch, BluetoothDtmIdleCommandRoute,
 };
 pub use dtm_rx_completion::{BluetoothDtmReceiverSession, BluetoothDtmRxCompletionOutcome};
 pub use dtm_scheduler_item::{
@@ -339,6 +345,13 @@ pub use legacy_advertising::{
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingFirstEventCandidate,
     BluetoothLegacyAdvertisingFirstEventTimingFailure,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_advertising_runner::{
+    BluetoothLegacyAdvertisingDeferredStart, BluetoothLegacyAdvertisingFirstRunner,
+    BluetoothLegacyAdvertisingFirstRunnerFailure, BluetoothLegacyAdvertisingFirstRunnerRetry,
+    BluetoothLegacyAdvertisingFirstRunnerRetryCause, BluetoothLegacyAdvertisingFirstRunnerStep,
+    BluetoothLegacyAdvertisingFirstRunning,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingEventPhase;

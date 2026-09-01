@@ -842,7 +842,8 @@ pub enum BluetoothControllerIdleCommandIntake<
 {
     /// One command was consumed and routed; scratch storage is reusable.
     Routed {
-        route: crate::BluetoothDtmIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>,
+        route:
+            crate::BluetoothControllerIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>,
         buffer: &'buffer mut [u8],
     },
     /// A readiness hint became stale before intake.
@@ -1207,7 +1208,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             'command,
             BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         >,
-    ) -> crate::BluetoothDtmIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>
+    ) -> crate::BluetoothControllerIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>
     where
         S: BluetoothSchedulerRunInterruptStorage,
     {
@@ -1220,8 +1221,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     task,
                     crate::BluetoothDtmDeferredStart::receiver(deferred),
                 ) {
-                    Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
-                    Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
+                    Ok(runner) => crate::BluetoothControllerIdleCommandRoute::Start(runner),
+                    Err(failure) => crate::BluetoothControllerIdleCommandRoute::StartFailed(failure),
                 }
             }
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartTransmitter(
@@ -1232,36 +1233,37 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     task,
                     crate::BluetoothDtmDeferredStart::transmitter(deferred),
                 ) {
-                    Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
-                    Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
+                    Ok(runner) => crate::BluetoothControllerIdleCommandRoute::Start(runner),
+                    Err(failure) => crate::BluetoothControllerIdleCommandRoute::StartFailed(failure),
                 }
             }
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartLegacyAdvertising(
                 deferred,
             ) => {
                 let (task, deferred) = deferred.into_parts();
-                crate::BluetoothDtmIdleCommandRoute::ResponsePending(
-                    BluetoothControllerIdleResponsePending::new(
-                        deferred
-                            .map_owner(|()| task)
-                            .into_hardware_failure_response(),
-                    ),
-                )
+                match crate::BluetoothLegacyAdvertisingFirstRunner::begin(task, deferred) {
+                    Ok(runner) => {
+                        crate::BluetoothControllerIdleCommandRoute::StartLegacyAdvertising(runner)
+                    }
+                    Err(failure) => {
+                        crate::BluetoothControllerIdleCommandRoute::LegacyAdvertisingStartFailed(failure)
+                    }
+                }
             }
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::ResponsePending(
                 pending,
-            ) => crate::BluetoothDtmIdleCommandRoute::ResponsePending(
+            ) => crate::BluetoothControllerIdleCommandRoute::ResponsePending(
                 BluetoothControllerIdleResponsePending::new(pending),
             ),
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::ResetBarrier(
                 barrier,
-            ) => crate::BluetoothDtmIdleCommandRoute::ResetBarrier(
+            ) => crate::BluetoothControllerIdleCommandRoute::ResetBarrier(
                 BluetoothControllerIdleResetBarrier::new(barrier),
             ),
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::EndpointMismatch(
                 command,
-            ) => crate::BluetoothDtmIdleCommandRoute::EndpointMismatch(
-                crate::BluetoothDtmIdleCommandMismatch::new(command),
+            ) => crate::BluetoothControllerIdleCommandRoute::EndpointMismatch(
+                crate::BluetoothControllerIdleCommandMismatch::new(command),
             ),
         }
     }
@@ -1295,10 +1297,6 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
-    #[expect(
-        dead_code,
-        reason = "production graph ownership lands before the next Enable actor iteration"
-    )]
     legacy_advertising_resources: &'runtime mut crate::BluetoothLegacyAdvertisingRuntimeResources,
     always_awake_timing: crate::ble_phy::BluetoothAlwaysAwakeTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
@@ -1561,7 +1559,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(target_arch = "riscv32")]
-const fn dtm_time_begin_error(
+const fn controller_time_begin_error(
     error: BluetoothControllerTimeRequestError,
 ) -> crate::BluetoothControllerTimeAcquisitionError {
     match error {
@@ -1581,7 +1579,7 @@ const fn dtm_time_begin_error(
 }
 
 #[cfg(target_arch = "riscv32")]
-const fn dtm_time_event_error(
+const fn controller_time_event_error(
     error: BluetoothControllerTimeEventError,
 ) -> crate::BluetoothControllerTimeAcquisitionError {
     match error {
@@ -1703,6 +1701,122 @@ pub enum BluetoothControllerSchedulerCurrentStep<'runtime, S, const SCHEDULER_CA
     Waiting(BluetoothControllerSchedulerCurrentPending<'runtime, S, SCHEDULER_CAPACITY>),
     /// The exact request completed with one private epoch-bound sample.
     Ready(BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>),
+}
+
+/// Finite reason the first legacy-advertising graph returned to idle ownership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingControllerPreparationError {
+    Set(crate::BluetoothLegacyAdvertisingSetError),
+    ControllerTime(crate::BluetoothControllerTimeAcquisitionError),
+    Runtime(crate::BluetoothLegacyAdvertisingRuntimeBeginError),
+    LinkState(open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingPduError),
+    TimingWindow,
+    Event(crate::BluetoothLegacyAdvertisingFirstEventPreparationError),
+    EmptyList(crate::BluetoothSchedulerEmptyListMergeError),
+}
+
+/// Terminal result of one source-ordered first advertising preparation.
+///
+/// Rejection proves that the LL generation and exact SRAM graph were restored
+/// to the same task-owned runtime. Success retains the timeline reservation and
+/// exclusive-list merge until the later `HEAD` publication edge.
+#[must_use = "publish the prepared item or retain the restored task owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingControllerPreparationOutcome {
+    Prepared(crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>),
+    Rejected(BluetoothLegacyAdvertisingControllerPreparationError),
+}
+
+#[cfg(target_arch = "riscv32")]
+enum BluetoothLegacyAdvertisingControllerPreparationPhase {
+    AlwaysAwakeTiming {
+        reset: crate::BluetoothLegacyAdvertisingLinkStateReset<'static>,
+        now: crate::controller_time::BluetoothControllerSchedulerNow,
+    },
+    Admission(crate::BluetoothLegacyAdvertisingFirstEventCandidate<'static>),
+    Sequence(crate::BluetoothLegacyAdvertisingFirstPreSequence<'static>),
+}
+
+#[cfg(target_arch = "riscv32")]
+struct BluetoothLegacyAdvertisingControllerPreparationTimeOwner<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    phase: Option<BluetoothLegacyAdvertisingControllerPreparationPhase>,
+    cancelled: Option<BluetoothLegacyAdvertisingControllerPreparationOutcome>,
+}
+
+/// One exact post-enable timing, admission or sequence-time request.
+#[must_use = "recheck or explicitly cancel the exact advertising time request"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothLegacyAdvertisingControllerPreparationPending<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    core: BluetoothControllerTimePendingCore<
+        BluetoothLegacyAdvertisingControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>,
+    >,
+}
+
+/// Terminal advertising preparation with the exact task service retained.
+#[must_use = "the task owner and preparation outcome must be handled together"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothLegacyAdvertisingControllerPreparationTerminal<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+    outcome: BluetoothLegacyAdvertisingControllerPreparationOutcome,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
+{
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothLegacyAdvertisingControllerPreparationOutcome,
+    ) {
+        (self.controller, self.outcome)
+    }
+}
+
+/// Result of one bounded advertising controller-time observation.
+#[must_use = "retain Pending or consume the terminal task and advertising result"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingControllerPreparationStep<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Pending(
+        BluetoothLegacyAdvertisingControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    Terminal(
+        BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothLegacyAdvertisingControllerInitialPreparationFailure<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Rejected {
+        current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
+        error: BluetoothLegacyAdvertisingControllerPreparationError,
+    },
+    Terminal(
+        BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
 }
 
 /// Terminal result of one source-ordered DTM preparation transaction.
@@ -1930,6 +2044,236 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
 #[cfg(target_arch = "riscv32")]
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothLegacyAdvertisingControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>
+{
+    fn terminal(
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        outcome: BluetoothLegacyAdvertisingControllerPreparationOutcome,
+    ) -> BluetoothLegacyAdvertisingControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        BluetoothLegacyAdvertisingControllerPreparationStep::Terminal(
+            BluetoothLegacyAdvertisingControllerPreparationTerminal {
+                controller: BluetoothControllerSchedulerEpochRetained { controller },
+                outcome,
+            },
+        )
+    }
+
+    /// Perform one bounded observation of the exact advertising time request.
+    pub fn recheck(
+        self,
+    ) -> BluetoothLegacyAdvertisingControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        let (mut owner, sample) = match self.core.recheck() {
+            Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
+                return BluetoothLegacyAdvertisingControllerPreparationStep::Pending(Self { core });
+            }
+            Ok(BluetoothControllerTimePendingCoreStep::Ready { owner, sample }) => (owner, sample),
+            Err(failure) => {
+                let (mut owner, error) = failure.into_parts();
+                let phase = owner
+                    .phase
+                    .take()
+                    .expect("failed advertising time recheck retains its exact phase");
+                let outcome = owner
+                    .controller
+                    .cancel_legacy_advertising_preparation_phase(
+                        phase,
+                        controller_time_event_error(error),
+                    );
+                return Self::terminal(owner.controller, outcome);
+            }
+        };
+        let phase = owner
+            .phase
+            .take()
+            .expect("completed advertising time request retains its exact phase");
+        let mut controller = owner.controller;
+        match phase {
+            BluetoothLegacyAdvertisingControllerPreparationPhase::AlwaysAwakeTiming {
+                reset,
+                now,
+            } => {
+                let epoch = now.epoch();
+                let current = crate::BluetoothSchedulerInstant::from_image(now.scheduler_image());
+                let radio_ready = controller
+                    .always_awake_timing
+                    .complete(epoch, sample)
+                    .into_scheduler_instant();
+                let timing = crate::BluetoothLegacyAdvertisingTimingObservation {
+                    current,
+                    radio_ready,
+                    epoch,
+                };
+                let candidate = match reset
+                    .form_first_event_candidate(timing, controller.runtime.scheduler_config())
+                {
+                    Ok(candidate) => candidate,
+                    Err(failure) => {
+                        controller
+                            .restore_legacy_advertising_cancelled(failure.into_reset().cancel());
+                        return Self::terminal(
+                            controller,
+                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
+                                BluetoothLegacyAdvertisingControllerPreparationError::TimingWindow,
+                            ),
+                        );
+                    }
+                };
+                match controller.begin_legacy_advertising_preparation_time(
+                    BluetoothLegacyAdvertisingControllerPreparationPhase::Admission(candidate),
+                ) {
+                    Ok(pending) => {
+                        BluetoothLegacyAdvertisingControllerPreparationStep::Pending(pending)
+                    }
+                    Err(terminal) => {
+                        BluetoothLegacyAdvertisingControllerPreparationStep::Terminal(terminal)
+                    }
+                }
+            }
+            BluetoothLegacyAdvertisingControllerPreparationPhase::Admission(candidate) => {
+                let admitted = match controller.runtime.admit_legacy_advertising_first_event(
+                    candidate,
+                    crate::BluetoothLegacyAdvertisingAdmissionObservation { sample },
+                ) {
+                    Ok(admitted) => admitted,
+                    Err(failure) => {
+                        let error = failure.error();
+                        controller.restore_legacy_advertising_cancelled(
+                            failure.into_candidate().cancel(),
+                        );
+                        return Self::terminal(
+                            controller,
+                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
+                                BluetoothLegacyAdvertisingControllerPreparationError::Event(error),
+                            ),
+                        );
+                    }
+                };
+                match controller.begin_legacy_advertising_preparation_time(
+                    BluetoothLegacyAdvertisingControllerPreparationPhase::Sequence(admitted),
+                ) {
+                    Ok(pending) => {
+                        BluetoothLegacyAdvertisingControllerPreparationStep::Pending(pending)
+                    }
+                    Err(terminal) => {
+                        BluetoothLegacyAdvertisingControllerPreparationStep::Terminal(terminal)
+                    }
+                }
+            }
+            BluetoothLegacyAdvertisingControllerPreparationPhase::Sequence(admitted) => {
+                let prepared = match controller.runtime.prepare_legacy_advertising_first_event(
+                    admitted,
+                    crate::BluetoothLegacyAdvertisingSequenceObservation { sample },
+                ) {
+                    Ok(prepared) => prepared,
+                    Err(failure) => {
+                        let error = failure.error();
+                        controller.restore_legacy_advertising_cancelled(
+                            failure.into_candidate().cancel(),
+                        );
+                        return Self::terminal(
+                            controller,
+                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
+                                BluetoothLegacyAdvertisingControllerPreparationError::Event(error),
+                            ),
+                        );
+                    }
+                };
+                match controller
+                    .runtime
+                    .prepare_legacy_advertising_empty_list_merge(prepared)
+                {
+                    Ok(merged) => Self::terminal(
+                        controller,
+                        BluetoothLegacyAdvertisingControllerPreparationOutcome::Prepared(merged),
+                    ),
+                    Err(failure) => {
+                        let error = failure.error();
+                        let cancelled = controller
+                            .runtime
+                            .cancel_legacy_advertising_first_event(failure.into_prepared());
+                        controller.restore_legacy_advertising_cancelled(cancelled);
+                        Self::terminal(
+                            controller,
+                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
+                                BluetoothLegacyAdvertisingControllerPreparationError::EmptyList(
+                                    error,
+                                ),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Cancel the exact unpublished phase and restore the advertising runtime.
+    pub fn cancel(
+        self,
+    ) -> BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let mut owner = match self.core.cancel() {
+            Ok(owner) => owner,
+            Err(failure) => failure.into_parts().0,
+        };
+        let outcome = owner
+            .cancelled
+            .take()
+            .expect("explicit advertising time cancellation records its restored outcome");
+        BluetoothLegacyAdvertisingControllerPreparationTerminal {
+            controller: BluetoothControllerSchedulerEpochRetained {
+                controller: owner.controller,
+            },
+            outcome,
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
+    for BluetoothLegacyAdvertisingControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>
+{
+    fn recheck_owned_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
+        BluetoothControllerTimePendingOwner::recheck_owned_controller_time(
+            &mut self.controller,
+            request,
+        )
+    }
+
+    fn cancel_owned_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<(), BluetoothControllerTimeEventError> {
+        let result = BluetoothControllerTimePendingOwner::cancel_owned_controller_time(
+            &mut self.controller,
+            request,
+        );
+        let error = match result {
+            Ok(()) => crate::BluetoothControllerTimeAcquisitionError::Cancelled,
+            Err(error) => controller_time_event_error(error),
+        };
+        let phase = self
+            .phase
+            .take()
+            .expect("private advertising time owner retains one exact preparation phase");
+        self.cancelled = Some(
+            self.controller
+                .cancel_legacy_advertising_preparation_phase(phase, error),
+        );
+        result
+    }
+
+    fn drain_orphan_controller_time(
+        &mut self,
+    ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
+        BluetoothControllerTimePendingOwner::drain_orphan_controller_time(&mut self.controller)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Borrow the exact role-specific terminal result.
@@ -1981,7 +2325,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     .expect("failed DTM time recheck retains its exact phase");
                 let outcome = owner
                     .controller
-                    .cancel_dtm_preparation_phase(phase, dtm_time_event_error(error));
+                    .cancel_dtm_preparation_phase(phase, controller_time_event_error(error));
                 return Self::terminal(owner.controller, outcome);
             }
         };
@@ -2240,7 +2584,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendin
         );
         let error = match result {
             Ok(()) => crate::BluetoothControllerTimeAcquisitionError::Cancelled,
-            Err(error) => dtm_time_event_error(error),
+            Err(error) => controller_time_event_error(error),
         };
         let phase = self
             .phase
@@ -2332,6 +2676,78 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    fn restore_legacy_advertising_cancelled(
+        &mut self,
+        cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
+    ) {
+        if self
+            .legacy_advertising_resources
+            .restore_cancelled(cancelled)
+            .is_err()
+        {
+            panic!("an advertising phase returned owners to a different runtime");
+        }
+    }
+
+    fn cancel_legacy_advertising_preparation_phase(
+        &mut self,
+        phase: BluetoothLegacyAdvertisingControllerPreparationPhase,
+        error: crate::BluetoothControllerTimeAcquisitionError,
+    ) -> BluetoothLegacyAdvertisingControllerPreparationOutcome {
+        let cancelled = match phase {
+            BluetoothLegacyAdvertisingControllerPreparationPhase::AlwaysAwakeTiming {
+                reset,
+                ..
+            } => reset.cancel(),
+            BluetoothLegacyAdvertisingControllerPreparationPhase::Admission(candidate) => {
+                candidate.cancel()
+            }
+            BluetoothLegacyAdvertisingControllerPreparationPhase::Sequence(admitted) => self
+                .runtime
+                .cancel_legacy_advertising_first_pre_sequence(admitted),
+        };
+        self.restore_legacy_advertising_cancelled(cancelled);
+        BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
+            BluetoothLegacyAdvertisingControllerPreparationError::ControllerTime(error),
+        )
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc begin rejection retains the restored task and typed outcome"
+    )]
+    fn begin_legacy_advertising_preparation_time(
+        mut self,
+        phase: BluetoothLegacyAdvertisingControllerPreparationPhase,
+    ) -> Result<
+        BluetoothLegacyAdvertisingControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    > {
+        let request = match self.runtime.request_controller_time() {
+            Ok(request) => request,
+            Err(error) => {
+                let outcome = self.cancel_legacy_advertising_preparation_phase(
+                    phase,
+                    controller_time_begin_error(error),
+                );
+                return Err(BluetoothLegacyAdvertisingControllerPreparationTerminal {
+                    controller: BluetoothControllerSchedulerEpochRetained { controller: self },
+                    outcome,
+                });
+            }
+        };
+        Ok(BluetoothLegacyAdvertisingControllerPreparationPending {
+            core: BluetoothControllerTimePendingCore::new(
+                BluetoothLegacyAdvertisingControllerPreparationTimeOwner {
+                    controller: self,
+                    phase: Some(phase),
+                    cancelled: None,
+                },
+                request,
+            ),
+        })
+    }
+
     /// Return the exact cancelled or stopped session graph to this Controller.
     ///
     /// The embedded runtime rejects an occupied slot or a graph minted from
@@ -2426,7 +2842,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         let request = match self.runtime.request_controller_time() {
             Ok(request) => request,
             Err(error) => {
-                let outcome = self.cancel_dtm_preparation_phase(phase, dtm_time_begin_error(error));
+                let outcome =
+                    self.cancel_dtm_preparation_phase(phase, controller_time_begin_error(error));
                 return Err(BluetoothDtmControllerPreparationTerminal {
                     controller: BluetoothControllerSchedulerEpochRetained { controller: self },
                     outcome,
@@ -2459,7 +2876,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         let request = match self.runtime.request_controller_time() {
             Ok(request) => request,
             Err(error) => {
-                let outcome = self.cancel_dtm_preparation_phase(phase, dtm_time_begin_error(error));
+                let outcome =
+                    self.cancel_dtm_preparation_phase(phase, controller_time_begin_error(error));
                 return Err(BluetoothDtmControllerPreparationTerminal {
                     controller: BluetoothControllerSchedulerEpochRetained { controller: self },
                     outcome,
@@ -2692,6 +3110,67 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 self.sample,
             ),
         )
+    }
+
+    /// Begin the source-ordered first legacy-advertising transaction.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the complete current or preparation owner"
+    )]
+    pub(crate) fn begin_legacy_advertising_first_event(
+        self,
+        set: open_esp_radio_bluetooth_ll::advertising::LegacyNonconnectableAdvertisingSet<'static>,
+    ) -> Result<
+        BluetoothLegacyAdvertisingControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothLegacyAdvertisingControllerInitialPreparationFailure<
+            'runtime,
+            S,
+            SCHEDULER_CAPACITY,
+        >,
+    > {
+        let mut current = self;
+        let event = match current
+            .controller
+            .legacy_advertising_resources
+            .begin_event(set)
+        {
+            Ok(event) => event,
+            Err(error) => {
+                return Err(
+                    BluetoothLegacyAdvertisingControllerInitialPreparationFailure::Rejected {
+                        current,
+                        error: BluetoothLegacyAdvertisingControllerPreparationError::Runtime(error),
+                    },
+                );
+            }
+        };
+        let (prepared, default_tx_power) = event.into_parts();
+        let reset = match prepared.reset_link_state(default_tx_power) {
+            Ok(reset) => reset,
+            Err(failure) => {
+                let error = failure.error();
+                current
+                    .controller
+                    .restore_legacy_advertising_cancelled(failure.into_prepared().cancel());
+                return Err(
+                    BluetoothLegacyAdvertisingControllerInitialPreparationFailure::Rejected {
+                        current,
+                        error: BluetoothLegacyAdvertisingControllerPreparationError::LinkState(
+                            error,
+                        ),
+                    },
+                );
+            }
+        };
+        let (controller, now) = current.into_parts();
+        controller
+            .begin_legacy_advertising_preparation_time(
+                BluetoothLegacyAdvertisingControllerPreparationPhase::AlwaysAwakeTiming {
+                    reset,
+                    now,
+                },
+            )
+            .map_err(BluetoothLegacyAdvertisingControllerInitialPreparationFailure::Terminal)
     }
 
     /// Begin source-ordered initial transmitter preparation.

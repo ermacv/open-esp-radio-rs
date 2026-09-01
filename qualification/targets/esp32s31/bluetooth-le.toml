@@ -406,7 +406,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",
 ]
 gaps = [
-  { axis = "implementation", id = "legacy-advertising-actor-composition-scanning-connection-and-llcp-missing" },
+  { axis = "implementation", id = "legacy-advertising-recurring-completion-active-command-scanning-connection-and-llcp-missing" },
   { axis = "host", id = "virtual-clock-link-layer-tests-missing" },
   { axis = "vendor", id = "link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },

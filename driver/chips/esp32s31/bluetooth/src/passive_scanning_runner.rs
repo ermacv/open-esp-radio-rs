@@ -21,9 +21,45 @@ use crate::{
     BluetoothPassiveScanControllerPreparationOutcome,
     BluetoothPassiveScanControllerPreparationPending,
     BluetoothPassiveScanControllerPreparationStep, BluetoothPassiveScanEmptySchedulerMergePrepared,
-    BluetoothPassiveScanSchedulerHeadPublished, BluetoothPassiveScanSchedulerRunning,
-    BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
+    BluetoothPassiveScanEventPhase, BluetoothPassiveScanSchedulerHeadPublished,
+    BluetoothPassiveScanSchedulerRunning, BluetoothSchedulerHeadPublicationError,
+    BluetoothSchedulerRunInterruptStorage,
 };
+
+/// Portable in-flight window plus the optional prior S31 recurrence phase.
+#[must_use = "retain the exact window request until it starts or is recovered"]
+pub struct BluetoothPassiveScanWindowRequest {
+    window: LegacyPassiveScanWindowInFlight,
+    previous_phase: Option<BluetoothPassiveScanEventPhase>,
+}
+
+impl BluetoothPassiveScanWindowRequest {
+    fn first(scanner: LegacyPassiveScannerEnabled) -> Self {
+        Self {
+            window: scanner.begin_window(),
+            previous_phase: None,
+        }
+    }
+
+    fn recurring(
+        scanner: LegacyPassiveScannerEnabled,
+        previous_phase: BluetoothPassiveScanEventPhase,
+    ) -> Self {
+        Self {
+            window: scanner.begin_window(),
+            previous_phase: Some(previous_phase),
+        }
+    }
+
+    pub fn cancel(
+        self,
+    ) -> (
+        LegacyPassiveScannerEnabled,
+        Option<BluetoothPassiveScanEventPhase>,
+    ) {
+        (self.window.cancel(), self.previous_phase)
+    }
+}
 
 #[must_use = "step or retain the exact first scanner runner"]
 pub struct BluetoothPassiveScanFirstRunner<'runtime, S, const SCHEDULER_CAPACITY: usize>
@@ -38,28 +74,30 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     ColdCurrent {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         pending: BluetoothAlwaysAwakePostEnableTimePending<'runtime, S, SCHEDULER_CAPACITY>,
     },
     WarmCurrent {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         pending: BluetoothControllerSchedulerCurrentPending<'runtime, S, SCHEDULER_CAPACITY>,
     },
     CurrentReady {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
     },
     Preparation {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         pending: BluetoothPassiveScanControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
     },
     Prepared {
         window: LegacyPassiveScanWindowInFlight,
+        phase: BluetoothPassiveScanEventPhase,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         merged: BluetoothPassiveScanEmptySchedulerMergePrepared,
     },
     Head {
         window: LegacyPassiveScanWindowInFlight,
+        phase: BluetoothPassiveScanEventPhase,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         head: BluetoothPassiveScanSchedulerHeadPublished,
     },
@@ -84,6 +122,7 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     window: LegacyPassiveScanWindowInFlight,
+    phase: BluetoothPassiveScanEventPhase,
     task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     running: BluetoothPassiveScanSchedulerRunning,
 }
@@ -98,9 +137,10 @@ where
     ) -> (
         BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         LegacyPassiveScanWindowInFlight,
+        BluetoothPassiveScanEventPhase,
         BluetoothPassiveScanSchedulerRunning,
     ) {
-        (self.task, self.window, self.running)
+        (self.task, self.window, self.phase, self.running)
     }
 }
 
@@ -141,23 +181,24 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     ColdBegin {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         failure: BluetoothAlwaysAwakePostEnableTimeBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
     },
     ColdRecheck {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         failure: BluetoothAlwaysAwakePostEnableTimeFailure<'runtime, S, SCHEDULER_CAPACITY>,
     },
     WarmBegin {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         failure: BluetoothControllerSchedulerCurrentBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
     },
     WarmRecheck {
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         failure: BluetoothControllerSchedulerCurrentFailure<'runtime, S, SCHEDULER_CAPACITY>,
     },
     Recovered {
         scanner: LegacyPassiveScannerEnabled,
+        previous_phase: Option<BluetoothPassiveScanEventPhase>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothPassiveScanControllerPreparationError,
     },
@@ -183,14 +224,36 @@ where
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         scanner: LegacyPassiveScannerEnabled,
     ) -> Result<Self, BluetoothPassiveScanFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>> {
-        let window = scanner.begin_window();
+        Self::begin_request(task, BluetoothPassiveScanWindowRequest::first(scanner))
+    }
+
+    /// Begin the next interval-preserving scanner window.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the exact scanner and Controller owner"
+    )]
+    pub fn begin_recurring(
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        scanner: LegacyPassiveScannerEnabled,
+        previous_phase: BluetoothPassiveScanEventPhase,
+    ) -> Result<Self, BluetoothPassiveScanFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>> {
+        Self::begin_request(
+            task,
+            BluetoothPassiveScanWindowRequest::recurring(scanner, previous_phase),
+        )
+    }
+
+    fn begin_request(
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        request: BluetoothPassiveScanWindowRequest,
+    ) -> Result<Self, BluetoothPassiveScanFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>> {
         match task.retain_scheduler_epoch() {
             Ok(epoch) => match epoch.begin_fresh_scheduler_current() {
                 Ok(pending) => Ok(Self::from_phase(
-                    BluetoothPassiveScanFirstRunnerPhase::WarmCurrent { window, pending },
+                    BluetoothPassiveScanFirstRunnerPhase::WarmCurrent { request, pending },
                 )),
                 Err(failure) => {
-                    Err(BluetoothPassiveScanFirstRunnerFailure::WarmBegin { window, failure })
+                    Err(BluetoothPassiveScanFirstRunnerFailure::WarmBegin { request, failure })
                 }
             },
             Err(unavailable) => match unavailable
@@ -198,10 +261,10 @@ where
                 .begin_always_awake_post_enable_time()
             {
                 Ok(pending) => Ok(Self::from_phase(
-                    BluetoothPassiveScanFirstRunnerPhase::ColdCurrent { window, pending },
+                    BluetoothPassiveScanFirstRunnerPhase::ColdCurrent { request, pending },
                 )),
                 Err(failure) => {
-                    Err(BluetoothPassiveScanFirstRunnerFailure::ColdBegin { window, failure })
+                    Err(BluetoothPassiveScanFirstRunnerFailure::ColdBegin { request, failure })
                 }
             },
         }
@@ -210,84 +273,94 @@ where
     /// Execute exactly one lower transition.
     pub fn step(self) -> BluetoothPassiveScanFirstRunnerStep<'runtime, S, SCHEDULER_CAPACITY> {
         match self.phase {
-            BluetoothPassiveScanFirstRunnerPhase::ColdCurrent { window, pending } => {
+            BluetoothPassiveScanFirstRunnerPhase::ColdCurrent { request, pending } => {
                 match pending.recheck() {
                     Ok(BluetoothAlwaysAwakePostEnableTimeStep::Waiting(pending)) => {
                         BluetoothPassiveScanFirstRunnerStep::WaitControllerTime(Self::from_phase(
-                            BluetoothPassiveScanFirstRunnerPhase::ColdCurrent { window, pending },
+                            BluetoothPassiveScanFirstRunnerPhase::ColdCurrent { request, pending },
                         ))
                     }
                     Ok(BluetoothAlwaysAwakePostEnableTimeStep::Ready(ready)) => {
                         BluetoothPassiveScanFirstRunnerStep::Continue(Self::from_phase(
                             BluetoothPassiveScanFirstRunnerPhase::CurrentReady {
-                                window,
+                                request,
                                 current: ready.initialize_scheduler_epoch(),
                             },
                         ))
                     }
                     Err(failure) => BluetoothPassiveScanFirstRunnerStep::Failed(
-                        BluetoothPassiveScanFirstRunnerFailure::ColdRecheck { window, failure },
+                        BluetoothPassiveScanFirstRunnerFailure::ColdRecheck { request, failure },
                     ),
                 }
             }
-            BluetoothPassiveScanFirstRunnerPhase::WarmCurrent { window, pending } => {
+            BluetoothPassiveScanFirstRunnerPhase::WarmCurrent { request, pending } => {
                 match pending.recheck() {
                     Ok(BluetoothControllerSchedulerCurrentStep::Waiting(pending)) => {
                         BluetoothPassiveScanFirstRunnerStep::WaitControllerTime(Self::from_phase(
-                            BluetoothPassiveScanFirstRunnerPhase::WarmCurrent { window, pending },
+                            BluetoothPassiveScanFirstRunnerPhase::WarmCurrent { request, pending },
                         ))
                     }
                     Ok(BluetoothControllerSchedulerCurrentStep::Ready(current)) => {
                         BluetoothPassiveScanFirstRunnerStep::Continue(Self::from_phase(
-                            BluetoothPassiveScanFirstRunnerPhase::CurrentReady { window, current },
+                            BluetoothPassiveScanFirstRunnerPhase::CurrentReady { request, current },
                         ))
                     }
                     Err(failure) => BluetoothPassiveScanFirstRunnerStep::Failed(
-                        BluetoothPassiveScanFirstRunnerFailure::WarmRecheck { window, failure },
+                        BluetoothPassiveScanFirstRunnerFailure::WarmRecheck { request, failure },
                     ),
                 }
             }
-            BluetoothPassiveScanFirstRunnerPhase::CurrentReady { window, current } => {
-                let scan_window = window.parameters().window();
-                let channel = window.channel();
-                match current.begin_passive_scan_first_event(scan_window, channel) {
+            BluetoothPassiveScanFirstRunnerPhase::CurrentReady { request, current } => {
+                let parameters = request.window.parameters();
+                let channel = request.window.channel();
+                match current.begin_passive_scan_first_event(
+                    parameters,
+                    channel,
+                    request.previous_phase,
+                ) {
                     Ok(pending) => {
                         BluetoothPassiveScanFirstRunnerStep::WaitControllerTime(Self::from_phase(
-                            BluetoothPassiveScanFirstRunnerPhase::Preparation { window, pending },
+                            BluetoothPassiveScanFirstRunnerPhase::Preparation { request, pending },
                         ))
                     }
                     Err(BluetoothPassiveScanControllerInitialPreparationFailure::Rejected {
                         current,
                         error,
                     }) => Self::recovered_failure(
-                        window,
+                        request,
                         current.into_retained_epoch().into_task_service(),
                         error,
                     ),
                     Err(BluetoothPassiveScanControllerInitialPreparationFailure::Terminal(
                         terminal,
-                    )) => Self::finish_preparation(window, terminal),
+                    )) => Self::finish_preparation(request, terminal),
                 }
             }
-            BluetoothPassiveScanFirstRunnerPhase::Preparation { window, pending } => {
+            BluetoothPassiveScanFirstRunnerPhase::Preparation { request, pending } => {
                 match pending.recheck() {
                     BluetoothPassiveScanControllerPreparationStep::Pending(pending) => {
                         BluetoothPassiveScanFirstRunnerStep::WaitControllerTime(Self::from_phase(
-                            BluetoothPassiveScanFirstRunnerPhase::Preparation { window, pending },
+                            BluetoothPassiveScanFirstRunnerPhase::Preparation { request, pending },
                         ))
                     }
                     BluetoothPassiveScanControllerPreparationStep::Terminal(terminal) => {
-                        Self::finish_preparation(window, terminal)
+                        Self::finish_preparation(request, terminal)
                     }
                 }
             }
             BluetoothPassiveScanFirstRunnerPhase::Prepared {
                 window,
+                phase,
                 mut task,
                 merged,
             } => match task.publish_passive_scan_scheduler_head(merged) {
                 Ok(head) => BluetoothPassiveScanFirstRunnerStep::Continue(Self::from_phase(
-                    BluetoothPassiveScanFirstRunnerPhase::Head { window, task, head },
+                    BluetoothPassiveScanFirstRunnerPhase::Head {
+                        window,
+                        phase,
+                        task,
+                        head,
+                    },
                 )),
                 Err(failure) => {
                     let cause =
@@ -299,6 +372,7 @@ where
                                 runner: Self::from_phase(
                                     BluetoothPassiveScanFirstRunnerPhase::Prepared {
                                         window,
+                                        phase,
                                         task,
                                         merged: failure.into_merged(),
                                     },
@@ -310,12 +384,14 @@ where
             },
             BluetoothPassiveScanFirstRunnerPhase::Head {
                 window,
+                phase,
                 mut task,
                 head,
             } => match task.start_passive_scan_scheduler(head) {
                 Ok(running) => {
                     BluetoothPassiveScanFirstRunnerStep::Running(BluetoothPassiveScanFirstRunning {
                         window,
+                        phase,
                         task,
                         running,
                     })
@@ -331,6 +407,7 @@ where
                                 runner: Self::from_phase(
                                     BluetoothPassiveScanFirstRunnerPhase::Head {
                                         window,
+                                        phase,
                                         task,
                                         head,
                                     },
@@ -344,7 +421,7 @@ where
     }
 
     fn finish_preparation(
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         terminal: crate::BluetoothPassiveScanControllerPreparationTerminal<
             'runtime,
             S,
@@ -354,29 +431,32 @@ where
         let (epoch, outcome) = terminal.into_parts();
         let task = epoch.into_task_service();
         match outcome {
-            BluetoothPassiveScanControllerPreparationOutcome::Prepared(merged) => {
+            BluetoothPassiveScanControllerPreparationOutcome::Prepared { merged, phase } => {
                 BluetoothPassiveScanFirstRunnerStep::Continue(Self::from_phase(
                     BluetoothPassiveScanFirstRunnerPhase::Prepared {
-                        window,
+                        window: request.window,
+                        phase,
                         task,
                         merged,
                     },
                 ))
             }
             BluetoothPassiveScanControllerPreparationOutcome::Rejected(error) => {
-                Self::recovered_failure(window, task, error)
+                Self::recovered_failure(request, task, error)
             }
         }
     }
 
     fn recovered_failure(
-        window: LegacyPassiveScanWindowInFlight,
+        request: BluetoothPassiveScanWindowRequest,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothPassiveScanControllerPreparationError,
     ) -> BluetoothPassiveScanFirstRunnerStep<'runtime, S, SCHEDULER_CAPACITY> {
+        let (scanner, previous_phase) = request.cancel();
         BluetoothPassiveScanFirstRunnerStep::Failed(
             BluetoothPassiveScanFirstRunnerFailure::Recovered {
-                scanner: window.cancel(),
+                scanner,
+                previous_phase,
                 task,
                 error,
             },

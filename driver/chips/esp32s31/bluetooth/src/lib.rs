@@ -464,6 +464,8 @@ pub use passive_scanning_runner::{
     BluetoothPassiveScanFirstRunnerStep, BluetoothPassiveScanFirstRunning,
 };
 #[cfg(target_arch = "riscv32")]
+pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
+#[cfg(target_arch = "riscv32")]
 pub use phy::{
     BluetoothControllerPhyClientAcquire, BluetoothControllerPhyClientAcquireFailure,
     BluetoothControllerPhyInitializationFailure, BluetoothControllerPhyPendingTrack,

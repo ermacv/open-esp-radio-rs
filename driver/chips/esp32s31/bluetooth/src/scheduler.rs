@@ -2546,7 +2546,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         match self
             .runtime
             .scheduler_timeline_mut()
-            .reserve_initial_window(
+            .reserve_phase_locked_initial_window(
                 requested.start(),
                 requested.end(),
                 timing_policy,

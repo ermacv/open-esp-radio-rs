@@ -1953,7 +1953,10 @@ pub enum BluetoothPassiveScanControllerPreparationError {
 #[must_use = "publish the scanner item or retain the restored task owner"]
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothPassiveScanControllerPreparationOutcome {
-    Prepared(crate::BluetoothPassiveScanEmptySchedulerMergePrepared),
+    Prepared {
+        merged: crate::BluetoothPassiveScanEmptySchedulerMergePrepared,
+        phase: crate::BluetoothPassiveScanEventPhase,
+    },
     Rejected(BluetoothPassiveScanControllerPreparationError),
 }
 
@@ -1962,11 +1965,18 @@ enum BluetoothPassiveScanControllerPreparationPhase {
     AlwaysAwakeTiming {
         graph: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
         channel: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanPrimaryChannel,
-        scan_window: open_esp_radio_bluetooth_ll::scanning::LegacyScanWindow,
+        parameters: open_esp_radio_bluetooth_ll::scanning::LegacyPassiveScanParameters,
+        previous_phase: Option<crate::BluetoothPassiveScanEventPhase>,
         now: crate::controller_time::BluetoothControllerSchedulerNow,
     },
-    Admission(crate::BluetoothPassiveScanFirstEventCandidate),
-    Sequence(crate::BluetoothPassiveScanFirstPreSequence),
+    Admission {
+        candidate: crate::BluetoothPassiveScanFirstEventCandidate,
+        phase: crate::BluetoothPassiveScanEventPhase,
+    },
+    Sequence {
+        admitted: crate::BluetoothPassiveScanFirstPreSequence,
+        phase: crate::BluetoothPassiveScanEventPhase,
+    },
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -2543,7 +2553,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             BluetoothPassiveScanControllerPreparationPhase::AlwaysAwakeTiming {
                 graph,
                 channel,
-                scan_window,
+                parameters,
+                previous_phase,
                 now,
             } => {
                 let epoch = now.epoch();
@@ -2559,12 +2570,22 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                         epoch,
                         controller_time,
                     };
-                let candidate = match timing.form_first_event_candidate(
-                    graph,
-                    channel,
-                    scan_window,
-                    controller.runtime.scheduler_config(),
-                ) {
+                let candidate = match previous_phase {
+                    Some(previous) => timing.form_recurring_event_candidate(
+                        graph,
+                        channel,
+                        parameters,
+                        controller.runtime.scheduler_config(),
+                        previous,
+                    ),
+                    None => timing.form_first_event_candidate(
+                        graph,
+                        channel,
+                        parameters,
+                        controller.runtime.scheduler_config(),
+                    ),
+                };
+                let (candidate, phase) = match candidate {
                     Ok(candidate) => candidate,
                     Err(failure) => {
                         controller.restore_passive_scan_graph(failure.into_graph());
@@ -2577,7 +2598,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     }
                 };
                 match controller.begin_passive_scan_preparation_time(
-                    BluetoothPassiveScanControllerPreparationPhase::Admission(candidate),
+                    BluetoothPassiveScanControllerPreparationPhase::Admission { candidate, phase },
                 ) {
                     Ok(pending) => BluetoothPassiveScanControllerPreparationStep::Pending(pending),
                     Err(terminal) => {
@@ -2585,7 +2606,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     }
                 }
             }
-            BluetoothPassiveScanControllerPreparationPhase::Admission(candidate) => {
+            BluetoothPassiveScanControllerPreparationPhase::Admission { candidate, phase } => {
                 let admitted = match controller.runtime.admit_passive_scan_first_event(
                     candidate,
                     crate::BluetoothPassiveScanAdmissionObservation { sample },
@@ -2603,7 +2624,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     }
                 };
                 match controller.begin_passive_scan_preparation_time(
-                    BluetoothPassiveScanControllerPreparationPhase::Sequence(admitted),
+                    BluetoothPassiveScanControllerPreparationPhase::Sequence { admitted, phase },
                 ) {
                     Ok(pending) => BluetoothPassiveScanControllerPreparationStep::Pending(pending),
                     Err(terminal) => {
@@ -2611,7 +2632,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     }
                 }
             }
-            BluetoothPassiveScanControllerPreparationPhase::Sequence(admitted) => {
+            BluetoothPassiveScanControllerPreparationPhase::Sequence { admitted, phase } => {
                 let prepared = match controller.runtime.prepare_passive_scan_first_event(
                     admitted,
                     crate::BluetoothPassiveScanSequenceObservation { sample },
@@ -2634,7 +2655,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 {
                     Ok(merged) => Self::terminal(
                         controller,
-                        BluetoothPassiveScanControllerPreparationOutcome::Prepared(merged),
+                        BluetoothPassiveScanControllerPreparationOutcome::Prepared {
+                            merged,
+                            phase,
+                        },
                     ),
                     Err(failure) => {
                         let error = failure.error();
@@ -3213,10 +3237,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             BluetoothPassiveScanControllerPreparationPhase::AlwaysAwakeTiming { graph, .. } => {
                 graph
             }
-            BluetoothPassiveScanControllerPreparationPhase::Admission(candidate) => {
+            BluetoothPassiveScanControllerPreparationPhase::Admission { candidate, .. } => {
                 candidate.cancel()
             }
-            BluetoothPassiveScanControllerPreparationPhase::Sequence(admitted) => self
+            BluetoothPassiveScanControllerPreparationPhase::Sequence { admitted, .. } => self
                 .runtime
                 .cancel_passive_scan_first_pre_sequence(admitted),
         };
@@ -3748,8 +3772,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub(crate) fn begin_passive_scan_first_event(
         self,
-        scan_window: open_esp_radio_bluetooth_ll::scanning::LegacyScanWindow,
+        parameters: open_esp_radio_bluetooth_ll::scanning::LegacyPassiveScanParameters,
         channel: open_esp_radio_bluetooth_ll::scanning::PrimaryScanChannel,
+        previous_phase: Option<crate::BluetoothPassiveScanEventPhase>,
     ) -> Result<
         BluetoothPassiveScanControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothPassiveScanControllerInitialPreparationFailure<'runtime, S, SCHEDULER_CAPACITY>,
@@ -3772,7 +3797,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 BluetoothPassiveScanControllerPreparationPhase::AlwaysAwakeTiming {
                     graph,
                     channel: crate::passive_scanning::lower_primary_channel(channel),
-                    scan_window,
+                    parameters,
+                    previous_phase,
                     now,
                 },
             )

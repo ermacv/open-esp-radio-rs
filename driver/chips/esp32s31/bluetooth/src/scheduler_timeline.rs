@@ -372,6 +372,36 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
         self.reserve_initial_raw_window(raw_start, raw_end, timing_policy)
     }
 
+    /// Reserve an exact initial window whose protocol phase cannot move.
+    ///
+    /// Passive scan recurrence is defined by its start-to-start interval. A
+    /// collision must therefore reject the selected phase instead of silently
+    /// displacing it and corrupting all following channel windows.
+    pub(crate) fn reserve_phase_locked_initial_window(
+        &mut self,
+        raw_start: u32,
+        raw_end: u32,
+        timing_policy: BluetoothSchedulerTimingPolicy,
+        admission_sample: BluetoothControllerTimeSample,
+    ) -> Result<
+        BluetoothSchedulerWindowReservation<BluetoothSchedulerInitialAdmissionResolved>,
+        BluetoothSchedulerReservationError,
+    > {
+        if !timing_policy.initial_deadline_is_open(admission_sample, raw_start) {
+            return Err(BluetoothSchedulerReservationError::InitialDeadlineExpired);
+        }
+        let Some(candidate) = BluetoothSchedulerRawWindow::new(raw_start, raw_end) else {
+            return Err(BluetoothSchedulerReservationError::WindowOutsideForwardHalfRange);
+        };
+        if self.slots.iter().any(|slot| {
+            slot.window
+                .is_some_and(|occupied| candidate.strictly_overlaps(occupied))
+        }) {
+            return Err(BluetoothSchedulerReservationError::RecurringOverlapUnsupported);
+        }
+        self.reserve_window(candidate, timing_policy)
+    }
+
     /// Reserve one exact recurring event without initial admission or displacement.
     ///
     /// The reviewed recurring helper bypasses the delay-if-overlap path. Until
@@ -656,6 +686,21 @@ mod tests {
         assert_eq!(recurring.window().start(), 25);
         assert_eq!(recurring.window().end(), 35);
         assert!(timeline.release(recurring).is_ok());
+        assert!(timeline.is_empty());
+    }
+
+    #[test]
+    fn phase_locked_initial_window_rejects_overlap_without_moving_scan_phase() {
+        let mut timeline = BluetoothSchedulerTimeline::<2>::new();
+        let occupied = reserve_raw(&mut timeline, 200, 300).expect("first window is admissible");
+
+        assert!(matches!(
+            timeline.reserve_phase_locked_initial_window(250, 350, timing_policy(), sample(100)),
+            Err(BluetoothSchedulerReservationError::RecurringOverlapUnsupported)
+        ));
+        assert_eq!(occupied.window().start(), 200);
+        assert_eq!(occupied.window().end(), 300);
+        assert!(timeline.release(occupied).is_ok());
         assert!(timeline.is_empty());
     }
 

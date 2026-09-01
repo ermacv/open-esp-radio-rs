@@ -30,6 +30,7 @@ use crate::{
 struct BluetoothPassiveScanActiveAxes<'runtime, S, const CAPACITY: usize> {
     task: BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>,
     window: LegacyPassiveScanWindowInFlight,
+    phase: crate::BluetoothPassiveScanEventPhase,
 }
 
 enum BluetoothPassiveScanActivePhase {
@@ -88,6 +89,7 @@ where
 {
     task: BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>,
     scanner: LegacyPassiveScannerEnabled,
+    phase: crate::BluetoothPassiveScanEventPhase,
     channel: PrimaryScanChannel,
     received: BluetoothPassiveScanReceivedBatch,
     status: BluetoothPassiveScanSchedulerItemCompletionStatus,
@@ -99,6 +101,10 @@ where
 {
     pub const fn channel(&self) -> PrimaryScanChannel {
         self.channel
+    }
+
+    pub const fn phase(&self) -> crate::BluetoothPassiveScanEventPhase {
+        self.phase
     }
 
     pub const fn received(&self) -> &BluetoothPassiveScanReceivedBatch {
@@ -126,10 +132,17 @@ where
     ) -> (
         BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>,
         LegacyPassiveScannerEnabled,
+        crate::BluetoothPassiveScanEventPhase,
         BluetoothPassiveScanReceivedBatch,
         BluetoothPassiveScanSchedulerItemCompletionStatus,
     ) {
-        (self.task, self.scanner, self.received, self.status)
+        (
+            self.task,
+            self.scanner,
+            self.phase,
+            self.received,
+            self.status,
+        )
     }
 }
 
@@ -201,9 +214,13 @@ where
     pub fn from_first_running(
         first: BluetoothPassiveScanFirstRunning<'runtime, S, CAPACITY>,
     ) -> Self {
-        let (task, window, running) = first.into_parts();
+        let (task, window, phase, running) = first.into_parts();
         Self {
-            axes: BluetoothPassiveScanActiveAxes { task, window },
+            axes: BluetoothPassiveScanActiveAxes {
+                task,
+                window,
+                phase,
+            },
             phase: BluetoothPassiveScanActivePhase::RunningAwaitingWake(running),
         }
     }
@@ -527,6 +544,7 @@ where
                                     BluetoothPassiveScanEventCpuOwned {
                                         task: self.axes.task,
                                         scanner: self.axes.window.complete(),
+                                        phase: self.axes.phase,
                                         channel,
                                         received,
                                         status,

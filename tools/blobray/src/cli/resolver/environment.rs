@@ -69,6 +69,16 @@ pub(super) fn resolve_from(
             )?;
             return Ok(ResolvedInvocation::ProjectInit(arguments));
         }
+        Command::SymbolCorrelate(arguments) => {
+            reject_configuration_roots(
+                requested_project.as_ref(),
+                requested_target.as_ref(),
+                requested_run_spec.as_ref(),
+                &svd_paths,
+                "symbols correlate consumes only its explicit --from and --to artifacts",
+            )?;
+            return Ok(ResolvedInvocation::SymbolCorrelate(arguments));
+        }
         command => command,
     };
 

@@ -320,6 +320,24 @@ cargo blobray project revision rebase vendor-2026-05 @live \
 cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
 ```
 
+When a vendor regenerates private symbol names, correlate the public or older
+named archive with the obfuscated revision before reviewing the update:
+
+```console
+cargo blobray advanced symbols correlate \
+  --from named=/path/to/older-named.a \
+  --to current=/path/to/current.a \
+  --output generated/revisions/named-to-current.json
+```
+
+The correlator hashes complete relocatable function bytes plus relocation
+offset/kind/addend while deliberately excluding relocation target names. It
+publishes an automatic match only when the normalized body is unique. An
+iterative second pass may resolve otherwise identical bodies when already
+unique caller/callee pairs prove the corresponding call edge. Ambiguous and
+changed bodies remain explicit review work; the report never rewrites the
+artifact or treats an obfuscated symbol as a stable semantic identity.
+
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and
 generated evidence, but does not write a snapshot or advance the state. This

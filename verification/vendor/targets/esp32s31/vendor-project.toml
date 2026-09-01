@@ -964,6 +964,27 @@ roots = [
 ]
 include-reachable = true
 
+# Peripheral connection setup and completion are a distinct controller-SRAM
+# contract.  The current archive obscures its function names, but member 51.o
+# retains the ble_lll_conn.c source path and the named same-chip revision keeps
+# the corresponding function-section order.  Root the peripheral constructor,
+# the descriptor recycler and the scheduler-item completion callback explicitly:
+# the latter two are callback-owned and are not both recoverable from ordinary
+# direct-call traversal.  The common worker and BLE scheduler close the same
+# asynchronous finished-list edge used by the other live BLE roles.
+[[review.scopes]]
+id = "ble-peripheral-connection-hardware"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_DCD5eVhcHQ9ueSpewKn1",
+    "ble-controller:r_sym_ble_7LDXbnFJ4YehO5PIXaNN",
+    "ble-controller:r_sym_ble_vssfeWXnPIcnyOfdsX00",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
 [[review.scopes]]
 id = "ieee802154-baseband-leaves"
 protocols = ["ieee802154"]

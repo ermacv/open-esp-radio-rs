@@ -1130,3 +1130,109 @@ name = "ble_lll_adv_recycle_scheduler_item"
 role = "ble.advertising.recycle-scheduler-item"
 summary = "Consumes one completed advertising scheduler item, processes role results and either recycles or reschedules its private graph."
 accept-incomplete = true
+
+# Current linked ESP32-S31 libble_app.a member 51.o obscures the connection
+# function names but retains the ble_lll_conn.c source path.  The mappings below
+# are role-only facts established by matching function-section order, size and
+# call extent against public same-chip commit
+# 31c30949541a5d3abd4043a1cb66d55aa55577dd.  Current linked IR remains the sole
+# authority for memory effects, control flow and descriptor geometry.
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_O0vMjkEidHi2LMntMUtT"
+status = "reviewed"
+name = "ble_lll_conn_alloc_memory"
+role = "ble.connection.memory-allocate"
+summary = "Allocates the private connection graph and publishes its subordinate software owners; current-artifact evidence owns every allocation and rollback edge."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_2ZQ4FJGb6hQUDPQ9jp4a"
+status = "reviewed"
+name = "ble_lll_conn_reset_link_state"
+role = "ble.connection.link-state-reset"
+summary = "Initializes the private connection link-state descriptor; generated current-artifact evidence owns its positional SRAM effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_DvtVKWzPKbNBN2o6jBOZ"
+status = "reviewed"
+name = "ble_lll_conn_tx_process"
+role = "ble.connection.tx-process"
+summary = "Processes connection transmit ownership and queues portable follow-up work; current-artifact evidence owns its exact memory and call effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_bfvX0WnyBVBCHWYvn0eP"
+status = "reviewed"
+name = "ble_lll_conn_rx_process"
+role = "ble.connection.rx-process"
+summary = "Processes one connection receive result and its packet owner; current-artifact evidence owns all parsing-independent descriptor effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_7LDXbnFJ4YehO5PIXaNN"
+status = "reviewed"
+name = "ble_lll_conn_recycle_buffer"
+role = "ble.connection.recycle-buffer"
+summary = "Reclaims completed connection RX and TX buffer ownership and dispatches the role-specific processors."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_VyzBqdGK2DvBMXBMIiHp"
+status = "reviewed"
+name = "ble_lll_conn_end"
+role = "ble.connection.event-end"
+summary = "Ends one connection event and advances or tears down its owned scheduler and descriptor state."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_bp2AWMfX9zEpJsmzOTUB"
+status = "reviewed"
+name = "ble_lll_conn_reschedule_event"
+role = "ble.connection.event-reschedule"
+summary = "Builds and admits a subsequent connection event from the retained connection graph."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_Dugdawung2wRHuTkJeRz"
+status = "reviewed"
+name = "ble_lll_conn_schedule_next_anchor"
+role = "ble.connection.schedule-next-anchor"
+summary = "Chooses the next connection anchor and delegates event rescheduling or termination according to the current graph state."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_vssfeWXnPIcnyOfdsX00"
+status = "reviewed"
+name = "ble_lll_conn_recycle_scheduler_item"
+role = "ble.connection.recycle-scheduler-item"
+summary = "Consumes one completed connection scheduler item, accounts its result and either closes or advances the connection event sequence."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_DCD5eVhcHQ9ueSpewKn1"
+status = "reviewed"
+name = "ble_lll_conn_peripheral_new"
+role = "ble.connection.peripheral-create"
+summary = "Creates the peripheral-side connection graph, derives its first anchor and submits the first scheduled event."
+accept-incomplete = true

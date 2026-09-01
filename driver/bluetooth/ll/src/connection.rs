@@ -10,6 +10,13 @@ use crate::{LeDeviceAddress, LeDeviceAddressKind};
 
 pub const LEGACY_CONNECT_IND_PDU_BYTES: usize = 36;
 pub const LEGACY_CONNECT_IND_PAYLOAD_BYTES: usize = 34;
+/// Complete on-air duration of a legacy `CONNECT_IND` on LE 1M.
+///
+/// This includes the one-byte preamble, four-byte Access Address, complete
+/// Link Layer PDU and three-byte CRC. The chip backend adds this duration to
+/// the observed packet start before applying the transmit-window offset.
+pub const LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS: u32 =
+    (1 + 4 + LEGACY_CONNECT_IND_PDU_BYTES as u32 + 3) * 8;
 
 const CONNECT_IND_TYPE: u8 = 0b0101;
 const PDU_TYPE_MASK: u8 = 0x0f;

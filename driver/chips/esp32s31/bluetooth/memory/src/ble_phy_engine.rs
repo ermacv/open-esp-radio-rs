@@ -149,9 +149,9 @@ pub struct BluetoothBlePhyLe1MPacketStartCalibration {
 
 impl BluetoothBlePhyLe1MPacketStartCalibration {
     /// Recover the on-air packet-start time from a converted receive timestamp.
-    pub fn normalize_controller_micros(self, captured_micros: u32) -> u32 {
+    pub const fn normalize_controller_micros(self, captured_micros: u32) -> u32 {
         captured_micros.wrapping_sub(
-            u32::from(self.packet_start_offset_micros) + u32::from(self.rx_address_delay_micros),
+            self.packet_start_offset_micros as u32 + self.rx_address_delay_micros as u32,
         )
     }
 }

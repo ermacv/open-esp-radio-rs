@@ -433,7 +433,7 @@ gaps = [
 [[capabilities]]
 id = "le-link-layer"
 title = "Bluetooth LE Link Layer"
-scope = "Production legacy advertising scanning and one peripheral connection from portable admission and channel selection through S31 event scheduling packet reliability supervision and minimum LL control procedures"
+scope = "Production legacy advertising scanning and one peripheral connection from portable admission and channel selection through causal captured-packet timestamp projection initialized LE 1M PHY normalization absolute first transmit-window derivation S31 event scheduling packet reliability supervision and minimum LL control procedures"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -448,7 +448,7 @@ gaps = [
   { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
   { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
-  { axis = "async", id = "connection-event-deadline-contract-missing" },
+  { axis = "async", id = "connection-window-admission-and-deadline-runtime-missing" },
 ]
 
 [[capabilities]]

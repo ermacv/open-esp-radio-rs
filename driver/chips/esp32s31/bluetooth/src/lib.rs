@@ -195,7 +195,8 @@ pub use controller_start::{
     BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmPostUnlinkArmStep,
     BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedStep,
-    BluetoothInterruptOwnerStorage, BluetoothLegacyAdvertisingControllerPreparationError,
+    BluetoothInterruptOwnerStorage, BluetoothLePacketStartTimingError,
+    BluetoothLegacyAdvertisingControllerPreparationError,
     BluetoothLegacyAdvertisingControllerPreparationOutcome,
     BluetoothLegacyAdvertisingControllerPreparationPending,
     BluetoothLegacyAdvertisingControllerPreparationStep,
@@ -486,7 +487,10 @@ pub use passive_scanning_runner::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
-pub use peripheral_connection::BluetoothPeripheralConnectionRuntimeResources;
+pub use peripheral_connection::{
+    BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionFirstEventPrepared,
+    BluetoothPeripheralConnectionRuntimeResources,
+};
 #[cfg(target_arch = "riscv32")]
 pub use phy::{
     BluetoothControllerPhyClientAcquire, BluetoothControllerPhyClientAcquireFailure,

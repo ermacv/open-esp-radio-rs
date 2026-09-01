@@ -1403,8 +1403,17 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     passive_scan_resources: &'runtime mut crate::BluetoothPassiveScanRuntimeResources,
     _peripheral_connection_resources:
         &'runtime mut crate::BluetoothPeripheralConnectionRuntimeResources,
-    always_awake_timing: crate::ble_phy::BluetoothAlwaysAwakeTimingAuthority,
+    ble_phy_timing: crate::ble_phy::BluetoothBlePhyTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
+}
+
+/// Why one completed LE packet cannot yet enter scheduler time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLePacketStartTimingError {
+    /// The mandatory first live controller-time sample has not established the
+    /// retained scheduler epoch yet.
+    SchedulerEpochUnavailable,
 }
 
 /// Why an affine post-enable controller-time acquisition did not start.
@@ -2345,8 +2354,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 let epoch = now.epoch();
                 let current = crate::BluetoothSchedulerInstant::from_image(now.micros());
                 let radio_ready = controller
-                    .always_awake_timing
-                    .complete(epoch, sample)
+                    .ble_phy_timing
+                    .complete_always_awake(epoch, sample)
                     .into_scheduler_instant();
                 let timing = crate::BluetoothLegacyAdvertisingTimingObservation {
                     current,
@@ -2576,8 +2585,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 let epoch = now.epoch();
                 let controller_time = sample.latched_time();
                 let radio_ready = controller
-                    .always_awake_timing
-                    .complete(epoch, sample)
+                    .ble_phy_timing
+                    .complete_always_awake(epoch, sample)
                     .into_scheduler_instant();
                 let timing =
                     crate::passive_scanning_timing::BluetoothPassiveScanTimingObservation {
@@ -2830,7 +2839,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 requested_interval_micros,
                 now,
             } => {
-                let timing_ready = controller.always_awake_timing.complete(now.epoch(), sample);
+                let timing_ready = controller
+                    .ble_phy_timing
+                    .complete_always_awake(now.epoch(), sample);
                 let staged = match controller.runtime.stage_dtm_transmitter_first_item(
                     owner,
                     link_state,
@@ -2864,7 +2875,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 phy,
                 now,
             } => {
-                let timing_ready = controller.always_awake_timing.complete(now.epoch(), sample);
+                let timing_ready = controller
+                    .ble_phy_timing
+                    .complete_always_awake(now.epoch(), sample);
                 let staged = match controller.runtime.stage_dtm_receiver_first_item(
                     owner,
                     link_state,
@@ -2892,7 +2905,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 owner,
                 epoch,
             } => {
-                let timing_ready = controller.always_awake_timing.complete(epoch, sample);
+                let timing_ready = controller
+                    .ble_phy_timing
+                    .complete_always_awake(epoch, sample);
                 match controller.begin_dtm_preparation_time(
                     BluetoothDtmControllerPreparationPhase::ReceiverRecurringCurrent {
                         owner,
@@ -4099,7 +4114,7 @@ where
                 modem_timer,
                 hci,
             },
-            always_awake_timing,
+            ble_phy_timing,
         ) = initialized.split_runtime();
         let interrupt = BluetoothControllerPublishedInterruptService {
             storage: _storage,
@@ -4114,7 +4129,7 @@ where
             legacy_advertising_resources,
             passive_scan_resources,
             _peripheral_connection_resources: peripheral_connection_resources,
-            always_awake_timing,
+            ble_phy_timing,
             scheduler_epoch,
         };
         let modem_timer = BluetoothControllerModemTimerTask::new(_storage, modem_timer);
@@ -4168,6 +4183,22 @@ where
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Normalize the hardware timestamp captured beside one received LE 1M PDU.
+    ///
+    /// This uses the persistent scheduler epoch and the calibration retained by
+    /// the initialized BLE PHY storage. It performs no MMIO, does not sample
+    /// `now()`, and does not advance the scheduler epoch.
+    pub fn normalize_le_1m_packet_start(
+        &mut self,
+        packet: &open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedPdu,
+    ) -> Result<crate::BluetoothLe1MPacketStartTiming, BluetoothLePacketStartTimingError> {
+        let epoch = (*self.scheduler_epoch)
+            .ok_or(BluetoothLePacketStartTimingError::SchedulerEpochUnavailable)?;
+        Ok(self
+            .ble_phy_timing
+            .complete_le_1m_packet_start(epoch, packet.captured_time()))
+    }
+
     /// Move this exact task service into its initialized scheduler epoch.
     ///
     /// This transition performs no MMIO, exposes no epoch image and cannot

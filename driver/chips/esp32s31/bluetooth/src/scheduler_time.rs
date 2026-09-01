@@ -27,7 +27,6 @@ impl BluetoothSchedulerInstant {
     }
 
     /// Advance by one wrapping microsecond delta.
-    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn wrapping_add(self, delta: u32) -> Self {
         Self(self.0.wrapping_add(delta))
     }

@@ -627,6 +627,19 @@ impl BluetoothControllerSchedulerEpoch {
         self.project_raw_ticks(sample.raw_ticks())
     }
 
+    /// Project the raw timestamp captured beside one completed LE RX packet.
+    ///
+    /// Packet capture is not a fresh controller-time sample and therefore
+    /// cannot re-anchor the scheduler epoch. The opaque memory-layer value is
+    /// consumed only by this conversion before PHY calibration.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn project_le_packet_capture(
+        self,
+        captured: open_esp_radio_esp32s31_bluetooth_memory::BluetoothLePacketCapturedTime,
+    ) -> u32 {
+        self.project_raw_ticks(captured.wrapping_controller_ticks())
+    }
+
     /// Advance the raw anchor while preserving this sample's scheduler image.
     ///
     /// The Controller does this after every live task-run reference update.

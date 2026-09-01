@@ -54,8 +54,11 @@ ordinary observation of controller `now()`.
 
 The controller-memory codec now copies that word into an opaque
 `BluetoothLePacketCapturedTime` beside the received PDU and RSSI. It exposes
-no field mask or scheduler-time claim: conversion still requires the retained
-S31 scheduler epoch and initialized PHY calibration in the chip controller.
+no field mask or scheduler-time claim. The published task service now performs
+the only permitted conversion: the opaque value enters the retained S31
+scheduler epoch without re-anchoring it and then the initialized PHY
+calibration. The result is a single-use `BluetoothLe1MPacketStartTiming`; no
+raw tick or scheduler image escapes that operation.
 
 The calibration is not implicit zero state. Current `ble_phy_module_init`
 copies three separately owned tables into the BLE PHY environment before the
@@ -86,6 +89,14 @@ arithmetic, while the S31 backend must supply a typed, PHY-calibrated packet
 time. Exposing the raw descriptor time word or substituting a later live clock
 sample would move an unresolved hardware transform into protocol code.
 
+That boundary is now implemented. Portable LL publishes the protocol-derived
+LE 1M `CONNECT_IND` airtime and relative WinOffset/WinSize positions. The S31
+connection runtime consumes the single-use packet-start value, adds the packet
+airtime and relative positions with wrapping scheduler semantics, and retains
+the resulting absolute first window beside the still-unsubmitted connection
+event and identity-prepared SRAM graph. Cancellation returns both the pristine
+graph and event counter zero; there is no `now()` input on this path.
+
 `r_sym_ble_DCD5eVhcHQ9ueSpewKn1`, reviewed as
 `ble_lll_conn_peripheral_new`, proves that the first event additionally depends
 on all of the following:
@@ -106,19 +117,20 @@ allocation.
 
 ## Next closure order
 
-The shortest path to one real peripheral event is:
+The first two former blockers are closed: packet timestamp conversion and the
+causal absolute first-window contract. The shortest remaining path to one real
+peripheral event is:
 
-1. publish a typed S31 PHY-calibrated packet-start observation from the
-   response-capable advertising RX owner;
-2. define the first-anchor and scheduler-window contract from that observation
-   plus the portable PDU-airtime and transmit-window calculation;
-3. close the remaining connection link-state and scheduler-item fields as
+1. attach the shared RX packet codec and selector-two RX publication to the
+   response-capable connectable-advertising graph, then pass the accepted
+   packet to the existing task-service normalizer;
+2. close the remaining connection link-state and scheduler-item fields as
    semantic accessors inside the memory crate;
-4. join the prepared graph to the existing common scheduler admission,
+3. join the prepared graph to the existing common scheduler admission,
    publication, completion and post-unlink owners;
-5. add SN/NESN, retransmission and supervision before exposing ACL success;
-6. add only the mandatory LL control procedures needed by the supported HCI
+4. add SN/NESN, retransmission and supervision before exposing ACL success;
+5. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
 The completion and next-anchor functions remain important evidence roots, but
-they do not block the identity-only preparation implemented now.
+they do not block the now timing-complete, still unpublished first-event owner.

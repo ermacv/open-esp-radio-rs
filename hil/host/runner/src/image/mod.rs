@@ -233,7 +233,7 @@ pub(crate) fn build(root: &Path, class: qualification::scenario::ImageClass) -> 
     let local_embassy = local_embassy_override()?;
     let local_xarxa = local_xarxa_override()?;
     if local_esp_hal.is_none() && local_embassy.is_none() && local_xarxa.is_none() {
-        return build_resolved(root, class, None, None, None, None);
+        return build_resolved(root, class, None, None, None, None, false);
     }
 
     let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
@@ -245,6 +245,7 @@ pub(crate) fn build(root: &Path, class: qualification::scenario::ImageClass) -> 
         local_embassy.as_deref(),
         local_xarxa.as_deref(),
         None,
+        false,
     );
     let restore = snapshot.restore();
     match (result, restore) {
@@ -265,6 +266,7 @@ fn build_resolved(
     local_embassy: Option<&Path>,
     local_xarxa: Option<&Path>,
     output_override: Option<&Path>,
+    trim_paths: bool,
 ) -> Result<Artifacts> {
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
@@ -313,6 +315,7 @@ fn build_resolved(
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
+    enable_experimental_path_trimming(&mut runtime, trim_paths);
     evidence::stack_audit::enable_stack_checks(&mut runtime, &stack_budget);
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
@@ -351,6 +354,7 @@ fn build_resolved(
     add_local_esp_hal_patches(&mut bootstrap, local_esp_hal);
     add_local_embassy_patches(&mut bootstrap, local_embassy);
     add_local_xarxa_patches(&mut bootstrap, local_xarxa);
+    enable_experimental_path_trimming(&mut bootstrap, trim_paths);
     evidence::stack_audit::enable_stack_checks(&mut bootstrap, &stack_budget);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&bootstrap_elf, "bootstrap ELF")?;
@@ -580,6 +584,17 @@ fn add_local_xarxa_patches(command: &mut Command, local: Option<&Path>) {
             "patch.\"https://github.com/ermacv/xarxa.git\".{package}.path=\"{}\"",
             package_root.display()
         ));
+    }
+}
+
+fn enable_experimental_path_trimming(command: &mut Command, enabled: bool) {
+    if enabled {
+        // This remains an opt-in build experiment. The normal recipe must not
+        // acquire an unstable Cargo setting until a same-source HIL A/B proves
+        // both byte identity and equivalent performance.
+        command
+            .args(["-Z", "trim-paths"])
+            .args(["--config", "profile.release.trim-paths=\"object\""]);
     }
 }
 

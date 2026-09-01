@@ -11,6 +11,7 @@ cargo hil scenario list
 cargo hil scenario validate [id]
 cargo hil image build|flash <image-class>
 cargo hil image verify-rebuild <image-class>
+cargo hil image verify-rebuild <image-class> --trim-paths
 cargo hil image replay <run-id> <image-class>
 cargo hil device status
 cargo hil report rebuild

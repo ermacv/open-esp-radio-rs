@@ -145,6 +145,9 @@ enum ImageCommand {
     /// Build one clean commit in two different checkout roots and compare every firmware subject.
     VerifyRebuild {
         class: qualification::scenario::ImageClass,
+        /// Diagnose Cargo's experimental object-path sanitization without changing normal builds.
+        #[arg(long)]
+        trim_paths: bool,
     },
     Flash {
         class: qualification::scenario::ImageClass,
@@ -214,7 +217,9 @@ fn run() -> Result<()> {
                 let artifacts = image::build(&root, class)?;
                 image::print_artifacts(class, &artifacts, false)
             }
-            ImageCommand::VerifyRebuild { class } => image::verify_rebuild(&root, class),
+            ImageCommand::VerifyRebuild { class, trim_paths } => {
+                image::verify_rebuild(&root, class, trim_paths)
+            }
             ImageCommand::Flash { class } => {
                 let artifacts = image::build(&root, class)?;
                 let lab = transport::lab_config::LabConfig::load(&lab_path)?;
@@ -901,8 +906,29 @@ mod cli_tests {
             Cli::try_parse_from(["cargo-hil", "image", "verify-rebuild", "performance"]).unwrap();
         match cli.command {
             CliCommand::Image {
-                command: ImageCommand::VerifyRebuild { class },
-            } => assert_eq!(class, qualification::scenario::ImageClass::Performance),
+                command: ImageCommand::VerifyRebuild { class, trim_paths },
+            } => {
+                assert_eq!(class, qualification::scenario::ImageClass::Performance);
+                assert!(!trim_paths);
+            }
+            _ => panic!("parsed the wrong HIL command"),
+        }
+    }
+
+    #[test]
+    fn path_trimming_is_explicit_and_diagnostic() {
+        let cli = Cli::try_parse_from([
+            "cargo-hil",
+            "image",
+            "verify-rebuild",
+            "performance",
+            "--trim-paths",
+        ])
+        .unwrap();
+        match cli.command {
+            CliCommand::Image {
+                command: ImageCommand::VerifyRebuild { trim_paths, .. },
+            } => assert!(trim_paths),
             _ => panic!("parsed the wrong HIL command"),
         }
     }

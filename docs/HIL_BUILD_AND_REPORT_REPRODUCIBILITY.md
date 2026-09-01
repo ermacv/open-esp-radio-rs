@@ -283,6 +283,18 @@ Current implementation status:
   lock file, and normalized full/allocated ELF section layouts under
   `target/hil/esp32s31/reproducibility/`. A mismatch is emitted as evidence and
   returns a failing exit status;
+- the first native-path experiment proved that the current recipe is not
+  checkout-path reproducible. The two roots differed by ten path bytes; the
+  runtime contained 188 workspace paths in allocated `.rodata`, whose size
+  differed by exactly 1880 bytes. Cargo also assigned different fingerprints
+  and crate disambiguators to local path packages. `.text` kept the same size
+  and addresses, but its bytes, runtime data placement, packed runtime and
+  application all differed. The result rules out treating this as DWARF-only
+  noise;
+- `--trim-paths` is an explicit diagnostic variant of the verifier which tests
+  Cargo's experimental `profile.release.trim-paths="object"`. It is never
+  applied to a normal image build and cannot become the recipe without both a
+  passing rebuild proof and a same-ELF HIL performance comparison;
 - the verifier is deliberately opt-in and does not add flags or a second build
   to ordinary HIL runs. Until a passing proof is bound to a firmware build,
   run-bundle `reproducibility` remains explicitly `unverified` and the reader

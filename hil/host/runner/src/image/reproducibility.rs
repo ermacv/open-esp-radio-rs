@@ -29,6 +29,13 @@ enum Verdict {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+enum PathTreatment {
+    Unmodified,
+    CargoTrimPathsObject,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 enum SubjectRole {
     Application,
     BootstrapElf,
@@ -72,6 +79,7 @@ struct VerificationConstraints {
     cargo_incremental: String,
     different_absolute_source_roots: bool,
     different_source_root_lengths: bool,
+    path_treatment: PathTreatment,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -147,10 +155,15 @@ impl Drop for DetachedWorktree {
     }
 }
 
-pub(crate) fn verify_rebuild(root: &Path, class: ImageClass) -> Result<()> {
+pub(crate) fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -> Result<()> {
     reject_local_overrides()?;
     let commit = require_clean_commit(root)?;
-    let verification_id = verification_id(&commit, class)?;
+    let path_treatment = if trim_paths {
+        PathTreatment::CargoTrimPathsObject
+    } else {
+        PathTreatment::Unmodified
+    };
+    let verification_id = verification_id(&commit, class, path_treatment)?;
     let output = root
         .join("target/hil/esp32s31/reproducibility")
         .join(&verification_id);
@@ -180,6 +193,7 @@ pub(crate) fn verify_rebuild(root: &Path, class: ImageClass) -> Result<()> {
         None,
         None,
         Some(&output.join("build-a")),
+        trim_paths,
     )?;
     eprintln!("==> rebuild B from a different clean detached worktree");
     let right_artifacts = build_resolved(
@@ -189,6 +203,7 @@ pub(crate) fn verify_rebuild(root: &Path, class: ImageClass) -> Result<()> {
         None,
         None,
         Some(&output.join("build-directory-b")),
+        trim_paths,
     )?;
 
     let subjects = compare_artifacts(root, &output, &left_artifacts, &right_artifacts)?;
@@ -211,6 +226,7 @@ pub(crate) fn verify_rebuild(root: &Path, class: ImageClass) -> Result<()> {
             cargo_incremental: String::from("0"),
             different_absolute_source_roots,
             different_source_root_lengths,
+            path_treatment,
         },
         subjects,
         verdict,
@@ -264,13 +280,21 @@ fn require_clean_commit(root: &Path) -> Result<String> {
     Ok(commit)
 }
 
-fn verification_id(commit: &str, class: ImageClass) -> Result<String> {
+fn verification_id(
+    commit: &str,
+    class: ImageClass,
+    path_treatment: PathTreatment,
+) -> Result<String> {
     let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
     let sequence = VERIFICATION_COUNTER.fetch_add(1, Ordering::Relaxed);
     let short_commit = commit.get(..12).unwrap_or(commit);
+    let treatment = match path_treatment {
+        PathTreatment::Unmodified => "native-paths",
+        PathTreatment::CargoTrimPathsObject => "trim-paths",
+    };
     Ok(format!(
-        "{millis}-{sequence:04}-{short_commit}-{}",
-        class.id()
+        "{millis}-{sequence:04}-{short_commit}-{}-{treatment}",
+        class.id(),
     ))
 }
 

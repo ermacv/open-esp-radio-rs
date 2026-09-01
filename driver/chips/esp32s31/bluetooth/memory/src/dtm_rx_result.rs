@@ -30,7 +30,8 @@ impl BluetoothDtmRxRssi {
 /// Dead-stripped raw-archive body
 /// `r_sym_ble_PptSRbXfefQwMVyO5jxP` independently corroborates that positional
 /// transform but is not its linked effect authority. This controller-memory
-/// Current `esp_ble_get_dtm_rx_rssi` tail-calls
+/// projection assigns no meaning to the individual low result bits. Current
+/// `esp_ble_get_dtm_rx_rssi` tail-calls
 /// `r_sym_ble_CLEB51J8jgSOcX50XteR`, whose complete body returns that same DTM
 /// state byte with a signed load. This closes the high-byte role as RSSI while
 /// leaving the low-bit failure meanings and physical unit unresolved.

@@ -200,8 +200,8 @@ async-not-applicable = "bounded-affine-memory-and-ownership-transitions"
 [[capabilities]]
 id = "dtm-rx-accounting"
 title = "DTM returned-buffer accounting"
-scope = "Affine returned-header validation low-24/high-byte classification wrapping receive-count transition deterministic capacity-one append/re-arm rotation active-session return and role-typed Test End count handoff with the reclaimed graph"
-implementation = "incomplete"
+scope = "Affine returned-header validation exact positional low-24/high-byte classification wrapping receive-count transition deterministic capacity-one append/re-arm rotation active-session return and role-typed Test End count handoff with the reclaimed graph, without assigning unsupported meanings to the rejected low twenty-four bits"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-memory-graph"]
@@ -209,8 +209,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "rx-result-crc-rssi-and-live-packet-engine-semantics-missing" },
-  { axis = "vendor", id = "rx-result-high-byte-length-crc-and-rssi-semantics-missing" },
+  { axis = "vendor", id = "rx-result-low-twenty-four-physical-meanings-missing" },
   { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
 ]
 async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
@@ -269,7 +268,7 @@ gaps = [
 id = "dtm-tx-timing"
 title = "DTM transmitter interval and scheduler timing"
 scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone post-enable timing projection initial-TX current-before-post-enable and recurring-TX current-only acquisition order"
-implementation = "incomplete"
+implementation = "complete"
 host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-tx-payload"]
@@ -278,7 +277,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "effective-counter-width-and-on-air-timing-validation-missing" },
+  { axis = "vendor", id = "effective-controller-counter-width-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]

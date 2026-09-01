@@ -42,11 +42,27 @@ pub(crate) fn flash_archived(
     firmware: &reporting::verification::ArchivedFirmware,
     port: &Path,
 ) -> Result<()> {
+    flash_replayed(
+        root,
+        &firmware.application_path,
+        &firmware.run_id,
+        firmware.image,
+        port,
+    )
+}
+
+pub(crate) fn flash_replayed(
+    root: &Path,
+    application: &Path,
+    run_id: &str,
+    image: crate::qualification::scenario::ImageClass,
+    port: &Path,
+) -> Result<()> {
     let output = root
         .join("target/hil/esp32s31/replay")
-        .join(&firmware.run_id)
-        .join(firmware.image.id());
-    flash_application(root, &firmware.application_path, &output, port)
+        .join(run_id)
+        .join(image.id());
+    flash_application(root, application, &output, port)
 }
 
 fn flash_application(root: &Path, application: &Path, output: &Path, port: &Path) -> Result<()> {

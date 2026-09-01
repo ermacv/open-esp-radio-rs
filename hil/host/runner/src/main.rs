@@ -117,7 +117,12 @@ enum CliCommand {
         command: ReportCommand,
     },
     /// Build, flash and execute one catalog scenario.
-    Run { scenario: String },
+    Run {
+        scenario: String,
+        /// Use the scenario's image class from a sealed earlier HIL run.
+        #[arg(long, value_name = "RUN_ID")]
+        firmware_from: Option<String>,
+    },
     /// Execute catalog scenarios, flashing once per selected image class.
     RunAll {
         /// Select only scenarios carrying this tag. May be repeated.
@@ -249,18 +254,51 @@ fn run() -> Result<()> {
                 emit_json(&completion, false)
             }
         },
-        CliCommand::Run { scenario: id } => {
+        CliCommand::Run {
+            scenario: id,
+            firmware_from,
+        } => {
             let catalog = qualification::scenario::Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?.clone();
+            let firmware = match firmware_from {
+                Some(run_id) => {
+                    RunFirmware::Replay(Box::new(reporting::verification::archived_firmware(
+                        &root,
+                        "esp32s31",
+                        &run_id,
+                        selected.image,
+                    )?))
+                }
+                None => RunFirmware::BuildCurrent,
+            };
             let lab = transport::lab_config::LabConfig::load(&lab_path)?;
             let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
-            run_one(&root, &lab, &catalog, &selected, invocation)
+            run_one(&root, &lab, &catalog, &selected, firmware, invocation)
         }
         CliCommand::RunAll { tag } => {
             let catalog = qualification::scenario::Catalog::load(&catalog_path)?;
             let lab = transport::lab_config::LabConfig::load(&lab_path)?;
             let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
             run_all(&root, &lab, &catalog, &tag, invocation)
+        }
+    }
+}
+
+enum RunFirmware {
+    BuildCurrent,
+    Replay(Box<reporting::verification::ArchivedFirmware>),
+}
+
+impl RunFirmware {
+    fn plan(&self) -> reporting::run::PlannedFirmware {
+        match self {
+            Self::BuildCurrent => reporting::run::PlannedFirmware::BuildCurrent,
+            Self::Replay(firmware) => reporting::run::PlannedFirmware::Replay {
+                source_run_id: firmware.run_id.clone(),
+                image: firmware.image,
+                build_id: firmware.build_id.clone(),
+                application_sha256: firmware.application_sha256.clone(),
+            },
         }
     }
 }
@@ -358,7 +396,15 @@ fn run_all(
     } else {
         format!("all scenarios with tags: {}", tags.join(", "))
     };
-    let mut session = start_run(root, lab, catalog, &selected, selection, invocation)?;
+    let mut session = start_run(
+        root,
+        lab,
+        catalog,
+        &selected,
+        selection,
+        Some(reporting::run::PlannedFirmware::BuildCurrent),
+        invocation,
+    )?;
     let mut results = Vec::with_capacity(selected.len());
     for class in qualification::scenario::ImageClass::ALL {
         let class_scenarios = selected
@@ -418,6 +464,7 @@ fn run_one(
     lab: &transport::lab_config::LabConfig,
     catalog: &qualification::scenario::Catalog,
     selected: &qualification::scenario::Scenario,
+    firmware: RunFirmware,
     invocation: Vec<OsString>,
 ) -> Result<()> {
     let selected_entries = [selected];
@@ -427,6 +474,7 @@ fn run_one(
         catalog,
         &selected_entries,
         format!("scenario: {}", selected.id),
+        Some(firmware.plan()),
         invocation,
     )?;
     if let Some(failure) = scenario_precondition(lab, selected) {
@@ -439,7 +487,7 @@ fn run_one(
         let result = write_blocked_scenario(&session, selected, failure)?;
         return finish_run(session, vec![result]);
     }
-    if let Some(failure) = prepare_image(root, lab, selected.image, &mut session)? {
+    if let Some(failure) = prepare_run_image(root, lab, selected.image, &firmware, &mut session)? {
         session.record_event(
             "scenario-blocked",
             Some(&selected.id),
@@ -463,6 +511,77 @@ fn run_one(
         Some(result.outcome),
     )?;
     finish_run(session, vec![result])
+}
+
+fn prepare_run_image(
+    root: &Path,
+    lab: &transport::lab_config::LabConfig,
+    class: qualification::scenario::ImageClass,
+    firmware: &RunFirmware,
+    session: &mut reporting::run::RunSession,
+) -> Result<Option<reporting::run::Failure>> {
+    match firmware {
+        RunFirmware::BuildCurrent => prepare_image(root, lab, class, session),
+        RunFirmware::Replay(archived) => prepare_replayed_image(root, lab, archived, session),
+    }
+}
+
+fn prepare_replayed_image(
+    root: &Path,
+    lab: &transport::lab_config::LabConfig,
+    archived: &reporting::verification::ArchivedFirmware,
+    session: &mut reporting::run::RunSession,
+) -> Result<Option<reporting::run::Failure>> {
+    session.record_event(
+        "image-replay-import-started",
+        None,
+        Some(archived.image),
+        None,
+    )?;
+    let application = match session.record_replayed_firmware(archived) {
+        Ok(application) => application,
+        Err(error) => {
+            session.record_event(
+                "image-replay-import-failed",
+                None,
+                Some(archived.image),
+                Some(reporting::run::Outcome::Broken),
+            )?;
+            return Err(error);
+        }
+    };
+    session.record_event(
+        "image-replay-import-finished",
+        None,
+        Some(archived.image),
+        Some(reporting::run::Outcome::Passed),
+    )?;
+    session.record_event("image-flash-started", None, Some(archived.image), None)?;
+    if let Err(error) = device::flash_replayed(
+        root,
+        &application,
+        session.id(),
+        archived.image,
+        &lab.device.serial,
+    ) {
+        session.record_event(
+            "image-flash-failed",
+            None,
+            Some(archived.image),
+            Some(reporting::run::Outcome::Broken),
+        )?;
+        return Ok(Some(reporting::run::Failure::new(
+            reporting::run::FailureKind::ImageFlash,
+            error.to_string(),
+        )));
+    }
+    session.record_event(
+        "image-flash-finished",
+        None,
+        Some(archived.image),
+        Some(reporting::run::Outcome::Passed),
+    )?;
+    Ok(None)
 }
 
 fn scenario_precondition(
@@ -546,6 +665,7 @@ fn start_run(
     catalog: &qualification::scenario::Catalog,
     selected: &[&qualification::scenario::Scenario],
     selection: String,
+    firmware: Option<reporting::run::PlannedFirmware>,
     invocation: Vec<OsString>,
 ) -> Result<reporting::run::RunSession> {
     let mut session = reporting::run::RunSession::create(
@@ -578,6 +698,7 @@ fn start_run(
         schema: reporting::run::RUN_SCHEMA,
         run_id: session.id().to_owned(),
         selection,
+        firmware,
         entries,
     })?;
     session.record_event("plan-resolved", None, None, None)?;
@@ -728,4 +849,39 @@ fn validate_flashed_image(
         .into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn run_firmware_from_is_an_explicit_single_scenario_input() {
+        let cli = Cli::try_parse_from([
+            "cargo-hil",
+            "run",
+            "station-udp-rx-ceiling",
+            "--firmware-from",
+            "sealed-run-1",
+        ])
+        .unwrap();
+        match cli.command {
+            CliCommand::Run {
+                scenario,
+                firmware_from,
+            } => {
+                assert_eq!(scenario, "station-udp-rx-ceiling");
+                assert_eq!(firmware_from.as_deref(), Some("sealed-run-1"));
+            }
+            _ => panic!("parsed the wrong HIL command"),
+        }
+    }
+
+    #[test]
+    fn run_all_does_not_accept_one_ambiguous_firmware_origin() {
+        assert!(
+            Cli::try_parse_from(["cargo-hil", "run-all", "--firmware-from", "sealed-run-1",])
+                .is_err()
+        );
+    }
 }

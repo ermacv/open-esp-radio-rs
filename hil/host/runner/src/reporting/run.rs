@@ -349,7 +349,22 @@ pub(crate) struct RunPlan {
     pub(crate) schema: u16,
     pub(crate) run_id: String,
     pub(crate) selection: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) firmware: Option<PlannedFirmware>,
     pub(crate) entries: Vec<PlanEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "source")]
+pub(crate) enum PlannedFirmware {
+    BuildCurrent,
+    Replay {
+        source_run_id: String,
+        image: ImageClass,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        build_id: Option<String>,
+        application_sha256: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -357,6 +372,15 @@ pub(super) struct RepositoryProvenance {
     pub(super) commit: String,
     pub(super) dirty: bool,
     pub(super) workspace_sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(super) struct FirmwareReplayOrigin {
+    pub(super) source_run_id: String,
+    pub(super) source_integrity_sha256: String,
+    pub(super) firmware_repository: RepositoryProvenance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) source_build_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -385,6 +409,8 @@ pub(super) struct CellProvenance {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) struct FirmwareArtifact {
     pub(super) image: ImageClass,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) replayed_from: Option<FirmwareReplayOrigin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) build_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -694,6 +720,7 @@ impl RunSession {
         atomic_json(&self.directory.join(&build_provenance_path), &provenance)?;
         let artifact = FirmwareArtifact {
             image,
+            replayed_from: None,
             build_id: Some(build_id),
             build_provenance_path: Some(build_provenance_path),
             application_path,
@@ -713,6 +740,115 @@ impl RunSession {
         self.manifest.firmware.push(artifact);
         atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
         Ok(archived_application)
+    }
+
+    pub(crate) fn record_replayed_firmware(
+        &mut self,
+        archived: &super::verification::ArchivedFirmware,
+    ) -> Result<PathBuf> {
+        build::verify_sources_unchanged(&self.repository_root, &self.source_materials)?;
+        let source = &archived.artifact;
+        let firmware_directory = PathBuf::from("firmware").join(source.image.id());
+        let application_path = firmware_directory.join("application.bin");
+        validate_replayed_source_path(&source.application_path)?;
+        archive_expected_file(
+            &archived.source_directory.join(&source.application_path),
+            &self.directory.join(&application_path),
+            &self.target_directory,
+            source.application_size_bytes,
+            &source.application_sha256,
+        )?;
+
+        import_optional_firmware_subject(
+            &archived.source_directory,
+            &self.directory,
+            &self.target_directory,
+            source.runtime_elf_path.as_deref(),
+            source.runtime_elf_size_bytes,
+            &source.runtime_elf_sha256,
+        )?;
+        import_optional_firmware_subject(
+            &archived.source_directory,
+            &self.directory,
+            &self.target_directory,
+            source.runtime_bin_path.as_deref(),
+            source.runtime_bin_size_bytes,
+            &source.runtime_bin_sha256,
+        )?;
+        import_optional_firmware_subject(
+            &archived.source_directory,
+            &self.directory,
+            &self.target_directory,
+            source.bootstrap_elf_path.as_deref(),
+            source.bootstrap_elf_size_bytes,
+            &source.bootstrap_elf_sha256,
+        )?;
+
+        let mut artifact = source.clone();
+        artifact.replayed_from = Some(FirmwareReplayOrigin {
+            source_run_id: archived.run_id.clone(),
+            source_integrity_sha256: archived.integrity_sha256.clone(),
+            firmware_repository: source
+                .replayed_from
+                .as_ref()
+                .map(|origin| origin.firmware_repository.clone())
+                .unwrap_or_else(|| archived.repository.clone()),
+            source_build_id: source.build_id.clone(),
+        });
+        if let Some(mut provenance) = archived.build_provenance.clone() {
+            for (index, source_material) in provenance.sources.iter_mut().enumerate() {
+                let Some(source_path) = source_material.tracked_patch_path.clone() else {
+                    continue;
+                };
+                validate_replayed_source_path(&source_path)?;
+                let destination = firmware_directory
+                    .join("source-patches")
+                    .join(format!("{index:02}.patch"));
+                archive_expected_file(
+                    &archived.source_directory.join(source_path),
+                    &self.directory.join(&destination),
+                    &self.target_directory,
+                    source_material
+                        .tracked_patch_size_bytes
+                        .ok_or("replayed source patch has no size")?,
+                    source_material
+                        .tracked_patch_sha256
+                        .as_deref()
+                        .ok_or("replayed source patch has no digest")?,
+                )?;
+                source_material.tracked_patch_path = Some(destination);
+            }
+            for (index, file) in provenance.files.iter_mut().enumerate() {
+                let Some(source_path) = file.archive_path.clone() else {
+                    continue;
+                };
+                validate_replayed_source_path(&source_path)?;
+                let destination = if file.name == "embedded-lock" {
+                    firmware_directory.join("effective-Cargo.lock")
+                } else {
+                    firmware_directory
+                        .join("build-materials")
+                        .join(format!("{index:02}"))
+                };
+                archive_expected_file(
+                    &archived.source_directory.join(source_path),
+                    &self.directory.join(&destination),
+                    &self.target_directory,
+                    file.size_bytes,
+                    &file.sha256,
+                )?;
+                file.archive_path = Some(destination);
+            }
+            let provenance_path = firmware_directory.join("build-provenance.json");
+            atomic_json(&self.directory.join(&provenance_path), &provenance)?;
+            artifact.build_provenance_path = Some(provenance_path);
+        }
+        self.manifest
+            .firmware
+            .retain(|entry| entry.image != artifact.image);
+        self.manifest.firmware.push(artifact);
+        atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
+        Ok(self.directory.join(application_path))
     }
 
     pub(crate) fn finish(
@@ -769,6 +905,63 @@ impl RunSession {
         };
         Ok((suite, completion))
     }
+}
+
+fn archive_expected_file(
+    source: &Path,
+    destination: &Path,
+    target_directory: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<()> {
+    let archived = build::archive_content_addressed(source, destination, target_directory)?;
+    if archived.size_bytes != expected_size || archived.sha256 != expected_sha256 {
+        return Err(format!(
+            "replayed firmware input changed after bundle verification: {}",
+            source.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn import_optional_firmware_subject(
+    source_directory: &Path,
+    destination_directory: &Path,
+    target_directory: &Path,
+    path: Option<&Path>,
+    size_bytes: Option<u64>,
+    sha256: &str,
+) -> Result<()> {
+    match (path, size_bytes) {
+        (None, None) => Ok(()),
+        (Some(path), Some(size_bytes)) => {
+            validate_replayed_source_path(path)?;
+            archive_expected_file(
+                &source_directory.join(path),
+                &destination_directory.join(path),
+                target_directory,
+                size_bytes,
+                sha256,
+            )
+        }
+        _ => Err("replayed firmware subject has incomplete archive provenance".into()),
+    }
+}
+
+fn validate_replayed_source_path(path: &Path) -> Result<()> {
+    if path.as_os_str().is_empty()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(format!(
+            "replayed firmware references an unsafe bundle path: {}",
+            path.display()
+        )
+        .into());
+    }
+    Ok(())
 }
 
 impl Drop for RunSession {
@@ -1059,6 +1252,11 @@ fn render_junit(suite: &SuiteResult, manifest: &RunManifest) -> String {
     );
     let _ = writeln!(
         xml,
+        "      <property name=\"firmware_replayed_from\" value=\"{}\"/>",
+        xml_escape(&firmware_replay_summary(manifest))
+    );
+    let _ = writeln!(
+        xml,
         "      <property name=\"cell_id\" value=\"{}\"/>",
         xml_escape(&manifest.cell.cell_id)
     );
@@ -1260,7 +1458,7 @@ fn render_html(suite: &SuiteResult, manifest: &RunManifest) -> String {
          table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #bbb;padding:.45rem;text-align:left}}\
          .pass{{color:#087830;font-weight:700}}.fail{{color:#b42318;font-weight:700}}code{{background:#eee;padding:.1rem .25rem}}</style>\
          </head><body><h1>Open ESP radio HIL</h1>\
-         <p>Run <code>{run}</code> · cell <code>{cell}</code> · device <code>{device}</code> · commit <code>{commit}</code>{dirty}</p>\
+         <p>Run <code>{run}</code> · cell <code>{cell}</code> · device <code>{device}</code> · commit <code>{commit}</code>{dirty} · firmware {firmware}</p>\
          <p>Outcome: <strong class=\"{class}\">{outcome:?}</strong> · {passed}/{total} scenarios passed · {duration:.3} s</p>\
          <table><thead><tr><th>Scenario</th><th>Image</th><th>Outcome</th><th>Repetitions</th><th>Failure</th><th>Artifacts</th><th>Measurements</th></tr></thead>\
          <tbody>{rows}</tbody></table></body></html>\n",
@@ -1273,6 +1471,7 @@ fn render_html(suite: &SuiteResult, manifest: &RunManifest) -> String {
         } else {
             ""
         },
+        firmware = html_escape(&firmware_replay_summary(manifest)),
         class = if suite.outcome.is_passed() {
             "pass"
         } else {
@@ -1283,6 +1482,24 @@ fn render_html(suite: &SuiteResult, manifest: &RunManifest) -> String {
         total = suite.counts.scenarios,
         duration = suite.duration_millis as f64 / 1_000.0,
     )
+}
+
+fn firmware_replay_summary(manifest: &RunManifest) -> String {
+    let origins = manifest
+        .firmware
+        .iter()
+        .filter_map(|artifact| {
+            artifact
+                .replayed_from
+                .as_ref()
+                .map(|origin| format!("{}:{}", artifact.image.id(), origin.source_run_id))
+        })
+        .collect::<Vec<_>>();
+    if origins.is_empty() {
+        String::from("current-build")
+    } else {
+        format!("replay({})", origins.join(","))
+    }
 }
 
 fn xml_escape(value: &str) -> String {
@@ -1381,6 +1598,11 @@ mod tests {
 
     fn session(directory: &Path) -> RunSession {
         let mut manifest = manifest();
+        manifest.run_id = directory
+            .file_name()
+            .expect("test run directory has a name")
+            .to_string_lossy()
+            .into_owned();
         manifest.state = RunState::Running;
         manifest.finished_unix_millis = None;
         manifest.duration_millis = None;
@@ -1721,6 +1943,86 @@ mod tests {
         second.finished = true;
         drop(second);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
+        let root = temporary_directory("firmware-replay");
+        let target_directory = root.join("target/hil/esp32s31");
+        let runs_directory = target_directory.join("runs");
+        let repository_root = target_directory.clone();
+        fs::create_dir_all(&runs_directory).unwrap();
+        write_test_build_materials(&repository_root);
+
+        let application = repository_root.join("application.bin");
+        let runtime_elf = repository_root.join("runtime.elf");
+        let runtime_bin = repository_root.join("runtime.bin");
+        let bootstrap_elf = repository_root.join("bootstrap.elf");
+        let effective_embedded_lock = repository_root.join("hil/targets/esp32s31/Cargo.lock");
+        fs::write(&application, b"application bytes").unwrap();
+        fs::write(&runtime_elf, b"runtime elf").unwrap();
+        fs::write(&runtime_bin, b"runtime bin").unwrap();
+        fs::write(&bootstrap_elf, b"bootstrap elf").unwrap();
+
+        let source_directory = runs_directory.join("source-run");
+        fs::create_dir(&source_directory).unwrap();
+        let mut source = session(&source_directory);
+        source.target_directory = target_directory.clone();
+        source.repository_root = repository_root.clone();
+        source.source_materials[0].checkout_path = repository_root.clone();
+        source
+            .record_firmware(
+                ImageClass::Correctness,
+                &application,
+                &runtime_elf,
+                &runtime_bin,
+                &bootstrap_elf,
+                &effective_embedded_lock,
+            )
+            .unwrap();
+        source.finish(Vec::new()).unwrap();
+
+        let archived = super::super::verification::archived_firmware(
+            &root,
+            "esp32s31",
+            "source-run",
+            ImageClass::Correctness,
+        )
+        .unwrap();
+        let replay_directory = runs_directory.join("replay-run");
+        fs::create_dir(&replay_directory).unwrap();
+        let mut replay = session(&replay_directory);
+        replay.target_directory = target_directory;
+        replay.repository_root = repository_root.clone();
+        replay.source_materials[0].checkout_path = repository_root;
+        let replayed_application = replay.record_replayed_firmware(&archived).unwrap();
+        assert_eq!(
+            fs::read(&replayed_application).unwrap(),
+            b"application bytes"
+        );
+        assert_eq!(replay.manifest.firmware.len(), 1);
+        assert_eq!(
+            replay.manifest.firmware[0]
+                .replayed_from
+                .as_ref()
+                .expect("replay origin")
+                .source_run_id,
+            "source-run"
+        );
+        replay.finish(Vec::new()).unwrap();
+
+        fs::remove_dir_all(source_directory).unwrap();
+        let verified =
+            super::super::verification::verify(&root, "esp32s31", Some("replay-run")).unwrap();
+        assert_eq!(verified.verified_run_ids, ["replay-run"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn replay_import_rejects_paths_outside_the_sealed_bundle() {
+        assert!(validate_replayed_source_path(Path::new("../application.bin")).is_err());
+        assert!(validate_replayed_source_path(Path::new("/tmp/application.bin")).is_err());
+        assert!(validate_replayed_source_path(Path::new("firmware/runtime.elf")).is_ok());
     }
 
     #[test]

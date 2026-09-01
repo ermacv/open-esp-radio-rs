@@ -36,6 +36,8 @@ pub(crate) struct RunHistoryEntry {
     pub(crate) commit: String,
     pub(crate) dirty: bool,
     pub(crate) workspace_sha256: String,
+    #[serde(default)]
+    pub(crate) replayed_from_runs: Vec<String>,
     pub(crate) cell_id: String,
     pub(crate) device_id: String,
     pub(crate) suite_counts: Option<SuiteCounts>,
@@ -204,6 +206,16 @@ pub(super) fn rebuild_at(target_directory: &Path, target: &str) -> Result<Histor
         } else {
             None
         };
+        let replayed_from_runs = manifest
+            .firmware
+            .iter()
+            .filter_map(|artifact| {
+                artifact
+                    .replayed_from
+                    .as_ref()
+                    .map(|origin| origin.source_run_id.clone())
+            })
+            .collect();
         runs.push(RunHistoryEntry {
             run_id: manifest.run_id,
             state: manifest.state,
@@ -214,6 +226,7 @@ pub(super) fn rebuild_at(target_directory: &Path, target: &str) -> Result<Histor
             commit: manifest.repository.commit,
             dirty: manifest.repository.dirty,
             workspace_sha256: manifest.repository.workspace_sha256,
+            replayed_from_runs,
             cell_id: manifest.cell.cell_id,
             device_id: manifest.cell.device_id,
             suite_counts: suite.map(|suite| suite.counts),
@@ -609,9 +622,14 @@ fn render_html(report: &HistoryReport) -> String {
             },
         );
         let commit = run.commit.get(..12).unwrap_or(&run.commit);
+        let firmware = if run.replayed_from_runs.is_empty() {
+            String::from("current build")
+        } else {
+            format!("replay: {}", run.replayed_from_runs.join(", "))
+        };
         let _ = writeln!(
             run_rows,
-            "<tr><td><code>{}</code></td><td data-unix-ms=\"{}\">{}</td><td>{}</td><td class=\"{}\">{}</td><td>{}</td><td><code>{}</code>{}</td><td>{}</td></tr>",
+            "<tr><td><code>{}</code></td><td data-unix-ms=\"{}\">{}</td><td>{}</td><td class=\"{}\">{}</td><td>{}</td><td><code>{}</code>{}</td><td>{}</td><td>{}</td></tr>",
             html_escape(&run.run_id),
             run.started_unix_millis,
             run.started_unix_millis,
@@ -625,6 +643,7 @@ fn render_html(report: &HistoryReport) -> String {
             counts,
             html_escape(commit),
             if run.dirty { "*" } else { "" },
+            html_escape(&firmware),
             report_link,
         );
     }
@@ -680,7 +699,7 @@ fn render_html(report: &HistoryReport) -> String {
          code{{background:#eee;padding:.1rem .25rem}}.bar{{display:inline-block;width:8rem;height:.6rem;background:#eee;margin-right:.5rem}}\
          .bar span{{display:block;height:100%;background:#14804a}}</style></head><body>\
          <h1>HIL history · {target}</h1><p>{passed}/{completed} completed runs passed · {interrupted} interrupted · {running} running</p>\
-         <h2>Runs</h2><table><thead><tr><th>Run</th><th>Started</th><th>Cell / DUT</th><th>Outcome</th><th>Passed scenarios</th><th>Commit</th><th>Report</th></tr></thead>\
+         <h2>Runs</h2><table><thead><tr><th>Run</th><th>Started</th><th>Cell / DUT</th><th>Outcome</th><th>Passed scenarios</th><th>Commit</th><th>Firmware</th><th>Report</th></tr></thead>\
          <tbody>{run_rows}</tbody></table><h2>Scenario stability</h2>\
          <table><thead><tr><th>Scenario</th><th>Runs</th><th>Pass rate</th><th>Flaky</th><th>Consecutive non-passed</th><th>Last outcome</th></tr></thead>\
          <tbody>{scenario_rows}</tbody></table><h2>Measurement trends</h2>\

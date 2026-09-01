@@ -15,6 +15,7 @@ cargo hil device status
 cargo hil report rebuild
 cargo hil report verify [run-id]
 cargo hil run <scenario-id>
+cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all [--tag qualification]
 ```
 
@@ -22,13 +23,14 @@ Scenarios are versioned TOML files in `hil/scenarios`; they contain workload,
 isolation and acceptance criteria, never serial paths or secrets. Machine-local
 device, STA/AP and OpenWrt values live only in mode-0600 `hil/local.toml`.
 
-`run` is a reproducible operation: it builds and flashes the scenario's exact
-image before executing it. `run-all` groups scenarios by image class, so
-changing UDP/TCP direction or rates does not rebuild or reflash firmware. It
-continues after scenario, image-build and image-flash failures, records the
-remaining scenarios as blocked when necessary, writes the complete suite, and
-returns a non-zero status unless every selected scenario passed. Independent
-scenarios reset the target. A future multi-cell workload may opt into one-boot
+By default, `run` builds and flashes the scenario's exact image before
+executing it. An explicit `--firmware-from` selects exact artifact replay
+instead, never a rebuild. `run-all` groups scenarios by image class, so changing
+UDP/TCP direction or rates does not rebuild or reflash firmware. It continues
+after scenario, image-build and image-flash failures, records the remaining
+scenarios as blocked when necessary, writes the complete suite, and returns a
+non-zero status unless every selected scenario passed. Independent scenarios
+reset the target. A future multi-cell workload may opt into one-boot
 `matrix-session`; ordinary scenario files must use `reset`.
 
 AP scenarios lease the laptop WLAN as one managed WPA2 client, without a
@@ -116,6 +118,18 @@ bundle verification and then flashes the archived `application.bin` without
 running Cargo or changing its bytes. It is the supported primitive for exact
 historical A/B. It does not by itself rerun a scenario or claim that the lab
 environment matches the original run.
+
+`cargo hil run <scenario-id> --firmware-from <run-id>` performs the same
+verification before acquiring the physical fixture, requires the archived
+image class to match the selected scenario, and then executes the ordinary
+scenario lifecycle without invoking Cargo. The resulting run imports all
+available firmware subjects, effective lock and tracked source patches into
+its own CAS-backed bundle; it remains verifiable after the source run is
+removed. Its manifest records the source run and source integrity digest, and
+the independent qualification reader deliberately excludes replayed firmware
+from current-clean evidence. `run-all` does not accept one ambiguous firmware
+origin; a future multi-image replay must provide an explicit mapping per image
+class.
 
 The qualification evaluator consumes these same sealed bundles through an
 independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to

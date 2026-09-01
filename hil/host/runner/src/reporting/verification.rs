@@ -38,6 +38,12 @@ pub(crate) struct ArchivedFirmware {
     pub(crate) image: crate::qualification::scenario::ImageClass,
     pub(crate) application_path: PathBuf,
     pub(crate) application_sha256: String,
+    pub(crate) build_id: Option<String>,
+    pub(super) source_directory: PathBuf,
+    pub(super) integrity_sha256: String,
+    pub(super) repository: super::run::RepositoryProvenance,
+    pub(super) artifact: super::run::FirmwareArtifact,
+    pub(super) build_provenance: Option<BuildProvenance>,
 }
 
 pub(crate) fn verify(
@@ -71,11 +77,22 @@ pub(crate) fn archived_firmware(
                 image.id()
             )
         })?;
+    let build_provenance = artifact
+        .build_provenance_path
+        .as_ref()
+        .map(|path| read_json(&run_directory.join(path)))
+        .transpose()?;
     Ok(ArchivedFirmware {
         run_id: run_id.to_owned(),
         image,
         application_path: run_directory.join(&artifact.application_path),
         application_sha256: artifact.application_sha256.clone(),
+        build_id: artifact.build_id.clone(),
+        source_directory: run_directory.clone(),
+        integrity_sha256: sha256_file(&run_directory.join("integrity.json"))?,
+        repository: manifest.repository,
+        artifact: artifact.clone(),
+        build_provenance,
     })
 }
 
@@ -197,6 +214,7 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
     let mut images = BTreeSet::new();
     let mut paths = BTreeSet::new();
     for artifact in &manifest.firmware {
+        validate_replay_origin(manifest, artifact)?;
         let expected_path = PathBuf::from("firmware")
             .join(artifact.image.id())
             .join("application.bin");
@@ -413,10 +431,15 @@ fn validate_build_provenance(
         validate_source_material(run_directory, manifest, source)?;
     }
     let primary = &provenance.sources[0];
+    let expected_repository = artifact
+        .replayed_from
+        .as_ref()
+        .map(|origin| &origin.firmware_repository)
+        .unwrap_or(&manifest.repository);
     if primary.name != "repository"
-        || primary.commit != manifest.repository.commit
-        || primary.dirty != manifest.repository.dirty
-        || primary.workspace_sha256 != manifest.repository.workspace_sha256
+        || primary.commit != expected_repository.commit
+        || primary.dirty != expected_repository.dirty
+        || primary.workspace_sha256 != expected_repository.workspace_sha256
     {
         return Err(format!(
             "HIL run `{}` has primary source material inconsistent with its manifest",
@@ -491,6 +514,31 @@ fn validate_build_provenance(
         .into());
     }
     Ok(())
+}
+
+fn validate_replay_origin(
+    manifest: &RunManifest,
+    artifact: &super::run::FirmwareArtifact,
+) -> Result<()> {
+    let Some(origin) = &artifact.replayed_from else {
+        return Ok(());
+    };
+    if origin.source_run_id == manifest.run_id
+        || !is_single_normal_component(Path::new(&origin.source_run_id))
+        || origin.source_build_id != artifact.build_id
+    {
+        return Err(format!(
+            "HIL run `{}` has inconsistent replay origin for `{}`",
+            manifest.run_id,
+            artifact.image.id()
+        )
+        .into());
+    }
+    validate_sha256(
+        &origin.source_integrity_sha256,
+        "source run integrity",
+        &origin.source_run_id,
+    )
 }
 
 fn validate_source_material(
@@ -964,6 +1012,25 @@ mod tests {
         fs::write(run.join("firmware/correctness/runtime.elf"), b"runtime elF").unwrap();
         let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
         assert!(error.to_string().contains("SHA-256"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_replay_origin_not_bound_to_the_firmware_build() {
+        let (root, run) = fixture();
+        add_build_provenance(&run);
+        let mut manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
+        let repository = manifest.repository.clone();
+        manifest.firmware[0].replayed_from = Some(super::super::run::FirmwareReplayOrigin {
+            source_run_id: String::from("source-run"),
+            source_integrity_sha256: "33".repeat(32),
+            firmware_repository: repository,
+            source_build_id: Some(String::from("wrong-build-id")),
+        });
+        atomic_json(&run.join("manifest.json"), &manifest).unwrap();
+        write_integrity_index(&run, "run-1").unwrap();
+        let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
+        assert!(error.to_string().contains("inconsistent replay origin"));
         fs::remove_dir_all(root).unwrap();
     }
 

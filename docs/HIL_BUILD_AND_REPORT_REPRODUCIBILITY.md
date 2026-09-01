@@ -249,15 +249,21 @@ execution.
 Current implementation status:
 
 - steps 1-3 are implemented for new runs; old schema-2 bundles remain valid;
-- `cargo hil image replay <run-id> <image-class>` implements the verified
-  artifact-replay primitive from step 4, but scenario replay from an archived
-  build remains pending;
+- step 4 is implemented for one scenario through both
+  `cargo hil image replay <run-id> <image-class>` and
+  `cargo hil run <scenario-id> --firmware-from <run-id>`; the latter produces
+  a new self-contained bundle and never invokes Cargo;
+- replay provenance is distinct from the runner checkout: the new manifest
+  binds the direct source run, its sealed-integrity digest, build ID and
+  firmware-source repository. Replayed runs are never accepted as
+  current-clean qualification evidence;
 - all Git source/override identities are captured before the build and checked
   again before firmware provenance is published, so an ordinary edit during a
   build fails closed instead of creating a misleading record;
 - `reproducibility` remains explicitly `unverified`; the reader rejects a
   `verified` claim until step 6 defines and retains its independent proof;
-- lab snapshots, deterministic two-directory rebuilds and CAS garbage
+- multi-image `run-all` replay, lab snapshots, deterministic two-directory
+  rebuilds and CAS garbage
   collection remain pending and must not be inferred from exact artifact
   replay.
 

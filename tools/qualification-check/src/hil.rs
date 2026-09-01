@@ -247,8 +247,18 @@ impl HilEvidenceIndex {
             if suite.outcome == Outcome::Passed {
                 summary.passing += 1;
             }
-            let current_clean_producer =
-                !manifest.repository.dirty && manifest.repository.commit == repository.commit;
+            let artifact_replays_firmware = manifest
+                .firmware
+                .iter()
+                .any(|artifact| artifact.replayed_from.is_some());
+            let plan_replays_firmware =
+                read_optional_json::<RunPlanProvenance>(&run_directory.join("plan.json"))?
+                    .and_then(|plan| plan.firmware)
+                    .is_some_and(|firmware| firmware.source == PlannedFirmwareSource::Replay);
+            let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
+            let current_clean_producer = !replays_firmware
+                && !manifest.repository.dirty
+                && manifest.repository.commit == repository.commit;
             if current_clean_producer {
                 summary.current_clean_producer += 1;
             }
@@ -332,6 +342,32 @@ struct RunManifest {
     finished_unix_millis: Option<u64>,
     duration_millis: Option<u64>,
     repository: RepositoryProvenance,
+    #[serde(default)]
+    firmware: Vec<FirmwareArtifactProvenance>,
+}
+
+#[derive(Deserialize)]
+struct FirmwareArtifactProvenance {
+    #[serde(default)]
+    replayed_from: Option<serde::de::IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+struct RunPlanProvenance {
+    #[serde(default)]
+    firmware: Option<PlannedFirmwareProvenance>,
+}
+
+#[derive(Deserialize)]
+struct PlannedFirmwareProvenance {
+    source: PlannedFirmwareSource,
+}
+
+#[derive(Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum PlannedFirmwareSource {
+    BuildCurrent,
+    Replay,
 }
 
 #[derive(Deserialize)]
@@ -673,7 +709,11 @@ mod tests {
     use serde_json::json;
 
     fn seal(run: &Path) {
-        let files = ["manifest.json", "suite.json"]
+        let mut names = vec!["manifest.json", "suite.json"];
+        if run.join("plan.json").is_file() {
+            names.push("plan.json");
+        }
+        let files = names
             .into_iter()
             .map(|name| {
                 let path = run.join(name);
@@ -791,6 +831,50 @@ mod tests {
                 })
                 .is_some()
         );
+
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("manifest.json")).unwrap()).unwrap();
+        manifest["firmware"] = json!([{
+            "replayed_from": {
+                "source_run_id": "older-run"
+            }
+        }]);
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        seal(&run);
+        let replayed =
+            HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+        assert_eq!(replayed.summary().current_clean_producer, 0);
+        assert_eq!(replayed.summary().qualifying, 0);
+
+        manifest["firmware"] = json!([]);
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            run.join("plan.json"),
+            serde_json::to_vec_pretty(&json!({
+                "firmware": {
+                    "source": "replay",
+                    "source_run_id": "older-run"
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        seal(&run);
+        let planned_replay =
+            HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+        assert_eq!(planned_replay.summary().current_clean_producer, 0);
+        assert_eq!(planned_replay.summary().qualifying, 0);
+
+        fs::remove_file(run.join("plan.json")).unwrap();
+        seal(&run);
 
         fs::write(run.join("suite.json"), b"{}").unwrap();
         assert!(

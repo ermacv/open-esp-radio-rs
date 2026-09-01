@@ -23,6 +23,10 @@ consumed by the qualification evaluator.
 Vendor-linked oracles remain isolated under `verification/vendor`; they are
 not HIL scenarios or runner commands.
 
+The current ownership review, measured module inventory and behavior-neutral
+refactor sequence are recorded in
+[`docs/HIL_ARCHITECTURE_AUDIT.md`](../docs/HIL_ARCHITECTURE_AUDIT.md).
+
 Run the host interface through the workspace alias:
 
 ```console

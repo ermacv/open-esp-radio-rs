@@ -88,9 +88,58 @@ The model also proves:
 - Xarxa middleware and the Embassy stack adapter preserve exact lifecycle
   identity, key and level values.
 
-The catalog remains a host model until phase 2 gives protocol providers stable
-handles without payload rescans. Shipping unused catalog state in every
-interface would add memory without semantics and is intentionally avoided.
+At the Phase 1 checkpoint the catalog remained a host model until protocol
+providers could own stable handles without payload rescans. Shipping unused
+catalog state in every interface was intentionally avoided at that boundary.
+
+## Phase 2 stack checkpoint
+
+The first production shadow publisher is now pinned by:
+
+```text
+Xarxa revision:   e903c7f4525689f5b7803d086c3b243390069f29
+Embassy revision: 24f4886f75b534b91a9e58716c0dd989eceaf148
+```
+
+Xarxa now owns a bounded interface catalog and invokes the demand callback for
+UDP indexed queues before synchronous dispatch. Each UDP destination queue
+retains a generation-validated lookup hint beside its queue metadata. During
+one interface observation, the catalog rebuilds aggregate demand for every
+opaque device key from those bounded queue counters; it retains no entries per
+socket or provider. Several IP queues and sockets resolving to the same key
+therefore publish one coherent demand lifetime. Queue length is maintained on
+enqueue/dequeue, so observation never scans packet payload. A schedule epoch
+reset invalidates queue-local hints; an unobserved key (including all providers
+being removed) is reclaimed and emits one terminal `Inactive`.
+
+The implementation deliberately remains shadow-only:
+
+- `transmit_for` and the existing interface burst arbiter are unchanged and
+  remain the only admission authority;
+- sparse demand is published immediately; BA32 is a high watermark, never a
+  minimum-fill delay;
+- a 16-entry catalog bounds distinct interface egress keys, not providers,
+  sockets or packet storage. This covers fifteen SoftAP unicast peers plus one
+  group domain; STA+AP combines its separate interface catalogues later at the
+  physical-radio owner. Overflow omits excess shadow demand without blocking
+  ordinary TX;
+- TCP, raw, ICMP and generated control traffic do not yet claim provider
+  coverage and continue through the existing synchronous path;
+- Embassy forwards the lifecycle exactly, but the open-radio network device
+  does not yet consume it. The old run/refill candidate protocol therefore
+  remains isolated until Phase 3 replaces it with radio-wide demand state.
+
+Host tests cover same-key aggregation across two independent UDP sockets,
+BA32 horizon crossing, socket removal, route rekey, epoch reset, stale handle
+rejection and terminal disable. This checkpoint still needs same-ELF HIL CPU
+accounting before it can be called performance-neutral.
+
+An earlier Phase 2 implementation retained 64 provider entries in every
+interface and increased the HIL `start_network_endpoint` async frame to 10,400
+bytes, over the 8,192-byte review threshold. The source-only image audit caught
+that architectural mistake. The aggregate-only redesign removes provider-sized
+state and carries a regression assertion that the 16-key catalog remains at or
+below 1,024 bytes; increasing the stack threshold was explicitly rejected.
 
 ## Current data path
 
@@ -506,7 +555,7 @@ not a wholesale stack rewrite.
 - retain the exact clean A/B/A and sparse HIL runs above;
 - do not make shadow grants authoritative.
 
-### Phase 1: specify the generic demand catalog
+### Phase 1: specify the generic demand catalog — complete
 
 - define key activation, backlog update, empty/deactivation, epoch invalidation
   and unused-grant return/expiry;
@@ -518,7 +567,7 @@ not a wholesale stack rewrite.
   all-keys-deferred progress;
 - keep packet admission unchanged.
 
-### Phase 2: refactor Xarxa egress providers
+### Phase 2: refactor Xarxa egress providers — UDP shadow complete
 
 - move active-key arbitration to one interface-owned catalog;
 - adapt the existing UDP indexed queues without changing their payload owner;
@@ -605,7 +654,7 @@ Performance gates:
   scheduler regression;
 - no authoritative fairness claim from throughput alone.
 
-The next code change is therefore Phase 1: specify and test the generic demand
-lifecycle, then implement the interface-owned Xarxa catalog in shadow mode.
-Only after that boundary is stable should the Core0 echo become a real
-radio-wide airtime scheduler.
+The next code change completes Phase 2 protocol coverage and measures the UDP
+publisher cost. Only after that boundary is stable should Phase 3 replace the
+AP-only Core0 echo with physical-radio-wide demand state and real burst/airtime
+grants.

@@ -437,11 +437,11 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy.git?rev=c6d0de6fc1b22aea8cd20aac26a183db4c73d447#c6d0de6fc1b22aea8cd20aac26a183db4c73d447"
+source = "git+https://github.com/ermacv/embassy.git?rev=24f4886f75b534b91a9e58716c0dd989eceaf148#24f4886f75b534b91a9e58716c0dd989eceaf148"
 dependencies = [
  "document-features",
  "embassy-futures",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=c6d0de6fc1b22aea8cd20aac26a183db4c73d447)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=24f4886f75b534b91a9e58716c0dd989eceaf148)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "embedded-io-async 0.7.0",
@@ -460,7 +460,7 @@ checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 [[package]]
 name = "embassy-net-driver"
 version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=c6d0de6fc1b22aea8cd20aac26a183db4c73d447#c6d0de6fc1b22aea8cd20aac26a183db4c73d447"
+source = "git+https://github.com/ermacv/embassy.git?rev=24f4886f75b534b91a9e58716c0dd989eceaf148#24f4886f75b534b91a9e58716c0dd989eceaf148"
 
 [[package]]
 name = "embassy-sync"
@@ -1337,7 +1337,7 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=c6d0de6fc1b22aea8cd20aac26a183db4c73d447)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=24f4886f75b534b91a9e58716c0dd989eceaf148)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
  "pin-project-lite",
@@ -2262,7 +2262,7 @@ dependencies = [
 [[package]]
 name = "xarxa"
 version = "0.13.1"
-source = "git+https://github.com/ermacv/xarxa.git?rev=bd2c27fb584445c93aec04e8560835de3dec450e#bd2c27fb584445c93aec04e8560835de3dec450e"
+source = "git+https://github.com/ermacv/xarxa.git?rev=e903c7f4525689f5b7803d086c3b243390069f29#e903c7f4525689f5b7803d086c3b243390069f29"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -2275,7 +2275,7 @@ dependencies = [
 [[package]]
 name = "xarxa-driver"
 version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=bd2c27fb584445c93aec04e8560835de3dec450e#bd2c27fb584445c93aec04e8560835de3dec450e"
+source = "git+https://github.com/ermacv/xarxa.git?rev=e903c7f4525689f5b7803d086c3b243390069f29#e903c7f4525689f5b7803d086c3b243390069f29"
 
 [[package]]
 name = "xtensa-lx"

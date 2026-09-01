@@ -110,6 +110,14 @@ reserve at `+0x68`, `+0x70` and `+0x78`. The open memory graph must therefore
 reserve the complete `0x84`-byte allocation even though most trailing reset
 words remain zero.
 
+The same complete scanner allocator requests one `0x48`-byte scheduler context
+and exactly three `0x60`-byte scheduler items. It chains each newly allocated
+item before the prior item through the compressed hardware link at item
+`+0x00`, installs the common context and link-state links at item `+0x04/+0x08`,
+and retains the resulting head as a full pointer at link state `+0x64`. The
+open graph reproduces those physical links but deliberately omits the vendor
+callback pointers and intrusive software-list objects.
+
 Complete current `r_sym_ble_ruvdJkUUpoEtaH2xv1jH` does not allocate an opaque
 vendor scan object.  It composes the common receive-memory primitives around
 one already allocated link state:

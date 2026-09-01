@@ -125,8 +125,9 @@ pub use passive_scanning_memory::BluetoothPassiveScanMemoryGraphModelAddress;
 pub use passive_scanning_memory::{
     BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT, BLUETOOTH_PASSIVE_SCAN_RX_PACKET_BYTES,
     BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
-    BluetoothPassiveScanMemoryGraphBindError, BluetoothPassiveScanMemoryGraphBindFailure,
-    BluetoothPassiveScanMemoryGraphCpuOwned, BluetoothPassiveScanMemoryGraphPublicationError,
+    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, BluetoothPassiveScanMemoryGraphBindError,
+    BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphCpuOwned,
+    BluetoothPassiveScanMemoryGraphPublicationError,
     BluetoothPassiveScanMemoryGraphPublicationMismatch,
     BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
     BluetoothPassiveScanMemoryGraphStorage,

@@ -21,6 +21,7 @@ use crate::{
         BluetoothPassiveScanResetConfig, BluetoothPassiveScanRxHeadProjection,
     },
     rx_memory_list::BluetoothRxMemoryListClass,
+    scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         BluetoothControllerSramLinkAddress,
@@ -29,6 +30,8 @@ use crate::{
 
 /// Number of independently backed receive nodes in the first passive scanner.
 pub const BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT: usize = 2;
+/// Number of scheduler-item allocations retained by the scanner graph.
+pub const BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT: usize = 3;
 /// Bytes preceding a received Link Layer payload in one controller allocation.
 pub const BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES: usize = 0x1e;
 /// Maximum Link Layer payload admitted by the first scanner graph.
@@ -45,6 +48,14 @@ const RX_PACKET_LAST_ALIGNED_OFFSET: u32 =
 const LINK_STATE_RX_HEAD_WORD: usize = 0x68 / 4;
 const LINK_STATE_RX_TAIL_WORD: usize = 0x70 / 4;
 const LINK_STATE_RX_SWAP_RESERVE_WORD: usize = 0x78 / 4;
+const LINK_STATE_SCHEDULER_HEAD_WORD: usize = 0x64 / 4;
+const SCHEDULER_ITEM_BYTES: usize = 0x60;
+const SCHEDULER_ITEM_WORDS: usize = SCHEDULER_ITEM_BYTES / 4;
+const SCHEDULER_ITEM_HARDWARE_NEXT_WORD: usize = 0;
+const SCHEDULER_ITEM_CONTEXT_WORD: usize = 1;
+const SCHEDULER_ITEM_LINK_STATE_WORD: usize = 0x08 / 4;
+const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
+const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x00c0_0000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct BluetoothPassiveScanRxPacketAddress(BluetoothControllerSramAddress);
@@ -225,6 +236,10 @@ impl BluetoothPassiveScanLinkStateStorage {
         self.words[LINK_STATE_RX_SWAP_RESERVE_WORD].set(0);
     }
 
+    fn install_scheduler_head(&self, head: BluetoothControllerSramAddress) {
+        self.words[LINK_STATE_SCHEDULER_HEAD_WORD].set(head.address());
+    }
+
     #[cfg(test)]
     fn image(&self) -> BluetoothPassiveScanLinkStateImage {
         BluetoothPassiveScanLinkStateImage::from_words(core::array::from_fn(|index| {
@@ -251,6 +266,59 @@ impl BluetoothPassiveScanLinkStateStorage {
             (reserve != 0).then(|| address(LINK_STATE_RX_SWAP_RESERVE_WORD)),
         )
     }
+
+    #[cfg(test)]
+    fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        BluetoothControllerSramAddress::new(self.words[LINK_STATE_SCHEDULER_HEAD_WORD].get())
+            .expect("the scanner link state retains a validated scheduler head")
+    }
+}
+
+/// Private hardware-shared scheduler item for one scanner event.
+#[repr(C, align(4))]
+struct BluetoothPassiveScanSchedulerItemStorage {
+    words: [VolatileCell<u32>; SCHEDULER_ITEM_WORDS],
+}
+
+impl BluetoothPassiveScanSchedulerItemStorage {
+    const fn new() -> Self {
+        Self {
+            words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
+        }
+    }
+
+    fn initialize_graph(
+        &self,
+        predecessor: Option<BluetoothControllerSramLinkAddress>,
+        scheduler_context: BluetoothControllerSramLinkAddress,
+        link_state: BluetoothControllerSramLinkAddress,
+    ) {
+        for word in &self.words {
+            word.set(0);
+        }
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].set(
+            SCHEDULER_ITEM_ALLOCATION_PREFIX
+                | predecessor.map_or(0, BluetoothControllerSramLinkAddress::compressed_image),
+        );
+        self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(scheduler_context.compressed_image());
+        self.words[SCHEDULER_ITEM_LINK_STATE_WORD]
+            .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
+    }
+
+    #[cfg(test)]
+    fn retains_graph(
+        &self,
+        predecessor: Option<BluetoothControllerSramLinkAddress>,
+        scheduler_context: BluetoothControllerSramLinkAddress,
+        link_state: BluetoothControllerSramLinkAddress,
+    ) -> bool {
+        let predecessor =
+            predecessor.map_or(0, BluetoothControllerSramLinkAddress::compressed_image);
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get() & 0x000f_ffff == predecessor
+            && self.words[SCHEDULER_ITEM_CONTEXT_WORD].get() == scheduler_context.compressed_image()
+            && self.words[SCHEDULER_ITEM_LINK_STATE_WORD].get() & 0x000f_ffff
+                == link_state.compressed_image()
+    }
 }
 
 /// Complete no-heap allocation for the first passive-scanner memory graph.
@@ -261,6 +329,9 @@ impl BluetoothPassiveScanLinkStateStorage {
 #[repr(C)]
 pub struct BluetoothPassiveScanMemoryGraphStorage {
     link_state: BluetoothPassiveScanLinkStateStorage,
+    scheduler_context: BluetoothSchedulerContextStorage,
+    scheduler_items:
+        [BluetoothPassiveScanSchedulerItemStorage; BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
     nodes: [BluetoothPassiveScanRxNodeStorage; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
     #[pin]
     _pin: PhantomPinned,
@@ -271,6 +342,10 @@ const MEMORY_GRAPH_BYTES: u32 =
 const RX_NODE_BYTES: u32 = core::mem::size_of::<BluetoothPassiveScanRxNodeStorage>() as u32;
 const RX_NODES_OFFSET: u32 =
     core::mem::offset_of!(BluetoothPassiveScanMemoryGraphStorage, nodes) as u32;
+const SCHEDULER_CONTEXT_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothPassiveScanMemoryGraphStorage, scheduler_context) as u32;
+const SCHEDULER_ITEMS_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothPassiveScanMemoryGraphStorage, scheduler_items) as u32;
 const RX_PACKET_OFFSET: u32 =
     core::mem::offset_of!(BluetoothPassiveScanRxNodeStorage, packet) as u32;
 
@@ -297,6 +372,9 @@ struct BluetoothPassiveScanMemoryGraphBinding {
     base: BluetoothControllerSramAddress,
     end_exclusive: u32,
     link_state: BluetoothControllerSramLinkAddress,
+    scheduler_context: BluetoothControllerSramLinkAddress,
+    scheduler_items:
+        [BluetoothControllerSramLinkAddress; BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
     nodes: [BluetoothPassiveScanRxNodeBinding; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
 }
 
@@ -314,6 +392,19 @@ impl BluetoothPassiveScanMemoryGraphBinding {
         }
         let link_state = BluetoothControllerSramLinkAddress::new(base)
             .map_err(|_| BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink)?;
+        let bound_link = |offset: u32| {
+            let address = base
+                .checked_add(offset)
+                .ok_or(BluetoothPassiveScanMemoryGraphBindError::ExtentOutsidePhysicalSram)?;
+            BluetoothControllerSramLinkAddress::new(address)
+                .map_err(|_| BluetoothPassiveScanMemoryGraphBindError::ZeroCompressedLink)
+        };
+        let scheduler_context = bound_link(SCHEDULER_CONTEXT_OFFSET)?;
+        let scheduler_items = [
+            bound_link(SCHEDULER_ITEMS_OFFSET)?,
+            bound_link(SCHEDULER_ITEMS_OFFSET + SCHEDULER_ITEM_BYTES as u32)?,
+            bound_link(SCHEDULER_ITEMS_OFFSET + 2 * SCHEDULER_ITEM_BYTES as u32)?,
+        ];
 
         let node = |index: u32| {
             let node_base = base
@@ -334,6 +425,8 @@ impl BluetoothPassiveScanMemoryGraphBinding {
             base: base_address,
             end_exclusive,
             link_state,
+            scheduler_context,
+            scheduler_items,
             nodes: [node(0)?, node(1)?],
         })
     }
@@ -344,6 +437,10 @@ impl BluetoothPassiveScanMemoryGraphBinding {
 
     const fn link_state(&self) -> BluetoothControllerSramAddress {
         self.link_state.controller_address()
+    }
+
+    const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.scheduler_items[BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1].controller_address()
     }
 
     const fn range(&self) -> (u32, u32) {
@@ -454,6 +551,13 @@ impl BluetoothPassiveScanMemoryGraphPublicationPrepared {
         self.binding.link_state()
     }
 
+    /// Return the validated first event item retained by the scanner graph.
+    /// This grants no scheduler-list publication authority.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_head()
+    }
+
     /// Consume a matching affine HAL publication into hardware ownership.
     #[doc(hidden)]
     pub fn into_published(
@@ -558,6 +662,9 @@ impl BluetoothPassiveScanMemoryGraphStorage {
     pub const fn new() -> Self {
         Self {
             link_state: BluetoothPassiveScanLinkStateStorage::new(),
+            scheduler_context: BluetoothSchedulerContextStorage::new(),
+            scheduler_items: [const { BluetoothPassiveScanSchedulerItemStorage::new() };
+                BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT],
             nodes: [
                 BluetoothPassiveScanRxNodeStorage::new(),
                 BluetoothPassiveScanRxNodeStorage::new(),
@@ -621,12 +728,25 @@ impl BluetoothPassiveScanMemoryGraphStorage {
 impl BluetoothPassiveScanMemoryGraphCpuOwned {
     fn initialize(&mut self, config: BluetoothPassiveScanResetConfig) {
         let bindings = self.binding.nodes;
+        let scheduler_items = self.binding.scheduler_items;
         let link_state = BluetoothPassiveScanLinkStateImage::restricted_passive_le_1m(
             BluetoothPassiveScanRxHeadProjection::from_bound(bindings[0].header),
             config,
         );
         let storage = self.storage.as_mut().project();
         storage.link_state.install(link_state);
+        storage.scheduler_context.clear();
+        for (index, item) in storage.scheduler_items.iter().enumerate() {
+            let predecessor = index.checked_sub(1).map(|index| scheduler_items[index]);
+            item.initialize_graph(
+                predecessor,
+                self.binding.scheduler_context,
+                self.binding.link_state,
+            );
+        }
+        storage.link_state.install_scheduler_head(
+            scheduler_items[BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1].controller_address(),
+        );
         storage.link_state.install_receive_graph(
             bindings[0].header.controller_address(),
             bindings[1].header.controller_address(),
@@ -729,11 +849,30 @@ mod tests {
                 None,
             )
         );
+        assert_eq!(
+            storage.link_state.scheduler_head(),
+            owner.binding.scheduler_head()
+        );
+        assert!(
+            storage
+                .scheduler_items
+                .iter()
+                .enumerate()
+                .all(|(index, item)| item.retains_graph(
+                    index
+                        .checked_sub(1)
+                        .map(|index| owner.binding.scheduler_items[index]),
+                    owner.binding.scheduler_context,
+                    owner.binding.link_state,
+                ))
+        );
 
         let link_state_address = owner.binding.link_state();
+        let scheduler_head = owner.binding.scheduler_head();
         let prepared = owner.prepare_publication();
         assert_eq!(prepared.head(), bindings[0].header.controller_address());
         assert_eq!(prepared.link_state(), link_state_address);
+        assert_eq!(prepared.scheduler_head(), scheduler_head);
         assert_eq!(
             prepared.selector(),
             crate::BluetoothRxMemoryListClass::Scanning.selector()

@@ -1121,7 +1121,9 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 #[cfg(feature = "tx-egress-scheduling")]
                 egress_control: None,
                 #[cfg(feature = "tx-egress-scheduling")]
-                egress_control_active: false,
+                egress_demand_active: false,
+                #[cfg(feature = "tx-egress-scheduling")]
+                egress_grant_echo_active: false,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
                 shadow_grant_serial: 0,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1301,7 +1303,9 @@ pub struct SplitPinnedDevice<
     #[cfg(feature = "tx-egress-scheduling")]
     egress_control: Option<&'resources mut DefaultEgressNetworkScheduler<'resources, M>>,
     #[cfg(feature = "tx-egress-scheduling")]
-    egress_control_active: bool,
+    egress_demand_active: bool,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_grant_echo_active: bool,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     shadow_grant_serial: u32,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1361,7 +1365,9 @@ impl<
         // built. Snapshotting it here avoids an Acquire load and RISC-V fence
         // in every packet admission while preserving same-ELF enabled/disabled
         // comparison.
-        self.egress_control_active = egress_control_enabled();
+        self.egress_demand_active = egress_control_enabled();
+        self.egress_grant_echo_active = self.egress_demand_active
+            && self.endpoint.egress_topology() == EgressQueueTopology::AssociatedPeer;
         self.egress_control = Some(control);
         self
     }
@@ -1540,7 +1546,9 @@ impl<
                 .expect("network scheduling epoch is not reusable");
             self.keyed_egress = None;
             self.keyed_run_length = 0;
-            if let Some(control) = self.egress_control.as_mut() {
+            if self.egress_grant_echo_active
+                && let Some(control) = self.egress_control.as_mut()
+            {
                 control.reset_epoch(&mut self.active_egress_lease);
             }
         }
@@ -2458,14 +2466,14 @@ impl<
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
             return EgressAdmission::KeyDeferred;
         }
-        let egress_control_is_enabled = self.egress_control_active;
+        let egress_grant_echo_is_enabled = self.egress_grant_echo_active;
         let run_changed = self.keyed_egress != Some(egress);
         if run_changed {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_egress_run(self.keyed_run_length);
             self.keyed_egress = Some(egress);
             self.keyed_run_length = 0;
-            if egress_control_is_enabled && let Some(control) = self.egress_control.as_mut() {
+            if egress_grant_echo_is_enabled && let Some(control) = self.egress_control.as_mut() {
                 match self.endpoint.grant_key(egress) {
                     Some(grant_key) => {
                         control.begin_active_run(
@@ -2491,7 +2499,7 @@ impl<
             .expect("keyed application admission reserves one TX credit");
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
-        if egress_control_is_enabled {
+        if egress_grant_echo_is_enabled {
             let needs_maintenance = self.active_egress_lease.commit_admission();
             if needs_maintenance && let Some(control) = self.egress_control.as_mut() {
                 control.maintain_active_run(&mut self.active_egress_lease, cx);
@@ -2519,7 +2527,7 @@ impl<
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_schedule(&mut self) -> Option<EgressSchedule> {
-        if self.egress_control_active
+        if self.egress_demand_active
             && let Some(control) = self.egress_control.as_mut()
         {
             control.flush_egress_demand();
@@ -2542,7 +2550,7 @@ impl<
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn update_egress_demand(&mut self, cx: &mut Context<'_>, update: EgressDemandUpdate) {
-        if self.egress_control_active
+        if self.egress_demand_active
             && let Some(control) = self.egress_control.as_mut()
         {
             // This phase remains observational. A malformed or over-capacity

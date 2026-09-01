@@ -419,6 +419,28 @@ fn ap_egress_control_l1_probe_is_a_same_image_runtime_control() {
 }
 
 #[test]
+fn station_egress_lifecycle_probe_is_a_same_image_runtime_control() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let enabled = catalog.get("udp-tx-ht40-core0-coarse-diagnostic").unwrap();
+    let disabled = catalog
+        .get("diagnostic-station-tx-egress-control-disabled-core0")
+        .unwrap();
+
+    assert_eq!(enabled.image, ImageClass::DiagnosticCore0RxCoarse);
+    assert_eq!(enabled.image, disabled.image);
+    assert_eq!(enabled.workload, disabled.workload);
+    assert_eq!(enabled.link, disabled.link);
+    assert_eq!(enabled.criteria, disabled.criteria);
+    assert_eq!(enabled.evidence, disabled.evidence);
+    assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
+    assert_eq!(
+        disabled.tx_buffer,
+        WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+    );
+}
+
+#[test]
 fn ap_egress_control_task_poll_probe_omits_intrusive_control_counters() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();

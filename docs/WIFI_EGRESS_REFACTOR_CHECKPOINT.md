@@ -187,6 +187,47 @@ This remains a shadow mirror:
   this ownership shape. The next gate is same-ELF HIL CPU accounting. Only
   then can the old run/refill publisher be replaced.
 
+### Phase 3 same-ELF result
+
+The first hardware gate used clean commit `c494994d`, channel 13, one replayed
+`diagnostic-core0-rx-coarse` artifact and application SHA-256
+`4032c4ec0441e952473bf7f975ca3fab48f7112717ceab574b77acc6a633c27a`.
+Laptop WLAN was down and the captured route/lab provenance used the Ethernet
+OpenWrt fixture.
+
+The low-rate AP run `1788280542958-0015ca40` completed both cycles. Each cycle
+published and consumed 18 demand transitions with no full or rejected update;
+the inactive STA stream remained empty. Saturated AP A/B/A then used that exact
+saved firmware:
+
+| Mode | Run | Device TX throughput | Demand updates | Old grant echoes |
+| --- | --- | ---: | ---: | ---: |
+| enabled A | `1788280773846-0015d2cf` | 116.168, 115.734 Mbit/s | 6, 7 | 4,933, 4,914 |
+| disabled B | `1788280859305-0015d52a` | 119.882, 119.981 Mbit/s | 0, 0 | 0, 0 |
+| enabled A | `1788280946035-0015da77` | 116.729, 115.490 Mbit/s | 6, 6 | 4,957, 4,904 |
+
+This pair does **not** measure the new lifecycle mirror alone. The enabled AP
+mode still includes the temporary candidate/grant echo once per aggregate,
+whereas lifecycle traffic is only six or seven state changes per cycle. The
+roughly 3.3% AP ceiling penalty therefore blocks the old echo from becoming a
+production authority; it is not evidence against the lifecycle mirror.
+
+STA provides the clean discriminator because its `SingleRadioPeer` topology
+has no old AP grant key. Enabled A/B/A runs `1788281092418-0015debe`,
+`1788281384943-0015ec50`, and `1788281618275-0015f045` produced average device
+throughput of 117.984, 117.991, and 117.981 Mbit/s respectively. Enabled runs
+published only 8--12 lifecycle transitions for roughly 120,000 packets and
+reported no full or rejected update. Explicit Core0 lifecycle service cost was
+about 32--44 thousand cycles per 12-second repetition. Thus Phase 3 demand
+transport is lifecycle-granular and has no measured ceiling loss; the AP
+candidate/grant oracle is the expensive component that must be removed.
+
+The A/B also exposed one unnecessary implementation coupling: attaching the
+control endpoint made STA execute the AP-only empty burst-lease check on every
+admission. The subsequent source fix separates `egress_demand_active` from
+`egress_grant_echo_active`; only `AssociatedPeer` AP endpoints enter the old
+echo, while both STA and AP retain the lifecycle mirror.
+
 ## Current data path
 
 ```text

@@ -85,7 +85,7 @@ impl Scenario {
                 | ImageClass::DiagnosticTxArchitecture
                 | ImageClass::DiagnosticTaskPoll
                 | ImageClass::DiagnosticCore0RxCoarse
-        ) || !matches!(
+        ) || (!matches!(
             self.workload,
             Workload::AccessPoint {
                 traffic: AccessPointTraffic::Udp {
@@ -97,9 +97,18 @@ impl Scenario {
                 },
                 ..
             }
-        )) {
+        ) && !(self.tx_buffer
+            == WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+            && matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Tx,
+                    ..
+                }
+            ))))
+        {
             return Err(format!(
-                "{}: TX architecture policies are restricted to a compatible AP UDP TX diagnostic image",
+                "{}: TX architecture policies are restricted to a compatible UDP TX diagnostic image",
                 self.source.display()
             )
             .into());

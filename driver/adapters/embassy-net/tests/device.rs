@@ -566,7 +566,7 @@ fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
     let tx_resources = Box::leak(Box::new(TxResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
-    let (network_control, radio_control) = control.split();
+    let (network_control, mut radio_control) = control.split();
     let network_state = Box::leak(Box::new(DefaultEgressNetworkState::new()));
     let network_control = Box::leak(Box::new(DefaultEgressNetworkScheduler::new(
         network_control,
@@ -606,6 +606,11 @@ fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
         EgressAdmission::Granted(token) => token,
         _ => panic!("demand publication must not gate SRAM admission"),
     });
+    assert_eq!(
+        radio_control.try_receive_candidate(),
+        None,
+        "single-peer STA demand must not enter the temporary AP grant echo"
+    );
     let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
     assert!(radio_control.service_shadow());
     assert_eq!(control.snapshot().demand_publications, 2);

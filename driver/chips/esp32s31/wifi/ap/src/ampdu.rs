@@ -104,7 +104,7 @@ impl Esp32s31ApAggregateAdmission {
 pub enum Esp32s31ApAmpduError {
     Busy,
     Idle,
-    AssociationChanged,
+    PeerChanged,
     KeyChanged,
     SequenceDiscontinuity,
     TooFewFrames,
@@ -147,7 +147,6 @@ impl From<HtAmpduTxRolePolicyError> for Esp32s31ApAmpduError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApPreparedAmpdu {
-    pub association: ApAssociationIdentity,
     pub rate: HtRate,
     pub first_sequence: u16,
     pub subframes: u8,
@@ -289,7 +288,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
 
     pub fn push(
         &mut self,
-        association: ApAssociationIdentity,
+        peer: [u8; 6],
         backing: B,
         frame: Esp32s31ApAggregateFrame,
     ) -> Result<(), Esp32s31ApAmpduError> {
@@ -304,8 +303,8 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
-        if association != *expected_association {
-            return Err(Esp32s31ApAmpduError::AssociationChanged);
+        if peer != expected_association.address() {
+            return Err(Esp32s31ApAmpduError::PeerChanged);
         }
         if frame.hardware_key_selector != *hardware_key_selector {
             return Err(Esp32s31ApAmpduError::KeyChanged);
@@ -335,7 +334,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     pub fn prepared(&self) -> Result<Esp32s31ApPreparedAmpdu, Esp32s31ApAmpduError> {
         let ApAmpduState::Building {
             cookie,
-            association,
             rate,
             first_sequence,
             hardware_key_selector,
@@ -349,7 +347,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             return Err(Esp32s31ApAmpduError::TooFewFrames);
         }
         Ok(Esp32s31ApPreparedAmpdu {
-            association,
             rate,
             first_sequence,
             subframes: aggregate.subframes,

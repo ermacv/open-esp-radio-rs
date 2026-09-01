@@ -1791,7 +1791,7 @@ where
                 )
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             active
-                .push(association, frame, first_encoded)
+                .push(association.address(), frame, first_encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
 
             let second_offset = second.ethernet_offset();
@@ -1809,7 +1809,7 @@ where
                     )
                 })?;
             active
-                .push(association, second, second_encoded)
+                .push(association.address(), second, second_encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
 
             let target = usize::from(policy.frame_limit());
@@ -1842,7 +1842,7 @@ where
                         )
                     })?;
                 active
-                    .push(association, next, encoded)
+                    .push(association.address(), next, encoded)
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
                 admitted += 1;
             }
@@ -2185,7 +2185,7 @@ where
             aggregate
                 .standby_mut()
                 .expect("checked standby arena")
-                .push(association, frame, encoded)
+                .push(association.address(), frame, encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         }
         let frame_limit;
@@ -2308,7 +2308,7 @@ where
             aggregate
                 .standby_mut()
                 .expect("checked standby arena")
-                .push(association, frame, encoded)
+                .push(association.address(), frame, encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             let batch = self
                 .prepared_standby
@@ -2408,7 +2408,7 @@ where
             )
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         standby
-            .push(association, first, first_encoded)
+            .push(association.address(), first, first_encoded)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         let offset = frame.ethernet_offset();
         let length = frame.ethernet_length();
@@ -2429,7 +2429,7 @@ where
         aggregate
             .standby_mut()
             .expect("checked standby arena")
-            .push(association, frame, encoded)
+            .push(association.address(), frame, encoded)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         #[cfg(feature = "tx-phase-telemetry")]
         self.publish_shadow_grant(admission.association(), policy.frame_limit());

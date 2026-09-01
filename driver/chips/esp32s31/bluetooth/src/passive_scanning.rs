@@ -16,6 +16,23 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 use open_esp_radio_esp32s31_hal::BluetoothControllerLatchedTime;
 
+#[cfg(target_arch = "riscv32")]
+pub(crate) const fn lower_primary_channel(
+    channel: open_esp_radio_bluetooth_ll::scanning::PrimaryScanChannel,
+) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanPrimaryChannel {
+    match channel {
+        open_esp_radio_bluetooth_ll::scanning::PrimaryScanChannel::Channel37 => {
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanPrimaryChannel::Channel37
+        }
+        open_esp_radio_bluetooth_ll::scanning::PrimaryScanChannel::Channel38 => {
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanPrimaryChannel::Channel38
+        }
+        open_esp_radio_bluetooth_ll::scanning::PrimaryScanChannel::Channel39 => {
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanPrimaryChannel::Channel39
+        }
+    }
+}
+
 /// Immutable placement inputs for the sole scanner graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPassiveScanRuntimeConfig {

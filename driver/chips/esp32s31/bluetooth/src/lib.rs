@@ -125,6 +125,10 @@ mod modem_lp_timer_queue;
 mod nrt_interrupt;
 mod passive_scanning;
 #[cfg(target_arch = "riscv32")]
+mod passive_scanning_runner;
+#[cfg(any(target_arch = "riscv32", test))]
+mod passive_scanning_timing;
+#[cfg(target_arch = "riscv32")]
 mod phy;
 mod primary_interrupt;
 mod resources;
@@ -194,7 +198,12 @@ pub use controller_start::{
     BluetoothLegacyAdvertisingPostUnlinkArmStep, BluetoothLegacyAdvertisingSchedulerStartFailure,
     BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
-    BluetoothPassiveScanPostUnlinkArmStep, BluetoothPassiveScanSchedulerStartFailure,
+    BluetoothPassiveScanControllerPreparationError,
+    BluetoothPassiveScanControllerPreparationOutcome,
+    BluetoothPassiveScanControllerPreparationPending,
+    BluetoothPassiveScanControllerPreparationStep,
+    BluetoothPassiveScanControllerPreparationTerminal, BluetoothPassiveScanPostUnlinkArmStep,
+    BluetoothPassiveScanSchedulerStartFailure,
     BluetoothPassiveScanSoftwareListRemovalPublishedStep, BluetoothSchedulerRunInterruptStorage,
     BluetoothSharedInterruptDispatchStorage,
 };
@@ -439,6 +448,12 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
 pub use passive_scanning::{
     BluetoothPassiveScanRuntimeBeginError, BluetoothPassiveScanRuntimeConfig,
     BluetoothPassiveScanRuntimeResources,
+};
+#[cfg(target_arch = "riscv32")]
+pub use passive_scanning_runner::{
+    BluetoothPassiveScanFirstRunner, BluetoothPassiveScanFirstRunnerFailure,
+    BluetoothPassiveScanFirstRunnerRetry, BluetoothPassiveScanFirstRunnerRetryCause,
+    BluetoothPassiveScanFirstRunnerStep, BluetoothPassiveScanFirstRunning,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{

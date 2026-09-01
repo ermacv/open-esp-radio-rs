@@ -106,6 +106,108 @@ pub enum PrimaryScanChannel {
     Channel39,
 }
 
+/// Host-selected duplicate filtering policy retained by the scanner role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacyScanDuplicatePolicy {
+    ReportAll,
+    FilterDuplicates,
+}
+
+/// Configured but disabled passive scanner.
+#[must_use = "retain the configured scanner or enable it"]
+pub struct LegacyPassiveScannerDisabled {
+    parameters: LegacyPassiveScanParameters,
+}
+
+impl LegacyPassiveScannerDisabled {
+    pub const fn new(parameters: LegacyPassiveScanParameters) -> Self {
+        Self { parameters }
+    }
+
+    pub const fn parameters(&self) -> LegacyPassiveScanParameters {
+        self.parameters
+    }
+
+    pub const fn set_parameters(mut self, parameters: LegacyPassiveScanParameters) -> Self {
+        self.parameters = parameters;
+        self
+    }
+
+    pub const fn enable(
+        self,
+        duplicate_policy: LegacyScanDuplicatePolicy,
+    ) -> LegacyPassiveScannerEnabled {
+        LegacyPassiveScannerEnabled {
+            parameters: self.parameters,
+            duplicate_policy,
+            next_channel: PrimaryScanChannel::Channel37,
+        }
+    }
+}
+
+/// Enabled scanner between hardware receive windows.
+#[must_use = "begin the next window or disable the scanner"]
+pub struct LegacyPassiveScannerEnabled {
+    parameters: LegacyPassiveScanParameters,
+    duplicate_policy: LegacyScanDuplicatePolicy,
+    next_channel: PrimaryScanChannel,
+}
+
+impl LegacyPassiveScannerEnabled {
+    pub const fn parameters(&self) -> LegacyPassiveScanParameters {
+        self.parameters
+    }
+
+    pub const fn duplicate_policy(&self) -> LegacyScanDuplicatePolicy {
+        self.duplicate_policy
+    }
+
+    pub const fn next_channel(&self) -> PrimaryScanChannel {
+        self.next_channel
+    }
+
+    pub const fn begin_window(self) -> LegacyPassiveScanWindowInFlight {
+        LegacyPassiveScanWindowInFlight { scanner: self }
+    }
+
+    pub const fn disable(self) -> LegacyPassiveScannerDisabled {
+        LegacyPassiveScannerDisabled {
+            parameters: self.parameters,
+        }
+    }
+}
+
+/// Portable scanner owner paired with exactly one lower receive window.
+#[must_use = "complete or cancel the exact scanner window"]
+pub struct LegacyPassiveScanWindowInFlight {
+    scanner: LegacyPassiveScannerEnabled,
+}
+
+impl LegacyPassiveScanWindowInFlight {
+    pub const fn parameters(&self) -> LegacyPassiveScanParameters {
+        self.scanner.parameters
+    }
+
+    pub const fn duplicate_policy(&self) -> LegacyScanDuplicatePolicy {
+        self.scanner.duplicate_policy
+    }
+
+    pub const fn channel(&self) -> PrimaryScanChannel {
+        self.scanner.next_channel
+    }
+
+    /// Complete a hardware window and rotate to the next primary channel.
+    pub const fn complete(mut self) -> LegacyPassiveScannerEnabled {
+        self.scanner.next_channel = self.scanner.next_channel.next();
+        self.scanner
+    }
+
+    /// Cancel before completion without advancing the primary-channel plan.
+    pub const fn cancel(self) -> LegacyPassiveScannerEnabled {
+        self.scanner
+    }
+}
+
 impl PrimaryScanChannel {
     pub const fn next(self) -> Self {
         match self {
@@ -333,7 +435,8 @@ impl<const CAPACITY: usize> Default for LegacyAdvertisingDuplicateFilter<CAPACIT
 mod tests {
     use super::{
         LegacyAdvertisingDuplicateFilter, LegacyAdvertisingReportKind, LegacyPassiveScanParameters,
-        LegacyScanInterval, LegacyScanTimingError, LegacyScanWindow, PrimaryScanChannel,
+        LegacyPassiveScannerDisabled, LegacyScanDuplicatePolicy, LegacyScanInterval,
+        LegacyScanTimingError, LegacyScanWindow, PrimaryScanChannel,
         parse_legacy_advertising_report,
     };
     use crate::LeDeviceAddressKind;
@@ -348,6 +451,23 @@ mod tests {
             LegacyPassiveScanParameters::new(interval, window),
             Err(LegacyScanTimingError::WindowExceedsInterval)
         );
+    }
+
+    #[test]
+    fn scanner_rotates_channel_only_after_a_completed_window() {
+        let parameters = LegacyPassiveScanParameters::new(
+            LegacyScanInterval::new(16).expect("the interval is valid"),
+            LegacyScanWindow::new(16).expect("the window is valid"),
+        )
+        .expect("the window fits its interval");
+        let enabled = LegacyPassiveScannerDisabled::new(parameters)
+            .enable(LegacyScanDuplicatePolicy::FilterDuplicates);
+        let first = enabled.begin_window();
+        assert_eq!(first.channel(), PrimaryScanChannel::Channel37);
+        let retry = first.cancel().begin_window();
+        assert_eq!(retry.channel(), PrimaryScanChannel::Channel37);
+        let second = retry.complete().begin_window();
+        assert_eq!(second.channel(), PrimaryScanChannel::Channel38);
     }
 
     #[test]

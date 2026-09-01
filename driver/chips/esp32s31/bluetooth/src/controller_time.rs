@@ -34,6 +34,14 @@ impl BluetoothControllerTimeSample {
     pub(crate) const fn raw_ticks(&self) -> u32 {
         self.latched_time.bits()
     }
+
+    /// Borrow the typed hardware sample for one private descriptor update.
+    ///
+    /// This does not expose an integer image or duplicate scheduler-time
+    /// authority. The returned PAC value can only enter a lower typed codec.
+    pub(crate) const fn latched_time(&self) -> BluetoothControllerLatchedTime {
+        self.latched_time
+    }
 }
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]

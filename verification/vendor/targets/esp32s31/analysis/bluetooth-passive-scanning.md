@@ -45,6 +45,14 @@ slice.
 | `65.o:r_sym_ble_h1CfV40z3TOeYWAmKSQ9` | 115 | `r_ble_lll_scan_recycle_sch_item` |
 | `65.o:r_sym_ble_QOG2ExWuZYIMUrJH3TXE` | 117 | `r_ble_lll_scan_stop` |
 | `65.o:r_sym_ble_znMr0TnKK4lkFEsrathq` | 121 | `r_ble_lll_scan_start` |
+| `49.o:r_sym_ble_N2bQ5jI8Lnppq1TkXRdA` | 38 | `r_ble_lll_rx_buffer_link_prepare` |
+| `61.o:r_sym_ble_YWBOuvQw70C562FKtQQy` | 45 | `r_ble_lll_mmgmt_rxbuf_cnt_get` |
+| `61.o:r_sym_ble_rAmBz3o2v26sqbA8bMfL` | 51 | `r_ble_lll_mmgmt_rxbuffer_disable_insert_check` |
+| `61.o:r_sym_ble_AzvE27e0dx0P2JPL5N20` | 53 | `r_ble_lll_mmgmt_alloc` |
+| `61.o:r_sym_ble_ciUbjr6ihzocNthFnrg3` | 123 | `r_ble_lll_mmgmt_alloc_global_rxlink_mem` |
+| `61.o:r_sym_ble_UagS1VQZDxizyWqNpmtA` | 125 | `r_ble_lll_mmgmt_alloc_buffer_hdr` |
+| `61.o:r_sym_ble_lecwwE0KZNKhANvOphXa` | 135 | `r_ble_lll_mmgmt_update_global_rxlink` |
+| `61.o:r_sym_ble_bUNJ21TLtnDa9owGUE7A` | 137 | `r_ble_lll_mmgmt_rxbuf_direct_alloc` |
 
 The independently named C61 body at
 [`espressif/esp32c61-bt-lib@c800514c39a3e491bb13bb224987e109623d2cf2`](https://github.com/espressif/esp32c61-bt-lib/tree/c800514c39a3e491bb13bb224987e109623d2cf2)
@@ -79,6 +87,48 @@ scheduler kind two uses current/next RX selector one.  DTM's private graph is
 not reusable here.  The scanner must own a normal current/next RX chain and
 the hardware-to-CPU rotation, completion fence and backpressure that go with
 it.
+
+## Proven allocation boundary
+
+Complete current `r_sym_ble_ruvdJkUUpoEtaH2xv1jH` does not allocate an opaque
+vendor scan object.  It composes the common receive-memory primitives around
+one already allocated link state:
+
+1. `r_ble_lll_rx_buffer_link_prepare(link_state, 1)` clears link-state words at
+   `+0x68`, `+0x70` and `+0x78`;
+2. `r_ble_lll_mmgmt_rxbuffer_disable_insert_check(link_state, 1)` configures
+   direct-allocation and skip-insertion policy on the global RX-link object
+   referenced at link-state `+0x7c`;
+3. `r_ble_lll_mmgmt_rxbuf_direct_alloc` receives the pointer stored at
+   link-state `+0x64` and tail-calls the global RX-link update routine;
+4. allocation succeeds only when `r_ble_lll_mmgmt_rxbuf_cnt_get(link_state)`
+   reports a nonzero count.
+
+The alternate `r_ble_lll_rx_buffer_link_prepare(link_state, 0)` path allocates
+a 24-byte buffer header, stores the same header pointer at `+0x68` and `+0x70`,
+clears `+0x78`, and marks header word `+0x0c`.  The scanner takes the first
+path, so reproducing a vendor heap or general-purpose mmgmt allocator is not a
+driver requirement.  What remains to prove is the final selector-one RX-link
+image produced by `r_ble_lll_mmgmt_update_global_rxlink`, not the allocator's
+software bookkeeping.
+
+Passive scanning also has no TX-buffer prerequisite.  Complete current
+`r_ble_ll_scan_set_scan_params` validates the first HCI payload octet as zero
+or one and stores it in the selected PHY configuration byte at `+0x04`.
+Complete current `r_ble_lll_scan_alloc_txbuf` reads that same byte through the
+scanner's selected-PHY pointer and returns success immediately when it is
+zero.  Zero is the portable passive scan type, as independently documented by
+the pinned
+[`esp-nimble` controller source](https://github.com/espressif/esp-nimble/blob/916be244a9c646bc16fd65507478cf3fe717d8ed/nimble/controller/src/ble_ll_scan.c).
+The first vertical slice therefore needs an RX chain only; scan-request PDU
+construction remains deferred with active scanning.
+
+The admission-only Blobray scope intentionally removes upper packet parsing
+and HCI reporting roots.  It reaches 255 functions versus 257 in the complete
+passive-scanning scope, confirming that the dominant open graph is the shared
+allocator/scheduler path rather than host policy.  Its generated interface
+anchors are navigation prerequisites, not hardware evidence, and must not be
+filled with guessed contracts.
 
 ## Open architecture
 

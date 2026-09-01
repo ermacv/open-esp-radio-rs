@@ -944,6 +944,26 @@ roots = [
 ]
 include-reachable = true
 
+# Hardware-admission subset of the passive-scanning investigation above.
+# Allocation/start/reset own CPU -> controller publication, scheduler recycling
+# is callback-owned, and the two common roots close the asynchronous finished
+# edge.  Upper packet parsing and HCI reporting deliberately remain in the
+# larger scope: this slice ranks only facts needed to publish and reclaim one
+# receive window.
+[[review.scopes]]
+id = "ble-legacy-passive-scan-admission"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_znMr0TnKK4lkFEsrathq",
+    "ble-controller:r_sym_ble_XwMfMguyw9lccbIeVsvN",
+    "ble-controller:r_sym_ble_FI34eU2bYuxQYjeVS51T",
+    "ble-controller:r_sym_ble_h1CfV40z3TOeYWAmKSQ9",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
 [[review.scopes]]
 id = "ieee802154-baseband-leaves"
 protocols = ["ieee802154"]

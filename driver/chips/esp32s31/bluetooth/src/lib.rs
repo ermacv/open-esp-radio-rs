@@ -461,9 +461,13 @@ pub use passive_scanning_active::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_hci::{
-    BluetoothPassiveScanHciActiveSession, BluetoothPassiveScanHciFirstRunner,
+    BluetoothPassiveScanHciActiveFault, BluetoothPassiveScanHciActiveSession,
+    BluetoothPassiveScanHciActiveStep, BluetoothPassiveScanHciFirstRunner,
     BluetoothPassiveScanHciFirstRunnerFailure, BluetoothPassiveScanHciFirstRunnerStep,
-    BluetoothPassiveScanHciFirstRunning, BluetoothPassiveScanHciResponsePendingSession,
+    BluetoothPassiveScanHciFirstRunning, BluetoothPassiveScanHciRecurringFailure,
+    BluetoothPassiveScanHciRecurringRunner, BluetoothPassiveScanHciRecurringRunnerStep,
+    BluetoothPassiveScanHciReportStep, BluetoothPassiveScanHciReportsComplete,
+    BluetoothPassiveScanHciReportsPending, BluetoothPassiveScanHciResponsePendingSession,
     BluetoothPassiveScanHciResponsePublication,
 };
 #[cfg(target_arch = "riscv32")]

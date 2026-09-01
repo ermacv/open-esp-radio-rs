@@ -4,7 +4,8 @@
 
 use open_esp_radio_bluetooth_ll::scanning::{
     LegacyAdvertisingReport, LegacyAdvertisingReportParseError, LegacyPassiveScanWindowInFlight,
-    LegacyPassiveScannerEnabled, PrimaryScanChannel, parse_legacy_advertising_report,
+    LegacyPassiveScannerEnabled, LegacyScanDuplicatePolicy, PrimaryScanChannel,
+    parse_legacy_advertising_report,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPassiveScanReceivedBatch, BluetoothPassiveScanSchedulerItemCompletionStatus,
@@ -113,6 +114,10 @@ where
 
     pub const fn completion_status(&self) -> BluetoothPassiveScanSchedulerItemCompletionStatus {
         self.status
+    }
+
+    pub const fn duplicate_policy(&self) -> LegacyScanDuplicatePolicy {
+        self.scanner.duplicate_policy()
     }
 
     /// Parse one hardware-copied PDU at the portable Link Layer boundary.

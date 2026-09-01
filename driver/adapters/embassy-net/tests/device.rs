@@ -17,16 +17,18 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
 #[cfg(feature = "tx-staging-copy-probe")]
 use open_esp_radio_embassy_net::PinnedNetworkTxFrame;
-#[cfg(feature = "tx-egress-scheduling")]
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 use open_esp_radio_embassy_net::{
     DefaultEgressControlPlane, DefaultEgressNetworkScheduler, DefaultEgressNetworkState,
-    DefaultEgressRadioScheduler, EgressGrantKey, EgressPeerDirectory, EgressPeerIdentity,
+    DefaultEgressRadioScheduler, EgressGrantKey,
 };
 use open_esp_radio_embassy_net::{
     DualPinnedNetworkRunner, ETHERNET_HEADER_LEN, FrameLengthError, NetworkEndpointConfig,
     NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool,
     PinnedTxResources, Resources, RxEnqueueError, SharedPinnedRxQueue,
 };
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::{EgressPeerDirectory, EgressPeerIdentity};
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 use open_esp_radio_embassy_net::{EgressShadowGrant, TX_PERFORMANCE};
 #[cfg(feature = "tx-core1-materializer-probe")]

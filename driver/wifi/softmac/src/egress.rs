@@ -373,18 +373,30 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         Ok(())
     }
 
-    pub fn remove_demand(&mut self, demand: WifiEgressDemand<K>) {
-        let Some(slot) = self.queue_slot(demand.vif, demand.key) else {
+    pub fn remove_demand(&mut self, vif: u8, id: WifiEgressDemandId, key: K) {
+        let Some(slot) = self.queue_slot(vif, key) else {
             return;
         };
         let mut queue = self.queues[slot].expect("located queue remains owned");
-        if !queue.demand.is_some_and(|current| current.id == demand.id) {
+        if !queue.demand.is_some_and(|current| current.id == id) {
             return;
         }
         queue.demand = None;
         queue.deficit = 0;
         queue.version = next_version(queue.version);
         self.queues[slot] = (queue.pending_airtime != 0).then_some(queue);
+    }
+
+    pub fn demand(&self, vif: u8, key: K) -> Option<WifiEgressDemand<K>> {
+        let slot = self.queue_slot(vif, key)?;
+        let queue = self.queues[slot]?;
+        let demand = queue.demand?;
+        Some(WifiEgressDemand::new(
+            queue.vif,
+            demand.id,
+            queue.key,
+            demand.level,
+        ))
     }
 
     pub fn select_next(
@@ -938,7 +950,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let admission = scheduler.commit_selected(selected).unwrap();
-        scheduler.remove_demand(active);
+        scheduler.remove_demand(active.vif(), active.id(), *active.key());
 
         assert_eq!(
             scheduler.upsert_demand(demand(0, 3, 2, 8, 1)),
@@ -960,7 +972,7 @@ mod tests {
             .select_next(|_| Some(opportunity(10_000)))
             .unwrap()
             .unwrap();
-        scheduler.remove_demand(old);
+        scheduler.remove_demand(old.vif(), old.id(), *old.key());
         scheduler.upsert_demand(demand(0, 1, 2, 4, 32)).unwrap();
 
         assert_eq!(

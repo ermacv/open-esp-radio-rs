@@ -30,6 +30,10 @@ use core::{
 };
 
 pub use embassy_net_driver::{Driver, LinkState, TxToken};
+#[cfg(feature = "tx-egress-scheduling")]
+pub use embassy_net_driver::{
+    EgressDemand, EgressDemandId, EgressDemandLevel, EgressDemandUpdate, EgressKey,
+};
 pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
 pub use embassy_sync::signal::Signal;
 

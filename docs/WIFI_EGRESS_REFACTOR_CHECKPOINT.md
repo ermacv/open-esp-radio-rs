@@ -517,6 +517,24 @@ credit after demand removal. The kernel is not yet wired into packet
 admission, so none of these model tests is a throughput or fairness claim for
 hardware.
 
+### Physical-owner demand mirror
+
+The product composition now retains one `DatapathEgressAirtimePolicy` beside
+the permanent dual-interface network frontier. It is static Core0-owned state,
+not part of an async runner future and not another cross-core allocator. The
+two radio-side lifecycle mirrors label accepted events with VIF 0 or 1 and
+apply only those accepted `Reset`, `Active` and `Inactive` transitions to the
+portable kernel. Rejected or stale transport events are counted and never
+reach the policy mirror.
+
+This wiring still has no scheduling authority. It does not call
+`select_next`, issue a grant, reserve SRAM, alter `transmit_for`, or charge
+pending airtime. The configured quanta and pending limits are therefore
+provisional shadow parameters, not a claimed production fairness policy. The
+next gate is a role-derived opportunity using the current association,
+power-save state, BlockAck window, PHY rate and a named PPDU cost model; a
+frame count must not be relabeled as airtime.
+
 ## Rejected candidate/grant experiment
 
 The following measurements describe the now-deleted AP candidate/grant echo,

@@ -105,7 +105,7 @@ impl<N: StationNetworkLink + ?Sized> StationNetworkLink for &mut N {
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
-impl<N: StationNetworkLink, R> StationNetworkLink for EgressControlledNetwork<N, R> {
+impl<N: StationNetworkLink, R, P> StationNetworkLink for EgressControlledNetwork<N, R, P> {
     fn publish_link_up(&self) {
         self.inner().publish_link_up();
     }

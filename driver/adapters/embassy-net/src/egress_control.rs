@@ -70,10 +70,10 @@ pub type DefaultEgressRadioOwner<'control, M> =
     EgressRadioOwner<'control, M, DEFAULT_EGRESS_CONTROL_DEPTH>;
 pub type DefaultDualEgressRadioOwner<'control, M> =
     DualEgressRadioOwner<'control, M, DEFAULT_EGRESS_CONTROL_DEPTH>;
-pub type DefaultEgressControlledNetwork<'control, M, N> =
-    EgressControlledNetwork<N, EgressRadioOwner<'control, M, DEFAULT_EGRESS_CONTROL_DEPTH>>;
-pub type DefaultDualEgressControlledNetwork<'control, M, N> =
-    EgressControlledNetwork<N, DualEgressRadioOwner<'control, M, DEFAULT_EGRESS_CONTROL_DEPTH>>;
+pub type DefaultEgressControlledNetwork<'control, M, N, P = ()> =
+    EgressControlledNetwork<N, EgressRadioOwner<'control, M, DEFAULT_EGRESS_CONTROL_DEPTH>, P>;
+pub type DefaultDualEgressControlledNetwork<'control, M, N, P = ()> =
+    EgressControlledNetwork<N, DualEgressRadioOwner<'control, M, DEFAULT_EGRESS_CONTROL_DEPTH>, P>;
 pub type DefaultEgressRadioWake<'control, M> = EgressRadioWake<'control, M>;
 pub type DefaultEgressNetworkState = EgressNetworkState<DEFAULT_EGRESS_CONTROL_DEPTH>;
 pub type DefaultEgressNetworkScheduler<'resources, M> =
@@ -502,19 +502,28 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
 
     /// Consume one finite shadow demand turn without influencing TX admission.
     pub fn service_shadow(&mut self) -> bool {
+        self.service_shadow_observed(|_| {})
+    }
+
+    /// Consume one finite turn and expose only transitions accepted by the
+    /// radio-side lifecycle mirror.
+    pub fn service_shadow_observed(&mut self, mut observe: impl FnMut(EgressDemandUpdate)) -> bool {
         let wake = self.port.wake_handle();
         let _ = wake.progress_signal().try_take();
         if !wake.progress_flag().swap(false, Ordering::AcqRel) {
             return false;
         }
-        let (progressed, revisit) = self.service_shadow_turn();
+        let (progressed, revisit) = self.service_shadow_turn(&mut observe);
         if revisit {
             wake.progress_flag().store(true, Ordering::Release);
         }
         progressed
     }
 
-    fn service_shadow_turn(&mut self) -> (bool, bool) {
+    fn service_shadow_turn(
+        &mut self,
+        observe: &mut impl FnMut(EgressDemandUpdate),
+    ) -> (bool, bool) {
         #[cfg(feature = "tx-phase-telemetry")]
         self.port
             .telemetry
@@ -539,6 +548,8 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
                     .telemetry
                     .radio_demand_rejected
                     .fetch_add(1, Ordering::Relaxed);
+            } else {
+                observe(update);
             }
         }
         (progressed, true)
@@ -632,6 +643,10 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioOwner<'control
     }
 
     pub fn service(&mut self) -> bool {
+        self.service_observed(|_, _| {})
+    }
+
+    pub fn service_observed(&mut self, mut observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
         if !self.active {
             return false;
         }
@@ -641,7 +656,9 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioOwner<'control
         }
         #[cfg(feature = "tx-phase-telemetry")]
         let started = TxPerformanceSample::read();
-        let progressed = self.scheduler.service_shadow();
+        let progressed = self
+            .scheduler
+            .service_shadow_observed(|update| observe(0, update));
         #[cfg(feature = "tx-phase-telemetry")]
         wake.record_service_cost(TxPerformanceSample::read().wrapping_delta_since(started));
         progressed
@@ -690,10 +707,12 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
 
     fn service_one(
         scheduler: &mut EgressRadioScheduler<'control, M, DEMAND_DEPTH>,
+        vif: u8,
+        observe: &mut impl FnMut(u8, EgressDemandUpdate),
     ) -> (bool, bool) {
         #[cfg(feature = "tx-phase-telemetry")]
         let started = TxPerformanceSample::read();
-        let result = scheduler.service_shadow_turn();
+        let result = scheduler.service_shadow_turn(&mut |update| observe(vif, update));
         #[cfg(feature = "tx-phase-telemetry")]
         scheduler
             .wake_handle()
@@ -702,6 +721,10 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
     }
 
     pub fn service(&mut self) -> bool {
+        self.service_observed(|_, _| {})
+    }
+
+    pub fn service_observed(&mut self, mut observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
         if !self.active {
             return false;
         }
@@ -716,12 +739,12 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
 
         let ((first_progressed, first_revisit), (second_progressed, second_revisit)) =
             if self.second_first {
-                let second = Self::service_one(self.second);
-                let first = Self::service_one(self.first);
+                let second = Self::service_one(self.second, 1, &mut observe);
+                let first = Self::service_one(self.first, 0, &mut observe);
                 (first, second)
             } else {
-                let first = Self::service_one(self.first);
-                let second = Self::service_one(self.second);
+                let first = Self::service_one(self.first, 0, &mut observe);
+                let second = Self::service_one(self.second, 1, &mut observe);
                 (first, second)
             };
         self.second_first = !self.second_first;
@@ -742,13 +765,16 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
 }
 
 /// A permanent network frontier paired with the unique movable Core0 policy.
-pub struct EgressControlledNetwork<N, R> {
+pub struct EgressControlledNetwork<N, R, P = ()> {
     inner: N,
     radio: R,
+    policy: P,
 }
 
 pub trait EgressRadioControlOwner {
     fn service(&mut self) -> bool;
+
+    fn service_observed(&mut self, observe: impl FnMut(u8, EgressDemandUpdate)) -> bool;
 
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()>;
 }
@@ -758,6 +784,10 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioControlOwner
 {
     fn service(&mut self) -> bool {
         EgressRadioOwner::service(self)
+    }
+
+    fn service_observed(&mut self, observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
+        EgressRadioOwner::service_observed(self, observe)
     }
 
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {
@@ -772,6 +802,10 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioControlOwner
         DualEgressRadioOwner::service(self)
     }
 
+    fn service_observed(&mut self, observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
+        DualEgressRadioOwner::service_observed(self, observe)
+    }
+
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {
         DualEgressRadioOwner::wait_or(self, payload)
     }
@@ -779,7 +813,21 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioControlOwner
 
 impl<N, R> EgressControlledNetwork<N, R> {
     pub const fn new(inner: N, radio: R) -> Self {
-        Self { inner, radio }
+        Self {
+            inner,
+            radio,
+            policy: (),
+        }
+    }
+}
+
+impl<N, R, P> EgressControlledNetwork<N, R, P> {
+    pub fn with_policy<Q>(self, policy: Q) -> EgressControlledNetwork<N, R, Q> {
+        EgressControlledNetwork {
+            inner: self.inner,
+            radio: self.radio,
+            policy,
+        }
     }
 
     pub const fn inner(&self) -> &N {
@@ -790,14 +838,25 @@ impl<N, R> EgressControlledNetwork<N, R> {
         &mut self.inner
     }
 
-    pub fn into_parts(self) -> (N, R) {
-        (self.inner, self.radio)
+    pub fn parts_mut(&mut self) -> (&mut N, &mut R, &mut P) {
+        (&mut self.inner, &mut self.radio, &mut self.policy)
+    }
+
+    pub fn into_parts(self) -> (N, R, P) {
+        (self.inner, self.radio, self.policy)
     }
 }
 
-impl<N, R: EgressRadioControlOwner> EgressControlledNetwork<N, R> {
+impl<N, R: EgressRadioControlOwner, P> EgressControlledNetwork<N, R, P> {
     pub fn service_egress_control(&mut self) -> bool {
         self.radio.service()
+    }
+
+    pub fn service_egress_control_observed(
+        &mut self,
+        observe: impl FnMut(u8, EgressDemandUpdate),
+    ) -> bool {
+        self.radio.service_observed(observe)
     }
 
     pub fn wait_egress_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {
@@ -806,7 +865,7 @@ impl<N, R: EgressRadioControlOwner> EgressControlledNetwork<N, R> {
 }
 
 impl<'control, M: RawMutex, N, const DEMAND_DEPTH: usize>
-    EgressControlledNetwork<N, EgressRadioOwner<'control, M, DEMAND_DEPTH>>
+    EgressControlledNetwork<N, EgressRadioOwner<'control, M, DEMAND_DEPTH>, ()>
 {
     pub fn with_egress_control(
         inner: N,
@@ -817,7 +876,7 @@ impl<'control, M: RawMutex, N, const DEMAND_DEPTH: usize>
 }
 
 impl<'control, M: RawMutex, N, const DEMAND_DEPTH: usize>
-    EgressControlledNetwork<N, DualEgressRadioOwner<'control, M, DEMAND_DEPTH>>
+    EgressControlledNetwork<N, DualEgressRadioOwner<'control, M, DEMAND_DEPTH>, ()>
 {
     pub fn with_dual_egress_control(
         inner: N,
@@ -920,7 +979,25 @@ mod tests {
         }
 
         let mut owner = DualEgressRadioOwner::new(first_radio, second_radio);
-        assert!(owner.service());
+        let mut observed = std::vec::Vec::new();
+        assert!(owner.service_observed(|vif, update| observed.push((vif, update))));
+        assert_eq!(
+            observed
+                .iter()
+                .map(|(vif, _)| *vif)
+                .collect::<std::vec::Vec<_>>(),
+            [0, 0, 1, 1]
+        );
+        assert!(matches!(
+            observed[0].1,
+            EgressDemandUpdate::Reset { schedule_epoch: 6 }
+        ));
+        assert!(matches!(observed[1].1, EgressDemandUpdate::Active(_)));
+        assert!(matches!(
+            observed[2].1,
+            EgressDemandUpdate::Reset { schedule_epoch: 6 }
+        ));
+        assert!(matches!(observed[3].1, EgressDemandUpdate::Active(_)));
         assert!(!owner.service());
         #[cfg(feature = "tx-phase-telemetry")]
         {
@@ -929,6 +1006,36 @@ mod tests {
             assert_eq!(first_control.snapshot().radio_service_progressed, 1);
             assert_eq!(second_control.snapshot().radio_service_progressed, 1);
         }
+    }
+
+    #[test]
+    fn observer_never_sees_a_transition_rejected_by_the_radio_mirror() {
+        let control = EgressControlPlane::<NoopRawMutex, 4>::new();
+        let (mut network, radio) = control.split();
+        let mut radio = EgressRadioScheduler::new(radio);
+
+        network
+            .try_send_demand(EgressDemandUpdate::Active(demand(7, 1, 1)))
+            .unwrap();
+        let mut observed = std::vec::Vec::new();
+        assert!(radio.service_shadow_observed(|update| observed.push(update)));
+        assert!(observed.is_empty());
+        assert_eq!(radio.active_demand_count(), 0);
+
+        network
+            .try_send_demand(EgressDemandUpdate::Reset { schedule_epoch: 7 })
+            .unwrap();
+        network
+            .try_send_demand(EgressDemandUpdate::Active(demand(7, 2, 32)))
+            .unwrap();
+        assert!(radio.service_shadow_observed(|update| observed.push(update)));
+        assert_eq!(observed.len(), 2);
+        assert!(matches!(
+            observed[0],
+            EgressDemandUpdate::Reset { schedule_epoch: 7 }
+        ));
+        assert!(matches!(observed[1], EgressDemandUpdate::Active(_)));
+        assert_eq!(radio.active_demand_count(), 1);
     }
 
     #[derive(Default)]
@@ -1000,10 +1107,11 @@ mod tests {
         let owner = EgressRadioOwner::new(scheduler);
         let context = &mut Context::from_waker(Waker::noop());
 
-        let mut payload_ready = pin!(owner.wait_or(ready(())));
-        assert!(payload_ready.as_mut().poll(context).is_ready());
-        assert!(!control.radio_waiting.load(Ordering::Acquire));
-        drop(payload_ready);
+        {
+            let mut payload_ready = pin!(owner.wait_or(ready(())));
+            assert!(payload_ready.as_mut().poll(context).is_ready());
+            assert!(!control.radio_waiting.load(Ordering::Acquire));
+        }
 
         {
             let mut cancelled = pin!(owner.wait_or(pending::<()>()));

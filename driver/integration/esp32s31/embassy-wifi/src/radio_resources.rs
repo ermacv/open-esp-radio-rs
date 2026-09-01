@@ -26,7 +26,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
-    datapath::tx::resources::AggregateTxResources,
+    datapath::{network::DatapathEgressAirtimePolicy, tx::resources::AggregateTxResources},
 };
 use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{
     HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,
@@ -116,6 +116,7 @@ type ControlledRadioNetworkRunner = DefaultDualEgressControlledNetwork<
     'static,
     CriticalSectionRawMutex,
     &'static RadioNetworkRunner,
+    DatapathEgressAirtimePolicy,
 >;
 pub(super) type NetworkRunner = &'static mut ControlledRadioNetworkRunner;
 type InterfaceEgressNetworkScheduler =
@@ -354,7 +355,8 @@ pub(super) fn initialize_network(
             &*runner,
             station_egress_radio,
             access_point_egress_radio,
-        ),
+        )
+        .with_policy(DatapathEgressAirtimePolicy::new()),
     );
     #[cfg(feature = "tx-staging-copy-probe")]
     let access_point_device = access_point_device.with_tx_staging_copy_probe_selection();

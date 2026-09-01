@@ -1,6 +1,8 @@
 //! Role-neutral network capabilities owned by the physical Wi-Fi datapath.
 
 use core::future::Future;
+#[cfg(feature = "tx-egress-scheduling")]
+use core::num::NonZeroU32;
 
 use open_esp_radio_embassy_net::{
     DualPinnedNetworkRunner, LinkState, NetworkInterfaceId, PinnedNetworkLinkController,
@@ -8,8 +10,125 @@ use open_esp_radio_embassy_net::{
     RawMutex, RxEnqueueError,
 };
 #[cfg(feature = "tx-egress-scheduling")]
-use open_esp_radio_embassy_net::{EgressControlledNetwork, EgressRadioControlOwner};
+use open_esp_radio_embassy_net::{
+    EgressControlledNetwork, EgressDemandUpdate, EgressKey, EgressRadioControlOwner,
+};
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_wifi_softmac::{
+    WifiAirtimeUnits, WifiEgressAirtimeConfig, WifiEgressAirtimeError, WifiEgressAirtimeScheduler,
+    WifiEgressDemand, WifiEgressDemandId, WifiEgressDemandLevel,
+};
+
+#[cfg(feature = "tx-egress-scheduling")]
+const PHYSICAL_EGRESS_VIFS: usize = 2;
+#[cfg(feature = "tx-egress-scheduling")]
+const PHYSICAL_EGRESS_QUEUES: usize = 32;
+
+#[cfg(feature = "tx-egress-scheduling")]
+const fn airtime_units(hundred_nanoseconds: u32) -> WifiAirtimeUnits {
+    let Some(value) = NonZeroU32::new(hundred_nanoseconds) else {
+        panic!("airtime policy units must be non-zero");
+    };
+    WifiAirtimeUnits::new(value)
+}
+
+/// Physical-radio shadow policy retained outside every async runner frame.
+///
+/// The two VIFs and 32 queue slots correspond to the two permanent network
+/// interfaces and their independent 16-key lifecycle mirrors. The policy owns
+/// only bounded metadata; packet bytes and DMA credits remain in the existing
+/// network/radio owners.
+#[cfg(feature = "tx-egress-scheduling")]
+pub struct DatapathEgressAirtimePolicy {
+    scheduler: WifiEgressAirtimeScheduler<EgressKey, PHYSICAL_EGRESS_VIFS, PHYSICAL_EGRESS_QUEUES>,
+    rejected_updates: u32,
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl DatapathEgressAirtimePolicy {
+    pub const fn new() -> Self {
+        Self {
+            scheduler: WifiEgressAirtimeScheduler::new(WifiEgressAirtimeConfig::new(
+                [airtime_units(10_000); PHYSICAL_EGRESS_VIFS],
+                airtime_units(10_000),
+                airtime_units(40_000),
+                [airtime_units(20_000); PHYSICAL_EGRESS_VIFS],
+            )),
+            rejected_updates: 0,
+        }
+    }
+
+    fn apply_update(
+        &mut self,
+        vif: u8,
+        update: EgressDemandUpdate,
+    ) -> Result<(), WifiEgressAirtimeError> {
+        match update {
+            EgressDemandUpdate::Reset { schedule_epoch } => {
+                self.scheduler.reset_vif(vif, schedule_epoch)
+            }
+            EgressDemandUpdate::Active(demand) => {
+                self.scheduler.upsert_demand(WifiEgressDemand::new(
+                    vif,
+                    WifiEgressDemandId::new(demand.id().schedule_epoch(), demand.id().activation()),
+                    demand.key(),
+                    WifiEgressDemandLevel::new(
+                        demand.level().ready_units(),
+                        demand.level().horizon_ready(),
+                    ),
+                ))
+            }
+            EgressDemandUpdate::Inactive { id, key } => {
+                self.scheduler.remove_demand(
+                    vif,
+                    WifiEgressDemandId::new(id.schedule_epoch(), id.activation()),
+                    key,
+                );
+                Ok(())
+            }
+        }
+    }
+
+    fn observe_update(&mut self, vif: u8, update: EgressDemandUpdate) {
+        if self.apply_update(vif, update).is_err() {
+            self.rejected_updates = self.rejected_updates.saturating_add(1);
+        }
+    }
+
+    pub const fn rejected_updates(&self) -> u32 {
+        self.rejected_updates
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl Default for DatapathEgressAirtimePolicy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+/// Bounded policy state updated by the physical Core0 egress owner.
+///
+/// Updates passed here have already been accepted by the transport-side
+/// lifecycle mirror. Implementations must remain synchronous and must not
+/// claim packet or DMA ownership.
+pub trait DatapathEgressPolicyOwner {
+    fn observe_update(&mut self, vif: u8, update: EgressDemandUpdate);
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl DatapathEgressPolicyOwner for () {
+    fn observe_update(&mut self, _vif: u8, _update: EgressDemandUpdate) {}
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl DatapathEgressPolicyOwner for DatapathEgressAirtimePolicy {
+    fn observe_update(&mut self, vif: u8, update: EgressDemandUpdate) {
+        DatapathEgressAirtimePolicy::observe_update(self, vif, update);
+    }
+}
 
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.
@@ -629,16 +748,18 @@ impl<
     M,
     N,
     R,
+    P,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 > DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
-    for EgressControlledNetwork<N, R>
+    for EgressControlledNetwork<N, R, P>
 where
     M: RawMutex + 'resources,
     R: EgressRadioControlOwner,
+    P: DatapathEgressPolicyOwner,
     N: DatapathNetwork<
             'resources,
             M,
@@ -667,7 +788,8 @@ where
     }
 
     fn service_egress_control(&mut self) -> bool {
-        EgressControlledNetwork::service_egress_control(self)
+        let (_, radio, policy) = self.parts_mut();
+        radio.service_observed(|vif, update| policy.observe_update(vif, update))
     }
 
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
@@ -875,6 +997,83 @@ where
         >,
     > + '_ {
         N::receive_physical_tx(*self)
+    }
+}
+
+#[cfg(all(test, feature = "tx-egress-scheduling"))]
+mod tests {
+    use core::num::{NonZeroU16, NonZeroU32};
+
+    use open_esp_radio_embassy_net::{
+        EgressDemand, EgressDemandId, EgressDemandLevel, EgressDemandUpdate, EgressKey,
+    };
+
+    use super::DatapathEgressAirtimePolicy;
+
+    const fn key(value: u32) -> EgressKey {
+        EgressKey::from_words([value, 0, 0, 0])
+    }
+
+    fn active(epoch: u32, activation: u32, key: EgressKey, ready: u16) -> EgressDemandUpdate {
+        EgressDemandUpdate::Active(EgressDemand::new(
+            EgressDemandId::new(epoch, NonZeroU32::new(activation).unwrap()),
+            key,
+            EgressDemandLevel::new(NonZeroU16::new(ready).unwrap(), ready >= 32),
+        ))
+    }
+
+    #[test]
+    fn physical_policy_mirrors_exact_vif_and_demand_lifetimes() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        let first = key(1);
+        let second = key(2);
+
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
+        policy.observe_update(1, EgressDemandUpdate::Reset { schedule_epoch: 11 });
+        policy.observe_update(0, active(7, 1, first, 32));
+        policy.observe_update(1, active(11, 4, second, 3));
+
+        let first_demand = policy.scheduler.demand(0, first).unwrap();
+        let second_demand = policy.scheduler.demand(1, second).unwrap();
+        assert_eq!(first_demand.id().schedule_epoch(), 7);
+        assert_eq!(first_demand.level().ready_frames().get(), 32);
+        assert_eq!(second_demand.id().activation().get(), 4);
+        assert_eq!(second_demand.level().ready_frames().get(), 3);
+
+        policy.observe_update(
+            0,
+            EgressDemandUpdate::Inactive {
+                id: EgressDemandId::new(7, NonZeroU32::new(2).unwrap()),
+                key: first,
+            },
+        );
+        assert!(policy.scheduler.demand(0, first).is_some());
+
+        policy.observe_update(
+            0,
+            EgressDemandUpdate::Inactive {
+                id: EgressDemandId::new(7, NonZeroU32::new(1).unwrap()),
+                key: first,
+            },
+        );
+        assert!(policy.scheduler.demand(0, first).is_none());
+        assert!(policy.scheduler.demand(1, second).is_some());
+        assert_eq!(policy.rejected_updates(), 0);
+    }
+
+    #[test]
+    fn physical_policy_counts_invalid_or_stale_updates_without_corrupting_state() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        let current = key(3);
+
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 9 });
+        policy.observe_update(0, active(9, 1, current, 8));
+        policy.observe_update(0, active(8, 2, key(4), 32));
+        policy.observe_update(2, EgressDemandUpdate::Reset { schedule_epoch: 1 });
+
+        assert_eq!(policy.rejected_updates(), 2);
+        assert!(policy.scheduler.demand(0, current).is_some());
+        assert!(policy.scheduler.demand(0, key(4)).is_none());
     }
 }
 

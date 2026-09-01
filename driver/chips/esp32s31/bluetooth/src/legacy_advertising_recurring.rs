@@ -21,14 +21,15 @@ use crate::{
     BluetoothControllerPublishedTaskService, BluetoothControllerSchedulerCurrentBeginError,
     BluetoothControllerSchedulerCurrentError, BluetoothControllerSchedulerCurrentPending,
     BluetoothControllerSchedulerCurrentStep, BluetoothLegacyAdvertisingActiveResponsePending,
-    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingEmptySchedulerMergePrepared,
-    BluetoothLegacyAdvertisingEventCpuOwned, BluetoothLegacyAdvertisingEventPrepared,
-    BluetoothLegacyAdvertisingNextEventScheduled,
+    BluetoothLegacyAdvertisingActiveSession, BluetoothLegacyAdvertisingDisableResponsePending,
+    BluetoothLegacyAdvertisingEmptySchedulerMergePrepared, BluetoothLegacyAdvertisingEventCpuOwned,
+    BluetoothLegacyAdvertisingEventPrepared, BluetoothLegacyAdvertisingNextEventScheduled,
     BluetoothLegacyAdvertisingRecurringEventCandidate,
     BluetoothLegacyAdvertisingRecurringEventPreparationError,
     BluetoothLegacyAdvertisingRecurringPreSequence,
     BluetoothLegacyAdvertisingRecurringPreparationError,
     BluetoothLegacyAdvertisingRecurringPreparationFailure,
+    BluetoothLegacyAdvertisingResetCompletionReady,
     BluetoothLegacyAdvertisingSchedulerHeadPublished, BluetoothLegacyAdvertisingStopping,
     BluetoothSchedulerEmptyListMergeError, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
@@ -198,6 +199,63 @@ where
     },
 }
 
+/// Entry selected by a retained Disable or Reset before the successor `RUN`.
+#[must_use = "restore the cancelled graph or finish the already-published successor"]
+pub enum BluetoothLegacyAdvertisingRecurringStopBegin<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Restore(BluetoothLegacyAdvertisingRecurringStopRestore<'runtime, S, CAPACITY>),
+    Published(BluetoothLegacyAdvertisingRecurringRunner<'runtime, S, CAPACITY>),
+    Fault(BluetoothLegacyAdvertisingRecurringFault<'runtime, S, CAPACITY>),
+}
+
+/// Cancelled unpublished successor retained until runtime restore is accepted.
+#[must_use = "drain Controller time if required and restore the exact graph"]
+pub struct BluetoothLegacyAdvertisingRecurringStopRestore<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    task: Task<'runtime, S, CAPACITY>,
+    cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
+    order: BluetoothLegacyAdvertisingStopOrder<'runtime>,
+    controller_time_drain_required: bool,
+}
+
+/// One exact unpublished-successor stop/restore transition.
+#[must_use = "retain the wait, response order, rejected restore, or fail-stop owner"]
+pub enum BluetoothLegacyAdvertisingRecurringStopRestoreStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    WaitControllerTime(BluetoothLegacyAdvertisingRecurringStopRestore<'runtime, S, CAPACITY>),
+    DisableResponse(BluetoothLegacyAdvertisingDisableResponsePending<'runtime, S, CAPACITY>),
+    ResetCompletion(BluetoothLegacyAdvertisingResetCompletionReady<'runtime, S, CAPACITY>),
+    Rejected(BluetoothLegacyAdvertisingRecurringStopRestore<'runtime, S, CAPACITY>),
+    Fault(BluetoothLegacyAdvertisingRecurringStopFault<'runtime, S, CAPACITY>),
+}
+
+/// Fail-stop owner for an abandoned Controller-time drain during recurrence cancellation.
+#[must_use = "retain every cancelled radio and HCI owner for shutdown diagnostics"]
+pub struct BluetoothLegacyAdvertisingRecurringStopFault<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _task: Task<'runtime, S, CAPACITY>,
+    _cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
+    _order: BluetoothLegacyAdvertisingStopOrder<'runtime>,
+    error: BluetoothControllerSchedulerCurrentError,
+}
+
+impl<S, const CAPACITY: usize> BluetoothLegacyAdvertisingRecurringStopFault<'_, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub const fn error(&self) -> BluetoothControllerSchedulerCurrentError {
+        self.error
+    }
+}
+
 /// Finite reason a lossless recurring phase asks its supervisor to retry.
 #[derive(Debug)]
 pub enum BluetoothLegacyAdvertisingRecurringRetryCause<E> {
@@ -238,6 +296,7 @@ where
 pub enum BluetoothLegacyAdvertisingRecurringFaultCause {
     SchedulerEpochUnavailable,
     ControllerTime(BluetoothControllerSchedulerCurrentError),
+    SchedulerMergeCancellationRejected,
 }
 
 #[allow(
@@ -256,6 +315,10 @@ enum BluetoothLegacyAdvertisingRecurringFaultOwner<'runtime, S, const CAPACITY: 
     SequenceRecheck {
         axes: BluetoothLegacyAdvertisingRecurringAxes<'runtime, S, CAPACITY>,
         admitted: BluetoothLegacyAdvertisingRecurringPreSequence<'static>,
+    },
+    Merged {
+        axes: BluetoothLegacyAdvertisingRecurringAxes<'runtime, S, CAPACITY>,
+        merged: BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
     },
 }
 
@@ -610,6 +673,145 @@ where
                     runner: runner.attach_response(response),
                     error,
                 }
+            }
+        }
+    }
+
+    fn stop_restore(
+        axes: BluetoothLegacyAdvertisingRecurringAxes<'runtime, S, CAPACITY>,
+        cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
+        controller_time_drain_required: bool,
+    ) -> BluetoothLegacyAdvertisingRecurringStopBegin<'runtime, S, CAPACITY> {
+        let BluetoothLegacyAdvertisingRecurringAxes {
+            task,
+            order,
+            previous_scheduler_item_address: _,
+            hardware_list_index: _,
+        } = axes;
+        let BluetoothLegacyAdvertisingRecurringOrder::Stopping(order) = order else {
+            unreachable!("only a retained stop order can cancel a recurrence")
+        };
+        BluetoothLegacyAdvertisingRecurringStopBegin::Restore(
+            BluetoothLegacyAdvertisingRecurringStopRestore {
+                task: task.expect("a cancelled recurrence retains its task service"),
+                cancelled,
+                order,
+                controller_time_drain_required,
+            },
+        )
+    }
+
+    /// Cancel every unpublished successor phase; a published HEAD must finish once.
+    pub fn begin_stopping(
+        mut self,
+    ) -> BluetoothLegacyAdvertisingRecurringStopBegin<'runtime, S, CAPACITY> {
+        let axes = self
+            .axes
+            .take()
+            .expect("a recurring runner retains its exact Controller axes");
+        assert!(matches!(
+            axes.order,
+            BluetoothLegacyAdvertisingRecurringOrder::Stopping(_)
+        ));
+        match self.phase {
+            BluetoothLegacyAdvertisingRecurringPhase::Scheduled(scheduled) => {
+                Self::stop_restore(axes, scheduled.cancel(), false)
+            }
+            BluetoothLegacyAdvertisingRecurringPhase::CandidatePreparationFailure(failure) => {
+                Self::stop_restore(axes, failure.cancel(), false)
+            }
+            BluetoothLegacyAdvertisingRecurringPhase::Candidate(candidate) => {
+                Self::stop_restore(axes, candidate.cancel().into_parts().0, false)
+            }
+            BluetoothLegacyAdvertisingRecurringPhase::SequenceBegin(admitted) => {
+                let mut axes = axes;
+                let cancelled = axes
+                    .task
+                    .as_mut()
+                    .expect("an admitted recurrence retains its task service")
+                    .cancel_legacy_advertising_recurring_pre_sequence(admitted);
+                Self::stop_restore(axes, cancelled, false)
+            }
+            BluetoothLegacyAdvertisingRecurringPhase::SequenceWait { pending, admitted } => {
+                let BluetoothLegacyAdvertisingRecurringAxes {
+                    task: _,
+                    order,
+                    previous_scheduler_item_address,
+                    hardware_list_index,
+                } = axes;
+                match pending.cancel() {
+                    Ok(epoch) => {
+                        let mut task = epoch.into_task_service();
+                        let cancelled =
+                            task.cancel_legacy_advertising_recurring_pre_sequence(admitted);
+                        Self::stop_restore(
+                            BluetoothLegacyAdvertisingRecurringAxes {
+                                task: Some(task),
+                                order,
+                                previous_scheduler_item_address,
+                                hardware_list_index,
+                            },
+                            cancelled,
+                            true,
+                        )
+                    }
+                    Err(failure) => {
+                        let cause = BluetoothLegacyAdvertisingRecurringFaultCause::ControllerTime(
+                            failure.error(),
+                        );
+                        let task = failure.into_parts().0.into_task_service();
+                        BluetoothLegacyAdvertisingRecurringStopBegin::Fault(
+                            BluetoothLegacyAdvertisingRecurringFault {
+                                cause,
+                                _owner:
+                                    BluetoothLegacyAdvertisingRecurringFaultOwner::SequenceRecheck {
+                                        axes: BluetoothLegacyAdvertisingRecurringAxes {
+                                            task: Some(task),
+                                            order,
+                                            previous_scheduler_item_address,
+                                            hardware_list_index,
+                                        },
+                                        admitted,
+                                    },
+                            },
+                        )
+                    }
+                }
+            }
+            BluetoothLegacyAdvertisingRecurringPhase::Merge(prepared) => {
+                let mut axes = axes;
+                let cancelled = axes
+                    .task
+                    .as_mut()
+                    .expect("a prepared recurrence retains its task service")
+                    .cancel_legacy_advertising_recurring_prepared(prepared);
+                Self::stop_restore(axes, cancelled, false)
+            }
+            BluetoothLegacyAdvertisingRecurringPhase::Merged(merged) => {
+                let mut axes = axes;
+                match axes
+                    .task
+                    .as_mut()
+                    .expect("a merged recurrence retains its task service")
+                    .cancel_legacy_advertising_recurring_merge(merged)
+                {
+                    Ok(cancelled) => Self::stop_restore(axes, cancelled, false),
+                    Err(merged) => BluetoothLegacyAdvertisingRecurringStopBegin::Fault(
+                        BluetoothLegacyAdvertisingRecurringFault {
+                            cause: BluetoothLegacyAdvertisingRecurringFaultCause::SchedulerMergeCancellationRejected,
+                            _owner: BluetoothLegacyAdvertisingRecurringFaultOwner::Merged {
+                                axes,
+                                merged,
+                            },
+                        },
+                    ),
+                }
+            }
+            BluetoothLegacyAdvertisingRecurringPhase::Head(head) => {
+                BluetoothLegacyAdvertisingRecurringStopBegin::Published(Self::from_parts(
+                    axes,
+                    BluetoothLegacyAdvertisingRecurringPhase::Head(head),
+                ))
             }
         }
     }
@@ -1004,6 +1206,71 @@ where
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothLegacyAdvertisingRecurringStopRestore<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Whether the executor must await the absolute Controller-time recheck source.
+    pub const fn controller_time_drain_required(&self) -> bool {
+        self.controller_time_drain_required
+    }
+
+    /// Drain an abandoned time request, restore the graph, then expose HCI completion.
+    pub fn step(
+        mut self,
+    ) -> BluetoothLegacyAdvertisingRecurringStopRestoreStep<'runtime, S, CAPACITY> {
+        if self.controller_time_drain_required {
+            match self.task.drain_abandoned_recurring_controller_time() {
+                Ok(crate::BluetoothControllerTimeOrphanDrainStep::Waiting) => {
+                    return BluetoothLegacyAdvertisingRecurringStopRestoreStep::WaitControllerTime(
+                        self,
+                    );
+                }
+                Ok(
+                    crate::BluetoothControllerTimeOrphanDrainStep::Idle
+                    | crate::BluetoothControllerTimeOrphanDrainStep::Drained,
+                ) => self.controller_time_drain_required = false,
+                Err(error) => {
+                    return BluetoothLegacyAdvertisingRecurringStopRestoreStep::Fault(
+                        BluetoothLegacyAdvertisingRecurringStopFault {
+                            _task: self.task,
+                            _cancelled: self.cancelled,
+                            _order: self.order,
+                            error,
+                        },
+                    );
+                }
+            }
+        }
+        match self
+            .task
+            .restore_legacy_advertising_cancelled_disabled(self.cancelled)
+        {
+            Ok(()) => match self.order {
+                BluetoothLegacyAdvertisingStopOrder::Disable(deferred) => {
+                    BluetoothLegacyAdvertisingRecurringStopRestoreStep::DisableResponse(
+                        BluetoothLegacyAdvertisingDisableResponsePending::from_cancelled(
+                            self.task, deferred,
+                        ),
+                    )
+                }
+                BluetoothLegacyAdvertisingStopOrder::Reset(barrier) => {
+                    BluetoothLegacyAdvertisingRecurringStopRestoreStep::ResetCompletion(
+                        BluetoothLegacyAdvertisingResetCompletionReady::from_cancelled(
+                            self.task, barrier,
+                        ),
+                    )
+                }
+            },
+            Err(cancelled) => {
+                self.cancelled = cancelled;
+                BluetoothLegacyAdvertisingRecurringStopRestoreStep::Rejected(self)
             }
         }
     }

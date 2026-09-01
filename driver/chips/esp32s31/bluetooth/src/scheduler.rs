@@ -2022,6 +2022,20 @@ impl<const SCHEDULER_CAPACITY: usize>
         candidate.cancel()
     }
 
+    /// Release an admitted recurring event before its sequence sample arrives.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn cancel_legacy_advertising_recurring_pre_sequence<'a>(
+        &mut self,
+        admitted: BluetoothLegacyAdvertisingRecurringPreSequence<'a>,
+    ) -> crate::BluetoothLegacyAdvertisingRecurringCancelled<'a> {
+        let BluetoothLegacyAdvertisingRecurringPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        self.release_scheduler_reservation(reservation);
+        candidate.cancel()
+    }
+
     /// Join one prepared advertising item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
     #[cfg_attr(

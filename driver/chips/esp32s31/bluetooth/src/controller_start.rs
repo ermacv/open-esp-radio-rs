@@ -3907,6 +3907,68 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .admit_legacy_advertising_recurring_event(candidate)
     }
 
+    /// Release a recurring timeline reservation before sequence authorization.
+    pub(crate) fn cancel_legacy_advertising_recurring_pre_sequence(
+        &mut self,
+        admitted: crate::BluetoothLegacyAdvertisingRecurringPreSequence<'static>,
+    ) -> crate::BluetoothLegacyAdvertisingCancelled<'static> {
+        self.runtime
+            .cancel_legacy_advertising_recurring_pre_sequence(admitted)
+            .into_parts()
+            .0
+    }
+
+    /// Release a sequence-ready recurring descriptor before scheduler-list publication.
+    pub(crate) fn cancel_legacy_advertising_recurring_prepared(
+        &mut self,
+        prepared: crate::BluetoothLegacyAdvertisingEventPrepared<'static>,
+    ) -> crate::BluetoothLegacyAdvertisingCancelled<'static> {
+        self.runtime.cancel_legacy_advertising_first_event(prepared)
+    }
+
+    /// Undo one unpublished recurring empty-list merge.
+    pub(crate) fn cancel_legacy_advertising_recurring_merge(
+        &mut self,
+        merged: crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+    ) -> Result<
+        crate::BluetoothLegacyAdvertisingCancelled<'static>,
+        crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+    > {
+        self.runtime
+            .cancel_legacy_advertising_empty_list_merge(merged)
+            .map(|prepared| self.runtime.cancel_legacy_advertising_first_event(prepared))
+    }
+
+    /// Return an unpublished disabled successor to this exact runtime.
+    pub(crate) fn restore_legacy_advertising_cancelled_disabled(
+        &mut self,
+        cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
+    ) -> Result<(), crate::BluetoothLegacyAdvertisingCancelled<'static>> {
+        self.legacy_advertising_resources
+            .restore_cancelled(cancelled)
+    }
+
+    /// Observe one abandoned Controller-time request before publishing stop success.
+    pub(crate) fn drain_abandoned_recurring_controller_time(
+        &mut self,
+    ) -> Result<
+        crate::BluetoothControllerTimeOrphanDrainStep,
+        BluetoothControllerSchedulerCurrentError,
+    > {
+        match drain_controller_time_orphan(self) {
+            Ok(BluetoothControllerTimePendingOrphanStep::Idle) => {
+                Ok(crate::BluetoothControllerTimeOrphanDrainStep::Idle)
+            }
+            Ok(BluetoothControllerTimePendingOrphanStep::Waiting) => {
+                Ok(crate::BluetoothControllerTimeOrphanDrainStep::Waiting)
+            }
+            Ok(BluetoothControllerTimePendingOrphanStep::Drained) => {
+                Ok(crate::BluetoothControllerTimeOrphanDrainStep::Drained)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
     /// Retry the empty-list join without rebuilding or reauthorizing the event.
     pub(crate) fn merge_legacy_advertising_recurring_event(
         &mut self,

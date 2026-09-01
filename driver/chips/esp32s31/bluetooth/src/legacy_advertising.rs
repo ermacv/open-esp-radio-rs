@@ -1084,6 +1084,20 @@ impl<'a> BluetoothLegacyAdvertisingNextEventScheduled<'a> {
             self.previous_phase,
         )
     }
+
+    /// Disable the not-yet-prepared successor and recover its exact graph.
+    pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
+        let Self {
+            scheduled,
+            memory,
+            previous_statuses: _,
+            previous_phase: _,
+        } = self;
+        BluetoothLegacyAdvertisingCancelled {
+            enabled: scheduled.into_event(),
+            memory,
+        }
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -1334,6 +1348,14 @@ impl<'a> BluetoothLegacyAdvertisingRecurringPreparationFailure<'a> {
             timing,
             config,
         )
+    }
+
+    /// Disable the rejected unpublished successor and recover its exact graph.
+    pub fn cancel(self) -> BluetoothLegacyAdvertisingCancelled<'a> {
+        BluetoothLegacyAdvertisingCancelled {
+            enabled: self.enabled,
+            memory: self.memory,
+        }
     }
 }
 

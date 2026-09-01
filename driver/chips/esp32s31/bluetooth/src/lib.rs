@@ -385,7 +385,9 @@ pub use legacy_advertising_recurring::{
     BluetoothLegacyAdvertisingRecurringResponsePublication,
     BluetoothLegacyAdvertisingRecurringRetry, BluetoothLegacyAdvertisingRecurringRetryCause,
     BluetoothLegacyAdvertisingRecurringRunner, BluetoothLegacyAdvertisingRecurringRunnerStep,
-    BluetoothLegacyAdvertisingRecurringStart,
+    BluetoothLegacyAdvertisingRecurringStart, BluetoothLegacyAdvertisingRecurringStopBegin,
+    BluetoothLegacyAdvertisingRecurringStopFault, BluetoothLegacyAdvertisingRecurringStopRestore,
+    BluetoothLegacyAdvertisingRecurringStopRestoreStep,
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_runner::{

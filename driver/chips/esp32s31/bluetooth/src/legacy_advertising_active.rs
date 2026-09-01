@@ -1083,6 +1083,15 @@ impl<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
+    pub(crate) fn from_cancelled(
+        task: Task<'runtime, S, CAPACITY>,
+        deferred: LeControllerDeferredLegacyAdvertisingDisable<'runtime, ()>,
+    ) -> Self {
+        Self {
+            transaction: deferred.map_owner(|()| task).into_stopped_response(),
+        }
+    }
+
     pub async fn wait_response_capacity<
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
@@ -1181,6 +1190,15 @@ impl<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
+    pub(crate) fn from_cancelled(
+        task: Task<'runtime, S, CAPACITY>,
+        barrier: LeControllerResetBarrier<'runtime, ()>,
+    ) -> Self {
+        Self {
+            barrier: barrier.map_owner(|()| task),
+        }
+    }
+
     pub fn complete<
         M: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,

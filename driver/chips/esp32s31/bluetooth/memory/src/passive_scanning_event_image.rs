@@ -26,6 +26,68 @@ const WORD_34: usize = 13;
 const WORD_38: usize = 14;
 const WORD_48: usize = 18;
 const WORD_50: usize = 20;
+const SCHEDULER_HARDWARE_CHAIN_ADJUSTED_START: u32 = 1 << 22;
+const SCHEDULER_HARDWARE_CHAIN_EVENT_READY: u32 = 1 << 23;
+const SCHEDULER_HARDWARE_CHAIN_TIMING_MASK: u32 =
+    SCHEDULER_HARDWARE_CHAIN_ADJUSTED_START | SCHEDULER_HARDWARE_CHAIN_EVENT_READY;
+const SCHEDULER_CONTEXT_EVENT_READY: u32 = 1 << 31;
+const SCHEDULER_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
+const SCHEDULER_FREQUENCY_AND_KIND_MASK: u32 = 0x0000_7fff;
+const SCHEDULER_SCANNER_EVENT_KIND: u32 = 1;
+
+/// Primary advertising channel observed by one passive scan window.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPassiveScanPrimaryChannel {
+    Channel37,
+    Channel38,
+    Channel39,
+}
+
+impl BluetoothPassiveScanPrimaryChannel {
+    const fn frequency_image(self) -> u8 {
+        match self {
+            Self::Channel37 => 0,
+            Self::Channel38 => 24,
+            Self::Channel39 => 78,
+        }
+    }
+}
+
+/// Non-empty raw Controller window produced by the scheduler timebase.
+///
+/// The integers remain opaque after construction; only the private memory
+/// codec can place them in a positional scanner item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPassiveScanSchedulerWindow {
+    start: u32,
+    end: u32,
+}
+
+impl BluetoothPassiveScanSchedulerWindow {
+    /// Bind one wrapping Controller-tick interval.
+    pub const fn from_controller_ticks(start: u32, end: u32) -> Option<Self> {
+        if start == end {
+            None
+        } else {
+            Some(Self { start, end })
+        }
+    }
+
+    const fn start(self) -> u32 {
+        self.start
+    }
+
+    const fn end(self) -> u32 {
+        self.end
+    }
+}
+
+/// Result of applying the scanner's earliest-start constraint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPassiveScanStartSelection {
+    Requested,
+    EarliestAvailable,
+}
 
 /// Physical default transmit-power request retained by the scanner profile.
 ///
@@ -132,9 +194,20 @@ impl BluetoothPassiveScanLinkStateImage {
         self.words
     }
 
-    #[cfg(test)]
     pub(super) const fn from_words(words: [u32; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS]) -> Self {
         Self { words }
+    }
+
+    pub(super) const fn with_controller_time(
+        mut self,
+        controller_time: BluetoothControllerLatchedTime,
+    ) -> Self {
+        self.words[WORD_34] = controller_time.bits();
+        self
+    }
+
+    const fn rounded_power(self) -> u32 {
+        (self.words[WORD_04] & ROUNDED_POWER_MASK) >> 23
     }
 
     #[cfg(test)]
@@ -155,6 +228,47 @@ impl BluetoothPassiveScanLinkStateImage {
     #[cfg(test)]
     pub(super) const fn controller_time(self) -> u32 {
         self.words[WORD_34]
+    }
+}
+
+/// Complete scanner-item subset changed before common scheduler admission.
+#[derive(Clone, Copy)]
+pub(super) struct BluetoothPassiveScanSchedulerItemWords {
+    pub(super) word_00: u32,
+    pub(super) word_04: u32,
+    pub(super) word_14: u32,
+    pub(super) word_18: u32,
+    pub(super) word_38: u32,
+    pub(super) raw_start_word_44: u32,
+    pub(super) raw_end_word_48: u32,
+}
+
+impl BluetoothPassiveScanSchedulerItemWords {
+    pub(super) const fn prepare_first_event(
+        mut self,
+        link_state: BluetoothPassiveScanLinkStateImage,
+        channel: BluetoothPassiveScanPrimaryChannel,
+        window: BluetoothPassiveScanSchedulerWindow,
+        start_selection: BluetoothPassiveScanStartSelection,
+    ) -> Self {
+        self.word_00 &= !SCHEDULER_HARDWARE_CHAIN_TIMING_MASK;
+        if matches!(
+            start_selection,
+            BluetoothPassiveScanStartSelection::EarliestAvailable
+        ) {
+            self.word_00 |= SCHEDULER_HARDWARE_CHAIN_ADJUSTED_START;
+        }
+        self.word_00 |= SCHEDULER_HARDWARE_CHAIN_EVENT_READY;
+        self.word_04 |= SCHEDULER_CONTEXT_EVENT_READY;
+        self.word_14 =
+            (self.word_14 & !SCHEDULER_RATE_AND_POWER_MASK) | (link_state.rounded_power() << 20);
+        self.word_18 = (self.word_18 & !SCHEDULER_FREQUENCY_AND_KIND_MASK)
+            | ((channel.frequency_image() as u32) << 8)
+            | SCHEDULER_SCANNER_EVENT_KIND;
+        self.word_38 = 0;
+        self.raw_start_word_44 = window.start();
+        self.raw_end_word_48 = window.end();
+        self
     }
 }
 

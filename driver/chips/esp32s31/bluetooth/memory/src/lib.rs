@@ -118,7 +118,9 @@ pub use legacy_advertising_storage::{
     BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
 };
 pub use passive_scanning_event_image::{
-    BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanResetConfig,
+    BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanPrimaryChannel,
+    BluetoothPassiveScanResetConfig, BluetoothPassiveScanSchedulerWindow,
+    BluetoothPassiveScanStartSelection,
 };
 #[cfg(not(target_arch = "riscv32"))]
 pub use passive_scanning_memory::BluetoothPassiveScanMemoryGraphModelAddress;
@@ -127,7 +129,7 @@ pub use passive_scanning_memory::{
     BLUETOOTH_PASSIVE_SCAN_RX_PACKET_PREFIX_BYTES, BLUETOOTH_PASSIVE_SCAN_RX_PAYLOAD_CAPACITY,
     BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, BluetoothPassiveScanMemoryGraphBindError,
     BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphCpuOwned,
-    BluetoothPassiveScanMemoryGraphPublicationError,
+    BluetoothPassiveScanMemoryGraphEventPrepared, BluetoothPassiveScanMemoryGraphPublicationError,
     BluetoothPassiveScanMemoryGraphPublicationMismatch,
     BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
     BluetoothPassiveScanMemoryGraphStorage,

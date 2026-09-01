@@ -308,11 +308,19 @@ scheduler insertion links. Channels 38 and 39 are subsequent events using the
 same typed transform with the already reviewed primary-channel frequency
 images 24 and 78; they do not require new MMIO operations.
 
+For the restricted passive path, the complete named body selects the RX event
+branch, clears both replicated rate lanes for LE 1M, binds the selected
+frequency, copies the link-state rounded-power projection, stores the bounded
+start/end ticks and updates the link-state controller-time observation. Its
+named `r_ble_lll_scan_get_earliest_start_time` result selects the sole
+adjusted-start item flag. The open codec accepts that semantic result rather
+than exposing the positional flag or reproducing the vendor timing policy.
+
 ## Open architecture
 
 The first implementation should contain these owners, in this order:
 
-1. a private, pinned scanner arena with affine CPU-owned, published, running,
+1. a private, pinned scanner graph with affine CPU-owned, published, running,
    completed and reclaimed states;
 2. a restricted-PAC scan-start transaction and stable read accessor for the
    existing scan hardware snapshot;

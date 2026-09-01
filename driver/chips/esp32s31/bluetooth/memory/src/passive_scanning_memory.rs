@@ -9,8 +9,9 @@
 use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
-    BluetoothMemoryListSelector, BluetoothRxMemoryListPublished,
+    BluetoothControllerLatchedTime, BluetoothControllerSramAddress,
+    BluetoothControllerSramAddressError, BluetoothMemoryListSelector,
+    BluetoothRxMemoryListPublished,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -18,7 +19,9 @@ use vcell::VolatileCell;
 use crate::{
     passive_scanning_event_image::{
         BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, BluetoothPassiveScanLinkStateImage,
-        BluetoothPassiveScanResetConfig, BluetoothPassiveScanRxHeadProjection,
+        BluetoothPassiveScanPrimaryChannel, BluetoothPassiveScanResetConfig,
+        BluetoothPassiveScanRxHeadProjection, BluetoothPassiveScanSchedulerItemWords,
+        BluetoothPassiveScanSchedulerWindow, BluetoothPassiveScanStartSelection,
     },
     rx_memory_list::BluetoothRxMemoryListClass,
     scheduler_context::BluetoothSchedulerContextStorage,
@@ -54,6 +57,11 @@ const SCHEDULER_ITEM_WORDS: usize = SCHEDULER_ITEM_BYTES / 4;
 const SCHEDULER_ITEM_HARDWARE_NEXT_WORD: usize = 0;
 const SCHEDULER_ITEM_CONTEXT_WORD: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE_WORD: usize = 0x08 / 4;
+const SCHEDULER_ITEM_WORD_14: usize = 0x14 / 4;
+const SCHEDULER_ITEM_WORD_18: usize = 0x18 / 4;
+const SCHEDULER_ITEM_WORD_38: usize = 0x38 / 4;
+const SCHEDULER_ITEM_WORD_44: usize = 0x44 / 4;
+const SCHEDULER_ITEM_WORD_48: usize = 0x48 / 4;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x00c0_0000;
 
@@ -240,11 +248,14 @@ impl BluetoothPassiveScanLinkStateStorage {
         self.words[LINK_STATE_SCHEDULER_HEAD_WORD].set(head.address());
     }
 
-    #[cfg(test)]
     fn image(&self) -> BluetoothPassiveScanLinkStateImage {
         BluetoothPassiveScanLinkStateImage::from_words(core::array::from_fn(|index| {
             self.words[index].get()
         }))
+    }
+
+    fn update_controller_time(&self, controller_time: BluetoothControllerLatchedTime) {
+        self.install(self.image().with_controller_time(controller_time));
     }
 
     #[cfg(test)]
@@ -303,6 +314,28 @@ impl BluetoothPassiveScanSchedulerItemStorage {
         self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE_WORD]
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
+    }
+
+    fn reviewed_words(&self) -> BluetoothPassiveScanSchedulerItemWords {
+        BluetoothPassiveScanSchedulerItemWords {
+            word_00: self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].get(),
+            word_04: self.words[SCHEDULER_ITEM_CONTEXT_WORD].get(),
+            word_14: self.words[SCHEDULER_ITEM_WORD_14].get(),
+            word_18: self.words[SCHEDULER_ITEM_WORD_18].get(),
+            word_38: self.words[SCHEDULER_ITEM_WORD_38].get(),
+            raw_start_word_44: self.words[SCHEDULER_ITEM_WORD_44].get(),
+            raw_end_word_48: self.words[SCHEDULER_ITEM_WORD_48].get(),
+        }
+    }
+
+    fn write_reviewed_words(&self, words: BluetoothPassiveScanSchedulerItemWords) {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT_WORD].set(words.word_00);
+        self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(words.word_04);
+        self.words[SCHEDULER_ITEM_WORD_14].set(words.word_14);
+        self.words[SCHEDULER_ITEM_WORD_18].set(words.word_18);
+        self.words[SCHEDULER_ITEM_WORD_38].set(words.word_38);
+        self.words[SCHEDULER_ITEM_WORD_44].set(words.raw_start_word_44);
+        self.words[SCHEDULER_ITEM_WORD_48].set(words.raw_end_word_48);
     }
 
     #[cfg(test)]
@@ -514,12 +547,58 @@ impl BluetoothPassiveScanMemoryGraphCpuOwned {
         self.binding.range()
     }
 
+    /// Lower the first accepted passive LE 1M window into the current item.
+    pub fn prepare_first_event(
+        mut self,
+        channel: BluetoothPassiveScanPrimaryChannel,
+        window: BluetoothPassiveScanSchedulerWindow,
+        start_selection: BluetoothPassiveScanStartSelection,
+        controller_time: BluetoothControllerLatchedTime,
+    ) -> BluetoothPassiveScanMemoryGraphEventPrepared {
+        let item_index = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT - 1;
+        let graph = self.storage.as_mut().project();
+        graph.link_state.update_controller_time(controller_time);
+        let words = graph.scheduler_items[item_index]
+            .reviewed_words()
+            .prepare_first_event(graph.link_state.image(), channel, window, start_selection);
+        graph.scheduler_items[item_index].write_reviewed_words(words);
+        BluetoothPassiveScanMemoryGraphEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            channel,
+            window,
+        }
+    }
+}
+
+/// CPU-owned scanner graph carrying one complete first-event image.
+#[must_use = "the prepared scanner event must be admitted or retained"]
+pub struct BluetoothPassiveScanMemoryGraphEventPrepared {
+    storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
+    binding: BluetoothPassiveScanMemoryGraphBinding,
+    channel: BluetoothPassiveScanPrimaryChannel,
+    window: BluetoothPassiveScanSchedulerWindow,
+}
+
+impl BluetoothPassiveScanMemoryGraphEventPrepared {
+    /// Primary channel retained by this exact event.
+    pub const fn channel(&self) -> BluetoothPassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Scheduler window retained by this exact event.
+    pub const fn window(&self) -> BluetoothPassiveScanSchedulerWindow {
+        self.window
+    }
+
     /// Freeze CPU initialization before an upper controller owner performs the
     /// ordered MMIO publication.
     pub fn prepare_publication(self) -> BluetoothPassiveScanMemoryGraphPublicationPrepared {
         BluetoothPassiveScanMemoryGraphPublicationPrepared {
             storage: self.storage,
             binding: self.binding,
+            channel: self.channel,
+            window: self.window,
         }
     }
 }
@@ -529,6 +608,8 @@ impl BluetoothPassiveScanMemoryGraphCpuOwned {
 pub struct BluetoothPassiveScanMemoryGraphPublicationPrepared {
     storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
     binding: BluetoothPassiveScanMemoryGraphBinding,
+    channel: BluetoothPassiveScanPrimaryChannel,
+    window: BluetoothPassiveScanSchedulerWindow,
 }
 
 impl BluetoothPassiveScanMemoryGraphPublicationPrepared {
@@ -585,6 +666,8 @@ impl BluetoothPassiveScanMemoryGraphPublicationPrepared {
             _storage: self.storage,
             binding: self.binding,
             publication,
+            channel: self.channel,
+            window: self.window,
         })
     }
 }
@@ -642,6 +725,8 @@ pub struct BluetoothPassiveScanMemoryGraphPublished {
     _storage: Pin<&'static mut BluetoothPassiveScanMemoryGraphStorage>,
     binding: BluetoothPassiveScanMemoryGraphBinding,
     publication: BluetoothRxMemoryListPublished,
+    channel: BluetoothPassiveScanPrimaryChannel,
+    window: BluetoothPassiveScanSchedulerWindow,
 }
 
 impl BluetoothPassiveScanMemoryGraphPublished {
@@ -654,6 +739,16 @@ impl BluetoothPassiveScanMemoryGraphPublished {
     #[doc(hidden)]
     pub const fn publication(&self) -> &BluetoothRxMemoryListPublished {
         &self.publication
+    }
+
+    /// Primary channel retained by the hardware-owned event.
+    pub const fn channel(&self) -> BluetoothPassiveScanPrimaryChannel {
+        self.channel
+    }
+
+    /// Scheduler window retained by the hardware-owned event.
+    pub const fn window(&self) -> BluetoothPassiveScanSchedulerWindow {
+        self.window
     }
 }
 
@@ -778,7 +873,9 @@ mod tests {
     use open_esp_radio_esp32s31_hal::BluetoothControllerLatchedTime;
 
     use crate::{
-        BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanResetConfig,
+        BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanPrimaryChannel,
+        BluetoothPassiveScanResetConfig, BluetoothPassiveScanSchedulerWindow,
+        BluetoothPassiveScanStartSelection,
         le_phy_packet::{BluetoothLeAccessAddress, BluetoothLeCrcInit},
         passive_scanning_event_image::BluetoothPassiveScanRxHeadProjection,
     };
@@ -869,7 +966,30 @@ mod tests {
 
         let link_state_address = owner.binding.link_state();
         let scheduler_head = owner.binding.scheduler_head();
-        let prepared = owner.prepare_publication();
+        let window = BluetoothPassiveScanSchedulerWindow::from_controller_ticks(500, 1_500)
+            .expect("the first scan window is non-empty");
+        let event = owner.prepare_first_event(
+            BluetoothPassiveScanPrimaryChannel::Channel37,
+            window,
+            BluetoothPassiveScanStartSelection::Requested,
+            BluetoothControllerLatchedTime::from_bits(0x2345_6789),
+        );
+        assert_eq!(
+            event.channel(),
+            BluetoothPassiveScanPrimaryChannel::Channel37
+        );
+        assert_eq!(event.window(), window);
+        assert_eq!(
+            event
+                .storage
+                .as_ref()
+                .get_ref()
+                .link_state
+                .image()
+                .controller_time(),
+            0x2345_6789
+        );
+        let prepared = event.prepare_publication();
         assert_eq!(prepared.head(), bindings[0].header.controller_address());
         assert_eq!(prepared.link_state(), link_state_address);
         assert_eq!(prepared.scheduler_head(), scheduler_head);

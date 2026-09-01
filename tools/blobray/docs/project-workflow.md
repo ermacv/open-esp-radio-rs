@@ -338,6 +338,22 @@ unique caller/callee pairs prove the corresponding call edge. Ambiguous and
 changed bodies remain explicit review work; the report never rewrites the
 artifact or treats an obfuscated symbol as a stable semantic identity.
 
+For archive revisions that replace alphabetically sorted source-object names
+with `0.o`, `1.o`, and so on, the report also publishes the complete inferred
+member-order table and measures it against unique exact-body matches. This is
+module provenance and a ranking signal only: functions can move between
+modules across releases, so member order never promotes an ambiguous function
+to an automatic match. Every function record includes an exact artifact-bound
+revision occurrence and its derivation locator for a later reviewed pin.
+Static data objects are correlated separately from functions using bounded
+initializer bytes, size/properties, and relocation shape with target names
+removed. Exact mapped function relocations may resolve otherwise identical or
+changed objects. Repeated zero-initialized state and tables without a unique
+reference remain ambiguous. The generated `pin-candidates` list contains both
+function and memory-object occurrences, but every candidate remains explicitly
+`review = required`; Blobray never promotes generated correspondence into a
+reviewed fact.
+
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and
 generated evidence, but does not write a snapshot or advance the state. This

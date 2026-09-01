@@ -75,6 +75,7 @@ impl<'de> Deserialize<'de> for SemanticPath {
 #[serde(rename_all = "kebab-case")]
 pub enum EntityDomain {
     Function,
+    MemoryObject,
     Register,
     RegisterField,
     Interface,
@@ -87,6 +88,7 @@ impl EntityDomain {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Function => "function",
+            Self::MemoryObject => "memory-object",
             Self::Register => "register",
             Self::RegisterField => "register-field",
             Self::Interface => "interface",
@@ -109,6 +111,7 @@ impl FromStr for EntityDomain {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "function" => Ok(Self::Function),
+            "memory-object" => Ok(Self::MemoryObject),
             "register" => Ok(Self::Register),
             "register-field" => Ok(Self::RegisterField),
             "interface" => Ok(Self::Interface),
@@ -126,6 +129,7 @@ impl FromStr for EntityDomain {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SemanticEntityId {
     Function(SemanticPath),
+    MemoryObject(SemanticPath),
     Register {
         chip: String,
         address_space: String,
@@ -153,6 +157,10 @@ pub enum SemanticEntityId {
 impl SemanticEntityId {
     pub fn function(path: impl Into<String>) -> Result<Self, IdentityError> {
         Ok(Self::Function(SemanticPath::new(path)?))
+    }
+
+    pub fn memory_object(path: impl Into<String>) -> Result<Self, IdentityError> {
+        Ok(Self::MemoryObject(SemanticPath::new(path)?))
     }
 
     pub fn register(
@@ -234,6 +242,7 @@ impl SemanticEntityId {
     pub const fn domain(&self) -> EntityDomain {
         match self {
             Self::Function(_) => EntityDomain::Function,
+            Self::MemoryObject(_) => EntityDomain::MemoryObject,
             Self::Register { .. } => EntityDomain::Register,
             Self::RegisterField { .. } => EntityDomain::RegisterField,
             Self::Interface(_) => EntityDomain::Interface,
@@ -248,6 +257,7 @@ impl fmt::Display for SemanticEntityId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Function(path) => write!(formatter, "function:{path}"),
+            Self::MemoryObject(path) => write!(formatter, "memory-object:{path}"),
             Self::Register {
                 chip,
                 address_space,
@@ -286,6 +296,8 @@ impl FromStr for SemanticEntityId {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let parsed = if let Some(path) = value.strip_prefix("function:") {
             Self::function(path)
+        } else if let Some(path) = value.strip_prefix("memory-object:") {
+            Self::memory_object(path)
         } else if let Some(rest) = value.strip_prefix("register-field:") {
             parse_register_field(rest)
         } else if let Some(rest) = value.strip_prefix("register:") {
@@ -712,6 +724,10 @@ mod tests {
             (
                 SemanticEntityId::function("esp-idf/wifi/rx").unwrap(),
                 "function:esp-idf/wifi/rx",
+            ),
+            (
+                SemanticEntityId::memory_object("esp-idf/ble/controller-state").unwrap(),
+                "memory-object:esp-idf/ble/controller-state",
             ),
             (
                 SemanticEntityId::register("chip-alpha", "radio", 0x600a_0034, 32).unwrap(),

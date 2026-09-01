@@ -799,9 +799,11 @@ not satisfy the architectural goal.
 - **AP aggregate terminal boundary — implemented and observed on HIL.** AP A-MPDU
   state no longer reduces association identity to a MAC address. Building,
   hardware-owned, retained-retry and completed states carry the exact peer
-  slot and generation, and terminal release returns that identity to the
-  caller. Completion also returns the fixed aggregate PHY rate needed by a
-  later estimator. Diagnostic counters split current and stale terminal
+  slot and generation, and terminal release returns that identity together
+  with the fixed aggregate PHY rate needed by a later estimator. The
+  frequently returned completion-progress value remains limited to BA/retry
+  observation rather than duplicating the terminal metadata. Diagnostic
+  counters split current and stale terminal
   aggregates and frames; they neither accept nor reject completion. This
   change also fixes standby publication bookkeeping so timeout/collision
   accounting uses the batch actually started rather than the previous active
@@ -854,11 +856,23 @@ an architectural cost. The clean run measured 119.444/120.109 Mbit/s at
 at 43.355/43.430%. The prior identity-only image was near 39.0% Core0. The
 replay proves this is a property of the new image, not one anomalous radio
 sample, but does not identify whether the added cost is the current-generation
-lookup/counters or an induced code-layout effect. The existing same-image
+lookup/counters or an induced code-layout/API effect. The existing same-image
 egress-control switch therefore also suppresses only this terminal diagnostic
 observation in its disabled mode; it does not change retry, release, retained
-identity or hardware behavior. That A/B must localize the cost before shadow
-airtime accounting proceeds.
+identity or hardware behavior.
+
+That A/B used one ELF from commit `556f743c`: enabled runs
+`1788291482425-0017c443` and `1788291801480-0017c85b` averaged 44.946% and
+44.955% Core0, while disabled run `1788291698268-0017c6f3` averaged 44.799%.
+All three averaged approximately 119.9 Mbit/s. Disabling the generation lookup
+and counters therefore recovered only about 0.15 percentage point; it did not
+explain the multi-point regression. The additional diagnostic branch itself
+also moved the image from approximately 43.4% to 44.9% without materially
+changing retired instructions, direct evidence that this diagnostic ELF is
+highly sensitive to hot code shape. The next source-level isolation keeps the
+terminal owner but removes association/rate duplication from the hot
+`AmpduProgress` return value. No shadow airtime accounting proceeds until the
+accepted Core0 baseline is recovered.
 
 ### Phase 5: authoritative cutover
 

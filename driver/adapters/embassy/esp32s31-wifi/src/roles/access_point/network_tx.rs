@@ -2897,17 +2897,18 @@ where
                 let _ = completion;
                 #[cfg(any(feature = "diagnostics", test))]
                 let release_started = self.observer.map(AggregateTxObserver::now_micros);
-                let released_association = aggregate
+                let terminal = aggregate
                     .active_mut()
                     .release_completed()
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-                debug_assert_eq!(released_association, completion.association);
                 #[cfg(feature = "tx-phase-telemetry")]
                 self.observe_terminal_egress_identity(
                     control.mac.engine(),
-                    released_association,
+                    terminal.association,
                     usize::from(completion.acknowledged.saturating_add(completion.missing)),
                 );
+                #[cfg(not(feature = "tx-phase-telemetry"))]
+                let _ = terminal;
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     let finished = observer.now_micros();

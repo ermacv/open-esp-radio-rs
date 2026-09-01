@@ -157,8 +157,6 @@ pub struct Esp32s31ApPreparedAmpdu {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApAmpduCompletion {
-    pub association: ApAssociationIdentity,
-    pub rate: HtRate,
     pub tx_status: u8,
     pub block_ack_received: bool,
     pub block_ack_control: u8,
@@ -168,6 +166,17 @@ pub struct Esp32s31ApAmpduCompletion {
     pub missing: u8,
     pub acknowledged: u8,
     pub aggregate_attempts: u8,
+}
+
+/// Role identity returned exactly once with terminal backing release.
+///
+/// Keeping this metadata out of [`Esp32s31ApAmpduProgress`] preserves the
+/// compact hot completion ABI while still binding later airtime accounting to
+/// the exact association generation and PHY rate owned by the transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApAmpduTerminal {
+    pub association: ApAssociationIdentity,
+    pub rate: HtRate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -200,6 +209,7 @@ enum ApAmpduState<const SLOTS: usize> {
     Completed {
         cookie: TxCookie,
         association: ApAssociationIdentity,
+        rate: HtRate,
     },
 }
 
@@ -437,8 +447,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         let current_first_sequence = observed.first_sequence;
         let decision = observed.decision;
         let observation = Esp32s31ApAmpduCompletion {
-            association,
-            rate,
             tx_status: completion.tx.status(),
             block_ack_received: completion.block_ack_received,
             block_ack_control: completion.block_ack.control,
@@ -479,22 +487,24 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         self.state = ApAmpduState::Completed {
             cookie,
             association,
+            rate,
         };
         Ok(Esp32s31ApAmpduProgress::CompletionReady(observation))
     }
 
     /// Release the exact detached terminal batch after the caller has
     /// finished completion classification and observation.
-    pub fn release_completed(&mut self) -> Result<ApAssociationIdentity, Esp32s31ApAmpduError> {
+    pub fn release_completed(&mut self) -> Result<Esp32s31ApAmpduTerminal, Esp32s31ApAmpduError> {
         let ApAmpduState::Completed {
             cookie,
             association,
+            rate,
         } = core::mem::replace(&mut self.state, ApAmpduState::Idle)
         else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
         self.inner.release_completed(cookie)?;
-        Ok(association)
+        Ok(Esp32s31ApAmpduTerminal { association, rate })
     }
 
     pub fn cancel_build(&mut self) -> Result<(), Esp32s31ApAmpduError> {
@@ -613,6 +623,7 @@ mod tests {
         let completed = ApAmpduState::<32>::Completed {
             cookie: TxCookie(1),
             association: ASSOCIATION,
+            rate,
         };
 
         assert_eq!(building.association(), Some(ASSOCIATION));

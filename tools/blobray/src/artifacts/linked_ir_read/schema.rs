@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v67.
+//! Complete owned DTO for linked-IR schema v68.
 
 #![allow(
     dead_code,
@@ -512,6 +512,8 @@ pub(crate) struct StoredReviewDirectEffect {
     pub(crate) site: Option<u32>,
     pub(crate) operation: String,
     pub(crate) target: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    pub(crate) semantic_target: Option<String>,
     pub(crate) width: Option<u8>,
     pub(crate) value: Option<String>,
     pub(crate) modified_mask: Option<u32>,

@@ -365,6 +365,14 @@ call-graph and xref keys are retained. Changing the reviewed pack invalidates
 the Linked-IR cache. Missing, stale, cross-domain, forged or colliding bindings
 fail closed.
 
+Revision snapshots use a reviewed function ID as the comparison key while
+retaining the raw identity, exact artifact digest, locator and occurrence as
+separate provenance. Calls to reviewed callees and effects on reviewed static
+objects use their semantic targets in fingerprints. A vendor-only rename then
+stays unchanged; changed behavior under the same reviewed identity remains a
+modification. Snapshot creation rejects stale generated semantics and requires
+the Linked-IR to be rebuilt after any accepted pin change.
+
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and
 generated evidence, but does not write a snapshot or advance the state. This

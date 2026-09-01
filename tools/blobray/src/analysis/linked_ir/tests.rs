@@ -94,7 +94,7 @@ fn linked_test_function(
 }
 
 #[test]
-fn schema_v67_requires_artifact_provenance_and_frontier_fields() {
+fn schema_v68_requires_artifact_provenance_and_frontier_fields() {
     let render = || {
         crate::artifacts::render_linked_ir_fixture(
             vec![linked_test_function("rom", "worker", "global", Vec::new())],

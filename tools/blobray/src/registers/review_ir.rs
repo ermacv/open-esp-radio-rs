@@ -1,4 +1,4 @@
-//! Selected schema-v67 linked-IR evidence used by the manual register report.
+//! Selected schema-v68 linked-IR evidence used by the manual register report.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -240,13 +240,13 @@ mod tests {
         write_report(&path, &report(1, "rtos.event.send"));
         let manifest = path.join("manifest.json");
         let input = std::fs::read_to_string(&manifest).unwrap().replacen(
-            "\"schema_version\": 67",
+            "\"schema_version\": 68",
             "\"schema_version\": 32",
             1,
         );
         std::fs::write(&manifest, input).unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        assert!(error.to_string().contains("expected schema_version 67"));
+        assert!(error.to_string().contains("expected schema_version 68"));
 
         std::fs::remove_dir_all(&path).unwrap();
         write_report(

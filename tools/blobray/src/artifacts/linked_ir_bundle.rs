@@ -179,6 +179,17 @@ pub(crate) struct LinkedIrReviewProjection {
     pub(crate) inventories: Vec<(String, String)>,
     pub(crate) companions: Vec<(String, String)>,
     pub(crate) functions: Vec<StoredFunctionReviewProjection>,
+    pub(crate) memory_objects: Vec<LinkedIrMemoryObjectReviewProjection>,
+}
+
+pub(crate) struct LinkedIrMemoryObjectReviewProjection {
+    pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
+    pub(crate) locator: String,
+    pub(crate) occurrence: String,
+    pub(crate) semantic: Option<String>,
+    pub(crate) member: Option<String>,
+    pub(crate) symbol: String,
 }
 
 fn parse_persisted_address(value: &str) -> Option<u32> {
@@ -767,6 +778,9 @@ impl LinkedIrReader {
                     &record.identity,
                     &record.source,
                     &record.artifact_sha256,
+                    &record.locator,
+                    &record.occurrence,
+                    &record.semantic,
                     &record.symbol,
                     &record.member,
                 )
@@ -779,6 +793,9 @@ impl LinkedIrReader {
                     &function.identity,
                     &function.source,
                     &function.artifact_sha256,
+                    &function.locator,
+                    &function.occurrence,
+                    &function.semantic,
                     &function.symbol,
                     &function.member,
                 )
@@ -807,11 +824,25 @@ impl LinkedIrReader {
             .iter()
             .map(|artifact| (artifact.source.clone(), artifact.artifact.sha256.clone()))
             .collect();
+        let memory_objects = self
+            .data_object_index
+            .iter()
+            .map(|object| LinkedIrMemoryObjectReviewProjection {
+                source: object.source.clone(),
+                artifact_sha256: object.artifact_sha256.clone(),
+                locator: object.locator.clone(),
+                occurrence: object.occurrence.clone(),
+                semantic: object.semantic.clone(),
+                member: object.member.clone(),
+                symbol: object.symbol.clone(),
+            })
+            .collect();
         Ok(LinkedIrReviewProjection {
             inputs,
             inventories,
             companions,
             functions,
+            memory_objects,
         })
     }
 

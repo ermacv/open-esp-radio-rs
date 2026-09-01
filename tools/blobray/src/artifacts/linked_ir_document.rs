@@ -702,6 +702,7 @@ struct FunctionOverviewDirectEffect {
     site: Option<u32>,
     operation: String,
     target: String,
+    semantic_target: Option<String>,
     width: Option<u8>,
     value: Option<String>,
     modified_mask: Option<u32>,
@@ -792,7 +793,10 @@ struct FunctionOverviewEventBinding<'a> {
 }
 
 impl<'a> FunctionOverviewDocument<'a> {
-    fn new(function: &'a FunctionDocument<'a>) -> Self {
+    fn new(
+        function: &'a FunctionDocument<'a>,
+        memory_semantics: &BTreeMap<(String, Option<String>, String), String>,
+    ) -> Self {
         let summary = &function.effect_summary;
         let mut direct_effects = function
             .instruction_effects
@@ -815,6 +819,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: Some(*site),
                     operation: format!("{access}:{mode}"),
                     target: format!("{address:#010x}"),
+                    semantic_target: None,
                     width: Some(*width),
                     value: value.clone(),
                     modified_mask: *modified_mask,
@@ -841,6 +846,12 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: Some(*site),
                     operation: (*access).to_owned(),
                     target: format!("{} {offset:+#x}", object.display_name()),
+                    semantic_target: semantic_memory_object_name(
+                        &function.source,
+                        object,
+                        memory_semantics,
+                    )
+                    .map(|object| format!("{object} {offset:+#x}")),
                     width: Some(*width),
                     value: value_pseudo.clone().or_else(|| value.clone()),
                     modified_mask: *write_mask,
@@ -860,6 +871,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: call.site,
                     operation: operation.clone(),
                     target: call.target.clone(),
+                    semantic_target: Some(operation.clone()),
                     width: None,
                     value: None,
                     modified_mask: None,
@@ -886,6 +898,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: None,
                     operation: "delay-micros".to_owned(),
                     target: delay.path.clone(),
+                    semantic_target: None,
                     width: None,
                     value: Some(delay.micros.clone()),
                     modified_mask: None,
@@ -904,6 +917,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     .receiver
                     .clone()
                     .unwrap_or_else(|| "<unknown>".to_owned()),
+                semantic_target: dispatch.receiver.clone(),
                 width: None,
                 value: Some(dispatch.execution_context.to_owned()),
                 modified_mask: None,
@@ -1045,6 +1059,30 @@ impl<'a> FunctionOverviewDocument<'a> {
             },
             decode_blockers: &function.decode_blockers,
         }
+    }
+}
+
+fn semantic_memory_object_name(
+    source: &str,
+    object: &crate::LinkedMemoryObject,
+    semantics: &BTreeMap<(String, Option<String>, String), String>,
+) -> Option<String> {
+    match object {
+        crate::LinkedMemoryObject::Global { member, symbol } => semantics
+            .get(&(source.to_owned(), member.clone(), symbol.clone()))
+            .cloned(),
+        crate::LinkedMemoryObject::Dereferenced {
+            pointer,
+            pointer_offset,
+        } => semantic_memory_object_name(source, pointer, semantics)
+            .map(|pointer| format!("*({pointer} {pointer_offset:+#x})")),
+        crate::LinkedMemoryObject::Indexed {
+            object,
+            argument,
+            stride,
+        } => semantic_memory_object_name(source, object, semantics)
+            .map(|object| format!("{object}[arg{argument} * {stride:#x}]")),
+        _ => None,
     }
 }
 
@@ -1356,8 +1394,33 @@ pub(crate) fn stage_linked_ir_bundle(
 
     {
         let mut overviews = budget_writer(&root, "function-overview.jsonl", &mut total)?;
+        let mut memory_semantics = BTreeMap::new();
+        for object in &document.data_objects {
+            let Some(semantic) = &object.semantic else {
+                continue;
+            };
+            for symbol in std::iter::once(object.symbol.as_str())
+                .chain(object.aliases.iter().map(String::as_str))
+            {
+                let key = (
+                    object.source.clone(),
+                    object.member.clone(),
+                    symbol.to_owned(),
+                );
+                if let Some(previous) = memory_semantics.insert(key, semantic.clone())
+                    && previous != *semantic
+                {
+                    return Err(crate::Error::invalid(format!(
+                        "linked-IR data symbol {symbol:?} resolves to conflicting reviewed semantic identities {previous} and {semantic}"
+                    )));
+                }
+            }
+        }
         for function in &document.functions {
-            serde_json::to_writer(&mut overviews, &FunctionOverviewDocument::new(function))?;
+            serde_json::to_writer(
+                &mut overviews,
+                &FunctionOverviewDocument::new(function, &memory_semantics),
+            )?;
             overviews.write_all(b"\n")?;
         }
         overviews.flush()?;
@@ -1605,6 +1668,7 @@ mod bundle_write_tests {
             site: Some(0x1000),
             operation: "write:static".to_owned(),
             target: "0x60000010".to_owned(),
+            semantic_target: None,
             width: Some(32),
             value: Some("0x00000001".to_owned()),
             modified_mask: Some(1),
@@ -1617,5 +1681,30 @@ mod bundle_write_tests {
         deduplicate_observable_effects(&mut effects);
 
         assert_eq!(effects, [effect]);
+    }
+
+    #[test]
+    fn reviewed_memory_object_identity_stabilizes_nested_effect_targets() {
+        let object = crate::LinkedMemoryObject::Indexed {
+            object: Box::new(crate::LinkedMemoryObject::Global {
+                member: Some("55.o".to_owned()),
+                symbol: "r_data_ble".to_owned(),
+            }),
+            argument: 1,
+            stride: 4,
+        };
+        let semantics = BTreeMap::from([(
+            (
+                "ble".to_owned(),
+                Some("55.o".to_owned()),
+                "r_data_ble".to_owned(),
+            ),
+            "memory-object:esp-idf/ble/controller-state".to_owned(),
+        )]);
+
+        assert_eq!(
+            semantic_memory_object_name("ble", &object, &semantics).as_deref(),
+            Some("memory-object:esp-idf/ble/controller-state[arg1 * 0x4]")
+        );
     }
 }

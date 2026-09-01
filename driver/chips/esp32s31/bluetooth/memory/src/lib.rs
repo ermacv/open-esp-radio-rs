@@ -42,6 +42,7 @@ pub use ble_phy_engine::{
     BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES, BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES,
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineBinding,
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
+    BluetoothBlePhyLe1MPacketStartCalibration,
 };
 
 pub use dtm_event_image::{

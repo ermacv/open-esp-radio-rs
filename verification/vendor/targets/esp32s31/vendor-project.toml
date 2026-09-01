@@ -1001,6 +1001,7 @@ roots = [
     # Portable request parsing and first-anchor construction.
     "ble-controller:r_sym_ble_yGsYADDrqjYziP9c5GNW",
     "ble-controller:r_sym_ble_EhsfmEgcePNEwVjH4OHN",
+    "ble-controller:r_sym_ble_lOibLRJHxbsSHA967fML",
     "ble-controller:r_sym_ble_mVQi032HguLS2FtruQIm",
     # Lower first-event construction plus callback-owned completion.
     "ble-controller:r_sym_ble_DCD5eVhcHQ9ueSpewKn1",

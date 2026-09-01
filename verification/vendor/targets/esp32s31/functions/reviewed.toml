@@ -1188,6 +1188,16 @@ accept-incomplete = true
 [[functions]]
 profile = "ble-controller-all"
 source = "ble-controller"
+identity = "ble-controller::r_sym_ble_lOibLRJHxbsSHA967fML"
+status = "reviewed"
+name = "ble_phy_module_init"
+role = "ble.phy.environment-table-initialize"
+summary = "Initializes the environment-owned channel-frequency and receive packet-start calibration tables before any receive-time normalization can consume them."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
 identity = "ble-controller::r_sym_ble_mVQi032HguLS2FtruQIm"
 status = "reviewed"
 name = "ble_phy_get_actual_tx_time"

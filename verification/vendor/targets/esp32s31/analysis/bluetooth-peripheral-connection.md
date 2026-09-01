@@ -51,6 +51,16 @@ microseconds, then subtracts two PHY-mode-indexed calibration terms. The
 result is an on-air packet-start time, not a packet-end time and not an
 ordinary observation of controller `now()`.
 
+The calibration is not implicit zero state. Current `ble_phy_module_init`
+copies three separately owned tables into the BLE PHY environment before the
+normalizer can use them: the 40-channel frequency mapping, PHY-mode packet
+prefix airtime and the receive address-capture delay. The channel mapping and
+packet-prefix airtime are derived in Rust from the LE channel/PHY definitions;
+only the S31 receive-capture delay remains a reviewed chip fact. The memory
+owner keeps the resulting tables private and exposes a value-only LE 1M
+normalization operation, so neither an extracted table nor its positional
+indices cross into the Link Layer.
+
 Current `ble_ll_adv_rx_pkt_in` routes PDU type 5 to
 `ble_ll_adv_conn_req_rxd`; after address/filter admission,
 `ble_ll_conn_peripheral_start` parses the request and reaches

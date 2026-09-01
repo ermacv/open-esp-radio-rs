@@ -71,13 +71,14 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
             ) / 10_000.0,
         );
         outputln!(
-            "Summary: source-functions={} target-functions={} unique={} name-stable={} token-stable={} graph-refined={} ambiguous={} unmatched={}",
+            "Summary: source-functions={} target-functions={} unique={} name-stable={} token-stable={} graph-refined={} review-candidates={} ambiguous={} unmatched={}",
             report.from.functions,
             report.to.functions,
             report.summary.unique,
             report.summary.name_stable,
             report.summary.token_stable,
             report.summary.graph_refined,
+            report.summary.review_candidates,
             report.summary.ambiguous,
             report.summary.unmatched,
         );

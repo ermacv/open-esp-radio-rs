@@ -141,6 +141,52 @@ pub(super) fn run(arguments: SymbolLineageArgs) -> Result<bool> {
                     )
                 );
             }
+            let mut candidate_rows = Vec::new();
+            for record in &report.functions {
+                if let Some(blocker) = &record.chain_blocker
+                    && !blocker.review_candidates.is_empty()
+                {
+                    candidate_rows.push([
+                        record.source.symbol.clone(),
+                        format!(
+                            "edge {}: {} → {}",
+                            blocker.edge,
+                            report.edges[blocker.edge].from_label,
+                            report.edges[blocker.edge].to_label,
+                        ),
+                        blocker
+                            .review_candidates
+                            .iter()
+                            .map(|candidate| candidate.symbol.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ]);
+                }
+                if let Some(blocker) = &record.direct_blocker
+                    && !blocker.review_candidates.is_empty()
+                {
+                    candidate_rows.push([
+                        record.source.symbol.clone(),
+                        format!(
+                            "direct: {} → {}",
+                            report.direct.from_label, report.direct.to_label,
+                        ),
+                        blocker
+                            .review_candidates
+                            .iter()
+                            .map(|candidate| candidate.symbol.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ]);
+                }
+            }
+            if !candidate_rows.is_empty() {
+                outputln!("\nReview-only function candidates (never automatic matches)");
+                outputln!(
+                    "{}",
+                    crate::cli::table::render(["Source", "Route", "Candidates"], candidate_rows)
+                );
+            }
         }
         if let Some(publication) = publication {
             outputln!("Publication: {} — {}", publication.status, publication.path);

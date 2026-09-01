@@ -370,9 +370,15 @@ An aligned relocation site inside a uniquely mapped caller may also identify a
 changed callee when every observed site votes for the same target and the
 reverse relation is one-to-one. Multiple targets, many-to-one votes, missing
 definitions, or disagreement with a body candidate fail closed. Other
-ambiguous and changed bodies remain review work. A stable generated token is a
-revision locator, not a semantic name; the report never rewrites the artifact
-or silently promotes it into reviewed knowledge.
+ambiguous and changed bodies remain review work. For an otherwise unmatched
+function, the same number of call sites plus the exact multiset of already
+mapped callees may publish at most 16 unclaimed target functions as a bounded
+review-only shortlist. Even a one-item shortlist remains `ambiguous`; it never
+becomes a pin candidate without stronger evidence. Lineage retains these
+candidate symbols, locators, and occurrences at the exact blocking edge, and
+`--details` prints them. A stable generated token is a revision locator, not a
+semantic name; the report never rewrites the artifact or silently promotes it
+into reviewed knowledge.
 
 For archive revisions that replace alphabetically sorted source-object names
 with `0.o`, `1.o`, and so on, the report also publishes the complete inferred
@@ -427,7 +433,7 @@ blocked composition. The report stores artifact digests and every successful
 hop, but not vendor bytes or disassembly. Its pin candidates still require
 review and exclude generated token names.
 
-Schema 6 also retains the failed independent direct correspondence and ranks
+Schema 7 also retains the failed independent direct correspondence and ranks
 `review-frontiers` that lack any resolved target before routes that need only
 independent corroboration, then by reviewable semantic names and finally by
 all affected functions or objects. Compiler labels remain counted but cannot

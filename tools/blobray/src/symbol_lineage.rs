@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 6;
+pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 7;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -70,6 +70,8 @@ pub(crate) struct SymbolLineageBlocker {
     pub(crate) status: Option<SymbolCorrespondenceStatus>,
     pub(crate) basis: &'static str,
     pub(crate) candidates: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) review_candidates: Vec<SymbolLineageReviewCandidate>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -77,6 +79,15 @@ pub(crate) struct SymbolLineageDirectBlocker {
     pub(crate) status: SymbolCorrespondenceStatus,
     pub(crate) basis: &'static str,
     pub(crate) candidates: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) review_candidates: Vec<SymbolLineageReviewCandidate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct SymbolLineageReviewCandidate {
+    pub(crate) symbol: String,
+    pub(crate) locator: String,
+    pub(crate) occurrence: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -439,7 +450,7 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     Ok(SymbolLineageReport {
         schema_version: SYMBOL_LINEAGE_SCHEMA,
         command: "symbols lineage",
-        method: "direct-and-ordered-one-to-one-correspondence-composition-v6",
+        method: "direct-and-ordered-one-to-one-correspondence-composition-v7",
         artifacts,
         edges: edge_summaries,
         direct: direct_summary,
@@ -638,6 +649,7 @@ where
                     status: direct.status(),
                     basis: direct.basis(),
                     candidates: direct.candidates().len(),
+                    review_candidates: review_candidates(direct),
                 });
             let mut current = direct.source().clone();
             let mut chain = Vec::with_capacity(indexes.len());
@@ -649,6 +661,7 @@ where
                         status: None,
                         basis: "intermediate-occurrence-not-indexed",
                         candidates: 0,
+                        review_candidates: Vec::new(),
                     });
                     break;
                 };
@@ -658,6 +671,7 @@ where
                         status: Some(correspondence.status()),
                         basis: correspondence.basis(),
                         candidates: correspondence.candidates().len(),
+                        review_candidates: review_candidates(*correspondence),
                     });
                     break;
                 };
@@ -689,6 +703,23 @@ where
                 chain_blocker,
                 resolved,
             }
+        })
+        .collect()
+}
+
+fn review_candidates<C: LineageCorrespondence>(
+    correspondence: &C,
+) -> Vec<SymbolLineageReviewCandidate> {
+    if correspondence.basis() != "mapped-callee-multiset-review-candidates" {
+        return Vec::new();
+    }
+    correspondence
+        .candidates()
+        .iter()
+        .map(|candidate| SymbolLineageReviewCandidate {
+            symbol: candidate.symbol().to_owned(),
+            locator: candidate.locator().to_owned(),
+            occurrence: candidate.occurrence().to_owned(),
         })
         .collect()
 }
@@ -1058,6 +1089,34 @@ mod tests {
     }
 
     #[test]
+    fn lineage_preserves_bounded_review_only_candidates() {
+        let source = entity("changed_handler", "source");
+        let candidate = entity("current_handler", "candidate");
+        let edges = vec![
+            empty_report(vec![SymbolCorrespondence {
+                from: source.clone(),
+                status: SymbolCorrespondenceStatus::Ambiguous,
+                basis: "mapped-callee-multiset-review-candidates",
+                candidates: vec![candidate.clone()],
+            }]),
+            empty_report(Vec::new()),
+        ];
+        let direct = vec![correspondence(source, None)];
+
+        let records = compose(&direct, &edges, |report| &report.correspondences);
+
+        let blocker = records[0].chain_blocker.as_ref().unwrap();
+        assert_eq!(blocker.candidates, 1);
+        assert_eq!(blocker.review_candidates.len(), 1);
+        assert_eq!(blocker.review_candidates[0].symbol, candidate.symbol);
+        assert_eq!(blocker.review_candidates[0].locator, candidate.locator);
+        assert_eq!(
+            blocker.review_candidates[0].occurrence,
+            candidate.occurrence
+        );
+    }
+
+    #[test]
     fn review_frontiers_rank_the_exact_route_that_blocks_confirmation() {
         let source = entity("named", "source");
         let middle = entity("token-old", "middle");
@@ -1298,7 +1357,7 @@ mod tests {
             load_rebase_evidence(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("current schema 6")
+                .contains("current schema 7")
         );
 
         let mut forged: serde_json::Value = serde_json::from_slice(&authentic).unwrap();

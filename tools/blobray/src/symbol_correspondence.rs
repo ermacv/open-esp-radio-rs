@@ -20,11 +20,12 @@ use open_radio_vendor_contracts::ArtifactIdentity;
 
 use crate::{Result, artifact, artifact_occurrence};
 
-pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 7;
+pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 8;
 const MINIMUM_COMMON_OBFUSCATION_TOKENS: usize = 64;
 const MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION: u32 = 900_000;
 const MINIMUM_MEMBER_ORDER_FUNCTION_SUPPORT: usize = 64;
 const MINIMUM_MEMBER_ORDER_SUPPORT_PARTS_PER_MILLION: u32 = 900_000;
+const MAX_CALL_GRAPH_REVIEW_CANDIDATES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -163,6 +164,7 @@ pub(crate) struct SymbolCorrespondenceSummary {
     pub(crate) name_stable: usize,
     pub(crate) token_stable: usize,
     pub(crate) graph_refined: usize,
+    pub(crate) review_candidates: usize,
     pub(crate) ambiguous: usize,
     pub(crate) unmatched: usize,
 }
@@ -268,6 +270,12 @@ pub(crate) fn correlate(
         &to_identity,
         &mut correspondences,
     )?;
+    suggest_changed_function_candidates_by_mapped_callees(
+        &from_symbols,
+        &to_symbols,
+        &to_identity,
+        &mut correspondences,
+    )?;
     correspondences.sort_by(|left, right| left.from.cmp(&right.from));
     let mut summary = SymbolCorrespondenceSummary::default();
     for correspondence in &correspondences {
@@ -284,6 +292,10 @@ pub(crate) fn correlate(
             SymbolCorrespondenceStatus::Unmatched => summary.unmatched += 1,
         }
     }
+    summary.review_candidates = correspondences
+        .iter()
+        .filter(|correspondence| correspondence.basis == "mapped-callee-multiset-review-candidates")
+        .count();
 
     let member_order = infer_member_order(request.from_path, request.to_path)?
         .map(|mapping| member_order_evidence(mapping, &correspondences));
@@ -305,7 +317,7 @@ pub(crate) fn correlate(
     Ok(SymbolCorrespondenceReport {
         schema_version: SYMBOL_CORRESPONDENCE_SCHEMA,
         command: "symbols correlate",
-        method: "archive-epoch-gated-stable-identity-or-sha256-relocatable-body-relocations-and-one-to-one-call-sites-v6",
+        method: "archive-epoch-gated-identities-relocatable-bodies-one-to-one-call-sites-and-bounded-review-shortlists-v7",
         from: from_artifact,
         to: to_artifact,
         obfuscation_epoch,
@@ -653,6 +665,100 @@ fn refine_function_matches_by_call_graph(
                 changed = true;
             }
         }
+    }
+    Ok(())
+}
+
+fn suggest_changed_function_candidates_by_mapped_callees(
+    from_symbols: &[artifact::ArtifactSymbolDefinition],
+    to_symbols: &[artifact::ArtifactSymbolDefinition],
+    to_artifact: &ArtifactIdentity,
+    correspondences: &mut [SymbolCorrespondence],
+) -> Result<()> {
+    let from_by_name = unique_symbols_by_name(from_symbols);
+    let to_by_name = unique_symbols_by_name(to_symbols);
+    let mappings = correspondences
+        .iter()
+        .filter(|correspondence| {
+            correspondence.status == SymbolCorrespondenceStatus::Unique
+                && correspondence.candidates.len() == 1
+                && from_by_name.contains_key(correspondence.from.symbol.as_str())
+                && to_by_name.contains_key(correspondence.candidates[0].symbol.as_str())
+        })
+        .map(|correspondence| {
+            (
+                correspondence.from.symbol.clone(),
+                correspondence.candidates[0].symbol.clone(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let claimed_targets = correspondences
+        .iter()
+        .filter(|correspondence| {
+            correspondence.status == SymbolCorrespondenceStatus::Unique
+                && correspondence.candidates.len() == 1
+        })
+        .map(|correspondence| correspondence.candidates[0].locator.clone())
+        .collect::<BTreeSet<_>>();
+    let mapped_targets = mappings
+        .values()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+
+    for correspondence in correspondences.iter_mut().filter(|correspondence| {
+        correspondence.status == SymbolCorrespondenceStatus::Unmatched
+            && correspondence.basis == "exact-normalized-body"
+    }) {
+        let Some(from) = from_by_name.get(correspondence.from.symbol.as_str()) else {
+            continue;
+        };
+        let from_calls = call_relocations(from);
+        let mut expected = BTreeMap::<&str, usize>::new();
+        for call in &from_calls {
+            if let Some(mapped) = mappings.get(call.symbol.as_str()) {
+                *expected.entry(mapped.as_str()).or_default() += 1;
+            }
+        }
+        if expected.is_empty() {
+            continue;
+        }
+        let candidate_definitions = to_symbols
+            .iter()
+            .filter(|target| {
+                to_by_name
+                    .get(target.name.as_str())
+                    .is_some_and(|unique| std::ptr::eq(*unique, *target))
+            })
+            .filter(|target| !claimed_targets.contains(function_locator(target).as_str()))
+            .filter(|target| {
+                let target_calls = call_relocations(target);
+                if target_calls.len() != from_calls.len() {
+                    return false;
+                }
+                let target_counts = target_calls
+                    .iter()
+                    .filter(|call| mapped_targets.contains(call.symbol.as_str()))
+                    .fold(BTreeMap::<&str, usize>::new(), |mut counts, call| {
+                        *counts.entry(call.symbol.as_str()).or_default() += 1;
+                        counts
+                    });
+                target_counts == expected
+            })
+            .collect::<Vec<_>>();
+        if candidate_definitions.is_empty()
+            || candidate_definitions.len() > MAX_CALL_GRAPH_REVIEW_CANDIDATES
+        {
+            continue;
+        }
+        let mut candidates = candidate_definitions
+            .into_iter()
+            .map(|target| function_document(target, to_artifact))
+            .collect::<Result<Vec<_>>>()?;
+        candidates.sort();
+        candidates.dedup();
+        correspondence.status = SymbolCorrespondenceStatus::Ambiguous;
+        correspondence.basis = "mapped-callee-multiset-review-candidates";
+        correspondence.candidates = candidates;
     }
     Ok(())
 }
@@ -1696,6 +1802,192 @@ mod tests {
                 |correspondence| correspondence.status == SymbolCorrespondenceStatus::Unmatched
             )
         );
+    }
+
+    #[test]
+    fn mapped_callees_produce_review_only_candidates_for_changed_callers() {
+        let leaf = |name: &str| artifact::ArtifactSymbolDefinition {
+            member: Some("leaf.o".to_owned()),
+            name: name.to_owned(),
+            address: 0,
+            bytes: vec![9, 8],
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let from_symbols = vec![
+            leaf("named_leaf"),
+            symbol("changed_caller", &[1, 2, 3, 4], "named_leaf"),
+        ];
+        let to_symbols = vec![
+            leaf("current_leaf"),
+            symbol("review_candidate", &[5, 6, 7, 8], "current_leaf"),
+            symbol("unrelated", &[10, 11, 12, 13], "other_leaf"),
+        ];
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let mut correspondences = vec![
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[0], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to_symbols[0], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[1], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unmatched,
+                basis: "exact-normalized-body",
+                candidates: Vec::new(),
+            },
+        ];
+
+        suggest_changed_function_candidates_by_mapped_callees(
+            &from_symbols,
+            &to_symbols,
+            &to_identity,
+            &mut correspondences,
+        )
+        .unwrap();
+
+        assert_eq!(
+            correspondences[1].status,
+            SymbolCorrespondenceStatus::Ambiguous
+        );
+        assert_eq!(correspondences[1].candidates.len(), 1);
+        assert_eq!(correspondences[1].candidates[0].symbol, "review_candidate");
+        assert_eq!(
+            correspondences[1].basis,
+            "mapped-callee-multiset-review-candidates"
+        );
+    }
+
+    #[test]
+    fn review_candidates_reject_additional_mapped_callees() {
+        let leaf = |name: &str| artifact::ArtifactSymbolDefinition {
+            member: Some("leaf.o".to_owned()),
+            name: name.to_owned(),
+            address: 0,
+            bytes: vec![9, 8],
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let mut changed_caller = symbol("changed_caller", &[1, 2, 3, 4], "named_leaf");
+        changed_caller.relocations.push(artifact::SymbolRelocation {
+            address: 8,
+            kind: artifact::RelocationKind::Call,
+            symbol: "unmapped_leaf".to_owned(),
+            addend: 0,
+        });
+        let mut invalid_candidate = symbol("invalid_candidate", &[5, 6, 7, 8], "current_leaf");
+        invalid_candidate
+            .relocations
+            .push(artifact::SymbolRelocation {
+                address: 8,
+                kind: artifact::RelocationKind::Call,
+                symbol: "current_other_leaf".to_owned(),
+                addend: 0,
+            });
+        let from_symbols = vec![leaf("named_leaf"), leaf("named_other_leaf"), changed_caller];
+        let to_symbols = vec![
+            leaf("current_leaf"),
+            leaf("current_other_leaf"),
+            invalid_candidate,
+        ];
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let mut correspondences = vec![
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[0], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to_symbols[0], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[1], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to_symbols[1], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[2], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unmatched,
+                basis: "exact-normalized-body",
+                candidates: Vec::new(),
+            },
+        ];
+
+        suggest_changed_function_candidates_by_mapped_callees(
+            &from_symbols,
+            &to_symbols,
+            &to_identity,
+            &mut correspondences,
+        )
+        .unwrap();
+
+        assert_eq!(
+            correspondences[2].status,
+            SymbolCorrespondenceStatus::Unmatched
+        );
+        assert!(correspondences[2].candidates.is_empty());
+    }
+
+    #[test]
+    fn review_candidate_lists_fail_closed_above_the_bound() {
+        let leaf = artifact::ArtifactSymbolDefinition {
+            member: Some("leaf.o".to_owned()),
+            name: "named_leaf".to_owned(),
+            address: 0,
+            bytes: vec![9, 8],
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let from_symbols = vec![
+            leaf.clone(),
+            symbol("changed_caller", &[1, 2, 3, 4], "named_leaf"),
+        ];
+        let mut to_symbols = vec![artifact::ArtifactSymbolDefinition {
+            name: "current_leaf".to_owned(),
+            ..leaf
+        }];
+        to_symbols.extend((0..=MAX_CALL_GRAPH_REVIEW_CANDIDATES).map(|index| {
+            symbol(
+                format!("candidate_{index}").as_str(),
+                &[5, 6, 7, 8],
+                "current_leaf",
+            )
+        }));
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let mut correspondences = vec![
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[0], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to_symbols[0], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from_symbols[1], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unmatched,
+                basis: "exact-normalized-body",
+                candidates: Vec::new(),
+            },
+        ];
+
+        suggest_changed_function_candidates_by_mapped_callees(
+            &from_symbols,
+            &to_symbols,
+            &to_identity,
+            &mut correspondences,
+        )
+        .unwrap();
+
+        assert_eq!(
+            correspondences[1].status,
+            SymbolCorrespondenceStatus::Unmatched
+        );
+        assert!(correspondences[1].candidates.is_empty());
     }
 
     #[test]

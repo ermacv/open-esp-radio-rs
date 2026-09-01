@@ -9,7 +9,8 @@ use crate::legacy_scanning::{
 use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
     HciControllerResponse, InProcessHciChannel, InProcessHciControllerEndpoint,
-    InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap,
+    InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY,
+    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY, LeControllerBootstrap,
     LeControllerBootstrapConfig, LeControllerCommandReady, LeLegacyAdvertisingCommandCompleteEvent,
     LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
     LeLegacyAdvertisingIdleEnableDisposition, LeLegacyAdvertisingReportEvent,
@@ -320,7 +321,8 @@ where
             usize::from(config.le_acl_data_packet_length()).saturating_add(HCI_ACL_HEADER_BYTES);
         let required = acl_packet_capacity
             .max(BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY)
-            .max(LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY);
+            .max(LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY)
+            .max(LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY);
         if PACKET_CAPACITY < required {
             return Err(LeControllerHciResourcesError::PacketCapacityTooSmall {
                 required,
@@ -420,12 +422,12 @@ mod tests {
         assert!(matches!(
             LeControllerHciResources::<NoopRawMutex, 2, 1, 30>::new(config(27, 1)),
             Err(LeControllerHciResourcesError::PacketCapacityTooSmall {
-                required: 31,
+                required: 45,
                 available: 30,
             })
         ));
         assert!(matches!(
-            LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 2)),
+            LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 2)),
             Err(LeControllerHciResourcesError::AclCreditsExceedHostQueue {
                 credits: 2,
                 slots: 1,
@@ -510,7 +512,7 @@ mod tests {
 
     #[test]
     fn one_split_exposes_host_and_the_matching_combined_command_endpoint() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
         assert!(resources.is_pristine());
 
@@ -527,7 +529,7 @@ mod tests {
                     .write(&Reset::new())
                     .await
                     .expect("Reset enters the bounded queue");
-                let mut command_buffer = [0; 31];
+                let mut command_buffer = [0; 45];
                 let LeControllerCommandReadyClaim::Ready(ready) =
                     endpoints.controller.claim_initial_command_ready(())
                 else {
@@ -565,7 +567,7 @@ mod tests {
                     panic!("the combined endpoint publishes the ordered completion");
                 };
 
-                let mut event_buffer = [0; 31];
+                let mut event_buffer = [0; 45];
                 let packet = endpoints
                     .host
                     .read(&mut event_buffer)
@@ -580,7 +582,7 @@ mod tests {
 
     #[test]
     fn initial_command_ready_can_be_claimed_only_once_across_resplits() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
 
         {
@@ -612,13 +614,13 @@ mod tests {
 
     #[test]
     fn draining_a_command_cannot_reclassify_the_epoch_as_pristine() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
 
         {
             let mut endpoints = resources.split();
             block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the input queue");
-            let mut command_buffer = [0; 31];
+            let mut command_buffer = [0; 45];
             let LeControllerCommandReadyClaim::Ready(ready) =
                 endpoints.controller.claim_initial_command_ready(())
             else {
@@ -637,13 +639,13 @@ mod tests {
 
     #[test]
     fn combined_router_dispatches_non_reset_once_before_ordered_backpressure() {
-        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 45>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
         let mut endpoints = resources.split();
 
         block_on(endpoints.host.write(&Reset::new()))
             .expect("Reset enters the real Host transport");
-        let mut reset_buffer = [0; 31];
+        let mut reset_buffer = [0; 45];
         let LeControllerCommandReadyClaim::Ready(initial) =
             endpoints.controller.claim_initial_command_ready(())
         else {
@@ -679,7 +681,7 @@ mod tests {
         let requested_mask = EventMask::new().enable_hardware_error(true);
         block_on(endpoints.host.write(&SetEventMask::new(requested_mask)))
             .expect("Set Event Mask enters the real Host transport");
-        let mut command_buffer = [0; 31];
+        let mut command_buffer = [0; 45];
         let LeControllerCommandIntake::Command {
             command: classified,
             ..
@@ -703,7 +705,7 @@ mod tests {
         };
         assert_eq!(endpoints.controller.bootstrap.event_mask(), requested_mask);
 
-        let mut event_buffer = [0; 31];
+        let mut event_buffer = [0; 45];
         assert_command_complete(
             block_on(endpoints.host.read(&mut event_buffer))
                 .expect("Host drains the older Reset completion"),

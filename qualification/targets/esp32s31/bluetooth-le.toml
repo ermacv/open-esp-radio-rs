@@ -429,6 +429,7 @@ depends-on = ["packet-dataplane", "portable-legacy-advertising", "portable-perip
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
   "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",
+  "verification/vendor/targets/esp32s31/analysis/bluetooth-peripheral-connection.md",
 ]
 gaps = [
   { axis = "implementation", id = "s31-peripheral-event-reliability-supervision-and-llcp-missing" },

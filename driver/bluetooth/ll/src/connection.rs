@@ -624,6 +624,11 @@ pub struct LePeripheralConnectionEventPrepared {
 }
 
 impl LePeripheralConnectionEventPrepared {
+    /// Immutable connection parameters retained by this exact event.
+    pub const fn request(&self) -> LeLegacyConnectionRequest {
+        self.connection.request
+    }
+
     pub const fn event_counter(&self) -> u16 {
         self.connection.event_counter
     }

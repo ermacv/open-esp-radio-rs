@@ -186,8 +186,9 @@ This remains a shadow mirror:
   folding both interfaces into one counter set;
 - the complete source-only audit, including all 117 isolated feature profiles,
   the final performance image, placement and stack-frame checks, passes with
-  this ownership shape. The next gate is same-ELF HIL CPU accounting. Only
-  The next gate is an AP same-ELF HIL run after removal of the old echo.
+  this ownership shape;
+- AP same-ELF HIL after removal of the old echo passes the one-percent CPU and
+  throughput gates described below.
 
 ### Phase 3 same-ELF result
 
@@ -230,6 +231,69 @@ admission. Commit `24730873` separated demand from the AP echo. The subsequent
 cut removed `EgressCandidate`, `EgressGrant`, `EgressBurstLease`, both echo
 queues and all packet-path maintenance; both STA and AP retain only the
 lifecycle mirror.
+
+### Accepted demand-only checkpoint
+
+Commit `939bf11273ef6e8628564634bb7688518195bdc3` is the first clean checkpoint
+with the rejected request/grant echo completely removed. Its low-rate source
+run `1788284016570-001656bb` and saturated replay runs
+`1788284217831-0016588b`, `1788284303627-00165ae1`, and
+`1788284391263-00165b65` proved that the AP ceiling returned from roughly
+116 Mbit/s to 120.5 Mbit/s. The demand-only enabled average was 120.505 Mbit/s
+and the same-ELF disabled average was 120.628 Mbit/s, a 0.10% difference.
+
+That checkpoint still showed a small but repeatable Core1 cost: enabled
+admission was about 42 cycles/attempt more expensive and full TX consume about
+77 cycles/frame more expensive. Inspection found that every network poll
+called the lifecycle outbox flush, and the empty flush rescanned up to sixteen
+cached-external key slots even after `desired == sent`. This work was unrelated
+to packet admission or radio policy.
+
+Commit `ecf34f404f3ebfa50acef99ea510370de72743f8` adds one persistent dirty bit
+to the Core1 lifecycle owner and a local retry bit to the recoverable network
+device. The ordinary synchronized poll is now O(1); a blocked outbox still
+retries after Core0 frees SPSC capacity, and reconstruction preserves an
+already-pending retry. The full source-only audit again passed all 117 isolated
+feature profiles, the production and diagnostic builds, placement, stack-frame
+and direct-target checks.
+
+The exact HIL source run was `1788284922409-001683a6` on channel 13, with laptop
+`wlan0` down and the OpenWrt ingress Ethernet interface up. Its archived image
+subjects are:
+
+```text
+application SHA-256: 245e527413b249591b910d88150f8bd66c5452e8f0e75384f5f99b4a3611b96c
+runtime ELF SHA-256: a390a6f4e8fb973379c52c0e127a54517df963d0e3a2a21d341c24f7e4bdb4d5
+build id:            2a9f449ebb72d4dceba3210cbb808c1e6a72e05689126e20651378f059ce4b6b
+runtime CRC:         2f1fb9cd
+```
+
+The low-rate run delivered 1.130486 Mbit/s in both cycles, published and
+consumed 18 AP demand transitions per cycle, and reported no full or rejected
+update. Saturated A/B/A replayed the exact image:
+
+| Mode | Run | Device TX throughput | AP demand updates |
+| --- | --- | ---: | ---: |
+| enabled A | `1788285396109-001689a7` | 120.513, 120.642 Mbit/s | 12, 6 |
+| disabled B | `1788285482991-00168bb7` | 120.373, 120.503 Mbit/s | 0, 0 |
+| enabled A | `1788285571577-00169037` | 120.485, 120.580 Mbit/s | 12, 12 |
+
+All six cycles negotiated BA32 and reported zero OpenWrt TX retries and
+failures. The normalized averages were:
+
+| Metric | enabled | disabled | difference |
+| --- | ---: | ---: | ---: |
+| throughput | 120.555 Mbit/s | 120.438 Mbit/s | +0.097% |
+| Core0 radio cycles / elapsed cycles | 41.563% | 41.523% | +0.039 pp |
+| Core1 admission cycles / attempt | 972.0 | 970.1 | +1.9 cycles |
+| Core1 consume cycles / admitted frame | 13085.0 | 13085.9 | -0.9 cycles |
+
+The lifecycle mirror is therefore performance-neutral at the resolution of
+this A/B. The earlier residual Core1 regression came from unnecessary empty
+outbox scans, not from lifecycle transport itself. Absolute Core0 occupancy in
+this intrusive diagnostic image is above the production `<40%` goal and must
+not be relabelled as a production result; the same-ELF comparison establishes
+only the cost of this control plane.
 
 ## Current data path
 
@@ -619,8 +683,9 @@ not a wholesale stack rewrite.
    per-TID BA/sequence state and role-specific WMM policy are all missing.
 7. **Wake proof.** Sparse HIL passed, but the dedicated control-only wake edge
    has not been isolated on hardware.
-8. **CPU accounting.** The next design must reduce total work, not merely move
-   Core0 work to Core1. Both cores and normalized cycles/frame/burst must be
+8. **CPU accounting.** The demand-only control plane now passes same-ELF
+   accounting. The next policy must still reduce total work, not merely move
+   Core0 work to Core1; both cores and normalized cycles/frame/burst must be
    reported together.
 9. **Absolute ceiling reproducibility.** Historical 123--124 Mbit/s results
     need a fixed channel, route, OpenWrt state, source archive and same-ELF
@@ -658,14 +723,16 @@ not a wholesale stack rewrite.
 - preserve `GlobalExhausted` versus `KeyDeferred` and direct SRAM emission;
 - measure observer-free single-peer and two-peer paths before proceeding.
 
-### Phase 3: make control physical-radio-wide — shadow mirror complete
+### Phase 3: make control physical-radio-wide — complete
 
 - generalize the AP-only control plane to STA and AP VIF demand;
 - keep exactly one affine Core0 scheduler owner;
 - replace echo-candidate semantics with activation/demand state;
 - delete the rejected echo queues and packet-path lease machinery;
 - retain a same-ELF shadow/off switch and finite work budgets;
-- measure AP after echo removal before adding a new return path.
+- measure AP after echo removal before adding a new return path;
+- eliminate steady-state lifecycle outbox scans and pass the same-ELF
+  throughput/Core0/Core1 gate.
 
 ### Phase 4: implement policy in shadow
 
@@ -735,7 +802,10 @@ Performance gates:
   scheduler regression;
 - no authoritative fairness claim from throughput alone.
 
-The immediate gate is AP same-ELF HIL on the demand-only Core0 mirror. After
-that, extend protocol-provider coverage and specify a real proactive grant
-around active demand plus Core0 BA/AQL/airtime state. No new packet-frequency
-request/reply API should be introduced.
+The next gate is Phase 4 policy in shadow. Before any return path becomes
+authoritative, exact VIF/peer-generation/TID completion identity and the
+estimated-versus-actual airtime accounting boundary must be specified and
+tested. Policy then selects from the mirrored active demands using real Core0
+BA, power-save, rate and radio state. Any future grant is proactive and
+burst/airtime-bounded; no packet-frequency request/reply API may be
+reintroduced.

@@ -614,6 +614,22 @@ min = 0
 max = 0xff
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
+[[enum-domains]]
+name = "BluetoothScanCommand0Image"
+description = "The two complete positional COMMAND_0 images published by the reviewed BLE scanner start path; their inner hardware semantics remain unassigned."
+
+[[enum-domains.values]]
+name = "Image1"
+value = 1
+description = "The complete positional image one selected by one reviewed scanner-start branch."
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+
+[[enum-domains.values]]
+name = "Image256"
+value = 0x100
+description = "The complete positional image 0x100 selected by the alternate reviewed scanner-start branch."
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+
 [[bounded-domains]]
 name = "BluetoothBasebandGainParameterByte"
 description = "Complete linked phy_param byte consumed by the reviewed Bluetooth baseband gain initialization; physical units remain unknown."
@@ -1688,6 +1704,34 @@ sources = [
     "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH",
     "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
 ]
+
+[[fixed-register-images]]
+name = "publish_bluetooth_scan_command_2_image_1"
+peripheral = "BLE_SCAN_CONTROL"
+register = "COMMAND_2"
+value = 1
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+
+[[fixed-register-images]]
+name = "publish_bluetooth_scan_command_1_image_1"
+peripheral = "BLE_SCAN_CONTROL"
+register = "COMMAND_1"
+value = 1
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+
+[[fixed-register-images]]
+name = "publish_bluetooth_scan_command_0_image_1"
+peripheral = "BLE_SCAN_CONTROL"
+register = "COMMAND_0"
+value = 1
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+
+[[fixed-register-images]]
+name = "publish_bluetooth_scan_command_0_image_256"
+peripheral = "BLE_SCAN_CONTROL"
+register = "COMMAND_0"
+value = 0x100
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
 
 [[field-reads]]
 name = "observe_bluetooth_scheduler_hardware_list_head"

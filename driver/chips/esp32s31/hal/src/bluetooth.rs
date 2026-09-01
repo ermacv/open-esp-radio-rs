@@ -33,7 +33,8 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
     BluetoothModemLpTimerOwnerError, BluetoothNrtInterruptAcknowledged,
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
-    BluetoothPhyRegisterInitInputs, BluetoothSchedulerExecutionLockDisposition,
+    BluetoothPhyRegisterInitInputs, BluetoothScanCommand0Image, BluetoothScanStartPublished,
+    BluetoothScanStartRequest, BluetoothSchedulerExecutionLockDisposition,
     BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
     BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
@@ -888,6 +889,24 @@ impl BluetoothControllerHal<'_> {
         };
         execute_rx_memory_list_initial_publication(&mut transaction);
         BluetoothRxMemoryListPublished { selector, head }
+    }
+
+    /// Publish one complete reviewed scanner command transaction.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the initialized pinned scanner graph, its
+    /// matching RX-list publication and an exclusive powered controller epoch.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains scanner graph lifetime and controller-lifecycle prerequisites"
+    )]
+    pub unsafe fn publish_scan_start(
+        &mut self,
+        request: BluetoothScanStartRequest,
+    ) -> BluetoothScanStartPublished {
+        unsafe { self.registers.publish_scan_start(request) }
     }
 
     /// Remove every published scheduler hardware-list head.

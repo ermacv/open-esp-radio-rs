@@ -59452,6 +59452,58 @@ pub mod fixed_register_image {
         }
     }
 
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_2`.
+    #[inline]
+    pub fn publish_bluetooth_scan_command_2_image_1(registers: &crate::BleScanControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_2()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_1`.
+    #[inline]
+    pub fn publish_bluetooth_scan_command_1_image_1(registers: &crate::BleScanControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_1()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_0`.
+    #[inline]
+    pub fn publish_bluetooth_scan_command_0_image_1(registers: &crate::BleScanControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000100` to `BLE_SCAN_CONTROL`.`COMMAND_0`.
+    #[inline]
+    pub fn publish_bluetooth_scan_command_0_image_256(registers: &crate::BleScanControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0()
+                .write_with_zero(|writer| writer.bits(0x00000100));
+        }
+    }
+
     /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0004`.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_command_0004(registers: &crate::BtdmRuntimeControl) {

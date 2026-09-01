@@ -14,6 +14,7 @@ mod bluetooth_interrupt;
 mod bluetooth_memory_lists;
 mod bluetooth_modem_lp_timer;
 mod bluetooth_phy_init;
+mod bluetooth_scan;
 mod bluetooth_scheduler;
 mod bluetooth_scheduler_insertion;
 mod bluetooth_scheduler_lock_modify;
@@ -116,6 +117,9 @@ pub use bluetooth_modem_lp_timer::{
 pub use bluetooth_phy_init::{
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
     BluetoothPhyRegisterInitInputs,
+};
+pub use bluetooth_scan::{
+    BluetoothScanCommand0Image, BluetoothScanStartPublished, BluetoothScanStartRequest,
 };
 pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,

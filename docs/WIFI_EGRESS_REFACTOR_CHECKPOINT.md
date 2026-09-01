@@ -869,10 +869,38 @@ and counters therefore recovered only about 0.15 percentage point; it did not
 explain the multi-point regression. The additional diagnostic branch itself
 also moved the image from approximately 43.4% to 44.9% without materially
 changing retired instructions, direct evidence that this diagnostic ELF is
-highly sensitive to hot code shape. The next source-level isolation keeps the
-terminal owner but removes association/rate duplication from the hot
-`AmpduProgress` return value. No shadow airtime accounting proceeds until the
-accepted Core0 baseline is recovered.
+highly sensitive to hot code shape.
+
+Commit `c9321e0a4dd7d271383b137962684c3eaa3a4a95` then removed association and
+rate duplication from the hot `AmpduProgress` return value. Clean run
+`1788291987639-0017d159` delivered 119.910/120.064 Mbit/s at
+42.749/42.808% Core0. This recovered about 2.17 percentage points, but retired
+instructions remained approximately 706 million per cycle rather than the
+previous 669--670 million. A smaller return ABI was beneficial, but it did
+not remove the added work.
+
+Source inspection localized that work to aggregate preparation. The exact
+association identity was already bound once by `begin()`, but `push()` copied
+and compared the complete 12-byte `(slot, generation, MAC)` identity again for
+every MPDU. That check ran approximately 163 thousand times per cycle while
+preparing the active and standby BA32 batches. It could not add generation
+correctness: all calls used the same batch admission from which `begin()` had
+already captured the exact identity. Commit
+`12c42c52c2f1982b66701cda1f663be2b8da0f7a` therefore retains exact identity
+through the entire aggregate lifetime but restores the per-MPDU check to the
+six-byte peer address, whose purpose is only to reject a mixed-peer batch.
+
+Clean channel-13 run `1788292393796-0017e36a` proves the result. Its two
+cycles delivered 119.922 and 119.630 Mbit/s at 40.037% and 39.812% Core0.
+Radio retired instructions fell to 670.841 and 668.215 million; publish-phase
+instructions fell to 111.304 and 108.052 million. Exact entry observations
+were 162,949/162,561, terminal current frames were exactly one fewer per
+cycle, all aggregates contained 32 MPDUs, and every stale or mismatch counter
+was zero. The accepted identity boundary is therefore exact once per affine
+aggregate lifetime, with only the minimal peer-consistency check in the
+per-MPDU hot path. Shadow airtime work may now resume, but every new accounting
+boundary must preserve this normalized Core0 baseline rather than treating a
+per-packet identity protocol as an acceptable policy cost.
 
 ### Phase 5: authoritative cutover
 

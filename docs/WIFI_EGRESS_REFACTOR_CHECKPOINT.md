@@ -1322,6 +1322,25 @@ mirror remained exact, proving the runtime switch isolates the new boundary.
 
 ### Phase 5: authoritative cutover
 
+The portable policy kernel now contains the first host-verified grant
+lifecycle, but it is not connected to the cross-core transport or production
+admission. A valid selection can become one copyable, serial-bound burst
+grant. Issuance charges no airtime. The first successful final-SRAM admission
+starts the grant and creates the affine pending-airtime receipt; the grant
+remains the sole physical preparation horizon until Core1 closes it once.
+An unused grant becomes stale after `Inactive` or a VIF epoch reset, while a
+started grant and its receipt survive those transitions until terminal radio
+reconciliation.
+
+Grant close carries `used_frames` plus the exact remaining demand level from
+Core1. Core0 must not derive that value by subtracting from its earlier demand
+snapshot: concurrent enqueue and coalesced demand watermarks make such a
+subtraction ambiguous and can produce a duplicate grant. Consequently the
+close record and ordinary demand lifecycle must share one ordered
+Core1-to-Core0 control stream. The host state tests cover sparse grants,
+unrelated demand churn, unused-grant invalidation, epoch reset after start,
+receipt tombstones and post-materialization demand installation.
+
 - issue one demand-id-bound frame/airtime quantum from Core0 per burst, never
   one request/reply per packet;
 - consume that grant locally in Core1 before final SRAM construction and bind

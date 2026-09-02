@@ -176,8 +176,11 @@ role-specific recycle/recurrence path existed.
 
 Decision: split scheduler.rs into a small facade plus scheduler/epoch.rs,
 scheduler/dtm.rs, scheduler/legacy_advertising.rs, scheduler/passive_scan.rs,
-and scheduler/peripheral_connection.rs. Factor only the private epoch
-mechanics. Do not erase role-specific typestates behind a broad public trait.
+and scheduler/peripheral_connection.rs. The DTM production lifecycle is now
+isolated in `scheduler/dtm.rs` with explicit dependencies; the parent retains
+the common epoch/timeline/list/publication core. Factor only those private
+epoch mechanics. Do not erase role-specific typestates behind a broad public
+trait.
 
 ### controller_start.rs crossed from composition into operation
 
@@ -264,8 +267,8 @@ monoliths.
 1. Extract operational scheduler service from controller_start.rs (done in
    the audit change).
 2. Split scheduler.rs by role and isolate the exclusive-list epoch
-   (in progress: connection states and transitions are isolated; DTM is being
-   extracted from the common scheduler facade).
+   (in progress: connection and DTM states/transitions are isolated; advertising
+   and scanning still occupy the common scheduler facade).
 3. Generalize and rename the post-unlink mailbox without legacy aliases.
 4. Finish connection recycle and recurrence against those shared primitives
    (SRAM/RX plus scheduler release done; status/destroy classification, LL

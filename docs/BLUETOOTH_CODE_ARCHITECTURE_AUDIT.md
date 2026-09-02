@@ -85,6 +85,15 @@ dependency. CI can then validate its dependency closure from Cargo metadata.
 That is a compiler/manifest boundary and must not be replaced with a regex
 test over type or symbol names.
 
+The physical crate split is deliberately deferred until three internal cycles
+are removed. `BluetoothControllerInterruptOwnersPublished` still owns role
+runtimes, the neutral powered task type still has operational role impls in the
+mixed scheduler module, and interrupt storage is still defined in the mixed
+controller-start module. The compileable order is therefore: split
+`hci.rs` into low-power and bind layers, isolate scheduler boot/runtime core,
+isolate interrupt publication, move role-resource attachment after hardware
+publication, and only then create the dependency-enforced hardware crate.
+
 The target internal hierarchy is:
 
     Embassy actor: wait, wake, select, cancellation
@@ -192,9 +201,11 @@ same change.
 
 The memory crate correctly contains volatile SRAM access and private bitfield
 codecs. Those operations must not move upward merely to reduce file size.
-dtm_storage.rs should instead be divided internally into allocation/layout,
-address binding, publication lifecycle, and completion/recycle. Higher layers
-must continue to see typed owners and semantic accessors only.
+`dtm_storage.rs` is now divided into a private `dtm_storage/codec.rs` containing
+layout, volatile cells, address binding and raw transforms, and a parent module
+containing semantic values plus the affine publication/completion lifecycle.
+Raw link-state, scheduler-item and binding types are no longer re-exported;
+higher layers use graph identity, allocation policy and extent accessors.
 
 ### dtm_order.rs is no longer a DTM-only module
 
@@ -257,8 +268,8 @@ monoliths.
    (SRAM/RX plus scheduler release done; status/destroy classification, LL
    commit and recurrence remain).
 5. Split the Embassy actor by role while retaining one task and one state slot.
-6. Split the portable command-order and memory-codec files after the hardware
-   lifecycle is complete.
+6. Split the portable command-order after the hardware lifecycle is complete;
+   the DTM memory codec split is done.
 
 The boot-chain inversion is now removed as one atomic refactor:
 `Scheduler -> LowPower -> PHY -> Baseband -> BLE PHY -> interrupt publication`

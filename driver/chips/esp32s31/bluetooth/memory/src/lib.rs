@@ -73,8 +73,7 @@ pub use dtm_storage::{
     BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
     BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES,
     BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
-    BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
-    BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
+    BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphBindFailure,
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphEmptyListLinkPrepared,
     BluetoothDtmMemoryGraphHeadPublished, BluetoothDtmMemoryGraphIdentity,
@@ -89,8 +88,7 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
     BluetoothDtmMemoryGraphTxPacketPrepareFailure, BluetoothDtmMemoryGraphTxPacketPrepared,
     BluetoothDtmPositionalEventSeed, BluetoothDtmSchedulerAllocationConfig,
-    BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
-    BluetoothDtmTxPacketPrepareError,
+    BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmTxPacketPrepareError,
 };
 pub use le_rx_packet::{
     BluetoothLePacketCapturedTime, BluetoothLeReceivedBatch, BluetoothLeReceivedPdu,

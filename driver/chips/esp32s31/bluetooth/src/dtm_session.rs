@@ -81,10 +81,9 @@ impl BluetoothDtmRuntimeResources {
         default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm,
         graph: BluetoothDtmMemoryGraphCpuOwned,
     ) -> Self {
-        let binding = graph.binding();
         let config =
-            BluetoothDtmRuntimeConfig::new(binding.allocation_config(), default_tx_power_dbm);
-        let graph_identity = binding.identity();
+            BluetoothDtmRuntimeConfig::new(graph.allocation_config(), default_tx_power_dbm);
+        let graph_identity = graph.identity();
         Self {
             config,
             graph_identity,
@@ -174,7 +173,7 @@ impl BluetoothDtmRuntimeResources {
         &mut self,
         idle: BluetoothDtmSessionIdle,
     ) -> Result<(), BluetoothDtmSessionIdle> {
-        if self.idle.is_some() || idle.graph.binding().identity() != self.graph_identity {
+        if self.idle.is_some() || idle.graph.identity() != self.graph_identity {
             return Err(idle);
         }
         self.idle = Some(idle);

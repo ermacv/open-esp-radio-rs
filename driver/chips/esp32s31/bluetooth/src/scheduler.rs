@@ -23,7 +23,8 @@ pub use peripheral_connection::{
     BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
     BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
     BluetoothPeripheralConnectionSchedulerHeadPublished,
-    BluetoothPeripheralConnectionSchedulerRunning,
+    BluetoothPeripheralConnectionSchedulerRecycleStep,
+    BluetoothPeripheralConnectionSchedulerRecycled, BluetoothPeripheralConnectionSchedulerRunning,
     BluetoothPeripheralConnectionSchedulerRunningDrainStep,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
     BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep,
@@ -58,7 +59,7 @@ use crate::peripheral_connection::{
     BluetoothPeripheralConnectionFirstEventCompletionObservation,
     BluetoothPeripheralConnectionFirstEventCompletionObserved,
     BluetoothPeripheralConnectionFirstEventRunning,
-    BluetoothPeripheralConnectionFirstEventRxPublished,
+    BluetoothPeripheralConnectionFirstEventRxPublished, BluetoothPeripheralConnectionRecycledEvent,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
@@ -105,6 +106,7 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphRecycleError,
     BluetoothPassiveScanMemoryGraphRecycled, BluetoothPassiveScanMemoryGraphRunning,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
+    BluetoothPeripheralConnectionMemoryGraphRecycleError,
     BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]

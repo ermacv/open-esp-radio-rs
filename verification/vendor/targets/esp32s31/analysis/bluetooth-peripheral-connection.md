@@ -251,6 +251,51 @@ consume semantic connection state and choose one PAC accessor. No raw
 register image or private vendor flag layout is allowed to cross into the
 portable Link Layer.
 
+## Completion recycle and recurring-event facts
+
+Current-to-named correspondence also identifies the complete connection-event
+suffix:
+
+- `r_sym_ble_vssfeWXnPIcnyOfdsX00` is the current
+  `ble_lll_conn_recycle_sch_item`;
+- `r_sym_ble_Dugdawung2wRHuTkJeRz` is the current
+  `ble_lll_conn_sched_next_anchor`;
+- `r_sym_ble_bp2AWMfX9zEpJsmzOTUB` is the current
+  `ble_lll_conn_reschedule_event`.
+
+The scheduler-item status is not a success/error boolean. Zero takes one quiet
+bookkeeping path. A nonzero value adds diagnostic accounting and then exposes
+independent flag branches; both zero and nonzero items are returned to the
+private free list, and either may later continue or destroy the connection
+according to separate connection state. The Rust status must therefore remain
+`Zero` versus opaque `NonZero`, and LL event completion must not be selected by
+that distinction alone.
+
+The recycle body first pushes the completed item onto the connection-private
+free list: it preserves the allocation prefix, installs the former private
+head as predecessor, then makes the completed item the new private head. The
+reschedule body pops that same item, clears its status and rebuilds its event
+fields; failed insertion pushes it back. This confirms that completed common
+list removal returns an event-local scheduler item while preserving the live
+link state.
+
+Recurring events use a different profile from the first event:
+
+- baseline priority is 8, with conflict escalation saturating at 15;
+- the receive wait includes accumulated window widening and controller-owned
+  guard terms and selects a short or long descriptor form;
+- the proposed anchor advances from the prior nominal anchor, never from a
+  fresh `now()` sample;
+- missed intervals advance the proposed event counter by `skipped + 1`, while
+  admission retries remain provisional until one candidate commits.
+
+That last branch exposes a portable-LL gap: the current one-event completion
+transition advances the channel selector and counter by exactly one. Recurrence
+needs a distinct provisional skipped-event transition which advances protocol
+time/channel selection without falsely claiming that the skipped intervals ran
+in hardware. Scheduler admission may retry proposed anchors, but only the
+accepted recurrence may commit that proposed LL state.
+
 ## Next closure order
 
 Packet timestamp conversion, the causal absolute first-window contract, the
@@ -269,7 +314,8 @@ remaining path to one real peripheral event is:
    scheduler, release the exact timeline reservation and advance the portable
    event exactly once;
 3. add recurrence from the completed event's negotiated interval and next data
-   channel through the same typed publication path;
+   channel through a provisional `skipped + 1` LL transition and the same typed
+   publication path;
 4. add SN/NESN, retransmission and supervision before exposing ACL success;
 5. add only the mandatory LL control procedures needed by the supported HCI
    surface.

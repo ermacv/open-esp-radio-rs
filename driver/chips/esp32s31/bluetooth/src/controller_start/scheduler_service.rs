@@ -450,6 +450,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         })
     }
 
+    /// Reclaim event-local connection SRAM and the common scheduler owners.
+    pub fn recycle_peripheral_connection_completed(
+        &mut self,
+        ready: crate::BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
+    ) -> crate::BluetoothPeripheralConnectionSchedulerRecycleStep {
+        self.runtime.recycle_peripheral_connection_completed(ready)
+    }
+
     /// Cancel a connection post-unlink wait without discarding a ready event.
     pub fn cancel_peripheral_connection_software_list_removal(
         &mut self,

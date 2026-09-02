@@ -8,9 +8,24 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventInFlight;
 use open_esp_radio_bluetooth_ll::connection::{
     LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeConnectionTiming, LeDataChannelIndex,
     LePeripheralConnection, LePeripheralConnectionEventPrepared,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, BluetoothLeReceivedBatch, BluetoothLeRxError,
+    BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
+    BluetoothPeripheralConnectionMemoryGraphCompletionObservation,
+    BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
+    BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    BluetoothPeripheralConnectionMemoryGraphRecycleError,
+    BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
+    BluetoothPeripheralConnectionMemoryGraphRunning,
+    BluetoothPeripheralConnectionMemoryGraphRxExtracted,
+    BluetoothPeripheralConnectionMemoryGraphRxPublished,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -38,15 +53,9 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothNonScanningRxMemoryModelAddress, BluetoothPeripheralConnectionMemoryGraphModelAddress,
 };
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothPeripheralConnectionMemoryGraphCompletionObservation,
-    BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
-    BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
-    BluetoothPeripheralConnectionMemoryGraphRunning,
-    BluetoothPeripheralConnectionMemoryGraphRxPublished,
+use open_esp_radio_esp32s31_hal::{
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerSoftwareListRemovalReady,
 };
-#[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::BluetoothSchedulerFinishedHardwareListObserved;
 
 use crate::BluetoothSchedulerInstant;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -864,7 +873,7 @@ impl BluetoothPeripheralConnectionFirstEventRxPublished {
     ) -> BluetoothPeripheralConnectionFirstEventRunning {
         BluetoothPeripheralConnectionFirstEventRunning {
             graph: self.graph.into_running(run),
-            event: self.event,
+            event: self.event.into_submitted(),
             _first_window: self.first_window,
             _requested_window: self.requested_window,
             _resolved_window: self.resolved_window,
@@ -877,7 +886,7 @@ impl BluetoothPeripheralConnectionFirstEventRxPublished {
 #[must_use = "the running connection event must advance through owned completion"]
 pub(crate) struct BluetoothPeripheralConnectionFirstEventRunning {
     graph: BluetoothPeripheralConnectionMemoryGraphRunning,
-    event: LePeripheralConnectionEventPrepared,
+    event: LePeripheralConnectionEventInFlight,
     _first_window: BluetoothPeripheralConnectionFirstWindow,
     _requested_window: BluetoothSchedulerRawWindow,
     _resolved_window: BluetoothSchedulerRawWindow,
@@ -959,7 +968,7 @@ pub(crate) enum BluetoothPeripheralConnectionFirstEventCompletionObservation {
 #[must_use = "the completed connection event must advance through scheduler unlink"]
 pub(crate) struct BluetoothPeripheralConnectionFirstEventCompletionObserved {
     graph: BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
-    event: LePeripheralConnectionEventPrepared,
+    event: LePeripheralConnectionEventInFlight,
     _first_window: BluetoothPeripheralConnectionFirstWindow,
     _requested_window: BluetoothSchedulerRawWindow,
     _resolved_window: BluetoothSchedulerRawWindow,
@@ -981,6 +990,238 @@ impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
         &self,
     ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionSchedulerItemCompletionStatus{
         self.graph.status()
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains the completed event and removal proof"
+    )]
+    pub(crate) fn prepare_recycle(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<
+        BluetoothPeripheralConnectionCompletionRecyclePrepared,
+        BluetoothPeripheralConnectionCompletionRecycleFailure,
+    > {
+        let Self {
+            graph,
+            event,
+            _first_window: first_window,
+            _requested_window: requested_window,
+            _resolved_window: resolved_window,
+        } = self;
+        match graph.prepare_recycle_after_software_list_removal(removal) {
+            Ok(graph) => Ok(BluetoothPeripheralConnectionCompletionRecyclePrepared {
+                graph,
+                event,
+                first_window,
+                requested_window,
+                resolved_window,
+            }),
+            Err(failure) => {
+                let error = failure.error();
+                let (graph, removal) = failure.into_parts();
+                Err(BluetoothPeripheralConnectionCompletionRecycleFailure {
+                    error,
+                    completed: Self {
+                        graph,
+                        event,
+                        _first_window: first_window,
+                        _requested_window: requested_window,
+                        _resolved_window: resolved_window,
+                    },
+                    removal,
+                })
+            }
+        }
+    }
+}
+
+/// Completed connection event authorized for lower RX extraction.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the recycle transaction must be extracted or returned unchanged"]
+pub(crate) struct BluetoothPeripheralConnectionCompletionRecyclePrepared {
+    graph: BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
+    event: LePeripheralConnectionEventInFlight,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionCompletionRecyclePrepared {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionFirstEventCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        let (graph, removal) = self.graph.into_parts();
+        (
+            BluetoothPeripheralConnectionFirstEventCompletionObserved {
+                graph,
+                event: self.event,
+                _first_window: self.first_window,
+                _requested_window: self.requested_window,
+                _resolved_window: self.resolved_window,
+            },
+            removal,
+        )
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains the complete recycle transaction"
+    )]
+    pub(crate) fn extract_received(
+        self,
+    ) -> Result<
+        BluetoothPeripheralConnectionCompletionRxExtracted,
+        BluetoothPeripheralConnectionCompletionRxExtractionFailure,
+    > {
+        let Self {
+            graph,
+            event,
+            first_window,
+            requested_window,
+            resolved_window,
+        } = self;
+        match graph.extract_received() {
+            Ok(graph) => Ok(BluetoothPeripheralConnectionCompletionRxExtracted {
+                graph,
+                event,
+                first_window,
+                requested_window,
+                resolved_window,
+            }),
+            Err(failure) => Err(BluetoothPeripheralConnectionCompletionRxExtractionFailure {
+                error: failure.error(),
+                prepared: Self {
+                    graph: failure.into_prepared(),
+                    event,
+                    first_window,
+                    requested_window,
+                    resolved_window,
+                },
+            }),
+        }
+    }
+}
+
+/// Lower recycle mismatch retaining the exact completion and removal proof.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed connection event and removal proof remain owned"]
+pub(crate) struct BluetoothPeripheralConnectionCompletionRecycleFailure {
+    error: BluetoothPeripheralConnectionMemoryGraphRecycleError,
+    completed: BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionCompletionRecycleFailure {
+    pub(crate) const fn error(&self) -> BluetoothPeripheralConnectionMemoryGraphRecycleError {
+        self.error
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionFirstEventCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+}
+
+/// Malformed RX result retaining the entire uncommitted recycle transaction.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the failed RX transaction must enter fail-stop handling or be retained"]
+pub(crate) struct BluetoothPeripheralConnectionCompletionRxExtractionFailure {
+    error: BluetoothLeRxError,
+    prepared: BluetoothPeripheralConnectionCompletionRecyclePrepared,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionCompletionRxExtractionFailure {
+    pub(crate) const fn error(&self) -> BluetoothLeRxError {
+        self.error
+    }
+
+    pub(crate) fn into_prepared(self) -> BluetoothPeripheralConnectionCompletionRecyclePrepared {
+        self.prepared
+    }
+}
+
+/// Copied RX result joined to the uncommitted connection recycle owner.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the event resources must be committed before connection recurrence"]
+pub(crate) struct BluetoothPeripheralConnectionCompletionRxExtracted {
+    graph: BluetoothPeripheralConnectionMemoryGraphRxExtracted,
+    event: LePeripheralConnectionEventInFlight,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionCompletionRxExtracted {
+    pub(crate) fn into_prepared(self) -> BluetoothPeripheralConnectionCompletionRecyclePrepared {
+        BluetoothPeripheralConnectionCompletionRecyclePrepared {
+            graph: self.graph.into_prepared(),
+            event: self.event,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
+        }
+    }
+
+    pub(crate) fn commit(self) -> BluetoothPeripheralConnectionRecycledEvent {
+        let (graph, batch, status) = self.graph.commit().into_parts();
+        BluetoothPeripheralConnectionRecycledEvent {
+            graph,
+            event: self.event,
+            batch,
+            status,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
+        }
+    }
+}
+
+/// CPU-owned active connection after event-local SRAM reclamation.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the active connection must classify completion before LL advance"]
+#[allow(
+    dead_code,
+    reason = "the next recurring-event transition consumes the preserved active graph and phase"
+)]
+pub(crate) struct BluetoothPeripheralConnectionRecycledEvent {
+    graph: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
+    event: LePeripheralConnectionEventInFlight,
+    batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+    status: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionRecycledEvent {
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub(crate) const fn status(
+        &self,
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionSchedulerItemCompletionStatus{
+        self.status
+    }
+
+    pub(crate) const fn received(
+        &self,
+    ) -> BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
+        self.batch
     }
 }
 

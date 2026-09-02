@@ -68,6 +68,15 @@ The clean cut is a transport-free `BluetoothControllerHardwareReady` owner,
 followed by a separate Controller composition step which joins HCI resources.
 This should be corrected before expanding the HCI command surface.
 
+The exact safe cut is after interrupt-owner publication and before production
+system composition. Up to `BluetoothControllerInterruptOwnersPublished`, the
+chain should carry only platform, timer, scheduler, PHY and interrupt-storage
+types. A final `BluetoothControllerHciBound` should then join the already
+published hardware owner to `LeControllerHciResources`; only that type and its
+runtime endpoints may carry `RawMutex` and HCI queue capacities. CPU interrupt
+routes are still inactive at this seam, and no HCI endpoint borrow exists, so
+failure can return both affine owners without rollback MMIO.
+
 The target internal hierarchy is:
 
     Embassy actor: wait, wake, select, cancellation
@@ -208,8 +217,17 @@ next event.
 The lower memory suffix now reflects that boundary: it validates the exact
 software-list removal proof, copies RX data before mutation, and returns an
 active CPU owner after restoring only the detached item and RX pool. It does
-not call the cold-allocation reset. Scheduler timeline/list release and the
-single portable LL completion transition remain the next upper-layer step.
+not call the cold-allocation reset. The scheduler suffix now joins that result
+to exact timeline release and common-list reclamation. The portable event was
+moved to `InFlight` at RUN and intentionally remains unadvanced after recycle:
+the separate connection-destroy/status policy must be closed before one LL
+completion can be committed.
+
+The connection-memory file is also the first codec split: raw SRAM storage,
+offsets, masks, address binding and word transforms live in the private
+`peripheral_connection_memory/codec.rs`; the parent module contains semantic
+values and affine lifecycle states. This is the template for the other memory
+monoliths.
 
 ## Refactor order
 
@@ -219,10 +237,17 @@ single portable LL completion transition remain the next upper-layer step.
    (in progress: connection states and transitions are isolated).
 3. Generalize and rename the post-unlink mailbox without legacy aliases.
 4. Finish connection recycle and recurrence against those shared primitives
-   (lower SRAM/RX recycle done; scheduler/LL suffix remains).
+   (SRAM/RX plus scheduler release done; status/destroy classification, LL
+   commit and recurrence remain).
 5. Split the Embassy actor by role while retaining one task and one state slot.
 6. Split the portable command-order and memory-codec files after the hardware
    lifecycle is complete.
+
+Before step 5, remove the boot-chain inversion as one atomic refactor:
+`Scheduler -> LowPower -> PHY -> Baseband -> BLE PHY -> interrupt publication`
+must be HCI-free, followed by the single final HCI bind. This is a hierarchy
+repair rather than a new feature and must not leave aliases for the old
+HCI-carrying boot typestates.
 
 Each step must preserve focused host tests, target checks and the source-only
 audit. File moves must not add tests that merely restate generated masks,
@@ -231,7 +256,7 @@ addresses or symbol names.
 ## Driver readiness impact
 
 The refactor does not replace missing functionality. The next functional edge
-is scheduler-side connection recycle, exact timeline/list release, one LL event
-advance, then recurrence and controller-runner integration. The split is
-worthwhile before that work because recurrence would otherwise add another
-copy of the largest duplicated pipeline.
+is connection completion classification, exactly one accepted LL event advance,
+then provisional skipped-event recurrence and controller-runner integration.
+The split is worthwhile before that work because recurrence would otherwise
+add another copy of the largest duplicated pipeline.

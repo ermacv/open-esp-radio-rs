@@ -410,6 +410,57 @@ impl BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
     }
 }
 
+/// Active connection owner after event-local memory and scheduler reclamation.
+#[must_use = "the recycled connection must classify status before protocol advance"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionSchedulerRecycled {
+    event: BluetoothPeripheralConnectionRecycledEvent,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerRecycled {
+    /// Link Layer counter retained without advancement after lower reclamation.
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    /// Opaque hardware status awaiting reviewed connection-event classification.
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.event.status()
+    }
+
+    /// Copied receive batch which no longer aliases controller SRAM.
+    pub const fn received(
+        &self,
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedBatch<
+        { open_esp_radio_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_NODE_COUNT },
+    > {
+        self.event.received()
+    }
+}
+
+/// One atomic attempt to release connection memory, timeline and list owners.
+#[must_use = "every rejected branch retains the exact removal-ready connection"]
+#[cfg(target_arch = "riscv32")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "no-alloc failure branches retain the exact affine connection owner"
+)]
+pub enum BluetoothPeripheralConnectionSchedulerRecycleStep {
+    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
+    FinishedListDrainStillActive(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
+    MemoryIdentityMismatch {
+        ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
+        error: BluetoothPeripheralConnectionMemoryGraphRecycleError,
+    },
+    ReceiveInvalid {
+        ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
+        error: BluetoothLeRxError,
+    },
+    ReservationIdentityMismatch(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
+    Recycled(BluetoothPeripheralConnectionSchedulerRecycled),
+}
+
 #[must_use = "the unlinked or removal-ready connection graph must remain owned"]
 #[cfg(target_arch = "riscv32")]
 pub(crate) enum BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin {
@@ -1079,5 +1130,87 @@ impl<const SCHEDULER_CAPACITY: usize>
                 )
             }
         }
+    }
+
+    /// Copy RX results and release the connection event's three lower owners.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recycle_peripheral_connection_completed(
+        &mut self,
+        ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
+    ) -> BluetoothPeripheralConnectionSchedulerRecycleStep {
+        let address = ready.scheduler_item_address();
+        if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_software_list_removal_ready_first_item(address)
+        {
+            return BluetoothPeripheralConnectionSchedulerRecycleStep::SchedulerIdentityMismatch(
+                ready,
+            );
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPeripheralConnectionSchedulerRecycleStep::FinishedListDrainStillActive(
+                ready,
+            );
+        }
+        let BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
+            event,
+            removal,
+            reservation,
+        } = ready;
+        let prepared = match event.prepare_recycle(removal) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let error = failure.error();
+                let (event, removal) = failure.into_parts();
+                return BluetoothPeripheralConnectionSchedulerRecycleStep::MemoryIdentityMismatch {
+                    ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
+                        event,
+                        removal,
+                        reservation,
+                    },
+                    error,
+                };
+            }
+        };
+        let extracted = match prepared.extract_received() {
+            Ok(extracted) => extracted,
+            Err(failure) => {
+                let error = failure.error();
+                let (event, removal) = failure.into_prepared().into_parts();
+                return BluetoothPeripheralConnectionSchedulerRecycleStep::ReceiveInvalid {
+                    ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
+                        event,
+                        removal,
+                        reservation,
+                    },
+                    error,
+                };
+            }
+        };
+        let release = match self
+            .runtime
+            .scheduler_timeline_mut()
+            .prepare_release(reservation)
+        {
+            Ok(release) => release,
+            Err(failure) => {
+                let reservation = failure.into_reservation();
+                let (event, removal) = extracted.into_prepared().into_parts();
+                return BluetoothPeripheralConnectionSchedulerRecycleStep::ReservationIdentityMismatch(
+                    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
+                        event,
+                        removal,
+                        reservation,
+                    },
+                );
+            }
+        };
+        let event = extracted.commit();
+        release.commit();
+        self._scheduler_list.commit_recycled_first_item();
+        BluetoothPeripheralConnectionSchedulerRecycleStep::Recycled(
+            BluetoothPeripheralConnectionSchedulerRecycled { event },
+        )
     }
 }

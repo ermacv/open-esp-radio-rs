@@ -694,6 +694,10 @@ fn affine_current_and_standby_grants_materialize_and_close_exactly() {
     let observed = device.poll_egress_grant(&mut cx).unwrap();
     assert_eq!(observed.serial(), grant.serial());
     assert_eq!(observed.demand(), demand);
+    let observed_standby = device.poll_egress_grant(&mut cx).unwrap();
+    assert_eq!(observed_standby.serial(), standby.serial());
+    assert_eq!(observed_standby.demand(), standby_demand);
+    assert!(device.poll_egress_grant(&mut cx).is_none());
 
     let token = match device.transmit_for(&mut cx, key) {
         EgressAdmission::Granted(token) => token,
@@ -758,13 +762,10 @@ fn affine_current_and_standby_grants_materialize_and_close_exactly() {
             )),
         }]
     );
-    assert_eq!(control.snapshot().network_grants, 1);
+    assert_eq!(control.snapshot().network_grants, 2);
     assert_eq!(control.snapshot().grant_progress_publications, 1);
     assert_eq!(control.snapshot().radio_grant_updates, 1);
 
-    let observed = device.poll_egress_grant(&mut cx).unwrap();
-    assert_eq!(observed.serial(), standby.serial());
-    assert_eq!(observed.demand(), standby_demand);
     drop(
         consumer
             .for_interface(interface)

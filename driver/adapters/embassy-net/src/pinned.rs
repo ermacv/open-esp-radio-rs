@@ -46,6 +46,10 @@ use crate::{
     ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
 };
 
+#[cfg(feature = "tx-egress-scheduling")]
+const PINNED_EGRESS_GRANT_PIPELINE_DEPTH: usize =
+    crate::egress_control::DEFAULT_EGRESS_GRANT_DEPTH;
+
 /// Opaque identity of one logical network endpoint sharing a physical radio.
 ///
 /// The network adapter preserves this value but never assigns Wi-Fi meaning
@@ -1333,6 +1337,8 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 egress_demand_flush_pending: false,
                 #[cfg(feature = "tx-egress-scheduling")]
                 egress_grant: None,
+                #[cfg(feature = "tx-egress-scheduling")]
+                egress_standby_grant: None,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
                 shadow_grant_serial: 0,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1539,6 +1545,8 @@ pub struct SplitPinnedDevice<
     egress_demand_flush_pending: bool,
     #[cfg(feature = "tx-egress-scheduling")]
     egress_grant: Option<PinnedEgressGrantState>,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_standby_grant: Option<PinnedEgressGrantState>,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     shadow_grant_serial: u32,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1680,18 +1688,23 @@ impl<
             return;
         };
 
-        let pending_finish = self
-            .egress_grant
-            .as_ref()
-            .and_then(|state| state.completion);
-        if let Some(completion) = pending_finish {
+        for _ in 0..PINNED_EGRESS_GRANT_PIPELINE_DEPTH {
+            let Some(completion) = self
+                .egress_grant
+                .as_ref()
+                .and_then(|state| state.completion)
+            else {
+                break;
+            };
             let progress = EgressGrantProgress::Finished {
                 serial: completion.serial(),
                 used_frames: completion.used_frames(),
                 remaining: completion.remaining(),
             };
             if control.try_publish_grant_progress(progress).is_ok() {
-                self.egress_grant = None;
+                self.egress_grant = self.egress_standby_grant.take();
+            } else {
+                break;
             }
         }
     }
@@ -3039,11 +3052,15 @@ impl<
     #[cfg(feature = "tx-egress-scheduling")]
     fn poll_egress_grant(&mut self, cx: &mut Context<'_>) -> Option<DriverEgressBurstGrant> {
         self.flush_egress_grant_progress();
-        if !self.egress_demand_active || self.egress_grant.is_some() {
+        if !self.egress_demand_active || self.egress_standby_grant.is_some() {
             return None;
         }
         let grant = self.egress_control.as_deref_mut()?.try_receive_grant(cx)?;
-        self.egress_grant = Some(PinnedEgressGrantState::new(grant));
+        if self.egress_grant.is_none() {
+            self.egress_grant = Some(PinnedEgressGrantState::new(grant));
+        } else {
+            self.egress_standby_grant = Some(PinnedEgressGrantState::new(grant));
+        }
         Some(DriverEgressBurstGrant::new(
             grant.serial(),
             grant.demand(),
@@ -3055,19 +3072,22 @@ impl<
     #[cfg(feature = "tx-egress-scheduling")]
     fn finish_egress_grant(&mut self, _cx: &mut Context<'_>, completion: EgressGrantCompletion) {
         self.flush_egress_grant_progress();
-        // A completion can only name a grant returned by `poll_egress_grant`,
-        // which remains retained until this exact serial closes. A mismatch
-        // is ignored as a duplicate/foreign callback and cannot close the
-        // live affine owner.
-        if let Some(state) = self.egress_grant.as_mut()
-            && state.grant.serial() == completion.serial()
-            && state.completion.is_none()
-            && state.used_frames == completion.used_frames()
-            && completion.used_frames() <= state.grant.frame_credits().get()
-        {
-            state.completion = Some(completion);
-            self.flush_egress_grant_progress();
+        // A completion can only name one of the two affine grants returned by
+        // `poll_egress_grant`. A mismatch is ignored as duplicate/foreign and
+        // cannot close either live owner. A standby may close unused during an
+        // epoch reset while current progress is waiting for transport space.
+        for state in [&mut self.egress_grant, &mut self.egress_standby_grant] {
+            if let Some(state) = state.as_mut()
+                && state.grant.serial() == completion.serial()
+                && state.completion.is_none()
+                && state.used_frames == completion.used_frames()
+                && completion.used_frames() <= state.grant.frame_credits().get()
+            {
+                state.completion = Some(completion);
+                break;
+            }
         }
+        self.flush_egress_grant_progress();
     }
 
     fn hardware_address(&self) -> HardwareAddress {

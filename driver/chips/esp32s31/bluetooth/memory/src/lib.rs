@@ -30,6 +30,7 @@ mod le_tx_packet;
 mod le_tx_power;
 mod legacy_advertising_event_image;
 mod legacy_advertising_storage;
+mod non_scanning_rx_memory;
 mod passive_scanning_event_image;
 mod passive_scanning_memory;
 mod peripheral_connection_memory;
@@ -121,6 +122,13 @@ pub use legacy_advertising_storage::{
     BluetoothLegacyAdvertisingMemoryGraphStorage,
     BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
 };
+#[cfg(not(target_arch = "riscv32"))]
+pub use non_scanning_rx_memory::BluetoothNonScanningRxMemoryModelAddress;
+pub use non_scanning_rx_memory::{
+    BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, BluetoothNonScanningRxMemoryBindError,
+    BluetoothNonScanningRxMemoryBindFailure, BluetoothNonScanningRxMemoryCpuOwned,
+    BluetoothNonScanningRxMemoryStorage,
+};
 pub use passive_scanning_event_image::{
     BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanPrimaryChannel,
     BluetoothPassiveScanResetConfig, BluetoothPassiveScanSchedulerWindow,
@@ -159,6 +167,7 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionMemoryGraphBinding,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
     BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
+    BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
     BluetoothPeripheralConnectionMemoryGraphStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;

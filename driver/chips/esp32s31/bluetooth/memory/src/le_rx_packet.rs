@@ -114,7 +114,6 @@ pub(crate) struct BluetoothLeRxBufferHeaderStorage {
 }
 
 impl BluetoothLeRxBufferHeaderStorage {
-    #[cfg(test)]
     const LINK_MASK: u32 = 0x000f_ffff;
     const ROTATION_MARKER: u32 = 1;
     const COMPLETION_GATE: u32 = 1 << 31;
@@ -161,24 +160,20 @@ impl BluetoothLeRxBufferHeaderStorage {
         self.words[3].set(self.words[3].get() | Self::COMPLETION_GATE);
     }
 
-    #[cfg(test)]
     pub(crate) fn retains_packet(&self, packet: BluetoothLeRxPacketAddress) -> bool {
         self.words[1].get() & Self::LINK_MASK == packet.compressed_image()
     }
 
-    #[cfg(test)]
     pub(crate) fn successor(&self) -> Option<u32> {
         let image = self.words[0].get() & Self::LINK_MASK;
         (image != 0).then_some(image)
     }
 
-    #[cfg(test)]
     pub(crate) fn predecessor(&self) -> Option<u32> {
         let address = self.words[5].get();
         (address != 0).then_some(address)
     }
 
-    #[cfg(test)]
     pub(crate) fn rotates_into_successor(&self) -> bool {
         self.words[4].get() & Self::ROTATION_MARKER != 0
     }
@@ -273,7 +268,6 @@ impl BluetoothLeRxPacketStorage {
         self.words[offset / 4].set((word & !(0xff << shift)) | (u32::from(value) << shift));
     }
 
-    #[cfg(test)]
     pub(crate) fn is_armed(&self) -> bool {
         self.words[Self::RESULT_WORD].get() & Self::RESULT_REARM_SENTINEL
             == Self::RESULT_REARM_SENTINEL

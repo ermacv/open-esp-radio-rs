@@ -3,9 +3,9 @@
 //! This is the stable memory boundary recovered from the current controller
 //! artifact.  It owns the two reusable scheduler items, their shared context,
 //! the connection link state and the initially empty transmit queue sentinel.
-//! The first event-time transition installs only the reviewed Access Address
-//! and CRC initialization fields. It deliberately does not encode anchor
-//! policy, packet sequence state or a hardware-ready event image.
+//! A separately owned static non-scanning RX pool can be attached for an exact
+//! event and recovered on cancellation. Event preparation still deliberately
+//! omits scheduler-item, packet-sequence and publication semantics.
 
 #![forbid(unsafe_code)]
 
@@ -18,6 +18,7 @@ use pin_project::pin_project;
 use vcell::VolatileCell;
 
 use crate::{
+    non_scanning_rx_memory::BluetoothNonScanningRxMemoryCpuOwned,
     scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
@@ -90,6 +91,22 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         self.words[LINK_STATE_RX_HEAD].get() == 0
             && self.words[LINK_STATE_RX_TAIL].get() == 0
             && self.words[LINK_STATE_RX_RESERVE].get() == 0
+    }
+
+    fn install_receive_pool(
+        &self,
+        head: BluetoothControllerSramAddress,
+        tail: BluetoothControllerSramAddress,
+    ) {
+        self.words[LINK_STATE_RX_HEAD].set(head.address());
+        self.words[LINK_STATE_RX_TAIL].set(tail.address());
+        self.words[LINK_STATE_RX_RESERVE].set(0);
+    }
+
+    fn clear_receive_pool(&self) {
+        self.words[LINK_STATE_RX_HEAD].set(0);
+        self.words[LINK_STATE_RX_TAIL].set(0);
+        self.words[LINK_STATE_RX_RESERVE].set(0);
     }
 
     fn retains_transmit_sentinel(&self, sentinel: BluetoothControllerSramLinkAddress) -> bool {
@@ -499,6 +516,26 @@ impl BluetoothPeripheralConnectionMemoryGraphIdentityPrepared {
         self.storage.as_ref().get_ref().link_state.identity()
     }
 
+    /// Attach the shared non-scanning RX pool to this connection link state.
+    ///
+    /// The pool remains separately owned and can later transfer from
+    /// response-capable advertising without exposing either SRAM endpoint.
+    pub fn attach_receive_pool(
+        self,
+        pool: BluetoothNonScanningRxMemoryCpuOwned,
+    ) -> BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .link_state
+            .install_receive_pool(pool.head(), pool.tail());
+        BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
+            storage: self.storage,
+            binding: self.binding,
+            pool,
+        }
+    }
+
     /// Discard the unsubmitted identity and recover the pristine allocation.
     pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphCpuOwned {
         let mut owner = BluetoothPeripheralConnectionMemoryGraphCpuOwned {
@@ -507,6 +544,48 @@ impl BluetoothPeripheralConnectionMemoryGraphIdentityPrepared {
         };
         owner.reinitialize_graph();
         owner
+    }
+}
+
+/// Identity-prepared connection graph owning its initialized selector-two RX pool.
+#[must_use = "the receive-prepared connection graph must be retained or cancelled"]
+pub struct BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
+    storage: Pin<&'static mut BluetoothPeripheralConnectionMemoryGraphStorage>,
+    binding: BluetoothPeripheralConnectionMemoryGraphBinding,
+    pool: BluetoothNonScanningRxMemoryCpuOwned,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
+    /// Whether the complete bounded receive topology is ready for later publication.
+    pub fn receive_pool_is_initialized(&self) -> bool {
+        !self
+            .storage
+            .as_ref()
+            .get_ref()
+            .link_state
+            .has_empty_receive_queue()
+            && self.pool.is_initialized()
+    }
+
+    /// Remove the unpublished RX links and recover both exact CPU owners.
+    pub fn cancel(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
+        BluetoothNonScanningRxMemoryCpuOwned,
+    ) {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .link_state
+            .clear_receive_pool();
+        (
+            BluetoothPeripheralConnectionMemoryGraphIdentityPrepared {
+                storage: self.storage,
+                binding: self.binding,
+            },
+            self.pool,
+        )
     }
 }
 

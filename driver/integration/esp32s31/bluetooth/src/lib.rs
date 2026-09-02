@@ -2,7 +2,8 @@
 //!
 //! This crate owns placement and one-time acquisition for the BLE PHY
 //! environment, one DTM event graph, one legacy-advertising event graph, one
-//! passive-scanner receive graph and one peripheral-connection allocation.
+//! passive-scanner receive graph, one peripheral-connection allocation and
+//! its transferable non-scanning RX pool.
 //! It also installs the final target-only
 //! bridge from the three typed ESP-HAL routes through the complete chip ISR
 //! service to durable Embassy notification. Controller-memory layout and
@@ -63,20 +64,20 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources,
     BluetoothLegacyAdvertisingDefaultTxPowerDbm, BluetoothLegacyAdvertisingRuntimeResources,
     BluetoothPassiveScanRuntimeConfig, BluetoothPassiveScanRuntimeResources,
-    BluetoothPeripheralConnectionRuntimeResources,
+    BluetoothPeripheralConnectionRuntimeClaimError, BluetoothPeripheralConnectionRuntimeResources,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphStorage,
     BluetoothLegacyAdvertisingMemoryGraphBindFailure, BluetoothLegacyAdvertisingMemoryGraphStorage,
-    BluetoothPassiveScanMemoryGraphBindFailure, BluetoothPassiveScanMemoryGraphStorage,
-    BluetoothPeripheralConnectionMemoryGraphBindFailure,
-    BluetoothPeripheralConnectionMemoryGraphStorage,
+    BluetoothNonScanningRxMemoryStorage, BluetoothPassiveScanMemoryGraphBindFailure,
+    BluetoothPassiveScanMemoryGraphStorage, BluetoothPeripheralConnectionMemoryGraphStorage,
 };
 #[cfg(not(target_arch = "riscv32"))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineModelAddress, BluetoothDtmMemoryGraphModelAddress,
-    BluetoothLegacyAdvertisingMemoryGraphModelAddress, BluetoothPassiveScanMemoryGraphModelAddress,
+    BluetoothLegacyAdvertisingMemoryGraphModelAddress, BluetoothNonScanningRxMemoryModelAddress,
+    BluetoothPassiveScanMemoryGraphModelAddress,
     BluetoothPeripheralConnectionMemoryGraphModelAddress,
 };
 use static_cell::ConstStaticCell;
@@ -469,6 +470,7 @@ static PRODUCTION_PASSIVE_SCAN_MEMORY: Esp32s31BluetoothPassiveScanMemory =
 pub struct Esp32s31BluetoothPeripheralConnectionMemory {
     claimed: AtomicBool,
     storage: ConstStaticCell<BluetoothPeripheralConnectionMemoryGraphStorage>,
+    receive_storage: ConstStaticCell<BluetoothNonScanningRxMemoryStorage>,
 }
 
 impl Esp32s31BluetoothPeripheralConnectionMemory {
@@ -476,13 +478,17 @@ impl Esp32s31BluetoothPeripheralConnectionMemory {
         Self {
             claimed: AtomicBool::new(false),
             storage: ConstStaticCell::new(BluetoothPeripheralConnectionMemoryGraphStorage::new()),
+            receive_storage: ConstStaticCell::new(BluetoothNonScanningRxMemoryStorage::new()),
         }
     }
 
     fn begin_claim(
         &'static self,
     ) -> Result<
-        &'static mut BluetoothPeripheralConnectionMemoryGraphStorage,
+        (
+            &'static mut BluetoothPeripheralConnectionMemoryGraphStorage,
+            &'static mut BluetoothNonScanningRxMemoryStorage,
+        ),
         Esp32s31BluetoothPeripheralConnectionMemoryClaimError,
     > {
         if self
@@ -492,7 +498,7 @@ impl Esp32s31BluetoothPeripheralConnectionMemory {
         {
             return Err(Esp32s31BluetoothPeripheralConnectionMemoryClaimError::InUse);
         }
-        Ok(self.storage.take())
+        Ok((self.storage.take(), self.receive_storage.take()))
     }
 
     /// Claim and bind this arena using its real ESP32-S31 address.
@@ -503,8 +509,8 @@ impl Esp32s31BluetoothPeripheralConnectionMemory {
         BluetoothPeripheralConnectionRuntimeResources,
         Esp32s31BluetoothPeripheralConnectionMemoryClaimError,
     > {
-        let storage = self.begin_claim()?;
-        BluetoothPeripheralConnectionRuntimeResources::claim_static(storage)
+        let (storage, receive_storage) = self.begin_claim()?;
+        BluetoothPeripheralConnectionRuntimeResources::claim_static(storage, receive_storage)
             .map_err(Esp32s31BluetoothPeripheralConnectionMemoryClaimError::Placement)
     }
 
@@ -513,13 +519,19 @@ impl Esp32s31BluetoothPeripheralConnectionMemory {
     pub fn claim_model(
         &'static self,
         base: BluetoothPeripheralConnectionMemoryGraphModelAddress,
+        receive_base: BluetoothNonScanningRxMemoryModelAddress,
     ) -> Result<
         BluetoothPeripheralConnectionRuntimeResources,
         Esp32s31BluetoothPeripheralConnectionMemoryClaimError,
     > {
-        let storage = self.begin_claim()?;
-        BluetoothPeripheralConnectionRuntimeResources::claim_static_model(storage, base)
-            .map_err(Esp32s31BluetoothPeripheralConnectionMemoryClaimError::Placement)
+        let (storage, receive_storage) = self.begin_claim()?;
+        BluetoothPeripheralConnectionRuntimeResources::claim_static_model(
+            storage,
+            base,
+            receive_storage,
+            receive_base,
+        )
+        .map_err(Esp32s31BluetoothPeripheralConnectionMemoryClaimError::Placement)
     }
 }
 
@@ -533,7 +545,7 @@ impl Default for Esp32s31BluetoothPeripheralConnectionMemory {
 #[derive(Debug)]
 pub enum Esp32s31BluetoothPeripheralConnectionMemoryClaimError {
     InUse,
-    Placement(BluetoothPeripheralConnectionMemoryGraphBindFailure),
+    Placement(BluetoothPeripheralConnectionRuntimeClaimError),
 }
 
 /// Claim the sole production peripheral-connection allocation graph.
@@ -565,7 +577,8 @@ mod tests {
         BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
         BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphModelAddress,
         BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
-        BluetoothLegacyAdvertisingMemoryGraphModelAddress, BluetoothPassiveScanDefaultTxPowerDbm,
+        BluetoothLegacyAdvertisingMemoryGraphModelAddress,
+        BluetoothNonScanningRxMemoryModelAddress, BluetoothPassiveScanDefaultTxPowerDbm,
         BluetoothPassiveScanMemoryGraphModelAddress, BluetoothPassiveScanSchedulerAllocationConfig,
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
     };
@@ -652,13 +665,15 @@ mod tests {
             Esp32s31BluetoothPeripheralConnectionMemory::new();
         let base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(0x2f00_a000)
             .expect("model base is encodable");
+        let receive_base = BluetoothNonScanningRxMemoryModelAddress::new(0x2f00_b000)
+            .expect("model receive base is encodable");
         let runtime = MEMORY
-            .claim_model(base)
+            .claim_model(base, receive_base)
             .expect("fresh connection arena binds once");
 
         assert!(runtime.allocation_is_idle());
         assert!(matches!(
-            MEMORY.claim_model(base),
+            MEMORY.claim_model(base, receive_base),
             Err(Esp32s31BluetoothPeripheralConnectionMemoryClaimError::InUse)
         ));
     }

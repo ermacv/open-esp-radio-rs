@@ -1,9 +1,10 @@
 //! Production ownership for the first ESP32-S31 BLE peripheral connection.
 //!
-//! The runtime can join a portable LL event to the recovered allocation graph
-//! and install only its reviewed Access Address and CRCInit fields. It cannot
-//! publish that partial graph; the S31 anchor/deadline and remaining descriptor
-//! semantics must be closed first.
+//! The runtime joins a portable LL event to the recovered allocation graph,
+//! installs its reviewed Access Address and CRCInit fields and attaches one
+//! separately owned static non-scanning RX pool. It cannot publish that partial
+//! graph; raw-time projection and remaining scheduler-item semantics must be
+//! closed first.
 
 #![forbid(unsafe_code)]
 
@@ -11,13 +12,18 @@ use open_esp_radio_bluetooth_ll::connection::{
     LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeConnectionTiming, LeDataChannelIndex,
     LePeripheralConnection, LePeripheralConnectionEventPrepared,
 };
-#[cfg(not(target_arch = "riscv32"))]
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionMemoryGraphModelAddress;
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionMemoryGraphBindFailure,
+    BluetoothNonScanningRxMemoryBindFailure, BluetoothNonScanningRxMemoryCpuOwned,
+    BluetoothNonScanningRxMemoryStorage, BluetoothPeripheralConnectionIdentity,
+    BluetoothPeripheralConnectionMemoryGraphBindFailure,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
     BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
+    BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
     BluetoothPeripheralConnectionMemoryGraphStorage,
+};
+#[cfg(not(target_arch = "riscv32"))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothNonScanningRxMemoryModelAddress, BluetoothPeripheralConnectionMemoryGraphModelAddress,
 };
 
 use crate::BluetoothSchedulerInstant;
@@ -81,20 +87,31 @@ impl BluetoothPeripheralConnectionFirstWindow {
 #[must_use = "the connection runtime retains the sole production graph"]
 pub struct BluetoothPeripheralConnectionRuntimeResources {
     graph: BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+    receive_pool: BluetoothNonScanningRxMemoryCpuOwned,
 }
 
 impl BluetoothPeripheralConnectionRuntimeResources {
-    fn from_claimed_graph(graph: BluetoothPeripheralConnectionMemoryGraphCpuOwned) -> Self {
-        Self { graph }
+    fn from_claimed_parts(
+        graph: BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+        receive_pool: BluetoothNonScanningRxMemoryCpuOwned,
+    ) -> Self {
+        Self {
+            graph,
+            receive_pool,
+        }
     }
 
     /// Bind one real statically placed peripheral-connection allocation.
     #[cfg(target_arch = "riscv32")]
     pub fn claim_static(
         storage: &'static mut BluetoothPeripheralConnectionMemoryGraphStorage,
-    ) -> Result<Self, BluetoothPeripheralConnectionMemoryGraphBindFailure> {
-        let graph = BluetoothPeripheralConnectionMemoryGraphStorage::pin_static(storage)?;
-        Ok(Self::from_claimed_graph(graph))
+        receive_storage: &'static mut BluetoothNonScanningRxMemoryStorage,
+    ) -> Result<Self, BluetoothPeripheralConnectionRuntimeClaimError> {
+        let graph = BluetoothPeripheralConnectionMemoryGraphStorage::pin_static(storage)
+            .map_err(BluetoothPeripheralConnectionRuntimeClaimError::Graph)?;
+        let receive_pool = BluetoothNonScanningRxMemoryStorage::pin_static(receive_storage)
+            .map_err(BluetoothPeripheralConnectionRuntimeClaimError::Receive)?;
+        Ok(Self::from_claimed_parts(graph, receive_pool))
     }
 
     /// Bind one deterministic native model allocation.
@@ -102,10 +119,16 @@ impl BluetoothPeripheralConnectionRuntimeResources {
     pub fn claim_static_model(
         storage: &'static mut BluetoothPeripheralConnectionMemoryGraphStorage,
         base: BluetoothPeripheralConnectionMemoryGraphModelAddress,
-    ) -> Result<Self, BluetoothPeripheralConnectionMemoryGraphBindFailure> {
+        receive_storage: &'static mut BluetoothNonScanningRxMemoryStorage,
+        receive_base: BluetoothNonScanningRxMemoryModelAddress,
+    ) -> Result<Self, BluetoothPeripheralConnectionRuntimeClaimError> {
         let graph =
-            BluetoothPeripheralConnectionMemoryGraphStorage::pin_static_model(storage, base)?;
-        Ok(Self::from_claimed_graph(graph))
+            BluetoothPeripheralConnectionMemoryGraphStorage::pin_static_model(storage, base)
+                .map_err(BluetoothPeripheralConnectionRuntimeClaimError::Graph)?;
+        let receive_pool =
+            BluetoothNonScanningRxMemoryStorage::pin_static_model(receive_storage, receive_base)
+                .map_err(BluetoothPeripheralConnectionRuntimeClaimError::Receive)?;
+        Ok(Self::from_claimed_parts(graph, receive_pool))
     }
 
     /// Whether the retained allocation still has its initial queue topology.
@@ -113,6 +136,7 @@ impl BluetoothPeripheralConnectionRuntimeResources {
         self.graph.has_recovered_scheduler_pool()
             && self.graph.has_empty_receive_queue()
             && self.graph.has_empty_transmit_queue()
+            && self.receive_pool.is_initialized()
     }
 
     /// Join one portable event with the two reviewed S31 identity fields.
@@ -130,6 +154,7 @@ impl BluetoothPeripheralConnectionRuntimeResources {
         );
         BluetoothPeripheralConnectionIdentityPrepared {
             graph: self.graph.prepare_identity(identity),
+            receive_pool: self.receive_pool,
             event,
         }
     }
@@ -145,29 +170,47 @@ impl BluetoothPeripheralConnectionRuntimeResources {
     ) -> BluetoothPeripheralConnectionFirstEventPrepared {
         let event = connection.prepare_event();
         let first_window = packet_start.first_connection_window(event.timing());
+        let request = event.request();
+        let identity = BluetoothPeripheralConnectionIdentity::new(
+            request.access_address().value().to_le_bytes(),
+            request.crc_initialization().wire_bytes(),
+        );
+        let graph = self
+            .graph
+            .prepare_identity(identity)
+            .attach_receive_pool(self.receive_pool);
         BluetoothPeripheralConnectionFirstEventPrepared {
-            prepared: self.prepare_identity(event),
+            graph,
+            event,
             first_window,
         }
     }
 }
 
+/// Why the complete connection graph plus shared RX pool could not be claimed.
+#[derive(Debug)]
+pub enum BluetoothPeripheralConnectionRuntimeClaimError {
+    Graph(BluetoothPeripheralConnectionMemoryGraphBindFailure),
+    Receive(BluetoothNonScanningRxMemoryBindFailure),
+}
+
 /// First portable connection event joined to its causal S31 receive timing.
 #[must_use = "the timed first connection event must be lowered or cancelled"]
 pub struct BluetoothPeripheralConnectionFirstEventPrepared {
-    prepared: BluetoothPeripheralConnectionIdentityPrepared,
+    graph: BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
+    event: LePeripheralConnectionEventPrepared,
     first_window: BluetoothPeripheralConnectionFirstWindow,
 }
 
 impl BluetoothPeripheralConnectionFirstEventPrepared {
     /// Link Layer event counter, still unadvanced before hardware admission.
     pub const fn event_counter(&self) -> u16 {
-        self.prepared.event_counter()
+        self.event.event_counter()
     }
 
     /// Selected first data channel.
     pub const fn channel(&self) -> LeDataChannelIndex {
-        self.prepared.channel()
+        self.event.channel()
     }
 
     #[cfg(test)]
@@ -183,6 +226,11 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
             .wrapping_sub(self.first_window.anchor.image())
     }
 
+    /// Whether the bounded non-scanning RX pool is attached before publication.
+    pub fn receive_pool_is_initialized(&self) -> bool {
+        self.graph.receive_pool_is_initialized()
+    }
+
     /// Cancel before publication and recover both unchanged owners.
     pub fn cancel(
         self,
@@ -190,7 +238,14 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
         BluetoothPeripheralConnectionRuntimeResources,
         LePeripheralConnection,
     ) {
-        self.prepared.cancel()
+        let (graph, receive_pool) = self.graph.cancel();
+        (
+            BluetoothPeripheralConnectionRuntimeResources::from_claimed_parts(
+                graph.cancel(),
+                receive_pool,
+            ),
+            self.event.cancel(),
+        )
     }
 }
 
@@ -198,6 +253,7 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
 #[must_use = "the identity-prepared connection event must be retained or cancelled"]
 pub struct BluetoothPeripheralConnectionIdentityPrepared {
     graph: BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
+    receive_pool: BluetoothNonScanningRxMemoryCpuOwned,
     event: LePeripheralConnectionEventPrepared,
 }
 
@@ -226,7 +282,10 @@ impl BluetoothPeripheralConnectionIdentityPrepared {
         LePeripheralConnection,
     ) {
         (
-            BluetoothPeripheralConnectionRuntimeResources::from_claimed_graph(self.graph.cancel()),
+            BluetoothPeripheralConnectionRuntimeResources::from_claimed_parts(
+                self.graph.cancel(),
+                self.receive_pool,
+            ),
             self.event.cancel(),
         )
     }
@@ -239,36 +298,44 @@ mod tests {
         LEGACY_CONNECT_IND_PDU_BYTES, LeLegacyConnectionRequest, LePeripheralConnection,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
+        BluetoothNonScanningRxMemoryModelAddress, BluetoothNonScanningRxMemoryStorage,
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
         BluetoothPeripheralConnectionMemoryGraphStorage,
     };
 
     use super::{BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionRuntimeResources};
 
-    #[test]
-    fn claimed_runtime_retains_the_idle_allocation() {
+    fn runtime(graph_base: u32) -> BluetoothPeripheralConnectionRuntimeResources {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(
             BluetoothPeripheralConnectionMemoryGraphStorage::new(),
         ));
-        let base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(0x2f00_1000)
-            .expect("the model base is a controller SRAM address");
-        let runtime =
-            BluetoothPeripheralConnectionRuntimeResources::claim_static_model(storage, base)
-                .expect("the model graph fits controller SRAM");
+        let receive_storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothNonScanningRxMemoryStorage::new(),
+        ));
+        let base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(graph_base)
+            .expect("the model graph base is a controller SRAM address");
+        let receive_base =
+            BluetoothNonScanningRxMemoryModelAddress::new(graph_base.wrapping_add(0x1000))
+                .expect("the model receive base is a controller SRAM address");
+        BluetoothPeripheralConnectionRuntimeResources::claim_static_model(
+            storage,
+            base,
+            receive_storage,
+            receive_base,
+        )
+        .expect("the model graph and receive pool fit controller SRAM")
+    }
+
+    #[test]
+    fn claimed_runtime_retains_the_idle_allocation() {
+        let runtime = runtime(0x2f00_1000);
 
         assert!(runtime.allocation_is_idle());
     }
 
     #[test]
     fn portable_event_can_prepare_identity_and_cancel_losslessly() {
-        let storage = std::boxed::Box::leak(std::boxed::Box::new(
-            BluetoothPeripheralConnectionMemoryGraphStorage::new(),
-        ));
-        let base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(0x2f00_2000)
-            .expect("the model base is a controller SRAM address");
-        let runtime =
-            BluetoothPeripheralConnectionRuntimeResources::claim_static_model(storage, base)
-                .expect("the model graph fits controller SRAM");
+        let runtime = runtime(0x2f00_2000);
         let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
         let connection = LePeripheralConnection::from_request(request);
 
@@ -284,14 +351,7 @@ mod tests {
 
     #[test]
     fn first_event_uses_the_received_packet_start_for_its_absolute_window() {
-        let storage = std::boxed::Box::leak(std::boxed::Box::new(
-            BluetoothPeripheralConnectionMemoryGraphStorage::new(),
-        ));
-        let base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(0x2f00_3000)
-            .expect("the model base is a controller SRAM address");
-        let runtime =
-            BluetoothPeripheralConnectionRuntimeResources::claim_static_model(storage, base)
-                .expect("the model graph fits controller SRAM");
+        let runtime = runtime(0x2f00_3000);
         let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
         let connection = LePeripheralConnection::from_request(request);
 
@@ -299,6 +359,7 @@ mod tests {
             connection,
             BluetoothLe1MPacketStartTiming::from_scheduler_micros(u32::MAX - 100),
         );
+        assert!(prepared.receive_pool_is_initialized());
         let window = prepared.first_window();
         assert_eq!(
             window.anchor().image(),

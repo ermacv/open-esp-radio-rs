@@ -113,9 +113,14 @@ following:
   connected.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
-event image. The current Rust identity-prepared owner has no scheduler
-publication or `RUN` transition and can only be cancelled back to the pristine
-allocation.
+event image. The Rust owner now also attaches a separate statically allocated
+two-node RX rotation graph. That pool represents the common non-scanning
+selector-two class rather than a connection-private vendor allocation, so a
+future response-capable advertiser can transfer the exact affine owner after
+accepting `CONNECT_IND`. Pre-publication cancellation clears the link-state RX
+endpoints and recovers both the pristine connection allocation and the intact
+pool. The resulting graph still has no scheduler publication or `RUN`
+transition.
 
 The same exact correspondence identifies
 `r_sym_ble_1KGaCqPI03xSu9c6Rh0G` as `ble_lll_conn_update_link_state`. Together
@@ -139,10 +144,10 @@ The first two former blockers are closed: packet timestamp conversion and the
 causal absolute first-window contract. The shortest remaining path to one real
 peripheral event is:
 
-1. attach the shared RX packet codec and selector-two RX publication to the
-   response-capable connectable-advertising graph, then pass the accepted
-   packet to the existing task-service normalizer;
-2. close the remaining connection link-state and scheduler-item fields as
+1. attach the now-static shared RX pool and selector-two RX publication to the
+   response-capable connectable-advertising graph, then transfer the pool and
+   accepted packet to the existing task-service normalizer;
+2. close raw-time projection and the remaining connection link-state and scheduler-item fields as
    semantic accessors inside the memory crate;
 3. join the prepared graph to the existing common scheduler admission,
    publication, completion and post-unlink owners;

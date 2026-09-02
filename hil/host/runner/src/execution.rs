@@ -448,15 +448,10 @@ fn execute_workload_inner(
                 payload_bytes: usize::from(*payload_bytes),
                 require_driver_observation: selected.image.requires_driver_observation(),
                 require_egress_policy_evidence: selected.criteria.require_egress_policy_evidence,
-                maximum_egress_different_recommendations: selected
+                maximum_egress_unused_grants: selected.criteria.maximum_egress_unused_grants,
+                maximum_egress_progress_without_grant: selected
                     .criteria
-                    .maximum_egress_different_recommendations,
-                maximum_egress_cancelled_recommendations: selected
-                    .criteria
-                    .maximum_egress_cancelled_recommendations,
-                maximum_egress_unavailable_actual: selected
-                    .criteria
-                    .maximum_egress_unavailable_actual,
+                    .maximum_egress_progress_without_grant,
                 capture_independent_laptop_air_monitor: selected
                     .evidence
                     .independent_laptop_air_monitor,

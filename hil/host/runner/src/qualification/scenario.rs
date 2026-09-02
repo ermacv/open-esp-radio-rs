@@ -409,9 +409,8 @@ pub struct Criteria {
     /// Require CRC-protected per-VIF shadow-policy evidence from a paired TX
     /// interval. Diagnostic images only.
     pub require_egress_policy_evidence: bool,
-    pub maximum_egress_different_recommendations: Option<u32>,
-    pub maximum_egress_cancelled_recommendations: Option<u32>,
-    pub maximum_egress_unavailable_actual: Option<u32>,
+    pub maximum_egress_unused_grants: Option<u32>,
+    pub maximum_egress_progress_without_grant: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

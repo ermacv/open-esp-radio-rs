@@ -175,6 +175,8 @@ where
             // mutable scheduling boundary. Saturated traffic uses the same
             // finite service at the explicit completed-BA boundary below.
             let _ = self.network.service_egress_control();
+            #[cfg(feature = "tx-egress-scheduling")]
+            let _ = self.prepare_physical_egress_grant();
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.discard_wakes_completed();
             let network_tx_pending =
@@ -376,13 +378,9 @@ where
                     };
                     let interface = self.tx_interface_for(&frame);
                     let network_tx = self.tx_consumer_for(interface);
-                    #[cfg(feature = "tx-egress-scheduling")]
-                    let recommendation_prepared = self.prepare_physical_egress_recommendation();
                     #[cfg(feature = "tx-phase-telemetry")]
                     let tx_phase_started = Core0PerformanceSample::read();
                     let start = self.services.start_tx(frame, &network_tx).await?;
-                    #[cfg(feature = "tx-egress-scheduling")]
-                    self.finish_physical_egress_recommendation(recommendation_prepared, start);
                     let progress = start.progress();
                     #[cfg(feature = "tx-phase-telemetry")]
                     CORE0_PERFORMANCE.record_tx_phase(
@@ -436,6 +434,8 @@ where
                             // Advance egress control once here, not once per
                             // frame while assembling the successor aggregate.
                             let _ = self.network.service_egress_control();
+                            #[cfg(feature = "tx-egress-scheduling")]
+                            let _ = self.prepare_physical_egress_grant();
                             let network_tx_pending =
                                 self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
                             let control_ready = self.control_ready_latched

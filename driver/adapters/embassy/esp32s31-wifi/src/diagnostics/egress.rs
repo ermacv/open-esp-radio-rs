@@ -1,79 +1,59 @@
 //! Low-overhead counters for the non-authoritative physical egress policy.
 //!
 //! The counters deliberately contain no queue identity or ownership. They
-//! only make the shadow policy's progress and agreement with the unchanged
-//! production admission path visible to same-ELF HIL experiments.
+//! only make the shadow grant lifecycle visible to same-ELF HIL experiments.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub const EGRESS_POLICY_VIF_COUNT: usize = 2;
 
-/// Per-interface shadow accounting at the physical TX transaction boundary.
+/// Per-interface shadow accounting for Core0-issued burst grants.
 ///
 /// Airtime is the conservative HT data-PPDU estimate used by the scheduler,
 /// expressed in 100-nanosecond units. It is not measured medium occupancy.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct EgressPolicyVifShadowSnapshot {
-    pub selected_transactions: u32,
-    pub selected_frames: u32,
-    pub selected_modeled_airtime_100ns: u32,
-    pub actual_transactions: u32,
-    pub actual_frames: u32,
-    pub actual_modeled_airtime_100ns: u32,
-    pub exact_recommendations: u32,
-    pub different_selected: u32,
-    pub different_actual: u32,
-    pub cancelled_selected: u32,
-    pub unavailable_selected: u32,
+    pub grants_issued: u32,
+    pub issued_frame_credits: u32,
+    pub issued_modeled_airtime_100ns: u32,
+    pub grants_started: u32,
+    pub grants_finished: u32,
+    pub used_frames: u32,
+    pub used_modeled_airtime_100ns: u32,
+    pub grants_unused: u32,
 }
 
 impl EgressPolicyVifShadowSnapshot {
     pub const fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
-            selected_transactions: self
-                .selected_transactions
-                .wrapping_sub(earlier.selected_transactions),
-            selected_frames: self.selected_frames.wrapping_sub(earlier.selected_frames),
-            selected_modeled_airtime_100ns: self
-                .selected_modeled_airtime_100ns
-                .wrapping_sub(earlier.selected_modeled_airtime_100ns),
-            actual_transactions: self
-                .actual_transactions
-                .wrapping_sub(earlier.actual_transactions),
-            actual_frames: self.actual_frames.wrapping_sub(earlier.actual_frames),
-            actual_modeled_airtime_100ns: self
-                .actual_modeled_airtime_100ns
-                .wrapping_sub(earlier.actual_modeled_airtime_100ns),
-            exact_recommendations: self
-                .exact_recommendations
-                .wrapping_sub(earlier.exact_recommendations),
-            different_selected: self
-                .different_selected
-                .wrapping_sub(earlier.different_selected),
-            different_actual: self.different_actual.wrapping_sub(earlier.different_actual),
-            cancelled_selected: self
-                .cancelled_selected
-                .wrapping_sub(earlier.cancelled_selected),
-            unavailable_selected: self
-                .unavailable_selected
-                .wrapping_sub(earlier.unavailable_selected),
+            grants_issued: self.grants_issued.wrapping_sub(earlier.grants_issued),
+            issued_frame_credits: self
+                .issued_frame_credits
+                .wrapping_sub(earlier.issued_frame_credits),
+            issued_modeled_airtime_100ns: self
+                .issued_modeled_airtime_100ns
+                .wrapping_sub(earlier.issued_modeled_airtime_100ns),
+            grants_started: self.grants_started.wrapping_sub(earlier.grants_started),
+            grants_finished: self.grants_finished.wrapping_sub(earlier.grants_finished),
+            used_frames: self.used_frames.wrapping_sub(earlier.used_frames),
+            used_modeled_airtime_100ns: self
+                .used_modeled_airtime_100ns
+                .wrapping_sub(earlier.used_modeled_airtime_100ns),
+            grants_unused: self.grants_unused.wrapping_sub(earlier.grants_unused),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct EgressPolicyShadowSnapshot {
-    pub recommendations: u32,
-    pub exact_recommendations: u32,
-    pub different_recommendations: u32,
-    pub cancelled_recommendations: u32,
-    pub unavailable_actual: u32,
-    pub unavailable_no_recommendation: u32,
-    pub unavailable_missing_key: u32,
-    pub unavailable_demand: u32,
-    pub unavailable_opportunity: u32,
+    pub grants_issued: u32,
+    pub grants_started: u32,
+    pub grants_finished: u32,
+    pub grants_used: u32,
+    pub grants_unused: u32,
+    pub progress_without_grant: u32,
     pub rejected_updates: u32,
-    pub rejected_observations: u32,
+    pub rejected_progress: u32,
     pub snapshot_queries: u32,
     pub snapshot_ready: u32,
     pub key_rejected: u32,
@@ -89,35 +69,18 @@ pub struct EgressPolicyShadowSnapshot {
 impl EgressPolicyShadowSnapshot {
     pub const fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
-            recommendations: self.recommendations.wrapping_sub(earlier.recommendations),
-            exact_recommendations: self
-                .exact_recommendations
-                .wrapping_sub(earlier.exact_recommendations),
-            different_recommendations: self
-                .different_recommendations
-                .wrapping_sub(earlier.different_recommendations),
-            cancelled_recommendations: self
-                .cancelled_recommendations
-                .wrapping_sub(earlier.cancelled_recommendations),
-            unavailable_actual: self
-                .unavailable_actual
-                .wrapping_sub(earlier.unavailable_actual),
-            unavailable_no_recommendation: self
-                .unavailable_no_recommendation
-                .wrapping_sub(earlier.unavailable_no_recommendation),
-            unavailable_missing_key: self
-                .unavailable_missing_key
-                .wrapping_sub(earlier.unavailable_missing_key),
-            unavailable_demand: self
-                .unavailable_demand
-                .wrapping_sub(earlier.unavailable_demand),
-            unavailable_opportunity: self
-                .unavailable_opportunity
-                .wrapping_sub(earlier.unavailable_opportunity),
+            grants_issued: self.grants_issued.wrapping_sub(earlier.grants_issued),
+            grants_started: self.grants_started.wrapping_sub(earlier.grants_started),
+            grants_finished: self.grants_finished.wrapping_sub(earlier.grants_finished),
+            grants_used: self.grants_used.wrapping_sub(earlier.grants_used),
+            grants_unused: self.grants_unused.wrapping_sub(earlier.grants_unused),
+            progress_without_grant: self
+                .progress_without_grant
+                .wrapping_sub(earlier.progress_without_grant),
             rejected_updates: self.rejected_updates.wrapping_sub(earlier.rejected_updates),
-            rejected_observations: self
-                .rejected_observations
-                .wrapping_sub(earlier.rejected_observations),
+            rejected_progress: self
+                .rejected_progress
+                .wrapping_sub(earlier.rejected_progress),
             snapshot_queries: self.snapshot_queries.wrapping_sub(earlier.snapshot_queries),
             snapshot_ready: self.snapshot_ready.wrapping_sub(earlier.snapshot_ready),
             key_rejected: self.key_rejected.wrapping_sub(earlier.key_rejected),
@@ -140,83 +103,78 @@ impl EgressPolicyShadowSnapshot {
 }
 
 struct EgressPolicyVifShadowCounters {
-    selected_transactions: AtomicU32,
-    selected_frames: AtomicU32,
-    selected_modeled_airtime_100ns: AtomicU32,
-    actual_transactions: AtomicU32,
-    actual_frames: AtomicU32,
-    actual_modeled_airtime_100ns: AtomicU32,
-    exact_recommendations: AtomicU32,
-    different_selected: AtomicU32,
-    different_actual: AtomicU32,
-    cancelled_selected: AtomicU32,
-    unavailable_selected: AtomicU32,
+    grants_issued: AtomicU32,
+    issued_frame_credits: AtomicU32,
+    issued_modeled_airtime_100ns: AtomicU32,
+    grants_started: AtomicU32,
+    grants_finished: AtomicU32,
+    used_frames: AtomicU32,
+    used_modeled_airtime_100ns: AtomicU32,
+    grants_unused: AtomicU32,
 }
 
 impl EgressPolicyVifShadowCounters {
     const fn new() -> Self {
         Self {
-            selected_transactions: AtomicU32::new(0),
-            selected_frames: AtomicU32::new(0),
-            selected_modeled_airtime_100ns: AtomicU32::new(0),
-            actual_transactions: AtomicU32::new(0),
-            actual_frames: AtomicU32::new(0),
-            actual_modeled_airtime_100ns: AtomicU32::new(0),
-            exact_recommendations: AtomicU32::new(0),
-            different_selected: AtomicU32::new(0),
-            different_actual: AtomicU32::new(0),
-            cancelled_selected: AtomicU32::new(0),
-            unavailable_selected: AtomicU32::new(0),
+            grants_issued: AtomicU32::new(0),
+            issued_frame_credits: AtomicU32::new(0),
+            issued_modeled_airtime_100ns: AtomicU32::new(0),
+            grants_started: AtomicU32::new(0),
+            grants_finished: AtomicU32::new(0),
+            used_frames: AtomicU32::new(0),
+            used_modeled_airtime_100ns: AtomicU32::new(0),
+            grants_unused: AtomicU32::new(0),
         }
     }
 
-    fn selected(&self, frames: u8, modeled_airtime_100ns: u32) {
-        self.selected_transactions.fetch_add(1, Ordering::Relaxed);
-        self.selected_frames
+    fn issued(&self, frames: u8, modeled_airtime_100ns: u32) {
+        self.grants_issued.fetch_add(1, Ordering::Relaxed);
+        self.issued_frame_credits
             .fetch_add(u32::from(frames), Ordering::Relaxed);
-        self.selected_modeled_airtime_100ns
+        self.issued_modeled_airtime_100ns
             .fetch_add(modeled_airtime_100ns, Ordering::Relaxed);
     }
 
-    fn actual(&self, frames: u8, modeled_airtime_100ns: u32) {
-        self.actual_transactions.fetch_add(1, Ordering::Relaxed);
-        self.actual_frames
+    fn started(&self) {
+        self.grants_started.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn finished_used(&self, frames: u8, modeled_airtime_100ns: u32) {
+        self.grants_finished.fetch_add(1, Ordering::Relaxed);
+        self.used_frames
             .fetch_add(u32::from(frames), Ordering::Relaxed);
-        self.actual_modeled_airtime_100ns
+        self.used_modeled_airtime_100ns
             .fetch_add(modeled_airtime_100ns, Ordering::Relaxed);
+    }
+
+    fn finished_unused(&self) {
+        self.grants_finished.fetch_add(1, Ordering::Relaxed);
+        self.grants_unused.fetch_add(1, Ordering::Relaxed);
     }
 
     fn snapshot(&self) -> EgressPolicyVifShadowSnapshot {
         EgressPolicyVifShadowSnapshot {
-            selected_transactions: self.selected_transactions.load(Ordering::Relaxed),
-            selected_frames: self.selected_frames.load(Ordering::Relaxed),
-            selected_modeled_airtime_100ns: self
-                .selected_modeled_airtime_100ns
-                .load(Ordering::Relaxed),
-            actual_transactions: self.actual_transactions.load(Ordering::Relaxed),
-            actual_frames: self.actual_frames.load(Ordering::Relaxed),
-            actual_modeled_airtime_100ns: self.actual_modeled_airtime_100ns.load(Ordering::Relaxed),
-            exact_recommendations: self.exact_recommendations.load(Ordering::Relaxed),
-            different_selected: self.different_selected.load(Ordering::Relaxed),
-            different_actual: self.different_actual.load(Ordering::Relaxed),
-            cancelled_selected: self.cancelled_selected.load(Ordering::Relaxed),
-            unavailable_selected: self.unavailable_selected.load(Ordering::Relaxed),
+            grants_issued: self.grants_issued.load(Ordering::Relaxed),
+            issued_frame_credits: self.issued_frame_credits.load(Ordering::Relaxed),
+            issued_modeled_airtime_100ns: self.issued_modeled_airtime_100ns.load(Ordering::Relaxed),
+            grants_started: self.grants_started.load(Ordering::Relaxed),
+            grants_finished: self.grants_finished.load(Ordering::Relaxed),
+            used_frames: self.used_frames.load(Ordering::Relaxed),
+            used_modeled_airtime_100ns: self.used_modeled_airtime_100ns.load(Ordering::Relaxed),
+            grants_unused: self.grants_unused.load(Ordering::Relaxed),
         }
     }
 }
 
 pub(crate) struct EgressPolicyShadowCounters {
-    recommendations: AtomicU32,
-    exact_recommendations: AtomicU32,
-    different_recommendations: AtomicU32,
-    cancelled_recommendations: AtomicU32,
-    unavailable_actual: AtomicU32,
-    unavailable_no_recommendation: AtomicU32,
-    unavailable_missing_key: AtomicU32,
-    unavailable_demand: AtomicU32,
-    unavailable_opportunity: AtomicU32,
+    grants_issued: AtomicU32,
+    grants_started: AtomicU32,
+    grants_finished: AtomicU32,
+    grants_used: AtomicU32,
+    grants_unused: AtomicU32,
+    progress_without_grant: AtomicU32,
     rejected_updates: AtomicU32,
-    rejected_observations: AtomicU32,
+    rejected_progress: AtomicU32,
     snapshot_queries: AtomicU32,
     snapshot_ready: AtomicU32,
     key_rejected: AtomicU32,
@@ -232,17 +190,14 @@ pub(crate) struct EgressPolicyShadowCounters {
 impl EgressPolicyShadowCounters {
     const fn new() -> Self {
         Self {
-            recommendations: AtomicU32::new(0),
-            exact_recommendations: AtomicU32::new(0),
-            different_recommendations: AtomicU32::new(0),
-            cancelled_recommendations: AtomicU32::new(0),
-            unavailable_actual: AtomicU32::new(0),
-            unavailable_no_recommendation: AtomicU32::new(0),
-            unavailable_missing_key: AtomicU32::new(0),
-            unavailable_demand: AtomicU32::new(0),
-            unavailable_opportunity: AtomicU32::new(0),
+            grants_issued: AtomicU32::new(0),
+            grants_started: AtomicU32::new(0),
+            grants_finished: AtomicU32::new(0),
+            grants_used: AtomicU32::new(0),
+            grants_unused: AtomicU32::new(0),
+            progress_without_grant: AtomicU32::new(0),
             rejected_updates: AtomicU32::new(0),
-            rejected_observations: AtomicU32::new(0),
+            rejected_progress: AtomicU32::new(0),
             snapshot_queries: AtomicU32::new(0),
             snapshot_ready: AtomicU32::new(0),
             key_rejected: AtomicU32::new(0),
@@ -263,75 +218,46 @@ impl EgressPolicyShadowCounters {
         self.vifs.get(usize::from(vif))
     }
 
-    pub(crate) fn recommendation(&self, vif: u8, frames: u8, modeled_airtime_100ns: u32) {
-        self.recommendations.fetch_add(1, Ordering::Relaxed);
+    pub(crate) fn grant_issued(&self, vif: u8, frames: u8, modeled_airtime_100ns: u32) {
+        self.grants_issued.fetch_add(1, Ordering::Relaxed);
         if let Some(counters) = self.vif(vif) {
-            counters.selected(frames, modeled_airtime_100ns);
+            counters.issued(frames, modeled_airtime_100ns);
         }
     }
 
-    pub(crate) fn exact_recommendation(&self, vif: u8, frames: u8, modeled_airtime_100ns: u32) {
-        self.exact_recommendations.fetch_add(1, Ordering::Relaxed);
+    pub(crate) fn grant_started(&self, vif: u8) {
+        self.grants_started.fetch_add(1, Ordering::Relaxed);
         if let Some(counters) = self.vif(vif) {
-            counters
-                .exact_recommendations
-                .fetch_add(1, Ordering::Relaxed);
-            counters.actual(frames, modeled_airtime_100ns);
+            counters.started();
         }
     }
 
-    pub(crate) fn different_recommendation(
-        &self,
-        selected_vif: u8,
-        actual_vif: u8,
-        actual_frames: u8,
-        actual_modeled_airtime_100ns: u32,
-    ) {
-        self.different_recommendations
-            .fetch_add(1, Ordering::Relaxed);
-        if let Some(counters) = self.vif(selected_vif) {
-            counters.different_selected.fetch_add(1, Ordering::Relaxed);
-        }
-        if let Some(counters) = self.vif(actual_vif) {
-            counters.different_actual.fetch_add(1, Ordering::Relaxed);
-            counters.actual(actual_frames, actual_modeled_airtime_100ns);
+    pub(crate) fn grant_finished_used(&self, vif: u8, frames: u8, modeled_airtime_100ns: u32) {
+        self.grants_finished.fetch_add(1, Ordering::Relaxed);
+        self.grants_used.fetch_add(1, Ordering::Relaxed);
+        if let Some(counters) = self.vif(vif) {
+            counters.finished_used(frames, modeled_airtime_100ns);
         }
     }
 
-    pub(crate) fn cancelled_recommendation(&self, selected_vif: u8) {
-        self.cancelled_recommendations
-            .fetch_add(1, Ordering::Relaxed);
-        if let Some(counters) = self.vif(selected_vif) {
-            counters.cancelled_selected.fetch_add(1, Ordering::Relaxed);
+    pub(crate) fn grant_finished_unused(&self, vif: u8) {
+        self.grants_finished.fetch_add(1, Ordering::Relaxed);
+        self.grants_unused.fetch_add(1, Ordering::Relaxed);
+        if let Some(counters) = self.vif(vif) {
+            counters.finished_unused();
         }
     }
 
-    pub(crate) fn unavailable_actual(
-        &self,
-        selected_vif: Option<u8>,
-        reason: EgressPolicyUnavailableActual,
-    ) {
-        self.unavailable_actual.fetch_add(1, Ordering::Relaxed);
-        match reason {
-            EgressPolicyUnavailableActual::NoRecommendation => &self.unavailable_no_recommendation,
-            EgressPolicyUnavailableActual::MissingKey => &self.unavailable_missing_key,
-            EgressPolicyUnavailableActual::Demand => &self.unavailable_demand,
-            EgressPolicyUnavailableActual::Opportunity => &self.unavailable_opportunity,
-        }
-        .fetch_add(1, Ordering::Relaxed);
-        if let Some(counters) = selected_vif.and_then(|vif| self.vif(vif)) {
-            counters
-                .unavailable_selected
-                .fetch_add(1, Ordering::Relaxed);
-        }
+    pub(crate) fn progress_without_grant(&self) {
+        self.progress_without_grant.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn rejected_update(&self) {
         self.rejected_updates.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub(crate) fn rejected_observation(&self) {
-        self.rejected_observations.fetch_add(1, Ordering::Relaxed);
+    pub(crate) fn rejected_progress(&self) {
+        self.rejected_progress.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn snapshot_query(&self, ready: bool) {
@@ -361,19 +287,14 @@ impl EgressPolicyShadowCounters {
 
     fn snapshot(&self) -> EgressPolicyShadowSnapshot {
         EgressPolicyShadowSnapshot {
-            recommendations: self.recommendations.load(Ordering::Relaxed),
-            exact_recommendations: self.exact_recommendations.load(Ordering::Relaxed),
-            different_recommendations: self.different_recommendations.load(Ordering::Relaxed),
-            cancelled_recommendations: self.cancelled_recommendations.load(Ordering::Relaxed),
-            unavailable_actual: self.unavailable_actual.load(Ordering::Relaxed),
-            unavailable_no_recommendation: self
-                .unavailable_no_recommendation
-                .load(Ordering::Relaxed),
-            unavailable_missing_key: self.unavailable_missing_key.load(Ordering::Relaxed),
-            unavailable_demand: self.unavailable_demand.load(Ordering::Relaxed),
-            unavailable_opportunity: self.unavailable_opportunity.load(Ordering::Relaxed),
+            grants_issued: self.grants_issued.load(Ordering::Relaxed),
+            grants_started: self.grants_started.load(Ordering::Relaxed),
+            grants_finished: self.grants_finished.load(Ordering::Relaxed),
+            grants_used: self.grants_used.load(Ordering::Relaxed),
+            grants_unused: self.grants_unused.load(Ordering::Relaxed),
+            progress_without_grant: self.progress_without_grant.load(Ordering::Relaxed),
             rejected_updates: self.rejected_updates.load(Ordering::Relaxed),
-            rejected_observations: self.rejected_observations.load(Ordering::Relaxed),
+            rejected_progress: self.rejected_progress.load(Ordering::Relaxed),
             snapshot_queries: self.snapshot_queries.load(Ordering::Relaxed),
             snapshot_ready: self.snapshot_ready.load(Ordering::Relaxed),
             key_rejected: self.key_rejected.load(Ordering::Relaxed),
@@ -388,13 +309,6 @@ impl EgressPolicyShadowCounters {
     }
 }
 
-pub(crate) enum EgressPolicyUnavailableActual {
-    NoRecommendation,
-    MissingKey,
-    Demand,
-    Opportunity,
-}
-
 pub(crate) static EGRESS_POLICY_SHADOW_COUNTERS: EgressPolicyShadowCounters =
     EgressPolicyShadowCounters::new();
 
@@ -407,19 +321,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn per_vif_snapshot_delta_preserves_selection_and_actual_identity() {
+    fn per_vif_snapshot_delta_preserves_grant_lifecycle_identity() {
         let earlier = EgressPolicyShadowSnapshot {
             vifs: [
                 EgressPolicyVifShadowSnapshot {
-                    selected_transactions: u32::MAX,
-                    selected_frames: 30,
-                    selected_modeled_airtime_100ns: 1_000,
+                    grants_issued: u32::MAX,
+                    issued_frame_credits: 30,
+                    issued_modeled_airtime_100ns: 1_000,
                     ..EgressPolicyVifShadowSnapshot::default()
                 },
                 EgressPolicyVifShadowSnapshot {
-                    actual_transactions: 7,
-                    actual_frames: 200,
-                    actual_modeled_airtime_100ns: 50_000,
+                    grants_finished: 7,
+                    used_frames: 200,
+                    used_modeled_airtime_100ns: 50_000,
                     ..EgressPolicyVifShadowSnapshot::default()
                 },
             ],
@@ -428,15 +342,15 @@ mod tests {
         let current = EgressPolicyShadowSnapshot {
             vifs: [
                 EgressPolicyVifShadowSnapshot {
-                    selected_transactions: 2,
-                    selected_frames: 62,
-                    selected_modeled_airtime_100ns: 3_000,
+                    grants_issued: 2,
+                    issued_frame_credits: 62,
+                    issued_modeled_airtime_100ns: 3_000,
                     ..EgressPolicyVifShadowSnapshot::default()
                 },
                 EgressPolicyVifShadowSnapshot {
-                    actual_transactions: 9,
-                    actual_frames: 264,
-                    actual_modeled_airtime_100ns: 70_000,
+                    grants_finished: 9,
+                    used_frames: 264,
+                    used_modeled_airtime_100ns: 70_000,
                     ..EgressPolicyVifShadowSnapshot::default()
                 },
             ],
@@ -444,11 +358,11 @@ mod tests {
         };
 
         let delta = current.wrapping_delta_since(earlier);
-        assert_eq!(delta.vifs[0].selected_transactions, 3);
-        assert_eq!(delta.vifs[0].selected_frames, 32);
-        assert_eq!(delta.vifs[0].selected_modeled_airtime_100ns, 2_000);
-        assert_eq!(delta.vifs[1].actual_transactions, 2);
-        assert_eq!(delta.vifs[1].actual_frames, 64);
-        assert_eq!(delta.vifs[1].actual_modeled_airtime_100ns, 20_000);
+        assert_eq!(delta.vifs[0].grants_issued, 3);
+        assert_eq!(delta.vifs[0].issued_frame_credits, 32);
+        assert_eq!(delta.vifs[0].issued_modeled_airtime_100ns, 2_000);
+        assert_eq!(delta.vifs[1].grants_finished, 2);
+        assert_eq!(delta.vifs[1].used_frames, 64);
+        assert_eq!(delta.vifs[1].used_modeled_airtime_100ns, 20_000);
     }
 }

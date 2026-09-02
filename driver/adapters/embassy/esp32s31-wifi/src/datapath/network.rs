@@ -13,7 +13,7 @@ use open_esp_radio_embassy_net::{
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use open_esp_radio_embassy_net::{
-    EgressControlledNetwork, EgressKey, EgressRadioControlOwner, PinnedTxMetadata,
+    EgressControlledNetwork, EgressKey, EgressRadioControlOwner, EgressRadioUpdate,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 #[cfg(feature = "tx-egress-scheduling")]
@@ -273,29 +273,13 @@ pub trait DatapathNetwork<
     /// plane return `false`.
     fn service_egress_control(&mut self) -> bool;
 
-    /// Select one radio-policy recommendation immediately before a role may
-    /// publish its next physical network transaction.
+    /// Select and publish one bounded radio quantum to the network owner.
+    ///
+    /// The grant is advisory while Xarxa runs in shadow mode. A full grant
+    /// ring retains the policy decision for an identical retry.
     #[cfg(feature = "tx-egress-scheduling")]
-    fn prepare_egress_recommendation(
+    fn prepare_egress_grant(
         &mut self,
-        _opportunity_for: &mut dyn FnMut(
-            WifiEgressDemand<EgressKey>,
-        ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        false
-    }
-
-    /// Cancel one recommendation when no physical network transaction was
-    /// published by the role.
-    #[cfg(feature = "tx-egress-scheduling")]
-    fn cancel_egress_recommendation(&mut self) {}
-
-    /// Compare the recommendation with immutable metadata returned by the
-    /// role for the physical network transaction it actually published.
-    #[cfg(feature = "tx-egress-scheduling")]
-    fn observe_actual_egress(
-        &mut self,
-        _metadata: PinnedTxMetadata,
         _opportunity_for: &mut dyn FnMut(
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
@@ -708,37 +692,29 @@ where
 
     fn service_egress_control(&mut self) -> bool {
         let (_, radio, policy) = self.parts_mut();
-        radio.service_observed(|vif, update| policy.observe_update(vif, update))
+        radio.service_updates_observed(|vif, update| match update {
+            EgressRadioUpdate::Demand(update) => policy.observe_update(vif, update),
+            EgressRadioUpdate::Grant(progress) => {
+                policy.observe_grant_progress(vif, progress);
+            }
+        })
     }
 
-    fn prepare_egress_recommendation(
+    fn prepare_egress_grant(
         &mut self,
         opportunity_for: &mut dyn FnMut(
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
     ) -> bool {
-        let (_, _, policy) = self.parts_mut();
-        policy.prepare_recommendation(opportunity_for)
-    }
-
-    fn cancel_egress_recommendation(&mut self) {
-        let (_, _, policy) = self.parts_mut();
-        policy.cancel_recommendation();
-    }
-
-    fn observe_actual_egress(
-        &mut self,
-        metadata: PinnedTxMetadata,
-        opportunity_for: &mut dyn FnMut(
-            WifiEgressDemand<EgressKey>,
-        ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        let (_, _, policy) = self.parts_mut();
-        policy.observe_actual(
-            metadata.interface().value(),
-            metadata.egress_key(),
-            opportunity_for,
-        )
+        let (_, radio, policy) = self.parts_mut();
+        let Some((vif, grant)) = policy.prepare_grant(opportunity_for) else {
+            return false;
+        };
+        if radio.try_issue_grant(vif, grant).is_err() {
+            return false;
+        }
+        policy.mark_grant_transported(grant.serial());
+        true
     }
 
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
@@ -994,29 +970,13 @@ where
     }
 
     #[cfg(feature = "tx-egress-scheduling")]
-    fn prepare_egress_recommendation(
+    fn prepare_egress_grant(
         &mut self,
         opportunity_for: &mut dyn FnMut(
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
     ) -> bool {
-        N::prepare_egress_recommendation(*self, opportunity_for)
-    }
-
-    #[cfg(feature = "tx-egress-scheduling")]
-    fn cancel_egress_recommendation(&mut self) {
-        N::cancel_egress_recommendation(*self);
-    }
-
-    #[cfg(feature = "tx-egress-scheduling")]
-    fn observe_actual_egress(
-        &mut self,
-        metadata: PinnedTxMetadata,
-        opportunity_for: &mut dyn FnMut(
-            WifiEgressDemand<EgressKey>,
-        ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        N::observe_actual_egress(*self, metadata, opportunity_for)
+        N::prepare_egress_grant(*self, opportunity_for)
     }
 
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {

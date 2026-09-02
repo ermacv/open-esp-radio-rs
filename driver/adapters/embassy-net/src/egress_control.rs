@@ -718,24 +718,31 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
         mut observe_demand: impl FnMut(EgressDemandUpdate),
         mut observe_grant: impl FnMut(EgressGrantProgress),
     ) -> bool {
+        self.service_shadow_updates_observed(|update| match update {
+            EgressRadioUpdate::Demand(update) => observe_demand(update),
+            EgressRadioUpdate::Grant(progress) => observe_grant(progress),
+        })
+    }
+
+    /// Consume one finite ordered control turn through a single callback.
+    /// Demand records are exposed only after lifecycle validation.
+    pub fn service_shadow_updates_observed(
+        &mut self,
+        mut observe: impl FnMut(EgressRadioUpdate),
+    ) -> bool {
         let wake = self.port.wake_handle();
         let _ = wake.progress_signal().try_take();
         if !wake.progress_flag().swap(false, Ordering::AcqRel) {
             return false;
         }
-        let (progressed, revisit) =
-            self.service_shadow_turn(&mut observe_demand, &mut observe_grant);
+        let (progressed, revisit) = self.service_shadow_turn(&mut observe);
         if revisit {
             wake.progress_flag().store(true, Ordering::Release);
         }
         progressed
     }
 
-    fn service_shadow_turn(
-        &mut self,
-        observe_demand: &mut impl FnMut(EgressDemandUpdate),
-        observe_grant: &mut impl FnMut(EgressGrantProgress),
-    ) -> (bool, bool) {
+    fn service_shadow_turn(&mut self, observe: &mut impl FnMut(EgressRadioUpdate)) -> (bool, bool) {
         #[cfg(feature = "tx-phase-telemetry")]
         self.port
             .telemetry
@@ -768,7 +775,7 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
                             .radio_demand_rejected
                             .fetch_add(1, Ordering::Relaxed);
                     } else {
-                        observe_demand(update);
+                        observe(EgressRadioUpdate::Demand(update));
                     }
                 }
                 EgressRadioUpdate::Grant(progress) => {
@@ -777,7 +784,7 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
                         .telemetry
                         .radio_grant_updates
                         .fetch_add(1, Ordering::Relaxed);
-                    observe_grant(progress);
+                    observe(EgressRadioUpdate::Grant(progress));
                 }
             }
         }
@@ -876,6 +883,24 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioOwner<'control
     }
 
     pub fn service_observed(&mut self, mut observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
+        self.service_control_observed(&mut observe, |_, _| {})
+    }
+
+    pub fn service_control_observed(
+        &mut self,
+        mut observe_demand: impl FnMut(u8, EgressDemandUpdate),
+        mut observe_grant: impl FnMut(u8, EgressGrantProgress),
+    ) -> bool {
+        self.service_updates_observed(|vif, update| match update {
+            EgressRadioUpdate::Demand(update) => observe_demand(vif, update),
+            EgressRadioUpdate::Grant(progress) => observe_grant(vif, progress),
+        })
+    }
+
+    pub fn service_updates_observed(
+        &mut self,
+        mut observe: impl FnMut(u8, EgressRadioUpdate),
+    ) -> bool {
         if !self.active {
             return false;
         }
@@ -887,10 +912,21 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioOwner<'control
         let started = TxPerformanceSample::read();
         let progressed = self
             .scheduler
-            .service_shadow_observed(|update| observe(0, update));
+            .service_shadow_updates_observed(|update| observe(0, update));
         #[cfg(feature = "tx-phase-telemetry")]
         wake.record_service_cost(TxPerformanceSample::read().wrapping_delta_since(started));
         progressed
+    }
+
+    pub fn try_issue_grant(
+        &mut self,
+        vif: u8,
+        grant: EgressBurstGrant,
+    ) -> Result<(), EgressBurstGrant> {
+        if !self.active || vif != 0 {
+            return Err(grant);
+        }
+        self.scheduler.try_issue_grant(grant)
     }
 
     pub fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> EgressWaitOr<'control, M, F> {
@@ -937,11 +973,11 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
     fn service_one(
         scheduler: &mut EgressRadioScheduler<'control, M, DEMAND_DEPTH>,
         vif: u8,
-        observe: &mut impl FnMut(u8, EgressDemandUpdate),
+        observe: &mut impl FnMut(u8, EgressRadioUpdate),
     ) -> (bool, bool) {
         #[cfg(feature = "tx-phase-telemetry")]
         let started = TxPerformanceSample::read();
-        let result = scheduler.service_shadow_turn(&mut |update| observe(vif, update), &mut |_| {});
+        let result = scheduler.service_shadow_turn(&mut |update| observe(vif, update));
         #[cfg(feature = "tx-phase-telemetry")]
         scheduler
             .wake_handle()
@@ -954,6 +990,24 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
     }
 
     pub fn service_observed(&mut self, mut observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
+        self.service_control_observed(&mut observe, |_, _| {})
+    }
+
+    pub fn service_control_observed(
+        &mut self,
+        mut observe_demand: impl FnMut(u8, EgressDemandUpdate),
+        mut observe_grant: impl FnMut(u8, EgressGrantProgress),
+    ) -> bool {
+        self.service_updates_observed(|vif, update| match update {
+            EgressRadioUpdate::Demand(update) => observe_demand(vif, update),
+            EgressRadioUpdate::Grant(progress) => observe_grant(vif, progress),
+        })
+    }
+
+    pub fn service_updates_observed(
+        &mut self,
+        mut observe: impl FnMut(u8, EgressRadioUpdate),
+    ) -> bool {
         if !self.active {
             return false;
         }
@@ -983,6 +1037,21 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
         first_progressed || second_progressed
     }
 
+    pub fn try_issue_grant(
+        &mut self,
+        vif: u8,
+        grant: EgressBurstGrant,
+    ) -> Result<(), EgressBurstGrant> {
+        if !self.active {
+            return Err(grant);
+        }
+        match vif {
+            0 => self.first.try_issue_grant(grant),
+            1 => self.second.try_issue_grant(grant),
+            _ => Err(grant),
+        }
+    }
+
     pub fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> EgressWaitOr<'control, M, F> {
         EgressWaitOr {
             wake: self.first.wake_handle(),
@@ -1005,6 +1074,17 @@ pub trait EgressRadioControlOwner {
 
     fn service_observed(&mut self, observe: impl FnMut(u8, EgressDemandUpdate)) -> bool;
 
+    fn service_control_observed(
+        &mut self,
+        observe_demand: impl FnMut(u8, EgressDemandUpdate),
+        observe_grant: impl FnMut(u8, EgressGrantProgress),
+    ) -> bool;
+
+    fn service_updates_observed(&mut self, observe: impl FnMut(u8, EgressRadioUpdate)) -> bool;
+
+    fn try_issue_grant(&mut self, vif: u8, grant: EgressBurstGrant)
+    -> Result<(), EgressBurstGrant>;
+
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()>;
 }
 
@@ -1017,6 +1097,26 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioControlOwner
 
     fn service_observed(&mut self, observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
         EgressRadioOwner::service_observed(self, observe)
+    }
+
+    fn service_control_observed(
+        &mut self,
+        observe_demand: impl FnMut(u8, EgressDemandUpdate),
+        observe_grant: impl FnMut(u8, EgressGrantProgress),
+    ) -> bool {
+        EgressRadioOwner::service_control_observed(self, observe_demand, observe_grant)
+    }
+
+    fn service_updates_observed(&mut self, observe: impl FnMut(u8, EgressRadioUpdate)) -> bool {
+        EgressRadioOwner::service_updates_observed(self, observe)
+    }
+
+    fn try_issue_grant(
+        &mut self,
+        vif: u8,
+        grant: EgressBurstGrant,
+    ) -> Result<(), EgressBurstGrant> {
+        EgressRadioOwner::try_issue_grant(self, vif, grant)
     }
 
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {
@@ -1033,6 +1133,26 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioControlOwner
 
     fn service_observed(&mut self, observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
         DualEgressRadioOwner::service_observed(self, observe)
+    }
+
+    fn service_control_observed(
+        &mut self,
+        observe_demand: impl FnMut(u8, EgressDemandUpdate),
+        observe_grant: impl FnMut(u8, EgressGrantProgress),
+    ) -> bool {
+        DualEgressRadioOwner::service_control_observed(self, observe_demand, observe_grant)
+    }
+
+    fn service_updates_observed(&mut self, observe: impl FnMut(u8, EgressRadioUpdate)) -> bool {
+        DualEgressRadioOwner::service_updates_observed(self, observe)
+    }
+
+    fn try_issue_grant(
+        &mut self,
+        vif: u8,
+        grant: EgressBurstGrant,
+    ) -> Result<(), EgressBurstGrant> {
+        DualEgressRadioOwner::try_issue_grant(self, vif, grant)
     }
 
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {

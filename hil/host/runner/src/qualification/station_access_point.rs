@@ -44,9 +44,8 @@ pub(crate) struct Config {
     pub(crate) payload_bytes: usize,
     pub(crate) require_driver_observation: bool,
     pub(crate) require_egress_policy_evidence: bool,
-    pub(crate) maximum_egress_different_recommendations: Option<u32>,
-    pub(crate) maximum_egress_cancelled_recommendations: Option<u32>,
-    pub(crate) maximum_egress_unavailable_actual: Option<u32>,
+    pub(crate) maximum_egress_unused_grants: Option<u32>,
+    pub(crate) maximum_egress_progress_without_grant: Option<u32>,
     pub(crate) capture_independent_laptop_air_monitor: bool,
 }
 
@@ -507,81 +506,63 @@ fn validate_egress_policy(
             Ok(())
         };
     };
-    let selected = evidence
+    let issued = evidence
         .station
-        .selected_transactions
-        .saturating_add(evidence.access_point.selected_transactions);
-    let actual = evidence
+        .grants_issued
+        .saturating_add(evidence.access_point.grants_issued);
+    let started = evidence
         .station
-        .actual_transactions
-        .saturating_add(evidence.access_point.actual_transactions);
-    let exact = evidence
+        .grants_started
+        .saturating_add(evidence.access_point.grants_started);
+    let finished = evidence
         .station
-        .exact_recommendations
-        .saturating_add(evidence.access_point.exact_recommendations);
-    let different_selected = evidence
+        .grants_finished
+        .saturating_add(evidence.access_point.grants_finished);
+    let unused = evidence
         .station
-        .different_selected
-        .saturating_add(evidence.access_point.different_selected);
-    let different_actual = evidence
-        .station
-        .different_actual
-        .saturating_add(evidence.access_point.different_actual);
-    let cancelled = evidence
-        .station
-        .cancelled_selected
-        .saturating_add(evidence.access_point.cancelled_selected);
-    let unavailable_selected = evidence
-        .station
-        .unavailable_selected
-        .saturating_add(evidence.access_point.unavailable_selected);
-    let unavailable_reasons = evidence
-        .unavailable_no_recommendation
-        .saturating_add(evidence.unavailable_missing_key)
-        .saturating_add(evidence.unavailable_demand)
-        .saturating_add(evidence.unavailable_opportunity);
-    if selected != evidence.recommendations
-        || actual
+        .grants_unused
+        .saturating_add(evidence.access_point.grants_unused);
+    if issued != evidence.grants_issued
+        || started != evidence.grants_started
+        || finished != evidence.grants_finished
+        || unused != evidence.grants_unused
+        || evidence.grants_finished
             != evidence
-                .exact_recommendations
-                .saturating_add(evidence.different_recommendations)
-        || exact != evidence.exact_recommendations
-        || different_selected != evidence.different_recommendations
-        || different_actual != evidence.different_recommendations
-        || cancelled != evidence.cancelled_recommendations
-        || unavailable_selected > evidence.unavailable_actual
-        || unavailable_reasons != evidence.unavailable_actual
+                .grants_used
+                .saturating_add(evidence.grants_unused)
+        // One affine grant may straddle either interval boundary. Anything
+        // larger proves a lost or duplicated lifecycle transition.
+        || evidence.grants_issued.abs_diff(evidence.grants_finished) > 1
+        || evidence
+            .grants_issued
+            .abs_diff(evidence.grants_started.saturating_add(evidence.grants_unused))
+            > 1
+        || evidence.grants_started.abs_diff(evidence.grants_used) > 1
         || evidence.rejected_updates != 0
-        || evidence.rejected_observations != 0
+        || evidence.rejected_progress != 0
     {
         return Err(
             format!("{interval} has inconsistent egress-policy evidence: {evidence:?}").into(),
         );
     }
     if config.require_egress_policy_evidence
-        && (evidence.station.actual_transactions == 0
-            || evidence.access_point.actual_transactions == 0)
+        && (evidence.station.grants_finished == 0 || evidence.access_point.grants_finished == 0)
     {
         return Err(format!(
-            "{interval} did not observe physical TX transactions on both VIFs: {evidence:?}"
+            "{interval} did not finish Core0-issued grants on both VIFs: {evidence:?}"
         )
         .into());
     }
     for (name, value, maximum) in [
         (
-            "different recommendations",
-            evidence.different_recommendations,
-            config.maximum_egress_different_recommendations,
+            "unused grants",
+            evidence.grants_unused,
+            config.maximum_egress_unused_grants,
         ),
         (
-            "cancelled recommendations",
-            evidence.cancelled_recommendations,
-            config.maximum_egress_cancelled_recommendations,
-        ),
-        (
-            "unavailable actual transactions",
-            evidence.unavailable_actual,
-            config.maximum_egress_unavailable_actual,
+            "grant progress records without a live grant",
+            evidence.progress_without_grant,
+            config.maximum_egress_progress_without_grant,
         ),
     ] {
         if let Some(maximum) = maximum
@@ -683,23 +664,24 @@ mod tests {
             payload_bytes: 1472,
             require_driver_observation: false,
             require_egress_policy_evidence: true,
-            maximum_egress_different_recommendations: Some(0),
-            maximum_egress_cancelled_recommendations: Some(0),
-            maximum_egress_unavailable_actual: Some(0),
+            maximum_egress_unused_grants: Some(0),
+            maximum_egress_progress_without_grant: Some(0),
             capture_independent_laptop_air_monitor: false,
         }
     }
 
     fn exact_egress_evidence() -> open_esp_radio_hil_protocol::WifiEgressPolicyEvidence {
         let vif = open_esp_radio_hil_protocol::WifiEgressVifEvidence {
-            selected_transactions: 10,
-            actual_transactions: 10,
-            exact_recommendations: 10,
+            grants_issued: 10,
+            grants_started: 10,
+            grants_finished: 10,
             ..Default::default()
         };
         open_esp_radio_hil_protocol::WifiEgressPolicyEvidence {
-            recommendations: 20,
-            exact_recommendations: 20,
+            grants_issued: 20,
+            grants_started: 20,
+            grants_finished: 20,
+            grants_used: 20,
             station: vif,
             access_point: vif,
             ..Default::default()
@@ -732,13 +714,23 @@ mod tests {
     }
 
     #[test]
-    fn paired_egress_gate_rejects_scheduler_disagreement() {
+    fn paired_egress_gate_rejects_inconsistent_grant_lifecycle() {
         let mut evidence = exact_egress_evidence();
-        evidence.exact_recommendations -= 1;
-        evidence.different_recommendations = 1;
-        evidence.station.exact_recommendations -= 1;
-        evidence.station.different_selected = 1;
-        evidence.access_point.different_actual = 1;
+        evidence.grants_used -= 2;
         assert!(validate_egress_policy("paired", Some(evidence), egress_config()).is_err());
+    }
+
+    #[test]
+    fn paired_egress_gate_accounts_unused_grant_without_forging_a_start() {
+        let mut evidence = exact_egress_evidence();
+        evidence.grants_issued += 1;
+        evidence.grants_finished += 1;
+        evidence.grants_unused = 1;
+        evidence.station.grants_issued += 1;
+        evidence.station.grants_finished += 1;
+        evidence.station.grants_unused = 1;
+        let mut config = egress_config();
+        config.maximum_egress_unused_grants = Some(1);
+        assert!(validate_egress_policy("paired", Some(evidence), config).is_ok());
     }
 }

@@ -250,41 +250,14 @@ where
 
     #[cfg(feature = "tx-egress-scheduling")]
     #[inline(never)]
-    pub(super) fn prepare_physical_egress_recommendation(&mut self) -> bool {
+    pub(super) fn prepare_physical_egress_grant(&mut self) -> bool {
         let services = &self.services;
         let network = &mut self.network;
-        network.prepare_egress_recommendation(&mut |demand| {
+        network.prepare_egress_grant(&mut |demand| {
             let snapshot = services.egress_radio_snapshot(demand);
             super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
             snapshot
         })
-    }
-
-    #[cfg(feature = "tx-egress-scheduling")]
-    #[inline(never)]
-    pub(super) fn finish_physical_egress_recommendation(
-        &mut self,
-        recommendation_prepared: bool,
-        start: DatapathTxStart,
-    ) {
-        if !recommendation_prepared {
-            return;
-        }
-        if start.progress() != WifiTxProgress::Pending {
-            self.network.cancel_egress_recommendation();
-            return;
-        }
-        let Some(metadata) = start.egress_metadata() else {
-            self.network.cancel_egress_recommendation();
-            return;
-        };
-        let services = &self.services;
-        let network = &mut self.network;
-        let _ = network.observe_actual_egress(metadata, &mut |demand| {
-            let snapshot = services.egress_radio_snapshot(demand);
-            super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
-            snapshot
-        });
     }
 
     pub(super) fn account_pair_tx_frames(&mut self, interface: NetworkInterfaceId, frames: usize) {

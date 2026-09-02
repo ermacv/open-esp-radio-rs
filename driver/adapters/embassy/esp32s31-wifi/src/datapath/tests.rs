@@ -3,6 +3,8 @@
     reason = "owner-graph test doubles implement the production borrowed Future contracts"
 )]
 
+#[cfg(feature = "tx-egress-scheduling")]
+use core::num::{NonZeroU8, NonZeroU16, NonZeroU32};
 use core::{
     future::{Future, pending, ready},
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -16,7 +18,8 @@ use open_esp_radio_embassy_net::{
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use open_esp_radio_embassy_net::{
-    EgressControlledNetwork, EgressDemandUpdate, EgressKey, EgressRadioControlOwner,
+    EgressBurstGrant, EgressControlledNetwork, EgressDemand, EgressDemandId, EgressDemandLevel,
+    EgressDemandUpdate, EgressGrantProgress, EgressKey, EgressRadioControlOwner, EgressRadioUpdate,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{EVENT_RX_SUCCESS, EVENT_TX_COMPLETE};
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
@@ -28,41 +31,49 @@ use super::*;
 #[cfg(feature = "tx-egress-scheduling")]
 #[derive(Default)]
 struct RecordingEgressPolicy {
-    recommendation_calls: usize,
-    cancellation_calls: usize,
-    observation_calls: usize,
+    grant_calls: usize,
+    transported_calls: usize,
+    progress_calls: usize,
+    grant_outstanding: bool,
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
 impl super::egress::DatapathEgressPolicyOwner for RecordingEgressPolicy {
     fn observe_update(&mut self, _vif: u8, _update: EgressDemandUpdate) {}
 
-    fn prepare_recommendation(
+    fn prepare_grant(
         &mut self,
         _opportunity_for: &mut dyn FnMut(
             open_esp_radio_wifi_softmac::WifiEgressDemand<EgressKey>,
         )
             -> Option<super::egress::DatapathHtEgressSnapshot>,
-    ) -> bool {
-        self.recommendation_calls += 1;
-        true
+    ) -> Option<(u8, EgressBurstGrant)> {
+        if self.grant_outstanding {
+            return None;
+        }
+        self.grant_calls += 1;
+        Some((
+            0,
+            EgressBurstGrant::new(
+                NonZeroU32::MIN,
+                EgressDemand::new(
+                    EgressDemandId::new(1, NonZeroU32::MIN),
+                    EgressKey::from_words([1, 0, 0, 0]),
+                    EgressDemandLevel::new(NonZeroU16::MIN, false),
+                ),
+                NonZeroU8::MIN,
+                NonZeroU32::MIN,
+            ),
+        ))
     }
 
-    fn cancel_recommendation(&mut self) {
-        self.cancellation_calls += 1;
+    fn mark_grant_transported(&mut self, _serial: NonZeroU32) {
+        self.transported_calls += 1;
+        self.grant_outstanding = true;
     }
 
-    fn observe_actual(
-        &mut self,
-        _interface: u8,
-        _key: Option<EgressKey>,
-        _opportunity_for: &mut dyn FnMut(
-            open_esp_radio_wifi_softmac::WifiEgressDemand<EgressKey>,
-        )
-            -> Option<super::egress::DatapathHtEgressSnapshot>,
-    ) -> bool {
-        self.observation_calls += 1;
-        true
+    fn observe_grant_progress(&mut self, _vif: u8, _progress: EgressGrantProgress) {
+        self.progress_calls += 1;
     }
 }
 
@@ -77,6 +88,26 @@ impl EgressRadioControlOwner for SilentEgressRadio {
 
     fn service_observed(&mut self, _observe: impl FnMut(u8, EgressDemandUpdate)) -> bool {
         false
+    }
+
+    fn service_control_observed(
+        &mut self,
+        _observe_demand: impl FnMut(u8, EgressDemandUpdate),
+        _observe_grant: impl FnMut(u8, EgressGrantProgress),
+    ) -> bool {
+        false
+    }
+
+    fn service_updates_observed(&mut self, _observe: impl FnMut(u8, EgressRadioUpdate)) -> bool {
+        false
+    }
+
+    fn try_issue_grant(
+        &mut self,
+        _vif: u8,
+        _grant: EgressBurstGrant,
+    ) -> Result<(), EgressBurstGrant> {
+        Ok(())
     }
 
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {
@@ -184,7 +215,7 @@ macro_rules! split_network {
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
-fn prepare_recommendation_through_network<N>(network: &mut N) -> bool
+fn prepare_grant_through_network<N>(network: &mut N) -> bool
 where
     N: super::network::DatapathNetwork<
             'static,
@@ -196,7 +227,7 @@ where
             QUEUE_DEPTH,
         >,
 {
-    network.prepare_egress_recommendation(&mut |_| None)
+    network.prepare_egress_grant(&mut |_| None)
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
@@ -209,12 +240,12 @@ fn mutable_network_reference_forwards_physical_egress_policy() {
         .with_policy(RecordingEgressPolicy::default());
 
     let mut borrowed = &mut controlled;
-    assert!(prepare_recommendation_through_network(&mut borrowed));
-    borrowed.cancel_egress_recommendation();
+    assert!(prepare_grant_through_network(&mut borrowed));
 
     let (_, _, policy) = controlled.into_parts();
-    assert_eq!(policy.recommendation_calls, 1);
-    assert_eq!(policy.cancellation_calls, 1);
+    assert_eq!(policy.grant_calls, 1);
+    assert_eq!(policy.transported_calls, 1);
+    assert_eq!(policy.progress_calls, 0);
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
@@ -242,16 +273,16 @@ fn run_egress_boundary_case(publish_transaction: bool) -> RecordingEgressPolicy 
 
 #[cfg(feature = "tx-egress-scheduling")]
 #[test]
-fn egress_shadow_observes_only_a_role_published_transaction() {
+fn egress_grant_is_issued_before_and_independently_of_physical_fifo_choice() {
     let published = run_egress_boundary_case(true);
-    assert_eq!(published.recommendation_calls, 1);
-    assert_eq!(published.observation_calls, 1);
-    assert_eq!(published.cancellation_calls, 0);
+    assert_eq!(published.grant_calls, 1);
+    assert_eq!(published.transported_calls, 1);
+    assert_eq!(published.progress_calls, 0);
 
     let retained_without_publication = run_egress_boundary_case(false);
-    assert_eq!(retained_without_publication.recommendation_calls, 1);
-    assert_eq!(retained_without_publication.observation_calls, 0);
-    assert_eq!(retained_without_publication.cancellation_calls, 1);
+    assert_eq!(retained_without_publication.grant_calls, 1);
+    assert_eq!(retained_without_publication.transported_calls, 1);
+    assert_eq!(retained_without_publication.progress_calls, 0);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

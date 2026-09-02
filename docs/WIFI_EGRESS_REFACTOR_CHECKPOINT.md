@@ -16,9 +16,9 @@ The useful architecture is already visible:
 - the network driver revalidates that key and emits the frame directly into
   the fixed internal-SRAM TX pool;
 - Core0 is the sole owner of radio policy and hardware feedback;
-- Core1 publishes bounded demand lifecycle values to Core0, never packet
-  payloads or DMA owners; the future return path will carry burst/airtime
-  grants, but no grant protocol is currently authoritative or retained.
+- Core1 publishes bounded demand/progress values to Core0, never packet
+  payloads or DMA owners; Core0 returns one affine burst/airtime grant through
+  a bounded transport, while Xarxa deliberately consumes it in shadow mode.
 
 The missing part is not another packet-copy mechanism. It is a physical-radio
 wide policy over the demand catalogs already mirrored for both STA and AP.
@@ -1373,25 +1373,40 @@ Full progress publication is retained for retry and has a distinct
 counters remain zero, the shared-stream ordering under a prolonged stalled
 Core0 is a shadow validity gate rather than production authority.
 
-This is still not a scheduling cutover: Core0 does not issue production
-grants yet, `transmit_for` remains the sole SRAM admission authority, and
-packet selection/order are unchanged. The next implementation boundary is to
-make the physical Core0 policy issue one already-modeled grant, consume
-`Started`/`Finished`, and retain its airtime receipt through terminal radio
-completion while the stack remains in `Shadow`.
+The next implementation boundary is now present in host-tested shadow form.
+After one bounded Core0 demand/progress service turn, the physical radio
+policy revalidates role facts, selects one demand and sends a frame/airtime
+quantum to Core1. A full grant ring does not reselect: the exact affine value
+is retried. Xarxa consumes matching credits locally and the pinned adapter
+reports `Started` only after final SRAM materialization and before physical
+publication. Exact `Finished { used_frames, remaining }` then closes the
+quantum on Core0. Selection therefore precedes stack materialization; the
+removed post-factum recommendation path can no longer be mistaken for a
+fairness mechanism.
 
-- issue one demand-id-bound frame/airtime quantum from Core0 per burst, never
-  one request/reply per packet;
-- consume that grant locally in Core1 before final SRAM construction and bind
-  the resulting physical owners to an admission receipt;
-- let `Inactive` revoke only unused grant credit while already-admitted
-  receipts survive until terminal BA/retry completion;
-- make missing or exhausted key grants return `KeyDeferred`;
-- prove the empty-pipeline bootstrap through demand activation;
-- prove immediate sparse dispatch without waiting for a full aggregate;
-- perform same-ELF off/shadow/authoritative A/B and retain rollback until all
-  gates pass;
-- remove the old non-authoritative path only after the cutover is accepted.
+The telemetry schema was cut over with the implementation. It now reports
+`grants_issued`, `grants_started`, `grants_finished`, used/unused grants and
+progress-without-grant. The obsolete recommendation/actual agreement fields
+and qualification criteria were removed rather than aliased. Host tests cover
+transport retry, stale serial rejection, unused close after epoch reset and a
+started admission receipt surviving reset until close.
+
+This remains a non-authoritative scheduling shadow. `transmit_for` and the
+existing stack choice still determine SRAM admission and packet order. The
+current shadow also returns modeled pending airtime when Core1 finishes
+materializing the grant, not at terminal BA/retry completion; that is adequate
+for lifecycle/cost validation but not yet AQL authority. The immediate next
+gates are therefore:
+
+- same-ELF disabled/shadow HIL for STA, AP and simultaneous STA+AP;
+- prove bootstrap, sparse dispatch and saturated progress with zero demand,
+  grant and progress queue overflow;
+- measure throughput plus Core0, Core1 and total normalized work per used
+  grant and per datagram;
+- bind a started grant's admission receipt to terminal radio completion and
+  reconcile actual modeled aggregate/retry cost;
+- only then enable authoritative `KeyDeferred` behavior and remove shadow
+  mode after its rollback gate has passed.
 
 ### Phase 6: fairness and scale qualification
 

@@ -22,6 +22,5 @@ payload_bytes = 1472
 
 [criteria]
 require_egress_policy_evidence = true
-maximum_egress_different_recommendations = 0
-maximum_egress_cancelled_recommendations = 0
-maximum_egress_unavailable_actual = 0
+maximum_egress_unused_grants = 0
+maximum_egress_progress_without_grant = 0

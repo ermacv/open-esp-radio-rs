@@ -2,15 +2,18 @@
 
 use core::num::{NonZeroU8, NonZeroU32};
 
-use open_esp_radio_embassy_net::{EgressDemandUpdate, EgressKey};
+use open_esp_radio_embassy_net::{
+    EgressBurstGrant, EgressDemand, EgressDemandId, EgressDemandLevel, EgressDemandUpdate,
+    EgressGrantProgress, EgressKey,
+};
 use open_esp_radio_esp32s31_wifi_mac::{
     tx::HtRate,
     tx_ampdu::{HtAmpduLengthAccumulator, ModeledHtAmpduPpduDuration},
 };
 use open_esp_radio_wifi_softmac::{
-    WifiAirtimeUnits, WifiEgressAdmissionObservation, WifiEgressAirtimeConfig,
-    WifiEgressAirtimeError, WifiEgressAirtimeScheduler, WifiEgressDemand, WifiEgressDemandId,
-    WifiEgressDemandLevel, WifiEgressOpportunity, WifiEgressSelection,
+    WifiAirtimeUnits, WifiEgressAdmission, WifiEgressAirtimeConfig, WifiEgressAirtimeError,
+    WifiEgressAirtimeScheduler, WifiEgressBurstGrant, WifiEgressDemand, WifiEgressDemandId,
+    WifiEgressDemandLevel, WifiEgressOpportunity,
 };
 
 const PHYSICAL_EGRESS_VIFS: usize = 2;
@@ -177,14 +180,22 @@ pub fn conservative_ht_data_ppdu_opportunity(
 /// network/radio owners.
 pub struct DatapathEgressAirtimePolicy {
     scheduler: WifiEgressAirtimeScheduler<EgressKey, PHYSICAL_EGRESS_VIFS, PHYSICAL_EGRESS_QUEUES>,
-    recommendation: Option<WifiEgressSelection<EgressKey>>,
+    grant: Option<DatapathEgressGrantState>,
     rejected_updates: u32,
-    recommendations: u32,
-    exact_recommendations: u32,
-    different_recommendations: u32,
-    cancelled_recommendations: u32,
-    unavailable_actual: u32,
-    rejected_observations: u32,
+    grants_issued: u32,
+    grants_started: u32,
+    grants_finished: u32,
+    grants_used: u32,
+    grants_unused: u32,
+    progress_without_grant: u32,
+    rejected_progress: u32,
+}
+
+#[derive(Debug)]
+struct DatapathEgressGrantState {
+    grant: WifiEgressBurstGrant<EgressKey>,
+    transported: bool,
+    admission: Option<WifiEgressAdmission<EgressKey>>,
 }
 
 impl DatapathEgressAirtimePolicy {
@@ -196,14 +207,15 @@ impl DatapathEgressAirtimePolicy {
                 airtime_units(40_000),
                 [airtime_units(20_000); PHYSICAL_EGRESS_VIFS],
             )),
-            recommendation: None,
+            grant: None,
             rejected_updates: 0,
-            recommendations: 0,
-            exact_recommendations: 0,
-            different_recommendations: 0,
-            cancelled_recommendations: 0,
-            unavailable_actual: 0,
-            rejected_observations: 0,
+            grants_issued: 0,
+            grants_started: 0,
+            grants_finished: 0,
+            grants_used: 0,
+            grants_unused: 0,
+            progress_without_grant: 0,
+            rejected_progress: 0,
         }
     }
 
@@ -239,7 +251,6 @@ impl DatapathEgressAirtimePolicy {
     }
 
     fn observe_update(&mut self, vif: u8, update: EgressDemandUpdate) {
-        self.cancel_recommendation();
         if self.apply_update(vif, update).is_err() {
             self.rejected_updates = self.rejected_updates.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
@@ -263,188 +274,208 @@ impl DatapathEgressAirtimePolicy {
         snapshot.opportunity(demand.level().ready_frames().get())
     }
 
-    fn cancel_recommendation(&mut self) -> Option<u8> {
-        let recommendation = self.recommendation.take()?;
-        let selected_vif = recommendation.demand().vif();
-        if self.scheduler.cancel_selection(recommendation).is_err() {
-            self.rejected_observations = self.rejected_observations.saturating_add(1);
-            #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_observation();
-        }
-        Some(selected_vif)
-    }
-
-    fn prepare_recommendation(
+    fn prepare_grant(
         &mut self,
         opportunity_for: &mut dyn FnMut(
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        self.cancel_recommendation();
-        match self.scheduler.select_next(|demand| {
+    ) -> Option<(u8, EgressBurstGrant)> {
+        if let Some(state) = self.grant.as_ref() {
+            return (!state.transported).then_some((
+                state.grant.demand().vif(),
+                Self::transport_grant(state.grant),
+            ));
+        }
+        let selection = match self.scheduler.select_next(|demand| {
             opportunity_for(demand)
                 .and_then(|snapshot| snapshot.opportunity(demand.level().ready_frames().get()))
         }) {
-            Ok(Some(recommendation)) => {
-                self.recommendations = self.recommendations.saturating_add(1);
-                #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.recommendation(
-                    recommendation.demand().vif(),
-                    recommendation.opportunity().frame_limit().get(),
-                    recommendation
-                        .opportunity()
-                        .estimated_airtime()
-                        .hundred_nanoseconds(),
-                );
-                self.recommendation = Some(recommendation);
-                true
-            }
-            Ok(None) => false,
+            Ok(Some(selection)) => selection,
+            Ok(None) => return None,
             Err(_) => {
-                self.rejected_observations = self.rejected_observations.saturating_add(1);
+                self.rejected_progress = self.rejected_progress.saturating_add(1);
                 #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_observation();
-                false
+                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_progress();
+                return None;
             }
+        };
+        let grant = match self.scheduler.issue_selected(selection) {
+            Ok(grant) => grant,
+            Err(_) => {
+                self.rejected_progress = self.rejected_progress.saturating_add(1);
+                #[cfg(feature = "tx-phase-telemetry")]
+                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_progress();
+                return None;
+            }
+        };
+        self.grants_issued = self.grants_issued.saturating_add(1);
+        #[cfg(feature = "tx-phase-telemetry")]
+        crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.grant_issued(
+            grant.demand().vif(),
+            grant.opportunity().frame_limit().get(),
+            grant
+                .opportunity()
+                .estimated_airtime()
+                .hundred_nanoseconds(),
+        );
+        self.grant = Some(DatapathEgressGrantState {
+            grant,
+            transported: false,
+            admission: None,
+        });
+        Some((grant.demand().vif(), Self::transport_grant(grant)))
+    }
+
+    fn transport_grant(grant: WifiEgressBurstGrant<EgressKey>) -> EgressBurstGrant {
+        let demand = grant.demand();
+        EgressBurstGrant::new(
+            grant.serial(),
+            EgressDemand::new(
+                EgressDemandId::new(demand.id().schedule_epoch(), demand.id().activation()),
+                *demand.key(),
+                EgressDemandLevel::new(
+                    demand.level().ready_frames(),
+                    demand.level().aggregate_ready(),
+                ),
+            ),
+            grant.opportunity().frame_limit(),
+            NonZeroU32::new(
+                grant
+                    .opportunity()
+                    .estimated_airtime()
+                    .hundred_nanoseconds(),
+            )
+            .expect("Wi-Fi airtime units are non-zero"),
+        )
+    }
+
+    fn mark_grant_transported(&mut self, serial: NonZeroU32) {
+        if let Some(state) = self.grant.as_mut()
+            && state.grant.serial() == serial
+        {
+            state.transported = true;
         }
     }
 
-    fn observe_actual(
-        &mut self,
-        interface: u8,
-        key: Option<EgressKey>,
-        opportunity_for: &mut dyn FnMut(
-            WifiEgressDemand<EgressKey>,
-        ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        let Some(recommendation) = self.recommendation.take() else {
-            self.unavailable_actual = self.unavailable_actual.saturating_add(1);
+    fn reject_grant_progress(&mut self) {
+        self.rejected_progress = self.rejected_progress.saturating_add(1);
+        #[cfg(feature = "tx-phase-telemetry")]
+        crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_progress();
+    }
+
+    fn observe_grant_progress(&mut self, vif: u8, progress: EgressGrantProgress) {
+        let Some(state) = self.grant.as_ref() else {
+            self.progress_without_grant = self.progress_without_grant.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
-                None,
-                crate::diagnostics::egress::EgressPolicyUnavailableActual::NoRecommendation,
-            );
-            return false;
+            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.progress_without_grant();
+            self.reject_grant_progress();
+            return;
         };
-        let _selected_vif = recommendation.demand().vif();
-        let Some(key) = key else {
-            let _ = self.scheduler.cancel_selection(recommendation);
-            self.unavailable_actual = self.unavailable_actual.saturating_add(1);
-            #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
-                Some(_selected_vif),
-                crate::diagnostics::egress::EgressPolicyUnavailableActual::MissingKey,
-            );
-            return false;
+        let serial = match progress {
+            EgressGrantProgress::Started { serial }
+            | EgressGrantProgress::Finished { serial, .. } => serial,
         };
-        // The selected demand and its role-derived opportunity are immutable
-        // for the lifetime of one outstanding recommendation. Reusing both
-        // on the overwhelmingly common exact path avoids a second role
-        // snapshot query at every physical transaction boundary. A genuinely
-        // different production choice must still be revalidated against its
-        // own current BA/rate/power-save state.
-        let (actual, opportunity) = if recommendation.demand().vif() == interface
-            && *recommendation.demand().key() == key
-        {
-            (*recommendation.demand(), recommendation.opportunity())
-        } else {
-            let Some(actual) = self.scheduler.demand(interface, key) else {
-                let _ = self.scheduler.cancel_selection(recommendation);
-                self.unavailable_actual = self.unavailable_actual.saturating_add(1);
-                #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
-                    Some(_selected_vif),
-                    crate::diagnostics::egress::EgressPolicyUnavailableActual::Demand,
-                );
-                return false;
-            };
-            let Some(opportunity) = opportunity_for(actual)
-                .and_then(|snapshot| snapshot.opportunity(actual.level().ready_frames().get()))
-            else {
-                let _ = self.scheduler.cancel_selection(recommendation);
-                self.unavailable_actual = self.unavailable_actual.saturating_add(1);
-                #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
-                    Some(_selected_vif),
-                    crate::diagnostics::egress::EgressPolicyUnavailableActual::Opportunity,
-                );
-                return false;
-            };
-            (actual, opportunity)
-        };
-        let estimated = opportunity.estimated_airtime();
-        match self
-            .scheduler
-            .observe_admission(recommendation, actual, opportunity)
-        {
-            Ok((observation, admission)) => {
-                match observation {
-                    WifiEgressAdmissionObservation::ExactRecommendation => {
-                        self.exact_recommendations = self.exact_recommendations.saturating_add(1);
-                        #[cfg(feature = "tx-phase-telemetry")]
-                        crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
-                            .exact_recommendation(
-                                actual.vif(),
-                                opportunity.frame_limit().get(),
-                                estimated.hundred_nanoseconds(),
-                            );
-                    }
-                    WifiEgressAdmissionObservation::DifferentQueue => {
-                        self.different_recommendations =
-                            self.different_recommendations.saturating_add(1);
-                        #[cfg(feature = "tx-phase-telemetry")]
-                        crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
-                            .different_recommendation(
-                                _selected_vif,
-                                actual.vif(),
-                                opportunity.frame_limit().get(),
-                                estimated.hundred_nanoseconds(),
-                            );
-                    }
+        if state.grant.demand().vif() != vif || state.grant.serial() != serial {
+            self.reject_grant_progress();
+            return;
+        }
+
+        match progress {
+            EgressGrantProgress::Started { .. } => {
+                if state.admission.is_some() {
+                    self.reject_grant_progress();
+                    return;
                 }
+                match self.scheduler.start_grant(state.grant) {
+                    Ok(admission) => {
+                        self.grants_started = self.grants_started.saturating_add(1);
+                        #[cfg(feature = "tx-phase-telemetry")]
+                        crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
+                            .grant_started(vif);
+                        self.grant
+                            .as_mut()
+                            .expect("validated grant remains present")
+                            .admission = Some(admission);
+                    }
+                    Err(_) => self.reject_grant_progress(),
+                }
+            }
+            EgressGrantProgress::Finished {
+                used_frames,
+                remaining,
+                ..
+            } => {
+                let state = self.grant.take().expect("validated grant remains present");
+                let remaining = remaining.map(|level| {
+                    WifiEgressDemandLevel::new(level.ready_units(), level.horizon_ready())
+                });
                 if self
                     .scheduler
-                    .reconcile_modeled_airtime(admission, estimated)
+                    .finish_grant(state.grant, used_frames, remaining)
                     .is_err()
                 {
-                    self.rejected_observations = self.rejected_observations.saturating_add(1);
+                    self.grant = Some(state);
+                    self.reject_grant_progress();
+                    return;
+                }
+                if let Some(admission) = state.admission
+                    && self
+                        .scheduler
+                        .reconcile_modeled_airtime(
+                            admission,
+                            state.grant.opportunity().estimated_airtime(),
+                        )
+                        .is_err()
+                {
+                    self.reject_grant_progress();
+                    return;
+                }
+                self.grants_finished = self.grants_finished.saturating_add(1);
+                if used_frames == 0 {
+                    self.grants_unused = self.grants_unused.saturating_add(1);
                     #[cfg(feature = "tx-phase-telemetry")]
                     crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
-                        .rejected_observation();
+                        .grant_finished_unused(vif);
+                } else {
+                    self.grants_used = self.grants_used.saturating_add(1);
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.grant_finished_used(
+                        vif,
+                        used_frames,
+                        state
+                            .grant
+                            .opportunity()
+                            .estimated_airtime()
+                            .hundred_nanoseconds(),
+                    );
                 }
-                true
-            }
-            Err(_) => {
-                self.rejected_observations = self.rejected_observations.saturating_add(1);
-                #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_observation();
-                false
             }
         }
     }
 
-    pub const fn shadow_observation(&self) -> DatapathEgressShadowObservation {
-        DatapathEgressShadowObservation {
-            recommendations: self.recommendations,
-            exact_recommendations: self.exact_recommendations,
-            different_recommendations: self.different_recommendations,
-            cancelled_recommendations: self.cancelled_recommendations,
-            unavailable_actual: self.unavailable_actual,
-            rejected_observations: self.rejected_observations,
+    pub const fn grant_observation(&self) -> DatapathEgressGrantObservation {
+        DatapathEgressGrantObservation {
+            grants_issued: self.grants_issued,
+            grants_started: self.grants_started,
+            grants_finished: self.grants_finished,
+            grants_used: self.grants_used,
+            grants_unused: self.grants_unused,
+            progress_without_grant: self.progress_without_grant,
+            rejected_progress: self.rejected_progress,
         }
     }
 }
 
-/// Monotonic comparison between the radio policy and unchanged production
-/// packet admission.
+/// Monotonic lifecycle totals for Core0-issued shadow grants.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct DatapathEgressShadowObservation {
-    pub recommendations: u32,
-    pub exact_recommendations: u32,
-    pub different_recommendations: u32,
-    pub cancelled_recommendations: u32,
-    pub unavailable_actual: u32,
-    pub rejected_observations: u32,
+pub struct DatapathEgressGrantObservation {
+    pub grants_issued: u32,
+    pub grants_started: u32,
+    pub grants_finished: u32,
+    pub grants_used: u32,
+    pub grants_unused: u32,
+    pub progress_without_grant: u32,
+    pub rejected_progress: u32,
 }
 
 impl Default for DatapathEgressAirtimePolicy {
@@ -461,55 +492,38 @@ impl Default for DatapathEgressAirtimePolicy {
 pub trait DatapathEgressPolicyOwner {
     fn observe_update(&mut self, vif: u8, update: EgressDemandUpdate);
 
-    fn prepare_recommendation(
-        &mut self,
-        opportunity_for: &mut dyn FnMut(
-            WifiEgressDemand<EgressKey>,
-        ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool;
-
-    /// Return one unconsumed shadow selection to the scheduler.
+    /// Select or retry one bounded radio grant without charging airtime.
     ///
-    /// A role may accept or retain a queue head without publishing a physical
-    /// radio transaction. That is not an unavailable actual decision: the
-    /// provisional scheduler selection simply did not cross the hardware
-    /// boundary and must be cancelled explicitly.
-    fn cancel_recommendation(&mut self);
-
-    fn observe_actual(
+    /// Returning the same value until [`Self::mark_grant_transported`] makes
+    /// a full cross-core grant ring ordinary backpressure rather than a lost
+    /// scheduler decision.
+    fn prepare_grant(
         &mut self,
-        interface: u8,
-        key: Option<EgressKey>,
         opportunity_for: &mut dyn FnMut(
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool;
+    ) -> Option<(u8, EgressBurstGrant)>;
+
+    fn mark_grant_transported(&mut self, serial: NonZeroU32);
+
+    fn observe_grant_progress(&mut self, vif: u8, progress: EgressGrantProgress);
 }
 
 impl DatapathEgressPolicyOwner for () {
     fn observe_update(&mut self, _vif: u8, _update: EgressDemandUpdate) {}
 
-    fn prepare_recommendation(
+    fn prepare_grant(
         &mut self,
         _opportunity_for: &mut dyn FnMut(
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        false
+    ) -> Option<(u8, EgressBurstGrant)> {
+        None
     }
 
-    fn cancel_recommendation(&mut self) {}
+    fn mark_grant_transported(&mut self, _serial: NonZeroU32) {}
 
-    fn observe_actual(
-        &mut self,
-        _interface: u8,
-        _key: Option<EgressKey>,
-        _opportunity_for: &mut dyn FnMut(
-            WifiEgressDemand<EgressKey>,
-        ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        false
-    }
+    fn observe_grant_progress(&mut self, _vif: u8, _progress: EgressGrantProgress) {}
 }
 
 impl DatapathEgressPolicyOwner for DatapathEgressAirtimePolicy {
@@ -517,33 +531,21 @@ impl DatapathEgressPolicyOwner for DatapathEgressAirtimePolicy {
         DatapathEgressAirtimePolicy::observe_update(self, vif, update);
     }
 
-    fn prepare_recommendation(
+    fn prepare_grant(
         &mut self,
         opportunity_for: &mut dyn FnMut(
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        DatapathEgressAirtimePolicy::prepare_recommendation(self, opportunity_for)
+    ) -> Option<(u8, EgressBurstGrant)> {
+        DatapathEgressAirtimePolicy::prepare_grant(self, opportunity_for)
     }
 
-    fn cancel_recommendation(&mut self) {
-        if let Some(_selected_vif) = DatapathEgressAirtimePolicy::cancel_recommendation(self) {
-            self.cancelled_recommendations = self.cancelled_recommendations.saturating_add(1);
-            #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
-                .cancelled_recommendation(_selected_vif);
-        }
+    fn mark_grant_transported(&mut self, serial: NonZeroU32) {
+        DatapathEgressAirtimePolicy::mark_grant_transported(self, serial);
     }
 
-    fn observe_actual(
-        &mut self,
-        interface: u8,
-        key: Option<EgressKey>,
-        opportunity_for: &mut dyn FnMut(
-            WifiEgressDemand<EgressKey>,
-        ) -> Option<DatapathHtEgressSnapshot>,
-    ) -> bool {
-        DatapathEgressAirtimePolicy::observe_actual(self, interface, key, opportunity_for)
+    fn observe_grant_progress(&mut self, vif: u8, progress: EgressGrantProgress) {
+        DatapathEgressAirtimePolicy::observe_grant_progress(self, vif, progress);
     }
 }
 
@@ -661,14 +663,11 @@ mod tests {
     }
 
     #[test]
-    fn shadow_recommendation_observes_actual_queue_without_retaining_pending_airtime() {
+    fn burst_grant_is_retried_until_transport_and_charged_only_after_start() {
         let mut policy = DatapathEgressAirtimePolicy::new();
         let first = key(1);
-        let second = key(2);
         policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
-        policy.observe_update(1, EgressDemandUpdate::Reset { schedule_epoch: 11 });
         policy.observe_update(0, active(7, 1, first, 32));
-        policy.observe_update(1, active(11, 1, second, 32));
 
         let snapshot = DatapathHtEgressSnapshot::new(
             HtRate::new(
@@ -680,51 +679,48 @@ mod tests {
             1_600,
             u16::MAX,
         );
-        let mut prepare_queries = 0;
-        assert!(policy.prepare_recommendation(&mut |_| {
-            prepare_queries += 1;
-            Some(snapshot)
-        }));
-        let mut actual_queries = 0;
-        assert!(policy.observe_actual(0, Some(first), &mut |_| {
-            actual_queries += 1;
-            Some(snapshot)
-        }));
-        assert!(prepare_queries != 0);
-        assert_eq!(actual_queries, 0, "exact admission reuses selected facts");
+        let (vif, grant) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        assert_eq!(vif, 0);
         assert_eq!(policy.scheduler.global_pending_airtime(), 0);
-
-        // The exact first admission debits VIF 0 and advances the DRR cursor
-        // to VIF 1. Feed the unchanged production FIFO's VIF-0 choice to the
-        // second recommendation and prove that disagreement is observational.
-        assert!(policy.prepare_recommendation(&mut |_| {
-            prepare_queries += 1;
-            Some(snapshot)
-        }));
-        assert!(policy.observe_actual(0, Some(first), &mut |_| {
-            actual_queries += 1;
-            Some(snapshot)
-        }));
         assert_eq!(
-            actual_queries, 1,
-            "a different actual queue requires its own role snapshot"
+            policy.prepare_grant(&mut |_| panic!("retry must reuse the selected facts")),
+            Some((vif, grant))
+        );
+        policy.mark_grant_transported(grant.serial());
+        assert_eq!(policy.prepare_grant(&mut |_| Some(snapshot)), None);
+
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Started {
+                serial: grant.serial(),
+            },
+        );
+        assert_ne!(policy.scheduler.global_pending_airtime(), 0);
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Finished {
+                serial: grant.serial(),
+                used_frames: grant.frame_credits().get(),
+                remaining: None,
+            },
         );
         assert_eq!(policy.scheduler.global_pending_airtime(), 0);
         assert_eq!(
-            policy.shadow_observation(),
-            DatapathEgressShadowObservation {
-                recommendations: 2,
-                exact_recommendations: 1,
-                different_recommendations: 1,
-                cancelled_recommendations: 0,
-                unavailable_actual: 0,
-                rejected_observations: 0,
+            policy.grant_observation(),
+            DatapathEgressGrantObservation {
+                grants_issued: 1,
+                grants_started: 1,
+                grants_finished: 1,
+                grants_used: 1,
+                grants_unused: 0,
+                progress_without_grant: 0,
+                rejected_progress: 0,
             }
         );
     }
 
     #[test]
-    fn unpublished_physical_transaction_cancels_without_forging_unavailable_actual() {
+    fn unused_grant_closes_without_charging_airtime() {
         let mut policy = DatapathEgressAirtimePolicy::new();
         let first = key(1);
         policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
@@ -740,19 +736,146 @@ mod tests {
             u16::MAX,
         );
 
-        assert!(policy.prepare_recommendation(&mut |_| Some(snapshot)));
-        DatapathEgressPolicyOwner::cancel_recommendation(&mut policy);
+        let (vif, grant) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(grant.serial());
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Finished {
+                serial: grant.serial(),
+                used_frames: 0,
+                remaining: Some(grant.demand().level()),
+            },
+        );
+        assert_eq!(policy.scheduler.global_pending_airtime(), 0);
         assert_eq!(
-            policy.shadow_observation(),
-            DatapathEgressShadowObservation {
-                recommendations: 1,
-                exact_recommendations: 0,
-                different_recommendations: 0,
-                cancelled_recommendations: 1,
-                unavailable_actual: 0,
-                rejected_observations: 0,
+            policy.grant_observation(),
+            DatapathEgressGrantObservation {
+                grants_issued: 1,
+                grants_started: 0,
+                grants_finished: 1,
+                grants_used: 0,
+                grants_unused: 1,
+                progress_without_grant: 0,
+                rejected_progress: 0,
             }
         );
-        assert!(policy.prepare_recommendation(&mut |_| Some(snapshot)));
+        assert!(policy.prepare_grant(&mut |_| Some(snapshot)).is_some());
+    }
+
+    #[test]
+    fn epoch_reset_revokes_unused_credit_but_preserves_its_terminal_close() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        let first = key(1);
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
+        policy.observe_update(0, active(7, 1, first, 32));
+        let snapshot = DatapathHtEgressSnapshot::new(
+            HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ),
+            NonZeroU8::new(32).unwrap(),
+            1_600,
+            u16::MAX,
+        );
+        let (vif, grant) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(grant.serial());
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 8 });
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Finished {
+                serial: grant.serial(),
+                used_frames: 0,
+                remaining: None,
+            },
+        );
+        assert_eq!(
+            policy.grant_observation(),
+            DatapathEgressGrantObservation {
+                grants_issued: 1,
+                grants_finished: 1,
+                grants_unused: 1,
+                ..DatapathEgressGrantObservation::default()
+            }
+        );
+
+        policy.observe_update(0, active(8, 2, first, 32));
+        assert!(policy.prepare_grant(&mut |_| Some(snapshot)).is_some());
+    }
+
+    #[test]
+    fn started_grant_receipt_survives_epoch_reset_until_finish() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
+        policy.observe_update(0, active(7, 1, key(1), 32));
+        let snapshot = DatapathHtEgressSnapshot::new(
+            HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ),
+            NonZeroU8::new(32).unwrap(),
+            1_600,
+            u16::MAX,
+        );
+        let (vif, grant) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(grant.serial());
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Started {
+                serial: grant.serial(),
+            },
+        );
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 8 });
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Finished {
+                serial: grant.serial(),
+                used_frames: grant.frame_credits().get(),
+                remaining: None,
+            },
+        );
+        assert_eq!(policy.scheduler.global_pending_airtime(), 0);
+        assert_eq!(policy.grant_observation().rejected_progress, 0);
+        assert_eq!(policy.grant_observation().grants_used, 1);
+    }
+
+    #[test]
+    fn stale_grant_progress_cannot_close_the_live_grant() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
+        policy.observe_update(0, active(7, 1, key(1), 32));
+        let snapshot = DatapathHtEgressSnapshot::new(
+            HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ),
+            NonZeroU8::new(32).unwrap(),
+            1_600,
+            u16::MAX,
+        );
+        let (vif, grant) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(grant.serial());
+        let stale = NonZeroU32::new(grant.serial().get().wrapping_add(1)).unwrap();
+        policy.observe_grant_progress(vif, EgressGrantProgress::Started { serial: stale });
+        assert_eq!(policy.grant_observation().rejected_progress, 1);
+        assert_eq!(policy.prepare_grant(&mut |_| Some(snapshot)), None);
+
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Started {
+                serial: grant.serial(),
+            },
+        );
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Finished {
+                serial: grant.serial(),
+                used_frames: grant.frame_credits().get(),
+                remaining: None,
+            },
+        );
+        assert_eq!(policy.scheduler.global_pending_airtime(), 0);
     }
 }

@@ -766,15 +766,11 @@ impl Scenario {
         if self.criteria.exact_delivery && !udp {
             return self.criteria_error("exact_delivery is valid only for UDP workloads");
         }
-        let has_egress_policy_limits = self
-            .criteria
-            .maximum_egress_different_recommendations
-            .is_some()
+        let has_egress_policy_limits = self.criteria.maximum_egress_unused_grants.is_some()
             || self
                 .criteria
-                .maximum_egress_cancelled_recommendations
-                .is_some()
-            || self.criteria.maximum_egress_unavailable_actual.is_some();
+                .maximum_egress_progress_without_grant
+                .is_some();
         if has_egress_policy_limits && !self.criteria.require_egress_policy_evidence {
             return self.criteria_error(
                 "egress-policy limits require require_egress_policy_evidence = true",

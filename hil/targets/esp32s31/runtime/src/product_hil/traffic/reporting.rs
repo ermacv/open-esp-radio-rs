@@ -1095,14 +1095,15 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     let policy = open_esp_radio_esp32s31_embassy_wifi::egress_policy_shadow_snapshot()
         .wrapping_delta_since(earlier_policy);
     runtime_log_reliably(format_args!(
-        "ONTXES recommendations={} exact={} different={} cancelled={} unavailable={} rejected_updates={} rejected_observations={} snapshot_queries={} snapshot_ready={} key_rejected={} identity_rejected={} traffic_class_rejected={} role_unavailable={} non_ht_rate={} no_block_ack={} invalid_geometry={}",
-        policy.recommendations,
-        policy.exact_recommendations,
-        policy.different_recommendations,
-        policy.cancelled_recommendations,
-        policy.unavailable_actual,
+        "ONTXES grants_issued={} grants_started={} grants_finished={} grants_used={} grants_unused={} progress_without_grant={} rejected_updates={} rejected_progress={} snapshot_queries={} snapshot_ready={} key_rejected={} identity_rejected={} traffic_class_rejected={} role_unavailable={} non_ht_rate={} no_block_ack={} invalid_geometry={}",
+        policy.grants_issued,
+        policy.grants_started,
+        policy.grants_finished,
+        policy.grants_used,
+        policy.grants_unused,
+        policy.progress_without_grant,
         policy.rejected_updates,
-        policy.rejected_observations,
+        policy.rejected_progress,
         policy.snapshot_queries,
         policy.snapshot_ready,
         policy.key_rejected,
@@ -1115,30 +1116,18 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     ))
     .await;
     yield_now().await;
-    runtime_log_reliably(format_args!(
-        "ONTXESU no_recommendation={} missing_key={} demand={} opportunity={}",
-        policy.unavailable_no_recommendation,
-        policy.unavailable_missing_key,
-        policy.unavailable_demand,
-        policy.unavailable_opportunity,
-    ))
-    .await;
-    yield_now().await;
     for (vif, vif_policy) in ["sta", "ap"].into_iter().zip(policy.vifs) {
         runtime_log_reliably(format_args!(
-            "ONTXESV vif={} selected={} selected_frames={} selected_airtime_100ns={} actual={} actual_frames={} actual_airtime_100ns={} exact={} different_selected={} different_actual={} cancelled={} unavailable={}",
+            "ONTXESV vif={} grants_issued={} issued_frame_credits={} issued_airtime_100ns={} grants_started={} grants_finished={} used_frames={} used_airtime_100ns={} grants_unused={}",
             vif,
-            vif_policy.selected_transactions,
-            vif_policy.selected_frames,
-            vif_policy.selected_modeled_airtime_100ns,
-            vif_policy.actual_transactions,
-            vif_policy.actual_frames,
-            vif_policy.actual_modeled_airtime_100ns,
-            vif_policy.exact_recommendations,
-            vif_policy.different_selected,
-            vif_policy.different_actual,
-            vif_policy.cancelled_selected,
-            vif_policy.unavailable_selected,
+            vif_policy.grants_issued,
+            vif_policy.issued_frame_credits,
+            vif_policy.issued_modeled_airtime_100ns,
+            vif_policy.grants_started,
+            vif_policy.grants_finished,
+            vif_policy.used_frames,
+            vif_policy.used_modeled_airtime_100ns,
+            vif_policy.grants_unused,
         ))
         .await;
         yield_now().await;
@@ -1201,17 +1190,14 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     .await;
     yield_now().await;
     WifiEgressPolicyEvidence {
-        recommendations: policy.recommendations,
-        exact_recommendations: policy.exact_recommendations,
-        different_recommendations: policy.different_recommendations,
-        cancelled_recommendations: policy.cancelled_recommendations,
-        unavailable_actual: policy.unavailable_actual,
-        unavailable_no_recommendation: policy.unavailable_no_recommendation,
-        unavailable_missing_key: policy.unavailable_missing_key,
-        unavailable_demand: policy.unavailable_demand,
-        unavailable_opportunity: policy.unavailable_opportunity,
+        grants_issued: policy.grants_issued,
+        grants_started: policy.grants_started,
+        grants_finished: policy.grants_finished,
+        grants_used: policy.grants_used,
+        grants_unused: policy.grants_unused,
+        progress_without_grant: policy.progress_without_grant,
         rejected_updates: policy.rejected_updates,
-        rejected_observations: policy.rejected_observations,
+        rejected_progress: policy.rejected_progress,
         station: hil_egress_vif_evidence(policy.vifs[0]),
         access_point: hil_egress_vif_evidence(policy.vifs[1]),
     }
@@ -1222,17 +1208,14 @@ const fn hil_egress_vif_evidence(
     snapshot: open_esp_radio_esp32s31_embassy_wifi::EgressPolicyVifShadowSnapshot,
 ) -> WifiEgressVifEvidence {
     WifiEgressVifEvidence {
-        selected_transactions: snapshot.selected_transactions,
-        selected_frames: snapshot.selected_frames,
-        selected_modeled_airtime_100ns: snapshot.selected_modeled_airtime_100ns,
-        actual_transactions: snapshot.actual_transactions,
-        actual_frames: snapshot.actual_frames,
-        actual_modeled_airtime_100ns: snapshot.actual_modeled_airtime_100ns,
-        exact_recommendations: snapshot.exact_recommendations,
-        different_selected: snapshot.different_selected,
-        different_actual: snapshot.different_actual,
-        cancelled_selected: snapshot.cancelled_selected,
-        unavailable_selected: snapshot.unavailable_selected,
+        grants_issued: snapshot.grants_issued,
+        issued_frame_credits: snapshot.issued_frame_credits,
+        issued_modeled_airtime_100ns: snapshot.issued_modeled_airtime_100ns,
+        grants_started: snapshot.grants_started,
+        grants_finished: snapshot.grants_finished,
+        used_frames: snapshot.used_frames,
+        used_modeled_airtime_100ns: snapshot.used_modeled_airtime_100ns,
+        grants_unused: snapshot.grants_unused,
     }
 }
 

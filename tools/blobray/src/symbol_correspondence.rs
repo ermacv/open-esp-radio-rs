@@ -20,12 +20,13 @@ use open_radio_vendor_contracts::ArtifactIdentity;
 
 use crate::{Result, artifact, artifact_occurrence};
 
-pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 8;
+pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 9;
 const MINIMUM_COMMON_OBFUSCATION_TOKENS: usize = 64;
 const MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION: u32 = 900_000;
 const MINIMUM_MEMBER_ORDER_FUNCTION_SUPPORT: usize = 64;
 const MINIMUM_MEMBER_ORDER_SUPPORT_PARTS_PER_MILLION: u32 = 900_000;
-const MAX_CALL_GRAPH_REVIEW_CANDIDATES: usize = 16;
+const MINIMUM_EXACT_FUNCTIONS_PER_DERIVED_MEMBER: usize = 2;
+const MAX_FUNCTION_REVIEW_CANDIDATES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -92,7 +93,7 @@ pub(crate) struct SymbolMemberCorrespondence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct SymbolMemberOrderEvidence {
+pub(crate) struct SymbolMemberMappingEvidence {
     pub(crate) basis: &'static str,
     pub(crate) automatic_function_matches: bool,
     pub(crate) automatic_data_matches: bool,
@@ -151,6 +152,22 @@ pub(crate) struct SemanticPinCandidate {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct SymbolResidualPool<T> {
+    pub(crate) source: Vec<T>,
+    pub(crate) target: Vec<T>,
+    pub(crate) member_groups: Vec<SymbolResidualMemberGroup<T>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct SymbolResidualMemberGroup<T> {
+    pub(crate) source_member: String,
+    pub(crate) target_member: String,
+    pub(crate) exact_function_support: usize,
+    pub(crate) source: Vec<T>,
+    pub(crate) target: Vec<T>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct SymbolCorrespondence {
     pub(crate) from: SymbolCorrespondenceFunction,
     pub(crate) status: SymbolCorrespondenceStatus,
@@ -164,6 +181,7 @@ pub(crate) struct SymbolCorrespondenceSummary {
     pub(crate) name_stable: usize,
     pub(crate) token_stable: usize,
     pub(crate) graph_refined: usize,
+    pub(crate) data_refined: usize,
     pub(crate) review_candidates: usize,
     pub(crate) ambiguous: usize,
     pub(crate) unmatched: usize,
@@ -178,11 +196,13 @@ pub(crate) struct SymbolCorrespondenceReport {
     pub(crate) to: SymbolCorrespondenceArtifact,
     pub(crate) obfuscation_epoch: ObfuscationEpochEvidence,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) member_order: Option<SymbolMemberOrderEvidence>,
+    pub(crate) member_mapping: Option<SymbolMemberMappingEvidence>,
     pub(crate) summary: SymbolCorrespondenceSummary,
     pub(crate) correspondences: Vec<SymbolCorrespondence>,
+    pub(crate) function_residual: SymbolResidualPool<SymbolCorrespondenceFunction>,
     pub(crate) data_summary: DataObjectCorrespondenceSummary,
     pub(crate) data_correspondences: Vec<DataObjectCorrespondence>,
+    pub(crate) data_residual: SymbolResidualPool<DataObjectCorrespondenceObject>,
     pub(crate) pin_candidates: Vec<SemanticPinCandidate>,
 }
 
@@ -270,10 +290,75 @@ pub(crate) fn correlate(
         &to_identity,
         &mut correspondences,
     )?;
+    let member_mapping =
+        if let Some(mapping) = infer_member_order(request.from_path, request.to_path)? {
+            Some(member_mapping_evidence(
+                mapping,
+                &correspondences,
+                "archive-wide-exact-function-validated-alphabetical-member-ordinal-v2",
+            ))
+        } else {
+            infer_member_mapping_from_exact_functions(&correspondences).map(|mapping| {
+                member_mapping_evidence(
+                    mapping,
+                    &correspondences,
+                    "one-to-one-member-correspondence-from-exact-functions-v3",
+                )
+            })
+        };
+    let (mut data_summary, mut data_correspondences) = correlate_data_objects(
+        &from_data,
+        &to_data,
+        &from_symbols,
+        &to_symbols,
+        &correspondences,
+        &from_identity,
+        &to_identity,
+        obfuscation_epoch.automatic_matches,
+        member_mapping.as_ref(),
+    )?;
+    loop {
+        let previous = correspondences.clone();
+        refine_function_matches_by_mapped_data_relocations(
+            &from_symbols,
+            &to_symbols,
+            &from_data,
+            &to_data,
+            &data_correspondences,
+            &to_identity,
+            &mut correspondences,
+        )?;
+        refine_function_matches_by_call_graph(
+            &from_symbols,
+            &to_symbols,
+            &to_identity,
+            &mut correspondences,
+        )?;
+        if correspondences == previous {
+            break;
+        }
+        (data_summary, data_correspondences) = correlate_data_objects(
+            &from_data,
+            &to_data,
+            &from_symbols,
+            &to_symbols,
+            &correspondences,
+            &from_identity,
+            &to_identity,
+            obfuscation_epoch.automatic_matches,
+            member_mapping.as_ref(),
+        )?;
+    }
     suggest_changed_function_candidates_by_mapped_callees(
         &from_symbols,
         &to_symbols,
         &to_identity,
+        &mut correspondences,
+    )?;
+    suggest_changed_function_candidates_by_member(
+        &to_symbols,
+        &to_identity,
+        member_mapping.as_ref(),
         &mut correspondences,
     )?;
     correspondences.sort_by(|left, right| left.from.cmp(&right.from));
@@ -287,6 +372,8 @@ pub(crate) fn correlate(
                 summary.token_stable +=
                     usize::from(correspondence.basis.contains("stable-obfuscation-token"));
                 summary.graph_refined += usize::from(correspondence.basis.contains("mapped-call"));
+                summary.data_refined +=
+                    usize::from(correspondence.basis.contains("mapped-data-relocation-site"));
             }
             SymbolCorrespondenceStatus::Ambiguous => summary.ambiguous += 1,
             SymbolCorrespondenceStatus::Unmatched => summary.unmatched += 1,
@@ -294,21 +381,19 @@ pub(crate) fn correlate(
     }
     summary.review_candidates = correspondences
         .iter()
-        .filter(|correspondence| correspondence.basis == "mapped-callee-multiset-review-candidates")
+        .filter(|correspondence| correspondence.basis.ends_with("review-candidates"))
         .count();
-
-    let member_order = infer_member_order(request.from_path, request.to_path)?
-        .map(|mapping| member_order_evidence(mapping, &correspondences));
-    let (data_summary, data_correspondences) = correlate_data_objects(
-        &from_data,
-        &to_data,
-        &from_symbols,
-        &to_symbols,
+    let function_residual = function_residual_pool(
         &correspondences,
-        &from_identity,
+        &to_symbols,
         &to_identity,
-        obfuscation_epoch.automatic_matches,
-        member_order.as_ref(),
+        member_mapping.as_ref(),
+    )?;
+    let data_residual = data_residual_pool(
+        &data_correspondences,
+        &to_data,
+        &to_identity,
+        member_mapping.as_ref(),
     )?;
     let mut pin_candidates = function_pin_candidates(&correspondences);
     pin_candidates.extend(data_pin_candidates(&data_correspondences));
@@ -317,15 +402,17 @@ pub(crate) fn correlate(
     Ok(SymbolCorrespondenceReport {
         schema_version: SYMBOL_CORRESPONDENCE_SCHEMA,
         command: "symbols correlate",
-        method: "archive-epoch-gated-identities-relocatable-bodies-one-to-one-call-sites-and-bounded-review-shortlists-v7",
+        method: "archive-epoch-gated-identities-relocatable-bodies-call-and-data-reference-fixed-point-v8",
         from: from_artifact,
         to: to_artifact,
         obfuscation_epoch,
-        member_order,
+        member_mapping,
         summary,
         correspondences,
+        function_residual,
         data_summary,
         data_correspondences,
+        data_residual,
         pin_candidates,
     })
 }
@@ -746,7 +833,7 @@ fn suggest_changed_function_candidates_by_mapped_callees(
             })
             .collect::<Vec<_>>();
         if candidate_definitions.is_empty()
-            || candidate_definitions.len() > MAX_CALL_GRAPH_REVIEW_CANDIDATES
+            || candidate_definitions.len() > MAX_FUNCTION_REVIEW_CANDIDATES
         {
             continue;
         }
@@ -758,6 +845,68 @@ fn suggest_changed_function_candidates_by_mapped_callees(
         candidates.dedup();
         correspondence.status = SymbolCorrespondenceStatus::Ambiguous;
         correspondence.basis = "mapped-callee-multiset-review-candidates";
+        correspondence.candidates = candidates;
+    }
+    Ok(())
+}
+
+fn suggest_changed_function_candidates_by_member(
+    to_symbols: &[artifact::ArtifactSymbolDefinition],
+    to_artifact: &ArtifactIdentity,
+    member_mapping: Option<&SymbolMemberMappingEvidence>,
+    correspondences: &mut [SymbolCorrespondence],
+) -> Result<()> {
+    let Some(member_mapping) = member_mapping else {
+        return Ok(());
+    };
+    let mapped_members = member_mapping
+        .correspondences
+        .iter()
+        .map(|mapping| (mapping.from.as_str(), mapping.to.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let to_by_name = unique_symbols_by_name(to_symbols);
+    let claimed_targets = correspondences
+        .iter()
+        .filter(|correspondence| {
+            correspondence.status == SymbolCorrespondenceStatus::Unique
+                && correspondence.candidates.len() == 1
+        })
+        .map(|correspondence| correspondence.candidates[0].locator.clone())
+        .collect::<BTreeSet<_>>();
+
+    for correspondence in correspondences.iter_mut().filter(|correspondence| {
+        correspondence.status == SymbolCorrespondenceStatus::Unmatched
+            && correspondence.basis == "exact-normalized-body"
+    }) {
+        let Some(from_member) = correspondence.from.member.as_deref() else {
+            continue;
+        };
+        let Some(to_member) = mapped_members.get(from_member) else {
+            continue;
+        };
+        let candidate_definitions = to_symbols
+            .iter()
+            .filter(|target| target.member.as_deref() == Some(*to_member))
+            .filter(|target| {
+                to_by_name
+                    .get(target.name.as_str())
+                    .is_some_and(|unique| std::ptr::eq(*unique, *target))
+            })
+            .filter(|target| !claimed_targets.contains(function_locator(target).as_str()))
+            .collect::<Vec<_>>();
+        if candidate_definitions.is_empty()
+            || candidate_definitions.len() > MAX_FUNCTION_REVIEW_CANDIDATES
+        {
+            continue;
+        }
+        let mut candidates = candidate_definitions
+            .into_iter()
+            .map(|target| function_document(target, to_artifact))
+            .collect::<Result<Vec<_>>>()?;
+        candidates.sort();
+        candidates.dedup();
+        correspondence.status = SymbolCorrespondenceStatus::Ambiguous;
+        correspondence.basis = "proven-member-residual-review-candidates";
         correspondence.candidates = candidates;
     }
     Ok(())
@@ -811,7 +960,7 @@ fn correlate_data_objects(
     from_artifact: &ArtifactIdentity,
     to_artifact: &ArtifactIdentity,
     allow_obfuscation_tokens: bool,
-    member_order: Option<&SymbolMemberOrderEvidence>,
+    member_mapping: Option<&SymbolMemberMappingEvidence>,
 ) -> Result<(
     DataObjectCorrespondenceSummary,
     Vec<DataObjectCorrespondence>,
@@ -860,8 +1009,8 @@ fn correlate_data_objects(
         allow_obfuscation_tokens,
         &mut correspondences,
     )?;
-    if let Some(member_order) = member_order {
-        refine_data_matches_by_member_order(member_order, &mut correspondences);
+    if let Some(member_mapping) = member_mapping {
+        refine_data_matches_by_member(member_mapping, &mut correspondences);
     }
     let votes = mapped_function_data_votes(
         from_functions,
@@ -935,8 +1084,11 @@ fn correlate_data_objects(
                     usize::from(correspondence.basis.contains("stable-obfuscation-token"));
                 summary.reference_refined +=
                     usize::from(correspondence.basis.contains("mapped-function-reference"));
-                summary.member_refined +=
-                    usize::from(correspondence.basis.contains("proven-member-order"));
+                summary.member_refined += usize::from(
+                    correspondence
+                        .basis
+                        .contains("proven-member-correspondence"),
+                );
             }
             SymbolCorrespondenceStatus::Ambiguous => summary.ambiguous += 1,
             SymbolCorrespondenceStatus::Unmatched => summary.unmatched += 1,
@@ -945,8 +1097,8 @@ fn correlate_data_objects(
     Ok((summary, correspondences))
 }
 
-fn refine_data_matches_by_member_order(
-    evidence: &SymbolMemberOrderEvidence,
+fn refine_data_matches_by_member(
+    evidence: &SymbolMemberMappingEvidence,
     correspondences: &mut [DataObjectCorrespondence],
 ) {
     if !evidence.automatic_data_matches {
@@ -977,7 +1129,7 @@ fn refine_data_matches_by_member_order(
         candidates.dedup();
         if candidates.len() == 1 {
             correspondence.status = SymbolCorrespondenceStatus::Unique;
-            correspondence.basis = "exact-normalized-data-object-and-proven-member-order";
+            correspondence.basis = "exact-normalized-data-object-and-proven-member-correspondence";
             correspondence.candidates = candidates;
         }
     }
@@ -1171,6 +1323,188 @@ fn mapped_function_data_votes(
     unique_one_to_one_votes(votes)
 }
 
+fn refine_function_matches_by_mapped_data_relocations(
+    from_functions: &[artifact::ArtifactSymbolDefinition],
+    to_functions: &[artifact::ArtifactSymbolDefinition],
+    from_objects: &[artifact::ArtifactDataObjectDefinition],
+    to_objects: &[artifact::ArtifactDataObjectDefinition],
+    data_correspondences: &[DataObjectCorrespondence],
+    to_artifact: &ArtifactIdentity,
+    function_correspondences: &mut [SymbolCorrespondence],
+) -> Result<()> {
+    let votes = mapped_data_function_votes(
+        from_objects,
+        to_objects,
+        data_correspondences,
+        from_functions,
+        to_functions,
+    );
+    let target_documents = to_functions
+        .iter()
+        .map(|function| {
+            let document = function_document(function, to_artifact)?;
+            Ok((document.locator.clone(), document))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let claimed_targets = function_correspondences
+        .iter()
+        .filter(|correspondence| {
+            correspondence.status == SymbolCorrespondenceStatus::Unique
+                && correspondence.candidates.len() == 1
+        })
+        .map(|correspondence| {
+            (
+                correspondence.candidates[0].locator.clone(),
+                correspondence.from.locator.clone(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for correspondence in function_correspondences {
+        if correspondence.basis.starts_with("conflicting-") {
+            continue;
+        }
+        let Some(target_locator) = votes.get(&correspondence.from.locator) else {
+            continue;
+        };
+        if claimed_targets
+            .get(target_locator.as_str())
+            .is_some_and(|source| source != &correspondence.from.locator)
+        {
+            continue;
+        }
+        let Some(target) = target_documents.get(target_locator) else {
+            continue;
+        };
+        match correspondence.status {
+            SymbolCorrespondenceStatus::Unique
+                if correspondence.candidates.first() == Some(target) => {}
+            SymbolCorrespondenceStatus::Unique => {
+                correspondence.status = SymbolCorrespondenceStatus::Ambiguous;
+                correspondence.basis =
+                    "conflicting-function-identity-and-mapped-data-relocation-site";
+                correspondence.candidates.push(target.clone());
+                correspondence.candidates.sort();
+                correspondence.candidates.dedup();
+            }
+            SymbolCorrespondenceStatus::Ambiguous if correspondence.candidates.contains(target) => {
+                correspondence.status = SymbolCorrespondenceStatus::Unique;
+                correspondence.basis =
+                    "exact-normalized-body-and-unique-one-to-one-mapped-data-relocation-site";
+                correspondence.candidates = vec![target.clone()];
+            }
+            SymbolCorrespondenceStatus::Ambiguous => {
+                correspondence.basis =
+                    "conflicting-normalized-body-and-mapped-data-relocation-site";
+                correspondence.candidates.push(target.clone());
+                correspondence.candidates.sort();
+                correspondence.candidates.dedup();
+            }
+            SymbolCorrespondenceStatus::Unmatched => {
+                correspondence.status = SymbolCorrespondenceStatus::Unique;
+                correspondence.basis = "unique-one-to-one-mapped-data-relocation-site";
+                correspondence.candidates = vec![target.clone()];
+            }
+        }
+    }
+    Ok(())
+}
+
+fn mapped_data_function_votes(
+    from_objects: &[artifact::ArtifactDataObjectDefinition],
+    to_objects: &[artifact::ArtifactDataObjectDefinition],
+    correspondences: &[DataObjectCorrespondence],
+    from_functions: &[artifact::ArtifactSymbolDefinition],
+    to_functions: &[artifact::ArtifactSymbolDefinition],
+) -> BTreeMap<String, String> {
+    let from_objects = from_objects
+        .iter()
+        .map(|object| (data_object_locator(object), object))
+        .collect::<BTreeMap<_, _>>();
+    let to_objects = to_objects
+        .iter()
+        .map(|object| (data_object_locator(object), object))
+        .collect::<BTreeMap<_, _>>();
+    let from_functions = function_alias_index(from_functions);
+    let to_functions = function_alias_index(to_functions);
+    let mut votes = BTreeMap::<String, BTreeSet<String>>::new();
+    for correspondence in correspondences.iter().filter(|correspondence| {
+        correspondence.status == SymbolCorrespondenceStatus::Unique
+            && correspondence.candidates.len() == 1
+    }) {
+        let (Some(from), Some(to)) = (
+            from_objects.get(&correspondence.from.locator),
+            to_objects.get(&correspondence.candidates[0].locator),
+        ) else {
+            continue;
+        };
+        if !aligned_data_relocation_shape(&from.relocations, &to.relocations) {
+            continue;
+        }
+        for (from_relocation, to_relocation) in from.relocations.iter().zip(&to.relocations) {
+            let (Some(from_function), Some(to_function)) = (
+                resolve_function_alias(
+                    &from_functions,
+                    from.member.as_deref(),
+                    &from_relocation.target,
+                ),
+                resolve_function_alias(&to_functions, to.member.as_deref(), &to_relocation.target),
+            ) else {
+                continue;
+            };
+            votes.entry(from_function).or_default().insert(to_function);
+        }
+    }
+    unique_one_to_one_votes(votes)
+}
+
+fn aligned_data_relocation_shape(
+    from: &[artifact::ArtifactDataObjectRelocation],
+    to: &[artifact::ArtifactDataObjectRelocation],
+) -> bool {
+    from.len() == to.len()
+        && from.iter().zip(to).all(|(from, to)| {
+            from.offset == to.offset && from.elf_type == to.elf_type && from.addend == to.addend
+        })
+}
+
+fn function_alias_index(
+    functions: &[artifact::ArtifactSymbolDefinition],
+) -> BTreeMap<(Option<String>, String), BTreeSet<String>> {
+    let mut index = BTreeMap::<_, BTreeSet<_>>::new();
+    for function in functions {
+        let locator = function_locator(function);
+        index
+            .entry((function.member.clone(), function.name.clone()))
+            .or_default()
+            .insert(locator.clone());
+        if function.member.is_some() {
+            index
+                .entry((None, function.name.clone()))
+                .or_default()
+                .insert(locator);
+        }
+    }
+    index
+}
+
+fn resolve_function_alias(
+    index: &BTreeMap<(Option<String>, String), BTreeSet<String>>,
+    owner_member: Option<&str>,
+    symbol: &str,
+) -> Option<String> {
+    let member_key = (owner_member.map(str::to_owned), symbol.to_owned());
+    let candidates = index
+        .get(&member_key)
+        .filter(|candidates| candidates.len() == 1)
+        .or_else(|| {
+            index
+                .get(&(None, symbol.to_owned()))
+                .filter(|candidates| candidates.len() == 1)
+        })?;
+    candidates.first().cloned()
+}
+
 fn aligned_relocation_shape(
     from: &[artifact::SymbolRelocation],
     to: &[artifact::SymbolRelocation],
@@ -1293,6 +1627,127 @@ fn normalized_data_fingerprint(object: &artifact::ArtifactDataObjectDefinition) 
     format!("sha256:{:x}", hash.finalize())
 }
 
+fn function_residual_pool(
+    correspondences: &[SymbolCorrespondence],
+    targets: &[artifact::ArtifactSymbolDefinition],
+    target_artifact: &ArtifactIdentity,
+    member_mapping: Option<&SymbolMemberMappingEvidence>,
+) -> Result<SymbolResidualPool<SymbolCorrespondenceFunction>> {
+    let claimed = correspondences
+        .iter()
+        .filter(|correspondence| {
+            correspondence.status == SymbolCorrespondenceStatus::Unique
+                && correspondence.candidates.len() == 1
+        })
+        .map(|correspondence| correspondence.candidates[0].locator.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut source = correspondences
+        .iter()
+        .filter(|correspondence| correspondence.status != SymbolCorrespondenceStatus::Unique)
+        .map(|correspondence| correspondence.from.clone())
+        .collect::<Vec<_>>();
+    let mut target = targets
+        .iter()
+        .filter(|target| !claimed.contains(function_locator(target).as_str()))
+        .map(|target| function_document(target, target_artifact))
+        .collect::<Result<Vec<_>>>()?;
+    source.sort();
+    source.dedup();
+    target.sort();
+    target.dedup();
+    let member_groups = residual_member_groups(&source, &target, member_mapping);
+    Ok(SymbolResidualPool {
+        source,
+        target,
+        member_groups,
+    })
+}
+
+fn data_residual_pool(
+    correspondences: &[DataObjectCorrespondence],
+    targets: &[artifact::ArtifactDataObjectDefinition],
+    target_artifact: &ArtifactIdentity,
+    member_mapping: Option<&SymbolMemberMappingEvidence>,
+) -> Result<SymbolResidualPool<DataObjectCorrespondenceObject>> {
+    let claimed = correspondences
+        .iter()
+        .filter(|correspondence| {
+            correspondence.status == SymbolCorrespondenceStatus::Unique
+                && correspondence.candidates.len() == 1
+        })
+        .map(|correspondence| correspondence.candidates[0].locator.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut source = correspondences
+        .iter()
+        .filter(|correspondence| correspondence.status != SymbolCorrespondenceStatus::Unique)
+        .map(|correspondence| correspondence.from.clone())
+        .collect::<Vec<_>>();
+    let mut target = targets
+        .iter()
+        .filter(|target| !claimed.contains(data_object_locator(target).as_str()))
+        .map(|target| data_object_document(target, target_artifact))
+        .collect::<Result<Vec<_>>>()?;
+    source.sort();
+    source.dedup();
+    target.sort();
+    target.dedup();
+    let member_groups = residual_member_groups(&source, &target, member_mapping);
+    Ok(SymbolResidualPool {
+        source,
+        target,
+        member_groups,
+    })
+}
+
+trait ResidualMemberEntity: Clone {
+    fn member(&self) -> Option<&str>;
+}
+
+impl ResidualMemberEntity for SymbolCorrespondenceFunction {
+    fn member(&self) -> Option<&str> {
+        self.member.as_deref()
+    }
+}
+
+impl ResidualMemberEntity for DataObjectCorrespondenceObject {
+    fn member(&self) -> Option<&str> {
+        self.member.as_deref()
+    }
+}
+
+fn residual_member_groups<T: ResidualMemberEntity>(
+    source: &[T],
+    target: &[T],
+    evidence: Option<&SymbolMemberMappingEvidence>,
+) -> Vec<SymbolResidualMemberGroup<T>> {
+    let Some(evidence) = evidence else {
+        return Vec::new();
+    };
+    evidence
+        .correspondences
+        .iter()
+        .filter_map(|mapping| {
+            let source = source
+                .iter()
+                .filter(|entity| entity.member() == Some(mapping.from.as_str()))
+                .cloned()
+                .collect::<Vec<_>>();
+            let target = target
+                .iter()
+                .filter(|entity| entity.member() == Some(mapping.to.as_str()))
+                .cloned()
+                .collect::<Vec<_>>();
+            (!source.is_empty() || !target.is_empty()).then(|| SymbolResidualMemberGroup {
+                source_member: mapping.from.clone(),
+                target_member: mapping.to.clone(),
+                exact_function_support: mapping.exact_function_support,
+                source,
+                target,
+            })
+        })
+        .collect()
+}
+
 fn function_pin_candidates(correspondences: &[SymbolCorrespondence]) -> Vec<SemanticPinCandidate> {
     correspondences
         .iter()
@@ -1408,10 +1863,53 @@ fn numeric_member_ordinal(name: &str) -> Option<usize> {
     digits.parse().ok()
 }
 
-fn member_order_evidence(
+fn infer_member_mapping_from_exact_functions(
+    correspondences: &[SymbolCorrespondence],
+) -> Option<BTreeMap<String, String>> {
+    let mut votes = BTreeMap::<String, BTreeMap<String, usize>>::new();
+    for correspondence in correspondences.iter().filter(|correspondence| {
+        correspondence.status == SymbolCorrespondenceStatus::Unique
+            && correspondence.candidates.len() == 1
+            && correspondence.from.fingerprint == correspondence.candidates[0].fingerprint
+    }) {
+        let (Some(from), Some(to)) = (
+            correspondence.from.member.as_ref(),
+            correspondence.candidates[0].member.as_ref(),
+        ) else {
+            continue;
+        };
+        *votes
+            .entry(from.clone())
+            .or_default()
+            .entry(to.clone())
+            .or_default() += 1;
+    }
+    let candidates = votes
+        .into_iter()
+        .filter_map(|(from, targets)| {
+            if targets.len() != 1 {
+                return None;
+            }
+            let (to, support) = targets.into_iter().next()?;
+            (support >= MINIMUM_EXACT_FUNCTIONS_PER_DERIVED_MEMBER).then_some((from, to))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut reverse = BTreeMap::<String, usize>::new();
+    for target in candidates.values() {
+        *reverse.entry(target.clone()).or_default() += 1;
+    }
+    let mapping = candidates
+        .into_iter()
+        .filter(|(_, target)| reverse.get(target.as_str()) == Some(&1))
+        .collect::<BTreeMap<_, _>>();
+    (!mapping.is_empty()).then_some(mapping)
+}
+
+fn member_mapping_evidence(
     mapping: BTreeMap<String, String>,
     correspondences: &[SymbolCorrespondence],
-) -> SymbolMemberOrderEvidence {
+    basis: &'static str,
+) -> SymbolMemberMappingEvidence {
     let mut support = BTreeMap::<&str, usize>::new();
     let mut conflicts = BTreeMap::<&str, usize>::new();
     for correspondence in correspondences.iter().filter(|correspondence| {
@@ -1445,8 +1943,8 @@ fn member_order_evidence(
     let automatic_data_matches = exact_function_support >= MINIMUM_MEMBER_ORDER_FUNCTION_SUPPORT
         && exact_function_conflicts == 0
         && support_parts_per_million >= MINIMUM_MEMBER_ORDER_SUPPORT_PARTS_PER_MILLION;
-    SymbolMemberOrderEvidence {
-        basis: "archive-wide-exact-function-validated-alphabetical-member-ordinal-v2",
+    SymbolMemberMappingEvidence {
+        basis,
         // Member order is valuable module provenance and candidate ranking,
         // but code can move between modules across revisions. It never turns
         // an otherwise ambiguous function body into an automatic pin.
@@ -1951,7 +2449,7 @@ mod tests {
             name: "current_leaf".to_owned(),
             ..leaf
         }];
-        to_symbols.extend((0..=MAX_CALL_GRAPH_REVIEW_CANDIDATES).map(|index| {
+        to_symbols.extend((0..=MAX_FUNCTION_REVIEW_CANDIDATES).map(|index| {
             symbol(
                 format!("candidate_{index}").as_str(),
                 &[5, 6, 7, 8],
@@ -1988,6 +2486,110 @@ mod tests {
             SymbolCorrespondenceStatus::Unmatched
         );
         assert!(correspondences[1].candidates.is_empty());
+    }
+
+    #[test]
+    fn one_remaining_function_in_a_proven_member_stays_review_only() {
+        let function = |member: &str, name: &str| artifact::ArtifactSymbolDefinition {
+            member: Some(member.to_owned()),
+            name: name.to_owned(),
+            address: 0,
+            bytes: vec![1, 2],
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let source = function("controller.c.o", "remaining_name");
+        let target = function("7.o", "remaining_target");
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let member_mapping = SymbolMemberMappingEvidence {
+            basis: "test-member-correspondence",
+            automatic_function_matches: false,
+            automatic_data_matches: false,
+            exact_function_support: 2,
+            exact_function_conflicts: 0,
+            support_parts_per_million: 1_000_000,
+            correspondences: vec![SymbolMemberCorrespondence {
+                from: "controller.c.o".to_owned(),
+                to: "7.o".to_owned(),
+                exact_function_support: 2,
+                exact_function_conflicts: 0,
+            }],
+        };
+        let mut correspondences = vec![SymbolCorrespondence {
+            from: function_document(&source, &from_identity).unwrap(),
+            status: SymbolCorrespondenceStatus::Unmatched,
+            basis: "exact-normalized-body",
+            candidates: Vec::new(),
+        }];
+
+        suggest_changed_function_candidates_by_member(
+            std::slice::from_ref(&target),
+            &to_identity,
+            Some(&member_mapping),
+            &mut correspondences,
+        )
+        .unwrap();
+
+        assert_eq!(
+            correspondences[0].status,
+            SymbolCorrespondenceStatus::Ambiguous
+        );
+        assert_eq!(correspondences[0].candidates.len(), 1);
+        assert_eq!(correspondences[0].candidates[0].symbol, "remaining_target");
+        assert_eq!(
+            correspondences[0].basis,
+            "proven-member-residual-review-candidates"
+        );
+    }
+
+    #[test]
+    fn residual_dictionary_removes_only_unique_one_to_one_matches() {
+        let function = |name: &str| artifact::ArtifactSymbolDefinition {
+            member: Some("radio.o".to_owned()),
+            name: name.to_owned(),
+            address: 0,
+            bytes: vec![1, 2],
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let from = [function("known"), function("remaining_name")];
+        let to = [function("claimed_target"), function("remaining_target")];
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let correspondences = vec![
+            SymbolCorrespondence {
+                from: function_document(&from[0], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to[0], &to_identity).unwrap()],
+            },
+            SymbolCorrespondence {
+                from: function_document(&from[1], &from_identity).unwrap(),
+                status: SymbolCorrespondenceStatus::Ambiguous,
+                basis: "mapped-callee-multiset-review-candidates",
+                candidates: vec![function_document(&to[1], &to_identity).unwrap()],
+            },
+        ];
+
+        let member_mapping = member_mapping_evidence(
+            BTreeMap::from([("radio.o".to_owned(), "radio.o".to_owned())]),
+            &correspondences,
+            "test-member-correspondence",
+        );
+        let residual =
+            function_residual_pool(&correspondences, &to, &to_identity, Some(&member_mapping))
+                .unwrap();
+
+        assert_eq!(residual.source.len(), 1);
+        assert_eq!(residual.source[0].symbol, "remaining_name");
+        assert_eq!(residual.target.len(), 1);
+        assert_eq!(residual.target[0].symbol, "remaining_target");
+        assert_eq!(residual.member_groups.len(), 1);
+        assert_eq!(residual.member_groups[0].source.len(), 1);
+        assert_eq!(residual.member_groups[0].target.len(), 1);
     }
 
     #[test]
@@ -2232,6 +2834,44 @@ mod tests {
     }
 
     #[test]
+    fn exact_functions_recover_partial_member_correspondence() {
+        let identity = |source: &str, byte| artifact_identity(source, byte);
+        let correspondence = |index: u8, from_member: &str, to_member: &str| {
+            let function = |member: &str, name: &str| artifact::ArtifactSymbolDefinition {
+                member: Some(member.to_owned()),
+                name: name.to_owned(),
+                address: 0,
+                bytes: vec![index, index.wrapping_add(1)],
+                addresses_resolved: false,
+                memory_regions: Arc::from([]),
+                relocations: Vec::new(),
+            };
+            let from = function(from_member, format!("named_{index}").as_str());
+            let to = function(to_member, format!("current_{index}").as_str());
+            SymbolCorrespondence {
+                from: function_document(&from, &identity("named", '1')).unwrap(),
+                status: SymbolCorrespondenceStatus::Unique,
+                basis: "exact-normalized-body",
+                candidates: vec![function_document(&to, &identity("current", '2')).unwrap()],
+            }
+        };
+        let correspondences = vec![
+            correspondence(1, "controller.c.o", "7.o"),
+            correspondence(2, "controller.c.o", "7.o"),
+            correspondence(3, "scheduler.c.o", "9.o"),
+            correspondence(4, "scheduler.c.o", "9.o"),
+            correspondence(5, "weak.c.o", "10.o"),
+        ];
+
+        let mapping = infer_member_mapping_from_exact_functions(&correspondences).unwrap();
+
+        assert_eq!(mapping.len(), 2);
+        assert_eq!(mapping["controller.c.o"], "7.o");
+        assert_eq!(mapping["scheduler.c.o"], "9.o");
+        assert!(!mapping.contains_key("weak.c.o"));
+    }
+
+    #[test]
     fn mapped_function_reference_resolves_identical_static_data() {
         let object = |name: &str, offset: u64| artifact::ArtifactDataObjectDefinition {
             member: Some("radio.o".to_owned()),
@@ -2293,7 +2933,83 @@ mod tests {
     }
 
     #[test]
-    fn proven_member_order_resolves_identical_static_data_inside_one_module() {
+    fn mapped_data_relocation_site_identifies_a_changed_function() {
+        let function = |name: &str, bytes: &[u8]| artifact::ArtifactSymbolDefinition {
+            member: Some("radio.o".to_owned()),
+            name: name.to_owned(),
+            address: 0,
+            bytes: bytes.to_vec(),
+            addresses_resolved: false,
+            memory_regions: Arc::from([]),
+            relocations: Vec::new(),
+        };
+        let object = |name: &str, target: &str| artifact::ArtifactDataObjectDefinition {
+            member: Some("radio.o".to_owned()),
+            section: format!(".rodata.{name}"),
+            name: name.to_owned(),
+            aliases: Vec::new(),
+            address: None,
+            object_offset: 0,
+            size: 4,
+            writable: false,
+            initialized: true,
+            synthetic_from_anchor: false,
+            exported: false,
+            initializer: vec![0; 4],
+            relocations: vec![artifact::ArtifactDataObjectRelocation {
+                offset: 0,
+                elf_type: Some(1),
+                target: target.to_owned(),
+                target_address: None,
+                addend: 0,
+            }],
+        };
+        let from_function = function("named_handler", &[1, 2, 3, 4]);
+        let to_function = function("current_handler", &[5, 6, 7, 8]);
+        let from_object = object("named_handlers", "named_handler");
+        let to_object = object("current_handlers", "current_handler");
+        let from_identity = artifact_identity("named", '1');
+        let to_identity = artifact_identity("current", '2');
+        let data_correspondences = vec![DataObjectCorrespondence {
+            from: data_object_document(&from_object, &from_identity).unwrap(),
+            status: SymbolCorrespondenceStatus::Unique,
+            basis: "exact-normalized-data-object",
+            candidates: vec![data_object_document(&to_object, &to_identity).unwrap()],
+        }];
+        let mut function_correspondences = vec![SymbolCorrespondence {
+            from: function_document(&from_function, &from_identity).unwrap(),
+            status: SymbolCorrespondenceStatus::Unmatched,
+            basis: "exact-normalized-body",
+            candidates: Vec::new(),
+        }];
+
+        refine_function_matches_by_mapped_data_relocations(
+            std::slice::from_ref(&from_function),
+            std::slice::from_ref(&to_function),
+            std::slice::from_ref(&from_object),
+            std::slice::from_ref(&to_object),
+            &data_correspondences,
+            &to_identity,
+            &mut function_correspondences,
+        )
+        .unwrap();
+
+        assert_eq!(
+            function_correspondences[0].status,
+            SymbolCorrespondenceStatus::Unique
+        );
+        assert_eq!(
+            function_correspondences[0].candidates[0].symbol,
+            "current_handler"
+        );
+        assert_eq!(
+            function_correspondences[0].basis,
+            "unique-one-to-one-mapped-data-relocation-site"
+        );
+    }
+
+    #[test]
+    fn proven_member_correspondence_resolves_identical_static_data_inside_one_module() {
         let object = |member: &str, name: &str| artifact::ArtifactDataObjectDefinition {
             member: Some(member.to_owned()),
             section: format!(".bss.{name}"),
@@ -2322,7 +3038,7 @@ mod tests {
                 .map(|target| data_object_document(target, &to_identity).unwrap())
                 .to_vec(),
         }];
-        let evidence = SymbolMemberOrderEvidence {
+        let evidence = SymbolMemberMappingEvidence {
             basis: "archive-wide-exact-function-validated-alphabetical-member-ordinal-v2",
             automatic_function_matches: false,
             automatic_data_matches: true,
@@ -2337,7 +3053,7 @@ mod tests {
             }],
         };
 
-        refine_data_matches_by_member_order(&evidence, &mut correspondences);
+        refine_data_matches_by_member(&evidence, &mut correspondences);
 
         assert_eq!(
             correspondences[0].status,
@@ -2349,7 +3065,7 @@ mod tests {
         );
         assert_eq!(
             correspondences[0].basis,
-            "exact-normalized-data-object-and-proven-member-order"
+            "exact-normalized-data-object-and-proven-member-correspondence"
         );
     }
 
@@ -2364,9 +3080,10 @@ mod tests {
             basis: "stable-symbol-name",
             candidates: vec![function_document(&to, &artifact_identity("current", '2')).unwrap()],
         };
-        let evidence = member_order_evidence(
+        let evidence = member_mapping_evidence(
             BTreeMap::from([("radio.o".to_owned(), "0.o".to_owned())]),
             &[correspondence],
+            "test-member-order",
         );
 
         assert_eq!(evidence.exact_function_support, 0);
@@ -2400,7 +3117,8 @@ mod tests {
             .map(|index| correspondence(index, "0.o"))
             .collect::<Vec<_>>();
 
-        let proven = member_order_evidence(mapping.clone(), &correspondences);
+        let proven =
+            member_mapping_evidence(mapping.clone(), &correspondences, "test-member-mapping");
         assert!(proven.automatic_data_matches);
         assert_eq!(
             proven.exact_function_support,
@@ -2408,7 +3126,7 @@ mod tests {
         );
 
         correspondences.push(correspondence(MINIMUM_MEMBER_ORDER_FUNCTION_SUPPORT, "1.o"));
-        let conflicted = member_order_evidence(mapping, &correspondences);
+        let conflicted = member_mapping_evidence(mapping, &correspondences, "test-member-mapping");
         assert_eq!(conflicted.exact_function_conflicts, 1);
         assert!(!conflicted.automatic_data_matches);
     }

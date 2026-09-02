@@ -380,6 +380,15 @@ candidate symbols, locators, and occurrences at the exact blocking edge, and
 semantic name; the report never rewrites the artifact or silently promotes it
 into reviewed knowledge.
 
+Exact one-to-one data-object correspondence is also used in the reverse
+direction. If aligned relocation slots in the mapped objects uniquely point
+from one source function to one target function, Blobray may recover that
+changed function and feed it back into call-graph and data-reference matching.
+The alternating refinement runs to a fixed point. Conflicting slots,
+many-to-one targets, non-unique symbols, or changed relocation shape fail
+closed; a table-shaped resemblance without an exact mapped object is not
+evidence.
+
 For archive revisions that replace alphabetically sorted source-object names
 with `0.o`, `1.o`, and so on, the report also publishes the complete inferred
 member-order table and measures it against unique exact-body matches. This is
@@ -391,6 +400,18 @@ candidate in its proven renamed member. Member order cannot rescue a changed
 or absent object. Every function and object record includes an exact
 artifact-bound revision occurrence and its derivation locator for a later
 reviewed pin.
+
+When archive member counts no longer agree, Blobray does not extrapolate the
+old ordinal rule. Instead it may recover a partial one-to-one member map from
+at least two exact function correspondences per member. Members with split,
+merge, or reverse-ownership conflicts are omitted. This partial map can refine
+data only after the same archive-wide support gate, and otherwise serves as a
+review constraint for the residual dictionary rather than a function match.
+For a residual member containing at most 16 unclaimed target functions, each
+still-unmatched source function receives that bounded module-local shortlist.
+It remains `ambiguous` even when subtraction leaves one name and one target;
+member ownership is useful review evidence, not proof of function identity.
+
 Static data objects are correlated separately from functions using stable
 non-generated names, epoch-gated generated tokens, bounded initializer bytes,
 size/properties, and relocation shape with target names removed. Exact mapped
@@ -433,7 +454,19 @@ blocked composition. The report stores artifact digests and every successful
 hop, but not vendor bytes or disassembly. Its pin candidates still require
 review and exclude generated token names.
 
-Schema 7 also retains the failed independent direct correspondence and ranks
+Schema 8 also publishes an explicit residual dictionary after every proven
+one-to-one mapping has consumed its source and target occurrence. For lineage,
+this is the remaining semantic-name set from the oldest artifact and the
+unclaimed function or data-object pool in the newest artifact. Ambiguous
+shortlists remain in both pools until reviewed; generated output never treats
+candidate exhaustion as proof. This makes the remaining bipartite matching
+problem available to tools without requiring them to reconstruct it from the
+full report. Where a proven full or partial member correspondence exists, the
+residual pool is also partitioned into old-member/new-member groups with exact
+function support counts. A `1 ↔ 1` group is still a review candidate, not an
+automatic identity claim.
+
+Schema 8 also retains the failed independent direct correspondence and ranks
 `review-frontiers` that lack any resolved target before routes that need only
 independent corroboration, then by reviewable semantic names and finally by
 all affected functions or objects. Compiler labels remain counted but cannot

@@ -71,25 +71,26 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
             ) / 10_000.0,
         );
         outputln!(
-            "Summary: source-functions={} target-functions={} unique={} name-stable={} token-stable={} graph-refined={} review-candidates={} ambiguous={} unmatched={}",
+            "Summary: source-functions={} target-functions={} unique={} name-stable={} token-stable={} graph-refined={} data-refined={} review-candidates={} ambiguous={} unmatched={}",
             report.from.functions,
             report.to.functions,
             report.summary.unique,
             report.summary.name_stable,
             report.summary.token_stable,
             report.summary.graph_refined,
+            report.summary.data_refined,
             report.summary.review_candidates,
             report.summary.ambiguous,
             report.summary.unmatched,
         );
-        if let Some(member_order) = &report.member_order {
+        if let Some(member_mapping) = &report.member_mapping {
             outputln!(
-                "Member order: {} mappings, exact-body support={} conflicts={} support={:.3}% data-refinement={}",
-                member_order.correspondences.len(),
-                member_order.exact_function_support,
-                member_order.exact_function_conflicts,
-                f64::from(member_order.support_parts_per_million) / 10_000.0,
-                if member_order.automatic_data_matches {
+                "Member mapping: {} mappings, exact-body support={} conflicts={} support={:.3}% data-refinement={}",
+                member_mapping.correspondences.len(),
+                member_mapping.exact_function_support,
+                member_mapping.exact_function_conflicts,
+                f64::from(member_mapping.support_parts_per_million) / 10_000.0,
+                if member_mapping.automatic_data_matches {
                     "enabled"
                 } else {
                     "disabled"
@@ -112,7 +113,57 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
             "Pin candidates: {} (all require review)",
             report.pin_candidates.len()
         );
+        outputln!(
+            "Residual dictionary: functions={} names ↔ {} targets ({} module groups); data-objects={} names ↔ {} targets ({} module groups)",
+            report.function_residual.source.len(),
+            report.function_residual.target.len(),
+            report.function_residual.member_groups.len(),
+            report.data_residual.source.len(),
+            report.data_residual.target.len(),
+            report.data_residual.member_groups.len(),
+        );
         if crate::cli::output::details() {
+            let residual_rows = report
+                .function_residual
+                .member_groups
+                .iter()
+                .map(|group| {
+                    [
+                        "function".to_owned(),
+                        group.source_member.clone(),
+                        group.target_member.clone(),
+                        group.exact_function_support.to_string(),
+                        group.source.len().to_string(),
+                        group.target.len().to_string(),
+                    ]
+                })
+                .chain(report.data_residual.member_groups.iter().map(|group| {
+                    [
+                        "memory-object".to_owned(),
+                        group.source_member.clone(),
+                        group.target_member.clone(),
+                        group.exact_function_support.to_string(),
+                        group.source.len().to_string(),
+                        group.target.len().to_string(),
+                    ]
+                }))
+                .collect::<Vec<_>>();
+            if !residual_rows.is_empty() {
+                outputln!(
+                    "Residual dictionary by proven module correspondence:\n{}",
+                    crate::cli::table::render(
+                        [
+                            "Domain",
+                            "Source member",
+                            "Target member",
+                            "Proofs",
+                            "Names",
+                            "Targets"
+                        ],
+                        residual_rows,
+                    )
+                );
+            }
             let rows = report
                 .correspondences
                 .iter()

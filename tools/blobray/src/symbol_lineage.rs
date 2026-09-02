@@ -16,11 +16,11 @@ use crate::{
         self, DataObjectCorrespondence, DataObjectCorrespondenceObject,
         DataObjectCorrespondenceSummary, ObfuscationEpochEvidence, SymbolCorrespondence,
         SymbolCorrespondenceArtifact, SymbolCorrespondenceFunction, SymbolCorrespondenceRequest,
-        SymbolCorrespondenceStatus, SymbolCorrespondenceSummary,
+        SymbolCorrespondenceStatus, SymbolCorrespondenceSummary, SymbolResidualPool,
     },
 };
 
-pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 7;
+pub(crate) const SYMBOL_LINEAGE_SCHEMA: u32 = 8;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -169,8 +169,10 @@ pub(crate) struct SymbolLineageReport {
     pub(crate) direct: SymbolLineageEdgeSummary,
     pub(crate) function_summary: SymbolLineageSummary,
     pub(crate) functions: Vec<SymbolLineageRecord<SymbolCorrespondenceFunction>>,
+    pub(crate) function_residual: SymbolResidualPool<SymbolCorrespondenceFunction>,
     pub(crate) data_summary: SymbolLineageSummary,
     pub(crate) data_objects: Vec<SymbolLineageRecord<DataObjectCorrespondenceObject>>,
+    pub(crate) data_residual: SymbolResidualPool<DataObjectCorrespondenceObject>,
     pub(crate) review_frontiers: Vec<SymbolLineageReviewFrontier>,
     pub(crate) pin_candidates: Vec<SymbolLineagePinCandidate>,
 }
@@ -405,6 +407,16 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     });
     let function_summary = summarize(&functions);
     let data_summary = summarize(&data_objects);
+    let function_residual = lineage_residual_pool(
+        &functions,
+        &direct.function_residual,
+        &direct.correspondences,
+    );
+    let data_residual = lineage_residual_pool(
+        &data_objects,
+        &direct.data_residual,
+        &direct.data_correspondences,
+    );
     let review_frontiers = review_frontiers(&functions, &data_objects, revisions);
     let mut pin_candidates = function_pin_candidates(&functions);
     pin_candidates.extend(data_pin_candidates(&data_objects));
@@ -450,14 +462,16 @@ pub(crate) fn build(revisions: &[SymbolLineageRevision<'_>]) -> Result<SymbolLin
     Ok(SymbolLineageReport {
         schema_version: SYMBOL_LINEAGE_SCHEMA,
         command: "symbols lineage",
-        method: "direct-and-ordered-one-to-one-correspondence-composition-v7",
+        method: "direct-and-ordered-one-to-one-correspondence-composition-v8",
         artifacts,
         edges: edge_summaries,
         direct: direct_summary,
         function_summary,
         functions,
+        function_residual,
         data_summary,
         data_objects,
+        data_residual,
         review_frontiers,
         pin_candidates,
     })
@@ -616,6 +630,73 @@ fn unique_target<C: LineageCorrespondence>(correspondence: &C) -> Option<&C::Ent
         .then(|| &correspondence.candidates()[0])
 }
 
+fn lineage_residual_pool<C: LineageCorrespondence>(
+    records: &[SymbolLineageRecord<C::Entity>],
+    direct_residual: &SymbolResidualPool<C::Entity>,
+    direct: &[C],
+) -> SymbolResidualPool<C::Entity> {
+    let source: Vec<C::Entity> = records
+        .iter()
+        .filter(|record| record.resolved.is_none())
+        .map(|record| (record.source.occurrence().to_owned(), record.source.clone()))
+        .collect::<BTreeMap<_, _>>()
+        .into_values()
+        .collect();
+    let resolved = records
+        .iter()
+        .filter_map(|record| record.resolved.as_ref())
+        .map(|target| target.occurrence())
+        .collect::<BTreeSet<_>>();
+    let mut target = direct_residual
+        .target
+        .iter()
+        .map(|target| (target.occurrence().to_owned(), target.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for correspondence in direct {
+        if let Some(candidate) = unique_target(correspondence) {
+            target.insert(candidate.occurrence().to_owned(), candidate.clone());
+        }
+    }
+    target.retain(|occurrence, _| !resolved.contains(occurrence.as_str()));
+    let source_occurrences = source
+        .iter()
+        .map(|entity| entity.occurrence())
+        .collect::<BTreeSet<_>>();
+    let target_occurrences = target.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    let member_groups = direct_residual
+        .member_groups
+        .iter()
+        .filter_map(|group| {
+            let source = group
+                .source
+                .iter()
+                .filter(|entity| source_occurrences.contains(entity.occurrence()))
+                .cloned()
+                .collect::<Vec<_>>();
+            let target = group
+                .target
+                .iter()
+                .filter(|entity| target_occurrences.contains(entity.occurrence()))
+                .cloned()
+                .collect::<Vec<_>>();
+            (!source.is_empty() || !target.is_empty()).then(|| {
+                symbol_correspondence::SymbolResidualMemberGroup {
+                    source_member: group.source_member.clone(),
+                    target_member: group.target_member.clone(),
+                    exact_function_support: group.exact_function_support,
+                    source,
+                    target,
+                }
+            })
+        })
+        .collect();
+    SymbolResidualPool {
+        source,
+        target: target.into_values().collect(),
+        member_groups,
+    }
+}
+
 fn compose<C, F>(
     direct: &[C],
     edges: &[symbol_correspondence::SymbolCorrespondenceReport],
@@ -710,7 +791,7 @@ where
 fn review_candidates<C: LineageCorrespondence>(
     correspondence: &C,
 ) -> Vec<SymbolLineageReviewCandidate> {
-    if correspondence.basis() != "mapped-callee-multiset-review-candidates" {
+    if !correspondence.basis().ends_with("review-candidates") {
         return Vec::new();
     }
     correspondence
@@ -1022,11 +1103,21 @@ mod tests {
                 functions: overlap.clone(),
                 data_objects: overlap,
             },
-            member_order: None,
+            member_mapping: None,
             summary: SymbolCorrespondenceSummary::default(),
             correspondences,
+            function_residual: SymbolResidualPool {
+                source: Vec::new(),
+                target: Vec::new(),
+                member_groups: Vec::new(),
+            },
             data_summary: DataObjectCorrespondenceSummary::default(),
             data_correspondences: Vec::new(),
+            data_residual: SymbolResidualPool {
+                source: Vec::new(),
+                target: Vec::new(),
+                member_groups: Vec::new(),
+            },
             pin_candidates: Vec::new(),
         }
     }
@@ -1114,6 +1205,57 @@ mod tests {
             blocker.review_candidates[0].occurrence,
             candidate.occurrence
         );
+
+        let member_candidate = SymbolCorrespondence {
+            from: entity("member_name", "member-source"),
+            status: SymbolCorrespondenceStatus::Ambiguous,
+            basis: "proven-member-residual-review-candidates",
+            candidates: vec![entity("member_target", "member-target")],
+        };
+        assert_eq!(review_candidates(&member_candidate).len(), 1);
+    }
+
+    #[test]
+    fn lineage_residual_dictionary_consumes_chain_only_targets() {
+        let known = entity("known", "known-source");
+        let remaining = entity("remaining-name", "remaining-source");
+        let target = entity("current-known", "known-target");
+        let remaining_target = entity("current-remaining", "remaining-target");
+        let records = vec![
+            SymbolLineageRecord {
+                source: known.clone(),
+                status: SymbolLineageStatus::ChainOnly,
+                direct_basis: None,
+                direct: None,
+                direct_blocker: None,
+                chain: Vec::new(),
+                chain_blocker: None,
+                resolved: Some(target.clone()),
+            },
+            SymbolLineageRecord {
+                source: remaining.clone(),
+                status: SymbolLineageStatus::Unresolved,
+                direct_basis: None,
+                direct: None,
+                direct_blocker: None,
+                chain: Vec::new(),
+                chain_blocker: None,
+                resolved: None,
+            },
+        ];
+        let direct = vec![correspondence(known, None), correspondence(remaining, None)];
+        let direct_residual = SymbolResidualPool {
+            source: Vec::new(),
+            target: vec![target, remaining_target.clone()],
+            member_groups: Vec::new(),
+        };
+
+        let residual = lineage_residual_pool(&records, &direct_residual, &direct);
+
+        assert_eq!(residual.source.len(), 1);
+        assert_eq!(residual.source[0].symbol, "remaining-name");
+        assert_eq!(residual.target.len(), 1);
+        assert_eq!(residual.target[0], remaining_target);
     }
 
     #[test]
@@ -1357,7 +1499,7 @@ mod tests {
             load_rebase_evidence(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("current schema 7")
+                .contains("current schema 8")
         );
 
         let mut forged: serde_json::Value = serde_json::from_slice(&authentic).unwrap();

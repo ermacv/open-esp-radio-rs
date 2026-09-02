@@ -128,6 +128,43 @@ impl BluetoothPeripheralConnectionIntervalTicks {
     }
 }
 
+/// Non-empty Controller event span installed before one connection RUN.
+///
+/// The connection engine replaces this input with a captured receive-time
+/// observation before the completed graph returns to software ownership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionEventSpan(u32);
+
+impl BluetoothPeripheralConnectionEventSpan {
+    pub const fn new(ticks: u32) -> Option<Self> {
+        if ticks == 0 { None } else { Some(Self(ticks)) }
+    }
+
+    const fn ticks(self) -> u32 {
+        self.0
+    }
+}
+
+/// Opaque Controller receive-time observation captured for a connection event.
+///
+/// This is neither scheduler time nor a normalized packet-start anchor. It can
+/// enter only the chip-private epoch and PHY timing projection above this
+/// controller-memory boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionCapturedAnchorTime(u32);
+
+impl BluetoothPeripheralConnectionCapturedAnchorTime {
+    const fn from_controller_sram_word(word: u32) -> Self {
+        Self(word)
+    }
+
+    /// Borrow the wrapping tick observation for chip-private time projection.
+    #[doc(hidden)]
+    pub const fn wrapping_controller_ticks(self) -> u32 {
+        self.0
+    }
+}
+
 /// Non-empty raw Controller window for one connection scheduler item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPeripheralConnectionSchedulerWindow {
@@ -438,10 +475,15 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
     ///
     /// This is not a publishable descriptor: direction-finding workspace and
     /// scheduler admission remain outside this state.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the complete typed first-event fields cross this ownership boundary together"
+    )]
     pub fn prepare_reviewed_first_event_fields(
         self,
         channel: BluetoothPeripheralConnectionDataChannel,
         interval: BluetoothPeripheralConnectionIntervalTicks,
+        event_span: BluetoothPeripheralConnectionEventSpan,
         window: BluetoothPeripheralConnectionSchedulerWindow,
         receive_wait: BluetoothPeripheralConnectionReceiveWait,
         default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
@@ -451,6 +493,7 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
         let input = BluetoothPeripheralConnectionFirstEventCodecInput {
             channel,
             interval,
+            event_span,
             window,
             receive_wait,
             default_tx_power,
@@ -463,6 +506,7 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
             pool: self.pool,
             channel,
             interval,
+            event_span,
             window,
             receive_wait,
             default_tx_power,
@@ -496,6 +540,7 @@ pub struct BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
     pool: BluetoothNonScanningRxMemoryCpuOwned,
     channel: BluetoothPeripheralConnectionDataChannel,
     interval: BluetoothPeripheralConnectionIntervalTicks,
+    event_span: BluetoothPeripheralConnectionEventSpan,
     window: BluetoothPeripheralConnectionSchedulerWindow,
     receive_wait: BluetoothPeripheralConnectionReceiveWait,
     default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
@@ -509,6 +554,10 @@ impl BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
 
     pub const fn interval(&self) -> BluetoothPeripheralConnectionIntervalTicks {
         self.interval
+    }
+
+    pub const fn event_span(&self) -> BluetoothPeripheralConnectionEventSpan {
+        self.event_span
     }
 
     pub const fn window(&self) -> BluetoothPeripheralConnectionSchedulerWindow {
@@ -572,6 +621,10 @@ impl BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
 
     pub const fn interval(&self) -> BluetoothPeripheralConnectionIntervalTicks {
         self.prepared.interval()
+    }
+
+    pub const fn event_span(&self) -> BluetoothPeripheralConnectionEventSpan {
+        self.prepared.event_span()
     }
 
     pub const fn window(&self) -> BluetoothPeripheralConnectionSchedulerWindow {
@@ -919,9 +972,19 @@ impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
                 error,
             });
         }
+        let captured_anchor = self
+            .running
+            .prepared
+            .prepared
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .captured_anchor_time();
         Ok(BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
             completed: self,
             removal,
+            captured_anchor,
         })
     }
 }
@@ -961,9 +1024,15 @@ impl BluetoothPeripheralConnectionMemoryGraphRecycleFailure {
 pub struct BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
     completed: BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
     removal: BluetoothSchedulerSoftwareListRemovalReady,
+    captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
+    /// Hardware-produced receive-time capture for this completed event.
+    pub const fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
+        self.captured_anchor
+    }
+
     /// Recover both unchanged owners before extraction starts.
     pub fn into_parts(
         self,
@@ -1055,6 +1124,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
         let BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
             completed,
             removal: _,
+            captured_anchor,
         } = self.prepared;
         let BluetoothPeripheralConnectionMemoryGraphCompletionObserved { running, status } =
             completed;
@@ -1074,6 +1144,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
             pool,
             channel: _,
             interval: _,
+            event_span: _,
             window: _,
             receive_wait: _,
             default_tx_power: _,
@@ -1089,6 +1160,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
             graph,
             batch: self.batch,
             status,
+            captured_anchor,
         }
     }
 }
@@ -1138,17 +1210,23 @@ pub struct BluetoothPeripheralConnectionMemoryGraphRecycled {
     graph: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
     batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
     status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphRecycled {
+    pub const fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
+        self.captured_anchor
+    }
+
     pub fn into_parts(
         self,
     ) -> (
         BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
         BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
         BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+        BluetoothPeripheralConnectionCapturedAnchorTime,
     ) {
-        (self.graph, self.batch, self.status)
+        (self.graph, self.batch, self.status, self.captured_anchor)
     }
 }
 
@@ -1220,7 +1298,8 @@ mod tests {
     };
 
     use super::{
-        BluetoothPeripheralConnectionDataChannel, BluetoothPeripheralConnectionDefaultTxPowerDbm,
+        BluetoothPeripheralConnectionCapturedAnchorTime, BluetoothPeripheralConnectionDataChannel,
+        BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionEventSpan,
         BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,
         BluetoothPeripheralConnectionMemoryGraphBindError,
         BluetoothPeripheralConnectionMemoryGraphCompletionObservation,
@@ -1248,7 +1327,10 @@ mod tests {
     fn completed_graph(
         graph_base: u32,
         status: u32,
-    ) -> BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
+    ) -> (
+        BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
+        BluetoothPeripheralConnectionCapturedAnchorTime,
+    ) {
         let owner = BluetoothPeripheralConnectionMemoryGraphStorage::pin_static_model(
             storage(),
             BluetoothPeripheralConnectionMemoryGraphModelAddress::new(graph_base)
@@ -1273,6 +1355,8 @@ mod tests {
                 .expect("the model workspace address is controller-encodable"),
         )
         .expect("the direction-finding workspace fits controller SRAM");
+        let event_span = BluetoothPeripheralConnectionEventSpan::new(23_000)
+            .expect("the event span is nonempty");
         let prepared = owner
             .prepare_identity(BluetoothPeripheralConnectionIdentity::new(
                 [0xd4, 0xc3, 0xb2, 0xa1],
@@ -1284,6 +1368,7 @@ mod tests {
                     .expect("data channel zero is valid"),
                 BluetoothPeripheralConnectionIntervalTicks::new(24_000)
                     .expect("the connection interval is nonzero"),
+                event_span,
                 BluetoothPeripheralConnectionSchedulerWindow::new(100, 200)
                     .expect("the scheduler window is nonempty"),
                 BluetoothPeripheralConnectionReceiveWait::new(1_250, 16)
@@ -1294,13 +1379,19 @@ mod tests {
             .install_direction_finding_workspace(workspace.binding().link())
             .prepare_scheduler_admission();
         let scheduler_item_address = prepared.scheduler_head();
-        prepared
-            .prepared
-            .prepared
-            .storage
-            .as_ref()
-            .get_ref()
-            .model_controller_status(status);
+        let captured_anchor =
+            BluetoothPeripheralConnectionCapturedAnchorTime::from_controller_sram_word(
+                graph_base.wrapping_add(0x1234),
+            );
+        assert!(
+            prepared
+                .prepared
+                .prepared
+                .storage
+                .as_ref()
+                .get_ref()
+                .model_controller_complete_event(event_span, captured_anchor, status)
+        );
         let running = BluetoothPeripheralConnectionMemoryGraphRunning {
             prepared,
             _rx_publication: BluetoothRxMemoryListPublished::from_parts_for_validation(
@@ -1315,12 +1406,13 @@ mod tests {
         else {
             panic!("the semantic observation contains list zero")
         };
-        match running.observe_completion(observed) {
+        let completed = match running.observe_completion(observed) {
             BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
                 completed,
             ) => completed,
             _ => panic!("the non-sentinel status completes the model event"),
-        }
+        };
+        (completed, captured_anchor)
     }
 
     fn removal_ready(
@@ -1413,7 +1505,7 @@ mod tests {
 
     #[test]
     fn recycle_rejects_a_foreign_item_without_mutating_the_connection() {
-        let completed = completed_graph(0x2f00_5000, 7);
+        let (completed, _) = completed_graph(0x2f00_5000, 7);
         let address = completed.scheduler_item_address();
         let foreign =
             open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(address.address() + 4)
@@ -1440,8 +1532,8 @@ mod tests {
     }
 
     #[test]
-    fn recycle_restores_event_resources_without_resetting_the_active_owner() {
-        let completed = completed_graph(0x2f00_9000, 0);
+    fn recycle_returns_the_capture_without_resetting_the_active_owner() {
+        let (completed, captured_anchor) = completed_graph(0x2f00_9000, 0);
         let address = completed.scheduler_item_address();
         let prepared = completed
             .prepare_recycle_after_software_list_removal(removal_ready(
@@ -1449,12 +1541,15 @@ mod tests {
                 address,
             ))
             .unwrap_or_else(|_| panic!("the exact removal proof authorizes reclamation"));
+        assert_eq!(prepared.captured_anchor_time(), captured_anchor);
         let extracted = prepared
             .extract_received()
             .unwrap_or_else(|_| panic!("an event without a received packet is valid"));
         assert!(extracted.batch().is_empty());
 
-        let (active, batch, status) = extracted.commit().into_parts();
+        let recycled = extracted.commit();
+        assert_eq!(recycled.captured_anchor_time(), captured_anchor);
+        let (active, batch, status, returned_anchor) = recycled.into_parts();
 
         assert!(active.event_resources_are_recycled());
         assert!(batch.is_empty());
@@ -1462,5 +1557,6 @@ mod tests {
             status,
             BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero
         );
+        assert_eq!(returned_anchor, captured_anchor);
     }
 }

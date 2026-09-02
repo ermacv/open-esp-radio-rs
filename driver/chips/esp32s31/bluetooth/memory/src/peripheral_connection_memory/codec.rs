@@ -10,9 +10,11 @@ use super::{
     BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
-    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES, BluetoothPeripheralConnectionDataChannel,
-    BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIdentity,
-    BluetoothPeripheralConnectionIntervalTicks, BluetoothPeripheralConnectionMemoryGraphBindError,
+    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
+    BluetoothPeripheralConnectionCapturedAnchorTime, BluetoothPeripheralConnectionDataChannel,
+    BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionEventSpan,
+    BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,
+    BluetoothPeripheralConnectionMemoryGraphBindError,
     BluetoothPeripheralConnectionMemoryGraphIdentity, BluetoothPeripheralConnectionReceiveWait,
     BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
     BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
@@ -48,6 +50,7 @@ const LINK_STATE_INTERVAL_TICKS: usize = 0x18 / 4;
 const LINK_STATE_PACKET_HISTORY: usize = 0x1c / 4;
 const LINK_STATE_PACKET_CONTROL: usize = 0x20 / 4;
 const LINK_STATE_PACKET_SEQUENCE: usize = 0x30 / 4;
+const LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR: usize = 0x34 / 4;
 const LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION: usize = 0x50 / 4;
 const LINK_STATE_DIRECTION_FINDING_POLICY: usize = 0x54 / 4;
 const LINK_STATE_EVENT_PRIORITY: usize = 0x60 / 4;
@@ -164,6 +167,7 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         receive_head: BluetoothControllerSramAddress,
         transmit_sentinel: BluetoothControllerSramLinkAddress,
         interval: BluetoothPeripheralConnectionIntervalTicks,
+        event_span: BluetoothPeripheralConnectionEventSpan,
         default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
         priority: BluetoothPeripheralConnectionSchedulerPriority,
     ) {
@@ -195,6 +199,27 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         self.words[LINK_STATE_ROUNDED_POWER]
             .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
         self.words[LINK_STATE_INTERVAL_TICKS].set(interval.ticks());
+        self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR].set(event_span.ticks());
+    }
+
+    fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
+        BluetoothPeripheralConnectionCapturedAnchorTime::from_controller_sram_word(
+            self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR].get(),
+        )
+    }
+
+    #[cfg(test)]
+    fn model_controller_complete_event(
+        &self,
+        prepared_span: BluetoothPeripheralConnectionEventSpan,
+        captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
+    ) -> bool {
+        if self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR].get() != prepared_span.ticks() {
+            return false;
+        }
+        self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR]
+            .set(captured_anchor.wrapping_controller_ticks());
+        true
     }
 
     fn install_direction_finding_workspace(
@@ -419,6 +444,7 @@ pub(super) struct BluetoothPeripheralConnectionMemoryGraphBinding {
 pub(super) struct BluetoothPeripheralConnectionFirstEventCodecInput {
     pub(super) channel: BluetoothPeripheralConnectionDataChannel,
     pub(super) interval: BluetoothPeripheralConnectionIntervalTicks,
+    pub(super) event_span: BluetoothPeripheralConnectionEventSpan,
     pub(super) window: BluetoothPeripheralConnectionSchedulerWindow,
     pub(super) receive_wait: BluetoothPeripheralConnectionReceiveWait,
     pub(super) default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
@@ -575,6 +601,7 @@ impl BluetoothPeripheralConnectionMemoryGraphStorage {
             receive_head,
             binding.tx_sentinel,
             input.interval,
+            input.event_span,
             input.default_tx_power,
             input.priority,
         );
@@ -628,6 +655,28 @@ impl BluetoothPeripheralConnectionMemoryGraphStorage {
     ) -> Option<BluetoothPeripheralConnectionSchedulerItemCompletionStatus> {
         self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
             .completion_status()
+    }
+
+    pub(super) fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
+        self.link_state.captured_anchor_time()
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_controller_complete_event(
+        &self,
+        prepared_span: BluetoothPeripheralConnectionEventSpan,
+        captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
+        status: u32,
+    ) -> bool {
+        if !self
+            .link_state
+            .model_controller_complete_event(prepared_span, captured_anchor)
+        {
+            return false;
+        }
+        self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
+            .model_controller_status(status);
+        true
     }
 
     pub(super) fn event_resources_are_recycled(

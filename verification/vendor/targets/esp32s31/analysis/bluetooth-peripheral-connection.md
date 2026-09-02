@@ -289,6 +289,36 @@ Recurring events use a different profile from the first event:
 - missed intervals advance the proposed event counter by `skipped + 1`, while
   admission retries remain provisional until one candidate commits.
 
+The link-state timing word at the reviewed `+0x34` position is a hardware
+input/output location, not an ordinary persistent field. Current
+`r_sym_ble_DCD5eVhcHQ9ueSpewKn1` and named `ble_lll_conn_slave_new` write the
+connection interval minus the common 440-microsecond LLL reserve, converted to
+scheduler ticks, before the first event. Current
+`r_sym_ble_bp2AWMfX9zEpJsmzOTUB` and named `ble_lll_conn_reschedule_event`
+restore the same input for recurrence. After completion, current
+`r_sym_ble_vssfeWXnPIcnyOfdsX00` and named `ble_lll_conn_recycle_sch_item` pass
+the location to the reviewed `ble_phy_get_actual_tx_time` operation. That
+operation interprets the value as a captured receive time, projects it into
+Controller microseconds and removes two PHY-mode calibration terms to recover
+an on-air packet-start reference. The CPU does not write the location between
+publication and this read.
+
+The memory API now models that reuse as three ownership phases: required
+semantic event-span input while CPU-owned, hardware-owned storage after RUN,
+and an opaque captured-anchor observation after fenced removal. The raw word
+and its positional reuse remain private to the codec. The capture is not the
+first completed RX packet timestamp and remains available even when the copied
+RX batch is empty.
+
+The first completion must correct the recurring phase from the captured
+packet-start. On the software window-widening path, the actual start replaces
+the committed anchor, the proposed anchor moves by the same delta, the
+fractional residual and accumulated guard reset, and the actual start becomes
+the widening reference. The separately identified mode flag selects automatic
+window widening. The initial source-owned driver may support only the software
+path and fail closed if automatic widening is unexpectedly active; the raw
+vendor flag must not enter portable LL.
+
 That last branch exposes a portable-LL gap: the current one-event completion
 transition advances the channel selector and counter by exactly one. Recurrence
 needs a distinct provisional skipped-event transition which advances protocol
@@ -304,24 +334,26 @@ task-side common-timeline admission are closed. The retained scheduler epoch
 projects the window into a validated raw Controller interval and converts the
 negotiated interval independently as a duration, avoiding subtraction of two
 truncated absolute projections. The selected private scheduler item is now
-detached and reversibly merged into the exclusive common list. The shortest
-remaining path to one real peripheral event is:
+detached and reversibly merged into the exclusive common list. Event-local
+scheduler and RX memory plus the exact timeline/list ownership are now
+reclaimed after completion. The shortest remaining path to a recurring
+peripheral connection is:
 
 1. attach the now-static shared RX pool to the response-capable
    connectable-advertising graph, then transfer the pool and accepted packet to
    the existing task-service normalizer;
-2. join the now-implemented lower scheduler-item/RX recycle to the common
-   scheduler, release the exact timeline reservation and advance the portable
-   event exactly once;
-3. add recurrence from the completed event's negotiated interval and next data
-   channel through a provisional `skipped + 1` LL transition and the same typed
-   publication path;
-4. add SN/NESN, retransmission and supervision before exposing ACL success;
-5. add only the mandatory LL control procedures needed by the supported HCI
+2. normalize the retained connection capture through the existing PHY/time
+   authority and correct the planned phase to the actual on-air packet start;
+3. classify the independent event/destroy branches and commit exactly one
+   completed portable LL event where continuation is valid;
+4. add recurrence from the corrected phase through a provisional
+   `skipped + 1` LL transition and the same typed publication path;
+5. add SN/NESN, retransmission and supervision before exposing ACL success;
+6. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
-The scheduler-side recycle transaction and next-anchor functions are now the
-shortest closure roots. They do not block the already source-ordered
-preparation, publication, fenced completion and post-unlink prefix, but they
-do block role-level CPU recovery and recurrence of the first hardware-owned
+Capture normalization, continuation/destroy classification and next-anchor
+proposal are now the shortest closure roots. They do not block the already
+source-ordered preparation, publication, fenced completion, post-unlink and
+CPU-recovery path, but they do block recurrence of the first hardware-owned
 event.

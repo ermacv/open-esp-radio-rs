@@ -30,7 +30,7 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDirectionFindingWorkspaceLink, BluetoothPeripheralConnectionDataChannel,
-    BluetoothPeripheralConnectionIntervalTicks,
+    BluetoothPeripheralConnectionEventSpan, BluetoothPeripheralConnectionIntervalTicks,
     BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
     BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
@@ -69,6 +69,11 @@ use crate::{
 // uncertainty is the open NimBLE timing guard. They are backend scheduling
 // policy, not portable Link Layer fields and not a vendor aggregate ABI.
 const LE_1M_FIRST_EVENT_RESERVATION_MICROS: u32 = 5_154;
+// The reviewed S31 connection LLL reserves this fixed common preparation
+// duration before projecting the remaining connection interval into the
+// hardware-owned event-span input.
+#[cfg(any(target_arch = "riscv32", test))]
+const LE_CONNECTION_COMMON_RESERVE_MICROS: u32 = 440;
 #[cfg(any(target_arch = "riscv32", test))]
 const LE_FIRST_EVENT_TIMING_GUARD_MICROS: u32 = 16;
 const LE_FIRST_EVENT_BOUNDARY_GUARD_MICROS: u32 = 1;
@@ -448,6 +453,19 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
         let Some(interval) = BluetoothPeripheralConnectionIntervalTicks::new(interval_ticks) else {
             return Err(self);
         };
+        let Some(event_span_micros) = self
+            .event
+            .timing()
+            .interval_micros()
+            .checked_sub(LE_CONNECTION_COMMON_RESERVE_MICROS)
+        else {
+            return Err(self);
+        };
+        let Some(event_span) = BluetoothPeripheralConnectionEventSpan::new(
+            epoch.raw_duration_ticks_for_micros(event_span_micros),
+        ) else {
+            return Err(self);
+        };
         let Some(requested_window) = self.first_window.project_scheduler_window(epoch, config)
         else {
             return Err(self);
@@ -457,6 +475,7 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
             requested_window,
             data_channel,
             interval,
+            event_span,
         })
     }
 
@@ -490,6 +509,7 @@ pub(crate) struct BluetoothPeripheralConnectionFirstEventCandidate {
     requested_window: BluetoothSchedulerRawWindow,
     data_channel: BluetoothPeripheralConnectionDataChannel,
     interval: BluetoothPeripheralConnectionIntervalTicks,
+    event_span: BluetoothPeripheralConnectionEventSpan,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -546,6 +566,7 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
             requested_window,
             data_channel,
             interval,
+            event_span,
         } = self;
         let BluetoothPeripheralConnectionFirstEventPrepared {
             graph,
@@ -555,6 +576,7 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
         let graph = graph.prepare_reviewed_first_event_fields(
             data_channel,
             interval,
+            event_span,
             window,
             receive_wait,
             default_tx_power,
@@ -1176,12 +1198,13 @@ impl BluetoothPeripheralConnectionCompletionRxExtracted {
     }
 
     pub(crate) fn commit(self) -> BluetoothPeripheralConnectionRecycledEvent {
-        let (graph, batch, status) = self.graph.commit().into_parts();
+        let (graph, batch, status, captured_anchor) = self.graph.commit().into_parts();
         BluetoothPeripheralConnectionRecycledEvent {
             graph,
             event: self.event,
             batch,
             status,
+            captured_anchor,
             first_window: self.first_window,
             requested_window: self.requested_window,
             resolved_window: self.resolved_window,
@@ -1201,6 +1224,7 @@ pub(crate) struct BluetoothPeripheralConnectionRecycledEvent {
     event: LePeripheralConnectionEventInFlight,
     batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
     status: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    captured_anchor: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
@@ -1222,6 +1246,18 @@ impl BluetoothPeripheralConnectionRecycledEvent {
         &self,
     ) -> BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
         self.batch
+    }
+
+    /// Hardware-captured connection timing retained for PHY normalization.
+    #[allow(
+        dead_code,
+        reason = "the recurring-event timing transition consumes this retained capture"
+    )]
+    pub(crate) const fn captured_anchor_time(
+        &self,
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime
+    {
+        self.captured_anchor
     }
 }
 

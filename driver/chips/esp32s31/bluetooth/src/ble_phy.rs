@@ -5,7 +5,8 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyLe1MPacketStartCalibration,
-    BluetoothDirectionFindingWorkspaceCpuOwned, BluetoothLePacketCapturedTime,
+    BluetoothDirectionFindingWorkspaceCpuOwned, BluetoothDirectionFindingWorkspaceLink,
+    BluetoothLePacketCapturedTime,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerLowPowerHardwareInitializedOwner;
@@ -25,8 +26,15 @@ use crate::resources::BluetoothInterruptBankOwner;
 #[must_use = "hardware-owned direction-finding storage must remain retained"]
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothDirectionFindingWorkspaceHardwareOwned {
-    _storage: BluetoothDirectionFindingWorkspaceCpuOwned,
+    storage: BluetoothDirectionFindingWorkspaceCpuOwned,
     _publication: open_esp_radio_esp32s31_hal::BluetoothDirectionFindingDisabledBaselineOwner,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDirectionFindingWorkspaceHardwareOwned {
+    const fn link(&self) -> BluetoothDirectionFindingWorkspaceLink {
+        self.storage.binding().link()
+    }
 }
 
 /// Source-owned normal BLE PHY policy for the reviewed ESP32-S31 baseline.
@@ -173,7 +181,7 @@ pub struct BluetoothControllerBlePhyEngineInitialized<
         PACKET_CAPACITY,
     >,
     storage: BluetoothBlePhyEngineCpuOwned,
-    _direction_finding: BluetoothDirectionFindingWorkspaceHardwareOwned,
+    direction_finding: BluetoothDirectionFindingWorkspaceHardwareOwned,
     report: BluetoothBlePhyInitializationReport,
 }
 
@@ -212,6 +220,13 @@ where
     /// Inspect the complete common-PHY transition.
     pub const fn phy_report(&self) -> crate::BluetoothPhyInitializationReport {
         self.initialized.phy_report()
+    }
+
+    /// Opaque ordinary-role link into this powered epoch's global DF workspace.
+    pub(crate) const fn direction_finding_workspace_link(
+        &self,
+    ) -> BluetoothDirectionFindingWorkspaceLink {
+        self.direction_finding.link()
     }
 
     pub(crate) fn take_activation_owners(
@@ -323,8 +338,8 @@ where
         BluetoothControllerBlePhyEngineInitialized {
             initialized: self,
             storage,
-            _direction_finding: BluetoothDirectionFindingWorkspaceHardwareOwned {
-                _storage: direction_finding,
+            direction_finding: BluetoothDirectionFindingWorkspaceHardwareOwned {
+                storage: direction_finding,
                 _publication: publication,
             },
             report,

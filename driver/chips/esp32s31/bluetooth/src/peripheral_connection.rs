@@ -12,6 +12,15 @@ use open_esp_radio_bluetooth_ll::connection::{
     LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeConnectionTiming, LeDataChannelIndex,
     LePeripheralConnection, LePeripheralConnectionEventPrepared,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDirectionFindingWorkspaceLink, BluetoothPeripheralConnectionDataChannel,
+    BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIntervalTicks,
+    BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
+    BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
+    BluetoothPeripheralConnectionReceiveWait, BluetoothPeripheralConnectionSchedulerPriority,
+    BluetoothPeripheralConnectionSchedulerWindow,
+};
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothNonScanningRxMemoryBindFailure, BluetoothNonScanningRxMemoryCpuOwned,
     BluetoothNonScanningRxMemoryStorage, BluetoothPeripheralConnectionIdentity,
@@ -24,14 +33,6 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 #[cfg(not(target_arch = "riscv32"))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothNonScanningRxMemoryModelAddress, BluetoothPeripheralConnectionMemoryGraphModelAddress,
-};
-#[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothPeripheralConnectionDataChannel, BluetoothPeripheralConnectionDefaultTxPowerDbm,
-    BluetoothPeripheralConnectionIntervalTicks,
-    BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
-    BluetoothPeripheralConnectionReceiveWait, BluetoothPeripheralConnectionSchedulerPriority,
-    BluetoothPeripheralConnectionSchedulerWindow,
 };
 
 use crate::BluetoothSchedulerInstant;
@@ -500,6 +501,24 @@ impl BluetoothPeripheralConnectionFirstEventFieldsPrepared {
         self.graph.receive_wait()
     }
 
+    /// Join the powered epoch's controller-global DF workspace.
+    ///
+    /// The link is opaque here: only the lower memory codec can project it
+    /// into the private connection descriptor. The returned event remains
+    /// CPU-owned until common scheduler publication is implemented.
+    pub(crate) fn install_direction_finding_workspace(
+        self,
+        workspace: BluetoothDirectionFindingWorkspaceLink,
+    ) -> BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
+        BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
+            graph: self.graph.install_direction_finding_workspace(workspace),
+            event: self.event,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
+        }
+    }
+
     pub(crate) fn cancel(
         self,
     ) -> (
@@ -510,6 +529,71 @@ impl BluetoothPeripheralConnectionFirstEventFieldsPrepared {
             graph: self.graph.cancel(),
             event: self.event,
             first_window: self.first_window,
+        }
+        .cancel()
+    }
+}
+
+/// First peripheral event whose complete reviewed SRAM fields retain the
+/// powered epoch's controller-global direction-finding workspace.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the DF-linked connection event must advance or be cancelled"]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-admission transition consumes this owner"
+)]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
+    graph: BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
+    event: LePeripheralConnectionEventPrepared,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-admission transition consumes this owner"
+)]
+impl BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub(crate) const fn channel(&self) -> BluetoothPeripheralConnectionDataChannel {
+        self.graph.channel()
+    }
+
+    pub(crate) const fn interval(&self) -> BluetoothPeripheralConnectionIntervalTicks {
+        self.graph.interval()
+    }
+
+    pub(crate) const fn requested_window(&self) -> BluetoothSchedulerRawWindow {
+        self.requested_window
+    }
+
+    pub(crate) const fn resolved_window(&self) -> BluetoothSchedulerRawWindow {
+        self.resolved_window
+    }
+
+    pub(crate) const fn direction_finding_workspace(
+        &self,
+    ) -> BluetoothDirectionFindingWorkspaceLink {
+        self.graph.direction_finding_workspace()
+    }
+
+    pub(crate) fn cancel(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionRuntimeResources,
+        LePeripheralConnection,
+    ) {
+        BluetoothPeripheralConnectionFirstEventFieldsPrepared {
+            graph: self.graph.cancel(),
+            event: self.event,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
         }
         .cancel()
     }
@@ -564,6 +648,7 @@ mod tests {
         LEGACY_CONNECT_IND_PDU_BYTES, LeLegacyConnectionRequest, LePeripheralConnection,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
+        BluetoothDirectionFindingWorkspaceModelAddress, BluetoothDirectionFindingWorkspaceStorage,
         BluetoothNonScanningRxMemoryModelAddress, BluetoothNonScanningRxMemoryStorage,
         BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIntervalTicks,
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
@@ -767,6 +852,25 @@ mod tests {
             )
             .expect("a validated LE connection interval projects to non-zero ticks")
         );
+
+        let workspace_storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothDirectionFindingWorkspaceStorage::new(),
+        ));
+        let workspace_base = BluetoothDirectionFindingWorkspaceModelAddress::new(0x2f00_6000)
+            .expect("the model workspace base is a controller SRAM address");
+        let workspace = BluetoothDirectionFindingWorkspaceStorage::pin_static_model(
+            workspace_storage,
+            workspace_base,
+        )
+        .expect("the complete workspace fits controller SRAM");
+        let workspace_link = workspace.binding().link();
+        let prepared = prepared.install_direction_finding_workspace(workspace_link);
+
+        assert_eq!(prepared.event_counter(), 0);
+        assert_eq!(prepared.channel().index(), expected_channel.get());
+        assert_eq!(prepared.requested_window(), requested);
+        assert_eq!(prepared.resolved_window(), resolved);
+        assert_eq!(prepared.direction_finding_workspace(), workspace_link);
 
         let (runtime, connection) = prepared.cancel();
         assert!(runtime.allocation_is_idle());

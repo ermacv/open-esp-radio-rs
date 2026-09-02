@@ -1403,6 +1403,8 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     passive_scan_resources: &'runtime mut crate::BluetoothPassiveScanRuntimeResources,
     _peripheral_connection_resources:
         &'runtime mut crate::BluetoothPeripheralConnectionRuntimeResources,
+    direction_finding_workspace:
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothDirectionFindingWorkspaceLink,
     ble_phy_timing: crate::ble_phy::BluetoothBlePhyTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
@@ -4107,6 +4109,7 @@ where
             peripheral_connection_resources,
             ..
         } = self;
+        let direction_finding_workspace = initialized.direction_finding_workspace_link();
         let (
             BluetoothControllerRuntimeEndpoints {
                 interrupt,
@@ -4129,6 +4132,7 @@ where
             legacy_advertising_resources,
             passive_scan_resources,
             _peripheral_connection_resources: peripheral_connection_resources,
+            direction_finding_workspace,
             ble_phy_timing,
             scheduler_epoch,
         };
@@ -4183,6 +4187,19 @@ where
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Join this powered epoch's global DF workspace to one connection image.
+    #[allow(
+        dead_code,
+        reason = "the next peripheral scheduler-publication transition consumes this state"
+    )]
+    pub(crate) fn install_peripheral_connection_direction_finding_workspace(
+        &self,
+        prepared: crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventFieldsPrepared,
+    ) -> crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared
+    {
+        prepared.install_direction_finding_workspace(self.direction_finding_workspace)
+    }
+
     /// Normalize the hardware timestamp captured beside one received LE 1M PDU.
     ///
     /// This uses the persistent scheduler epoch and the calibration retained by

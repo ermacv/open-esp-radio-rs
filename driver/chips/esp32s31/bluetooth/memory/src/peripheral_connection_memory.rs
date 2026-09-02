@@ -4,8 +4,9 @@
 //! artifact.  It owns the two reusable scheduler items, their shared context,
 //! the connection link state and the initially empty transmit queue sentinel.
 //! A separately owned static non-scanning RX pool can be attached for an exact
-//! event and recovered on cancellation. Event preparation still deliberately
-//! omits direction-finding memory and publication semantics.
+//! event and recovered on cancellation. A later affine transition joins the
+//! controller-global direction-finding workspace before the graph can approach
+//! scheduler publication.
 
 #![forbid(unsafe_code)]
 
@@ -18,6 +19,7 @@ use pin_project::pin_project;
 use vcell::VolatileCell;
 
 use crate::{
+    direction_finding_workspace::BluetoothDirectionFindingWorkspaceLink,
     le_tx_power::rounded_tx_power,
     non_scanning_rx_memory::BluetoothNonScanningRxMemoryCpuOwned,
     scheduler_context::BluetoothSchedulerContextStorage,
@@ -57,7 +59,8 @@ const LINK_STATE_INTERVAL_TICKS: usize = 0x18 / 4;
 const LINK_STATE_PACKET_HISTORY: usize = 0x1c / 4;
 const LINK_STATE_PACKET_CONTROL: usize = 0x20 / 4;
 const LINK_STATE_PACKET_SEQUENCE: usize = 0x30 / 4;
-const LINK_STATE_COMMON_RADIO_POLICY: usize = 0x50 / 4;
+const LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION: usize = 0x50 / 4;
+const LINK_STATE_DIRECTION_FINDING_POLICY: usize = 0x54 / 4;
 const LINK_STATE_EVENT_PRIORITY: usize = 0x60 / 4;
 const LINK_STATE_ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
 const LINK_STATE_TX_PATH_VALID: u32 = 1 << 31;
@@ -69,6 +72,10 @@ const LINK_STATE_BASELINE_CONTROL_POLICY: u32 = 2;
 const LINK_STATE_CRC_CONTEXT_READY: u32 = 1 << 31;
 const LINK_STATE_PACKET_SEQUENCE_BASELINE: u32 = 0x1e00;
 const LINK_STATE_COMMON_RADIO_POLICY_BASELINE: u32 = 3;
+const LINK_STATE_DIRECTION_FINDING_RETAINED_POLICY: u32 = 0xbf00_0000;
+const LINK_STATE_DIRECTION_FINDING_CONFIGURATION_READY: u32 = 1 << 30;
+const LINK_STATE_DIRECTION_FINDING_POLICY_RETAINED: u32 = 0x8007_ffff;
+const LINK_STATE_DIRECTION_FINDING_DISABLED_BASELINE: u32 = 0x0018_0000;
 
 const SCHEDULER_ITEM_NEXT: usize = 0;
 const SCHEDULER_ITEM_CONTEXT: usize = 1;
@@ -186,7 +193,7 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         self.words[LINK_STATE_CRC_INITIALIZATION]
             .set(self.words[LINK_STATE_CRC_INITIALIZATION].get() | LINK_STATE_CRC_CONTEXT_READY);
         self.words[LINK_STATE_PACKET_SEQUENCE].set(LINK_STATE_PACKET_SEQUENCE_BASELINE);
-        self.words[LINK_STATE_COMMON_RADIO_POLICY]
+        self.words[LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION]
             .set(LINK_STATE_COMMON_RADIO_POLICY_BASELINE << 24);
         self.words[LINK_STATE_EVENT_PRIORITY].set(u32::from(priority.value()));
 
@@ -195,6 +202,31 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         self.words[LINK_STATE_ROUNDED_POWER]
             .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
         self.words[LINK_STATE_INTERVAL_TICKS].set(interval.ticks());
+    }
+
+    fn install_direction_finding_workspace(
+        &self,
+        workspace: BluetoothDirectionFindingWorkspaceLink,
+    ) {
+        let configuration =
+            self.words[LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION].get();
+        self.words[LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION].set(
+            (configuration & LINK_STATE_DIRECTION_FINDING_RETAINED_POLICY)
+                | LINK_STATE_DIRECTION_FINDING_CONFIGURATION_READY
+                | workspace.compressed_link_state_configuration(),
+        );
+
+        let policy = self.words[LINK_STATE_DIRECTION_FINDING_POLICY].get();
+        self.words[LINK_STATE_DIRECTION_FINDING_POLICY].set(
+            (policy & LINK_STATE_DIRECTION_FINDING_POLICY_RETAINED)
+                | LINK_STATE_DIRECTION_FINDING_DISABLED_BASELINE,
+        );
+    }
+
+    fn remove_direction_finding_workspace(&self) {
+        self.words[LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION]
+            .set(LINK_STATE_COMMON_RADIO_POLICY_BASELINE << 24);
+        self.words[LINK_STATE_DIRECTION_FINDING_POLICY].set(0);
     }
 
     fn rounded_power(&self) -> u32 {
@@ -933,6 +965,26 @@ impl BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
         self.priority
     }
 
+    /// Join the controller-global disabled-CTE workspace to this exact event.
+    ///
+    /// The opaque link carries no storage or publication authority. Its
+    /// positional encoding and the adjacent baseline policy remain confined
+    /// to this private controller-memory codec.
+    pub fn install_direction_finding_workspace(
+        self,
+        workspace: BluetoothDirectionFindingWorkspaceLink,
+    ) -> BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .link_state
+            .install_direction_finding_workspace(workspace);
+        BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
+            prepared: self,
+            workspace,
+        }
+    }
+
     /// Return to the RX-attached CPU frontier without publishing hardware state.
     pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
         BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
@@ -940,6 +992,57 @@ impl BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
             binding: self.binding,
             pool: self.pool,
         }
+    }
+}
+
+/// Complete reviewed first-event fields joined to the global DF workspace.
+///
+/// This remains CPU-owned and cannot publish a scheduler head or execute RUN.
+#[must_use = "the direction-finding-prepared graph must advance or be cancelled"]
+pub struct BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
+    prepared: BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
+    workspace: BluetoothDirectionFindingWorkspaceLink,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
+    pub const fn channel(&self) -> BluetoothPeripheralConnectionDataChannel {
+        self.prepared.channel()
+    }
+
+    pub const fn interval(&self) -> BluetoothPeripheralConnectionIntervalTicks {
+        self.prepared.interval()
+    }
+
+    pub const fn window(&self) -> BluetoothPeripheralConnectionSchedulerWindow {
+        self.prepared.window()
+    }
+
+    pub const fn receive_wait(&self) -> BluetoothPeripheralConnectionReceiveWait {
+        self.prepared.receive_wait()
+    }
+
+    pub const fn default_tx_power(&self) -> BluetoothPeripheralConnectionDefaultTxPowerDbm {
+        self.prepared.default_tx_power()
+    }
+
+    pub const fn priority(&self) -> BluetoothPeripheralConnectionSchedulerPriority {
+        self.prepared.priority()
+    }
+
+    /// Opaque identity of the controller-global workspace joined to this event.
+    pub const fn direction_finding_workspace(&self) -> BluetoothDirectionFindingWorkspaceLink {
+        self.workspace
+    }
+
+    /// Remove the unpublished workspace link and recover the prior exact state.
+    pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
+        self.prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .link_state
+            .remove_direction_finding_workspace();
+        self.prepared
     }
 }
 

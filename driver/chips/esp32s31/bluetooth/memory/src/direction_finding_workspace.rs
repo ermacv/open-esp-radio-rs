@@ -126,6 +126,13 @@ pub struct BluetoothDirectionFindingWorkspaceLink {
     link_state_configuration: BluetoothControllerSramLinkAddress,
 }
 
+impl BluetoothDirectionFindingWorkspaceLink {
+    /// Private descriptor projection consumed only by sibling SRAM codecs.
+    pub(crate) const fn compressed_link_state_configuration(self) -> u32 {
+        self.link_state_configuration.compressed_image()
+    }
+}
+
 /// Immutable geometry retained with one workspace allocation.
 pub struct BluetoothDirectionFindingWorkspaceBinding {
     base: BluetoothControllerSramAddress,

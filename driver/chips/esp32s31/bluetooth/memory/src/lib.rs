@@ -177,6 +177,7 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionMemoryGraphBindFailure,
     BluetoothPeripheralConnectionMemoryGraphBinding,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+    BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
     BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
     BluetoothPeripheralConnectionMemoryGraphReceivePrepared,

@@ -125,7 +125,8 @@ semantic values and performs these positional transforms privately:
 | link state `+0x18` | negotiated connection interval | interval converted as a duration into raw controller ticks |
 | link state `+0x14`, `+0x1c`, `+0x20`, `+0x30` | new unencrypted connection | clears packet history/control state and installs the recovered initial sequence profile |
 | link state `+0x2c` | CRCInit | preserves the low 24-bit CRC seed and marks that context ready |
-| link state `+0x50` upper policy lane | S31 baseline common-radio policy | installs the retained default value 3 without publishing a direction-finding workspace pointer |
+| link state `+0x50` | powered epoch's opaque global workspace link plus S31 common-radio policy | retains the default value 3, stores the compressed `workspace + 8` endpoint, clears the separate four-bit mode and marks the direction-finding configuration ready |
+| link state halfword `+0x56` | disabled-CTE ordinary-role policy | preserves the reviewed low flags, clears the unsupported mode region and installs the disabled baseline |
 | link state `+0x60` | S31 first-event conflict policy | starts at 13; later conflict handling increases it and saturates at 15 |
 | scheduler item `+0x04` | ready state | sets the reviewed context-ready flag |
 | scheduler item `+0x14` | LE 1M plus rounded TX power | selects the LE 1M rate lanes and copies the rounded-power projection |
@@ -167,7 +168,7 @@ transmit window fits its short descriptor form, whose encoding is now private
 to `BluetoothPeripheralConnectionReceiveWait`. No upper layer accepts the
 duration/configuration word.
 
-This transition remains deliberately partial. Complete current and named
+The event remains deliberately CPU-owned. Complete current and named
 same-chip direction-finding bodies prove that ordinary advertising, sync and
 connection link states all retain one controller-global `0x20`-byte
 environment even when IQ sampling is disabled. The open driver now claims and
@@ -175,11 +176,15 @@ initializes that separate static workspace before MMIO, publishes its disabled
 descriptor through CTE buffer zero, clears software ownership through generated
 PAC accessors and retains the joined SRAM/HAL owner for the complete powered
 epoch. It does not reproduce the vendor allocator or make the workspace
-connection-private. Installing the resulting opaque environment link into the
-connection descriptor and the exact first-event task admission/publication edge
-remain before one complete runnable contract. In particular, the descriptor
-uses the common scheduler's resolved window rather than the requested window:
-overlap insertion is allowed to displace the initial candidate.
+connection-private. A distinct memory-layer transition now consumes the
+resulting opaque environment link, privately installs the `workspace + 8`
+configuration endpoint and adjacent disabled-CTE policy, and returns a new
+affine graph state. Cancellation removes that unpublished link before
+recovering the prior first-event owner. The exact first-event task admission
+and publication edge remains before one complete runnable contract. In
+particular, the descriptor uses the common scheduler's resolved window rather
+than the requested window: overlap insertion is allowed to displace the
+initial candidate.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
 event image. The Rust owner now also attaches a separate statically allocated

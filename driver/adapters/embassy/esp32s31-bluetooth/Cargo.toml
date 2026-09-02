@@ -14,7 +14,6 @@ embassy-time = "0.5.1"
 open-esp-radio-bluetooth-hci = { path = "../../../bluetooth/hci" }
 open-esp-radio-bluetooth-ll = { path = "../../../bluetooth/ll" }
 open-esp-radio-esp32s31-bluetooth = { path = "../../../chips/esp32s31/bluetooth" }
-open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
 
 [dev-dependencies]
 bt-hci = "=0.10.1"

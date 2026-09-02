@@ -5575,230 +5575,230 @@ access = "read-write"
 [[registers]]
 address = 537926048
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD0"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER0"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
+register-method = "buffer_pointer"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "COMPRESSED_DESCRIPTOR_POINTER"
+method = "compressed_descriptor_pointer"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 20
+access = "read-write"
 
 [[registers]]
 address = 537926052
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD1"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE0"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 1
+register-method = "buffer_state"
+register-index = 0
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
-bit-offset = 0
-bit-width = 32
-access = "write-only"
+svd-name = "SOFTWARE_OWNED"
+method = "software_owned"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537926056
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD2"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER1"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 2
+register-method = "buffer_pointer"
+register-index = 1
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "COMPRESSED_DESCRIPTOR_POINTER"
+method = "compressed_descriptor_pointer"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 20
+access = "read-write"
 
 [[registers]]
 address = 537926060
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD3"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE1"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 3
+register-method = "buffer_state"
+register-index = 1
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
-bit-offset = 0
-bit-width = 32
-access = "write-only"
+svd-name = "SOFTWARE_OWNED"
+method = "software_owned"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537926064
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD4"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER2"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 4
+register-method = "buffer_pointer"
+register-index = 2
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "COMPRESSED_DESCRIPTOR_POINTER"
+method = "compressed_descriptor_pointer"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 20
+access = "read-write"
 
 [[registers]]
 address = 537926068
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD5"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE2"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 5
+register-method = "buffer_state"
+register-index = 2
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
-bit-offset = 0
-bit-width = 32
-access = "write-only"
+svd-name = "SOFTWARE_OWNED"
+method = "software_owned"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537926072
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD6"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER3"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 6
+register-method = "buffer_pointer"
+register-index = 3
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "COMPRESSED_DESCRIPTOR_POINTER"
+method = "compressed_descriptor_pointer"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 20
+access = "read-write"
 
 [[registers]]
 address = 537926076
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD7"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE3"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 7
+register-method = "buffer_state"
+register-index = 3
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
-bit-offset = 0
-bit-width = 32
-access = "write-only"
+svd-name = "SOFTWARE_OWNED"
+method = "software_owned"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537926080
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD8"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER4"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 8
+register-method = "buffer_pointer"
+register-index = 4
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "COMPRESSED_DESCRIPTOR_POINTER"
+method = "compressed_descriptor_pointer"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 20
+access = "read-write"
 
 [[registers]]
 address = 537926084
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD9"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE4"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 9
+register-method = "buffer_state"
+register-index = 4
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
-bit-offset = 0
-bit-width = 32
-access = "write-only"
+svd-name = "SOFTWARE_OWNED"
+method = "software_owned"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537926088
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD10"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER5"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 10
+register-method = "buffer_pointer"
+register-index = 5
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "COMPRESSED_DESCRIPTOR_POINTER"
+method = "compressed_descriptor_pointer"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 20
+access = "read-write"
 
 [[registers]]
 address = 537926092
 width = 32
-access = "write-only"
-identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD11"
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE5"
 peripheral = "BLE_HW_CTE_RING_CONTROL"
 peripheral-type = "BleHwCteRingControl"
 peripheral-module = "ble_hw_cte_ring_control"
 scope = []
-register-method = "reset_word"
-register-index = 11
+register-method = "buffer_state"
+register-index = 5
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
-bit-offset = 0
-bit-width = 32
-access = "write-only"
+svd-name = "SOFTWARE_OWNED"
+method = "software_owned"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537926448

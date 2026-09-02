@@ -10,6 +10,7 @@ mod baseband;
 mod bluetooth_baseband;
 mod bluetooth_controller_hal_init;
 mod bluetooth_controller_time;
+mod bluetooth_direction_finding;
 mod bluetooth_interrupt;
 mod bluetooth_memory_lists;
 mod bluetooth_modem_lp_timer;
@@ -94,6 +95,7 @@ pub use bluetooth_controller_time::{
     BluetoothControllerTimeLatchRequest, BluetoothControllerTimeLatchStep,
     BluetoothControllerTimeLatchStepError,
 };
+pub use bluetooth_direction_finding::BluetoothDirectionFindingDisabledBaselinePrepared;
 pub use bluetooth_interrupt::{
     BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
     BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,

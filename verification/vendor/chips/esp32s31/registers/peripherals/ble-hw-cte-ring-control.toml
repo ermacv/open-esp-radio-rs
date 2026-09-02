@@ -3,10 +3,11 @@ schema = 2
 [[peripherals]]
 name = "BLE_HW_CTE_RING_CONTROL"
 description = """
-Late direction-finding hardware state recovered from complete ESP32-S31
-ble_hw_cte.c leaves. The block is kept separate from the minimum standalone
-BLE controller: advertising, scanning and ordinary connections do not require
-CTE sample-ring support. Only observed reset and ring-limit fields are named.
+Direction-finding ring state recovered from complete ESP32-S31 ble_hw_cte.c
+leaves. Ordinary advertising, scanning and connection link states retain a
+controller-global disabled-CTE descriptor even when IQ sampling is not
+requested, so the baseline pointer and ownership fields are part of the
+minimum standalone BLE controller.
 """
 baseAddress = 0x2010199C
 
@@ -32,19 +33,37 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-dim = 12
-dimIncrement = 0x4
-dimIndex = "0,1,2,3,4,5,6,7,8,9,10,11"
-name = "RESET_WORD%s"
-description = "Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned."
+dim = 6
+dimIncrement = 0x8
+dimIndex = "0,1,2,3,4,5"
+name = "BUFFER_POINTER%s"
+description = "Compressed controller-SRAM address of one CTE sample-ring descriptor. The setter replaces bits 0..19 and preserves the upper twelve bits."
 addressOffset = 0x4
 size = 32
-access = "write-only"
+access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "COMPRESSED_DESCRIPTOR_POINTER"
+description = "Low-twenty-bit controller-SRAM pointer reconstructed with the fixed 0x2f prefix and four-byte alignment."
 bitOffset = 0
-bitWidth = 32
+bitWidth = 20
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+dim = 6
+dimIncrement = 0x8
+dimIndex = "0,1,2,3,4,5"
+name = "BUFFER_STATE%s"
+description = "Hardware state paired with one CTE sample-ring descriptor. Only the software-ownership flag is currently assigned."
+addressOffset = 0x8
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "SOFTWARE_OWNED"
+description = "The named owner-clear/set leaves respectively clear and set bit 31; the paired query returns that bit."
+bitOffset = 31
+bitWidth = 1
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL"
@@ -75,14 +94,28 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD%s"
+entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER%s"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD%s.IMAGE"
+entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER%s.COMPRESSED_DESCRIPTOR_POINTER"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE%s"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE%s.SOFTWARE_OWNED"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"

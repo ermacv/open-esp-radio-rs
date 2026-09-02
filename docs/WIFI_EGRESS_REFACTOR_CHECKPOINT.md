@@ -1806,3 +1806,33 @@ points. The next optimization must distinguish irreducible one-per-BA32 grant
 work from duplicated per-packet validation and polling. Absolute Core1 stack
 optimization remains a later phase; 74--76% residence here is a no-regression
 constraint, not available capacity.
+
+### Rejected 68th construction-credit experiment
+
+The control-reserve change reused the former 67th pipeline credit, changing
+the 67-slot geometry from `64 data + 2 ingress + 1 construction` to `64 data +
+2 ingress + 1 control`. A separate dirty-source A/B restored an additional
+construction credit, producing a fixed 68-slot pool without changing the
+64-credit data horizon or making any resource scale with peer count.
+
+Enabled run `1788351630026-001f8997` and disabled exact-image replay
+`1788351939413-001f8f3b` used runtime CRC32 `0x5a035314`, application SHA-256
+`ef28d05773008d20b4a44a95d13d0cdd742e99e2c7934e1adac085a0bf19ba6b` and
+the archived source delta over commit `a801c91c`. The laptop WLAN was down,
+every socket route was asserted over Ethernet `enp0s20f0u2u4c2`, and OpenWrt
+reported channel 13, HT40, one associated station and no concurrent radio VIF.
+
+| Metric | authoritative enabled | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host throughput, mean | 118.655 Mbit/s | 120.574 Mbit/s | -1.59% |
+| device throughput, mean | 118.284 Mbit/s | 120.720 Mbit/s | -2.02% |
+| Core0 radio task residence | 38.620% | 37.343% | +1.277 pp |
+| Core1 `network + udp_tx` residence | 77.229% | 76.146% | +1.083 pp |
+
+All repetitions delivered without loss, reorder or duplicates. The extra
+credit did not raise the disabled ceiling relative to the preceding 67-slot
+same-image control (120.490/120.610 Mbit/s host/device), and it did not improve
+the enabled path. The construction-credit explanation for the historical
+123--124 Mbit/s ceiling loss is therefore rejected for this implementation.
+The production geometry remains 67 slots; the one-credit experiment is kept
+only as replayable evidence, not as shipping SRAM growth.

@@ -141,14 +141,18 @@ portable Link Layer.
 ## Next closure order
 
 The first two former blockers are closed: packet timestamp conversion and the
-causal absolute first-window contract. The shortest remaining path to one real
-peripheral event is:
+causal absolute first-window contract. The retained scheduler epoch now also
+projects that window back into a validated non-empty raw Controller interval,
+including the common preparation lead and preserving cancellation. This is a
+CPU-only candidate; it is not yet composed into task-side admission. The
+shortest remaining path to one real peripheral event is:
 
 1. attach the now-static shared RX pool and selector-two RX publication to the
    response-capable connectable-advertising graph, then transfer the pool and
    accepted packet to the existing task-service normalizer;
-2. close raw-time projection and the remaining connection link-state and scheduler-item fields as
-   semantic accessors inside the memory crate;
+2. close the remaining connection link-state and scheduler-item fields as
+   semantic accessors inside the memory crate, then consume the existing raw
+   candidate from task-side admission;
 3. join the prepared graph to the existing common scheduler admission,
    publication, completion and post-unlink owners;
 4. add SN/NESN, retransmission and supervision before exposing ACL success;

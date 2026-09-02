@@ -27,6 +27,11 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 
 use crate::BluetoothSchedulerInstant;
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::{
+    BluetoothControllerSchedulerEpoch, BluetoothSchedulerRawWindow,
+    BluetoothSchedulerSoftwareConfig,
+};
 
 /// PHY-calibrated on-air start of one received LE 1M packet.
 ///
@@ -80,6 +85,26 @@ impl BluetoothPeripheralConnectionFirstWindow {
     #[cfg(test)]
     pub(crate) const fn end(self) -> BluetoothSchedulerInstant {
         self.end
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[allow(
+        dead_code,
+        reason = "the next connection scheduler-admission transition consumes this projection"
+    )]
+    const fn project_scheduler_window(
+        self,
+        epoch: BluetoothControllerSchedulerEpoch,
+        config: BluetoothSchedulerSoftwareConfig,
+    ) -> Option<BluetoothSchedulerRawWindow> {
+        let scheduler_start = self
+            .anchor
+            .image()
+            .wrapping_sub(config.preparation_lead_micros());
+        BluetoothSchedulerRawWindow::from_projected_scheduler_window(
+            epoch.raw_ticks_for_micros(scheduler_start),
+            epoch.raw_ticks_for_micros(self.end.image()),
+        )
     }
 }
 
@@ -231,6 +256,35 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
         self.graph.receive_pool_is_initialized()
     }
 
+    /// Project the causal microsecond window into the retained Controller epoch.
+    ///
+    /// The common preparation lead is included before the first receive anchor;
+    /// a projection that collapses or exceeds the wrapping scheduler domain
+    /// returns this exact unchanged owner.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[allow(
+        dead_code,
+        reason = "the next connection scheduler-admission transition consumes this projection"
+    )]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc projection failure returns the complete affine event owner"
+    )]
+    pub(crate) fn project_scheduler_window(
+        self,
+        epoch: BluetoothControllerSchedulerEpoch,
+        config: BluetoothSchedulerSoftwareConfig,
+    ) -> Result<BluetoothPeripheralConnectionFirstEventCandidate, Self> {
+        let Some(requested_window) = self.first_window.project_scheduler_window(epoch, config)
+        else {
+            return Err(self);
+        };
+        Ok(BluetoothPeripheralConnectionFirstEventCandidate {
+            prepared: self,
+            requested_window,
+        })
+    }
+
     /// Cancel before publication and recover both unchanged owners.
     pub fn cancel(
         self,
@@ -246,6 +300,46 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
             ),
             self.event.cancel(),
         )
+    }
+}
+
+/// First peripheral event with one epoch-bound raw scheduler candidate.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the projected connection event must enter admission or be cancelled"]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-admission transition consumes this owner"
+)]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventCandidate {
+    prepared: BluetoothPeripheralConnectionFirstEventPrepared,
+    requested_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-admission transition consumes this owner"
+)]
+impl BluetoothPeripheralConnectionFirstEventCandidate {
+    pub(crate) const fn requested_window(&self) -> BluetoothSchedulerRawWindow {
+        self.requested_window
+    }
+
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.prepared.event_counter()
+    }
+
+    pub(crate) const fn channel(&self) -> LeDataChannelIndex {
+        self.prepared.channel()
+    }
+
+    pub(crate) fn cancel(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionRuntimeResources,
+        LePeripheralConnection,
+    ) {
+        self.prepared.cancel()
     }
 }
 
@@ -302,8 +396,13 @@ mod tests {
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
         BluetoothPeripheralConnectionMemoryGraphStorage,
     };
+    use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionRuntimeResources};
+    use crate::{
+        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
+        BluetoothSchedulerSoftwareConfig,
+    };
 
     fn runtime(graph_base: u32) -> BluetoothPeripheralConnectionRuntimeResources {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(
@@ -376,6 +475,53 @@ mod tests {
         );
 
         let (runtime, connection) = prepared.cancel();
+        assert!(runtime.allocation_is_idle());
+        assert_eq!(connection.event_counter(), 0);
+    }
+
+    #[test]
+    fn first_event_projects_one_preparation_window_without_losing_ownership() {
+        let runtime = runtime(0x2f00_5000);
+        let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
+        let expected_channel = LePeripheralConnection::from_request(request)
+            .prepare_event()
+            .channel();
+        let packet_start_micros = 10_000;
+        let prepared = runtime.prepare_first_event(
+            LePeripheralConnection::from_request(request),
+            BluetoothLe1MPacketStartTiming::from_scheduler_micros(packet_start_micros),
+        );
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let epoch = BluetoothControllerSchedulerEpoch::new(
+            BluetoothControllerTimeSample::for_validation(100),
+            9_000,
+            scale,
+        );
+        let config = BluetoothSchedulerSoftwareConfig::reviewed_standalone();
+        let candidate = match prepared.project_scheduler_window(epoch, config) {
+            Ok(candidate) => candidate,
+            Err(_) => panic!("the accepted first window has a non-empty raw projection"),
+        };
+        let anchor = packet_start_micros
+            .wrapping_add(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS)
+            .wrapping_add(request.timing().first_window_start_micros());
+
+        assert_eq!(candidate.event_counter(), 0);
+        assert_eq!(candidate.channel(), expected_channel);
+        assert_eq!(
+            candidate.requested_window().start(),
+            epoch.raw_ticks_for_micros(anchor.wrapping_sub(config.preparation_lead_micros()))
+        );
+        assert_eq!(
+            candidate.requested_window().end(),
+            epoch.raw_ticks_for_micros(
+                packet_start_micros
+                    .wrapping_add(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS)
+                    .wrapping_add(request.timing().first_window_end_micros())
+            )
+        );
+
+        let (runtime, connection) = candidate.cancel();
         assert!(runtime.allocation_is_idle());
         assert_eq!(connection.event_counter(), 0);
     }

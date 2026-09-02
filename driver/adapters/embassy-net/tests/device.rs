@@ -565,10 +565,71 @@ fn authoritative_device_defers_sram_until_core0_grants_the_demand() {
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 #[test]
+fn saturated_bulk_horizon_cannot_consume_the_control_credit() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (network_control, _radio_control) = control.split();
+    let network_state = Box::leak(Box::new(DefaultEgressNetworkState::new()));
+    let network_control = Box::leak(Box::new(DefaultEgressNetworkScheduler::new(
+        network_control,
+        network_state,
+    )));
+    let (provider, consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(0);
+    let (device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let mut device = device.with_egress_control(network_control);
+    radio.set_link_state(LinkState::Up);
+
+    let initial = consumer.ownership_snapshot_for(interface);
+    assert_eq!(initial.free, 3);
+    assert_eq!(initial.control_free, 1);
+
+    for fill in [0x5a, 0x5b] {
+        device
+            .transmit(&mut context())
+            .expect("both ordinary credits remain available")
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(fill));
+    }
+    assert!(device.transmit(&mut context()).is_none());
+    let bulk_full = consumer.ownership_snapshot_for(interface);
+    assert_eq!(bulk_full.free, 1);
+    assert_eq!(bulk_full.control_free, 1);
+    assert_eq!(bulk_full.ready_for_interface, 2);
+
+    device
+        .transmit_control(&mut context())
+        .expect("control admission owns its disjoint physical credit")
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xc0));
+    let fully_published = consumer.ownership_snapshot_for(interface);
+    assert_eq!(fully_published.free, 0);
+    assert_eq!(fully_published.control_free, 0);
+    assert_eq!(fully_published.ready_for_interface, 3);
+
+    while let Some(frame) = consumer.for_interface(interface).try_receive_direct() {
+        drop(frame);
+    }
+    let returned = consumer.ownership_snapshot_for(interface);
+    assert_eq!(returned.free, 3);
+    assert_eq!(returned.control_free, 1);
+    assert_eq!(returned.ready_for_interface, 0);
+}
+
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+#[test]
 fn affine_current_and_standby_grants_materialize_and_close_exactly() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
-    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
-    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    // Two ordinary data credits plus the global control reserve.
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
 
     let resources = Box::leak(Box::new(TestResources::new()));
     let tx_resources = Box::leak(Box::new(TxResources::new()));
@@ -1968,10 +2029,12 @@ fn direct_pool_snapshot_accounts_reserves_tokens_ready_and_radio_owners() {
         consumer.ownership_snapshot_for(NetworkInterfaceId::new(0)),
         open_esp_radio_embassy_net::PinnedTxOwnershipSnapshot {
             free: 1,
+            control_free: 0,
             ready_for_interface: 0,
             ready_for_other_interfaces: 0,
             ingress_reserved: 2,
             application_reserved: 0,
+            control_reserved: 0,
             tokens_in_flight: 1,
         }
     );

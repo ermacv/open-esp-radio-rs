@@ -36,9 +36,12 @@ ingress is time-bounded at 250 us and owns
 one dedicated TX credit per permanent endpoint beyond the 64 application
 credits. Saturated egress therefore cannot prevent either STA or AP from
 receiving the paired RX/TX-token handoff required by `embassy-net`. Application
-credits are otherwise elastic: a standalone role may use the complete pool,
-and real concurrent contention is resolved by waking one active waiting VIF on
-each returned credit instead of applying a permanent per-role quota.
+credits are otherwise elastic across active roles. The final credit in the
+fixed 67-slot pool is a global bounded control reserve used only by
+DHCP/DNS/ICMP admission while authoritative keyed egress is active; TCP/raw
+bulk traffic cannot claim it. Real concurrent contention is resolved by waking
+active waiting VIFs in round-robin order instead of applying a permanent
+per-role or per-peer quota.
 
 Initialization ends at `WifiIdle`. Credentials arrive only with a STA/AP role
 request; scan and monitor do not require a temporary STA. Permanent STA and

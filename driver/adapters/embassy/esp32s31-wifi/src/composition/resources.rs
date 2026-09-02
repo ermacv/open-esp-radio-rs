@@ -68,19 +68,20 @@ pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
 // reorder/reassembly frames use independent queue backing.
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
 const ESP32S31_PERMANENT_NETWORK_ENDPOINTS: usize = 2;
-const ESP32S31_NETWORK_TX_PIPELINE_CREDITS: usize = 1;
+const ESP32S31_NETWORK_TX_CONTROL_CREDITS: usize = 1;
 // One additional credit per permanent network endpoint is reserved for the
 // TX token paired with ingress. Combined STA+AP therefore needs two reserves.
-// Application egress needs two complete 32-MPDU aggregate arenas and one
-// pipeline credit:
-// `Driver::transmit` owns that credit while the network stack formats a frame,
-// before the resulting lease becomes visible to the radio consumer. The
-// optional staged architecture must prove that peer classification no longer
-// consumes physical DMA credits before this pool is grown again.
+// Application egress keeps two complete 32-MPDU aggregate arenas. One final
+// global credit is partitioned from the same fixed pool when authoritative
+// egress is attached; only bounded DHCP/DNS/ICMP control admission can claim
+// it. Uncatalogued TCP/raw traffic remains ordinary bulk and cannot consume
+// this reserve. The optional staged architecture must prove that peer
+// classification no longer consumes physical DMA credits before this pool is
+// grown again.
 pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 2
     * ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
     + ESP32S31_PERMANENT_NETWORK_ENDPOINTS
-    + ESP32S31_NETWORK_TX_PIPELINE_CREDITS;
+    + ESP32S31_NETWORK_TX_CONTROL_CREDITS;
 pub const ESP32S31_DEFAULT_NETWORK_TX_TRAILER: usize = 12;
 pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 32;
 
@@ -211,9 +212,9 @@ mod tests {
         assert_eq!(
             ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH
                 - ESP32S31_PERMANENT_NETWORK_ENDPOINTS
-                - ESP32S31_NETWORK_TX_PIPELINE_CREDITS,
+                - ESP32S31_NETWORK_TX_CONTROL_CREDITS,
             2 * ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT,
-            "two aggregate arenas remain visible while Core1 owns one unpublished TX token"
+            "two aggregate arenas remain disjoint from ingress and control reserves"
         );
     }
 

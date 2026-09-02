@@ -1756,3 +1756,53 @@ The next implementation order is therefore:
 General Core1 stack optimization remains deliberately later. Its current
 absolute residence above 80% is a mandatory no-regression constraint during
 this work, not spare capacity into which Core0 work may be moved.
+
+## Bounded control admission without growing the physical pool
+
+The uncatalogued-provider bypass above exposed a second API ambiguity:
+ordinary `Device::transmit()` was shared by both bounded DHCP/ICMP/DNS control
+work and uncatalogued TCP/raw bulk work. Reserving one physical credit behind
+that undifferentiated call would avoid DHCP deadlock but silently limit TCP to
+one frame in flight. Xarxa commit
+`5d29b3749f00f21343ee80fd77639ef0bb36bee7` and Embassy commit
+`c875ac4ab9f85a668dbc10f54b028627cbae0a5e` therefore add an explicit
+`transmit_control` admission boundary. Provider coverage is now:
+
+- UDP: catalogued and authoritative-grant gated;
+- DHCP, DNS and ICMP: uncatalogued bounded control;
+- TCP and raw sockets: uncatalogued bulk using ordinary data credits until
+  their own catalogue providers are implemented.
+
+The pinned adapter lazily partitions one global control index from the same
+67-slot physical SRAM pool when the egress control plane is attached. It does
+not allocate memory and does not scale with peer count. The resulting default
+geometry is 64 elastic bulk credits, two per-VIF ingress credits and one global
+control credit. A host regression fills every ordinary data credit, proves
+that another bulk admission fails, then publishes and terminally returns a
+control owner through the disjoint credit. Ownership telemetry includes both
+the free and reserved control states.
+
+Low-rate HIL run `1788349977268-001f2825` passed at 2.072 Mbit/s with all 1408
+datagrams delivered. This proves that DHCP reaches `ServiceReady` through the
+new typed control operation and that the authoritative grant loop continues
+making progress. It is not a ceiling result.
+
+The production-like task-residence A/B uses enabled run
+`1788350194299-001f2b20` and disabled exact-image replay
+`1788350507723-001f35f7`. Both execute runtime CRC32 `0xf3d8a779`.
+
+| Metric | authoritative enabled | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host throughput, mean | 119.170 Mbit/s | 120.490 Mbit/s | -1.10% |
+| device throughput, mean | 118.847 Mbit/s | 120.610 Mbit/s | -1.46% |
+| Core0 radio task residence | 38.862% | 37.812% | +1.050 pp |
+| Core1 network plus UDP-TX residence | 75.594% | 74.711% | +0.883 pp |
+
+All six saturation repetitions passed with zero host loss, reorder or
+duplicates. The result accepts the control-reserve correctness design but does
+not accept authoritative cutover performance: throughput still misses the
+one-percent gate, and Core0 exceeds the one-percentage-point gate by 0.05
+points. The next optimization must distinguish irreducible one-per-BA32 grant
+work from duplicated per-packet validation and polling. Absolute Core1 stack
+optimization remains a later phase; 74--76% residence here is a no-regression
+constraint, not available capacity.

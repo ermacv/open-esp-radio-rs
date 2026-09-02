@@ -935,11 +935,11 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy.git?rev=861e46da63520f340e33f1786710c0f43e9676f6#861e46da63520f340e33f1786710c0f43e9676f6"
+source = "git+https://github.com/ermacv/embassy.git?rev=c875ac4ab9f85a668dbc10f54b028627cbae0a5e#c875ac4ab9f85a668dbc10f54b028627cbae0a5e"
 dependencies = [
  "document-features",
  "embassy-futures",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=861e46da63520f340e33f1786710c0f43e9676f6)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=c875ac4ab9f85a668dbc10f54b028627cbae0a5e)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "embedded-io-async 0.7.0",
@@ -958,7 +958,7 @@ checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 [[package]]
 name = "embassy-net-driver"
 version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=861e46da63520f340e33f1786710c0f43e9676f6#861e46da63520f340e33f1786710c0f43e9676f6"
+source = "git+https://github.com/ermacv/embassy.git?rev=c875ac4ab9f85a668dbc10f54b028627cbae0a5e#c875ac4ab9f85a668dbc10f54b028627cbae0a5e"
 
 [[package]]
 name = "embassy-sync"
@@ -2284,7 +2284,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-executor",
  "embassy-net",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=861e46da63520f340e33f1786710c0f43e9676f6)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=c875ac4ab9f85a668dbc10f54b028627cbae0a5e)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "open-esp-radio-dma",
@@ -4523,7 +4523,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 [[package]]
 name = "xarxa"
 version = "0.13.1"
-source = "git+https://github.com/ermacv/xarxa.git?rev=448d39b991eff0c102f202aaad74ad65a9744fb3#448d39b991eff0c102f202aaad74ad65a9744fb3"
+source = "git+https://github.com/ermacv/xarxa.git?rev=5d29b3749f00f21343ee80fd77639ef0bb36bee7#5d29b3749f00f21343ee80fd77639ef0bb36bee7"
 dependencies = [
  "bitflags 1.3.2",
  "byteorder",
@@ -4537,7 +4537,7 @@ dependencies = [
 [[package]]
 name = "xarxa-driver"
 version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=448d39b991eff0c102f202aaad74ad65a9744fb3#448d39b991eff0c102f202aaad74ad65a9744fb3"
+source = "git+https://github.com/ermacv/xarxa.git?rev=5d29b3749f00f21343ee80fd77639ef0bb36bee7#5d29b3749f00f21343ee80fd77639ef0bb36bee7"
 
 [[package]]
 name = "xml-rs"

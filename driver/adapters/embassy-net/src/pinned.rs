@@ -4,7 +4,7 @@
 use core::num::{NonZeroU8, NonZeroU32};
 use core::{
     pin::Pin,
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
     task::{Context, Poll},
 };
 
@@ -441,11 +441,15 @@ impl<'registry> NetworkEndpointConfig<'registry> {
 #[cfg(feature = "tx-phase-telemetry")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PinnedTxOwnershipSnapshot {
+    /// All immediately available physical credits, including `control_free`.
     pub free: usize,
+    /// Informational subset of `free` reserved for bounded control traffic.
+    pub control_free: usize,
     pub ready_for_interface: usize,
     pub ready_for_other_interfaces: usize,
     pub ingress_reserved: usize,
     pub application_reserved: usize,
+    pub control_reserved: usize,
     pub tokens_in_flight: usize,
 }
 
@@ -458,12 +462,17 @@ impl PinnedTxOwnershipSnapshot {
                 .saturating_add(self.ready_for_other_interfaces)
                 .saturating_add(self.ingress_reserved)
                 .saturating_add(self.application_reserved)
+                .saturating_add(self.control_reserved)
                 .saturating_add(self.tokens_in_flight),
         )
     }
 }
 
 const PINNED_TX_CREDIT_WAKER_SLOTS: usize = 8;
+#[cfg(feature = "tx-egress-scheduling")]
+const UNINITIALIZED_CONTROL_TX_INDEX: usize = usize::MAX;
+#[cfg(feature = "tx-egress-scheduling")]
+const INITIALIZING_CONTROL_TX_INDEX: usize = usize::MAX - 1;
 
 /// One HT A-MPDU worth of value-only ownership records.
 ///
@@ -661,6 +670,14 @@ impl<M: RawMutex> PinnedTxCreditWakers<M> {
     fn wake_all(&self) {
         for slot in &self.slots {
             slot.wake();
+        }
+    }
+
+    fn wake_mask(&self, waiting: u32) {
+        for (index, slot) in self.slots.iter().enumerate() {
+            if waiting & (1_u32 << index) != 0 {
+                slot.wake();
+            }
         }
     }
 
@@ -940,6 +957,13 @@ pub struct PinnedTxResources<
     tx_published: Signal<M, ()>,
     tx_credit_wakers: PinnedTxCreditWakers<M>,
     tx_credit_waiters: AtomicU32,
+    /// One lazily partitioned physical credit reserved for uncatalogued
+    /// control providers after the egress control plane is attached.
+    control_tx_index: AtomicUsize,
+    control_tx_available: AtomicBool,
+    control_tx_waiters: AtomicU32,
+    #[cfg(feature = "tx-egress-scheduling")]
+    control_tx_next_interface: AtomicU32,
     #[cfg(feature = "tx-staging-copy-probe")]
     tx_staged_interfaces: AtomicU32,
     split: AtomicBool,
@@ -951,6 +975,8 @@ pub struct PinnedTxResources<
     tx_ingress_reserved: AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_application_reserved: AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_control_reserved: AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_tokens_in_flight: AtomicU32,
 }
@@ -1019,6 +1045,11 @@ impl<
             tx_published: Signal::new(),
             tx_credit_wakers: PinnedTxCreditWakers::new(),
             tx_credit_waiters: AtomicU32::new(0),
+            control_tx_index: AtomicUsize::new(usize::MAX),
+            control_tx_available: AtomicBool::new(false),
+            control_tx_waiters: AtomicU32::new(0),
+            #[cfg(feature = "tx-egress-scheduling")]
+            control_tx_next_interface: AtomicU32::new(0),
             #[cfg(feature = "tx-staging-copy-probe")]
             tx_staged_interfaces: AtomicU32::new(0),
             split: AtomicBool::new(false),
@@ -1027,6 +1058,8 @@ impl<
             tx_ingress_reserved: AtomicU32::new(0),
             #[cfg(feature = "tx-phase-telemetry")]
             tx_application_reserved: AtomicU32::new(0),
+            #[cfg(feature = "tx-phase-telemetry")]
+            tx_control_reserved: AtomicU32::new(0),
             #[cfg(feature = "tx-phase-telemetry")]
             tx_tokens_in_flight: AtomicU32::new(0),
         }
@@ -1092,6 +1125,11 @@ impl<
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
                 tx_credit_waiters: &resources.tx_credit_waiters,
+                control_tx_index: &resources.control_tx_index,
+                control_tx_available: &resources.control_tx_available,
+                control_tx_waiters: &resources.control_tx_waiters,
+                #[cfg(feature = "tx-egress-scheduling")]
+                control_tx_next_interface: &resources.control_tx_next_interface,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 tx_staged_interfaces: &resources.tx_staged_interfaces,
                 tx_active: &resources.tx_active,
@@ -1099,6 +1137,8 @@ impl<
                 tx_ingress_reserved: &resources.tx_ingress_reserved,
                 #[cfg(feature = "tx-phase-telemetry")]
                 tx_application_reserved: &resources.tx_application_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_control_reserved: &resources.tx_control_reserved,
                 #[cfg(feature = "tx-phase-telemetry")]
                 tx_tokens_in_flight: &resources.tx_tokens_in_flight,
                 tx_pool: pool,
@@ -1131,6 +1171,9 @@ impl<
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
                 tx_credit_waiters: &resources.tx_credit_waiters,
+                control_tx_index: &resources.control_tx_index,
+                control_tx_available: &resources.control_tx_available,
+                control_tx_waiters: &resources.control_tx_waiters,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 tx_staged_interfaces: &resources.tx_staged_interfaces,
                 tx_active: &resources.tx_active,
@@ -1138,6 +1181,8 @@ impl<
                 tx_ingress_reserved: &resources.tx_ingress_reserved,
                 #[cfg(feature = "tx-phase-telemetry")]
                 tx_application_reserved: &resources.tx_application_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
+                tx_control_reserved: &resources.tx_control_reserved,
                 #[cfg(feature = "tx-phase-telemetry")]
                 tx_tokens_in_flight: &resources.tx_tokens_in_flight,
                 tx_pool: pool,
@@ -1243,6 +1288,11 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 tx_published: tx.tx_published,
                 tx_credit_wakers: tx.tx_credit_wakers,
                 tx_credit_waiters: tx.tx_credit_waiters,
+                control_tx_index: tx.control_tx_index,
+                control_tx_available: tx.control_tx_available,
+                control_tx_waiters: tx.control_tx_waiters,
+                #[cfg(feature = "tx-egress-scheduling")]
+                control_tx_next_interface: tx.control_tx_next_interface,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 tx_staged_interfaces: tx.tx_staged_interfaces,
                 tx_active: tx.tx_active,
@@ -1251,14 +1301,18 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 #[cfg(feature = "tx-phase-telemetry")]
                 tx_application_reserved: tx.tx_application_reserved,
                 #[cfg(feature = "tx-phase-telemetry")]
+                tx_control_reserved: tx.tx_control_reserved,
+                #[cfg(feature = "tx-phase-telemetry")]
                 tx_tokens_in_flight: tx.tx_tokens_in_flight,
                 tx_pool: tx.tx_pool,
                 link: &resources.link,
                 endpoint,
                 ingress_tx: None,
                 application_tx: None,
+                control_tx: None,
                 reserve_ingress_tx: false,
                 waiting_for_tx_credit: false,
+                waiting_for_control_tx: false,
                 #[cfg(feature = "tx-staging-copy-probe")]
                 staged_tx_selected: false,
                 #[cfg(feature = "tx-egress-scheduling")]
@@ -1362,6 +1416,11 @@ pub struct PinnedTxProvider<
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
+    control_tx_index: &'resources AtomicUsize,
+    control_tx_available: &'resources AtomicBool,
+    control_tx_waiters: &'resources AtomicU32,
+    #[cfg(feature = "tx-egress-scheduling")]
+    control_tx_next_interface: &'resources AtomicU32,
     #[cfg(feature = "tx-staging-copy-probe")]
     tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
@@ -1369,6 +1428,8 @@ pub struct PinnedTxProvider<
     tx_ingress_reserved: &'resources AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_application_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_control_reserved: &'resources AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
@@ -1429,6 +1490,11 @@ pub struct SplitPinnedDevice<
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
+    control_tx_index: &'resources AtomicUsize,
+    control_tx_available: &'resources AtomicBool,
+    control_tx_waiters: &'resources AtomicU32,
+    #[cfg(feature = "tx-egress-scheduling")]
+    control_tx_next_interface: &'resources AtomicU32,
     #[cfg(feature = "tx-staging-copy-probe")]
     tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
@@ -1436,6 +1502,8 @@ pub struct SplitPinnedDevice<
     tx_ingress_reserved: &'resources AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_application_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_control_reserved: &'resources AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
@@ -1445,8 +1513,12 @@ pub struct SplitPinnedDevice<
     /// satisfy the `Driver::receive` RX+TX-token contract under saturated TX.
     ingress_tx: Option<u8>,
     application_tx: Option<u8>,
+    /// The sole global control credit is claimed only while an uncatalogued
+    /// provider synchronously constructs its final frame.
+    control_tx: Option<u8>,
     reserve_ingress_tx: bool,
     waiting_for_tx_credit: bool,
+    waiting_for_control_tx: bool,
     #[cfg(feature = "tx-staging-copy-probe")]
     staged_tx_selected: bool,
     #[cfg(feature = "tx-egress-scheduling")]
@@ -1520,6 +1592,13 @@ impl PinnedEgressGrantState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PinnedTxAdmissionClass {
+    Ordinary,
+    #[cfg(feature = "tx-egress-scheduling")]
+    Control,
+}
+
 impl<
     'resources,
     M: RawMutex,
@@ -1553,6 +1632,7 @@ impl<
             self.egress_control.is_none(),
             "network egress control may only be attached once"
         );
+        self.initialize_control_tx_reserve();
         // The diagnostic selector is immutable after the device owner graph is
         // built. Snapshotting it here avoids an Acquire load and RISC-V fence
         // in every packet admission while preserving same-ELF enabled/disabled
@@ -1562,6 +1642,33 @@ impl<
             self.egress_demand_active && control.egress_demand_flush_pending();
         self.egress_control = Some(control);
         self
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn initialize_control_tx_reserve(&mut self) {
+        match self.control_tx_index.compare_exchange(
+            UNINITIALIZED_CONTROL_TX_INDEX,
+            INITIALIZING_CONTROL_TX_INDEX,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                let index = self
+                    .free_tx
+                    .try_receive()
+                    .expect("egress control requires one global physical TX reserve");
+                self.control_tx_index
+                    .store(usize::from(index), Ordering::Release);
+                assert!(
+                    !self.control_tx_available.swap(true, Ordering::AcqRel),
+                    "new control TX reserve must start unavailable"
+                );
+            }
+            Err(existing) => assert_ne!(
+                existing, INITIALIZING_CONTROL_TX_INDEX,
+                "control TX reserve owner graph cannot be initialized concurrently"
+            ),
+        }
     }
 
     /// Retry a retained terminal grant record. A full transport leaves the
@@ -1676,6 +1783,62 @@ impl<
         }
     }
 
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn control_tx_index(&self) -> Option<u8> {
+        let index = self.control_tx_index.load(Ordering::Acquire);
+        (index < INITIALIZING_CONTROL_TX_INDEX)
+            .then(|| u8::try_from(index).expect("pinned TX indices fit in u8"))
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn try_take_control_tx(&mut self) -> Option<u8> {
+        let index = self.control_tx_index()?;
+        let interface = usize::from(self.interface.value());
+        let own_bit = 1_u32 << interface;
+        let waiting = self.control_tx_waiters.load(Ordering::Acquire)
+            & self.tx_active.load(Ordering::Acquire);
+        let start = self.control_tx_next_interface.load(Ordering::Relaxed) as usize
+            % PINNED_TX_CREDIT_WAKER_SLOTS;
+        let selected = (0..PINNED_TX_CREDIT_WAKER_SLOTS)
+            .map(|offset| (start + offset) % PINNED_TX_CREDIT_WAKER_SLOTS)
+            .find(|candidate| waiting & (1_u32 << candidate) != 0)?;
+        if selected != interface
+            || self
+                .control_tx_available
+                .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return None;
+        }
+        self.control_tx_waiters
+            .fetch_and(!own_bit, Ordering::AcqRel);
+        self.control_tx_next_interface.store(
+            ((interface + 1) % PINNED_TX_CREDIT_WAKER_SLOTS) as u32,
+            Ordering::Relaxed,
+        );
+        self.waiting_for_control_tx = false;
+        Some(index)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn poll_reserve_control_tx(&mut self, cx: &mut Context<'_>) -> bool {
+        if self.control_tx.is_some() {
+            return true;
+        }
+        self.tx_credit_wakers.register(self.interface, cx);
+        if !self.waiting_for_control_tx {
+            self.control_tx_waiters
+                .fetch_or(1_u32 << self.interface.value(), Ordering::AcqRel);
+            self.waiting_for_control_tx = true;
+        }
+        if let Some(index) = self.try_take_control_tx() {
+            self.control_tx = Some(index);
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.tx_control_reserved.fetch_add(1, Ordering::Relaxed);
+        }
+        self.control_tx.is_some()
+    }
+
     fn poll_reserve_ingress_tx(&mut self, cx: &mut Context<'_>) -> bool {
         if self.ingress_tx.is_none()
             && let Poll::Ready(index) = self.poll_free_tx(cx)
@@ -1710,6 +1873,7 @@ impl<
         &'device mut self,
         index: u8,
         metadata: PinnedTxMetadata,
+        class: PinnedTxAdmissionClass,
     ) -> PinnedTransmitToken<
         'device,
         'resources,
@@ -1720,17 +1884,28 @@ impl<
         TX_QUEUE_DEPTH,
     > {
         #[cfg(feature = "tx-staging-copy-probe")]
-        let lease = if self.staged_tx_selected {
+        let lease = if self.staged_tx_selected && class == PinnedTxAdmissionClass::Ordinary {
             PinnedTransmitLease::Staged(self.staged_pool.claim_radio(index))
         } else {
             PinnedTransmitLease::Direct(self.tx_pool.claim_network(index))
         };
         #[cfg(not(feature = "tx-staging-copy-probe"))]
+        let _ = class;
+        #[cfg(not(feature = "tx-staging-copy-probe"))]
         let lease = PinnedTransmitLease::Direct(self.tx_pool.claim_network(index));
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_tokens_in_flight.fetch_add(1, Ordering::Relaxed);
         PinnedTransmitToken {
-            free_tx: self.free_tx_return,
+            tx_return: PinnedTxReturn {
+                free_tx: self.free_tx_return,
+                interface: self.interface,
+                tx_credit_wakers: self.tx_credit_wakers,
+                tx_credit_waiters: self.tx_credit_waiters,
+                control_tx_index: self.control_tx_index,
+                control_tx_available: self.control_tx_available,
+                control_tx_waiters: self.control_tx_waiters,
+                tx_active: self.tx_active,
+            },
             tx_metadata: self.tx_metadata,
             ready_tx: self.ready_tx,
             #[cfg(feature = "tx-staging-copy-probe")]
@@ -2220,14 +2395,22 @@ impl<
                 .fetch_and(!(1_u32 << self.interface.value()), Ordering::AcqRel);
             self.waiting_for_tx_credit = false;
         }
+        if self.waiting_for_control_tx {
+            self.control_tx_waiters
+                .fetch_and(!(1_u32 << self.interface.value()), Ordering::AcqRel);
+            self.waiting_for_control_tx = false;
+        }
         let ingress = self.ingress_tx.take();
         let application = self.application_tx.take();
+        let control = self.control_tx.take();
         #[cfg(feature = "tx-phase-telemetry")]
         {
             self.tx_ingress_reserved
                 .fetch_sub(u32::from(ingress.is_some()), Ordering::Relaxed);
             self.tx_application_reserved
                 .fetch_sub(u32::from(application.is_some()), Ordering::Relaxed);
+            self.tx_control_reserved
+                .fetch_sub(u32::from(control.is_some()), Ordering::Relaxed);
         }
         for index in [ingress, application].into_iter().flatten() {
             #[cfg(feature = "tx-staging-copy-probe")]
@@ -2247,6 +2430,19 @@ impl<
                 self.tx_active,
                 self.tx_credit_waiters,
             );
+        }
+        if let Some(index) = control {
+            PinnedTxReturn {
+                free_tx: self.free_tx_return,
+                interface: self.interface,
+                tx_credit_wakers: self.tx_credit_wakers,
+                tx_credit_waiters: self.tx_credit_waiters,
+                control_tx_index: self.control_tx_index,
+                control_tx_available: self.control_tx_available,
+                control_tx_waiters: self.control_tx_waiters,
+                tx_active: self.tx_active,
+            }
+            .return_network_index(index);
         }
     }
 }
@@ -2271,7 +2467,7 @@ pub struct PinnedTransmitToken<
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
 > {
-    free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    tx_return: PinnedTxReturn<'resources, M, QUEUE_DEPTH>,
     tx_metadata: &'resources [PinnedTxMetadataSlot; QUEUE_DEPTH],
     ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     #[cfg(feature = "tx-staging-copy-probe")]
@@ -2514,7 +2710,8 @@ impl<
         // publication, return every inactive-VIF owner immediately. No other
         // token for this device can coexist because `_reservation` is affine.
         if self.tx_active.load(Ordering::Acquire) & (1_u32 << interface.value()) == 0 {
-            let mut returned = 0usize;
+            #[cfg(feature = "tx-staging-copy-probe")]
+            let mut staged_returned = false;
             while let Ok(stale_index) = ready.try_receive() {
                 #[cfg(feature = "tx-staging-copy-probe")]
                 if staged {
@@ -2522,22 +2719,19 @@ impl<
                     if let Err(TrySendError::Full(_)) = self.free_staged.try_send(stale_index) {
                         unreachable!("late staged publication returns its unique index");
                     }
+                    staged_returned = true;
                 } else {
                     let stale_index = self.tx_pool.claim_radio(stale_index).release();
-                    if let Err(TrySendError::Full(_)) = self.free_tx.try_send(stale_index) {
-                        unreachable!("late direct publication returns its unique index");
-                    }
+                    self.tx_return.return_network_index(stale_index);
                 }
                 #[cfg(not(feature = "tx-staging-copy-probe"))]
                 {
                     let stale_index = self.tx_pool.claim_radio(stale_index).release();
-                    if let Err(TrySendError::Full(_)) = self.free_tx.try_send(stale_index) {
-                        unreachable!("late direct publication returns its unique index");
-                    }
+                    self.tx_return.return_network_index(stale_index);
                 }
-                returned = returned.saturating_add(1);
             }
-            if returned != 0 {
+            #[cfg(feature = "tx-staging-copy-probe")]
+            if staged_returned {
                 self.tx_credit_wakers.wake_waiter_after(
                     interface,
                     self.tx_active,
@@ -2548,7 +2742,7 @@ impl<
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_tokens_in_flight.fetch_sub(1, Ordering::Relaxed);
         #[cfg(feature = "tx-phase-telemetry")]
-        TX_PERFORMANCE.record_publication_geometry(self.free_tx.len(), ready.len());
+        TX_PERFORMANCE.record_publication_geometry(self.tx_return.free_count(), ready.len());
         self.tx_published.signal(());
         #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_consume(
@@ -2573,13 +2767,11 @@ impl<
         if let Some(lease) = self.lease.take() {
             #[cfg(feature = "tx-phase-telemetry")]
             self.tx_tokens_in_flight.fetch_sub(1, Ordering::Relaxed);
-            let index = match lease {
+            let staged_returned = match lease {
                 PinnedTransmitLease::Direct(lease) => {
                     let index = lease.release();
-                    if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
-                        unreachable!("dropped pinned TX token returns its unique index");
-                    }
-                    index
+                    self.tx_return.return_network_index(index);
+                    false
                 }
                 #[cfg(feature = "tx-staging-copy-probe")]
                 PinnedTransmitLease::Staged(lease) => {
@@ -2587,15 +2779,16 @@ impl<
                     if let Err(TrySendError::Full(_)) = self.free_staged.try_send(index) {
                         unreachable!("dropped staged TX token returns its unique index");
                     }
-                    index
+                    true
                 }
             };
-            let _ = index;
-            self.tx_credit_wakers.wake_waiter_after(
-                self.metadata.interface(),
-                self.tx_active,
-                self.tx_credit_waiters,
-            );
+            if staged_returned {
+                self.tx_credit_wakers.wake_waiter_after(
+                    self.metadata.interface(),
+                    self.tx_active,
+                    self.tx_credit_waiters,
+                );
+            }
         }
     }
 }
@@ -2658,7 +2851,11 @@ impl<
                 free_rx: self.free_rx,
                 lease: Some(lease),
             },
-            self.take_tx_token(tx_index, PinnedTxMetadata::unclassified(self.interface)),
+            self.take_tx_token(
+                tx_index,
+                PinnedTxMetadata::unclassified(self.interface),
+                PinnedTxAdmissionClass::Ordinary,
+            ),
         ))
     }
 
@@ -2676,7 +2873,35 @@ impl<
                 .expect("application admission reserves one TX credit");
             #[cfg(feature = "tx-phase-telemetry")]
             self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
-            Some(self.take_tx_token(index, PinnedTxMetadata::unclassified(self.interface)))
+            Some(self.take_tx_token(
+                index,
+                PinnedTxMetadata::unclassified(self.interface),
+                PinnedTxAdmissionClass::Ordinary,
+            ))
+        };
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), token.is_some());
+        token
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn transmit_control(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
+        #[cfg(feature = "tx-phase-telemetry")]
+        let started = TxPerformanceSample::read();
+        let token = if !self.poll_reserve_control_tx(cx) {
+            None
+        } else {
+            let index = self
+                .control_tx
+                .take()
+                .expect("control admission reserves the global control credit");
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.tx_control_reserved.fetch_sub(1, Ordering::Relaxed);
+            Some(self.take_tx_token(
+                index,
+                PinnedTxMetadata::unclassified(self.interface),
+                PinnedTxAdmissionClass::Control,
+            ))
         };
         #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), token.is_some());
@@ -2747,9 +2972,11 @@ impl<
         self.keyed_run_length = self.keyed_run_length.saturating_add(1);
         #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), true);
-        EgressAdmission::Granted(
-            self.take_tx_token(index, PinnedTxMetadata::classified(self.interface, egress)),
-        )
+        EgressAdmission::Granted(self.take_tx_token(
+            index,
+            PinnedTxMetadata::classified(self.interface, egress),
+            PinnedTxAdmissionClass::Ordinary,
+        ))
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
@@ -2922,14 +3149,21 @@ impl<
             .tx_ingress_reserved
             .fetch_sub(1, Ordering::Relaxed);
         let interface = self.inner.interface;
-        let tx = self
-            .inner
-            .take_tx_token(tx_index, PinnedTxMetadata::unclassified(interface));
+        let tx = self.inner.take_tx_token(
+            tx_index,
+            PinnedTxMetadata::unclassified(interface),
+            PinnedTxAdmissionClass::Ordinary,
+        );
         Some((rx, tx))
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
         self.inner.transmit(cx)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn transmit_control(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
+        self.inner.transmit_control(cx)
     }
 
     #[cfg(feature = "tx-egress-scheduling")]
@@ -3403,6 +3637,9 @@ pub struct PinnedTxConsumer<
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
+    control_tx_index: &'resources AtomicUsize,
+    control_tx_available: &'resources AtomicBool,
+    control_tx_waiters: &'resources AtomicU32,
     #[cfg(feature = "tx-staging-copy-probe")]
     tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
@@ -3410,6 +3647,8 @@ pub struct PinnedTxConsumer<
     tx_ingress_reserved: &'resources AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_application_reserved: &'resources AtomicU32,
+    #[cfg(feature = "tx-phase-telemetry")]
+    tx_control_reserved: &'resources AtomicU32,
     #[cfg(feature = "tx-phase-telemetry")]
     tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
@@ -3496,6 +3735,9 @@ impl<
                     interface,
                     tx_credit_wakers: self.tx_credit_wakers,
                     tx_credit_waiters: self.tx_credit_waiters,
+                    control_tx_index: self.control_tx_index,
+                    control_tx_available: self.control_tx_available,
+                    control_tx_waiters: self.control_tx_waiters,
                     tx_active: self.tx_active,
                 },
             ),
@@ -3710,12 +3952,18 @@ impl<
     ) -> PinnedTxOwnershipSnapshot {
         let ready_for_interface = self.ready_tx[usize::from(interface.value())].len();
         let ready_total = self.ready_tx.iter().map(Channel::len).sum::<usize>();
+        let control_free = usize::from(
+            self.control_tx_index.load(Ordering::Acquire) < INITIALIZING_CONTROL_TX_INDEX
+                && self.control_tx_available.load(Ordering::Acquire),
+        );
         PinnedTxOwnershipSnapshot {
-            free: self.free_tx.len(),
+            free: self.free_tx.len().saturating_add(control_free),
+            control_free,
             ready_for_interface,
             ready_for_other_interfaces: ready_total.saturating_sub(ready_for_interface),
             ingress_reserved: self.tx_ingress_reserved.load(Ordering::Relaxed) as usize,
             application_reserved: self.tx_application_reserved.load(Ordering::Relaxed) as usize,
+            control_reserved: self.tx_control_reserved.load(Ordering::Relaxed) as usize,
             tokens_in_flight: self.tx_tokens_in_flight.load(Ordering::Relaxed) as usize,
         }
     }
@@ -4626,22 +4874,41 @@ pub struct PinnedTxReturn<'resources, M: RawMutex, const QUEUE_DEPTH: usize> {
     interface: NetworkInterfaceId,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
+    control_tx_index: &'resources AtomicUsize,
+    control_tx_available: &'resources AtomicBool,
+    control_tx_waiters: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
 }
 
-impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_, M, QUEUE_DEPTH> {
-    fn return_index(&self, index: u8) {
-        if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
-            unreachable!("radio lease returns its unique pinned TX index");
+impl<M: RawMutex, const QUEUE_DEPTH: usize> PinnedTxReturn<'_, M, QUEUE_DEPTH> {
+    fn is_control_index(&self, index: u8) -> bool {
+        self.control_tx_index.load(Ordering::Acquire) == usize::from(index)
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn free_count(&self) -> usize {
+        self.free_tx.len()
+            + usize::from(
+                self.control_tx_index.load(Ordering::Acquire) < usize::MAX - 1
+                    && self.control_tx_available.load(Ordering::Acquire),
+            )
+    }
+
+    fn return_network_index(&self, index: u8) -> bool {
+        if self.is_control_index(index) {
+            assert!(
+                !self.control_tx_available.swap(true, Ordering::AcqRel),
+                "control TX credit cannot be returned twice"
+            );
+            let waiting = self.control_tx_waiters.load(Ordering::Acquire)
+                & self.tx_active.load(Ordering::Acquire);
+            self.tx_credit_wakers.wake_mask(waiting);
+            return waiting != 0;
         }
-        // A terminal A-MPDU releases its retained leases synchronously. The
-        // first returned index changes the physical pool from empty to ready;
-        // the remaining indices are additional credits, not additional
-        // readiness edges. If another core drains the pool concurrently, a
-        // later return legitimately creates a new edge and wakes again.
+        if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
+            unreachable!("network owner returns its unique pinned TX index");
+        }
         let woke_network = self.free_tx.len() == 1;
-        #[cfg(feature = "tx-phase-telemetry")]
-        TX_PERFORMANCE.record_radio_return(woke_network);
         if woke_network {
             self.tx_credit_wakers.wake_waiter_after(
                 self.interface,
@@ -4649,6 +4916,22 @@ impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_
                 self.tx_credit_waiters,
             );
         }
+        woke_network
+    }
+}
+
+impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_, M, QUEUE_DEPTH> {
+    fn return_index(&self, index: u8) {
+        // A terminal A-MPDU releases its retained leases synchronously. The
+        // first returned index changes the physical pool from empty to ready;
+        // the remaining indices are additional credits, not additional
+        // readiness edges. If another core drains the pool concurrently, a
+        // later return legitimately creates a new edge and wakes again.
+        let woke_network = self.return_network_index(index);
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_radio_return(woke_network);
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        let _ = woke_network;
     }
 }
 

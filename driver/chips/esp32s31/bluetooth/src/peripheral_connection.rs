@@ -3,8 +3,8 @@
 //! The runtime joins a portable LL event to the recovered allocation graph,
 //! installs its reviewed Access Address and CRCInit fields and attaches one
 //! separately owned static non-scanning RX pool. It cannot publish that partial
-//! graph; the remaining link-state reset and scheduler admission must be closed
-//! first.
+//! graph; direction-finding workspace policy and scheduler admission must be
+//! closed first.
 
 #![forbid(unsafe_code)]
 
@@ -378,10 +378,10 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
     /// The resolved common-scheduler window is intentionally accepted here,
     /// rather than during candidate formation, because initial admission may
     /// displace the requested interval. The resulting memory owner still has
-    /// no publication operation: remaining link-state reset and hardware
-    /// admission are mandatory later transitions. The first-event receive wait
-    /// is derived here from the retained transmit window and timing guard, so no
-    /// caller can pass a descriptor duration or mode image.
+    /// no publication operation: direction-finding workspace policy and
+    /// hardware admission are mandatory later transitions. The first-event
+    /// receive wait and priority are source-owned here, so no caller can pass a
+    /// descriptor duration, mode or raw scheduling policy.
     #[expect(
         clippy::result_large_err,
         reason = "the no-alloc conversion failure returns the complete affine candidate"
@@ -390,7 +390,6 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
         self,
         resolved_window: BluetoothSchedulerRawWindow,
         default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
-        priority: BluetoothPeripheralConnectionSchedulerPriority,
     ) -> Result<BluetoothPeripheralConnectionFirstEventFieldsPrepared, Self> {
         let Some(window) = BluetoothPeripheralConnectionSchedulerWindow::new(
             resolved_window.start(),
@@ -404,6 +403,7 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
         ) else {
             return Err(self);
         };
+        let priority = BluetoothPeripheralConnectionSchedulerPriority::FIRST_EVENT;
         let Self {
             prepared,
             requested_window,
@@ -447,7 +447,7 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
 /// This state is deliberately CPU-owned and unpublished. It proves that the
 /// identity, RX rotation, channel, interval, power, priority, complete receive
 /// wait and resolved event reservation are present, but does not stand in for
-/// the remaining link-state reset or scheduler admission semantics.
+/// direction-finding workspace policy or scheduler admission semantics.
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the partial connection descriptor must advance or be cancelled"]
 #[allow(
@@ -737,11 +737,10 @@ mod tests {
         )
         .expect("the displaced window retains the accepted duration");
         let default_tx_power = BluetoothPeripheralConnectionDefaultTxPowerDbm::new(-4);
-        let priority = BluetoothPeripheralConnectionSchedulerPriority::new(5)
-            .expect("the scheduler priority fits both reviewed lanes");
+        let priority = BluetoothPeripheralConnectionSchedulerPriority::FIRST_EVENT;
 
         let prepared = candidate
-            .prepare_resolved_event_fields(resolved, default_tx_power, priority)
+            .prepare_resolved_event_fields(resolved, default_tx_power)
             .unwrap_or_else(|_| panic!("a resolved scheduler window remains non-empty"));
 
         assert_eq!(prepared.event_counter(), 0);

@@ -118,8 +118,15 @@ semantic values and performs these positional transforms privately:
 
 | Private object field | Source-owned input | Reviewed first-event behavior |
 | --- | --- | --- |
+| link state `+0x00` | owned empty TX sentinel | stores the compressed endpoint, 251-octet S31 capability and the two transmit-path ready states |
 | link state `+0x04` | signed default TX power | shared S31 five-bit rounded-power projection |
+| link state `+0x08` | owned initialized RX pool | stores the compressed head and initial unconsumed receive sentinel |
+| link state `+0x0c` | S31 baseline control policy | installs the duplicated value 2 and makes that policy active |
 | link state `+0x18` | negotiated connection interval | interval converted as a duration into raw controller ticks |
+| link state `+0x14`, `+0x1c`, `+0x20`, `+0x30` | new unencrypted connection | clears packet history/control state and installs the recovered initial sequence profile |
+| link state `+0x2c` | CRCInit | preserves the low 24-bit CRC seed and marks that context ready |
+| link state `+0x50` upper policy lane | S31 baseline common-radio policy | installs the retained default value 3 without publishing a direction-finding workspace pointer |
+| link state `+0x60` | S31 first-event conflict policy | starts at 13; later conflict handling increases it and saturates at 15 |
 | scheduler item `+0x04` | ready state | sets the reviewed context-ready flag |
 | scheduler item `+0x14` | LE 1M plus rounded TX power | selects the LE 1M rate lanes and copies the rounded-power projection |
 | scheduler item `+0x18` | data-channel index plus bounded priority | maps data channels 0--36 to the S31 frequency image and copies the four-bit priority into both lanes |
@@ -128,10 +135,14 @@ semantic values and performs these positional transforms privately:
 | scheduler item `+0x44`, `+0x48` | resolved common-scheduler window | stores the accepted start and end only after overlap resolution |
 | scheduler item `+0x4c` | new event | clears the reviewed low bookkeeping byte |
 
+The priority is no longer an application-supplied integer. The retained
+current options object and the older named options object are byte-identical:
+the first-event transform maps its priority input to 13 and its common-radio
+policy input to 3. These scalars are reviewed chip policy inside the backend.
 The channel-frequency mapping is the ordinary LE data-channel ordering around
 the three primary advertising-channel positions; the portable LL still sees
-only a validated data-channel index. Likewise, signed dBm, priority, interval
-and a non-empty wrapping window are the only inputs visible above the memory
+only a validated data-channel index. Likewise, signed dBm, interval and a
+non-empty wrapping window are the only dynamic inputs visible above the memory
 crate. Masks, shifts, rounded-power values and SRAM offsets do not leave that
 codec.
 
@@ -156,11 +167,15 @@ transmit window fits its short descriptor form, whose encoding is now private
 to `BluetoothPeripheralConnectionReceiveWait`. No upper layer accepts the
 duration/configuration word.
 
-This transition remains deliberately partial. The remaining link-state reset
-fields and the exact first-event task admission/publication edge are not yet
-proven as one complete runnable contract. In particular, the descriptor uses
-the common scheduler's resolved window rather than the requested window:
-overlap insertion is allowed to displace the initial candidate.
+This transition remains deliberately partial. The vendor reset always binds a
+direction-finding sample workspace and touches the CTE register block even for
+the ordinary connection constructor. The open driver has not yet established
+whether a CTE-disabled first event may retain a zero workspace pointer or must
+own an initialized disabled workspace. That decision and the exact first-event
+task admission/publication edge are not yet proven as one complete runnable
+contract. In particular, the descriptor uses the common scheduler's resolved
+window rather than the requested window: overlap insertion is allowed to
+displace the initial candidate.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
 event image. The Rust owner now also attaches a separate statically allocated
@@ -201,8 +216,8 @@ The shortest remaining path to one real peripheral event is:
 1. attach the now-static shared RX pool and selector-two RX publication to the
    response-capable connectable-advertising graph, then transfer the pool and
    accepted packet to the existing task-service normalizer;
-2. resolve the remaining mandatory link-state reset fields inside the private
-   memory codec;
+2. close the CTE-disabled direction-finding workspace policy without importing
+   the vendor allocator or exposing its pointer image;
 3. consume the complete raw reservation through common task-side admission and
    only then lower the resolved window into the descriptor;
 4. join the complete graph to publication, completion and post-unlink owners;

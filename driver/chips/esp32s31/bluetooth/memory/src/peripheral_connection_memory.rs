@@ -5,7 +5,7 @@
 //! the connection link state and the initially empty transmit queue sentinel.
 //! A separately owned static non-scanning RX pool can be attached for an exact
 //! event and recovered on cancellation. Event preparation still deliberately
-//! omits remaining link-state, packet-sequence and publication semantics.
+//! omits direction-finding memory and publication semantics.
 
 #![forbid(unsafe_code)]
 
@@ -46,11 +46,29 @@ const LINK_STATE_TX_HEAD: usize = 0x6c / 4;
 const LINK_STATE_RX_TAIL: usize = 0x70 / 4;
 const LINK_STATE_TX_TAIL: usize = 0x74 / 4;
 const LINK_STATE_RX_RESERVE: usize = 0x78 / 4;
+const LINK_STATE_TX_PATH: usize = 0;
 const LINK_STATE_CRC_INITIALIZATION: usize = 0x2c / 4;
 const LINK_STATE_ACCESS_ADDRESS: usize = 0x38 / 4;
 const LINK_STATE_ROUNDED_POWER: usize = 1;
+const LINK_STATE_RX_PATH: usize = 2;
+const LINK_STATE_CONTROL_POLICY: usize = 3;
+const LINK_STATE_PACKET_FLAGS: usize = 0x14 / 4;
 const LINK_STATE_INTERVAL_TICKS: usize = 0x18 / 4;
+const LINK_STATE_PACKET_HISTORY: usize = 0x1c / 4;
+const LINK_STATE_PACKET_CONTROL: usize = 0x20 / 4;
+const LINK_STATE_PACKET_SEQUENCE: usize = 0x30 / 4;
+const LINK_STATE_COMMON_RADIO_POLICY: usize = 0x50 / 4;
+const LINK_STATE_EVENT_PRIORITY: usize = 0x60 / 4;
 const LINK_STATE_ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
+const LINK_STATE_TX_PATH_VALID: u32 = 1 << 31;
+const LINK_STATE_TX_QUEUE_READY: u32 = 1 << 28;
+const LINK_STATE_SUPPORTED_MAX_TX_OCTETS: u32 = 251;
+const LINK_STATE_RX_UNCONSUMED_LIMIT: u32 = 0xff;
+const LINK_STATE_CONTROL_POLICY_ACTIVE: u32 = 1 << 31;
+const LINK_STATE_BASELINE_CONTROL_POLICY: u32 = 2;
+const LINK_STATE_CRC_CONTEXT_READY: u32 = 1 << 31;
+const LINK_STATE_PACKET_SEQUENCE_BASELINE: u32 = 0x1e00;
+const LINK_STATE_COMMON_RADIO_POLICY_BASELINE: u32 = 3;
 
 const SCHEDULER_ITEM_NEXT: usize = 0;
 const SCHEDULER_ITEM_CONTEXT: usize = 1;
@@ -143,9 +161,35 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
 
     fn prepare_event_profile(
         &self,
+        receive_head: BluetoothControllerSramAddress,
+        transmit_sentinel: BluetoothControllerSramLinkAddress,
         interval: BluetoothPeripheralConnectionIntervalTicks,
         default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
+        priority: BluetoothPeripheralConnectionSchedulerPriority,
     ) {
+        self.words[LINK_STATE_TX_PATH].set(
+            LINK_STATE_TX_PATH_VALID
+                | LINK_STATE_TX_QUEUE_READY
+                | (LINK_STATE_SUPPORTED_MAX_TX_OCTETS << 20)
+                | transmit_sentinel.compressed_image(),
+        );
+        self.words[LINK_STATE_RX_PATH]
+            .set((LINK_STATE_RX_UNCONSUMED_LIMIT << 20) | receive_head.compressed_image());
+        self.words[LINK_STATE_CONTROL_POLICY].set(
+            LINK_STATE_CONTROL_POLICY_ACTIVE
+                | (LINK_STATE_BASELINE_CONTROL_POLICY << 20)
+                | (LINK_STATE_BASELINE_CONTROL_POLICY << 24),
+        );
+        self.words[LINK_STATE_PACKET_FLAGS].set(0);
+        self.words[LINK_STATE_PACKET_HISTORY].set(0);
+        self.words[LINK_STATE_PACKET_CONTROL].set(0);
+        self.words[LINK_STATE_CRC_INITIALIZATION]
+            .set(self.words[LINK_STATE_CRC_INITIALIZATION].get() | LINK_STATE_CRC_CONTEXT_READY);
+        self.words[LINK_STATE_PACKET_SEQUENCE].set(LINK_STATE_PACKET_SEQUENCE_BASELINE);
+        self.words[LINK_STATE_COMMON_RADIO_POLICY]
+            .set(LINK_STATE_COMMON_RADIO_POLICY_BASELINE << 24);
+        self.words[LINK_STATE_EVENT_PRIORITY].set(u32::from(priority.value()));
+
         let power = u32::from(rounded_tx_power(default_tx_power.dbm()));
         let current = self.words[LINK_STATE_ROUNDED_POWER].get();
         self.words[LINK_STATE_ROUNDED_POWER]
@@ -350,18 +394,17 @@ impl BluetoothPeripheralConnectionDefaultTxPowerDbm {
     }
 }
 
-/// Four-bit scheduler priority copied into both connection priority lanes.
+/// Source-owned first-event priority shared by connection state and scheduler item.
+///
+/// The retained default Controller options select 13. Conflict handling then
+/// increases the value and saturates at 15; the later recurring-event reset to
+/// 8 is deliberately outside this first-event value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPeripheralConnectionSchedulerPriority(u8);
 
 impl BluetoothPeripheralConnectionSchedulerPriority {
-    pub const fn new(priority: u8) -> Option<Self> {
-        if priority <= 0x0f {
-            Some(Self(priority))
-        } else {
-            None
-        }
-    }
+    /// Priority selected by the reviewed ESP32-S31 first-event policy.
+    pub const FIRST_EVENT: Self = Self(13);
 
     pub const fn value(self) -> u8 {
         self.0
@@ -789,7 +832,7 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
 
     /// Install only the complete first-event fields whose transforms are reviewed.
     ///
-    /// This is not a publishable descriptor: remaining link-state fields and
+    /// This is not a publishable descriptor: direction-finding workspace and
     /// scheduler admission remain outside this state.
     pub fn prepare_reviewed_first_event_fields(
         self,
@@ -802,9 +845,13 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
     ) -> BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
         let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
         let graph = self.storage.as_ref().get_ref();
-        graph
-            .link_state
-            .prepare_event_profile(interval, default_tx_power);
+        graph.link_state.prepare_event_profile(
+            self.pool.head(),
+            self.binding.tx_sentinel,
+            interval,
+            default_tx_power,
+            priority,
+        );
         graph.scheduler_items[selected_index].prepare_reviewed_first_event_fields(
             graph.link_state.rounded_power(),
             channel,

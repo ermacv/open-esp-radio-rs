@@ -580,6 +580,10 @@ pub use scheduler::{
     BluetoothPassiveScanSchedulerCompletionObserved,
     BluetoothPassiveScanSchedulerCompletionObservedDrainStep,
     BluetoothPassiveScanSchedulerCompletionStep, BluetoothPassiveScanSchedulerRunningDrainStep,
+    BluetoothPeripheralConnectionSchedulerCompletionObserved,
+    BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep,
+    BluetoothPeripheralConnectionSchedulerCompletionStep,
+    BluetoothPeripheralConnectionSchedulerRunningDrainStep,
     BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
 };
 #[cfg(any(target_arch = "riscv32", test))]

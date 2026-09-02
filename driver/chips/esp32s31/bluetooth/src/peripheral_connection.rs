@@ -39,10 +39,14 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothPeripheralConnectionMemoryGraphCompletionObservation,
+    BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
     BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
     BluetoothPeripheralConnectionMemoryGraphRunning,
     BluetoothPeripheralConnectionMemoryGraphRxPublished,
 };
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::BluetoothSchedulerFinishedHardwareListObserved;
 
 use crate::BluetoothSchedulerInstant;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -889,6 +893,94 @@ impl BluetoothPeripheralConnectionFirstEventRunning {
 
     pub(crate) const fn event_counter(&self) -> u16 {
         self.event.event_counter()
+    }
+
+    pub(crate) fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothPeripheralConnectionFirstEventCompletionObservation {
+        let Self {
+            graph,
+            event,
+            _first_window,
+            _requested_window,
+            _resolved_window,
+        } = self;
+        match graph.observe_completion(observed) {
+            BluetoothPeripheralConnectionMemoryGraphCompletionObservation::ListMismatch {
+                running,
+                observed,
+            } => BluetoothPeripheralConnectionFirstEventCompletionObservation::ListMismatch {
+                running: Self {
+                    graph: running,
+                    event,
+                    _first_window,
+                    _requested_window,
+                    _resolved_window,
+                },
+                observed,
+            },
+            BluetoothPeripheralConnectionMemoryGraphCompletionObservation::StillInFlight(graph) => {
+                BluetoothPeripheralConnectionFirstEventCompletionObservation::StillInFlight(Self {
+                    graph,
+                    event,
+                    _first_window,
+                    _requested_window,
+                    _resolved_window,
+                })
+            }
+            BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
+                graph,
+            ) => BluetoothPeripheralConnectionFirstEventCompletionObservation::CompletionObserved(
+                BluetoothPeripheralConnectionFirstEventCompletionObserved {
+                    graph,
+                    event,
+                    _first_window,
+                    _requested_window,
+                    _resolved_window,
+                },
+            ),
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPeripheralConnectionFirstEventCompletionObservation {
+    ListMismatch {
+        running: BluetoothPeripheralConnectionFirstEventRunning,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothPeripheralConnectionFirstEventRunning),
+    CompletionObserved(BluetoothPeripheralConnectionFirstEventCompletionObserved),
+}
+
+/// First connection event after one fenced non-sentinel status observation.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed connection event must advance through scheduler unlink"]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventCompletionObserved {
+    graph: BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
+    event: LePeripheralConnectionEventPrepared,
+    _first_window: BluetoothPeripheralConnectionFirstWindow,
+    _requested_window: BluetoothSchedulerRawWindow,
+    _resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
+    pub(crate) const fn scheduler_item_address(
+        &self,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress {
+        self.graph.scheduler_item_address()
+    }
+
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub(crate) const fn status(
+        &self,
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionSchedulerItemCompletionStatus{
+        self.graph.status()
     }
 }
 

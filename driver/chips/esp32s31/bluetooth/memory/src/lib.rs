@@ -175,6 +175,8 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIdentity,
     BluetoothPeripheralConnectionIntervalTicks, BluetoothPeripheralConnectionMemoryGraphBindError,
     BluetoothPeripheralConnectionMemoryGraphBindFailure,
+    BluetoothPeripheralConnectionMemoryGraphCompletionObservation,
+    BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
     BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
@@ -188,6 +190,7 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionMemoryGraphRxPublished,
     BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
     BluetoothPeripheralConnectionMemoryGraphStorage, BluetoothPeripheralConnectionReceiveWait,
+    BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
     BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;

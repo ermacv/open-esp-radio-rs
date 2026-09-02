@@ -5241,6 +5241,38 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         run
     }
 
+    /// Perform one fresh fenced completion-list transfer for a connection event.
+    pub fn observe_peripheral_connection_completion(
+        &mut self,
+        running: crate::BluetoothPeripheralConnectionSchedulerRunning,
+        wake: crate::BluetoothSchedulerWakeBatch,
+    ) -> crate::BluetoothPeripheralConnectionSchedulerCompletionStep {
+        self.runtime
+            .observe_peripheral_connection_completion(running, wake)
+    }
+
+    /// Continue one retained finished-list capture while the connection runs.
+    pub fn continue_peripheral_connection_running_finished_list_drain(
+        &mut self,
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
+            crate::BluetoothPeripheralConnectionSchedulerRunning,
+        >,
+    ) -> crate::BluetoothPeripheralConnectionSchedulerRunningDrainStep {
+        self.runtime
+            .continue_peripheral_connection_running_finished_list_drain(pending)
+    }
+
+    /// Continue one retained capture after connection completion was observed.
+    pub fn continue_peripheral_connection_completed_finished_list_drain(
+        &mut self,
+        pending: crate::BluetoothSchedulerFinishedListDrainPending<
+            crate::BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ) -> crate::BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep {
+        self.runtime
+            .continue_peripheral_connection_completed_finished_list_drain(pending)
+    }
+
     /// Perform one fresh fenced completion-list transfer for advertising.
     pub fn observe_legacy_advertising_completion<'a>(
         &mut self,

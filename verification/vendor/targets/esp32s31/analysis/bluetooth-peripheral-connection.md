@@ -214,7 +214,11 @@ scheduler HEAD, prepares dynamic interrupts and consumes the matching RUN
 proof into hardware-owned connection state. No raw selector, address or
 register image crosses the memory/HAL boundary. There is deliberately no
 software rollback after selector-two or HEAD becomes hardware-visible;
-completion and post-unlink ownership must recover that same affine graph.
+completion now consumes the affine fenced list-zero observation and classifies
+only in-flight, zero and opaque-nonzero status. It keeps the graph, RX
+publication, portable event and timeline reservation hardware-owned. The
+remaining post-unlink path must recover that same affine graph before any SRAM
+mutation or protocol-state advancement.
 
 Production retention now treats that graph and pool as one reusable affine
 allocation. Cold start binds the physical default transmit-power policy once,
@@ -256,15 +260,16 @@ remaining path to one real peripheral event is:
 1. attach the now-static shared RX pool to the response-capable
    connectable-advertising graph, then transfer the pool and accepted packet to
    the existing task-service normalizer;
-2. extend the existing completion and post-unlink ownership pipeline to the
-   connection item and return the detached item to its private free list;
+2. extend the existing hardware-head retirement and post-unlink ownership
+   pipeline to the completed connection item, then return the detached item to
+   its private free list;
 3. add recurrence from the completed event's negotiated interval and next data
    channel through the same typed publication path;
 4. add SN/NESN, retransmission and supervision before exposing ACL success;
 5. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
-The completion and next-anchor functions are now the shortest evidence roots.
-They do not block the already source-ordered preparation and publication
-prefix, but they do block recovery and recurrence of the first hardware-owned
-event.
+The recycle-scheduler-item and next-anchor functions are now the shortest
+evidence roots. They do not block the already source-ordered preparation,
+publication and fenced completion prefix, but they do block recovery and
+recurrence of the first hardware-owned event.

@@ -20,6 +20,8 @@ use crate::peripheral_connection::{
 };
 #[cfg(target_arch = "riscv32")]
 use crate::peripheral_connection::{
+    BluetoothPeripheralConnectionFirstEventCompletionObservation,
+    BluetoothPeripheralConnectionFirstEventCompletionObserved,
     BluetoothPeripheralConnectionFirstEventRunning,
     BluetoothPeripheralConnectionFirstEventRxPublished,
 };
@@ -68,6 +70,7 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPassiveScanMemoryGraphRecycled, BluetoothPassiveScanMemoryGraphRunning,
     BluetoothPassiveScanReceivedBatch, BluetoothPassiveScanRxError,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
+    BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -574,6 +577,38 @@ impl BluetoothPeripheralConnectionSchedulerRunning {
     }
 
     /// Common-timeline reservation retained until completion or teardown.
+    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.reservation.window()
+    }
+}
+
+/// First peripheral connection event after a fenced non-sentinel status read.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed connection graph must advance through unlink and recycle"]
+pub struct BluetoothPeripheralConnectionSchedulerCompletionObserved {
+    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerCompletionObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.event.status()
+    }
+
     pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
         self.reservation.window()
     }
@@ -2001,6 +2036,82 @@ impl<Owner> BluetoothSchedulerFinishedListDrainState<Owner> {
             Self::Drained(owner)
         }
     }
+}
+
+/// One bounded Controller-owned connection completion attempt.
+#[must_use = "the connection graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerCompletionStep {
+    DrainAlreadyActive(BluetoothPeripheralConnectionSchedulerRunning),
+    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerRunning),
+    NoFinishedList(BluetoothPeripheralConnectionSchedulerRunning),
+    UnrelatedList {
+        drain:
+            BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(
+        BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+}
+
+/// One bounded continuation of a captured finished-list set while the
+/// connection item is still running.
+#[must_use = "the connection graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerRunningDrainStep {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    DrainLost(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    UnrelatedList {
+        drain:
+            BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(
+        BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+}
+
+/// One bounded continuation after list zero already completed the connection item.
+#[must_use = "the completed connection graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+    DrainLost(
+        BluetoothSchedulerFinishedListDrainPending<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    RepeatedConnectionList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
 }
 
 /// One bounded Controller-owned advertising completion attempt.
@@ -5230,6 +5341,209 @@ impl<const SCHEDULER_CAPACITY: usize>
         BluetoothPassiveScanSchedulerRecycleStep::Recycled(BluetoothPassiveScanSchedulerRecycled {
             graph,
         })
+    }
+
+    /// Perform one fresh, bounded first-connection completion observation.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_peripheral_connection_completion(
+        &mut self,
+        running: BluetoothPeripheralConnectionSchedulerRunning,
+        wake: BluetoothSchedulerWakeBatch,
+    ) -> BluetoothPeripheralConnectionSchedulerCompletionStep {
+        let address = running.scheduler_item_address();
+        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothPeripheralConnectionSchedulerCompletionStep::SchedulerIdentityMismatch(
+                running,
+            );
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPeripheralConnectionSchedulerCompletionStep::DrainAlreadyActive(
+                running,
+            );
+        }
+
+        if self
+            .task
+            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake)
+            .is_err()
+        {
+            return BluetoothPeripheralConnectionSchedulerCompletionStep::DrainAlreadyActive(
+                running,
+            );
+        }
+        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
+            return BluetoothPeripheralConnectionSchedulerCompletionStep::NoFinishedList(running);
+        };
+
+        let BluetoothPeripheralConnectionSchedulerRunning {
+            event,
+            run,
+            reservation,
+        } = running;
+        match event.observe_completion(observed) {
+            BluetoothPeripheralConnectionFirstEventCompletionObservation::ListMismatch {
+                running: event,
+                observed,
+            } => BluetoothPeripheralConnectionSchedulerCompletionStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothPeripheralConnectionSchedulerRunning {
+                        event,
+                        run,
+                        reservation,
+                    },
+                    more,
+                ),
+                observed,
+            },
+            BluetoothPeripheralConnectionFirstEventCompletionObservation::StillInFlight(event) => {
+                BluetoothPeripheralConnectionSchedulerCompletionStep::StillInFlight(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPeripheralConnectionSchedulerRunning {
+                            event,
+                            run,
+                            reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+            BluetoothPeripheralConnectionFirstEventCompletionObservation::CompletionObserved(
+                event,
+            ) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothPeripheralConnectionSchedulerCompletionStep::CompletionObserved(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPeripheralConnectionSchedulerCompletionObserved {
+                            event,
+                            run,
+                            reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue the same captured finished-list set while the connection is running.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_peripheral_connection_running_finished_list_drain(
+        &mut self,
+        pending: BluetoothSchedulerFinishedListDrainPending<
+            BluetoothPeripheralConnectionSchedulerRunning,
+        >,
+    ) -> BluetoothPeripheralConnectionSchedulerRunningDrainStep {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothPeripheralConnectionSchedulerRunningDrainStep::SchedulerIdentityMismatch(
+                pending,
+            );
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPeripheralConnectionSchedulerRunningDrainStep::DrainLost(pending);
+        }
+        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
+            return BluetoothPeripheralConnectionSchedulerRunningDrainStep::DrainLost(pending);
+        };
+        let BluetoothPeripheralConnectionSchedulerRunning {
+            event,
+            run,
+            reservation,
+        } = pending.into_owner();
+        match event.observe_completion(observed) {
+            BluetoothPeripheralConnectionFirstEventCompletionObservation::ListMismatch {
+                running: event,
+                observed,
+            } => BluetoothPeripheralConnectionSchedulerRunningDrainStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothPeripheralConnectionSchedulerRunning {
+                        event,
+                        run,
+                        reservation,
+                    },
+                    more,
+                ),
+                observed,
+            },
+            BluetoothPeripheralConnectionFirstEventCompletionObservation::StillInFlight(event) => {
+                BluetoothPeripheralConnectionSchedulerRunningDrainStep::StillInFlight(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPeripheralConnectionSchedulerRunning {
+                            event,
+                            run,
+                            reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+            BluetoothPeripheralConnectionFirstEventCompletionObservation::CompletionObserved(
+                event,
+            ) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothPeripheralConnectionSchedulerRunningDrainStep::CompletionObserved(
+                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothPeripheralConnectionSchedulerCompletionObserved {
+                            event,
+                            run,
+                            reservation,
+                        },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue one captured set after list zero completed the connection item.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_peripheral_connection_completed_finished_list_drain(
+        &mut self,
+        pending: BluetoothSchedulerFinishedListDrainPending<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ) -> BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_completion_observed_first_item(address)
+        {
+            return BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
+                pending,
+            );
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::DrainLost(
+                pending,
+            );
+        }
+        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
+            return BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::DrainLost(
+                pending,
+            );
+        };
+        let completed = pending.into_owner();
+        if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
+            BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::RepeatedConnectionList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
+                observed,
+            }
+        } else {
+            BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::UnrelatedList {
+                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
+                observed,
+            }
+        }
     }
 
     /// Perform one fresh, bounded DTM completion observation.

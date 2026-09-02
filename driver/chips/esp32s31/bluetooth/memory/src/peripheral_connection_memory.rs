@@ -10,12 +10,13 @@
 
 #![forbid(unsafe_code)]
 
-use core::{marker::PhantomPinned, pin::Pin};
+use core::{marker::PhantomPinned, num::NonZeroU32, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothMemoryListSelector, BluetoothRxMemoryListPublished,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareRunCommandPublished,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -509,6 +510,25 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
 
     fn restore_cpu_owned_status(&self) {
         self.words[SCHEDULER_ITEM_STATUS].set(0);
+    }
+
+    fn completion_status(
+        &self,
+    ) -> Option<BluetoothPeripheralConnectionSchedulerItemCompletionStatus> {
+        match self.words[SCHEDULER_ITEM_STATUS].get() {
+            u32::MAX => None,
+            0 => Some(BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero),
+            status => Some(
+                BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero(
+                    NonZeroU32::new(status).expect("a nonzero branch retains a nonzero value"),
+                ),
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    fn model_controller_status(&self, status: u32) {
+        self.words[SCHEDULER_ITEM_STATUS].set(status);
     }
 
     fn prepare_reviewed_first_event_fields(
@@ -1290,6 +1310,82 @@ impl BluetoothPeripheralConnectionMemoryGraphRunning {
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.prepared.scheduler_head()
     }
+
+    /// Consume one fresh list-zero completion report and inspect the selected item.
+    ///
+    /// The status word remains private controller SRAM. The in-flight sentinel
+    /// retains hardware ownership; any other value advances only to a fenced
+    /// completion observation and does not authorize descriptor mutation.
+    pub fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothPeripheralConnectionMemoryGraphCompletionObservation {
+        if observed.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            return BluetoothPeripheralConnectionMemoryGraphCompletionObservation::ListMismatch {
+                running: self,
+                observed,
+            };
+        }
+        let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
+        let Some(status) = self
+            .prepared
+            .prepared
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .scheduler_items[selected_index]
+            .completion_status()
+        else {
+            return BluetoothPeripheralConnectionMemoryGraphCompletionObservation::StillInFlight(
+                self,
+            );
+        };
+        BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
+            BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
+                running: self,
+                status,
+            },
+        )
+    }
+}
+
+/// Opaque interpretation of one non-sentinel connection scheduler status.
+///
+/// The numeric nonzero value is retained for diagnostics. No Link Layer
+/// meaning is assigned until the corresponding controller branch is reviewed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+    Zero,
+    NonZero(NonZeroU32),
+}
+
+/// One bounded observation of a running connection graph.
+#[must_use = "the graph and any unrelated finished-list token remain owned"]
+pub enum BluetoothPeripheralConnectionMemoryGraphCompletionObservation {
+    ListMismatch {
+        running: BluetoothPeripheralConnectionMemoryGraphRunning,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothPeripheralConnectionMemoryGraphRunning),
+    CompletionObserved(BluetoothPeripheralConnectionMemoryGraphCompletionObserved),
+}
+
+/// Hardware-owned graph after its selected item produced a non-sentinel status.
+#[must_use = "the completed connection graph must pass scheduler unlink before CPU access"]
+pub struct BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
+    running: BluetoothPeripheralConnectionMemoryGraphRunning,
+    status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.running.scheduler_item_address()
+    }
+
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.status
+    }
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphStorage {
@@ -1367,10 +1463,14 @@ impl Default for BluetoothPeripheralConnectionMemoryGraphStorage {
 
 #[cfg(test)]
 mod tests {
+    use core::num::NonZeroU32;
+
     use super::{
+        BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
         BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionMemoryGraphBindError,
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
         BluetoothPeripheralConnectionMemoryGraphStorage,
+        BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
     };
 
     fn storage() -> &'static mut BluetoothPeripheralConnectionMemoryGraphStorage {
@@ -1432,5 +1532,28 @@ mod tests {
         );
         let (storage, _) = failure.into_parts();
         assert_eq!(core::ptr::addr_of!(*storage), identity);
+    }
+
+    #[test]
+    fn scheduler_status_separates_in_flight_from_opaque_completion() {
+        let storage = BluetoothPeripheralConnectionMemoryGraphStorage::new();
+        let item =
+            &storage.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1];
+
+        item.model_controller_status(u32::MAX);
+        assert_eq!(item.completion_status(), None);
+
+        item.model_controller_status(0);
+        assert_eq!(
+            item.completion_status(),
+            Some(BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero)
+        );
+
+        let opaque = NonZeroU32::new(7).expect("the fixture status is nonzero");
+        item.model_controller_status(opaque.get());
+        assert_eq!(
+            item.completion_status(),
+            Some(BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero(opaque))
+        );
     }
 }

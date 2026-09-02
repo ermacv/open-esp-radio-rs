@@ -3,8 +3,8 @@
 //! The runtime joins a portable LL event to the recovered allocation graph,
 //! installs its reviewed Access Address and CRCInit fields and attaches one
 //! separately owned static non-scanning RX pool. It cannot publish that partial
-//! graph; raw-time projection and remaining scheduler-item semantics must be
-//! closed first.
+//! graph; the remaining link-state reset and scheduler admission must be closed
+//! first.
 
 #![forbid(unsafe_code)]
 
@@ -30,7 +30,8 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPeripheralConnectionDataChannel, BluetoothPeripheralConnectionDefaultTxPowerDbm,
     BluetoothPeripheralConnectionIntervalTicks,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
-    BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
+    BluetoothPeripheralConnectionReceiveWait, BluetoothPeripheralConnectionSchedulerPriority,
+    BluetoothPeripheralConnectionSchedulerWindow,
 };
 
 use crate::BluetoothSchedulerInstant;
@@ -39,6 +40,15 @@ use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothSchedulerRawWindow,
     BluetoothSchedulerSoftwareConfig,
 };
+
+// Source-owned S31 first-event policy. The 5,154-us LE 1M reservation is
+// retained by both current and named older S31 controller bodies. The 16-us
+// uncertainty is the open NimBLE timing guard. They are backend scheduling
+// policy, not portable Link Layer fields and not a vendor aggregate ABI.
+const LE_1M_FIRST_EVENT_RESERVATION_MICROS: u32 = 5_154;
+#[cfg(any(target_arch = "riscv32", test))]
+const LE_FIRST_EVENT_TIMING_GUARD_MICROS: u32 = 16;
+const LE_FIRST_EVENT_BOUNDARY_GUARD_MICROS: u32 = 1;
 
 /// PHY-calibrated on-air start of one received LE 1M packet.
 ///
@@ -68,19 +78,24 @@ impl BluetoothLe1MPacketStartTiming {
             .wrapping_add(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS);
         BluetoothPeripheralConnectionFirstWindow {
             anchor: packet_end.wrapping_add(timing.first_window_start_micros()),
-            end: packet_end.wrapping_add(timing.first_window_end_micros()),
+            receive_end: packet_end.wrapping_add(timing.first_window_end_micros()),
+            event_end: packet_end
+                .wrapping_add(timing.first_window_end_micros())
+                .wrapping_add(LE_1M_FIRST_EVENT_RESERVATION_MICROS)
+                .wrapping_add(LE_FIRST_EVENT_BOUNDARY_GUARD_MICROS),
         }
     }
 }
 
-/// Absolute first transmit window derived from the accepted `CONNECT_IND`.
+/// Absolute first receive window and containing event reservation.
 ///
 /// The positions stay private to the S31 scheduler boundary. Portable Link
 /// Layer code owns only the relative WinOffset/WinSize semantics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct BluetoothPeripheralConnectionFirstWindow {
     anchor: BluetoothSchedulerInstant,
-    end: BluetoothSchedulerInstant,
+    receive_end: BluetoothSchedulerInstant,
+    event_end: BluetoothSchedulerInstant,
 }
 
 impl BluetoothPeripheralConnectionFirstWindow {
@@ -91,7 +106,7 @@ impl BluetoothPeripheralConnectionFirstWindow {
 
     #[cfg(test)]
     pub(crate) const fn end(self) -> BluetoothSchedulerInstant {
-        self.end
+        self.receive_end
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
@@ -107,10 +122,12 @@ impl BluetoothPeripheralConnectionFirstWindow {
         let scheduler_start = self
             .anchor
             .image()
-            .wrapping_sub(config.preparation_lead_micros());
+            .wrapping_sub(config.preparation_lead_micros())
+            .wrapping_sub(LE_FIRST_EVENT_TIMING_GUARD_MICROS)
+            .wrapping_sub(LE_FIRST_EVENT_BOUNDARY_GUARD_MICROS);
         BluetoothSchedulerRawWindow::from_projected_scheduler_window(
             epoch.raw_ticks_for_micros(scheduler_start),
-            epoch.raw_ticks_for_micros(self.end.image()),
+            epoch.raw_ticks_for_micros(self.event_end.image()),
         )
     }
 }
@@ -253,7 +270,7 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
     /// Width of the first accepted transmit window.
     pub const fn first_window_width_micros(&self) -> u32 {
         self.first_window
-            .end
+            .receive_end
             .image()
             .wrapping_sub(self.first_window.anchor.image())
     }
@@ -263,11 +280,13 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
         self.graph.receive_pool_is_initialized()
     }
 
-    /// Project the causal microsecond window into the retained Controller epoch.
+    /// Project the complete causal event reservation into the retained Controller epoch.
     ///
-    /// The common preparation lead is included before the first receive anchor;
-    /// a projection that collapses or exceeds the wrapping scheduler domain
-    /// returns this exact unchanged owner.
+    /// The common preparation lead and source-owned timing guards precede the
+    /// first receive anchor. The end includes both the accepted transmit window
+    /// and the complete LE 1M first-event budget; it is not merely the end of
+    /// the transmit window. A projection that collapses or exceeds the wrapping
+    /// scheduler domain returns this exact unchanged owner.
     #[cfg(any(target_arch = "riscv32", test))]
     #[allow(
         dead_code,
@@ -359,8 +378,10 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
     /// The resolved common-scheduler window is intentionally accepted here,
     /// rather than during candidate formation, because initial admission may
     /// displace the requested interval. The resulting memory owner still has
-    /// no publication operation: unreviewed duration/configuration fields and
-    /// hardware admission remain mandatory later transitions.
+    /// no publication operation: remaining link-state reset and hardware
+    /// admission are mandatory later transitions. The first-event receive wait
+    /// is derived here from the retained transmit window and timing guard, so no
+    /// caller can pass a descriptor duration or mode image.
     #[expect(
         clippy::result_large_err,
         reason = "the no-alloc conversion failure returns the complete affine candidate"
@@ -374,6 +395,12 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
         let Some(window) = BluetoothPeripheralConnectionSchedulerWindow::new(
             resolved_window.start(),
             resolved_window.end(),
+        ) else {
+            return Err(self);
+        };
+        let Some(receive_wait) = BluetoothPeripheralConnectionReceiveWait::new(
+            self.prepared.first_window_width_micros(),
+            LE_FIRST_EVENT_TIMING_GUARD_MICROS,
         ) else {
             return Err(self);
         };
@@ -392,6 +419,7 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
             data_channel,
             interval,
             window,
+            receive_wait,
             default_tx_power,
             priority,
         );
@@ -417,9 +445,9 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
 /// Portable first event paired with the reviewed, resolved descriptor subset.
 ///
 /// This state is deliberately CPU-owned and unpublished. It proves that the
-/// identity, RX rotation, channel, interval, power, priority and resolved
-/// window are present, but does not stand in for the remaining connection
-/// duration/configuration semantics.
+/// identity, RX rotation, channel, interval, power, priority, complete receive
+/// wait and resolved event reservation are present, but does not stand in for
+/// the remaining link-state reset or scheduler admission semantics.
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the partial connection descriptor must advance or be cancelled"]
 #[allow(
@@ -466,6 +494,10 @@ impl BluetoothPeripheralConnectionFirstEventFieldsPrepared {
 
     pub(crate) const fn resolved_window(&self) -> BluetoothSchedulerRawWindow {
         self.resolved_window
+    }
+
+    pub(crate) const fn receive_wait(&self) -> BluetoothPeripheralConnectionReceiveWait {
+        self.graph.receive_wait()
     }
 
     pub(crate) fn cancel(
@@ -652,7 +684,12 @@ mod tests {
         assert_eq!(candidate.channel(), expected_channel);
         assert_eq!(
             candidate.requested_window().start(),
-            epoch.raw_ticks_for_micros(anchor.wrapping_sub(config.preparation_lead_micros()))
+            epoch.raw_ticks_for_micros(
+                anchor
+                    .wrapping_sub(config.preparation_lead_micros())
+                    .wrapping_sub(super::LE_FIRST_EVENT_TIMING_GUARD_MICROS)
+                    .wrapping_sub(super::LE_FIRST_EVENT_BOUNDARY_GUARD_MICROS)
+            )
         );
         assert_eq!(
             candidate.requested_window().end(),
@@ -660,6 +697,8 @@ mod tests {
                 packet_start_micros
                     .wrapping_add(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS)
                     .wrapping_add(request.timing().first_window_end_micros())
+                    .wrapping_add(super::LE_1M_FIRST_EVENT_RESERVATION_MICROS)
+                    .wrapping_add(super::LE_FIRST_EVENT_BOUNDARY_GUARD_MICROS)
             )
         );
 
@@ -711,6 +750,17 @@ mod tests {
         assert_eq!(prepared.priority(), priority);
         assert_eq!(prepared.requested_window(), requested);
         assert_eq!(prepared.resolved_window(), resolved);
+        assert_eq!(
+            prepared.receive_wait().transmit_window_micros(),
+            request
+                .timing()
+                .first_window_end_micros()
+                .wrapping_sub(request.timing().first_window_start_micros())
+        );
+        assert_eq!(
+            prepared.receive_wait().timing_guard_micros(),
+            super::LE_FIRST_EVENT_TIMING_GUARD_MICROS
+        );
         assert_eq!(
             prepared.interval(),
             BluetoothPeripheralConnectionIntervalTicks::new(

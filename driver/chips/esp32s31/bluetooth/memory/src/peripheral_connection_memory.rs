@@ -5,7 +5,7 @@
 //! the connection link state and the initially empty transmit queue sentinel.
 //! A separately owned static non-scanning RX pool can be attached for an exact
 //! event and recovered on cancellation. Event preparation still deliberately
-//! omits scheduler-item, packet-sequence and publication semantics.
+//! omits remaining link-state, packet-sequence and publication semantics.
 
 #![forbid(unsafe_code)]
 
@@ -59,6 +59,7 @@ const SCHEDULER_ITEM_CLASS: usize = 0x4c / 4;
 const SCHEDULER_ITEM_CONTEXT_STATE: usize = 1;
 const SCHEDULER_ITEM_RATE_AND_POWER: usize = 0x14 / 4;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY: usize = 0x18 / 4;
+const SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION: usize = 0x2c / 4;
 const SCHEDULER_ITEM_STATUS: usize = 0x38 / 4;
 const SCHEDULER_ITEM_START: usize = 0x44 / 4;
 const SCHEDULER_ITEM_END: usize = 0x48 / 4;
@@ -69,6 +70,7 @@ const SCHEDULER_ITEM_CONNECTION_CLASS: u32 = 3 << 8;
 const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
 const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK: u32 = 0x0000_7fff;
+const SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE: u32 = 0x000f_0000;
 
 const TX_SENTINEL_STATE: usize = 0x0c / 4;
 const TX_SENTINEL_CLASS: usize = 0x10 / 4;
@@ -279,6 +281,61 @@ impl BluetoothPeripheralConnectionSchedulerWindow {
     }
 }
 
+/// Bounded first-event receive wait expressed only in physical time.
+///
+/// The controller-memory codec owns the positional duration/mode encoding.
+/// Callers provide the accepted transmit-window width and the symmetric timing
+/// uncertainty which surrounds it; they cannot construct a descriptor word.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionReceiveWait {
+    transmit_window_micros: u32,
+    timing_guard_micros: u32,
+    total_micros: u16,
+}
+
+impl BluetoothPeripheralConnectionReceiveWait {
+    /// Form the complete first-event receive wait.
+    ///
+    /// The extra 61 microseconds are a fixed S31 PHY allowance recovered from
+    /// the complete connection-event builder. This constructor admits only the
+    /// short hardware form used by every valid legacy first transmit window.
+    pub const fn new(transmit_window_micros: u32, timing_guard_micros: u32) -> Option<Self> {
+        let Some(double_guard) = timing_guard_micros.checked_mul(2) else {
+            return None;
+        };
+        let Some(guarded_window_micros) = transmit_window_micros.checked_add(double_guard) else {
+            return None;
+        };
+        let Some(total_micros) = guarded_window_micros.checked_add(61) else {
+            return None;
+        };
+        if transmit_window_micros == 0 || total_micros > 0xfffe {
+            return None;
+        }
+        Some(Self {
+            transmit_window_micros,
+            timing_guard_micros,
+            total_micros: total_micros as u16,
+        })
+    }
+
+    pub const fn transmit_window_micros(self) -> u32 {
+        self.transmit_window_micros
+    }
+
+    pub const fn timing_guard_micros(self) -> u32 {
+        self.timing_guard_micros
+    }
+
+    pub const fn total_micros(self) -> u32 {
+        self.total_micros as u32
+    }
+
+    const fn descriptor_image(self) -> u32 {
+        SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE | self.total_micros as u32
+    }
+}
+
 /// Physical default transmit-power request for the first connection profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPeripheralConnectionDefaultTxPowerDbm(i8);
@@ -359,6 +416,7 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
         rounded_power: u32,
         channel: BluetoothPeripheralConnectionDataChannel,
         window: BluetoothPeripheralConnectionSchedulerWindow,
+        receive_wait: BluetoothPeripheralConnectionReceiveWait,
         priority: BluetoothPeripheralConnectionSchedulerPriority,
     ) {
         self.words[SCHEDULER_ITEM_CONTEXT_STATE]
@@ -375,6 +433,7 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
                 | priority
                 | (priority << 4),
         );
+        self.words[SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION].set(receive_wait.descriptor_image());
         self.words[SCHEDULER_ITEM_STATUS].set(0);
         self.words[SCHEDULER_ITEM_START].set(window.start());
         self.words[SCHEDULER_ITEM_END].set(window.end());
@@ -730,13 +789,14 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
 
     /// Install only the complete first-event fields whose transforms are reviewed.
     ///
-    /// This is not a publishable descriptor: connection duration/configuration
-    /// fields and scheduler admission remain outside this state.
+    /// This is not a publishable descriptor: remaining link-state fields and
+    /// scheduler admission remain outside this state.
     pub fn prepare_reviewed_first_event_fields(
         self,
         channel: BluetoothPeripheralConnectionDataChannel,
         interval: BluetoothPeripheralConnectionIntervalTicks,
         window: BluetoothPeripheralConnectionSchedulerWindow,
+        receive_wait: BluetoothPeripheralConnectionReceiveWait,
         default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
         priority: BluetoothPeripheralConnectionSchedulerPriority,
     ) -> BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
@@ -749,6 +809,7 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
             graph.link_state.rounded_power(),
             channel,
             window,
+            receive_wait,
             priority,
         );
         BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
@@ -758,6 +819,7 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
             channel,
             interval,
             window,
+            receive_wait,
             default_tx_power,
             priority,
         }
@@ -794,6 +856,7 @@ pub struct BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
     channel: BluetoothPeripheralConnectionDataChannel,
     interval: BluetoothPeripheralConnectionIntervalTicks,
     window: BluetoothPeripheralConnectionSchedulerWindow,
+    receive_wait: BluetoothPeripheralConnectionReceiveWait,
     default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
     priority: BluetoothPeripheralConnectionSchedulerPriority,
 }
@@ -809,6 +872,10 @@ impl BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
 
     pub const fn window(&self) -> BluetoothPeripheralConnectionSchedulerWindow {
         self.window
+    }
+
+    pub const fn receive_wait(&self) -> BluetoothPeripheralConnectionReceiveWait {
+        self.receive_wait
     }
 
     pub const fn default_tx_power(&self) -> BluetoothPeripheralConnectionDefaultTxPowerDbm {

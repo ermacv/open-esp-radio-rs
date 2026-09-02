@@ -170,7 +170,7 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
     BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
     BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
-    BluetoothPeripheralConnectionMemoryGraphStorage,
+    BluetoothPeripheralConnectionMemoryGraphStorage, BluetoothPeripheralConnectionReceiveWait,
     BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;

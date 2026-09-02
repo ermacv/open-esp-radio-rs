@@ -123,6 +123,7 @@ semantic values and performs these positional transforms privately:
 | scheduler item `+0x04` | ready state | sets the reviewed context-ready flag |
 | scheduler item `+0x14` | LE 1M plus rounded TX power | selects the LE 1M rate lanes and copies the rounded-power projection |
 | scheduler item `+0x18` | data-channel index plus bounded priority | maps data channels 0--36 to the S31 frequency image and copies the four-bit priority into both lanes |
+| scheduler item `+0x2c`, `+0x2e` | first transmit-window width plus a symmetric timing guard | stores the short receive-wait duration and its fixed mode; the descriptor image remains private to the memory codec |
 | scheduler item `+0x38` | new event | clears the initial status |
 | scheduler item `+0x44`, `+0x48` | resolved common-scheduler window | stores the accepted start and end only after overlap resolution |
 | scheduler item `+0x4c` | new event | clears the reviewed low bookkeeping byte |
@@ -134,11 +135,31 @@ and a non-empty wrapping window are the only inputs visible above the memory
 crate. Masks, shifts, rounded-power values and SRAM offsets do not leave that
 codec.
 
-This transition remains deliberately partial. The scheduler-item
-duration/configuration fields around `+0x2c`/`+0x2e`, the remaining link-state
-reset fields and the exact first-event task admission/publication edge are not
-yet proven as one complete runnable contract. In particular, the descriptor
-uses the common scheduler's resolved window rather than the requested window:
+The current and named older S31 `ble_ll_conn_created` bodies additionally prove
+that the first scheduler reservation does not end at the upper edge of the
+transmit window. For LE 1M it retains another 5,154 microseconds of event time
+and a one-unit boundary guard. The source-owned backend now preserves that
+complete reservation and begins it before the receive anchor by the common
+preparation lead plus the open NimBLE 16-microsecond uncertainty guard and one
+boundary unit. The portable LL still owns only WinOffset and WinSize.
+
+This also agrees with the architectural split in
+[public Espressif NimBLE](https://github.com/espressif/esp-nimble/blob/916be244a9c646bc16fd65507478cf3fe717d8ed/nimble/controller/src/ble_ll_conn.c#L2868-L2873):
+its first peripheral event separately retains `periph_cur_tx_win_usecs` and a
+connection-event deadline based on `BLE_LL_CONN_INIT_SLOTS`. The open source is
+used to identify the two scheduling concepts, not to import its NPL scheduler
+or make the vendor's connection aggregate an ABI.
+
+The complete `ble_lll_conn_peripheral_new` body derives its receive-wait value
+as `WinSize * 1.25 ms + 2 * timing_guard + 61 us`. Every valid legacy
+transmit window fits its short descriptor form, whose encoding is now private
+to `BluetoothPeripheralConnectionReceiveWait`. No upper layer accepts the
+duration/configuration word.
+
+This transition remains deliberately partial. The remaining link-state reset
+fields and the exact first-event task admission/publication edge are not yet
+proven as one complete runnable contract. In particular, the descriptor uses
+the common scheduler's resolved window rather than the requested window:
 overlap insertion is allowed to displace the initial candidate.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
@@ -180,9 +201,9 @@ The shortest remaining path to one real peripheral event is:
 1. attach the now-static shared RX pool and selector-two RX publication to the
    response-capable connectable-advertising graph, then transfer the pool and
    accepted packet to the existing task-service normalizer;
-2. resolve the scheduler-item duration/configuration formula and remaining
-   mandatory link-state reset fields inside the private memory codec;
-3. consume the existing raw candidate through common task-side admission and
+2. resolve the remaining mandatory link-state reset fields inside the private
+   memory codec;
+3. consume the complete raw reservation through common task-side admission and
    only then lower the resolved window into the descriptor;
 4. join the complete graph to publication, completion and post-unlink owners;
 5. add SN/NESN, retransmission and supervision before exposing ACL success;

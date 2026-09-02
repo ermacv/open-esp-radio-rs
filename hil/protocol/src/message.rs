@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 77;
+pub const PROTOCOL_VERSION: u16 = 78;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -2176,7 +2176,6 @@ pub struct WifiEgressVifEvidence {
     pub grants_issued: u32,
     pub issued_frame_credits: u32,
     pub issued_modeled_airtime_100ns: u32,
-    pub grants_started: u32,
     pub grants_finished: u32,
     pub used_frames: u32,
     pub used_modeled_airtime_100ns: u32,
@@ -2188,7 +2187,6 @@ pub struct WifiEgressVifEvidence {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiEgressPolicyEvidence {
     pub grants_issued: u32,
-    pub grants_started: u32,
     pub grants_finished: u32,
     pub grants_used: u32,
     pub grants_unused: u32,

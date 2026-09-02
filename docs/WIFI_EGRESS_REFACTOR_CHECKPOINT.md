@@ -1325,13 +1325,15 @@ mirror remained exact, proving the runtime switch isolates the new boundary.
 
 The portable policy kernel and cross-core transport now exercise the first
 host- and HIL-verified grant lifecycle in shadow. A valid selection becomes one
-copyable, serial-bound burst grant. Issuance charges no airtime. The first
-successful final-SRAM admission starts the grant and creates the affine
-pending-airtime receipt; the grant remains the sole physical preparation
-horizon until Core1 closes it once.
-An unused grant becomes stale after `Inactive` or a VIF epoch reset, while a
-started grant and its receipt survive those transitions until terminal radio
-reconciliation.
+copyable, serial-bound burst grant plus one affine Core0 admission receipt.
+Issuance reserves pending airtime before the grant crosses cores: from that
+boundary onward the work is already below the radio scheduler even if Core1
+has not materialized the final SRAM prefix. The grant remains the sole physical
+preparation horizon until Core1 closes it once. An unused close cancels the
+reservation and restores the charged deficit. An issued grant and its receipt
+survive `Inactive` or a VIF epoch reset until that exact close. The current
+shadow reconciles the receipt there; production authority must retain it to
+later terminal radio reconciliation.
 
 Grant close carries `used_frames` plus the exact remaining demand level from
 Core1. Core0 must not derive that value by subtracting from its earlier demand
@@ -1344,9 +1346,9 @@ receipt tombstones and post-materialization demand installation.
 
 The adapter now also has the non-authoritative transport primitive required
 by that model. Core0-to-Core1 grants use a two-entry affine SPSC queue per
-logical interface. Core1-to-Core0 demand and `Started`/`Finished` grant
-records share the existing bounded ordered queue rather than racing through
-independent channels. A full grant queue retains the rejected value at Core0;
+logical interface. Core1-to-Core0 demand and exact `Finished` grant records
+share the existing bounded ordered queue rather than racing through independent
+channels. A full grant queue retains the rejected value at Core0;
 when Core1 returns capacity it level-latches a Core0 retry. A grant publication
 wakes the permanent network task after the value is visible. Host tests prove
 the ordered record sequence and the full/return/retry edge. No production
@@ -1367,11 +1369,11 @@ composition does not select it.
 
 The pinned adapter now consumes the Core0-to-Core1 grant transport when the
 same-ELF egress-control switch is enabled and advertises only `Shadow`. It
-retains the affine grant next to the permanent Core1 device. A matching
-`TxToken` records the first `Started` edge after the final SRAM buffer is
-written and before its index is published to Core0. Xarxa's terminal callback
-then publishes `Finished`; a dropped, unused token cannot create `Started`.
-Full progress publication is retained for retry and has a distinct
+retains the affine grant next to the permanent Core1 device. Xarxa owns the
+exact spent-credit count, and its terminal callback publishes the sole
+`Finished` record. Final packet materialization no longer inspects or mutates
+grant state and does not publish a separate cross-core record. Full progress
+publication is retained for retry and has a distinct
 `grant_progress_full` counter. Until HIL proves both demand and progress-full
 counters remain zero, the shared-stream ordering under a prolonged stalled
 Core0 is a shadow validity gate rather than production authority.
@@ -1381,14 +1383,15 @@ After one bounded Core0 demand/progress service turn, the physical radio
 policy revalidates role facts, selects one demand and sends a frame/airtime
 quantum to Core1. A full grant ring does not reselect: the exact affine value
 is retried. Xarxa consumes matching credits locally and the pinned adapter
-reports `Started` only after final SRAM materialization and before physical
-publication. Exact `Finished { used_frames, remaining }` then closes the
-quantum on Core0. Selection therefore precedes stack materialization; the
+reports exact `Finished { used_frames, remaining }` after the stack stops
+spending the quantum. Core0 had already reserved the bounded airtime at issue,
+so no packet-frequency start handshake is needed. Selection therefore
+precedes stack materialization; the
 removed post-factum recommendation path can no longer be mistaken for a
 fairness mechanism.
 
 The telemetry schema was cut over with the implementation. It now reports
-`grants_issued`, `grants_started`, `grants_finished`, used/unused grants and
+`grants_issued`, `grants_finished`, used/unused grants and
 progress-without-grant. The obsolete recommendation/actual agreement fields
 and qualification criteria were removed rather than aliased. Host tests cover
 transport retry, stale serial rejection, unused close after epoch reset and a
@@ -1422,7 +1425,7 @@ do not gate real transmission. It is a correctness/readiness limitation which
 must be removed before an authoritative cutover, either by a bounded standby
 grant or an equivalent low-watermark refill protocol.
 
-Commit `90f46c88` removes two measured-but-semantically-redundant costs. Core0
+Commit `90f46c88` removed two costs from the earlier two-record lifecycle. Core0
 no longer rescans all 32 policy slots when `Finished` merely updates an active
 demand from `Some` to `Some`; a full refresh remains mandatory when the active
 topology changes. Core1 records only the first final-SRAM materialization edge
@@ -1430,7 +1433,9 @@ and stops repeating the 128-bit key comparison and a second frame counter for
 the rest of the grant. Xarxa remains the sole owner of the exact spent-credit
 count. Unit tests cover retained sole-active state and prove that two matching
 materializations still publish exactly one `Started` followed by the exact
-`Finished` record.
+`Finished` record. The later issue-time-reservation cutover below removes that
+remaining `Started` edge entirely; this paragraph records the historical A/B
+whose cost motivated the cutover, not the current protocol.
 
 The production-like STA task-residence A/B used one archived image. Source run
 `1788332253629-001c38c4` contains the exact tracked source patch later committed
@@ -1513,22 +1518,75 @@ blindly; once a grant gates selection, an unused return needs an explicit
 reason such as lifecycle invalidation, upstream withdrawal or early quantum
 return.
 
+### Issue-time airtime reservation and one-record grant lifecycle
+
+The next cutover moves AQL reservation to the actual radio scheduling
+boundary. `issue_selected` now returns a copyable burst grant plus a unique
+Core0 admission receipt and charges the complete bounded opportunity before
+the grant crosses cores. This is the point at which work moves below the
+airtime scheduler; waiting for final SRAM materialization had incorrectly made
+reservation depend on a second Core1-to-Core0 packet-path edge. Core1 now
+publishes only `Finished { used_frames, remaining }`. A zero-use close cancels
+the issued reservation and restores its deficit, while the current shadow
+reconciles a used close against the complete modeled opportunity. The receipt
+and its queue tombstone survive VIF reset or demand withdrawal until that
+close.
+
+Paired STA+AP run `1788336965163-001caa78` passed all three repetitions after
+this protocol cutover. Both 32.5 Mbit/s offered flows delivered without a
+missing, reordered or duplicate datagram. Rejected demand updates, rejected
+grant progress and progress without a live grant remained zero. Every snapshot
+had at most the one deliberately bounded open grant; per-VIF unused fractions
+remained below the existing two-percent shadow gate. The sealed report bundle
+and all 15 attachments pass `cargo hil report verify`.
+
+The production-like AP same-ELF A/B/A then used enabled source run
+`1788337311943-001cb95b`, disabled replay `1788337557776-001cd87e` and enabled
+replay `1788337673476-001cd9ea`. All three use application SHA-256
+`460c298dd13cd0f69add088fb54023346f67e5568be189629af4b4dd40437039`,
+runtime ELF SHA-256
+`6b0104af47fec6c7336cb6b5aebbc490ecd1a52d784ae00f01d69d69e040d7f0`
+and build ID
+`8ac85d1d138d3d330e6b59308f1d48fe447065792f00ba713635dac3bae5624d`.
+The enabled mean contains all four bracketing cycles; the disabled result
+contains both middle cycles.
+
+| Metric | shadow enabled A/A mean | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host throughput | 119.391 Mbit/s | 119.840 Mbit/s | -0.375% |
+| Core0 radio task residence | 40.619% | 39.991% | +0.627 pp |
+| Core1 `network + udp_tx` task residence | 87.014% | 86.252% | +0.762 pp |
+
+The new lifecycle passes the one-percent throughput and one-percentage-point
+per-core control-cost gates for AP. Compared with the preceding two-record AP
+A/B, throughput regression falls from 1.049% to 0.375% and Core0 overhead from
+0.866 to 0.627 percentage points. The Core1 delta remains below its gate but is
+not treated as free capacity: absolute diagnostic task residence is high and
+must not grow during authoritative cutover. Task residence includes time while
+a task is preempted and is not CPU retired-instruction utilization.
+
+These results prove the cost and lifecycle properties of one observational
+grant horizon. They do not prove terminal AQL accounting: the current adapter
+still reconciles a used receipt with its full modeled opportunity at Core1
+grant close, before BA/retry terminal feedback and without scaling partial
+use. Nor do they prove airtime fairness, because `StackSelected` remains the
+packet-order authority. Those limitations are the next ownership boundary,
+not reasons to reintroduce `Started`.
+
 This remains a non-authoritative scheduling shadow. `transmit_for` and the
 existing stack choice still determine SRAM admission and packet order. The
 current shadow also returns modeled pending airtime when Core1 finishes
-materializing the grant, not at terminal BA/retry completion; that is adequate
+spending the grant, not at terminal BA/retry completion; that is adequate
 for lifecycle/cost validation but not yet AQL authority. The immediate next
 gates are therefore:
 
-- reduce the remaining AP control-path throughput regression and repeat its
-  exact-ELF A/B/A until throughput and both-core deltas all pass;
 - add a non-intrusive simultaneous STA+AP same-ELF cost comparison; the coarse
   paired run proves correspondence but not acceptable total work;
 - prove bootstrap, sparse dispatch and saturated progress with zero demand,
   grant and progress queue overflow;
 - measure throughput plus Core0, Core1 and total normalized work per used
   grant and per datagram;
-- bind a started grant's admission receipt to terminal radio completion and
+- bind an issued grant's admission receipt to terminal radio completion and
   reconcile actual modeled aggregate/retry cost;
 - only then enable authoritative `KeyDeferred` behavior and remove shadow
   mode after its rollback gate has passed.
@@ -1584,14 +1642,13 @@ Performance gates:
   scheduler regression;
 - no authoritative fairness claim from throughput alone.
 
-The selection-before-materialization shadow, standalone STA cost gate and
-paired STA+AP correspondence gate are complete. The next gate is not an
-immediate authoritative cutover. AP must first pass its strict throughput
-gate, and simultaneous STA+AP still needs a non-intrusive both-core cost A/B.
-Sparse progress and zero transport overflow also remain required. The
-one-live-grant stop-and-wait gap must then become a bounded current/standby or
-low-watermark pipeline, and a started admission receipt must reconcile the
-exact VIF/schedule-epoch/peer-generation/TID transaction through retry and
-terminal release. Multi-peer fairness, power-save, aggregate depth and service-gap
-evidence follow with the fixed SRAM pool. No packet-frequency request/reply
-API may be reintroduced.
+The selection-before-materialization shadow, standalone STA and AP cost gates,
+and paired STA+AP correspondence gate are complete. The next gate is not an
+immediate authoritative cutover: simultaneous STA+AP still needs a
+non-intrusive both-core cost A/B, and sparse progress and zero transport
+overflow remain required. The one-live-grant stop-and-wait gap must then become
+a bounded current/standby or low-watermark pipeline, and an issued admission
+receipt must reconcile the exact VIF/schedule-epoch/peer-generation/TID
+transaction through retry and terminal release. Multi-peer fairness,
+power-save, aggregate depth and service-gap evidence follow with the fixed SRAM
+pool. No packet-frequency request/reply API may be reintroduced.

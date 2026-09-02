@@ -1285,7 +1285,6 @@ mod tests {
             grants_issued: u32::MAX,
             issued_frame_credits: u32::MAX,
             issued_modeled_airtime_100ns: u32::MAX,
-            grants_started: u32::MAX,
             grants_finished: u32::MAX,
             used_frames: u32::MAX,
             used_modeled_airtime_100ns: u32::MAX,
@@ -1298,7 +1297,6 @@ mod tests {
             2,
             Event::Evidence(EvidenceRecord::WifiEgressPolicy(WifiEgressPolicyEvidence {
                 grants_issued: u32::MAX,
-                grants_started: u32::MAX,
                 grants_finished: u32::MAX,
                 grants_used: u32::MAX,
                 grants_unused: u32::MAX,

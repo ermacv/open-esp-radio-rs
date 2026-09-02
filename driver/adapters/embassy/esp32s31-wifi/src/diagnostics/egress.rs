@@ -16,7 +16,6 @@ pub struct EgressPolicyVifShadowSnapshot {
     pub grants_issued: u32,
     pub issued_frame_credits: u32,
     pub issued_modeled_airtime_100ns: u32,
-    pub grants_started: u32,
     pub grants_finished: u32,
     pub used_frames: u32,
     pub used_modeled_airtime_100ns: u32,
@@ -33,7 +32,6 @@ impl EgressPolicyVifShadowSnapshot {
             issued_modeled_airtime_100ns: self
                 .issued_modeled_airtime_100ns
                 .wrapping_sub(earlier.issued_modeled_airtime_100ns),
-            grants_started: self.grants_started.wrapping_sub(earlier.grants_started),
             grants_finished: self.grants_finished.wrapping_sub(earlier.grants_finished),
             used_frames: self.used_frames.wrapping_sub(earlier.used_frames),
             used_modeled_airtime_100ns: self
@@ -47,7 +45,6 @@ impl EgressPolicyVifShadowSnapshot {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct EgressPolicyShadowSnapshot {
     pub grants_issued: u32,
-    pub grants_started: u32,
     pub grants_finished: u32,
     pub grants_used: u32,
     pub grants_unused: u32,
@@ -70,7 +67,6 @@ impl EgressPolicyShadowSnapshot {
     pub const fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
             grants_issued: self.grants_issued.wrapping_sub(earlier.grants_issued),
-            grants_started: self.grants_started.wrapping_sub(earlier.grants_started),
             grants_finished: self.grants_finished.wrapping_sub(earlier.grants_finished),
             grants_used: self.grants_used.wrapping_sub(earlier.grants_used),
             grants_unused: self.grants_unused.wrapping_sub(earlier.grants_unused),
@@ -106,7 +102,6 @@ struct EgressPolicyVifShadowCounters {
     grants_issued: AtomicU32,
     issued_frame_credits: AtomicU32,
     issued_modeled_airtime_100ns: AtomicU32,
-    grants_started: AtomicU32,
     grants_finished: AtomicU32,
     used_frames: AtomicU32,
     used_modeled_airtime_100ns: AtomicU32,
@@ -119,7 +114,6 @@ impl EgressPolicyVifShadowCounters {
             grants_issued: AtomicU32::new(0),
             issued_frame_credits: AtomicU32::new(0),
             issued_modeled_airtime_100ns: AtomicU32::new(0),
-            grants_started: AtomicU32::new(0),
             grants_finished: AtomicU32::new(0),
             used_frames: AtomicU32::new(0),
             used_modeled_airtime_100ns: AtomicU32::new(0),
@@ -133,10 +127,6 @@ impl EgressPolicyVifShadowCounters {
             .fetch_add(u32::from(frames), Ordering::Relaxed);
         self.issued_modeled_airtime_100ns
             .fetch_add(modeled_airtime_100ns, Ordering::Relaxed);
-    }
-
-    fn started(&self) {
-        self.grants_started.fetch_add(1, Ordering::Relaxed);
     }
 
     fn finished_used(&self, frames: u8, modeled_airtime_100ns: u32) {
@@ -157,7 +147,6 @@ impl EgressPolicyVifShadowCounters {
             grants_issued: self.grants_issued.load(Ordering::Relaxed),
             issued_frame_credits: self.issued_frame_credits.load(Ordering::Relaxed),
             issued_modeled_airtime_100ns: self.issued_modeled_airtime_100ns.load(Ordering::Relaxed),
-            grants_started: self.grants_started.load(Ordering::Relaxed),
             grants_finished: self.grants_finished.load(Ordering::Relaxed),
             used_frames: self.used_frames.load(Ordering::Relaxed),
             used_modeled_airtime_100ns: self.used_modeled_airtime_100ns.load(Ordering::Relaxed),
@@ -168,7 +157,6 @@ impl EgressPolicyVifShadowCounters {
 
 pub(crate) struct EgressPolicyShadowCounters {
     grants_issued: AtomicU32,
-    grants_started: AtomicU32,
     grants_finished: AtomicU32,
     grants_used: AtomicU32,
     grants_unused: AtomicU32,
@@ -191,7 +179,6 @@ impl EgressPolicyShadowCounters {
     const fn new() -> Self {
         Self {
             grants_issued: AtomicU32::new(0),
-            grants_started: AtomicU32::new(0),
             grants_finished: AtomicU32::new(0),
             grants_used: AtomicU32::new(0),
             grants_unused: AtomicU32::new(0),
@@ -222,13 +209,6 @@ impl EgressPolicyShadowCounters {
         self.grants_issued.fetch_add(1, Ordering::Relaxed);
         if let Some(counters) = self.vif(vif) {
             counters.issued(frames, modeled_airtime_100ns);
-        }
-    }
-
-    pub(crate) fn grant_started(&self, vif: u8) {
-        self.grants_started.fetch_add(1, Ordering::Relaxed);
-        if let Some(counters) = self.vif(vif) {
-            counters.started();
         }
     }
 
@@ -288,7 +268,6 @@ impl EgressPolicyShadowCounters {
     fn snapshot(&self) -> EgressPolicyShadowSnapshot {
         EgressPolicyShadowSnapshot {
             grants_issued: self.grants_issued.load(Ordering::Relaxed),
-            grants_started: self.grants_started.load(Ordering::Relaxed),
             grants_finished: self.grants_finished.load(Ordering::Relaxed),
             grants_used: self.grants_used.load(Ordering::Relaxed),
             grants_unused: self.grants_unused.load(Ordering::Relaxed),

@@ -641,20 +641,15 @@ fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
     assert!(radio_control.service_shadow_control_observed(|_| {}, |update| progress.push(update)));
     assert_eq!(
         progress,
-        std::vec![
-            EgressGrantProgress::Started {
-                serial: grant.serial(),
-            },
-            EgressGrantProgress::Finished {
-                serial: grant.serial(),
-                used_frames: 2,
-                remaining: None,
-            },
-        ]
+        std::vec![EgressGrantProgress::Finished {
+            serial: grant.serial(),
+            used_frames: 2,
+            remaining: None,
+        }]
     );
     assert_eq!(control.snapshot().network_grants, 1);
-    assert_eq!(control.snapshot().grant_progress_publications, 2);
-    assert_eq!(control.snapshot().radio_grant_updates, 2);
+    assert_eq!(control.snapshot().grant_progress_publications, 1);
+    assert_eq!(control.snapshot().radio_grant_updates, 1);
 }
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]

@@ -1095,9 +1095,8 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     let policy = open_esp_radio_esp32s31_embassy_wifi::egress_policy_shadow_snapshot()
         .wrapping_delta_since(earlier_policy);
     runtime_log_reliably(format_args!(
-        "ONTXES grants_issued={} grants_started={} grants_finished={} grants_used={} grants_unused={} progress_without_grant={} rejected_updates={} rejected_progress={} snapshot_queries={} snapshot_ready={} key_rejected={} identity_rejected={} traffic_class_rejected={} role_unavailable={} non_ht_rate={} no_block_ack={} invalid_geometry={}",
+        "ONTXES grants_issued={} grants_finished={} grants_used={} grants_unused={} progress_without_grant={} rejected_updates={} rejected_progress={} snapshot_queries={} snapshot_ready={} key_rejected={} identity_rejected={} traffic_class_rejected={} role_unavailable={} non_ht_rate={} no_block_ack={} invalid_geometry={}",
         policy.grants_issued,
-        policy.grants_started,
         policy.grants_finished,
         policy.grants_used,
         policy.grants_unused,
@@ -1118,12 +1117,11 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     yield_now().await;
     for (vif, vif_policy) in ["sta", "ap"].into_iter().zip(policy.vifs) {
         runtime_log_reliably(format_args!(
-            "ONTXESV vif={} grants_issued={} issued_frame_credits={} issued_airtime_100ns={} grants_started={} grants_finished={} used_frames={} used_airtime_100ns={} grants_unused={}",
+            "ONTXESV vif={} grants_issued={} issued_frame_credits={} issued_airtime_100ns={} grants_finished={} used_frames={} used_airtime_100ns={} grants_unused={}",
             vif,
             vif_policy.grants_issued,
             vif_policy.issued_frame_credits,
             vif_policy.issued_modeled_airtime_100ns,
-            vif_policy.grants_started,
             vif_policy.grants_finished,
             vif_policy.used_frames,
             vif_policy.used_modeled_airtime_100ns,
@@ -1191,7 +1189,6 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     yield_now().await;
     WifiEgressPolicyEvidence {
         grants_issued: policy.grants_issued,
-        grants_started: policy.grants_started,
         grants_finished: policy.grants_finished,
         grants_used: policy.grants_used,
         grants_unused: policy.grants_unused,
@@ -1211,7 +1208,6 @@ const fn hil_egress_vif_evidence(
         grants_issued: snapshot.grants_issued,
         issued_frame_credits: snapshot.issued_frame_credits,
         issued_modeled_airtime_100ns: snapshot.issued_modeled_airtime_100ns,
-        grants_started: snapshot.grants_started,
         grants_finished: snapshot.grants_finished,
         used_frames: snapshot.used_frames,
         used_modeled_airtime_100ns: snapshot.used_modeled_airtime_100ns,

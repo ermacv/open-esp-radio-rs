@@ -510,10 +510,6 @@ fn validate_egress_policy(
         .station
         .grants_issued
         .saturating_add(evidence.access_point.grants_issued);
-    let started = evidence
-        .station
-        .grants_started
-        .saturating_add(evidence.access_point.grants_started);
     let finished = evidence
         .station
         .grants_finished
@@ -522,10 +518,20 @@ fn validate_egress_policy(
         .station
         .grants_unused
         .saturating_add(evidence.access_point.grants_unused);
+    let used = evidence
+        .station
+        .grants_finished
+        .saturating_sub(evidence.station.grants_unused)
+        .saturating_add(
+            evidence
+                .access_point
+                .grants_finished
+                .saturating_sub(evidence.access_point.grants_unused),
+        );
     if issued != evidence.grants_issued
-        || started != evidence.grants_started
         || finished != evidence.grants_finished
         || unused != evidence.grants_unused
+        || used != evidence.grants_used
         || evidence.grants_finished
             != evidence
                 .grants_used
@@ -533,11 +539,6 @@ fn validate_egress_policy(
         // One affine grant may straddle either interval boundary. Anything
         // larger proves a lost or duplicated lifecycle transition.
         || evidence.grants_issued.abs_diff(evidence.grants_finished) > 1
-        || evidence
-            .grants_issued
-            .abs_diff(evidence.grants_started.saturating_add(evidence.grants_unused))
-            > 1
-        || evidence.grants_started.abs_diff(evidence.grants_used) > 1
         || evidence.rejected_updates != 0
         || evidence.rejected_progress != 0
     {
@@ -684,13 +685,11 @@ mod tests {
     fn exact_egress_evidence() -> open_esp_radio_hil_protocol::WifiEgressPolicyEvidence {
         let vif = open_esp_radio_hil_protocol::WifiEgressVifEvidence {
             grants_issued: 10,
-            grants_started: 10,
             grants_finished: 10,
             ..Default::default()
         };
         open_esp_radio_hil_protocol::WifiEgressPolicyEvidence {
             grants_issued: 20,
-            grants_started: 20,
             grants_finished: 20,
             grants_used: 20,
             station: vif,
@@ -732,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn paired_egress_gate_accounts_unused_grant_without_forging_a_start() {
+    fn paired_egress_gate_accounts_one_unused_grant() {
         let mut evidence = exact_egress_evidence();
         evidence.grants_issued += 1;
         evidence.grants_finished += 1;

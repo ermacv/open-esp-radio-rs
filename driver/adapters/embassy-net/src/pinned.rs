@@ -1492,17 +1492,13 @@ pub struct SplitPinnedDevice<
 /// Core1-local owner of one radio-issued observational quantum.
 ///
 /// The state remains next to the permanent device rather than in an async
-/// stack frame. The first matching token records `materialization_started`
-/// only after its final SRAM backing has been written. Xarxa owns the exact
-/// spent-credit count; this endpoint only has to publish the one-shot start
-/// edge. Full control transport retains that edge for retry, while shadow mode
-/// never turns it into admission authority.
+/// stack frame. Xarxa owns the exact spent-credit count and publishes one
+/// terminal completion. Airtime was already reserved by Core0 before the
+/// grant crossed cores, so no materialization-start record is required.
 #[cfg(feature = "tx-egress-scheduling")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PinnedEgressGrantState {
     grant: EgressBurstGrant,
-    materialization_started: bool,
-    started_published: bool,
     completion: Option<EgressGrantCompletion>,
 }
 
@@ -1511,8 +1507,6 @@ impl PinnedEgressGrantState {
     const fn new(grant: EgressBurstGrant) -> Self {
         Self {
             grant,
-            materialization_started: false,
-            started_published: false,
             completion: None,
         }
     }
@@ -1570,23 +1564,6 @@ impl<
         let Some(control) = self.egress_control.as_deref_mut() else {
             return;
         };
-
-        let pending_start = self.egress_grant.as_ref().and_then(|state| {
-            (state.materialization_started && !state.started_published).then_some(
-                EgressGrantProgress::Started {
-                    serial: state.grant.serial(),
-                },
-            )
-        });
-        if let Some(progress) = pending_start {
-            if control.try_publish_grant_progress(progress).is_err() {
-                return;
-            }
-            self.egress_grant
-                .as_mut()
-                .expect("the retained grant cannot disappear while publishing its start")
-                .started_published = true;
-        }
 
         let pending_finish = self
             .egress_grant
@@ -1765,10 +1742,6 @@ impl<
             tx_tokens_in_flight: self.tx_tokens_in_flight,
             tx_pool: self.tx_pool,
             lease: Some(lease),
-            #[cfg(feature = "tx-egress-scheduling")]
-            egress_grant: &mut self.egress_grant,
-            #[cfg(feature = "tx-egress-scheduling")]
-            egress_control: &mut self.egress_control,
             _reservation: &mut self.tx_reservation,
         }
     }
@@ -2310,11 +2283,6 @@ pub struct PinnedTransmitToken<
     tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     lease: Option<PinnedTransmitLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
-    #[cfg(feature = "tx-egress-scheduling")]
-    egress_grant: &'device mut Option<PinnedEgressGrantState>,
-    #[cfg(feature = "tx-egress-scheduling")]
-    egress_control:
-        &'device mut Option<&'resources mut DefaultEgressNetworkScheduler<'resources, M>>,
     _reservation: &'device mut (),
 }
 
@@ -2514,26 +2482,6 @@ impl<
                 (index, true, result)
             }
         };
-        #[cfg(feature = "tx-egress-scheduling")]
-        if let Some(state) = self.egress_grant.as_mut()
-            && !state.materialization_started
-            && state.completion.is_none()
-            && self
-                .metadata
-                .egress_key()
-                .is_some_and(|egress| state.grant.demand().key() == egress)
-        {
-            state.materialization_started = true;
-            if let Some(control) = self.egress_control.as_deref_mut()
-                && control
-                    .try_publish_grant_progress(EgressGrantProgress::Started {
-                        serial: state.grant.serial(),
-                    })
-                    .is_ok()
-            {
-                state.started_published = true;
-            }
-        }
         #[cfg(feature = "tx-staging-copy-probe")]
         let (ready, index) = if staged {
             self.staged_metadata[usize::from(index)].publish(self.metadata);

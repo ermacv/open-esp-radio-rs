@@ -131,9 +131,6 @@ impl EgressBurstGrant {
 /// ordinary demand transitions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EgressGrantProgress {
-    /// The first final-SRAM packet was materialized. Core0 can now charge the
-    /// complete bounded quantum before that owner becomes physically visible.
-    Started { serial: NonZeroU32 },
     /// Core1 has stopped spending the quantum. `remaining` is its exact
     /// post-materialization software-demand snapshot.
     Finished {
@@ -1417,9 +1414,6 @@ mod tests {
         let grant = grant(1, 1);
         radio.try_issue_grant(grant).unwrap();
         assert_eq!(network.try_receive_grant(&context), Some(grant));
-        let started = EgressGrantProgress::Started {
-            serial: grant.serial(),
-        };
         let finished = EgressGrantProgress::Finished {
             serial: grant.serial(),
             used_frames: 29,
@@ -1428,11 +1422,10 @@ mod tests {
                 false,
             )),
         };
-        network.try_publish_grant_progress(started).unwrap();
         network.try_publish_grant_progress(finished).unwrap();
         let mut reports = std::vec::Vec::new();
         assert!(radio.service_shadow_control_observed(|_| {}, |report| reports.push(report)));
-        assert_eq!(reports, [started, finished]);
+        assert_eq!(reports, [finished]);
         assert_eq!(radio.active_demand_count(), 1);
 
         #[cfg(feature = "tx-phase-telemetry")]
@@ -1440,8 +1433,8 @@ mod tests {
             let snapshot = control.snapshot();
             assert_eq!(snapshot.grant_publications, 1);
             assert_eq!(snapshot.network_grants, 1);
-            assert_eq!(snapshot.grant_progress_publications, 2);
-            assert_eq!(snapshot.radio_grant_updates, 2);
+            assert_eq!(snapshot.grant_progress_publications, 1);
+            assert_eq!(snapshot.radio_grant_updates, 1);
         }
     }
 
@@ -1456,8 +1449,10 @@ mod tests {
         network
             .update_egress_demand(&context, EgressDemandUpdate::Reset { schedule_epoch: 7 })
             .unwrap();
-        let progress = EgressGrantProgress::Started {
+        let progress = EgressGrantProgress::Finished {
             serial: NonZeroU32::new(1).unwrap(),
+            used_frames: 1,
+            remaining: None,
         };
 
         assert_eq!(network.try_publish_grant_progress(progress), Err(progress));

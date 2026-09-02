@@ -448,7 +448,7 @@ gaps = [
   { axis = "host", id = "virtual-clock-s31-peripheral-event-tests-missing" },
   { axis = "vendor", id = "connection-link-layer-production-contracts-missing" },
   { axis = "hil", id = "advertising-scanning-and-connection-cells-missing" },
-  { axis = "async", id = "connection-unlink-recycle-and-recurrence-runtime-missing" },
+  { axis = "async", id = "connection-recycle-and-recurrence-runtime-missing" },
 ]
 
 [[capabilities]]

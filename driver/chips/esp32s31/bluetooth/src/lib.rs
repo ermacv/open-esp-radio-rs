@@ -216,8 +216,10 @@ pub use controller_start::{
     BluetoothPeripheralConnectionControllerPreparationPending,
     BluetoothPeripheralConnectionControllerPreparationStep,
     BluetoothPeripheralConnectionControllerPreparationTerminal,
-    BluetoothPeripheralConnectionSchedulerStartFailure, BluetoothSchedulerRunInterruptStorage,
-    BluetoothSharedInterruptDispatchStorage,
+    BluetoothPeripheralConnectionPostUnlinkArmStep,
+    BluetoothPeripheralConnectionSchedulerStartFailure,
+    BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use controller_time::{
@@ -276,6 +278,8 @@ pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep,
     BluetoothLegacyAdvertisingPostUnlinkAwaiting, BluetoothLegacyAdvertisingPostUnlinkCancelStep,
     BluetoothPassiveScanPostUnlinkAwaiting, BluetoothPassiveScanPostUnlinkCancelStep,
+    BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    BluetoothPeripheralConnectionPostUnlinkCancelStep,
 };
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
@@ -562,9 +566,14 @@ pub use scheduler::{
     BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck,
     BluetoothPassiveScanSchedulerSoftwareListUnlinkStep,
     BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
+    BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
     BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
     BluetoothPeripheralConnectionSchedulerHeadPublished,
     BluetoothPeripheralConnectionSchedulerRunning,
+    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
+    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep,
+    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{

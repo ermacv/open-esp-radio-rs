@@ -632,6 +632,77 @@ impl BluetoothDtmPostUnlinkMailbox {
             }
         }
     }
+
+    pub(crate) fn take_peripheral_connection(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    ) -> BluetoothPeripheralConnectionPostUnlinkTake {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .take(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxTake::Recheck { key } => {
+                BluetoothPeripheralConnectionPostUnlinkTake::Recheck {
+                    key,
+                    unlinked: awaiting.unlinked,
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::Ready { key, event } => {
+                let _ = self.wake.close();
+                BluetoothPeripheralConnectionPostUnlinkTake::Ready {
+                    key,
+                    event: BluetoothPeripheralConnectionPostUnlinkPublishedEvent {
+                        unlinked: awaiting.unlinked,
+                        published: event,
+                    },
+                }
+            }
+            BluetoothDtmPostUnlinkMailboxTake::AffinityMismatch => {
+                BluetoothPeripheralConnectionPostUnlinkTake::AffinityMismatch(awaiting)
+            }
+        }
+    }
+
+    pub(crate) fn rearm_peripheral_connection(
+        &self,
+        critical_section: CriticalSection<'_>,
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    ) -> BluetoothPeripheralConnectionPostUnlinkRearm {
+        if self.state.borrow(critical_section).borrow_mut().rearm(key) {
+            BluetoothPeripheralConnectionPostUnlinkRearm::Armed(
+                BluetoothPeripheralConnectionPostUnlinkAwaiting { unlinked, key },
+            )
+        } else {
+            BluetoothPeripheralConnectionPostUnlinkRearm::AffinityMismatch(unlinked)
+        }
+    }
+
+    pub(crate) fn cancel_peripheral_connection(
+        &self,
+        critical_section: CriticalSection<'_>,
+        awaiting: BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    ) -> BluetoothPeripheralConnectionPostUnlinkCancelStep {
+        match self
+            .state
+            .borrow(critical_section)
+            .borrow_mut()
+            .cancel(awaiting.key)
+        {
+            BluetoothDtmPostUnlinkMailboxCancel::Cancelled => {
+                BluetoothPeripheralConnectionPostUnlinkCancelStep::Cancelled(awaiting.unlinked)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::EventReady => {
+                BluetoothPeripheralConnectionPostUnlinkCancelStep::EventReady(awaiting)
+            }
+            BluetoothDtmPostUnlinkMailboxCancel::AffinityMismatch => {
+                BluetoothPeripheralConnectionPostUnlinkCancelStep::AffinityMismatch(awaiting)
+            }
+        }
+    }
 }
 
 /// Already-unlinked DTM owner tied to one exact mailbox identity and arm generation.
@@ -844,6 +915,78 @@ pub enum BluetoothPassiveScanPostUnlinkCancelStep {
     Cancelled(crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked),
     EventReady(BluetoothPassiveScanPostUnlinkAwaiting),
     AffinityMismatch(BluetoothPassiveScanPostUnlinkAwaiting),
+}
+
+/// Already-unlinked connection owner tied to one exact mailbox generation.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the armed connection owner must consume an event or cancel"]
+pub struct BluetoothPeripheralConnectionPostUnlinkAwaiting {
+    unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    key: BluetoothDtmPostUnlinkArmKey,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionPostUnlinkAwaiting {
+    pub(crate) const fn new(
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        key: BluetoothDtmPostUnlinkArmKey,
+    ) -> Self {
+        Self { unlinked, key }
+    }
+
+    pub const fn generation(&self) -> u32 {
+        self.key.generation
+    }
+
+    pub const fn event_counter(&self) -> u16 {
+        self.unlinked.event_counter()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothPeripheralConnectionPostUnlinkPublishedEvent {
+    unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    published: BluetoothPrimaryPublishedInterruptStep,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionPostUnlinkPublishedEvent {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        BluetoothPrimaryPublishedInterruptStep,
+    ) {
+        (self.unlinked, self.published)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPeripheralConnectionPostUnlinkTake {
+    Recheck {
+        key: BluetoothDtmPostUnlinkArmKey,
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    },
+    Ready {
+        key: BluetoothDtmPostUnlinkArmKey,
+        event: BluetoothPeripheralConnectionPostUnlinkPublishedEvent,
+    },
+    AffinityMismatch(BluetoothPeripheralConnectionPostUnlinkAwaiting),
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPeripheralConnectionPostUnlinkRearm {
+    Armed(BluetoothPeripheralConnectionPostUnlinkAwaiting),
+    AffinityMismatch(crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+}
+
+/// Lossless cancellation result for a connection post-unlink wait.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "retain the unlinked connection owner or consume the ready event"]
+pub enum BluetoothPeripheralConnectionPostUnlinkCancelStep {
+    Cancelled(crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+    EventReady(BluetoothPeripheralConnectionPostUnlinkAwaiting),
+    AffinityMismatch(BluetoothPeripheralConnectionPostUnlinkAwaiting),
 }
 
 #[cfg(test)]

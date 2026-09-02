@@ -24,12 +24,18 @@ use crate::dtm_post_unlink::{
     BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkMailbox, BluetoothDtmPostUnlinkRearm,
     BluetoothDtmPostUnlinkTake, BluetoothLegacyAdvertisingPostUnlinkRearm,
     BluetoothLegacyAdvertisingPostUnlinkTake, BluetoothPassiveScanPostUnlinkRearm,
-    BluetoothPassiveScanPostUnlinkTake,
+    BluetoothPassiveScanPostUnlinkTake, BluetoothPeripheralConnectionPostUnlinkRearm,
+    BluetoothPeripheralConnectionPostUnlinkTake,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::modem_lp_timer_queue::{
     BluetoothModemLpTimerExpirationState, BluetoothModemLpTimerSoftwareState,
     BluetoothModemLpTimerSoftwareStateStep,
+};
+#[cfg(target_arch = "riscv32")]
+use crate::scheduler::{
+    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
+    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
@@ -512,6 +518,66 @@ pub enum BluetoothPassiveScanSoftwareListRemovalPublishedStep {
     },
     Ready {
         ready: crate::BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+    },
+}
+
+/// Result of atomically unlinking a connection item and arming its return mailbox.
+#[must_use = "retain the empty-head connection graph or armed owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionPostUnlinkArmStep {
+    MailboxBusy(crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
+    MailboxIdentityExhausted(
+        crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
+    ),
+    GenerationExhausted(crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
+    SchedulerIdentityMismatch(
+        crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
+    ),
+    MailboxCommitMismatch(crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+    Armed(crate::BluetoothPeripheralConnectionPostUnlinkAwaiting),
+}
+
+/// Controller result of consuming one connection post-unlink event pair.
+#[must_use = "every outcome retains the connection graph"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep {
+    MailboxAffinityMismatch(crate::BluetoothPeripheralConnectionPostUnlinkAwaiting),
+    Fault {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        fault: crate::BluetoothPrimaryControllerFault,
+    },
+    NoSchedulerWork {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PublishedPending {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    },
+    DirectPending {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    },
+    RecheckUnavailable {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    },
+    NoSchedulerWorkRearmMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PendingRearmMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    },
+    RecheckRearmMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    },
+    SchedulerIdentityMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    },
+    DirectSchedulerIdentityMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    },
+    Ready {
+        ready: crate::BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
     },
 }
 
@@ -5271,6 +5337,131 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     ) -> crate::BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep {
         self.runtime
             .continue_peripheral_connection_completed_finished_list_drain(pending)
+    }
+
+    /// Observe the post-picker hardware-head retirement barrier for a connection.
+    pub fn observe_peripheral_connection_hardware_head_retirement(
+        &mut self,
+        completed: crate::BluetoothPeripheralConnectionSchedulerCompletionObserved,
+    ) -> crate::BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep {
+        self.runtime
+            .observe_peripheral_connection_hardware_head_retirement(completed)
+    }
+
+    /// Atomically unlink the connection item and arm its post-unlink mailbox.
+    pub fn unlink_and_arm_peripheral_connection_software_list_removal(
+        &mut self,
+        observed: crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
+    ) -> BluetoothPeripheralConnectionPostUnlinkArmStep {
+        let runtime = &mut self.runtime;
+        let mailbox = self.mailbox;
+        critical_section::with(|critical_section| {
+            let key = match mailbox.prepare_arm(critical_section) {
+                Ok(key) => key,
+                Err(BluetoothDtmPostUnlinkArmError::Busy) => {
+                    return BluetoothPeripheralConnectionPostUnlinkArmStep::MailboxBusy(observed);
+                }
+                Err(BluetoothDtmPostUnlinkArmError::IdentityExhausted) => {
+                    return BluetoothPeripheralConnectionPostUnlinkArmStep::MailboxIdentityExhausted(observed);
+                }
+                Err(BluetoothDtmPostUnlinkArmError::GenerationExhausted) => {
+                    return BluetoothPeripheralConnectionPostUnlinkArmStep::GenerationExhausted(
+                        observed,
+                    );
+                }
+            };
+            match runtime.unlink_peripheral_connection_software_list(observed) {
+                crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(observed) => {
+                    BluetoothPeripheralConnectionPostUnlinkArmStep::SchedulerIdentityMismatch(observed)
+                }
+                crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep::Unlinked(unlinked) => {
+                    if mailbox.commit_arm(critical_section, key) {
+                        BluetoothPeripheralConnectionPostUnlinkArmStep::Armed(
+                            crate::BluetoothPeripheralConnectionPostUnlinkAwaiting::new(unlinked, key),
+                        )
+                    } else {
+                        BluetoothPeripheralConnectionPostUnlinkArmStep::MailboxCommitMismatch(unlinked)
+                    }
+                }
+            }
+        })
+    }
+
+    /// Consume or directly recheck one armed connection removal gate.
+    pub fn consume_peripheral_connection_software_list_removal(
+        &mut self,
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    ) -> BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let runtime = &mut self.runtime;
+        let mailbox = self.mailbox;
+        critical_section::with(|critical_section| {
+            match mailbox.take_peripheral_connection(critical_section, awaiting) {
+                BluetoothPeripheralConnectionPostUnlinkTake::Recheck { key, unlinked } => {
+                    match runtime.recheck_peripheral_connection_software_list_removal(
+                        self.storage,
+                        unlinked,
+                    ) {
+                        BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch { unlinked },
+                        BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::StorageUnavailable(unlinked) => {
+                            match mailbox.rearm_peripheral_connection(critical_section, key, unlinked) {
+                                BluetoothPeripheralConnectionPostUnlinkRearm::Armed(awaiting) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting },
+                                BluetoothPeripheralConnectionPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
+                            }
+                        }
+                        BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::Pending(unlinked) => {
+                            match mailbox.rearm_peripheral_connection(critical_section, key, unlinked) {
+                                BluetoothPeripheralConnectionPostUnlinkRearm::Armed(awaiting) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::DirectPending { awaiting },
+                                BluetoothPeripheralConnectionPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
+                            }
+                        }
+                        BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::Ready(ready) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::Ready { ready },
+                    }
+                }
+                BluetoothPeripheralConnectionPostUnlinkTake::AffinityMismatch(awaiting) => {
+                    BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(awaiting)
+                }
+                BluetoothPeripheralConnectionPostUnlinkTake::Ready { key, event } => {
+                    let (unlinked, published) = event.into_parts();
+                    match published {
+                        BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
+                            BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::Fault { unlinked, fault }
+                        }
+                        BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
+                            match mailbox.rearm_peripheral_connection(critical_section, key, unlinked) {
+                                BluetoothPeripheralConnectionPostUnlinkRearm::Armed(awaiting) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::NoSchedulerWork { awaiting, epoch },
+                                BluetoothPeripheralConnectionPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch { unlinked, epoch },
+                            }
+                        }
+                        BluetoothPrimaryPublishedInterruptStep::Scheduler { event, .. } => {
+                            match runtime.join_peripheral_connection_software_list_removal(unlinked, event) {
+                                BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch { unlinked, event } => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch { unlinked, event },
+                                BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin::Pending(unlinked) => {
+                                    match mailbox.rearm_peripheral_connection(critical_section, key, unlinked) {
+                                        BluetoothPeripheralConnectionPostUnlinkRearm::Armed(awaiting) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::PublishedPending { awaiting },
+                                        BluetoothPeripheralConnectionPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::PendingRearmMismatch { unlinked },
+                                    }
+                                }
+                                BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin::Ready(ready) => BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep::Ready { ready },
+                            }
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    /// Cancel a connection post-unlink wait without discarding a ready event.
+    pub fn cancel_peripheral_connection_software_list_removal(
+        &mut self,
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    ) -> crate::BluetoothPeripheralConnectionPostUnlinkCancelStep {
+        critical_section::with(|critical_section| {
+            self.mailbox
+                .cancel_peripheral_connection(critical_section, awaiting)
+        })
     }
 
     /// Perform one fresh fenced completion-list transfer for advertising.

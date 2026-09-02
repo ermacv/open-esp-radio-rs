@@ -175,7 +175,8 @@ remains the sole dispatcher.
 
 1. Extract operational scheduler service from controller_start.rs (done in
    the audit change).
-2. Split scheduler.rs by role and isolate the exclusive-list epoch.
+2. Split scheduler.rs by role and isolate the exclusive-list epoch
+   (in progress: connection states and transitions are isolated).
 3. Generalize and rename the post-unlink mailbox without legacy aliases.
 4. Finish connection recycle and recurrence against those shared primitives.
 5. Split the Embassy actor by role while retaining one task and one state slot.

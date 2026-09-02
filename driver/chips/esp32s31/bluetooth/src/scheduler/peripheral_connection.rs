@@ -6,6 +6,455 @@
 
 use super::*;
 
+/// Fresh initial-admission sample sealed by the controller-time worker.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh connection admission observation must be consumed or retained"]
+pub(crate) struct BluetoothPeripheralConnectionAdmissionObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// Fresh post-overlap sequence sample sealed by the controller-time worker.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh connection sequence observation must be consumed or retained"]
+pub(crate) struct BluetoothPeripheralConnectionSequenceObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// First connection event after timeline admission and before sequence authorization.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the admitted connection event must pass sequence authorization or be cancelled"]
+pub(crate) struct BluetoothPeripheralConnectionFirstPreSequence {
+    candidate: BluetoothPeripheralConnectionFirstEventCandidate,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerInitialAdmissionResolved>,
+}
+
+/// Why one CPU-owned connection candidate could not complete scheduler preparation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
+pub enum BluetoothPeripheralConnectionFirstEventPreparationError {
+    Timeline(BluetoothSchedulerReservationError),
+    Sequence(BluetoothSchedulerSequenceAuthorizationError),
+    Descriptor,
+}
+
+/// Lossless failure before connection scheduler-list publication.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the unchanged connection candidate must be retried, cancelled, or retained"]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventPreparationFailure {
+    candidate: BluetoothPeripheralConnectionFirstEventCandidate,
+    error: BluetoothPeripheralConnectionFirstEventPreparationError,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionFirstEventPreparationFailure {
+    pub(crate) const fn error(&self) -> BluetoothPeripheralConnectionFirstEventPreparationError {
+        self.error
+    }
+
+    pub(crate) fn into_candidate(self) -> BluetoothPeripheralConnectionFirstEventCandidate {
+        self.candidate
+    }
+}
+
+/// Sequence-authorized connection image paired with its exact timeline slot.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the prepared connection event must be merged, cancelled, or retained"]
+pub(crate) struct BluetoothPeripheralConnectionEventPrepared {
+    event: BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(test)]
+impl BluetoothPeripheralConnectionEventPrepared {
+    pub(crate) const fn requested_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.event.requested_window()
+    }
+
+    pub(crate) const fn resolved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.event.resolved_window()
+    }
+}
+
+/// Lossless rejection while joining one detached connection item to the empty list.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the unchanged connection event remains prepared and CPU-owned"]
+pub(crate) struct BluetoothPeripheralConnectionEmptySchedulerMergeFailure {
+    error: BluetoothSchedulerEmptyListMergeError,
+    prepared: BluetoothPeripheralConnectionEventPrepared,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionEmptySchedulerMergeFailure {
+    pub(crate) const fn error(&self) -> BluetoothSchedulerEmptyListMergeError {
+        self.error
+    }
+
+    pub(crate) fn into_prepared(self) -> BluetoothPeripheralConnectionEventPrepared {
+        self.prepared
+    }
+}
+
+/// Detached connection item joined to the source-owned empty scheduler list.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the connection merge must be published or cancelled"]
+pub struct BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
+    event: BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_head()
+    }
+
+    pub(crate) const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        BluetoothSchedulerHardwareListIndex::ZERO
+    }
+}
+
+/// Lossless rejection before any connection or scheduler MMIO publication.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the unchanged CPU-owned connection merge can be retried or cancelled"]
+pub struct BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
+    error: BluetoothSchedulerHeadPublicationError,
+    merged: BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
+    /// Exact reason the common scheduler head could not be prepared.
+    pub const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
+        self.error
+    }
+
+    /// Recover the unchanged merge. No MMIO was performed.
+    pub fn into_merged(self) -> BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
+        self.merged
+    }
+}
+
+/// Connection RX list and scheduler head made hardware-visible in one order.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the connection head must advance through the common RUN suffix"]
+pub struct BluetoothPeripheralConnectionSchedulerHeadPublished {
+    event: BluetoothPeripheralConnectionFirstEventRxPublished,
+    publication: BluetoothSchedulerHardwareListHeadPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerHeadPublished {
+    /// Exact selected event item retained by both hardware publications.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_head()
+    }
+
+    /// Hardware list containing the first connection item.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.publication.index()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionFirstEventRxPublished,
+        BluetoothSchedulerHardwareListHeadPublished,
+        BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+    ) {
+        (self.event, self.publication, self.reservation)
+    }
+}
+
+/// First peripheral connection event admitted through the common RUN suffix.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the running connection event must advance through owned completion"]
+pub struct BluetoothPeripheralConnectionSchedulerRunning {
+    event: BluetoothPeripheralConnectionFirstEventRunning,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerRunning {
+    pub(crate) fn new(
+        event: BluetoothPeripheralConnectionFirstEventRxPublished,
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+        reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+    ) -> Self {
+        Self {
+            event: event.into_running(&run),
+            run,
+            reservation,
+        }
+    }
+
+    /// Exact hardware-owned scheduler item.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    /// Hardware list containing the running connection item.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+
+    /// Link Layer event counter, not advanced before completion.
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    /// Common-timeline reservation retained until completion or teardown.
+    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.reservation.window()
+    }
+}
+
+/// First peripheral connection event after a fenced non-sentinel status read.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the completed connection graph must advance through unlink and recycle"]
+pub struct BluetoothPeripheralConnectionSchedulerCompletionObserved {
+    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerCompletionObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.event.status()
+    }
+
+    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.reservation.window()
+    }
+}
+
+/// One bounded Controller-owned connection completion attempt.
+#[must_use = "the connection graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerCompletionStep {
+    DrainAlreadyActive(BluetoothPeripheralConnectionSchedulerRunning),
+    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerRunning),
+    NoFinishedList(BluetoothPeripheralConnectionSchedulerRunning),
+    UnrelatedList {
+        drain:
+            BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(
+        BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+}
+
+/// One bounded continuation of a captured finished-list set while the
+/// connection item is still running.
+#[must_use = "the connection graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerRunningDrainStep {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    DrainLost(
+        BluetoothSchedulerFinishedListDrainPending<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    UnrelatedList {
+        drain:
+            BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(
+        BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
+    ),
+    CompletionObserved(
+        BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+}
+
+/// One bounded continuation after list zero already completed the connection item.
+#[must_use = "the completed connection graph and every observed list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep {
+    SchedulerIdentityMismatch(
+        BluetoothSchedulerFinishedListDrainPending<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+    DrainLost(
+        BluetoothSchedulerFinishedListDrainPending<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+    ),
+    UnrelatedList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    RepeatedConnectionList {
+        drain: BluetoothSchedulerFinishedListDrainState<
+            BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        >,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+}
+
+/// Completed connection graph after its exact hardware-list head became empty.
+#[must_use = "the empty-head connection graph must advance through software-list removal"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved {
+    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.event.status()
+    }
+
+    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.reservation.window()
+    }
+}
+
+/// Completed connection item removed from the source-owned software list.
+#[must_use = "the unlinked connection graph must pass the finite removal gate"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
+    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.event.status()
+    }
+}
+
+/// Connection graph after the post-unlink return predicate became ready.
+#[must_use = "the removal-ready connection graph must advance through recycle"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
+    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.removal.index()
+    }
+
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.event.status()
+    }
+
+    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.reservation.window()
+    }
+}
+
+#[must_use = "the unlinked or removal-ready connection graph must remain owned"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin {
+    SchedulerIdentityMismatch {
+        unlinked: BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    },
+    Pending(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+    Ready(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
+}
+
+#[must_use = "the unlinked or removal-ready connection graph must remain owned"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck {
+    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+    StorageUnavailable(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+    Pending(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+    Ready(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
+}
+
+/// Result of removing the sole connection item from the source-owned list.
+#[must_use = "identity mismatch retains the empty-head graph"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep {
+    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
+    Unlinked(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+}
+
+/// One bounded post-completion hardware-head retirement attempt.
+#[must_use = "the connection completion owner must enter fail-stop handling or advance"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep {
+    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerCompletionObserved),
+    FinishedListDrainStillActive(BluetoothPeripheralConnectionSchedulerCompletionObserved),
+    ExpectedHeadStillPublished {
+        completed: BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    UnexpectedHeadChanged {
+        completed: BluetoothPeripheralConnectionSchedulerCompletionObserved,
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    EmptyObserved(BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
+}
+
 #[cfg(any(target_arch = "riscv32", test))]
 impl<const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>

@@ -6,8 +6,13 @@ notes remain useful as experimental history, but do not override this status.
 
 ## Verdict
 
-The refactor is moving in the correct direction, but the current egress
-control must remain non-authoritative.
+The architecture direction is accepted, but the cutover is not complete.
+Catalogued UDP egress now uses the Core0 grant as real admission authority
+when the diagnostic selector is enabled. That path is an experimental
+authoritative vertical slice, not yet a production-complete scheduler: its
+latest same-image A/B still misses the strict throughput and per-core overhead
+gates, terminal BA/retry feedback is not yet bound to the grant receipt, and
+TCP/raw provider coverage is absent.
 
 The useful architecture is already visible:
 
@@ -18,23 +23,43 @@ The useful architecture is already visible:
 - Core0 is the sole owner of radio policy and hardware feedback;
 - Core1 publishes bounded demand/progress values to Core0, never packet
   payloads or DMA owners; Core0 returns one affine burst/airtime grant through
-  a bounded transport, while Xarxa deliberately consumes it in shadow mode.
+  a bounded transport, and Xarxa consumes a current plus standby grant before
+  final SRAM materialization.
 
-The missing part is not another packet-copy mechanism. It is a physical-radio
-wide policy over the demand catalogs already mirrored for both STA and AP.
-The former AP-only candidate/grant echo was measured, rejected and removed:
-it added packet-path work without expressing BA, power-save, rate, AQL or
-airtime policy. The retained mirror proves lifecycle identity, bounded service
-and physical-radio ownership, but it does not yet provide fairness or
-`KeyDeferred` authority.
+The missing part is not another packet-copy mechanism and not a per-packet
+cross-core protocol. It is completion of the physical-radio-wide policy around
+the accepted interface-owned demand catalogue: terminal airtime receipts,
+provider coverage, multi-peer/WMM capacity, sparse-traffic latency and final
+removal of diagnostic/fallback paths.
 
-An authoritative cutover now would introduce policy before these lifecycle
-and radio-wide contracts are complete. A full rewrite of Xarxa's RX path,
-transport protocols or packet API would also be premature. The next change
-should instead be an evolutionary interface-owned egress-demand catalog, kept
-in shadow mode until its behavior and cost are measured.
+Do not perform a blind full cutover yet: the same-image enabled/disabled path
+is the only strong attribution oracle for the remaining approximately two
+percent throughput delta. Conversely, do not optimize code that will be
+deleted at cutover. Pre-cutover performance work is limited to permanent hot
+boundaries: burst transport, direct SRAM admission, wake/service cadence and
+terminal feedback. Obsolete AP post-factum shadow telemetry and stack-selected
+compatibility are deletion work, not optimization targets.
 
-## Exact checkpoint
+## Current audited checkpoint
+
+```text
+open-esp-radio-rs-wifi: 507843866f1b915791e11f2ee8910193178ade1b
+Xarxa:                   616725874b1138bd4969a9b40eb6536ff2119445
+Embassy:                 7bc4dd9d016782b104c502a31aae06531c676387
+branch:                  refactor/wifi-interface-egress-scheduler
+workspace:               clean
+application SHA-256:     00deb6297d18675a65fd1130d3e462c056853a00357c393199b90979d650c46d
+runtime ELF SHA-256:     383fbb3ef433b7cc89ee9d8b0dda8ccfd4a3fe5609f1254ab5f340e7837855c0
+```
+
+The HIL bundle records the clean commit, effective lockfile, build tools,
+application, runtime ELF/bin and lab provenance. Rebuilding is source
+reconstructable but bit-reproducibility is intentionally not claimed.
+
+The earlier exact checkpoint below is retained as historical evidence. It is
+not the current implementation boundary.
+
+## Historical exact checkpoint
 
 The repository checkpoint used by the measurements below is:
 
@@ -1983,3 +2008,226 @@ the sole SRAM authority, checks that exact live serial and derives VIF/peer/TID
 metadata from the retained grant. Associated-peer generation publication still
 receives a fail-closed device-side check. This change is not accepted until a
 new exact-image enabled/disabled HIL pair demonstrates its cost and air effect.
+
+### Grant-serial admission result
+
+The exact-serial experiment is implemented by main commit `50784386`, Xarxa
+commit `61672587` and Embassy commit `7bc4dd9`. The additive driver operation
+is default-fail-closed. Xarxa supplies the serial of the exact authoritative
+grant whose FIFO prefix it selected; the pinned driver remains the only owner
+allowed to claim physical SRAM, verifies the live serial, epoch and remaining
+credit, and derives the egress metadata from that grant. Associated-peer mode
+also revalidates the current peer generation. The driver-side admitted-frame
+counter remains as an independent completion invariant.
+
+Enabled run `1788361516440-002220f2` and disabled replay
+`1788361861113-00222cd7` use the same archived application and runtime ELF.
+Both came from clean main commit `50784386`; the enabled bundle records the
+current pinned Xarxa and Embassy revisions listed at the top of this document.
+
+| Metric | authoritative enabled | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host throughput, mean | 119.142 Mbit/s | 120.890 Mbit/s | -1.45% |
+| device throughput, mean | 118.777 Mbit/s | 121.013 Mbit/s | -1.85% |
+| Core0 radio task residence | 37.070% | 35.769% | +1.301 pp |
+| Core1 network plus UDP-TX residence | 85.564% | 83.703% | +1.861 pp |
+| Core0 radio residence per datagram | 36.75 us | 34.81 us | +5.6% |
+| Core1 network plus UDP-TX residence per datagram | 84.83 us | 81.45 us | +4.2% |
+| peer BlockAck interarrival, p50 | about 3118 us | about 3066 us | about +52 us |
+
+All six repetitions passed with zero host loss, reorder or duplicates. Full
+BA32 BlockAck dominates and hole counts remain negligible. Exact-serial
+admission is marginally better than the previous current-plus-standby result,
+so repeated key decoding was a real but small cost. It was not the main cause:
+the path still fails the strict `<= 1%` throughput and `<= 1 percentage point`
+per-core overhead gates. These task-residence ratios are wall-time accounting
+inside named tasks, not proof of retired CPU utilization or saturation.
+
+## Architecture audit after the authoritative UDP vertical slice
+
+### What is closed
+
+- The original global FIFO/HOL problem is localized and removed for the
+  catalogued UDP path. Xarxa groups work by opaque egress identity and selects
+  a contiguous run before final backing.
+- The final packet is constructed directly in fixed internal SRAM. The
+  PSRAM-complete-frame copy, replacement/page-pool TX design, GDMA mem2mem copy,
+  98-slot SRAM growth and extra 68th construction credit were measured and
+  rejected as production solutions.
+- The physical DMA working set is fixed at 67 slots and does not scale with
+  associated-peer count. A separate one-credit control reserve is carved from
+  that pool only when the control plane is attached.
+- Demand lifecycle identity, association generation fencing, bounded SPSC
+  transport, fail-closed overflow, current-plus-standby affine grants and exact
+  admitted-frame completion checks have host regressions.
+- Core0 is the single physical-radio policy owner. Core1 passes bounded value
+  records, not payloads, packet owners or DMA leases.
+- Grant granularity is one full BA32 burst in the saturated STA experiment,
+  not one cross-core request/reply per packet. Intrusive HIL recorded no partial
+  supply, unused-grant or lifecycle error explanation for the speed delta.
+- Route, laboratory channel, HT40/MCS7 bucket, BlockAck health and same-image
+  enabled/disabled replay are part of the current evidence path. The current
+  delta is reproducible without attributing it to radio loss.
+- Source replay is materially improved: clean/dirty state, commit, patch or
+  untracked-source manifest, effective lockfile, tool versions, image hashes,
+  firmware binaries and lab provenance are archived by HIL. Bit-identical
+  rebuilds are not required for behavioral replay.
+
+### What is not closed
+
+1. **Performance attribution.** Authoritative UDP remains about 1.5--1.9%
+   slower and adds about 1.3/1.9 task-residence percentage points on Core0/Core1
+   in the latest same-image pair. Full BA32 and clean radio counters prove that
+   grant supply is not the problem, but do not identify which boundary creates
+   the extra approximately 52 us median air cadence.
+2. **Terminal airtime feedback.** `Finished` currently means that Xarxa stopped
+   consuming a software grant. Core0 immediately reconciles the modeled data
+   PPDU cost. It does not yet receive actual terminal BA/retry/rate outcome for
+   the frames admitted under that grant. Consequently current deficit and AQL
+   state are policy scaffolding, not a fairness qualification.
+3. **Provider coverage.** UDP is catalogued and authoritative; DHCP/DNS/ICMP
+   use the bounded control reserve; TCP and raw bulk still use the transitional
+   unclassified path. A final cutover must catalogue every schedulable bulk
+   provider or reject it explicitly. Silent bulk bypass is not an acceptable
+   final contract.
+4. **Multi-peer and dual-VIF fairness.** Single-peer STA proves the fast-path
+   geometry only. Sparse AP traffic, multiple saturated AP peers, simultaneous
+   STA+AP, slow/lossy peers, reassociation, power-save and group/control traffic
+   still need behavior and fairness HIL.
+5. **QoS capacity.** The present two mirrors of 16 active keys and 32 physical
+   scheduler slots cover the current TID0 shape (up to 15 AP peers plus one STA
+   peer). They do not represent 15 peers multiplied by several active WMM
+   classes. Before QoS cutover the design must choose an explicit bounded
+   peer/AC table or a specified active-subset admission policy.
+6. **Receipt identity through radio completion.** Grant serial is now the
+   correct admission identity, but it is not retained through the aggregate,
+   retry and terminal-status path. The implementation must either enforce
+   serial-homogeneous physical aggregates or support a bounded set of serial
+   segments per aggregate. It must not assume without proof that one software
+   grant always maps one-to-one to one terminal A-MPDU.
+7. **Blocked completion plus standby progress.** Xarxa can retain and switch to
+   a standby grant locally, but the pinned driver's `transmit_granted` currently
+   admits only against its current state. If current completion publication is
+   backpressured, a valid standby serial can be temporarily rejected. There is
+   no observed full transport in the saturation run, so this is not the
+   measured speed cause; it remains a fail-closed progress edge requiring a
+   focused regression and either dual-slot validation or an explicit invariant.
+8. **Whole-stack load.** Core1 `network + udp_tx` task residence above 80% is a
+   no-regression alarm, not spare capacity and not yet a calibrated CPU-idle
+   measurement. General stack optimization remains separate from this semantic
+   cutover, but no new design may reduce Core0 work by moving it blindly to
+   Core1.
+
+### Permanent, transitional and obsolete code
+
+The following parts are expected to survive cutover and are valid optimization
+targets:
+
+- interface-wide egress catalogues and opaque `EgressKey` identity;
+- selection before final SRAM allocation;
+- one physical Core0 policy over VIF/peer/TID queues;
+- bounded active-key/progress transport and affine burst grants;
+- current-plus-standby radio horizon;
+- direct final construction in the fixed SRAM pool;
+- bounded control reserve;
+- exact grant/association identity and terminal receipt accounting.
+
+The following parts are temporary diagnostic scaffolding and must not be
+micro-optimized:
+
+- the runtime same-ELF enabled/disabled selector;
+- Wi-Fi `StackSelected` fallback for catalogued data;
+- shadow-mode mirrors and duplicate diagnostic counters;
+- names such as `service_shadow*` on operations that now service real
+  authoritative control;
+- the unclassified TCP/raw bulk bypass.
+
+The older AP post-factum `EgressShadowGrant` publisher is already superseded by
+the physical-radio control plane. It still exists under TX telemetry and can
+add AP diagnostic work even when no observer consumes it. It should be removed
+after its last report dependency is verified; optimizing it would be wasted
+work.
+
+### Why the high-level design remains valid
+
+The architecture follows the same separation used by mature Wi-Fi stacks,
+adapted to the S31 memory constraint. Linux mac80211 describes intermediate
+per-station/per-TID TX queues as a way to keep hardware queues short and retain
+fairness; the driver selects a TXQ and drains multiple frames rather than
+negotiating each frame independently. Its per-AC station state separately
+tracks airtime deficit and AQL pending airtime, with completion feedback. The
+S31-specific difference is that queued PSRAM is not the final Wi-Fi DMA
+backing, so selection must precede a direct final SRAM construction rather than
+a late DMA mapping.
+
+This validates the topology, not the current implementation or constants. The
+67 slots, two-grant horizon, 16-key mirrors, cost model and cross-core wake
+protocol still require repository-specific evidence. In particular, Linux's
+terminal pending-airtime feedback reinforces that modeled charge at stack
+grant close is not a sufficient final AQL design.
+
+### Correct optimization policy
+
+Do not fully remove the disabled path before terminal semantics and provider
+coverage are correct: it is the only same-ELF causal control and has repeatedly
+prevented cache/layout and radio variation from being mistaken for code cost.
+Do not, however, wait for every micro-optimization before semantic completion.
+Use this rule:
+
+- optimize before cutover only if the code is on the permanent path and a
+  same-image trace identifies it as material;
+- delete obsolete/fallback machinery instead of optimizing it;
+- accept temporary diagnostic overhead only in intrusive images, never in the
+  production-like gate;
+- after the final fallback deletion, establish a new clean production baseline
+  and only then optimize Core1 and remaining radio hot paths.
+
+The next measurement must therefore be a bounded per-grant critical timeline,
+not another speculative rewrite. It must distinguish:
+
+```text
+Core0 grant issue
+    -> Core1 grant receipt
+    -> first and last final-SRAM materialization
+    -> standby/radio publication
+    -> terminal BA/retry status
+    -> successor grant issue
+```
+
+Counters and sampled timestamps must be keyed by serial and kept out of normal
+images. This will determine whether the remaining delta belongs to cross-core
+wake latency, Core1 materialization, SRAM admission polling, radio publication
+or completion/accounting cadence.
+
+### Revised execution order and gates
+
+1. Add diagnostic-only serial-keyed critical-timeline evidence and repeat the
+   exact-image enabled/disabled STA TX A/B. Make at most evidence-driven changes
+   to permanent boundaries; do not tune old shadow code.
+2. Fix the blocked-completion/standby edge and prove sparse traffic sends
+   promptly without waiting for BA32, while saturated traffic keeps full BA32.
+3. Design and implement terminal receipt propagation from admitted grant serial
+   to BA/retry/rate completion. Reconcile estimated pending airtime with the
+   terminal measured/modeled outcome.
+4. Catalogue TCP and raw bulk providers, retain typed control admission, and
+   remove silent unclassified bulk bypass.
+5. Replace provisional flat capacity with an explicit bounded VIF/peer/AC
+   model suitable for 15 AP peers, then implement weighted airtime DRR/AQL and
+   power-save eligibility around the existing fixed SRAM horizon.
+6. Run the full matrix: STA and AP RX/TX/bidirectional; sparse and saturated;
+   one, two and several AP peers; simultaneous STA+AP; mixed fast/slow peers;
+   reassociation and power-save; HE20 STA. Record aggregate efficiency, latency,
+   per-peer airtime/goodput, drops, queues and both-core residence.
+7. Only after correctness and performance gates pass, delete the selector,
+   `StackSelected` compatibility, obsolete shadow telemetry and misleading
+   naming. Run the clean production HIL baseline.
+8. Optimize Core1 as a separate measured project. First add calibrated idle/
+   busy attribution and split Xarxa protocol/emission/checksum/queue costs;
+   preserve the accepted radio behavior while considering any later same-core
+   stack/driver merge.
+
+The immediate cutover gate remains: zero lifecycle/ownership errors, no sparse
+latency regression, no aggregation/fairness regression, and no more than 1%
+throughput or one percentage point of task-residence overhead per core in the
+same-image control. These are engineering acceptance gates, not claims that a
+task-residence ratio equals physical CPU saturation.

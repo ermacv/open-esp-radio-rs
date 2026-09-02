@@ -3,12 +3,14 @@
 Status: working architecture decision, 2026-08-31. This document separates
 measured facts from design conclusions. It is not qualification evidence.
 
-> **Current planning status:** the implemented AP-only burst candidate/grant
-> shadow, its same-ELF cost and the next radio-wide Xarxa/Core0 refactor stages
-> are defined in
+> **Current planning status:** this document preserves the original TXQ/Core0
+> decision and experiment history. The radio-wide controller has since reached
+> an experimental authoritative UDP vertical slice with current-plus-standby
+> grants and exact-serial SRAM admission. Its current same-ELF cost and remaining
+> Xarxa/Core0 cutover stages are defined in
 > [`WIFI_EGRESS_REFACTOR_CHECKPOINT.md`](WIFI_EGRESS_REFACTOR_CHECKPOINT.md).
-> Later references here to a not-yet-implemented candidate stream are retained
-> as historical context, not as the current plan.
+> Shadow and not-yet-implemented wording below is retained as historical
+> context, not as the current plan.
 
 ## Decision
 

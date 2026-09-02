@@ -47,8 +47,7 @@ use crate::{
 };
 
 #[cfg(feature = "tx-egress-scheduling")]
-const PINNED_EGRESS_GRANT_PIPELINE_DEPTH: usize =
-    crate::egress_control::DEFAULT_EGRESS_GRANT_DEPTH;
+const PINNED_EGRESS_GRANT_PIPELINE_DEPTH: usize = crate::egress_control::DEFAULT_EGRESS_GRANT_DEPTH;
 
 /// Opaque identity of one logical network endpoint sharing a physical radio.
 ///
@@ -2992,6 +2991,71 @@ impl<
         ))
     }
 
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn transmit_granted(
+        &mut self,
+        cx: &mut Context<'_>,
+        grant_serial: NonZeroU32,
+    ) -> EgressAdmission<Self::TxToken<'_>> {
+        #[cfg(feature = "tx-phase-telemetry")]
+        let started = TxPerformanceSample::read();
+        let epoch = self.refresh_scheduling_epoch();
+        let Some(grant) = self.egress_grant.as_ref() else {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
+            return EgressAdmission::KeyDeferred;
+        };
+        let egress = grant.grant.demand().key();
+        let grant_current = grant.completion.is_none()
+            && grant.grant.serial() == grant_serial
+            && grant.grant.demand().id().schedule_epoch() == epoch
+            && grant.used_frames < grant.grant.frame_credits().get()
+            && (self.endpoint.egress_topology != EgressQueueTopology::AssociatedPeer
+                || self.endpoint.key_is_current(egress, epoch));
+        if !grant_current {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
+            return EgressAdmission::KeyDeferred;
+        }
+
+        let run_changed = self.keyed_egress != Some(egress);
+        if run_changed {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_egress_run(self.keyed_run_length);
+            self.keyed_egress = Some(egress);
+            self.keyed_run_length = 0;
+        }
+        if !self.poll_reserve_application_tx(cx) {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
+            return EgressAdmission::GlobalExhausted;
+        }
+        let index = self
+            .application_tx
+            .take()
+            .expect("granted application admission reserves one TX credit");
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
+        let grant = self
+            .egress_grant
+            .as_mut()
+            .expect("validated authoritative admission retains its affine grant");
+        grant.used_frames = grant
+            .used_frames
+            .checked_add(1)
+            .expect("a bounded grant cannot overflow its frame count");
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.observe_successful_shadow_grant(egress);
+        self.keyed_run_length = self.keyed_run_length.saturating_add(1);
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), true);
+        EgressAdmission::Granted(self.take_tx_token(
+            index,
+            PinnedTxMetadata::classified(self.interface, egress),
+            PinnedTxAdmissionClass::Ordinary,
+        ))
+    }
+
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
         self.link.get(cx)
     }
@@ -3198,6 +3262,15 @@ impl<
         egress: EgressKey,
     ) -> EgressAdmission<Self::TxToken<'_>> {
         self.inner.transmit_for(cx, egress)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn transmit_granted(
+        &mut self,
+        cx: &mut Context<'_>,
+        grant_serial: NonZeroU32,
+    ) -> EgressAdmission<Self::TxToken<'_>> {
+        self.inner.transmit_granted(cx, grant_serial)
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {

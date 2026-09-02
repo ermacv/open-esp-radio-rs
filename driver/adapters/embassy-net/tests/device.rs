@@ -698,13 +698,17 @@ fn affine_current_and_standby_grants_materialize_and_close_exactly() {
     assert_eq!(observed_standby.serial(), standby.serial());
     assert_eq!(observed_standby.demand(), standby_demand);
     assert!(device.poll_egress_grant(&mut cx).is_none());
+    assert!(matches!(
+        device.transmit_granted(&mut cx, core::num::NonZeroU32::new(9).unwrap()),
+        EgressAdmission::KeyDeferred
+    ));
 
-    let token = match device.transmit_for(&mut cx, key) {
+    let token = match device.transmit_granted(&mut cx, grant.serial()) {
         EgressAdmission::Granted(token) => token,
         _ => panic!("the authoritative grant must materialize one SRAM owner"),
     };
     token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5a));
-    let token = match device.transmit_for(&mut cx, key) {
+    let token = match device.transmit_granted(&mut cx, grant.serial()) {
         EgressAdmission::Granted(token) => token,
         _ => panic!("the authoritative grant must materialize the second SRAM owner"),
     };
@@ -713,14 +717,15 @@ fn affine_current_and_standby_grants_materialize_and_close_exactly() {
 
     // Return one physical credit while retaining the exhausted affine grant.
     // A third packet must still be deferred before it can claim that SRAM.
-    drop(
-        consumer
-            .for_interface(interface)
-            .try_receive_direct()
-            .unwrap(),
+    let interface_consumer = consumer.for_interface(interface);
+    let first = interface_consumer.try_receive_direct().unwrap();
+    assert_eq!(
+        interface_consumer.direct_metadata(&first).egress_key(),
+        Some(key)
     );
+    drop(first);
     assert!(matches!(
-        device.transmit_for(&mut cx, key),
+        device.transmit_granted(&mut cx, grant.serial()),
         EgressAdmission::KeyDeferred
     ));
     assert_eq!(consumer.queue_len_for(interface), 1);
@@ -734,7 +739,7 @@ fn affine_current_and_standby_grants_materialize_and_close_exactly() {
     device.finish_egress_grant(&mut cx, EgressGrantCompletion::new(grant.serial(), 1, None));
     assert!(!radio_control.service_shadow_control_observed(|_| {}, |_| {}));
     assert!(matches!(
-        device.transmit_for(&mut cx, key),
+        device.transmit_granted(&mut cx, grant.serial()),
         EgressAdmission::KeyDeferred
     ));
 
@@ -773,7 +778,7 @@ fn affine_current_and_standby_grants_materialize_and_close_exactly() {
             .unwrap(),
     );
     for byte in [0x5c, 0x5d] {
-        let token = match device.transmit_for(&mut cx, key) {
+        let token = match device.transmit_granted(&mut cx, standby.serial()) {
             EgressAdmission::Granted(token) => token,
             _ => panic!("the standby grant must authorize its disjoint prefix"),
         };

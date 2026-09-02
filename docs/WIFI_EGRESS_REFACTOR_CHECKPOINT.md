@@ -1934,3 +1934,52 @@ be deleted mechanically. The intended experiment must consolidate the
 interface selection and device admission contract while retaining one
 fail-closed owner, then repeat the same-image task-residence and independent
 air A/B.
+
+### Current plus locally retained standby grant
+
+Xarxa commit `4053d3177227fd24148716261b569e495a5158d6` removes the
+remaining stop-and-wait boundary on Core1. The interface retains a current and
+a standby affine grant, switches to the standby locally when the current grant
+is exhausted, and only then reports completion. This is a two-quantum pipeline,
+not a packet-frequency cross-core handshake.
+
+The production-like exact-image task-residence pair is enabled run
+`1788358671234-00215b1d` and disabled replay
+`1788359171526-002187e4`; both execute runtime CRC32 `0x33b5c635`.
+
+| Metric | authoritative enabled | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host throughput, mean | 118.832 Mbit/s | 120.771 Mbit/s | -1.61% |
+| device throughput, mean | 118.319 Mbit/s | 120.890 Mbit/s | -2.13% |
+| Core0 radio residence per datagram | approximately 38.6 us | approximately 36.3 us | approximately +6% |
+| Core1 network plus UDP-TX residence per datagram | approximately 85.7 us | approximately 81.9 us | approximately +4--5% |
+| peer BlockAck interarrival, p50 | approximately 3130 us | approximately 3070 us | approximately +60 us |
+
+All six repetitions delivered without host loss, reorder or duplicates. Almost
+every BlockAck acknowledged a full BA32 window. The standby pipeline therefore
+preserves correctness and aggregation but does not recover the missing air
+cadence; it increases normalized work on both cores. It is retained as the
+correct bounded scheduling horizon, but it is not accepted as a performance
+fix.
+
+The intrusive exact-image pair, enabled run
+`1788359471911-00219102` and disabled replay
+`1788359784670-002196b7`, establishes that the remaining overhead is not caused
+by partial grants or lifecycle rejection. Every issued grant was completed and
+used, essentially every grant carried its full 32-frame credit, and unused,
+progress, key, epoch and geometry error counters remained zero. In this image,
+the enabled adapter admission path cost approximately 958 cycles per datagram
+versus 726 cycles disabled, while Core0 spent approximately 6.3k cycles per STA
+grant plus 0.62k cycles on the idle AP half of the dual owner. The enabled
+throughput loss remains visible despite full BA32 grants.
+
+This evidence narrows the next boundary to duplicated authorization rather
+than grant supply. Xarxa has already selected an exact FIFO prefix and retained
+its affine grant, but `transmit_for(key)` makes the device rediscover and
+revalidate the same key for every frame. The next experiment changes the
+internal driver contract to `transmit_granted(serial)`: Xarxa supplies the
+serial of the already validated current grant, while the pinned adapter remains
+the sole SRAM authority, checks that exact live serial and derives VIF/peer/TID
+metadata from the retained grant. Associated-peer generation publication still
+receives a fail-closed device-side check. This change is not accepted until a
+new exact-image enabled/disabled HIL pair demonstrates its cost and air effect.

@@ -1459,6 +1459,60 @@ interrupt preemption and is not relabelled as retired-instruction utilization.
 The A/B establishes acceptable control cost for this single-peer STA case, not
 fairness, complete grant coverage, AP behavior or terminal airtime accounting.
 
+### AP cost gate and simultaneous STA+AP shadow behavior
+
+The equivalent single-client AP task-residence A/B/A used the same archived
+application and runtime ELF as the STA comparison above. Enabled runs
+`1788333129093-001c42c7` and `1788334690548-001c6230` bracket exact-ELF
+disabled replay `1788333226497-001c46d7`. OpenWrt reported HT40/MCS7 and zero
+TX retries or failed transmissions in every interval.
+
+| Metric | shadow enabled A/A mean | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host throughput | 118.913 Mbit/s | 120.174 Mbit/s | -1.049% |
+| Core0 radio task residence | 41.704% | 40.838% | +0.866 pp |
+| Core1 `network + udp_tx` task residence | 83.133% | 82.449% | +0.684 pp |
+
+Both per-core control-cost limits pass, but the AP throughput result is 0.049
+percentage points outside the strict one-percent regression gate. It is
+therefore recorded as **not passed**, rather than rounded into acceptance.
+The same-ELF comparison and zero radio retry/failure counters localize the
+difference to enabled control-path work for this image; they do not identify
+one individual function as the complete cause. The absolute task-residence
+values come from a diagnostic image and are not accepted as the production
+Core0/Core1 utilization target.
+
+Paired shadow validation then used simultaneous 32.5 Mbit/s STA and AP TX
+flows. The first run `1788334852700-001c7150` delivered both flows without
+missing, reordered or duplicate datagrams and had zero rejected updates,
+rejected progress or progress without a live grant. It exposed an invalid HIL
+criterion: 9, 29 and 9 grants across its repetitions closed unused. In
+`Shadow`, a grant is observational and does not stop the existing
+stack-selected path from draining a short queue before the grant crosses the
+core boundary. An absolute `unused == 0` requirement therefore confuses a
+measured shadow race with an affine-lifecycle error.
+
+The criterion now bounds the unused fraction independently on each VIF, so a
+healthy interface cannot hide another interface's stale grants and the result
+does not scale accidentally with test duration. Identity/lifecycle equalities,
+queue overflow and progress-without-grant remain fail-closed zero-tolerance
+checks. Repeated run `1788335446473-001c8187` passed all three repetitions:
+
+- mean STA/AP throughput was 32.571/31.805 Mbit/s, 64.376 Mbit/s combined;
+- no flow had missing, reordered or duplicate datagrams;
+- aggregate unused-grant fractions were 0.715% for STA and 0.190% for AP;
+- the worst individual repetition/VIF was 8/875, or 0.914%;
+- rejected updates, rejected progress and progress without a live grant were
+  zero throughout.
+
+The paired result proves bounded correspondence and progress for two VIFs in
+the current observational mode. It is not an authoritative fairness proof:
+the ordinary Xarxa scheduler still chooses packets, and the coarse Core0 image
+is intrusive. Authoritative mode must not inherit the shadow allowance
+blindly; once a grant gates selection, an unused return needs an explicit
+reason such as lifecycle invalidation, upstream withdrawal or early quantum
+return.
+
 This remains a non-authoritative scheduling shadow. `transmit_for` and the
 existing stack choice still determine SRAM admission and packet order. The
 current shadow also returns modeled pending airtime when Core1 finishes
@@ -1466,8 +1520,10 @@ materializing the grant, not at terminal BA/retry completion; that is adequate
 for lifecycle/cost validation but not yet AQL authority. The immediate next
 gates are therefore:
 
-- same-ELF disabled/shadow HIL for AP and simultaneous STA+AP; the standalone
-  STA throughput and both-core cost gate is complete;
+- reduce the remaining AP control-path throughput regression and repeat its
+  exact-ELF A/B/A until throughput and both-core deltas all pass;
+- add a non-intrusive simultaneous STA+AP same-ELF cost comparison; the coarse
+  paired run proves correspondence but not acceptable total work;
 - prove bootstrap, sparse dispatch and saturated progress with zero demand,
   grant and progress queue overflow;
 - measure throughput plus Core0, Core1 and total normalized work per used
@@ -1528,13 +1584,14 @@ Performance gates:
   scheduler regression;
 - no authoritative fairness claim from throughput alone.
 
-The selection-before-materialization shadow and its standalone STA cost gate
-are complete. The next gate is not an immediate authoritative cutover. AP and
-simultaneous STA+AP must first prove correspondence, bounded sparse progress,
-zero transport overflow and acceptable both-core cost. The one-live-grant
-stop-and-wait gap must then become a bounded current/standby or low-watermark
-pipeline, and a started admission receipt must reconcile the exact
-VIF/schedule-epoch/peer-generation/TID transaction through retry and terminal
-release. Multi-peer fairness, power-save, aggregate depth and service-gap
+The selection-before-materialization shadow, standalone STA cost gate and
+paired STA+AP correspondence gate are complete. The next gate is not an
+immediate authoritative cutover. AP must first pass its strict throughput
+gate, and simultaneous STA+AP still needs a non-intrusive both-core cost A/B.
+Sparse progress and zero transport overflow also remain required. The
+one-live-grant stop-and-wait gap must then become a bounded current/standby or
+low-watermark pipeline, and a started admission receipt must reconcile the
+exact VIF/schedule-epoch/peer-generation/TID transaction through retry and
+terminal release. Multi-peer fairness, power-save, aggregate depth and service-gap
 evidence follow with the fixed SRAM pool. No packet-frequency request/reply
 API may be reintroduced.

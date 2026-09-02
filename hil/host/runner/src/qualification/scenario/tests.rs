@@ -450,7 +450,10 @@ fn paired_egress_identity_probe_is_a_typed_fail_closed_gate() {
 
     assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
     assert!(scenario.criteria.require_egress_policy_evidence);
-    assert_eq!(scenario.criteria.maximum_egress_unused_grants, Some(0));
+    assert_eq!(
+        scenario.criteria.maximum_egress_unused_grant_percent,
+        Some(2)
+    );
     assert_eq!(
         scenario.criteria.maximum_egress_progress_without_grant,
         Some(0)

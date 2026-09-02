@@ -409,7 +409,10 @@ pub struct Criteria {
     /// Require CRC-protected per-VIF shadow-policy evidence from a paired TX
     /// interval. Diagnostic images only.
     pub require_egress_policy_evidence: bool,
-    pub maximum_egress_unused_grants: Option<u32>,
+    /// Maximum percentage of finished shadow grants that may close unused on
+    /// either VIF. Shadow grants are observational, so a non-authoritative
+    /// stack may drain a short queue before the corresponding grant arrives.
+    pub maximum_egress_unused_grant_percent: Option<u8>,
     pub maximum_egress_progress_without_grant: Option<u32>,
 }
 

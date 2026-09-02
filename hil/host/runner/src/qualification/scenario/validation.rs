@@ -766,7 +766,7 @@ impl Scenario {
         if self.criteria.exact_delivery && !udp {
             return self.criteria_error("exact_delivery is valid only for UDP workloads");
         }
-        let has_egress_policy_limits = self.criteria.maximum_egress_unused_grants.is_some()
+        let has_egress_policy_limits = self.criteria.maximum_egress_unused_grant_percent.is_some()
             || self
                 .criteria
                 .maximum_egress_progress_without_grant
@@ -775,6 +775,14 @@ impl Scenario {
             return self.criteria_error(
                 "egress-policy limits require require_egress_policy_evidence = true",
             );
+        }
+        if self
+            .criteria
+            .maximum_egress_unused_grant_percent
+            .is_some_and(|maximum| maximum > 100)
+        {
+            return self
+                .criteria_error("maximum_egress_unused_grant_percent must be within 0..=100");
         }
         if self.criteria.require_egress_policy_evidence
             && !(self.image == ImageClass::DiagnosticCore0RxCoarse

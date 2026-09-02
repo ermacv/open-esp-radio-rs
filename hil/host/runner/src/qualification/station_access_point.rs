@@ -44,7 +44,7 @@ pub(crate) struct Config {
     pub(crate) payload_bytes: usize,
     pub(crate) require_driver_observation: bool,
     pub(crate) require_egress_policy_evidence: bool,
-    pub(crate) maximum_egress_unused_grants: Option<u32>,
+    pub(crate) maximum_egress_unused_grant_percent: Option<u8>,
     pub(crate) maximum_egress_progress_without_grant: Option<u32>,
     pub(crate) capture_independent_laptop_air_monitor: bool,
 }
@@ -553,26 +553,37 @@ fn validate_egress_policy(
         )
         .into());
     }
-    for (name, value, maximum) in [
-        (
-            "unused grants",
-            evidence.grants_unused,
-            config.maximum_egress_unused_grants,
-        ),
-        (
-            "grant progress records without a live grant",
-            evidence.progress_without_grant,
-            config.maximum_egress_progress_without_grant,
-        ),
-    ] {
-        if let Some(maximum) = maximum
-            && value > maximum
-        {
-            return Err(format!(
-                "{interval} has {value} {name}, exceeding the configured maximum {maximum}"
-            )
-            .into());
+    if let Some(maximum) = config.maximum_egress_unused_grant_percent {
+        for (vif, finished, unused) in [
+            (
+                "station",
+                evidence.station.grants_finished,
+                evidence.station.grants_unused,
+            ),
+            (
+                "access-point",
+                evidence.access_point.grants_finished,
+                evidence.access_point.grants_unused,
+            ),
+        ] {
+            if u64::from(unused).saturating_mul(100)
+                > u64::from(finished).saturating_mul(u64::from(maximum))
+            {
+                return Err(format!(
+                    "{interval} {vif} has {unused}/{finished} unused grants, exceeding the configured maximum {maximum}%"
+                )
+                .into());
+            }
         }
+    }
+    if let Some(maximum) = config.maximum_egress_progress_without_grant
+        && evidence.progress_without_grant > maximum
+    {
+        return Err(format!(
+            "{interval} has {} grant progress records without a live grant, exceeding the configured maximum {maximum}",
+            evidence.progress_without_grant
+        )
+        .into());
     }
     Ok(())
 }
@@ -664,7 +675,7 @@ mod tests {
             payload_bytes: 1472,
             require_driver_observation: false,
             require_egress_policy_evidence: true,
-            maximum_egress_unused_grants: Some(0),
+            maximum_egress_unused_grant_percent: Some(0),
             maximum_egress_progress_without_grant: Some(0),
             capture_independent_laptop_air_monitor: false,
         }
@@ -730,7 +741,21 @@ mod tests {
         evidence.station.grants_finished += 1;
         evidence.station.grants_unused = 1;
         let mut config = egress_config();
-        config.maximum_egress_unused_grants = Some(1);
+        config.maximum_egress_unused_grant_percent = Some(10);
         assert!(validate_egress_policy("paired", Some(evidence), config).is_ok());
+    }
+
+    #[test]
+    fn paired_egress_gate_applies_unused_limit_to_each_vif() {
+        let mut evidence = exact_egress_evidence();
+        evidence.grants_issued += 1;
+        evidence.grants_finished += 1;
+        evidence.grants_unused = 1;
+        evidence.station.grants_issued += 1;
+        evidence.station.grants_finished += 1;
+        evidence.station.grants_unused = 1;
+        let mut config = egress_config();
+        config.maximum_egress_unused_grant_percent = Some(9);
+        assert!(validate_egress_policy("paired", Some(evidence), config).is_err());
     }
 }

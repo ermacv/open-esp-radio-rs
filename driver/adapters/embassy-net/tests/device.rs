@@ -629,13 +629,14 @@ fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
         _ => panic!("the unchanged shadow path must materialize one SRAM owner"),
     };
     token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5a));
-    assert_eq!(consumer.queue_len_for(interface), 1);
+    let token = match device.transmit_for(&mut cx, key) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("the unchanged shadow path must materialize the second SRAM owner"),
+    };
+    token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5b));
+    assert_eq!(consumer.queue_len_for(interface), 2);
 
-    let remaining = EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false);
-    device.finish_egress_grant(
-        &mut cx,
-        EgressGrantCompletion::new(grant.serial(), 1, Some(remaining)),
-    );
+    device.finish_egress_grant(&mut cx, EgressGrantCompletion::new(grant.serial(), 2, None));
     let mut progress = std::vec::Vec::new();
     assert!(radio_control.service_shadow_control_observed(|_| {}, |update| progress.push(update)));
     assert_eq!(
@@ -646,8 +647,8 @@ fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
             },
             EgressGrantProgress::Finished {
                 serial: grant.serial(),
-                used_frames: 1,
-                remaining: Some(remaining),
+                used_frames: 2,
+                remaining: None,
             },
         ]
     );

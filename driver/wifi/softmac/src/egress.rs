@@ -660,6 +660,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         }
 
         self.grant = None;
+        let mut active_topology_changed = false;
         if let Some(mut queue) = self.queues.get(state.slot).copied().flatten()
             && queue.key == grant.demand.key
             && queue.vif == grant.demand.vif
@@ -667,6 +668,11 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
                 .demand
                 .is_some_and(|demand| demand.id == grant.demand.id)
         {
+            // A level-only Some -> Some update cannot change the cached
+            // single-active-queue result. Only closing this exact demand can
+            // expose another queue as the sole active one, which requires a
+            // complete summary refresh.
+            active_topology_changed = remaining.is_none();
             queue.demand = remaining.map(|level| DemandState {
                 id: grant.demand.id,
                 level,
@@ -683,7 +689,9 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         {
             self.queues[state.slot] = None;
         }
-        self.refresh_active_summary();
+        if active_topology_changed {
+            self.refresh_active_summary();
+        }
         Ok(())
     }
 
@@ -1414,6 +1422,7 @@ mod tests {
             scheduler.demand(0, 4).unwrap().level().ready_frames().get(),
             3
         );
+        assert_eq!(scheduler.sole_active_slot, Some(0));
         let sparse = scheduler
             .select_next(|demand| {
                 Some(WifiEgressOpportunity::new(

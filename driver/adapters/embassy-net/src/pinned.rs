@@ -1492,14 +1492,16 @@ pub struct SplitPinnedDevice<
 /// Core1-local owner of one radio-issued observational quantum.
 ///
 /// The state remains next to the permanent device rather than in an async
-/// stack frame. A token increments `materialized` only after its final SRAM
-/// backing has been written. Full control transport retains the lifecycle in
-/// this owner for retry; shadow mode never turns it into admission authority.
+/// stack frame. The first matching token records `materialization_started`
+/// only after its final SRAM backing has been written. Xarxa owns the exact
+/// spent-credit count; this endpoint only has to publish the one-shot start
+/// edge. Full control transport retains that edge for retry, while shadow mode
+/// never turns it into admission authority.
 #[cfg(feature = "tx-egress-scheduling")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PinnedEgressGrantState {
     grant: EgressBurstGrant,
-    materialized: u8,
+    materialization_started: bool,
     started_published: bool,
     completion: Option<EgressGrantCompletion>,
 }
@@ -1509,7 +1511,7 @@ impl PinnedEgressGrantState {
     const fn new(grant: EgressBurstGrant) -> Self {
         Self {
             grant,
-            materialized: 0,
+            materialization_started: false,
             started_published: false,
             completion: None,
         }
@@ -1570,7 +1572,7 @@ impl<
         };
 
         let pending_start = self.egress_grant.as_ref().and_then(|state| {
-            (state.materialized != 0 && !state.started_published).then_some(
+            (state.materialization_started && !state.started_published).then_some(
                 EgressGrantProgress::Started {
                     serial: state.grant.serial(),
                 },
@@ -2513,15 +2515,16 @@ impl<
             }
         };
         #[cfg(feature = "tx-egress-scheduling")]
-        if let (Some(egress), Some(state)) =
-            (self.metadata.egress_key(), self.egress_grant.as_mut())
+        if let Some(state) = self.egress_grant.as_mut()
+            && !state.materialization_started
             && state.completion.is_none()
-            && state.grant.demand().key() == egress
-            && state.materialized < state.grant.frame_credits().get()
+            && self
+                .metadata
+                .egress_key()
+                .is_some_and(|egress| state.grant.demand().key() == egress)
         {
-            state.materialized = state.materialized.saturating_add(1);
-            if state.materialized == 1
-                && let Some(control) = self.egress_control.as_deref_mut()
+            state.materialization_started = true;
+            if let Some(control) = self.egress_control.as_deref_mut()
                 && control
                     .try_publish_grant_progress(EgressGrantProgress::Started {
                         serial: state.grant.serial(),

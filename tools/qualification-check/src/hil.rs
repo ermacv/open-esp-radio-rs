@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::Result;
 
 const HIL_RUN_SCHEMA: u16 = 2;
+const HIL_SCENARIO_SCHEMA: u16 = 4;
 
 #[derive(Clone, Debug)]
 pub(crate) struct RepositoryState {
@@ -70,7 +71,7 @@ impl ScenarioCatalog {
             }
             let document: ScenarioDocument =
                 toml_edit::de::from_str(&fs::read_to_string(entry.path())?)?;
-            if document.schema != 3
+            if document.schema != HIL_SCENARIO_SCHEMA
                 || document.id
                     != entry
                         .path()
@@ -748,6 +749,37 @@ mod tests {
         assert!(valid_sha256(&"ab".repeat(32)));
         assert!(!valid_sha256(&"AB".repeat(32)));
         assert!(!valid_sha256("abc"));
+    }
+
+    #[test]
+    fn scenario_catalog_accepts_only_the_current_schema() {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-qualification-scenario-catalog-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let catalog = root.join("scenarios");
+        fs::create_dir_all(&catalog).unwrap();
+        let scenario = catalog.join("smoke.toml");
+        fs::write(
+            &scenario,
+            format!("schema = {HIL_SCENARIO_SCHEMA}\nid = \"smoke\"\nrepetitions = 2\n"),
+        )
+        .unwrap();
+
+        let loaded = ScenarioCatalog::load(&root, Path::new("scenarios")).unwrap();
+        loaded
+            .validate_requirement(&HilRequirement {
+                scenario: "smoke".to_owned(),
+                minimum_repetitions: 2,
+            })
+            .unwrap();
+
+        fs::write(&scenario, "schema = 3\nid = \"smoke\"\nrepetitions = 2\n").unwrap();
+        assert!(ScenarioCatalog::load(&root, Path::new("scenarios")).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

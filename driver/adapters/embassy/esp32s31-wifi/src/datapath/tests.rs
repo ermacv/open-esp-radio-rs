@@ -34,7 +34,7 @@ struct RecordingEgressPolicy {
     grant_calls: usize,
     transported_calls: usize,
     progress_calls: usize,
-    grant_outstanding: bool,
+    grants_outstanding: usize,
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
@@ -48,14 +48,14 @@ impl super::egress::DatapathEgressPolicyOwner for RecordingEgressPolicy {
         )
             -> Option<super::egress::DatapathHtEgressSnapshot>,
     ) -> Option<(u8, EgressBurstGrant)> {
-        if self.grant_outstanding {
+        if self.grants_outstanding == open_esp_radio_wifi_softmac::WIFI_EGRESS_GRANT_HORIZON {
             return None;
         }
         self.grant_calls += 1;
         Some((
             0,
             EgressBurstGrant::new(
-                NonZeroU32::MIN,
+                NonZeroU32::new(u32::try_from(self.grant_calls).unwrap()).unwrap(),
                 EgressDemand::new(
                     EgressDemandId::new(1, NonZeroU32::MIN),
                     EgressKey::from_words([1, 0, 0, 0]),
@@ -69,7 +69,7 @@ impl super::egress::DatapathEgressPolicyOwner for RecordingEgressPolicy {
 
     fn mark_grant_transported(&mut self, _serial: NonZeroU32) {
         self.transported_calls += 1;
-        self.grant_outstanding = true;
+        self.grants_outstanding += 1;
     }
 
     fn observe_grant_progress(&mut self, _vif: u8, _progress: EgressGrantProgress) {
@@ -275,13 +275,13 @@ fn run_egress_boundary_case(publish_transaction: bool) -> RecordingEgressPolicy 
 #[test]
 fn egress_grant_is_issued_before_and_independently_of_physical_fifo_choice() {
     let published = run_egress_boundary_case(true);
-    assert_eq!(published.grant_calls, 1);
-    assert_eq!(published.transported_calls, 1);
+    assert_eq!(published.grant_calls, 2);
+    assert_eq!(published.transported_calls, 2);
     assert_eq!(published.progress_calls, 0);
 
     let retained_without_publication = run_egress_boundary_case(false);
-    assert_eq!(retained_without_publication.grant_calls, 1);
-    assert_eq!(retained_without_publication.transported_calls, 1);
+    assert_eq!(retained_without_publication.grant_calls, 2);
+    assert_eq!(retained_without_publication.transported_calls, 2);
     assert_eq!(retained_without_publication.progress_calls, 0);
 }
 

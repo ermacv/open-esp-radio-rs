@@ -32,6 +32,10 @@ const TARGET_RX_PORT: u16 = 4_323;
 const TARGET_TX_SOURCE_PORT: u16 = 4_324;
 const STATION_HOST_PORT: u16 = 9_101;
 const ACCESS_POINT_HOST_PORT: u16 = 9_102;
+// The target policy deliberately exposes one current plus one standby radio
+// quantum. This validates the observed lifecycle bound without making the
+// host runner depend on a target-only driver crate.
+const MAXIMUM_EGRESS_GRANT_HORIZON: u32 = 2;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Config {
@@ -536,9 +540,11 @@ fn validate_egress_policy(
             != evidence
                 .grants_used
                 .saturating_add(evidence.grants_unused)
-        // One affine grant may straddle either interval boundary. Anything
-        // larger proves a lost or duplicated lifecycle transition.
-        || evidence.grants_issued.abs_diff(evidence.grants_finished) > 1
+        // The physical policy owns one current and one standby affine grant.
+        // Either may straddle an interval boundary; anything larger proves a
+        // lost or duplicated lifecycle transition.
+        || evidence.grants_issued.abs_diff(evidence.grants_finished)
+            > MAXIMUM_EGRESS_GRANT_HORIZON
         || evidence.rejected_updates != 0
         || evidence.rejected_progress != 0
     {
@@ -727,6 +733,22 @@ mod tests {
     fn paired_egress_gate_rejects_inconsistent_grant_lifecycle() {
         let mut evidence = exact_egress_evidence();
         evidence.grants_used -= 2;
+        assert!(validate_egress_policy("paired", Some(evidence), egress_config()).is_err());
+    }
+
+    #[test]
+    fn paired_egress_gate_accepts_current_and_standby_at_an_interval_boundary() {
+        let mut evidence = exact_egress_evidence();
+        evidence.grants_issued += 2;
+        evidence.station.grants_issued += 2;
+        assert!(validate_egress_policy("paired", Some(evidence), egress_config()).is_ok());
+    }
+
+    #[test]
+    fn paired_egress_gate_rejects_more_than_the_bounded_grant_horizon() {
+        let mut evidence = exact_egress_evidence();
+        evidence.grants_issued += 3;
+        evidence.station.grants_issued += 3;
         assert!(validate_egress_policy("paired", Some(evidence), egress_config()).is_err());
     }
 

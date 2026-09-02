@@ -11,14 +11,17 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_ampdu::{HtAmpduLengthAccumulator, ModeledHtAmpduPpduDuration},
 };
 use open_esp_radio_wifi_softmac::{
-    WifiAirtimeUnits, WifiEgressAdmission, WifiEgressAirtimeConfig, WifiEgressAirtimeError,
-    WifiEgressAirtimeScheduler, WifiEgressBurstGrant, WifiEgressDemand, WifiEgressDemandId,
-    WifiEgressDemandLevel, WifiEgressOpportunity,
+    WIFI_EGRESS_GRANT_HORIZON, WifiAirtimeUnits, WifiEgressAdmission, WifiEgressAirtimeConfig,
+    WifiEgressAirtimeError, WifiEgressAirtimeScheduler, WifiEgressBurstGrant, WifiEgressDemand,
+    WifiEgressDemandId, WifiEgressDemandLevel, WifiEgressOpportunity,
 };
 
 const PHYSICAL_EGRESS_VIFS: usize = 2;
 const PHYSICAL_EGRESS_QUEUES: usize = 32;
 const IEEE80211_FCS_BYTES: usize = 4;
+const MAXIMUM_HT_PPDU_AIRTIME_100NS: u32 = 54_840;
+const PHYSICAL_EGRESS_HORIZON_AIRTIME_100NS: u32 =
+    MAXIMUM_HT_PPDU_AIRTIME_100NS * WIFI_EGRESS_GRANT_HORIZON as u32;
 
 const fn airtime_units(hundred_nanoseconds: u32) -> WifiAirtimeUnits {
     let Some(value) = NonZeroU32::new(hundred_nanoseconds) else {
@@ -109,7 +112,7 @@ impl DatapathHtEgressSnapshot {
             self.maximum_frames.get(),
             self.maximum_ethernet_bytes,
             self.maximum_aggregate_bytes,
-            airtime_units(20_000),
+            airtime_units(PHYSICAL_EGRESS_HORIZON_AIRTIME_100NS),
             NonZeroU8::MIN,
         )
     }
@@ -172,7 +175,7 @@ pub fn conservative_ht_data_ppdu_opportunity(
     ))
 }
 
-/// Physical-radio shadow policy retained outside every async runner frame.
+/// Physical-radio egress policy retained outside every async runner frame.
 ///
 /// The two VIFs and 32 queue slots correspond to the two permanent network
 /// interfaces and their independent 16-key lifecycle mirrors. The policy owns
@@ -180,7 +183,7 @@ pub fn conservative_ht_data_ppdu_opportunity(
 /// network/radio owners.
 pub struct DatapathEgressAirtimePolicy {
     scheduler: WifiEgressAirtimeScheduler<EgressKey, PHYSICAL_EGRESS_VIFS, PHYSICAL_EGRESS_QUEUES>,
-    grant: Option<DatapathEgressGrantState>,
+    grants: [Option<DatapathEgressGrantState>; WIFI_EGRESS_GRANT_HORIZON],
     rejected_updates: u32,
     grants_issued: u32,
     grants_finished: u32,
@@ -203,10 +206,10 @@ impl DatapathEgressAirtimePolicy {
             scheduler: WifiEgressAirtimeScheduler::new(WifiEgressAirtimeConfig::new(
                 [airtime_units(10_000); PHYSICAL_EGRESS_VIFS],
                 airtime_units(10_000),
-                airtime_units(40_000),
-                [airtime_units(20_000); PHYSICAL_EGRESS_VIFS],
+                airtime_units(PHYSICAL_EGRESS_HORIZON_AIRTIME_100NS),
+                [airtime_units(PHYSICAL_EGRESS_HORIZON_AIRTIME_100NS); PHYSICAL_EGRESS_VIFS],
             )),
-            grant: None,
+            grants: [None, None],
             rejected_updates: 0,
             grants_issued: 0,
             grants_finished: 0,
@@ -278,11 +281,20 @@ impl DatapathEgressAirtimePolicy {
             WifiEgressDemand<EgressKey>,
         ) -> Option<DatapathHtEgressSnapshot>,
     ) -> Option<(u8, EgressBurstGrant)> {
-        if let Some(state) = self.grant.as_ref() {
-            return (!state.transported).then_some((
+        if let Some(state) = self
+            .grants
+            .iter()
+            .flatten()
+            .find(|state| !state.transported)
+        {
+            return Some((
                 state.grant.demand().vif(),
                 Self::transport_grant(state.grant),
             ));
+        }
+        let grant_slot = self.grants.iter().position(Option::is_none)?;
+        if self.grants[grant_slot].is_some() {
+            return None;
         }
         let selection = match self.scheduler.select_next(|demand| {
             opportunity_for(demand)
@@ -316,7 +328,7 @@ impl DatapathEgressAirtimePolicy {
                 .estimated_airtime()
                 .hundred_nanoseconds(),
         );
-        self.grant = Some(DatapathEgressGrantState {
+        self.grants[grant_slot] = Some(DatapathEgressGrantState {
             grant,
             transported: false,
             admission,
@@ -348,7 +360,11 @@ impl DatapathEgressAirtimePolicy {
     }
 
     fn mark_grant_transported(&mut self, serial: NonZeroU32) {
-        if let Some(state) = self.grant.as_mut()
+        if let Some(state) = self
+            .grants
+            .iter_mut()
+            .flatten()
+            .find(|state| state.grant.serial() == serial)
             && state.grant.serial() == serial
         {
             state.transported = true;
@@ -362,15 +378,22 @@ impl DatapathEgressAirtimePolicy {
     }
 
     fn observe_grant_progress(&mut self, vif: u8, progress: EgressGrantProgress) {
-        let Some(state) = self.grant.as_ref() else {
+        let EgressGrantProgress::Finished { serial, .. } = progress;
+        let Some(grant_slot) = self.grants.iter().position(|state| {
+            state
+                .as_ref()
+                .is_some_and(|state| state.grant.serial() == serial)
+        }) else {
             self.progress_without_grant = self.progress_without_grant.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
             crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.progress_without_grant();
             self.reject_grant_progress();
             return;
         };
-        let EgressGrantProgress::Finished { serial, .. } = progress;
-        if state.grant.demand().vif() != vif || state.grant.serial() != serial {
+        if !self.grants[grant_slot]
+            .as_ref()
+            .is_some_and(|state| state.grant.demand().vif() == vif)
+        {
             self.reject_grant_progress();
             return;
         }
@@ -380,7 +403,9 @@ impl DatapathEgressAirtimePolicy {
             remaining,
             ..
         } = progress;
-        let state = self.grant.take().expect("validated grant remains present");
+        let state = self.grants[grant_slot]
+            .take()
+            .expect("validated grant remains present");
         let remaining = remaining
             .map(|level| WifiEgressDemandLevel::new(level.ready_units(), level.horizon_ready()));
         if self
@@ -388,7 +413,7 @@ impl DatapathEgressAirtimePolicy {
             .finish_grant(state.grant, used_frames, remaining)
             .is_err()
         {
-            self.grant = Some(state);
+            self.grants[grant_slot] = Some(state);
             self.reject_grant_progress();
             return;
         }
@@ -436,7 +461,7 @@ impl DatapathEgressAirtimePolicy {
     }
 }
 
-/// Monotonic lifecycle totals for Core0-issued shadow grants.
+/// Monotonic lifecycle totals for Core0-issued grants.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DatapathEgressGrantObservation {
     pub grants_issued: u32,
@@ -678,6 +703,100 @@ mod tests {
                 rejected_progress: 0,
             }
         );
+    }
+
+    #[test]
+    fn current_and_standby_grants_are_both_reserved_and_closed_by_serial() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        let first = key(1);
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
+        policy.observe_update(0, active(7, 1, first, 64));
+
+        let snapshot = DatapathHtEgressSnapshot::new(
+            HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ),
+            NonZeroU8::new(32).unwrap(),
+            1_600,
+            u16::MAX,
+        );
+        let (vif, current) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(current.serial());
+        let (_, standby) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(standby.serial());
+        assert_ne!(current.serial(), standby.serial());
+        assert_eq!(current.demand().level().ready_units().get(), 64);
+        assert_eq!(standby.demand().level().ready_units().get(), 32);
+        assert_eq!(policy.prepare_grant(&mut |_| Some(snapshot)), None);
+
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Finished {
+                serial: current.serial(),
+                used_frames: 32,
+                remaining: Some(EgressDemandLevel::new(NonZeroU16::new(32).unwrap(), true)),
+            },
+        );
+        policy.observe_grant_progress(
+            vif,
+            EgressGrantProgress::Finished {
+                serial: standby.serial(),
+                used_frames: 32,
+                remaining: None,
+            },
+        );
+        assert_eq!(policy.scheduler.global_pending_airtime(), 0);
+        assert_eq!(
+            policy.grant_observation(),
+            DatapathEgressGrantObservation {
+                grants_issued: 2,
+                grants_finished: 2,
+                grants_used: 2,
+                grants_unused: 0,
+                progress_without_grant: 0,
+                rejected_progress: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn standby_advances_to_the_other_backlogged_vif() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
+        policy.observe_update(1, EgressDemandUpdate::Reset { schedule_epoch: 9 });
+        policy.observe_update(0, active(7, 1, key(1), 64));
+        policy.observe_update(1, active(9, 1, key(2), 64));
+        let snapshot = DatapathHtEgressSnapshot::new(
+            HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ),
+            NonZeroU8::new(32).unwrap(),
+            1_600,
+            u16::MAX,
+        );
+
+        let (current_vif, current) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(current.serial());
+        let (standby_vif, standby) = policy.prepare_grant(&mut |_| Some(snapshot)).unwrap();
+        policy.mark_grant_transported(standby.serial());
+
+        assert_ne!(current_vif, standby_vif);
+        assert_ne!(current.demand().key(), standby.demand().key());
+        for (vif, grant) in [(current_vif, current), (standby_vif, standby)] {
+            policy.observe_grant_progress(
+                vif,
+                EgressGrantProgress::Finished {
+                    serial: grant.serial(),
+                    used_frames: 32,
+                    remaining: Some(EgressDemandLevel::new(NonZeroU16::new(32).unwrap(), true)),
+                },
+            );
+        }
+        assert_eq!(policy.scheduler.global_pending_airtime(), 0);
     }
 
     #[test]

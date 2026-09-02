@@ -275,8 +275,8 @@ pub trait DatapathNetwork<
 
     /// Select and publish one bounded radio quantum to the network owner.
     ///
-    /// The grant is advisory while Xarxa runs in shadow mode. A full grant
-    /// ring retains the policy decision for an identical retry.
+    /// Xarxa may materialize only the prefix authorized by this affine grant.
+    /// A full grant ring retains the policy decision for an identical retry.
     #[cfg(feature = "tx-egress-scheduling")]
     fn prepare_egress_grant(
         &mut self,

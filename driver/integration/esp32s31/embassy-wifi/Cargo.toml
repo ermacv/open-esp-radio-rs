@@ -12,7 +12,7 @@ embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 # Keep this composition independently buildable. xarxa requires one socket
 # backend whenever its socket set is enabled; applications may add UDP/TCP.
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "c4d871089d22be1398e2f2d62b23298b900a6d62", default-features = false, features = ["iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "raw", "tx-egress-metadata"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "861e46da63520f340e33f1786710c0f43e9676f6", default-features = false, features = ["iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "raw", "tx-egress-metadata"] }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "rt", "unstable"] }

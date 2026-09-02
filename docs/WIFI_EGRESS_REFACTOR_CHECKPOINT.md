@@ -1652,3 +1652,107 @@ receipt must reconcile the exact VIF/schedule-epoch/peer-generation/TID
 transaction through retry and terminal release. Multi-peer fairness,
 power-save, aggregate depth and service-gap evidence follow with the fixed SRAM
 pool. No packet-frequency request/reply API may be reintroduced.
+
+### Current/standby authoritative checkpoint and provider-coverage fault
+
+The first authoritative trial replaces the one-grant stop-and-wait horizon
+with two affine grants. `WIFI_EGRESS_GRANT_HORIZON == 2`; the Core0 scheduler
+reserves disjoint current and standby demand prefixes and limits their combined
+modeled pending airtime to two maximum-length HT PPDUs. Core1 retains only one
+currently spendable grant because Xarxa serializes final packet construction;
+the second grant waits in the bounded cross-core ring. Closing either serial
+frees exactly that Core0 slot and permits one successor. There is no per-packet
+request/reply exchange.
+
+The first hardware image connected at the 802.11 layer but never reached
+`ServiceReady`. A bounded state-only repoll change did not alter the failure,
+so a generic executor livelock was rejected as the cause. Source tracing and a
+focused Xarxa test localized the actual defect:
+
+- authoritative admission gated every socket egress on a radio grant;
+- only UDP providers publish entries into the current egress catalogue;
+- the STA DHCPv4 socket therefore had no demand identity with which to request
+  a grant;
+- DHCP DISCOVER was deferred forever before IPv4 configuration and HIL
+  readiness, while Wi-Fi and all queue-error counters remained healthy.
+
+Xarxa commit `448d39b991eff0c102f202aaad74ad65a9744fb3` now makes provider coverage
+explicit at the dispatch boundary. Catalogued UDP work remains grant-gated.
+Uncatalogued DHCPv4, TCP, raw, ICMP and DNS work bypasses authoritative data
+selection through ordinary device admission, so it cannot deadlock behind a
+grant it cannot request. The regression test queues UDP and DHCP together with
+no available grant and proves that UDP remains queued while DHCP DISCOVER is
+emitted. Embassy commit `861e46da63520f340e33f1786710c0f43e9676f6` carries
+the corresponding dependency and the bounded state-only repoll guard.
+
+This bypass is an evolutionary correctness boundary, not final system-wide
+fairness. UDP is currently catalogued; TCP and generated/control providers are
+not. Before deleting the fallback modes, uncatalogued traffic needs either a
+real provider or a deliberately bounded control class backed by a fixed global
+physical reserve. That reserve may scale with the physical radio/VIF topology,
+but never with peer count. Bulk data must not consume it indefinitely, and
+using it must remain visible in qualification counters.
+
+Low-rate STA run `1788346322576-001e94cc` is the permanent bootstrap/progress
+regression. It delivered 2.072 Mbit/s, closed 44 grants with exactly 1408 used
+frames, and reported zero unused grants, rejected updates, rejected progress,
+transport overflow or progress without a live grant. This proves that the
+fixed DHCP path reaches `ServiceReady` and that authoritative progress returns
+to the executor; it is not a saturation or fairness result.
+
+The production-like same-ELF task-residence A/B used enabled run
+`1788346408216-001e95ea` and disabled replay `1788346710093-001e9910`.
+Both use runtime CRC32 `0x1d653883`; the disabled selector changes runtime
+policy without changing the firmware bytes.
+
+| Metric | authoritative enabled | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host/device throughput, mean | 120.113 / 119.966 Mbit/s | 121.809 / 121.955 Mbit/s | -1.39% / -1.63% |
+| Core0 radio task residence | 32.632% | 31.468% | +1.164 pp |
+| Core1 `network + udp_tx` task residence | 80.974% | 79.976% | +0.998 pp |
+| Core0 radio residence per datagram | 32.032 us | 30.386 us | +1.646 us |
+| Core1 network residence per datagram | 79.485 us | 77.224 us | +2.261 us |
+
+Task residence is wall time inside instrumented future polls, including
+interrupt preemption. It is not relabelled as retired-instruction utilization.
+The result proves that work was not merely moved from Core0 to Core1, but it
+also means the authoritative implementation does **not** yet pass the strict
+one-percent throughput and per-core-overhead gates.
+
+The exact-image coarse A/B then used enabled run
+`1788347230517-001ea33d` and disabled replay `1788347426038-001ebbbe`.
+The enabled path averaged 118.654 Mbit/s versus 121.447 Mbit/s disabled at the
+device, while the host observed 119.153 versus 121.303 Mbit/s. It
+issued and finished one full grant per BA32 aggregate with no unused or
+rejected lifecycle records. The measured Core0 control service averaged:
+
+- 3779.7 grants and 3779.3 progressed service calls per repetition;
+- 5450.1 cycles and 702.5 retired instructions per grant;
+- 170.8 cycles per admitted datagram;
+- 0.538% of one 320 MHz Core0 over the interval.
+
+The coarse image is intrusive, so its absolute throughput is not substituted
+for the task-residence gate. It does establish granularity and cost: the
+protocol is already per-aggregate rather than per-packet, and explicit Core0
+control service accounts for roughly half a percentage point. Same-image phase
+counters also show higher prepare/publish/terminal costs with control enabled;
+those must be measured around grant preparation before attributing them to one
+function or to cache layout. Core1 admission rises by about 66 cycles per
+datagram in this diagnostic, while packet emission remains approximately
+11.4k cycles per datagram and is outside the current control-plane cutover.
+
+The next implementation order is therefore:
+
+1. introduce explicit bounded control admission/reserve semantics and retain
+   the DHCP no-grant regression;
+2. measure and reduce Core0 grant preparation plus the duplicated Core1
+   per-frame bookkeeping until the strict A/B gates pass;
+3. add TCP and remaining provider coverage, then remove silent uncatalogued
+   data bypasses;
+4. bind the issued admission receipt to terminal BA/retry airtime;
+5. only then delete shadow/disabled compatibility paths and qualify sparse,
+   saturated, multi-peer and simultaneous STA+AP behavior.
+
+General Core1 stack optimization remains deliberately later. Its current
+absolute residence above 80% is a mandatory no-regression constraint during
+this work, not spare capacity into which Core0 work may be moved.

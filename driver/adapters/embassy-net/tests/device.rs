@@ -509,7 +509,7 @@ fn final_keyed_admission_rejects_stale_and_foreign_peer_keys_before_sram_claim()
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 #[test]
-fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
+fn authoritative_device_defers_sram_until_core0_grants_the_demand() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
@@ -552,12 +552,10 @@ fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
         )),
     );
 
-    // Demand is observational in this phase: the same valid key still claims
-    // its real SRAM token before Core0 consumes either lifecycle transition.
-    drop(match device.transmit_for(&mut cx, key) {
-        EgressAdmission::Granted(token) => token,
-        _ => panic!("demand publication must not gate SRAM admission"),
-    });
+    assert!(matches!(
+        device.transmit_for(&mut cx, key),
+        EgressAdmission::KeyDeferred
+    ));
     let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
     assert!(radio_control.service_shadow());
     assert_eq!(control.snapshot().demand_publications, 2);
@@ -567,7 +565,7 @@ fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 #[test]
-fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
+fn affine_current_and_standby_grants_materialize_and_close_exactly() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
@@ -591,7 +589,7 @@ fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
     let mut device = device.with_egress_control(network_control);
     radio.set_link_state(LinkState::Up);
     let schedule = device.egress_schedule().unwrap();
-    assert_eq!(schedule.grant_mode(), EgressGrantMode::Shadow);
+    assert_eq!(schedule.grant_mode(), EgressGrantMode::Authoritative);
     let key = device.egress_key(EgressRoute {
         destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 2]),
         traffic_class: 0,
@@ -600,7 +598,7 @@ fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
     let demand = EgressDemand::new(
         id,
         key,
-        EgressDemandLevel::new(core::num::NonZeroU16::new(2).unwrap(), false),
+        EgressDemandLevel::new(core::num::NonZeroU16::new(4).unwrap(), false),
     );
     let mut cx = context();
     device.update_egress_demand(
@@ -620,23 +618,72 @@ fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
         core::num::NonZeroU32::new(1_000).unwrap(),
     );
     radio_control.try_issue_grant(grant).unwrap();
+    let standby_demand = EgressDemand::new(
+        id,
+        key,
+        EgressDemandLevel::new(core::num::NonZeroU16::new(2).unwrap(), false),
+    );
+    let standby = EgressBurstGrant::new(
+        core::num::NonZeroU32::new(8).unwrap(),
+        standby_demand,
+        core::num::NonZeroU8::new(2).unwrap(),
+        core::num::NonZeroU32::new(1_000).unwrap(),
+    );
+    radio_control.try_issue_grant(standby).unwrap();
     let observed = device.poll_egress_grant(&mut cx).unwrap();
     assert_eq!(observed.serial(), grant.serial());
     assert_eq!(observed.demand(), demand);
 
     let token = match device.transmit_for(&mut cx, key) {
         EgressAdmission::Granted(token) => token,
-        _ => panic!("the unchanged shadow path must materialize one SRAM owner"),
+        _ => panic!("the authoritative grant must materialize one SRAM owner"),
     };
     token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5a));
     let token = match device.transmit_for(&mut cx, key) {
         EgressAdmission::Granted(token) => token,
-        _ => panic!("the unchanged shadow path must materialize the second SRAM owner"),
+        _ => panic!("the authoritative grant must materialize the second SRAM owner"),
     };
     token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5b));
     assert_eq!(consumer.queue_len_for(interface), 2);
 
-    device.finish_egress_grant(&mut cx, EgressGrantCompletion::new(grant.serial(), 2, None));
+    // Return one physical credit while retaining the exhausted affine grant.
+    // A third packet must still be deferred before it can claim that SRAM.
+    drop(
+        consumer
+            .for_interface(interface)
+            .try_receive_direct()
+            .unwrap(),
+    );
+    assert!(matches!(
+        device.transmit_for(&mut cx, key),
+        EgressAdmission::KeyDeferred
+    ));
+    assert_eq!(consumer.queue_len_for(interface), 1);
+
+    // Neither a foreign serial nor a false spent-credit count may close the
+    // live affine owner.
+    device.finish_egress_grant(
+        &mut cx,
+        EgressGrantCompletion::new(core::num::NonZeroU32::new(9).unwrap(), 2, None),
+    );
+    device.finish_egress_grant(&mut cx, EgressGrantCompletion::new(grant.serial(), 1, None));
+    assert!(!radio_control.service_shadow_control_observed(|_| {}, |_| {}));
+    assert!(matches!(
+        device.transmit_for(&mut cx, key),
+        EgressAdmission::KeyDeferred
+    ));
+
+    device.finish_egress_grant(
+        &mut cx,
+        EgressGrantCompletion::new(
+            grant.serial(),
+            2,
+            Some(EgressDemandLevel::new(
+                core::num::NonZeroU16::new(2).unwrap(),
+                false,
+            )),
+        ),
+    );
     let mut progress = std::vec::Vec::new();
     assert!(radio_control.service_shadow_control_observed(|_| {}, |update| progress.push(update)));
     assert_eq!(
@@ -644,12 +691,52 @@ fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
         std::vec![EgressGrantProgress::Finished {
             serial: grant.serial(),
             used_frames: 2,
-            remaining: None,
+            remaining: Some(EgressDemandLevel::new(
+                core::num::NonZeroU16::new(2).unwrap(),
+                false,
+            )),
         }]
     );
     assert_eq!(control.snapshot().network_grants, 1);
     assert_eq!(control.snapshot().grant_progress_publications, 1);
     assert_eq!(control.snapshot().radio_grant_updates, 1);
+
+    let observed = device.poll_egress_grant(&mut cx).unwrap();
+    assert_eq!(observed.serial(), standby.serial());
+    assert_eq!(observed.demand(), standby_demand);
+    drop(
+        consumer
+            .for_interface(interface)
+            .try_receive_direct()
+            .unwrap(),
+    );
+    for byte in [0x5c, 0x5d] {
+        let token = match device.transmit_for(&mut cx, key) {
+            EgressAdmission::Granted(token) => token,
+            _ => panic!("the standby grant must authorize its disjoint prefix"),
+        };
+        token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(byte));
+    }
+    device.finish_egress_grant(
+        &mut cx,
+        EgressGrantCompletion::new(standby.serial(), 2, None),
+    );
+    let mut standby_progress = std::vec::Vec::new();
+    assert!(
+        radio_control
+            .service_shadow_control_observed(|_| {}, |update| standby_progress.push(update))
+    );
+    assert_eq!(
+        standby_progress,
+        std::vec![EgressGrantProgress::Finished {
+            serial: standby.serial(),
+            used_frames: 2,
+            remaining: None,
+        }]
+    );
+    assert_eq!(control.snapshot().network_grants, 2);
+    assert_eq!(control.snapshot().grant_progress_publications, 2);
+    assert_eq!(control.snapshot().radio_grant_updates, 2);
 }
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -690,14 +777,25 @@ fn software_demand_can_close_before_its_pinned_radio_owner_is_consumed() {
             schedule_epoch: schedule.epoch(),
         },
     );
-    device.update_egress_demand(
-        &mut cx,
-        EgressDemandUpdate::Active(EgressDemand::new(
-            id,
-            key,
-            EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false),
-        )),
+    let demand = EgressDemand::new(
+        id,
+        key,
+        EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false),
     );
+    device.update_egress_demand(&mut cx, EgressDemandUpdate::Active(demand));
+
+    let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
+    assert!(radio_control.service_shadow());
+    let grant = EgressBurstGrant::new(
+        core::num::NonZeroU32::new(9).unwrap(),
+        demand,
+        core::num::NonZeroU8::MIN,
+        core::num::NonZeroU32::new(1_000).unwrap(),
+    );
+    radio_control.try_issue_grant(grant).unwrap();
+    let observed = device.poll_egress_grant(&mut cx).unwrap();
+    assert_eq!(observed.serial(), grant.serial());
+    assert_eq!(observed.demand(), demand);
 
     match device.transmit_for(&mut cx, key) {
         EgressAdmission::Granted(token) => {
@@ -714,22 +812,21 @@ fn software_demand_can_close_before_its_pinned_radio_owner_is_consumed() {
     // frontiers; an authoritative design must bind the latter to a grant or
     // admission receipt instead of extending software demand artificially.
     device.update_egress_demand(&mut cx, EgressDemandUpdate::Inactive { id, key });
-    let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
+    device.finish_egress_grant(&mut cx, EgressGrantCompletion::new(grant.serial(), 1, None));
     let mut updates = std::vec::Vec::new();
-    assert!(radio_control.service_shadow_observed(|update| updates.push(update)));
+    let mut progress = std::vec::Vec::new();
+    assert!(radio_control.service_shadow_control_observed(
+        |update| updates.push(update),
+        |update| progress.push(update),
+    ));
+    assert_eq!(updates, std::vec![EgressDemandUpdate::Inactive { id, key }]);
     assert_eq!(
-        updates,
-        std::vec![
-            EgressDemandUpdate::Reset {
-                schedule_epoch: schedule.epoch(),
-            },
-            EgressDemandUpdate::Active(EgressDemand::new(
-                id,
-                key,
-                EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false),
-            )),
-            EgressDemandUpdate::Inactive { id, key },
-        ]
+        progress,
+        std::vec![EgressGrantProgress::Finished {
+            serial: grant.serial(),
+            used_frames: 1,
+            remaining: None,
+        }]
     );
     assert_eq!(consumer.queue_len_for(interface), 1);
     let frame = consumer

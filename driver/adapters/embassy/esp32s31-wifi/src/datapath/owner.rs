@@ -253,11 +253,18 @@ where
     pub(super) fn prepare_physical_egress_grant(&mut self) -> bool {
         let services = &self.services;
         let network = &mut self.network;
-        network.prepare_egress_grant(&mut |demand| {
-            let snapshot = services.egress_radio_snapshot(demand);
-            super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
-            snapshot
-        })
+        let mut progressed = false;
+        for _ in 0..open_esp_radio_wifi_softmac::WIFI_EGRESS_GRANT_HORIZON {
+            if !network.prepare_egress_grant(&mut |demand| {
+                let snapshot = services.egress_radio_snapshot(demand);
+                super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
+                snapshot
+            }) {
+                break;
+            }
+            progressed = true;
+        }
+        progressed
     }
 
     pub(super) fn account_pair_tx_frames(&mut self, interface: NetworkInterfaceId, frames: usize) {

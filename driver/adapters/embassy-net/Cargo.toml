@@ -30,7 +30,7 @@ tx-core1-materializer-probe = ["tx-staging-copy-probe"]
 tx-egress-scheduling = ["embassy-net-driver/tx-egress-metadata"]
 
 [dependencies]
-embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "c4d871089d22be1398e2f2d62b23298b900a6d62" }
+embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "861e46da63520f340e33f1786710c0f43e9676f6" }
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
 pin-project-lite = "0.2.17"
@@ -40,7 +40,7 @@ riscv = { version = "0.15", optional = true }
 
 [dev-dependencies]
 embassy-executor = { version = "0.10.0", features = ["executor-thread", "platform-std"] }
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "c4d871089d22be1398e2f2d62b23298b900a6d62", features = ["icmp", "iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "std", "tx-egress-metadata", "udp"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "861e46da63520f340e33f1786710c0f43e9676f6", features = ["icmp", "iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "std", "tx-egress-metadata", "udp"] }
 embassy-time = { version = "0.5.0", features = ["std"] }
 
 [lints]

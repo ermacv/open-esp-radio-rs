@@ -1,0 +1,25 @@
+schema = 4
+id = "diagnostic-station-tx-egress-control-low-rate-core0"
+description = "Low-rate station TX proving authoritative egress progress returns to the Core1 executor"
+repetitions = 1
+image = "diagnostic-core0-rx-coarse"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "station", "udp", "tx", "ht40", "split-core", "core0", "egress-control", "livelock"]
+
+[link]
+phy = "ht40"
+guard_interval = "any"
+
+[workload]
+kind = "udp"
+direction = "tx"
+duration_seconds = 8
+tx_rate_bps = 2000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_tx_bps = 100000
+maximum_idle_channel_utilization_255 = 64

@@ -30,9 +30,10 @@ pub use configuration::{
     WifiStationConfig,
 };
 pub use egress::{
-    WifiAirtimeUnits, WifiEgressAdmission, WifiEgressAdmissionObservation, WifiEgressAirtimeConfig,
-    WifiEgressAirtimeError, WifiEgressAirtimeScheduler, WifiEgressBurstGrant, WifiEgressDemand,
-    WifiEgressDemandId, WifiEgressDemandLevel, WifiEgressOpportunity, WifiEgressSelection,
+    WIFI_EGRESS_GRANT_HORIZON, WifiAirtimeUnits, WifiEgressAdmission,
+    WifiEgressAdmissionObservation, WifiEgressAirtimeConfig, WifiEgressAirtimeError,
+    WifiEgressAirtimeScheduler, WifiEgressBurstGrant, WifiEgressDemand, WifiEgressDemandId,
+    WifiEgressDemandLevel, WifiEgressOpportunity, WifiEgressSelection,
 };
 pub use esp_now::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY, EspNowConfig,

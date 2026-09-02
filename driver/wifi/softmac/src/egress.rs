@@ -205,6 +205,7 @@ struct QueueState<K> {
     key: K,
     vif: u8,
     demand: Option<DemandState>,
+    reserved_frames: u16,
     deficit: i64,
     pending_airtime: u64,
     version: u32,
@@ -279,6 +280,10 @@ struct GrantState<K> {
     slot: usize,
 }
 
+/// One current and one standby radio quantum. This bounds both cross-core
+/// preparation and the amount of stack backlog hidden below the scheduler.
+pub const WIFI_EGRESS_GRANT_HORIZON: usize = 2;
+
 /// One newly issued burst and its already-reserved airtime receipt.
 ///
 /// Issuance is the boundary where work moves below the radio scheduler. The
@@ -336,7 +341,7 @@ pub struct WifiEgressAirtimeScheduler<K: Copy + Eq, const VIFS: usize, const QUE
     global_pending_airtime: u64,
     selection_serial: u32,
     selection_outstanding: bool,
-    grant: Option<GrantState<K>>,
+    grants: [Option<GrantState<K>>; WIFI_EGRESS_GRANT_HORIZON],
     /// Exact single active demand, maintained only on lifecycle changes.
     ///
     /// The common one-peer path must not rescan the maximum queue table for
@@ -358,7 +363,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
             global_pending_airtime: 0,
             selection_serial: 0,
             selection_outstanding: false,
-            grant: None,
+            grants: [None; WIFI_EGRESS_GRANT_HORIZON],
             sole_active_slot: None,
         }
     }
@@ -433,6 +438,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
                 id: demand.id,
                 level: demand.level,
             }),
+            reserved_frames: 0,
             deficit: 0,
             pending_airtime: 0,
             version: 1,
@@ -473,7 +479,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         &mut self,
         mut opportunity_for: impl FnMut(WifiEgressDemand<K>) -> Option<WifiEgressOpportunity>,
     ) -> Result<Option<WifiEgressSelection<K>>, WifiEgressAirtimeError> {
-        if self.grant.is_some() {
+        if self.grants.iter().all(Option::is_some) {
             return Err(WifiEgressAirtimeError::GrantOutstanding);
         }
         if self.selection_outstanding {
@@ -482,8 +488,9 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
 
         if let Some(slot) = self.sole_active_slot {
             let mut queue = self.queues[slot].expect("sole active queue remains owned");
-            let demand = queue.demand.expect("sole active queue retains demand");
-            let demand = WifiEgressDemand::new(queue.vif, demand.id, queue.key, demand.level);
+            let Some(demand) = available_demand(queue) else {
+                return Ok(None);
+            };
             let Some(opportunity) = opportunity_for(demand) else {
                 return Ok(None);
             };
@@ -530,8 +537,9 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         let mut eligible_vifs = [false; VIFS];
         for (slot, queue) in self.queues.iter().copied().enumerate() {
             let Some(queue) = queue else { continue };
-            let Some(demand) = queue.demand else { continue };
-            let demand = WifiEgressDemand::new(queue.vif, demand.id, queue.key, demand.level);
+            let Some(demand) = available_demand(queue) else {
+                continue;
+            };
             let Some(opportunity) = opportunity_for(demand) else {
                 continue;
             };
@@ -588,16 +596,24 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
     /// Issuance reserves pending airtime before the grant crosses cores. From
     /// this boundary onward the work is below the scheduler, even if Core1 has
     /// not yet materialized its final SRAM prefix. Until
-    /// [`Self::finish_grant`] is called, no second grant can be issued,
-    /// bounding the physical preparation horizon.
+    /// [`Self::finish_grant`] is called, at most one additional standby grant
+    /// can be issued. Every issued grant reserves a disjoint part of the
+    /// mirrored frame backlog as well as pending airtime.
     pub fn issue_selected(
         &mut self,
         selection: WifiEgressSelection<K>,
     ) -> Result<WifiEgressIssuedGrant<K>, WifiEgressAirtimeError> {
-        if self.grant.is_some() {
-            return Err(WifiEgressAirtimeError::GrantOutstanding);
-        }
+        let grant_slot = self
+            .grants
+            .iter()
+            .position(Option::is_none)
+            .ok_or(WifiEgressAirtimeError::GrantOutstanding)?;
         self.take_selection(&selection)?;
+        let queue = self.queues[selection.slot].expect("selected queue remains owned");
+        let reserved_frames = queue
+            .reserved_frames
+            .checked_add(u16::from(selection.opportunity.frame_limit.get()))
+            .ok_or(WifiEgressAirtimeError::CounterOverflow)?;
         let grant = WifiEgressBurstGrant {
             serial: NonZeroU32::new(selection.serial)
                 .expect("selection serials never use the zero value"),
@@ -606,7 +622,10 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         };
         let admission =
             self.charge_admission(selection.slot, selection.demand, selection.opportunity)?;
-        self.grant = Some(GrantState {
+        let mut queue = self.queues[selection.slot].expect("selected queue remains owned");
+        queue.reserved_frames = reserved_frames;
+        self.queues[selection.slot] = Some(queue);
+        self.grants[grant_slot] = Some(GrantState {
             grant,
             slot: selection.slot,
         });
@@ -625,21 +644,46 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         used_frames: u8,
         remaining: Option<WifiEgressDemandLevel>,
     ) -> Result<(), WifiEgressAirtimeError> {
-        let Some(state) = self.grant else {
-            return Err(WifiEgressAirtimeError::GrantUnavailable);
-        };
-        if state.grant != grant {
-            return Err(WifiEgressAirtimeError::GrantUnavailable);
-        }
+        let grant_slot = self
+            .grants
+            .iter()
+            .position(|state| state.is_some_and(|state| state.grant == grant))
+            .ok_or(WifiEgressAirtimeError::GrantUnavailable)?;
+        let state = self.grants[grant_slot].expect("located grant remains owned");
         let frame_limit = grant.opportunity.frame_limit.get();
         if used_frames > frame_limit {
             return Err(WifiEgressAirtimeError::InvalidGrantUsage);
         }
+        if used_frames < frame_limit
+            && remaining.is_some()
+            && self.grants.iter().enumerate().any(|(slot, state)| {
+                slot != grant_slot
+                    && state.is_some_and(|state| {
+                        state.grant.demand.vif == grant.demand.vif
+                            && state.grant.demand.id == grant.demand.id
+                            && state.grant.demand.key == grant.demand.key
+                    })
+            })
+        {
+            // Without a stack-owned head sequence, a same-demand standby is
+            // aligned only after its predecessor consumed the entire reserved
+            // prefix. A partial live close would otherwise let the standby
+            // consume packets which were never part of its reservation.
+            return Err(WifiEgressAirtimeError::InvalidGrantUsage);
+        }
 
-        self.grant = None;
+        let Some(mut queue) = self.queues.get(state.slot).copied().flatten() else {
+            return Err(WifiEgressAirtimeError::GrantUnavailable);
+        };
+        let reserved_frames = queue
+            .reserved_frames
+            .checked_sub(u16::from(grant.opportunity.frame_limit.get()))
+            .ok_or(WifiEgressAirtimeError::CounterOverflow)?;
+
+        self.grants[grant_slot] = None;
         let mut active_topology_changed = false;
-        if let Some(mut queue) = self.queues.get(state.slot).copied().flatten()
-            && queue.key == grant.demand.key
+        queue.reserved_frames = reserved_frames;
+        if queue.key == grant.demand.key
             && queue.vif == grant.demand.vif
             && queue
                 .demand
@@ -658,9 +702,10 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
                 queue.deficit = 0;
             }
             queue.version = next_version(queue.version);
-            self.queues[state.slot] =
-                (queue.demand.is_some() || queue.pending_airtime != 0).then_some(queue);
         }
+        self.queues[state.slot] =
+            (queue.demand.is_some() || queue.pending_airtime != 0 || queue.reserved_frames != 0)
+                .then_some(queue);
         if self.queues[state.slot]
             .is_some_and(|queue| queue.demand.is_none() && queue.pending_airtime == 0)
         {
@@ -834,7 +879,9 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
     }
 
     fn grant_holds_slot(&self, slot: usize) -> bool {
-        self.grant.is_some_and(|grant| grant.slot == slot)
+        self.grants
+            .iter()
+            .any(|grant| grant.is_some_and(|grant| grant.slot == slot))
     }
 
     fn refresh_active_summary(&mut self) {
@@ -1037,6 +1084,22 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
             })
             .unwrap_or_else(|| first_eligible.expect("an eligible queue exists"))
     }
+}
+
+fn available_demand<K: Copy>(queue: QueueState<K>) -> Option<WifiEgressDemand<K>> {
+    let demand = queue.demand?;
+    let ready_frames = demand
+        .level
+        .ready_frames
+        .get()
+        .checked_sub(queue.reserved_frames)
+        .and_then(NonZeroU16::new)?;
+    Some(WifiEgressDemand::new(
+        queue.vif,
+        demand.id,
+        queue.key,
+        WifiEgressDemandLevel::new(ready_frames, demand.level.aggregate_ready),
+    ))
 }
 
 fn next_version(current: u32) -> u32 {
@@ -1305,7 +1368,7 @@ mod tests {
     }
 
     #[test]
-    fn issued_burst_blocks_a_second_selection_and_survives_unrelated_updates() {
+    fn issued_bursts_fill_only_the_bounded_current_and_standby_horizon() {
         let mut scheduler = WifiEgressAirtimeScheduler::<u8, 1, 4>::new(config());
         scheduler.reset_vif(0, 1).unwrap();
         let first = demand(0, 1, 1, 1, 32);
@@ -1317,10 +1380,18 @@ mod tests {
             .unwrap()
             .unwrap();
         let selected_key = *selected.demand().key();
-        let (grant, admission) = scheduler.issue_selected(selected).unwrap().into_parts();
+        let (first_grant, first_admission) =
+            scheduler.issue_selected(selected).unwrap().into_parts();
 
-        assert_eq!(grant.opportunity().frame_limit().get(), 32);
-        assert_eq!(*grant.demand().key(), selected_key);
+        assert_eq!(first_grant.opportunity().frame_limit().get(), 32);
+        assert_eq!(*first_grant.demand().key(), selected_key);
+        let standby = scheduler
+            .select_next(|_| Some(opportunity(20_000)))
+            .unwrap()
+            .unwrap();
+        assert_ne!(*standby.demand().key(), selected_key);
+        let (standby_grant, standby_admission) =
+            scheduler.issue_selected(standby).unwrap().into_parts();
         assert!(matches!(
             scheduler.select_next(|_| Some(opportunity(20_000))),
             Err(WifiEgressAirtimeError::GrantOutstanding)
@@ -1328,14 +1399,121 @@ mod tests {
 
         let unrelated = if selected_key == 1 { second } else { first };
         scheduler.upsert_demand(unrelated).unwrap();
-        assert_eq!(admission.demand_id(), grant.demand().id());
-        scheduler.finish_grant(grant, 32, None).unwrap();
+        assert_eq!(first_admission.demand_id(), first_grant.demand().id());
+        scheduler.finish_grant(first_grant, 32, None).unwrap();
         scheduler
-            .reconcile_modeled_airtime(admission, airtime(20_000))
+            .reconcile_modeled_airtime(first_admission, airtime(20_000))
+            .unwrap();
+        scheduler.finish_grant(standby_grant, 32, None).unwrap();
+        scheduler
+            .reconcile_modeled_airtime(standby_admission, airtime(20_000))
             .unwrap();
 
         assert_eq!(scheduler.global_pending_airtime(), 0);
-        assert_eq!(serve(&mut scheduler, |_| 20_000), *unrelated.key());
+    }
+
+    #[test]
+    fn standby_reserves_a_disjoint_prefix_of_the_same_demand() {
+        let mut scheduler = WifiEgressAirtimeScheduler::<u8, 1, 2>::new(config());
+        scheduler.reset_vif(0, 1).unwrap();
+        scheduler.upsert_demand(demand(0, 1, 1, 4, 80)).unwrap();
+
+        let current = scheduler
+            .select_next(|_| Some(opportunity(20_000)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.demand().level().ready_frames().get(), 80);
+        let (current, current_admission) = scheduler.issue_selected(current).unwrap().into_parts();
+        let standby = scheduler
+            .select_next(|_| Some(opportunity(20_000)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(standby.demand().level().ready_frames().get(), 48);
+        let (standby, standby_admission) = scheduler.issue_selected(standby).unwrap().into_parts();
+        assert_eq!(scheduler.global_pending_airtime(), 40_000);
+
+        scheduler
+            .finish_grant(
+                current,
+                32,
+                Some(WifiEgressDemandLevel::new(
+                    NonZeroU16::new(48).unwrap(),
+                    true,
+                )),
+            )
+            .unwrap();
+        let tail = scheduler
+            .select_next(|demand| {
+                let frames = u8::try_from(demand.level().ready_frames().get()).unwrap();
+                Some(WifiEgressOpportunity::new(
+                    NonZeroU8::new(frames).unwrap(),
+                    airtime(5_000),
+                    airtime(80_000),
+                    NonZeroU8::MIN,
+                ))
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(tail.demand().level().ready_frames().get(), 16);
+        assert_eq!(tail.opportunity().frame_limit().get(), 16);
+        scheduler.cancel_selection(tail).unwrap();
+
+        scheduler
+            .finish_grant(
+                standby,
+                32,
+                Some(WifiEgressDemandLevel::new(
+                    NonZeroU16::new(16).unwrap(),
+                    false,
+                )),
+            )
+            .unwrap();
+        scheduler
+            .reconcile_modeled_airtime(current_admission, airtime(12_000))
+            .unwrap();
+        scheduler
+            .reconcile_modeled_airtime(standby_admission, airtime(20_000))
+            .unwrap();
+        assert_eq!(scheduler.global_pending_airtime(), 0);
+    }
+
+    #[test]
+    fn partial_live_current_cannot_misalign_a_same_demand_standby() {
+        let mut scheduler = WifiEgressAirtimeScheduler::<u8, 1, 2>::new(config());
+        scheduler.reset_vif(0, 1).unwrap();
+        scheduler.upsert_demand(demand(0, 1, 1, 4, 64)).unwrap();
+
+        let current = scheduler
+            .select_next(|_| Some(opportunity(20_000)))
+            .unwrap()
+            .unwrap();
+        let (current, _) = scheduler.issue_selected(current).unwrap().into_parts();
+        let standby = scheduler
+            .select_next(|_| Some(opportunity(20_000)))
+            .unwrap()
+            .unwrap();
+        let (standby, _) = scheduler.issue_selected(standby).unwrap().into_parts();
+
+        assert_eq!(
+            scheduler.finish_grant(
+                current,
+                20,
+                Some(WifiEgressDemandLevel::new(
+                    NonZeroU16::new(44).unwrap(),
+                    true,
+                )),
+            ),
+            Err(WifiEgressAirtimeError::InvalidGrantUsage)
+        );
+        assert!(matches!(
+            scheduler.select_next(|_| Some(opportunity(20_000))),
+            Err(WifiEgressAirtimeError::GrantOutstanding)
+        ));
+
+        // Ending the lifetime makes both reservations stale and is safe even
+        // when the predecessor did not consume its complete prefix.
+        scheduler.finish_grant(current, 20, None).unwrap();
+        scheduler.finish_grant(standby, 0, None).unwrap();
     }
 
     #[test]

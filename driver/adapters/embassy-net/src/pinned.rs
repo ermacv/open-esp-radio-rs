@@ -1489,7 +1489,7 @@ pub struct SplitPinnedDevice<
     tx_reservation: (),
 }
 
-/// Core1-local owner of one radio-issued observational quantum.
+/// Core1-local owner of one radio-issued authoritative quantum.
 ///
 /// The state remains next to the permanent device rather than in an async
 /// stack frame. Xarxa owns the exact spent-credit count and publishes one
@@ -1499,6 +1499,7 @@ pub struct SplitPinnedDevice<
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PinnedEgressGrantState {
     grant: EgressBurstGrant,
+    used_frames: u8,
     completion: Option<EgressGrantCompletion>,
 }
 
@@ -1507,8 +1508,15 @@ impl PinnedEgressGrantState {
     const fn new(grant: EgressBurstGrant) -> Self {
         Self {
             grant,
+            used_frames: 0,
             completion: None,
         }
+    }
+
+    fn authorizes(&self, key: EgressKey) -> bool {
+        self.completion.is_none()
+            && self.grant.demand().key() == key
+            && self.used_frames < self.grant.frame_credits().get()
     }
 }
 
@@ -1556,9 +1564,9 @@ impl<
         self
     }
 
-    /// Retry retained grant lifecycle records without changing packet
-    /// admission. A full transport leaves the exact record in the permanent
-    /// Core1 owner and the radio capacity edge wakes this device again.
+    /// Retry a retained terminal grant record. A full transport leaves the
+    /// exact record in the permanent Core1 owner and the radio capacity edge
+    /// wakes this device again.
     #[cfg(feature = "tx-egress-scheduling")]
     fn flush_egress_grant_progress(&mut self) {
         let Some(control) = self.egress_control.as_deref_mut() else {
@@ -2695,6 +2703,16 @@ impl<
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
             return EgressAdmission::KeyDeferred;
         }
+        if self.egress_demand_active
+            && !self
+                .egress_grant
+                .as_ref()
+                .is_some_and(|grant| grant.authorizes(egress))
+        {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
+            return EgressAdmission::KeyDeferred;
+        }
         let run_changed = self.keyed_egress != Some(egress);
         if run_changed {
             #[cfg(feature = "tx-phase-telemetry")]
@@ -2714,6 +2732,16 @@ impl<
             .expect("keyed application admission reserves one TX credit");
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
+        if self.egress_demand_active {
+            let grant = self
+                .egress_grant
+                .as_mut()
+                .expect("authoritative admission retains its affine grant");
+            grant.used_frames = grant
+                .used_frames
+                .checked_add(1)
+                .expect("a bounded grant cannot overflow its frame count");
+        }
         #[cfg(feature = "tx-phase-telemetry")]
         self.observe_successful_shadow_grant(egress);
         self.keyed_run_length = self.keyed_run_length.saturating_add(1);
@@ -2752,7 +2780,7 @@ impl<
                 NonZeroU8::new(crate::keyed_egress_dispatch_quantum()).unwrap(),
                 epoch,
                 if self.egress_demand_active && self.egress_control.is_some() {
-                    EgressGrantMode::Shadow
+                    EgressGrantMode::Authoritative
                 } else {
                     EgressGrantMode::StackSelected
                 },
@@ -2772,9 +2800,9 @@ impl<
         if self.egress_demand_active
             && let Some(control) = self.egress_control.as_mut()
         {
-            // This phase remains observational. A malformed or over-capacity
-            // lifecycle is omitted from radio shadow state while synchronous
-            // `transmit_for` remains the sole admission authority.
+            // Malformed or over-capacity lifecycles are omitted from the
+            // radio mirror. A valid Core0 grant and synchronous SRAM claim are
+            // jointly required for final packet materialization.
             if let Ok(pending) = control.update_egress_demand(cx, update) {
                 self.egress_demand_flush_pending = pending;
             }
@@ -2807,6 +2835,8 @@ impl<
         if let Some(state) = self.egress_grant.as_mut()
             && state.grant.serial() == completion.serial()
             && state.completion.is_none()
+            && state.used_frames == completion.used_frames()
+            && completion.used_frames() <= state.grant.frame_credits().get()
         {
             state.completion = Some(completion);
             self.flush_egress_grant_progress();

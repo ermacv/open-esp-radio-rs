@@ -10,7 +10,9 @@ use embassy_net_driver::{
     Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _,
 };
 #[cfg(feature = "tx-egress-scheduling")]
-use embassy_net_driver::{EgressAdmission, EgressKey, EgressRoute, EgressSchedule};
+use embassy_net_driver::{
+    EgressAdmission, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
+};
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 use embassy_net_driver::{EgressDemand, EgressDemandId, EgressDemandLevel, EgressDemandUpdate};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -319,6 +321,7 @@ fn shared_rx_wrapper_delegates_the_inner_egress_schedule() {
             core::num::NonZeroU8::new(32).unwrap(),
             core::num::NonZeroU8::new(4).unwrap(),
             2,
+            EgressGrantMode::StackSelected,
         )
     );
 }

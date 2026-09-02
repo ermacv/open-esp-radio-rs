@@ -17,7 +17,7 @@ use embassy_net_driver::{
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use embassy_net_driver::{
-    EgressAdmission, EgressDemandUpdate, EgressKey, EgressRoute, EgressSchedule,
+    EgressAdmission, EgressDemandUpdate, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
 };
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
@@ -2695,6 +2695,7 @@ impl<
                 NonZeroU8::new(32).unwrap(),
                 NonZeroU8::new(crate::keyed_egress_dispatch_quantum()).unwrap(),
                 epoch,
+                EgressGrantMode::StackSelected,
             ))
         } else {
             // A permanent network stack survives radio role epochs. Returning

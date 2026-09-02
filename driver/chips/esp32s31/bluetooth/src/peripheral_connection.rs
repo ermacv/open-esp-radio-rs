@@ -25,6 +25,13 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothNonScanningRxMemoryModelAddress, BluetoothPeripheralConnectionMemoryGraphModelAddress,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothPeripheralConnectionDataChannel, BluetoothPeripheralConnectionDefaultTxPowerDbm,
+    BluetoothPeripheralConnectionIntervalTicks,
+    BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
+    BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
+};
 
 use crate::BluetoothSchedulerInstant;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -275,6 +282,16 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
         epoch: BluetoothControllerSchedulerEpoch,
         config: BluetoothSchedulerSoftwareConfig,
     ) -> Result<BluetoothPeripheralConnectionFirstEventCandidate, Self> {
+        let Some(data_channel) =
+            BluetoothPeripheralConnectionDataChannel::new(self.event.channel().get())
+        else {
+            return Err(self);
+        };
+        let interval_ticks =
+            epoch.raw_duration_ticks_for_micros(self.event.timing().interval_micros());
+        let Some(interval) = BluetoothPeripheralConnectionIntervalTicks::new(interval_ticks) else {
+            return Err(self);
+        };
         let Some(requested_window) = self.first_window.project_scheduler_window(epoch, config)
         else {
             return Err(self);
@@ -282,6 +299,8 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
         Ok(BluetoothPeripheralConnectionFirstEventCandidate {
             prepared: self,
             requested_window,
+            data_channel,
+            interval,
         })
     }
 
@@ -313,6 +332,8 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
 pub(crate) struct BluetoothPeripheralConnectionFirstEventCandidate {
     prepared: BluetoothPeripheralConnectionFirstEventPrepared,
     requested_window: BluetoothSchedulerRawWindow,
+    data_channel: BluetoothPeripheralConnectionDataChannel,
+    interval: BluetoothPeripheralConnectionIntervalTicks,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -333,6 +354,56 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
         self.prepared.channel()
     }
 
+    /// Install the reviewed descriptor subset after overlap resolution.
+    ///
+    /// The resolved common-scheduler window is intentionally accepted here,
+    /// rather than during candidate formation, because initial admission may
+    /// displace the requested interval. The resulting memory owner still has
+    /// no publication operation: unreviewed duration/configuration fields and
+    /// hardware admission remain mandatory later transitions.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc conversion failure returns the complete affine candidate"
+    )]
+    pub(crate) fn prepare_resolved_event_fields(
+        self,
+        resolved_window: BluetoothSchedulerRawWindow,
+        default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
+        priority: BluetoothPeripheralConnectionSchedulerPriority,
+    ) -> Result<BluetoothPeripheralConnectionFirstEventFieldsPrepared, Self> {
+        let Some(window) = BluetoothPeripheralConnectionSchedulerWindow::new(
+            resolved_window.start(),
+            resolved_window.end(),
+        ) else {
+            return Err(self);
+        };
+        let Self {
+            prepared,
+            requested_window,
+            data_channel,
+            interval,
+        } = self;
+        let BluetoothPeripheralConnectionFirstEventPrepared {
+            graph,
+            event,
+            first_window,
+        } = prepared;
+        let graph = graph.prepare_reviewed_first_event_fields(
+            data_channel,
+            interval,
+            window,
+            default_tx_power,
+            priority,
+        );
+        Ok(BluetoothPeripheralConnectionFirstEventFieldsPrepared {
+            graph,
+            event,
+            first_window,
+            requested_window,
+            resolved_window,
+        })
+    }
+
     pub(crate) fn cancel(
         self,
     ) -> (
@@ -340,6 +411,75 @@ impl BluetoothPeripheralConnectionFirstEventCandidate {
         LePeripheralConnection,
     ) {
         self.prepared.cancel()
+    }
+}
+
+/// Portable first event paired with the reviewed, resolved descriptor subset.
+///
+/// This state is deliberately CPU-owned and unpublished. It proves that the
+/// identity, RX rotation, channel, interval, power, priority and resolved
+/// window are present, but does not stand in for the remaining connection
+/// duration/configuration semantics.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the partial connection descriptor must advance or be cancelled"]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-admission transition consumes this owner"
+)]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventFieldsPrepared {
+    graph: BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
+    event: LePeripheralConnectionEventPrepared,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-admission transition consumes this owner"
+)]
+impl BluetoothPeripheralConnectionFirstEventFieldsPrepared {
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub(crate) const fn channel(&self) -> BluetoothPeripheralConnectionDataChannel {
+        self.graph.channel()
+    }
+
+    pub(crate) const fn interval(&self) -> BluetoothPeripheralConnectionIntervalTicks {
+        self.graph.interval()
+    }
+
+    pub(crate) const fn default_tx_power(&self) -> BluetoothPeripheralConnectionDefaultTxPowerDbm {
+        self.graph.default_tx_power()
+    }
+
+    pub(crate) const fn priority(&self) -> BluetoothPeripheralConnectionSchedulerPriority {
+        self.graph.priority()
+    }
+
+    pub(crate) const fn requested_window(&self) -> BluetoothSchedulerRawWindow {
+        self.requested_window
+    }
+
+    pub(crate) const fn resolved_window(&self) -> BluetoothSchedulerRawWindow {
+        self.resolved_window
+    }
+
+    pub(crate) fn cancel(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionRuntimeResources,
+        LePeripheralConnection,
+    ) {
+        BluetoothPeripheralConnectionFirstEventPrepared {
+            graph: self.graph.cancel(),
+            event: self.event,
+            first_window: self.first_window,
+        }
+        .cancel()
     }
 }
 
@@ -393,15 +533,17 @@ mod tests {
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BluetoothNonScanningRxMemoryModelAddress, BluetoothNonScanningRxMemoryStorage,
+        BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIntervalTicks,
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
         BluetoothPeripheralConnectionMemoryGraphStorage,
+        BluetoothPeripheralConnectionSchedulerPriority,
     };
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionRuntimeResources};
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
-        BluetoothSchedulerSoftwareConfig,
+        BluetoothSchedulerRawWindow, BluetoothSchedulerSoftwareConfig,
     };
 
     fn runtime(graph_base: u32) -> BluetoothPeripheralConnectionRuntimeResources {
@@ -522,6 +664,62 @@ mod tests {
         );
 
         let (runtime, connection) = candidate.cancel();
+        assert!(runtime.allocation_is_idle());
+        assert_eq!(connection.event_counter(), 0);
+    }
+
+    #[test]
+    fn resolved_connection_fields_remain_affine_and_cancel_losslessly() {
+        let runtime = runtime(0x2f00_7000);
+        let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
+        let expected_channel = LePeripheralConnection::from_request(request)
+            .prepare_event()
+            .channel();
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let epoch = BluetoothControllerSchedulerEpoch::new(
+            BluetoothControllerTimeSample::for_validation(300),
+            20_000,
+            scale,
+        );
+        let candidate = runtime
+            .prepare_first_event(
+                LePeripheralConnection::from_request(request),
+                BluetoothLe1MPacketStartTiming::from_scheduler_micros(21_000),
+            )
+            .project_scheduler_window(
+                epoch,
+                BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            )
+            .unwrap_or_else(|_| panic!("the first connection window projects"));
+        let requested = candidate.requested_window();
+        let resolved = BluetoothSchedulerRawWindow::from_projected_scheduler_window(
+            requested.end(),
+            requested.end().wrapping_add(requested.duration()),
+        )
+        .expect("the displaced window retains the accepted duration");
+        let default_tx_power = BluetoothPeripheralConnectionDefaultTxPowerDbm::new(-4);
+        let priority = BluetoothPeripheralConnectionSchedulerPriority::new(5)
+            .expect("the scheduler priority fits both reviewed lanes");
+
+        let prepared = candidate
+            .prepare_resolved_event_fields(resolved, default_tx_power, priority)
+            .unwrap_or_else(|_| panic!("a resolved scheduler window remains non-empty"));
+
+        assert_eq!(prepared.event_counter(), 0);
+        assert_eq!(prepared.channel().index(), expected_channel.get());
+        assert_eq!(prepared.default_tx_power(), default_tx_power);
+        assert_eq!(prepared.priority(), priority);
+        assert_eq!(prepared.requested_window(), requested);
+        assert_eq!(prepared.resolved_window(), resolved);
+        assert_eq!(
+            prepared.interval(),
+            BluetoothPeripheralConnectionIntervalTicks::new(
+                epoch.raw_duration_ticks_for_micros(request.timing().interval_micros())
+            )
+            .expect("a validated LE connection interval projects to non-zero ticks")
+        );
+
+        let (runtime, connection) = prepared.cancel();
         assert!(runtime.allocation_is_idle());
         assert_eq!(connection.event_counter(), 0);
     }

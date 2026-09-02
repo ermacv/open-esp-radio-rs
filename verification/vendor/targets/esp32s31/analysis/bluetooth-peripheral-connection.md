@@ -112,6 +112,35 @@ following:
 - post-insertion retry/reschedule policy before the device is reported as
   connected.
 
+The same body closes a useful descriptor subset without requiring names for
+the vendor's private aggregate types. The Rust memory codec now consumes only
+semantic values and performs these positional transforms privately:
+
+| Private object field | Source-owned input | Reviewed first-event behavior |
+| --- | --- | --- |
+| link state `+0x04` | signed default TX power | shared S31 five-bit rounded-power projection |
+| link state `+0x18` | negotiated connection interval | interval converted as a duration into raw controller ticks |
+| scheduler item `+0x04` | ready state | sets the reviewed context-ready flag |
+| scheduler item `+0x14` | LE 1M plus rounded TX power | selects the LE 1M rate lanes and copies the rounded-power projection |
+| scheduler item `+0x18` | data-channel index plus bounded priority | maps data channels 0--36 to the S31 frequency image and copies the four-bit priority into both lanes |
+| scheduler item `+0x38` | new event | clears the initial status |
+| scheduler item `+0x44`, `+0x48` | resolved common-scheduler window | stores the accepted start and end only after overlap resolution |
+| scheduler item `+0x4c` | new event | clears the reviewed low bookkeeping byte |
+
+The channel-frequency mapping is the ordinary LE data-channel ordering around
+the three primary advertising-channel positions; the portable LL still sees
+only a validated data-channel index. Likewise, signed dBm, priority, interval
+and a non-empty wrapping window are the only inputs visible above the memory
+crate. Masks, shifts, rounded-power values and SRAM offsets do not leave that
+codec.
+
+This transition remains deliberately partial. The scheduler-item
+duration/configuration fields around `+0x2c`/`+0x2e`, the remaining link-state
+reset fields and the exact first-event task admission/publication edge are not
+yet proven as one complete runnable contract. In particular, the descriptor
+uses the common scheduler's resolved window rather than the requested window:
+overlap insertion is allowed to displace the initial candidate.
+
 These dependencies explain why Access Address plus CRCInit is not a runnable
 event image. The Rust owner now also attaches a separate statically allocated
 two-node RX rotation graph. That pool represents the common non-scanning
@@ -140,23 +169,24 @@ portable Link Layer.
 
 ## Next closure order
 
-The first two former blockers are closed: packet timestamp conversion and the
-causal absolute first-window contract. The retained scheduler epoch now also
-projects that window back into a validated non-empty raw Controller interval,
-including the common preparation lead and preserving cancellation. This is a
-CPU-only candidate; it is not yet composed into task-side admission. The
-shortest remaining path to one real peripheral event is:
+Packet timestamp conversion, the causal absolute first-window contract and the
+reviewed channel/interval/power/priority/window descriptor subset are closed.
+The retained scheduler epoch projects the window into a validated raw
+Controller interval and converts the negotiated interval independently as a
+duration, avoiding subtraction of two truncated absolute projections. This is
+still a CPU-only candidate; it is not yet composed into task-side admission.
+The shortest remaining path to one real peripheral event is:
 
 1. attach the now-static shared RX pool and selector-two RX publication to the
    response-capable connectable-advertising graph, then transfer the pool and
    accepted packet to the existing task-service normalizer;
-2. close the remaining connection link-state and scheduler-item fields as
-   semantic accessors inside the memory crate, then consume the existing raw
-   candidate from task-side admission;
-3. join the prepared graph to the existing common scheduler admission,
-   publication, completion and post-unlink owners;
-4. add SN/NESN, retransmission and supervision before exposing ACL success;
-5. add only the mandatory LL control procedures needed by the supported HCI
+2. resolve the scheduler-item duration/configuration formula and remaining
+   mandatory link-state reset fields inside the private memory codec;
+3. consume the existing raw candidate through common task-side admission and
+   only then lower the resolved window into the descriptor;
+4. join the complete graph to publication, completion and post-unlink owners;
+5. add SN/NESN, retransmission and supervision before exposing ACL success;
+6. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
 The completion and next-anchor functions remain important evidence roots, but

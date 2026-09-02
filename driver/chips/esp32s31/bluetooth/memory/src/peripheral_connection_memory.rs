@@ -18,6 +18,7 @@ use pin_project::pin_project;
 use vcell::VolatileCell;
 
 use crate::{
+    le_tx_power::rounded_tx_power,
     non_scanning_rx_memory::BluetoothNonScanningRxMemoryCpuOwned,
     scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
@@ -47,15 +48,27 @@ const LINK_STATE_TX_TAIL: usize = 0x74 / 4;
 const LINK_STATE_RX_RESERVE: usize = 0x78 / 4;
 const LINK_STATE_CRC_INITIALIZATION: usize = 0x2c / 4;
 const LINK_STATE_ACCESS_ADDRESS: usize = 0x38 / 4;
+const LINK_STATE_ROUNDED_POWER: usize = 1;
+const LINK_STATE_INTERVAL_TICKS: usize = 0x18 / 4;
+const LINK_STATE_ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
 
 const SCHEDULER_ITEM_NEXT: usize = 0;
 const SCHEDULER_ITEM_CONTEXT: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE: usize = 2;
 const SCHEDULER_ITEM_CLASS: usize = 0x4c / 4;
+const SCHEDULER_ITEM_CONTEXT_STATE: usize = 1;
+const SCHEDULER_ITEM_RATE_AND_POWER: usize = 0x14 / 4;
+const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY: usize = 0x18 / 4;
+const SCHEDULER_ITEM_STATUS: usize = 0x38 / 4;
+const SCHEDULER_ITEM_START: usize = 0x44 / 4;
+const SCHEDULER_ITEM_END: usize = 0x48 / 4;
 const SCHEDULER_ITEM_LINK_MASK: u32 = 0x000f_ffff;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0010_0000;
 const SCHEDULER_ITEM_PERIPHERAL_PREFIX: u32 = 0x0020_0000;
 const SCHEDULER_ITEM_CONNECTION_CLASS: u32 = 3 << 8;
+const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
+const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
+const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK: u32 = 0x0000_7fff;
 
 const TX_SENTINEL_STATE: usize = 0x0c / 4;
 const TX_SENTINEL_CLASS: usize = 0x10 / 4;
@@ -126,6 +139,22 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
             .set(u32::from_le_bytes(identity.access_address_wire_bytes()));
     }
 
+    fn prepare_event_profile(
+        &self,
+        interval: BluetoothPeripheralConnectionIntervalTicks,
+        default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
+    ) {
+        let power = u32::from(rounded_tx_power(default_tx_power.dbm()));
+        let current = self.words[LINK_STATE_ROUNDED_POWER].get();
+        self.words[LINK_STATE_ROUNDED_POWER]
+            .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
+        self.words[LINK_STATE_INTERVAL_TICKS].set(interval.ticks());
+    }
+
+    fn rounded_power(&self) -> u32 {
+        (self.words[LINK_STATE_ROUNDED_POWER].get() & LINK_STATE_ROUNDED_POWER_MASK) >> 23
+    }
+
     fn identity(&self) -> BluetoothPeripheralConnectionIdentity {
         let crc_initialization = self.words[LINK_STATE_CRC_INITIALIZATION]
             .get()
@@ -177,6 +206,111 @@ impl BluetoothPeripheralConnectionIdentity {
     }
 }
 
+/// One validated LE data channel projected into the S31 frequency table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionDataChannel {
+    index: u8,
+    frequency_image: u8,
+}
+
+impl BluetoothPeripheralConnectionDataChannel {
+    /// Bind one of the 37 Link Layer data-channel indices.
+    pub const fn new(index: u8) -> Option<Self> {
+        if index >= 37 {
+            return None;
+        }
+        let frequency_image = if index <= 10 {
+            (index + 1) * 2
+        } else {
+            (index + 2) * 2
+        };
+        Some(Self {
+            index,
+            frequency_image,
+        })
+    }
+
+    pub const fn index(self) -> u8 {
+        self.index
+    }
+
+    const fn frequency_image(self) -> u8 {
+        self.frequency_image
+    }
+}
+
+/// Non-empty raw Controller interval between connection events.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionIntervalTicks(u32);
+
+impl BluetoothPeripheralConnectionIntervalTicks {
+    pub const fn new(ticks: u32) -> Option<Self> {
+        if ticks == 0 { None } else { Some(Self(ticks)) }
+    }
+
+    const fn ticks(self) -> u32 {
+        self.0
+    }
+}
+
+/// Non-empty raw Controller window for one connection scheduler item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionSchedulerWindow {
+    start: u32,
+    end: u32,
+}
+
+impl BluetoothPeripheralConnectionSchedulerWindow {
+    pub const fn new(start: u32, end: u32) -> Option<Self> {
+        let duration = end.wrapping_sub(start);
+        if duration == 0 || duration > i32::MAX as u32 {
+            None
+        } else {
+            Some(Self { start, end })
+        }
+    }
+
+    const fn start(self) -> u32 {
+        self.start
+    }
+
+    const fn end(self) -> u32 {
+        self.end
+    }
+}
+
+/// Physical default transmit-power request for the first connection profile.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionDefaultTxPowerDbm(i8);
+
+impl BluetoothPeripheralConnectionDefaultTxPowerDbm {
+    pub const fn new(dbm: i8) -> Self {
+        Self(dbm)
+    }
+
+    pub const fn dbm(self) -> i8 {
+        self.0
+    }
+}
+
+/// Four-bit scheduler priority copied into both connection priority lanes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionSchedulerPriority(u8);
+
+impl BluetoothPeripheralConnectionSchedulerPriority {
+    pub const fn new(priority: u8) -> Option<Self> {
+        if priority <= 0x0f {
+            Some(Self(priority))
+        } else {
+            None
+        }
+    }
+
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
 #[repr(C, align(4))]
 struct BluetoothPeripheralConnectionSchedulerItemStorage {
     words: [VolatileCell<u32>; SCHEDULER_ITEM_WORDS],
@@ -218,6 +352,33 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
                 == scheduler_context.compressed_image()
             && self.words[SCHEDULER_ITEM_LINK_STATE].get() & SCHEDULER_ITEM_LINK_MASK
                 == link_state.compressed_image()
+    }
+
+    fn prepare_reviewed_first_event_fields(
+        &self,
+        rounded_power: u32,
+        channel: BluetoothPeripheralConnectionDataChannel,
+        window: BluetoothPeripheralConnectionSchedulerWindow,
+        priority: BluetoothPeripheralConnectionSchedulerPriority,
+    ) {
+        self.words[SCHEDULER_ITEM_CONTEXT_STATE]
+            .set(self.words[SCHEDULER_ITEM_CONTEXT_STATE].get() | SCHEDULER_ITEM_CONTEXT_READY);
+        self.words[SCHEDULER_ITEM_RATE_AND_POWER].set(
+            (self.words[SCHEDULER_ITEM_RATE_AND_POWER].get() & !SCHEDULER_ITEM_RATE_AND_POWER_MASK)
+                | (rounded_power << 20),
+        );
+        let priority = u32::from(priority.value());
+        self.words[SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY].set(
+            (self.words[SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY].get()
+                & !SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK)
+                | (u32::from(channel.frequency_image()) << 8)
+                | priority
+                | (priority << 4),
+        );
+        self.words[SCHEDULER_ITEM_STATUS].set(0);
+        self.words[SCHEDULER_ITEM_START].set(window.start());
+        self.words[SCHEDULER_ITEM_END].set(window.end());
+        self.words[SCHEDULER_ITEM_CLASS].set(self.words[SCHEDULER_ITEM_CLASS].get() & 0xffff_ff00);
     }
 }
 
@@ -567,6 +728,41 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
             && self.pool.is_initialized()
     }
 
+    /// Install only the complete first-event fields whose transforms are reviewed.
+    ///
+    /// This is not a publishable descriptor: connection duration/configuration
+    /// fields and scheduler admission remain outside this state.
+    pub fn prepare_reviewed_first_event_fields(
+        self,
+        channel: BluetoothPeripheralConnectionDataChannel,
+        interval: BluetoothPeripheralConnectionIntervalTicks,
+        window: BluetoothPeripheralConnectionSchedulerWindow,
+        default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
+        priority: BluetoothPeripheralConnectionSchedulerPriority,
+    ) -> BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
+        let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
+        let graph = self.storage.as_ref().get_ref();
+        graph
+            .link_state
+            .prepare_event_profile(interval, default_tx_power);
+        graph.scheduler_items[selected_index].prepare_reviewed_first_event_fields(
+            graph.link_state.rounded_power(),
+            channel,
+            window,
+            priority,
+        );
+        BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            pool: self.pool,
+            channel,
+            interval,
+            window,
+            default_tx_power,
+            priority,
+        }
+    }
+
     /// Remove the unpublished RX links and recover both exact CPU owners.
     pub fn cancel(
         self,
@@ -586,6 +782,50 @@ impl BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
             },
             self.pool,
         )
+    }
+}
+
+/// RX-attached graph carrying the reviewed subset of one first-event image.
+#[must_use = "the partial connection event image must be retained or cancelled"]
+pub struct BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
+    storage: Pin<&'static mut BluetoothPeripheralConnectionMemoryGraphStorage>,
+    binding: BluetoothPeripheralConnectionMemoryGraphBinding,
+    pool: BluetoothNonScanningRxMemoryCpuOwned,
+    channel: BluetoothPeripheralConnectionDataChannel,
+    interval: BluetoothPeripheralConnectionIntervalTicks,
+    window: BluetoothPeripheralConnectionSchedulerWindow,
+    default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
+    priority: BluetoothPeripheralConnectionSchedulerPriority,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
+    pub const fn channel(&self) -> BluetoothPeripheralConnectionDataChannel {
+        self.channel
+    }
+
+    pub const fn interval(&self) -> BluetoothPeripheralConnectionIntervalTicks {
+        self.interval
+    }
+
+    pub const fn window(&self) -> BluetoothPeripheralConnectionSchedulerWindow {
+        self.window
+    }
+
+    pub const fn default_tx_power(&self) -> BluetoothPeripheralConnectionDefaultTxPowerDbm {
+        self.default_tx_power
+    }
+
+    pub const fn priority(&self) -> BluetoothPeripheralConnectionSchedulerPriority {
+        self.priority
+    }
+
+    /// Return to the RX-attached CPU frontier without publishing hardware state.
+    pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
+        BluetoothPeripheralConnectionMemoryGraphReceivePrepared {
+            storage: self.storage,
+            binding: self.binding,
+            pool: self.pool,
+        }
     }
 }
 

@@ -161,14 +161,17 @@ pub use peripheral_connection_memory::{
     BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
-    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES, BluetoothPeripheralConnectionIdentity,
-    BluetoothPeripheralConnectionMemoryGraphBindError,
+    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES, BluetoothPeripheralConnectionDataChannel,
+    BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIdentity,
+    BluetoothPeripheralConnectionIntervalTicks, BluetoothPeripheralConnectionMemoryGraphBindError,
     BluetoothPeripheralConnectionMemoryGraphBindFailure,
     BluetoothPeripheralConnectionMemoryGraphBinding,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+    BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
     BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
     BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
     BluetoothPeripheralConnectionMemoryGraphStorage,
+    BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};

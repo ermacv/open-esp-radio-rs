@@ -684,6 +684,16 @@ impl BluetoothControllerSchedulerEpoch {
             )
         }
     }
+
+    /// Convert a duration without applying either scheduler epoch anchor.
+    ///
+    /// Descriptor intervals are deltas, not absolute scheduler positions.
+    /// Keeping this operation on the retained epoch prevents callers from
+    /// reconstructing a duration by subtracting two independently truncated
+    /// absolute projections.
+    pub(crate) const fn raw_duration_ticks_for_micros(self, micros: u32) -> u32 {
+        self.scale.raw_ticks_from_micros(micros).whole_ticks
+    }
 }
 
 /// One exact live sample bound to the retained Controller scheduler epoch.

@@ -3,7 +3,7 @@
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use open_esp_radio_hil_protocol::{
     Direction, FlowTransportEvidence, RadioEvidence, RxDeliveryEvidence, SESSION_FLOW_CAPACITY,
-    TxAggregateTimingEvidence,
+    TxAggregateTimingEvidence, WifiEgressPolicyEvidence,
 };
 
 use crate::console::{ActiveSession, complete_session};
@@ -29,6 +29,7 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     radio: Option<RadioEvidence>,
     tx_timing: Option<TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
+    egress_policy: Option<WifiEgressPolicyEvidence>,
     passed: bool,
 }
 
@@ -40,6 +41,7 @@ impl OpenRadioBidirectionalResult {
         radio: Option<RadioEvidence>,
         tx_timing: Option<TxAggregateTimingEvidence>,
         rx_delivery: Option<RxDeliveryEvidence>,
+        egress_policy: Option<WifiEgressPolicyEvidence>,
         passed: bool,
     ) -> Self {
         Self {
@@ -49,6 +51,7 @@ impl OpenRadioBidirectionalResult {
             radio,
             tx_timing,
             rx_delivery,
+            egress_policy,
             passed,
         }
     }
@@ -101,6 +104,7 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                     } else {
                         second.rx_delivery
                     },
+                    first.egress_policy.or(second.egress_policy),
                     valid_pair && valid_flows && first.passed && second.passed,
                 )
                 .await;
@@ -125,6 +129,7 @@ async fn complete_single_direction(
         result.radio,
         result.tx_timing,
         result.rx_delivery,
+        result.egress_policy,
         valid && result.passed,
     )
     .await;

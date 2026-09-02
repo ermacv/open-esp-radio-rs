@@ -23,9 +23,10 @@ use open_esp_radio_hil_protocol::{
     SessionLinkRequirements, SessionReady, SessionState, StackUsage, StartupArtifactChunk,
     StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent,
     TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
-    TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
-    WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    TxAggregateTimingEvidence, TxRadioEvidence, WifiEgressPolicyEvidence,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
+    WifiNetworkInterface, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -205,6 +206,7 @@ pub(crate) struct SessionEvidence {
     pub(crate) tx_timing: Option<TxAggregateTimingEvidence>,
     pub(crate) rx_delivery: Option<RxDeliveryEvidence>,
     pub(crate) network_scheduler: Option<NetworkSchedulerEvidence>,
+    pub(crate) egress_policy: Option<WifiEgressPolicyEvidence>,
     pub(crate) stack: StackUsage,
     pub(crate) finished: Finished,
 }

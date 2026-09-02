@@ -1,0 +1,27 @@
+schema = 4
+id = "station-access-point-tx-egress-identity-core0"
+description = "Per-VIF shadow-policy identity and modeled-airtime accounting during simultaneous STA and AP UDP egress"
+image = "diagnostic-core0-rx-coarse"
+repetitions = 3
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "sta-ap", "udp", "tx", "egress-policy", "fairness", "core0", "coarse", "psram-stack"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "station-access-point"
+timeout_seconds = 30
+duration_seconds = 12
+direction = "tx"
+rate_bps_per_flow = 32500000
+minimum_bps_per_flow = 5000000
+maximum_fairness_skew_percent = 50
+payload_bytes = 1472
+
+[criteria]
+require_egress_policy_evidence = true
+maximum_egress_different_recommendations = 0
+maximum_egress_cancelled_recommendations = 0
+maximum_egress_unavailable_actual = 0

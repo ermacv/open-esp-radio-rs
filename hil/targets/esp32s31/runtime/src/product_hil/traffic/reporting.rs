@@ -31,6 +31,8 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     task_poll::{TaskPollCounters, TaskPollSet, TaskPollSetSnapshot, TaskPollSnapshot},
 };
 use open_esp_radio_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRadioEvidence};
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use open_esp_radio_hil_protocol::{WifiEgressPolicyEvidence, WifiEgressVifEvidence};
 
 use crate::console::runtime_log_reliably;
 
@@ -1070,7 +1072,7 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     earlier: TxPerformanceSnapshot,
     earlier_control: (EgressControlSnapshot, EgressControlSnapshot),
     earlier_policy: EgressPolicyShadowSnapshot,
-) {
+) -> WifiEgressPolicyEvidence {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
         "ONTX admission_attempts={} admission_successes={} admission_cycles={} admission_instret={} consume_calls={} consume_bytes={} consume_cycles={} consume_instret={} emit_cycles={} emit_instret={} publication_cycles={} publication_instret={}",
@@ -1113,6 +1115,34 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     ))
     .await;
     yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ONTXESU no_recommendation={} missing_key={} demand={} opportunity={}",
+        policy.unavailable_no_recommendation,
+        policy.unavailable_missing_key,
+        policy.unavailable_demand,
+        policy.unavailable_opportunity,
+    ))
+    .await;
+    yield_now().await;
+    for (vif, vif_policy) in ["sta", "ap"].into_iter().zip(policy.vifs) {
+        runtime_log_reliably(format_args!(
+            "ONTXESV vif={} selected={} selected_frames={} selected_airtime_100ns={} actual={} actual_frames={} actual_airtime_100ns={} exact={} different_selected={} different_actual={} cancelled={} unavailable={}",
+            vif,
+            vif_policy.selected_transactions,
+            vif_policy.selected_frames,
+            vif_policy.selected_modeled_airtime_100ns,
+            vif_policy.actual_transactions,
+            vif_policy.actual_frames,
+            vif_policy.actual_modeled_airtime_100ns,
+            vif_policy.exact_recommendations,
+            vif_policy.different_selected,
+            vif_policy.different_actual,
+            vif_policy.cancelled_selected,
+            vif_policy.unavailable_selected,
+        ))
+        .await;
+        yield_now().await;
+    }
     let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
     runtime_log_reliably(format_args!(
         "ONTXQ runs={} run31={} run32={} other={} shadow_checks={} shadow_matches={} shadow_no_window={} shadow_key_mismatch={} shadow_credit_exhausted={} shadow_unclassified={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",
@@ -1170,6 +1200,40 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     ))
     .await;
     yield_now().await;
+    WifiEgressPolicyEvidence {
+        recommendations: policy.recommendations,
+        exact_recommendations: policy.exact_recommendations,
+        different_recommendations: policy.different_recommendations,
+        cancelled_recommendations: policy.cancelled_recommendations,
+        unavailable_actual: policy.unavailable_actual,
+        unavailable_no_recommendation: policy.unavailable_no_recommendation,
+        unavailable_missing_key: policy.unavailable_missing_key,
+        unavailable_demand: policy.unavailable_demand,
+        unavailable_opportunity: policy.unavailable_opportunity,
+        rejected_updates: policy.rejected_updates,
+        rejected_observations: policy.rejected_observations,
+        station: hil_egress_vif_evidence(policy.vifs[0]),
+        access_point: hil_egress_vif_evidence(policy.vifs[1]),
+    }
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+const fn hil_egress_vif_evidence(
+    snapshot: open_esp_radio_esp32s31_embassy_wifi::EgressPolicyVifShadowSnapshot,
+) -> WifiEgressVifEvidence {
+    WifiEgressVifEvidence {
+        selected_transactions: snapshot.selected_transactions,
+        selected_frames: snapshot.selected_frames,
+        selected_modeled_airtime_100ns: snapshot.selected_modeled_airtime_100ns,
+        actual_transactions: snapshot.actual_transactions,
+        actual_frames: snapshot.actual_frames,
+        actual_modeled_airtime_100ns: snapshot.actual_modeled_airtime_100ns,
+        exact_recommendations: snapshot.exact_recommendations,
+        different_selected: snapshot.different_selected,
+        different_actual: snapshot.different_actual,
+        cancelled_selected: snapshot.cancelled_selected,
+        unavailable_selected: snapshot.unavailable_selected,
+    }
 }
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]

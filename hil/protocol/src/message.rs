@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 76;
+pub const PROTOCOL_VERSION: u16 = 77;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -2167,6 +2167,44 @@ pub struct NetworkSchedulerEvidence {
     pub exit_egress_credit: u32,
 }
 
+/// One VIF's shadow scheduler decision and physical TX publication totals.
+///
+/// Airtime values are conservative HT data-PPDU estimates in 100-nanosecond
+/// units. They are scheduling inputs, not measured medium occupancy.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiEgressVifEvidence {
+    pub selected_transactions: u32,
+    pub selected_frames: u32,
+    pub selected_modeled_airtime_100ns: u32,
+    pub actual_transactions: u32,
+    pub actual_frames: u32,
+    pub actual_modeled_airtime_100ns: u32,
+    pub exact_recommendations: u32,
+    pub different_selected: u32,
+    pub different_actual: u32,
+    pub cancelled_selected: u32,
+    pub unavailable_selected: u32,
+}
+
+/// Typed, interval-scoped evidence from the non-authoritative Wi-Fi egress
+/// policy. Queue bytes and scheduler ownership never cross this boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiEgressPolicyEvidence {
+    pub recommendations: u32,
+    pub exact_recommendations: u32,
+    pub different_recommendations: u32,
+    pub cancelled_recommendations: u32,
+    pub unavailable_actual: u32,
+    pub unavailable_no_recommendation: u32,
+    pub unavailable_missing_key: u32,
+    pub unavailable_demand: u32,
+    pub unavailable_opportunity: u32,
+    pub rejected_updates: u32,
+    pub rejected_observations: u32,
+    pub station: WifiEgressVifEvidence,
+    pub access_point: WifiEgressVifEvidence,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
@@ -2175,6 +2213,7 @@ pub enum EvidenceRecord {
     TxAggregateTiming(TxAggregateTimingEvidence),
     RxDelivery(RxDeliveryEvidence),
     NetworkScheduler(NetworkSchedulerEvidence),
+    WifiEgressPolicy(WifiEgressPolicyEvidence),
     Link(LinkHealth),
     Stack(StackUsage),
 }

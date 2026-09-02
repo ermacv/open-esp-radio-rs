@@ -40,6 +40,7 @@ use open_esp_radio_hil_protocol::{
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
     WifiRole, WifiRoleFailureEvidence, WifiRoleTransitionEvidence, WifiScanEvidence,
     WifiScanRequest, WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence,
+    WifiEgressPolicyEvidence,
     evidence_crc32c, startup_artifact_crc32c,
 };
 
@@ -299,6 +300,7 @@ struct SessionResult {
     radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
     tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
+    egress_policy: Option<WifiEgressPolicyEvidence>,
     passed: bool,
 }
 
@@ -983,6 +985,7 @@ pub async fn complete_session(
     radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
     tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
+    egress_policy: Option<WifiEgressPolicyEvidence>,
     passed: bool,
 ) {
     let evidence = TransportEvidence::from_flows(flow_evidence);
@@ -994,6 +997,7 @@ pub async fn complete_session(
             radio,
             tx_timing,
             rx_delivery,
+            egress_policy,
             passed,
         })
         .await;
@@ -1934,7 +1938,7 @@ async fn transition_state(
 }
 
 async fn publish_result(result: SessionResult, request_id: u32) {
-    let mut evidence = heapless::Vec::<EvidenceRecord, 8>::new();
+    let mut evidence = heapless::Vec::<EvidenceRecord, 9>::new();
     evidence
         .push(EvidenceRecord::Transport(result.evidence))
         .expect("session evidence has fixed capacity");
@@ -1956,6 +1960,11 @@ async fn publish_result(result: SessionResult, request_id: u32) {
     if let Some(rx_delivery) = result.rx_delivery {
         evidence
             .push(EvidenceRecord::RxDelivery(rx_delivery))
+            .expect("session evidence has fixed capacity");
+    }
+    if let Some(egress_policy) = result.egress_policy {
+        evidence
+            .push(EvidenceRecord::WifiEgressPolicy(egress_policy))
             .expect("session evidence has fixed capacity");
     }
     let link = link_health_snapshot();

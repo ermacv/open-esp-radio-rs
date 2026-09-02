@@ -421,7 +421,7 @@ producer-publication versus waiter-arming lost-wake window. The unique mutable
 `EgressRadioOwner` travels with the connected Core0 datapath owner; the shared
 network side only holds a small wake capability.
 
-The mirror is observational:
+The lifecycle mirror itself is observational:
 
 ```text
 Xarxa demand lifecycle
@@ -430,11 +430,14 @@ Xarxa demand lifecycle
     -> Core0 demand view
 ```
 
-It does not yet inspect BA availability, power-save state, rate, pending
-airtime, VIF deficit or peer deficit, and it returns no grant. Packet admission
-therefore remains under the existing direct-SRAM arbiter. This is intentional:
-the next policy must select an active demand and issue an affine quantum from
-real Core0 state, not resurrect an echo of a Core1 packet request.
+The separate Core0 shadow policy now derives BA, power-save, rate and modeled
+airtime opportunity for each visible physical transaction, but it returns no
+grant and does not alter packet order. Packet admission therefore remains
+under the existing direct-SRAM arbiter. The paired HIL gate proves that the
+current recommendation is requested too late to choose a VIF and that its
+demand mirror can omit an actually transmitted key. The next policy boundary
+must resolve both defects before it can issue an affine quantum from real
+Core0 state; it must not resurrect an echo of a Core1 packet request.
 
 ## Reviewed selectable-work boundary
 
@@ -683,7 +686,49 @@ as evidence of laboratory/run variability; it is not attributed to code and
 it prevents treating a single paired-role pass as a ceiling proof. The paired
 role path is operational and within the CPU target, but its current
 task-residence image does not emit the coarse identity counters, so exact
-simultaneous two-VIF correspondence is not yet claimed from that run alone.
+simultaneous two-VIF correspondence is not claimed from that run alone.
+
+### Typed paired-VIF identity gate
+
+The paired `diagnostic-core0-rx-coarse` path now emits a dedicated
+CRC-protected `WifiEgressPolicy` HIL record. It is not reconstructed from UART
+text. The record contains global outcomes, a mutually exclusive breakdown of
+every unavailable observation and separate selected/actual transaction,
+frame and modeled-airtime totals for STA and AP. The host validates the
+cross-field arithmetic and rejects missing evidence, stale/rejected policy
+updates and any run in which either VIF performed no physical transaction.
+The new `station-access-point-tx-egress-identity-core0` scenario additionally
+sets the accepted different, cancelled and unavailable counts to zero.
+
+That strict gate correctly fails on the current shadow implementation. Run
+`1788309447235-001a9267` completed all three paired workloads with valid typed
+evidence:
+
+| Repetition | STA + AP throughput | Recommendations | Exact | Different | Unavailable |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 19.861 + 31.601 Mbit/s | 2,695 | 1,889 | 715 | 91 |
+| 2 | 24.220 + 23.773 Mbit/s | 2,471 | 1,316 | 965 | 190 |
+| 3 | 32.571 + 30.174 Mbit/s | 2,844 | 2,192 | 522 | 130 |
+
+Across the three repetitions, all 8,010 recommendations reconcile exactly as
+5,397 exact, 2,202 different and 411 unavailable observations. Of those 411,
+410 report that the actual transaction's key has no active demand in the
+Core0 policy mirror, one reports a missing actual key, and zero report no
+recommendation or a role opportunity failure. Cancellation and rejected
+update/observation counters are also zero. Both VIFs perform substantial
+actual work in every repetition, so a dormant interface cannot explain the
+result.
+
+This result does not show that shadow airtime policy reduced throughput: the
+policy is observational and cannot defer or reorder a frame. It does prove
+that it cannot become authoritative at the current boundary. The production
+paired owner first chooses a VIF with its historical admitted-frame counter,
+then removes that VIF's frame, and only afterwards asks the independent
+airtime-DRR policy for a recommendation. A disagreement is therefore an
+expected policy comparison, not a packet-identity race. The `demand missing`
+outcomes are a second issue: demand lifecycle visibility is not coherent with
+the actual TX selection boundary. That lifetime/frontier must be explained
+and repaired before a selection-before-claim experiment.
 
 ## Rejected candidate/grant experiment
 
@@ -913,8 +958,10 @@ not a wholesale stack rewrite.
 
 ## Known gaps and risks
 
-1. **Radio policy.** STA and AP demand now reach the same Core0 owner, but no
-   VIF/peer/TID airtime, AQL, BA, PS or rate policy consumes that state yet.
+1. **Radio policy.** STA and AP demand reach one Core0 shadow airtime policy,
+   but the historical frame-count arbiter still chooses the actual VIF first.
+   Paired HIL therefore observes both policy disagreement and actual keys
+   absent from the demand mirror. The shadow has no admission authority.
 2. **Grant contract.** The rejected echo deliberately left no compatibility
    API. A real grant still needs key/lifecycle identity, bounded frame and
    airtime horizons, unused-quantum return/expiry, and completion accounting.
@@ -1032,7 +1079,7 @@ is active in both modes. The absolute Core1 residence is also a first-class
 constraint: reducing Core0 work by transferring it to the network core would
 not satisfy the architectural goal.
 
-### Phase 4: implement policy in shadow
+### Phase 4: implement policy in shadow — standalone proven, paired gate active
 
 - **Identity-correspondence boundary — implemented and proven for one AP
   peer.** The
@@ -1092,8 +1139,11 @@ not satisfy the architectural goal.
   Core0 task residence and a 0.73% median STA coarse-image ceiling cost. The
   implementation observes role-selected initial/prepared transaction identity,
   not a guessed FIFO head, and cancels selections which do not publish
-  hardware work. Simultaneous two-VIF identity telemetry remains a separate
-  qualification gap.
+  hardware work. Simultaneous two-VIF typed telemetry and a fail-closed HIL
+  gate are now implemented. The gate currently rejects the shadow policy:
+  production frame-count VIF arbitration disagrees with airtime DRR, and some
+  actual transaction keys are absent from the radio-side demand view. No
+  authoritative cutover is permitted until both boundaries are repaired.
 - hierarchical VIF then peer/TID weighted airtime DRR;
 - AQL-like estimated pending airtime charged at successful SRAM admission;
 - completion reconciliation from exact published PHY/length and retry/BA

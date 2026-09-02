@@ -928,6 +928,7 @@ mod tests {
                 }),
                 tx: None,
             }),
+            egress_policy: None,
             tx_timing: None,
             rx_delivery: None,
             network_scheduler: None,

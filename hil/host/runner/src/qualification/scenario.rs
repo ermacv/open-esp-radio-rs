@@ -406,6 +406,12 @@ pub struct Criteria {
     pub maximum_p95_ms: Option<u16>,
     pub require_no_beacon_loss: bool,
     pub minimum_concurrent_ap_clients: Option<u8>,
+    /// Require CRC-protected per-VIF shadow-policy evidence from a paired TX
+    /// interval. Diagnostic images only.
+    pub require_egress_policy_evidence: bool,
+    pub maximum_egress_different_recommendations: Option<u32>,
+    pub maximum_egress_cancelled_recommendations: Option<u32>,
+    pub maximum_egress_unavailable_actual: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

@@ -1278,6 +1278,53 @@ mod tests {
     }
 
     #[test]
+    fn maximum_wifi_egress_policy_evidence_fits_and_round_trips() {
+        use crate::{EvidenceRecord, WifiEgressPolicyEvidence, WifiEgressVifEvidence};
+
+        let vif = WifiEgressVifEvidence {
+            selected_transactions: u32::MAX,
+            selected_frames: u32::MAX,
+            selected_modeled_airtime_100ns: u32::MAX,
+            actual_transactions: u32::MAX,
+            actual_frames: u32::MAX,
+            actual_modeled_airtime_100ns: u32::MAX,
+            exact_recommendations: u32::MAX,
+            different_selected: u32::MAX,
+            different_actual: u32::MAX,
+            cancelled_selected: u32::MAX,
+            unavailable_selected: u32::MAX,
+        };
+        let expected = Envelope::new(
+            7,
+            4,
+            9,
+            2,
+            Event::Evidence(EvidenceRecord::WifiEgressPolicy(WifiEgressPolicyEvidence {
+                recommendations: u32::MAX,
+                exact_recommendations: u32::MAX,
+                different_recommendations: u32::MAX,
+                cancelled_recommendations: u32::MAX,
+                unavailable_actual: u32::MAX,
+                unavailable_no_recommendation: u32::MAX,
+                unavailable_missing_key: u32::MAX,
+                unavailable_demand: u32::MAX,
+                unavailable_opportunity: u32::MAX,
+                rejected_updates: u32::MAX,
+                rejected_observations: u32::MAX,
+                station: vif,
+                access_point: vif,
+            })),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn maximum_radio_evidence_fits_and_round_trips() {
         use crate::{EvidenceRecord, RadioEvidence, RxRadioEvidence, TxRadioEvidence};
 
@@ -1453,6 +1500,7 @@ mod tests {
                 | EvidenceRecord::TxAggregateTiming(_)
                 | EvidenceRecord::RxDelivery(_)
                 | EvidenceRecord::NetworkScheduler(_)
+                | EvidenceRecord::WifiEgressPolicy(_)
                 | EvidenceRecord::Link(_)
                 | EvidenceRecord::Stack(_) => unreachable!(),
             }

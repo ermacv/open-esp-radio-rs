@@ -592,12 +592,25 @@ impl SerialCapture {
                 Event::Evidence(EvidenceRecord::NetworkScheduler(evidence)) => evidence,
                 _ => unreachable!("scheduler predicate accepted only scheduler evidence"),
             });
+        let egress_policy = self
+            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+                message.session_id == session.session_id
+                    && matches!(
+                        message.body,
+                        Event::Evidence(EvidenceRecord::WifiEgressPolicy(_))
+                    )
+            })
+            .map(|event| match event.body {
+                Event::Evidence(EvidenceRecord::WifiEgressPolicy(evidence)) => evidence,
+                _ => unreachable!("egress-policy predicate accepted only policy evidence"),
+            });
         let expected_records = 3
             + u16::try_from(flow_transport.iter().flatten().count())?
             + u16::from(radio.is_some())
             + u16::from(tx_timing.is_some())
             + u16::from(rx_delivery.is_some())
-            + u16::from(network_scheduler.is_some());
+            + u16::from(network_scheduler.is_some())
+            + u16::from(egress_policy.is_some());
         if finished.summary.evidence_records != expected_records {
             return Err(format!(
                 "device reported {} evidence records but published {expected_records} typed records",
@@ -622,6 +635,9 @@ impl SerialCapture {
         if let Some(scheduler) = network_scheduler {
             records.push(EvidenceRecord::NetworkScheduler(scheduler));
         }
+        if let Some(policy) = egress_policy {
+            records.push(EvidenceRecord::WifiEgressPolicy(policy));
+        }
         records.push(EvidenceRecord::Link(link));
         records.push(EvidenceRecord::Stack(stack));
         let checksum = evidence_crc32c(&records)
@@ -640,6 +656,7 @@ impl SerialCapture {
             tx_timing,
             rx_delivery,
             network_scheduler,
+            egress_policy,
             stack,
             finished,
         };

@@ -43,6 +43,10 @@ pub(crate) struct Config {
     pub(crate) maximum_fairness_skew_percent: u8,
     pub(crate) payload_bytes: usize,
     pub(crate) require_driver_observation: bool,
+    pub(crate) require_egress_policy_evidence: bool,
+    pub(crate) maximum_egress_different_recommendations: Option<u32>,
+    pub(crate) maximum_egress_cancelled_recommendations: Option<u32>,
+    pub(crate) maximum_egress_unavailable_actual: Option<u32>,
     pub(crate) capture_independent_laptop_air_monitor: bool,
 }
 
@@ -76,6 +80,7 @@ struct InterfaceReport {
     host_rx_first_reordered_after: Option<u32>,
     host_rx_first_reordered_sequence: Option<u32>,
     host_rx_maximum_reorder_distance: Option<u32>,
+    egress_policy: Option<open_esp_radio_hil_protocol::WifiEgressPolicyEvidence>,
 }
 
 struct HostFlow {
@@ -248,6 +253,8 @@ fn qualify(
     let data_plane_verdict = (|| {
         validate_interface("station", &station, config.minimum_bps_per_flow)?;
         validate_interface("access-point", &access_point, config.minimum_bps_per_flow)?;
+        validate_egress_policy("station interval", station.egress_policy, config)?;
+        validate_egress_policy("access-point interval", access_point.egress_policy, config)?;
         if let (Some(station), Some(access_point)) =
             (station.target_rx_bps, access_point.target_rx_bps)
         {
@@ -484,7 +491,109 @@ fn interface_report(
         host_rx_maximum_reorder_distance: burst
             .as_ref()
             .map(|burst| burst.maximum_reorder_distance),
+        egress_policy: evidence.egress_policy,
     })
+}
+
+fn validate_egress_policy(
+    interval: &str,
+    evidence: Option<open_esp_radio_hil_protocol::WifiEgressPolicyEvidence>,
+    config: Config,
+) -> Result<()> {
+    let Some(evidence) = evidence else {
+        return if config.require_egress_policy_evidence {
+            Err(format!("{interval} did not publish typed egress-policy evidence").into())
+        } else {
+            Ok(())
+        };
+    };
+    let selected = evidence
+        .station
+        .selected_transactions
+        .saturating_add(evidence.access_point.selected_transactions);
+    let actual = evidence
+        .station
+        .actual_transactions
+        .saturating_add(evidence.access_point.actual_transactions);
+    let exact = evidence
+        .station
+        .exact_recommendations
+        .saturating_add(evidence.access_point.exact_recommendations);
+    let different_selected = evidence
+        .station
+        .different_selected
+        .saturating_add(evidence.access_point.different_selected);
+    let different_actual = evidence
+        .station
+        .different_actual
+        .saturating_add(evidence.access_point.different_actual);
+    let cancelled = evidence
+        .station
+        .cancelled_selected
+        .saturating_add(evidence.access_point.cancelled_selected);
+    let unavailable_selected = evidence
+        .station
+        .unavailable_selected
+        .saturating_add(evidence.access_point.unavailable_selected);
+    let unavailable_reasons = evidence
+        .unavailable_no_recommendation
+        .saturating_add(evidence.unavailable_missing_key)
+        .saturating_add(evidence.unavailable_demand)
+        .saturating_add(evidence.unavailable_opportunity);
+    if selected != evidence.recommendations
+        || actual
+            != evidence
+                .exact_recommendations
+                .saturating_add(evidence.different_recommendations)
+        || exact != evidence.exact_recommendations
+        || different_selected != evidence.different_recommendations
+        || different_actual != evidence.different_recommendations
+        || cancelled != evidence.cancelled_recommendations
+        || unavailable_selected > evidence.unavailable_actual
+        || unavailable_reasons != evidence.unavailable_actual
+        || evidence.rejected_updates != 0
+        || evidence.rejected_observations != 0
+    {
+        return Err(
+            format!("{interval} has inconsistent egress-policy evidence: {evidence:?}").into(),
+        );
+    }
+    if config.require_egress_policy_evidence
+        && (evidence.station.actual_transactions == 0
+            || evidence.access_point.actual_transactions == 0)
+    {
+        return Err(format!(
+            "{interval} did not observe physical TX transactions on both VIFs: {evidence:?}"
+        )
+        .into());
+    }
+    for (name, value, maximum) in [
+        (
+            "different recommendations",
+            evidence.different_recommendations,
+            config.maximum_egress_different_recommendations,
+        ),
+        (
+            "cancelled recommendations",
+            evidence.cancelled_recommendations,
+            config.maximum_egress_cancelled_recommendations,
+        ),
+        (
+            "unavailable actual transactions",
+            evidence.unavailable_actual,
+            config.maximum_egress_unavailable_actual,
+        ),
+    ] {
+        if let Some(maximum) = maximum
+            && value > maximum
+        {
+            return Err(format!(
+                "{interval} has {value} {name}, exceeding the configured maximum {maximum}"
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn throughput_bps(bytes: u64, elapsed_micros: u64) -> u64 {
@@ -563,6 +672,40 @@ fn validate_access_point_epoch(
 mod tests {
     use super::*;
 
+    fn egress_config() -> Config {
+        Config {
+            timeout: Duration::from_secs(30),
+            duration: Duration::from_secs(10),
+            direction: crate::qualification::scenario::Direction::Tx,
+            rate_bps_per_flow: 1_000_000,
+            minimum_bps_per_flow: 1,
+            maximum_fairness_skew_percent: 100,
+            payload_bytes: 1472,
+            require_driver_observation: false,
+            require_egress_policy_evidence: true,
+            maximum_egress_different_recommendations: Some(0),
+            maximum_egress_cancelled_recommendations: Some(0),
+            maximum_egress_unavailable_actual: Some(0),
+            capture_independent_laptop_air_monitor: false,
+        }
+    }
+
+    fn exact_egress_evidence() -> open_esp_radio_hil_protocol::WifiEgressPolicyEvidence {
+        let vif = open_esp_radio_hil_protocol::WifiEgressVifEvidence {
+            selected_transactions: 10,
+            actual_transactions: 10,
+            exact_recommendations: 10,
+            ..Default::default()
+        };
+        open_esp_radio_hil_protocol::WifiEgressPolicyEvidence {
+            recommendations: 20,
+            exact_recommendations: 20,
+            station: vif,
+            access_point: vif,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn fairness_is_symmetric_and_bounded() {
         assert!(validate_fairness("rx", 10_000, 12_000, 20).is_ok());
@@ -578,5 +721,24 @@ mod tests {
             ..Default::default()
         };
         assert!(validate_access_point_epoch(evidence).is_err());
+    }
+
+    #[test]
+    fn paired_egress_gate_accepts_exact_typed_identity_on_both_vifs() {
+        assert!(
+            validate_egress_policy("paired", Some(exact_egress_evidence()), egress_config())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn paired_egress_gate_rejects_scheduler_disagreement() {
+        let mut evidence = exact_egress_evidence();
+        evidence.exact_recommendations -= 1;
+        evidence.different_recommendations = 1;
+        evidence.station.exact_recommendations -= 1;
+        evidence.station.different_selected = 1;
+        evidence.access_point.different_actual = 1;
+        assert!(validate_egress_policy("paired", Some(evidence), egress_config()).is_err());
     }
 }

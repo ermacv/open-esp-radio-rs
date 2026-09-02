@@ -441,6 +441,27 @@ fn station_egress_lifecycle_probe_is_a_same_image_runtime_control() {
 }
 
 #[test]
+fn paired_egress_identity_probe_is_a_typed_fail_closed_gate() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let scenario = catalog
+        .get("station-access-point-tx-egress-identity-core0")
+        .unwrap();
+
+    assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
+    assert!(scenario.criteria.require_egress_policy_evidence);
+    assert_eq!(
+        scenario.criteria.maximum_egress_different_recommendations,
+        Some(0)
+    );
+    assert_eq!(
+        scenario.criteria.maximum_egress_cancelled_recommendations,
+        Some(0)
+    );
+    assert_eq!(scenario.criteria.maximum_egress_unavailable_actual, Some(0));
+}
+
+#[test]
 fn ap_egress_control_task_poll_probe_omits_intrusive_control_counters() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();

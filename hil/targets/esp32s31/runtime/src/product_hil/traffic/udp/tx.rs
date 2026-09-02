@@ -621,12 +621,16 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        crate::product_hil::traffic::log_open_radio_core1_tx_phases(
-            core1_tx_performance_start,
-            egress_control_start,
-            egress_policy_start,
-        )
-        .await;
+        let egress_policy = Some(
+            crate::product_hil::traffic::log_open_radio_core1_tx_phases(
+                core1_tx_performance_start,
+                egress_control_start,
+                egress_policy_start,
+            )
+            .await,
+        );
+        #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+        let egress_policy = None;
         #[cfg(any(
             feature = "core0-rx-cycle-telemetry",
             feature = "core0-rx-coarse-telemetry"
@@ -650,6 +654,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 aggregate_evidence.map(|(radio, _)| radio),
                 aggregate_evidence.map(|(_, timing)| timing),
                 None,
+                egress_policy,
                 send_errors == 0,
             ),
         )

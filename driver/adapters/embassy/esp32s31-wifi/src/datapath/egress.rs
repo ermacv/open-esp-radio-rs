@@ -263,16 +263,15 @@ impl DatapathEgressAirtimePolicy {
         snapshot.opportunity(demand.level().ready_frames().get())
     }
 
-    fn cancel_recommendation(&mut self) -> bool {
-        let Some(recommendation) = self.recommendation.take() else {
-            return false;
-        };
+    fn cancel_recommendation(&mut self) -> Option<u8> {
+        let recommendation = self.recommendation.take()?;
+        let selected_vif = recommendation.demand().vif();
         if self.scheduler.cancel_selection(recommendation).is_err() {
             self.rejected_observations = self.rejected_observations.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
             crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_observation();
         }
-        true
+        Some(selected_vif)
     }
 
     fn prepare_recommendation(
@@ -289,7 +288,14 @@ impl DatapathEgressAirtimePolicy {
             Ok(Some(recommendation)) => {
                 self.recommendations = self.recommendations.saturating_add(1);
                 #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.recommendation();
+                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.recommendation(
+                    recommendation.demand().vif(),
+                    recommendation.opportunity().frame_limit().get(),
+                    recommendation
+                        .opportunity()
+                        .estimated_airtime()
+                        .hundred_nanoseconds(),
+                );
                 self.recommendation = Some(recommendation);
                 true
             }
@@ -314,14 +320,21 @@ impl DatapathEgressAirtimePolicy {
         let Some(recommendation) = self.recommendation.take() else {
             self.unavailable_actual = self.unavailable_actual.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
+            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
+                None,
+                crate::diagnostics::egress::EgressPolicyUnavailableActual::NoRecommendation,
+            );
             return false;
         };
+        let _selected_vif = recommendation.demand().vif();
         let Some(key) = key else {
             let _ = self.scheduler.cancel_selection(recommendation);
             self.unavailable_actual = self.unavailable_actual.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
+            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
+                Some(_selected_vif),
+                crate::diagnostics::egress::EgressPolicyUnavailableActual::MissingKey,
+            );
             return false;
         };
         // The selected demand and its role-derived opportunity are immutable
@@ -339,7 +352,10 @@ impl DatapathEgressAirtimePolicy {
                 let _ = self.scheduler.cancel_selection(recommendation);
                 self.unavailable_actual = self.unavailable_actual.saturating_add(1);
                 #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
+                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
+                    Some(_selected_vif),
+                    crate::diagnostics::egress::EgressPolicyUnavailableActual::Demand,
+                );
                 return false;
             };
             let Some(opportunity) = opportunity_for(actual)
@@ -348,7 +364,10 @@ impl DatapathEgressAirtimePolicy {
                 let _ = self.scheduler.cancel_selection(recommendation);
                 self.unavailable_actual = self.unavailable_actual.saturating_add(1);
                 #[cfg(feature = "tx-phase-telemetry")]
-                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
+                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual(
+                    Some(_selected_vif),
+                    crate::diagnostics::egress::EgressPolicyUnavailableActual::Opportunity,
+                );
                 return false;
             };
             (actual, opportunity)
@@ -364,14 +383,23 @@ impl DatapathEgressAirtimePolicy {
                         self.exact_recommendations = self.exact_recommendations.saturating_add(1);
                         #[cfg(feature = "tx-phase-telemetry")]
                         crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
-                            .exact_recommendation();
+                            .exact_recommendation(
+                                actual.vif(),
+                                opportunity.frame_limit().get(),
+                                estimated.hundred_nanoseconds(),
+                            );
                     }
                     WifiEgressAdmissionObservation::DifferentQueue => {
                         self.different_recommendations =
                             self.different_recommendations.saturating_add(1);
                         #[cfg(feature = "tx-phase-telemetry")]
                         crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
-                            .different_recommendation();
+                            .different_recommendation(
+                                _selected_vif,
+                                actual.vif(),
+                                opportunity.frame_limit().get(),
+                                estimated.hundred_nanoseconds(),
+                            );
                     }
                 }
                 if self
@@ -499,10 +527,11 @@ impl DatapathEgressPolicyOwner for DatapathEgressAirtimePolicy {
     }
 
     fn cancel_recommendation(&mut self) {
-        if DatapathEgressAirtimePolicy::cancel_recommendation(self) {
+        if let Some(_selected_vif) = DatapathEgressAirtimePolicy::cancel_recommendation(self) {
             self.cancelled_recommendations = self.cancelled_recommendations.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.cancelled_recommendation();
+            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS
+                .cancelled_recommendation(_selected_vif);
         }
     }
 

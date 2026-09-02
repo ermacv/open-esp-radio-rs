@@ -83,6 +83,7 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         tx_timing: None,
         rx_delivery: None,
         network_scheduler: None,
+        egress_policy: None,
         stack: StackUsage {
             cpu0: StackWatermark {
                 capacity_bytes: 1,

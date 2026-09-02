@@ -8,7 +8,7 @@ use open_esp_radio_bluetooth_ll::scanning::{
     parse_legacy_advertising_report,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothPassiveScanReceivedBatch, BluetoothPassiveScanSchedulerItemCompletionStatus,
+    BluetoothLeReceivedBatch, BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 
 use crate::{
@@ -92,7 +92,7 @@ where
     scanner: LegacyPassiveScannerEnabled,
     phase: crate::BluetoothPassiveScanEventPhase,
     channel: PrimaryScanChannel,
-    received: BluetoothPassiveScanReceivedBatch,
+    received: BluetoothLeReceivedBatch,
     status: BluetoothPassiveScanSchedulerItemCompletionStatus,
 }
 
@@ -108,7 +108,7 @@ where
         self.phase
     }
 
-    pub const fn received(&self) -> &BluetoothPassiveScanReceivedBatch {
+    pub const fn received(&self) -> &BluetoothLeReceivedBatch {
         &self.received
     }
 
@@ -138,7 +138,7 @@ where
         BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>,
         LegacyPassiveScannerEnabled,
         crate::BluetoothPassiveScanEventPhase,
-        BluetoothPassiveScanReceivedBatch,
+        BluetoothLeReceivedBatch,
         BluetoothPassiveScanSchedulerItemCompletionStatus,
     ) {
         (

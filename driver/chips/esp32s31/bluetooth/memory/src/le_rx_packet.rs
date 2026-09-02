@@ -82,10 +82,77 @@ impl BluetoothLeReceivedPdu {
     }
 }
 
+/// Bounded completed packet batch copied from one LE receive graph.
+///
+/// The graph-specific owner chooses the capacity. This value contains no SRAM
+/// links and can cross into role-specific Link Layer code after reclamation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLeReceivedBatch<const CAPACITY: usize = 2> {
+    packets: [Option<BluetoothLeReceivedPdu>; CAPACITY],
+    len: usize,
+}
+
+impl<const CAPACITY: usize> BluetoothLeReceivedBatch<CAPACITY> {
+    pub(crate) const fn empty() -> Self {
+        Self {
+            packets: [None; CAPACITY],
+            len: 0,
+        }
+    }
+
+    pub(crate) fn push(&mut self, packet: BluetoothLeReceivedPdu) {
+        assert!(
+            self.len < CAPACITY,
+            "the receive graph bounds its copied batch"
+        );
+        self.packets[self.len] = Some(packet);
+        self.len += 1;
+    }
+
+    /// Number of completed packets copied from this event.
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether this event completed without a received packet.
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Borrow one packet in hardware list order.
+    pub const fn packet(&self, index: usize) -> Option<&BluetoothLeReceivedPdu> {
+        if index < self.len {
+            self.packets[index].as_ref()
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BluetoothLeRxPacketError {
     ProducerSentinelRetained,
     EpochSentinelRetained,
+}
+
+/// Malformed completed LE receive storage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLeRxError {
+    /// A completed header still points at an untouched producer sentinel.
+    ProducerSentinelRetained,
+    /// A completed header still points at an untouched receive-epoch sentinel.
+    EpochSentinelRetained,
+    /// A later node completed after an earlier incomplete node in the chain.
+    CompletionChainGap,
+}
+
+impl From<BluetoothLeRxPacketError> for BluetoothLeRxError {
+    fn from(error: BluetoothLeRxPacketError) -> Self {
+        match error {
+            BluetoothLeRxPacketError::ProducerSentinelRetained => Self::ProducerSentinelRetained,
+            BluetoothLeRxPacketError::EpochSentinelRetained => Self::EpochSentinelRetained,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -289,4 +356,22 @@ impl BluetoothLeRxNodeStorage {
             packet: BluetoothLeRxPacketStorage::new(),
         }
     }
+}
+
+pub(crate) fn extract_completed_rx_batch<const CAPACITY: usize>(
+    nodes: &[BluetoothLeRxNodeStorage; CAPACITY],
+) -> Result<BluetoothLeReceivedBatch<CAPACITY>, BluetoothLeRxError> {
+    let mut batch = BluetoothLeReceivedBatch::empty();
+    let mut incomplete_observed = false;
+    for node in nodes {
+        if !node.header.completion_observed() {
+            incomplete_observed = true;
+            continue;
+        }
+        if incomplete_observed {
+            return Err(BluetoothLeRxError::CompletionChainGap);
+        }
+        batch.push(node.packet.received_pdu()?);
+    }
+    Ok(batch)
 }

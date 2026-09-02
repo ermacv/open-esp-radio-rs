@@ -92,7 +92,10 @@ pub use dtm_storage::{
     BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
     BluetoothDtmTxPacketPrepareError,
 };
-pub use le_rx_packet::{BluetoothLePacketCapturedTime, BluetoothLeReceivedPdu};
+pub use le_rx_packet::{
+    BluetoothLePacketCapturedTime, BluetoothLeReceivedBatch, BluetoothLeReceivedPdu,
+    BluetoothLeRxError,
+};
 pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
     BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
@@ -161,8 +164,7 @@ pub use passive_scanning_memory::{
     BluetoothPassiveScanMemoryGraphRunning, BluetoothPassiveScanMemoryGraphRxExtracted,
     BluetoothPassiveScanMemoryGraphRxExtractionFailure,
     BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
-    BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanReceivedBatch,
-    BluetoothPassiveScanRxError, BluetoothPassiveScanSchedulerAllocationConfig,
+    BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanSchedulerAllocationConfig,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 #[cfg(not(target_arch = "riscv32"))]

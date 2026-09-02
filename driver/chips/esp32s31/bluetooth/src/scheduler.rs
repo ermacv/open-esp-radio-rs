@@ -99,11 +99,11 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
-    BluetoothDtmSchedulerItemCompletionStatus, BluetoothPassiveScanMemoryGraphCommandPublished,
+    BluetoothDtmSchedulerItemCompletionStatus, BluetoothLeReceivedBatch, BluetoothLeRxError,
+    BluetoothPassiveScanMemoryGraphCommandPublished,
     BluetoothPassiveScanMemoryGraphCompletionObservation,
     BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphRecycleError,
     BluetoothPassiveScanMemoryGraphRecycled, BluetoothPassiveScanMemoryGraphRunning,
-    BluetoothPassiveScanReceivedBatch, BluetoothPassiveScanRxError,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
     BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
 };
@@ -616,7 +616,7 @@ impl BluetoothPassiveScanSchedulerRecycled {
         self,
     ) -> (
         open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
-        BluetoothPassiveScanReceivedBatch,
+        BluetoothLeReceivedBatch,
         BluetoothPassiveScanSchedulerItemCompletionStatus,
     ) {
         self.graph.into_parts()
@@ -733,7 +733,7 @@ pub enum BluetoothPassiveScanSchedulerRecycleStep {
     },
     ReceiveInvalid {
         ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
-        error: BluetoothPassiveScanRxError,
+        error: BluetoothLeRxError,
     },
     ReservationIdentityMismatch(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
     Recycled(BluetoothPassiveScanSchedulerRecycled),

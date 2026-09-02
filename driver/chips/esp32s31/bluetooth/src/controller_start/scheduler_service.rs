@@ -805,7 +805,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         recycled: crate::BluetoothPassiveScanSchedulerRecycled,
     ) -> Result<
         (
-            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanReceivedBatch,
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedBatch,
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
         ),
         crate::passive_scanning::BluetoothPassiveScanRuntimeRestoreFailure,

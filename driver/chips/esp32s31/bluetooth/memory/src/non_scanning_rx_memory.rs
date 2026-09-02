@@ -16,7 +16,10 @@ use open_esp_radio_esp32s31_hal::{
 use pin_project::pin_project;
 
 use crate::{
-    le_rx_packet::{BluetoothLeRxNodeStorage, BluetoothLeRxPacketAddress},
+    le_rx_packet::{
+        BluetoothLeReceivedBatch, BluetoothLeRxError, BluetoothLeRxNodeStorage,
+        BluetoothLeRxPacketAddress, extract_completed_rx_batch,
+    },
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
         BluetoothControllerSramLinkAddress,
@@ -216,6 +219,23 @@ impl BluetoothNonScanningRxMemoryCpuOwned {
             && !storage.nodes[1].header.rotates_into_successor()
     }
 
+    /// Validate and copy every contiguous completed node without mutating SRAM.
+    ///
+    /// Connection reclamation keeps this exact affine pool owner on failure.
+    /// A successful caller must finish consuming the copied batch before
+    /// explicitly rearming the pool with [`Self::reinitialize_after_event`].
+    pub(crate) fn extract_completed_rx_batch(
+        &self,
+    ) -> Result<BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>, BluetoothLeRxError>
+    {
+        extract_completed_rx_batch(&self.storage.as_ref().get_ref().nodes)
+    }
+
+    /// Rearm both packet allocations after the completed event was copied.
+    pub(crate) fn reinitialize_after_event(&mut self) {
+        self.reinitialize();
+    }
+
     fn reinitialize(&mut self) {
         let bindings = self.binding.nodes;
         let storage = self.storage.as_mut().project();
@@ -311,5 +331,41 @@ mod tests {
             .expect("the complete RX pool fits controller SRAM");
 
         assert!(owner.is_initialized());
+    }
+
+    #[test]
+    fn completed_batch_is_copied_before_explicit_pool_reinitialization() {
+        let storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothNonScanningRxMemoryStorage::new(),
+        ));
+        let base = BluetoothNonScanningRxMemoryModelAddress::new(0x2f00_5000)
+            .expect("the model base belongs to controller SRAM");
+        let mut owner = BluetoothNonScanningRxMemoryStorage::pin_static_model(storage, base)
+            .expect("the complete RX pool fits controller SRAM");
+        let pdu = [0x02, 6, 1, 2, 3, 4, 5, 6];
+        let pool = owner.storage.as_ref().get_ref();
+        pool.nodes[0]
+            .packet
+            .emulate_hardware_receive(&pdu, -42, 0x1234_5678);
+        pool.nodes[0].header.emulate_hardware_completion();
+
+        let batch = owner
+            .extract_completed_rx_batch()
+            .expect("one completed prefix node is a valid receive batch");
+        assert!(!owner.is_initialized());
+        let packet = batch.packet(0).expect("the completed PDU was copied");
+        assert_eq!(packet.as_bytes(), &pdu);
+        assert_eq!(packet.rssi_dbm(), -42);
+
+        owner.reinitialize_after_event();
+
+        assert!(owner.is_initialized());
+        assert_eq!(
+            batch
+                .packet(0)
+                .expect("the copied batch remains owned")
+                .as_bytes(),
+            &pdu
+        );
     }
 }

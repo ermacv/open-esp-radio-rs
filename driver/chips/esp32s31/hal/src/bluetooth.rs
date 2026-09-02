@@ -805,6 +805,16 @@ pub struct BluetoothDirectionFindingDisabledBaselineOwner {
 }
 
 impl BluetoothRxMemoryListPublished {
+    /// Construct a semantic publication proof for host ownership validation.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn from_parts_for_validation(
+        selector: BluetoothMemoryListSelector,
+        head: BluetoothControllerSramAddress,
+    ) -> Self {
+        Self { selector, head }
+    }
+
     /// Return the positional hardware-list selector chosen by the memory
     /// layer.
     pub const fn selector(&self) -> BluetoothMemoryListSelector {

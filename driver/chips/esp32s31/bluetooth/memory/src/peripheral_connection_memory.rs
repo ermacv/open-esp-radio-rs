@@ -16,15 +16,19 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothMemoryListSelector, BluetoothRxMemoryListPublished,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerSoftwareListRemovalReady,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
 
 use crate::{
     direction_finding_workspace::BluetoothDirectionFindingWorkspaceLink,
+    le_rx_packet::{BluetoothLeReceivedBatch, BluetoothLeRxError},
     le_tx_power::rounded_tx_power,
-    non_scanning_rx_memory::BluetoothNonScanningRxMemoryCpuOwned,
+    non_scanning_rx_memory::{
+        BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, BluetoothNonScanningRxMemoryCpuOwned,
+        BluetoothNonScanningRxMemoryIdentity,
+    },
     rx_memory_list::BluetoothRxMemoryListClass,
     scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
@@ -1386,6 +1390,275 @@ impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
     pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
         self.status
     }
+
+    /// Bind the exact post-unlink removal proof before reading or resetting SRAM.
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc mismatch returns both exact affine owners"
+        )
+    )]
+    pub fn prepare_recycle_after_software_list_removal(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<
+        BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
+        BluetoothPeripheralConnectionMemoryGraphRecycleFailure,
+    > {
+        let error = if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(BluetoothPeripheralConnectionMemoryGraphRecycleError::HardwareListMismatch)
+        } else if removal.completed_head().address() != Some(self.scheduler_item_address()) {
+            Some(BluetoothPeripheralConnectionMemoryGraphRecycleError::SchedulerItemMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(BluetoothPeripheralConnectionMemoryGraphRecycleFailure {
+                completed: self,
+                removal,
+                error,
+            });
+        }
+        Ok(BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
+            completed: self,
+            removal,
+        })
+    }
+}
+
+/// Why a completed connection graph rejected CPU-recycle authorization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPeripheralConnectionMemoryGraphRecycleError {
+    HardwareListMismatch,
+    SchedulerItemMismatch,
+}
+
+/// Lossless recycle rejection retaining the hardware-owned graph and proof.
+#[must_use = "the completed connection graph and removal proof remain owned"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRecycleFailure {
+    completed: BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+    error: BluetoothPeripheralConnectionMemoryGraphRecycleError,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRecycleFailure {
+    pub const fn error(&self) -> BluetoothPeripheralConnectionMemoryGraphRecycleError {
+        self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+}
+
+/// Completed connection graph authorized for bounded RX extraction.
+#[must_use = "the connection RX result must be extracted or retained unchanged"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
+    completed: BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
+    /// Recover both unchanged owners before extraction starts.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+
+    /// Validate and copy every contiguous completed PDU without mutating SRAM.
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc extraction failure retains the complete affine graph"
+        )
+    )]
+    pub fn extract_received(
+        self,
+    ) -> Result<
+        BluetoothPeripheralConnectionMemoryGraphRxExtracted,
+        BluetoothPeripheralConnectionMemoryGraphRxExtractionFailure,
+    > {
+        let batch = match self
+            .completed
+            .running
+            .prepared
+            .prepared
+            .prepared
+            .pool
+            .extract_completed_rx_batch()
+        {
+            Ok(batch) => batch,
+            Err(error) => {
+                return Err(
+                    BluetoothPeripheralConnectionMemoryGraphRxExtractionFailure {
+                        prepared: self,
+                        error,
+                    },
+                );
+            }
+        };
+        Ok(BluetoothPeripheralConnectionMemoryGraphRxExtracted {
+            prepared: self,
+            batch,
+        })
+    }
+}
+
+/// Malformed completed RX storage retaining the unchanged recycle owner.
+#[must_use = "the unchanged connection graph remains unavailable until fail-stop handling"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRxExtractionFailure {
+    prepared: BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
+    error: BluetoothLeRxError,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRxExtractionFailure {
+    pub const fn error(&self) -> BluetoothLeRxError {
+        self.error
+    }
+
+    pub fn into_prepared(self) -> BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
+        self.prepared
+    }
+}
+
+/// Copied RX batch paired with the sole reclaimable connection graph.
+#[must_use = "commit reclamation before reusing the connection allocation"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRxExtracted {
+    prepared: BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
+    batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
+    /// Copy of every completed Link Layer PDU in receive-list order.
+    pub const fn batch(&self) -> BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
+        self.batch
+    }
+
+    /// Recover the unchanged recycle proof before reclamation is committed.
+    #[doc(hidden)]
+    pub fn into_prepared(self) -> BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
+        self.prepared
+    }
+
+    /// Restore both private graphs and return ordinary CPU ownership.
+    pub fn commit(self) -> BluetoothPeripheralConnectionMemoryGraphRecycled {
+        let BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
+            completed,
+            removal: _,
+        } = self.prepared;
+        let BluetoothPeripheralConnectionMemoryGraphCompletionObserved { running, status } =
+            completed;
+        let BluetoothPeripheralConnectionMemoryGraphRunning {
+            prepared,
+            _rx_publication: _,
+        } = running;
+        let BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared { prepared } =
+            prepared;
+        let BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
+            prepared,
+            workspace: _,
+        } = prepared;
+        let BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
+            storage,
+            binding,
+            pool,
+            channel: _,
+            interval: _,
+            window: _,
+            receive_wait: _,
+            default_tx_power: _,
+            priority: _,
+        } = prepared;
+        let mut graph = BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+            storage,
+            binding,
+            pool,
+        };
+        graph.restore_after_event();
+        BluetoothPeripheralConnectionMemoryGraphRecycled {
+            graph,
+            batch: self.batch,
+            status,
+        }
+    }
+}
+
+/// CPU owner of a live connection graph between recurring radio events.
+///
+/// Unlike the cold allocation owner, this state preserves the link-state
+/// words updated by hardware. It restores only the detached scheduler item
+/// and receive rotation which the completed event exclusively owned.
+#[must_use = "the active connection allocation must reach recurrence or teardown"]
+pub struct BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+    storage: Pin<&'static mut BluetoothPeripheralConnectionMemoryGraphStorage>,
+    binding: BluetoothPeripheralConnectionMemoryGraphBinding,
+    pool: BluetoothNonScanningRxMemoryCpuOwned,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+    pub const fn identity(&self) -> BluetoothPeripheralConnectionMemoryGraphIdentity {
+        self.binding.identity()
+    }
+
+    pub const fn receive_identity(&self) -> BluetoothNonScanningRxMemoryIdentity {
+        self.pool.identity()
+    }
+
+    /// Whether the event-local scheduler item and RX pool are reusable.
+    pub fn event_resources_are_recycled(&self) -> bool {
+        let graph = self.storage.as_ref().get_ref();
+        graph
+            .link_state
+            .retains_scheduler_head(self.binding.scheduler_items[1])
+            && graph.scheduler_items[1].retains_allocation(
+                Some(self.binding.scheduler_items[0]),
+                self.binding.scheduler_context,
+                self.binding.link_state,
+            )
+            && self.pool.is_initialized()
+    }
+
+    fn restore_after_event(&mut self) {
+        let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
+        let predecessor = self.binding.scheduler_items[selected_index - 1];
+        let selected = self.binding.scheduler_items[selected_index];
+        let graph = self.storage.as_mut().project();
+        graph.scheduler_items[selected_index].restore_hardware_predecessor(predecessor);
+        graph.scheduler_items[selected_index].restore_cpu_owned_status();
+        graph.link_state.install_scheduler_head(selected);
+        self.pool.reinitialize_after_event();
+    }
+}
+
+/// Reusable CPU-owned connection graphs plus copied event results.
+#[must_use = "the allocation and received batch must return to the connection owner"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRecycled {
+    graph: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
+    batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+    status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRecycled {
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
+        BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+        BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    ) {
+        (self.graph, self.batch, self.status)
+    }
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphStorage {
@@ -1465,18 +1738,129 @@ impl Default for BluetoothPeripheralConnectionMemoryGraphStorage {
 mod tests {
     use core::num::NonZeroU32;
 
+    use open_esp_radio_esp32s31_hal::{
+        BluetoothRxMemoryListPublished, BluetoothSchedulerFinishedListObservation,
+        BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+        BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListIndex,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    };
+
     use super::{
         BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
-        BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionMemoryGraphBindError,
+        BluetoothPeripheralConnectionDataChannel, BluetoothPeripheralConnectionDefaultTxPowerDbm,
+        BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,
+        BluetoothPeripheralConnectionMemoryGraphBindError,
+        BluetoothPeripheralConnectionMemoryGraphCompletionObservation,
+        BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
         BluetoothPeripheralConnectionMemoryGraphModelAddress,
-        BluetoothPeripheralConnectionMemoryGraphStorage,
+        BluetoothPeripheralConnectionMemoryGraphRecycleError,
+        BluetoothPeripheralConnectionMemoryGraphRunning,
+        BluetoothPeripheralConnectionMemoryGraphStorage, BluetoothPeripheralConnectionReceiveWait,
         BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+        BluetoothPeripheralConnectionSchedulerPriority,
+        BluetoothPeripheralConnectionSchedulerWindow,
+    };
+    use crate::{
+        BluetoothDirectionFindingWorkspaceModelAddress, BluetoothDirectionFindingWorkspaceStorage,
+        BluetoothNonScanningRxMemoryModelAddress, BluetoothNonScanningRxMemoryStorage,
+        BluetoothRxMemoryListClass,
     };
 
     fn storage() -> &'static mut BluetoothPeripheralConnectionMemoryGraphStorage {
         std::boxed::Box::leak(std::boxed::Box::new(
             BluetoothPeripheralConnectionMemoryGraphStorage::new(),
         ))
+    }
+
+    fn completed_graph(
+        graph_base: u32,
+        status: u32,
+    ) -> BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
+        let owner = BluetoothPeripheralConnectionMemoryGraphStorage::pin_static_model(
+            storage(),
+            BluetoothPeripheralConnectionMemoryGraphModelAddress::new(graph_base)
+                .expect("the model graph address is controller-encodable"),
+        )
+        .expect("the connection graph fits controller SRAM");
+        let receive_storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothNonScanningRxMemoryStorage::new(),
+        ));
+        let receive_pool = BluetoothNonScanningRxMemoryStorage::pin_static_model(
+            receive_storage,
+            BluetoothNonScanningRxMemoryModelAddress::new(graph_base + 0x1000)
+                .expect("the model RX address is controller-encodable"),
+        )
+        .expect("the receive graph fits controller SRAM");
+        let workspace_storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothDirectionFindingWorkspaceStorage::new(),
+        ));
+        let workspace = BluetoothDirectionFindingWorkspaceStorage::pin_static_model(
+            workspace_storage,
+            BluetoothDirectionFindingWorkspaceModelAddress::new(graph_base + 0x2000)
+                .expect("the model workspace address is controller-encodable"),
+        )
+        .expect("the direction-finding workspace fits controller SRAM");
+        let prepared = owner
+            .prepare_identity(BluetoothPeripheralConnectionIdentity::new(
+                [0xd4, 0xc3, 0xb2, 0xa1],
+                [0x33, 0x22, 0x11],
+            ))
+            .attach_receive_pool(receive_pool)
+            .prepare_reviewed_first_event_fields(
+                BluetoothPeripheralConnectionDataChannel::new(0)
+                    .expect("data channel zero is valid"),
+                BluetoothPeripheralConnectionIntervalTicks::new(24_000)
+                    .expect("the connection interval is nonzero"),
+                BluetoothPeripheralConnectionSchedulerWindow::new(100, 200)
+                    .expect("the scheduler window is nonempty"),
+                BluetoothPeripheralConnectionReceiveWait::new(1_250, 16)
+                    .expect("the first receive wait fits its short form"),
+                BluetoothPeripheralConnectionDefaultTxPowerDbm::new(0),
+                BluetoothPeripheralConnectionSchedulerPriority::FIRST_EVENT,
+            )
+            .install_direction_finding_workspace(workspace.binding().link())
+            .prepare_scheduler_admission();
+        let scheduler_item_address = prepared.scheduler_head();
+        prepared
+            .prepared
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
+            .model_controller_status(status);
+        let running = BluetoothPeripheralConnectionMemoryGraphRunning {
+            prepared,
+            _rx_publication: BluetoothRxMemoryListPublished::from_parts_for_validation(
+                BluetoothRxMemoryListClass::NonScanning.selector(),
+                scheduler_item_address,
+            ),
+        };
+        let observation =
+            BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0])
+                .expect("list zero is representable");
+        let BluetoothSchedulerFinishedListPop::List { observed, .. } = observation.pop_lowest()
+        else {
+            panic!("the semantic observation contains list zero")
+        };
+        match running.observe_completion(observed) {
+            BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the non-sentinel status completes the model event"),
+        }
+    }
+
+    fn removal_ready(
+        index: BluetoothSchedulerHardwareListIndex,
+        address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
+    ) -> BluetoothSchedulerSoftwareListRemovalReady {
+        let head = BluetoothSchedulerHardwareListHead::from_address(address)
+            .expect("the connection item forms a nonempty scheduler head");
+        let empty = BluetoothSchedulerHardwareListHeadEmptyObserved::from_identity_for_validation(
+            index, head,
+        );
+        BluetoothSchedulerSoftwareListRemovalReady::from_head_for_validation(empty)
     }
 
     #[test]
@@ -1554,6 +1938,59 @@ mod tests {
         assert_eq!(
             item.completion_status(),
             Some(BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero(opaque))
+        );
+    }
+
+    #[test]
+    fn recycle_rejects_a_foreign_item_without_mutating_the_connection() {
+        let completed = completed_graph(0x2f00_5000, 7);
+        let address = completed.scheduler_item_address();
+        let foreign =
+            open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(address.address() + 4)
+                .expect("the adjacent model address remains controller-encodable");
+        let failure = match completed.prepare_recycle_after_software_list_removal(removal_ready(
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            foreign,
+        )) {
+            Ok(_) => panic!("a removal proof for another item must be rejected"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothPeripheralConnectionMemoryGraphRecycleError::SchedulerItemMismatch
+        );
+        let (completed, _) = failure.into_parts();
+        assert_eq!(completed.scheduler_item_address(), address);
+        assert_eq!(
+            completed.status(),
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero(
+                NonZeroU32::new(7).expect("seven is nonzero")
+            )
+        );
+    }
+
+    #[test]
+    fn recycle_restores_event_resources_without_resetting_the_active_owner() {
+        let completed = completed_graph(0x2f00_9000, 0);
+        let address = completed.scheduler_item_address();
+        let prepared = completed
+            .prepare_recycle_after_software_list_removal(removal_ready(
+                BluetoothSchedulerHardwareListIndex::ZERO,
+                address,
+            ))
+            .unwrap_or_else(|_| panic!("the exact removal proof authorizes reclamation"));
+        let extracted = prepared
+            .extract_received()
+            .unwrap_or_else(|_| panic!("an event without a received packet is valid"));
+        assert!(extracted.batch().is_empty());
+
+        let (active, batch, status) = extracted.commit().into_parts();
+
+        assert!(active.event_resources_are_recycled());
+        assert!(batch.is_empty());
+        assert_eq!(
+            status,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero
         );
     }
 }

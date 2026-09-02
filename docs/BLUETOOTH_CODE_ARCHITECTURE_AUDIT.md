@@ -60,6 +60,14 @@ There are three hierarchy weaknesses:
    intentionally Embassy-only. Waiting policy and task selection must still
    stay in the adapter.
 
+The first weakness has one concrete priority-zero inversion: HCI queue
+resources and their `RawMutex` are currently joined to the controller typestate
+before modem low-power timing, common PHY, baseband and BLE PHY initialization
+finish. Hardware readiness must not depend on a transport or executor mutex.
+The clean cut is a transport-free `BluetoothControllerHardwareReady` owner,
+followed by a separate Controller composition step which joins HCI resources.
+This should be corrected before expanding the HCI command surface.
+
 The target internal hierarchy is:
 
     Embassy actor: wait, wake, select, cancellation
@@ -77,6 +85,24 @@ The target internal hierarchy is:
 Dependencies may point downward only. In particular, scheduler core must not
 know HCI commands, memory codecs must not know controller roles, and the
 Embassy actor must not interpret registers or SRAM descriptor fields.
+
+The long-term crate boundary should make that direction explicit:
+
+    S31 contracts: controller SRAM address/time/list value domains
+                                 |
+    generated PAC -> HAL     memory layout/codecs
+                    \          /
+                 ESP32-S31 LLL
+                         |
+                    Controller
+                         |
+                 Embassy adapter
+
+Today the memory crate also consumes HAL publication/completion proofs. This
+is safe and preserves the required fences, but combines descriptor codecs with
+the outer hardware ownership protocol. Split those as internal `codec` and
+`protocol` layers first; only then consider separate crates. Do not remove the
+affine proof joins merely to eliminate the dependency.
 
 ## Inventory
 
@@ -171,6 +197,20 @@ tasks would introduce arbitration and cancellation races. Its state vocabulary
 and transition handlers can be separated by role while the top-level run loop
 remains the sole dispatcher.
 
+### Connection recycle must preserve the live link state
+
+The completed connection owns two kinds of SRAM with different lifetimes.
+The selected scheduler item and two-node RX rotation are event-local and must
+be restored after unlink. Packet sequence/history, negotiated identity and
+future encryption/control state are connection-long and must survive into the
+next event.
+
+The lower memory suffix now reflects that boundary: it validates the exact
+software-list removal proof, copies RX data before mutation, and returns an
+active CPU owner after restoring only the detached item and RX pool. It does
+not call the cold-allocation reset. Scheduler timeline/list release and the
+single portable LL completion transition remain the next upper-layer step.
+
 ## Refactor order
 
 1. Extract operational scheduler service from controller_start.rs (done in
@@ -178,7 +218,8 @@ remains the sole dispatcher.
 2. Split scheduler.rs by role and isolate the exclusive-list epoch
    (in progress: connection states and transitions are isolated).
 3. Generalize and rename the post-unlink mailbox without legacy aliases.
-4. Finish connection recycle and recurrence against those shared primitives.
+4. Finish connection recycle and recurrence against those shared primitives
+   (lower SRAM/RX recycle done; scheduler/LL suffix remains).
 5. Split the Embassy actor by role while retaining one task and one state slot.
 6. Split the portable command-order and memory-codec files after the hardware
    lifecycle is complete.
@@ -190,7 +231,7 @@ addresses or symbol names.
 ## Driver readiness impact
 
 The refactor does not replace missing functionality. The next functional edge
-is still peripheral-connection memory/RX recycle followed by recurrence and
-controller-runner integration. The split is worthwhile before that work
-because recurrence would otherwise add another copy of the largest duplicated
-pipeline.
+is scheduler-side connection recycle, exact timeline/list release, one LL event
+advance, then recurrence and controller-runner integration. The split is
+worthwhile before that work because recurrence would otherwise add another
+copy of the largest duplicated pipeline.

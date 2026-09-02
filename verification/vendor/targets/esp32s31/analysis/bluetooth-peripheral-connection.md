@@ -219,8 +219,11 @@ only in-flight, zero and opaque-nonzero status. It keeps the graph, RX
 publication, portable event and timeline reservation hardware-owned. The
 fresh hardware-head observation, atomic source-list unlink/mailbox arm and
 finite interrupt-or-direct removal gate now retain the same owners through a
-removal-ready state. Only the remaining SRAM recycle may return CPU ownership
-or advance protocol state.
+removal-ready state. The lower memory boundary now binds that exact proof,
+copies every contiguous completed RX PDU before mutation and restores only the
+event-local scheduler item and receive rotation. It deliberately preserves the
+live connection link state. Scheduler timeline/list release still gates CPU
+ownership at the role boundary and the later protocol-state advance.
 
 Production retention now treats that graph and pool as one reusable affine
 allocation. Cold start binds the physical default transmit-power policy once,
@@ -262,15 +265,17 @@ remaining path to one real peripheral event is:
 1. attach the now-static shared RX pool to the response-capable
    connectable-advertising graph, then transfer the pool and accepted packet to
    the existing task-service normalizer;
-2. return the removal-ready detached scheduler item to its private free list
-   and release the exact timeline reservation;
+2. join the now-implemented lower scheduler-item/RX recycle to the common
+   scheduler, release the exact timeline reservation and advance the portable
+   event exactly once;
 3. add recurrence from the completed event's negotiated interval and next data
    channel through the same typed publication path;
 4. add SN/NESN, retransmission and supervision before exposing ACL success;
 5. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
-The recycle-scheduler-item and next-anchor functions are now the shortest
-evidence roots. They do not block the already source-ordered preparation,
-publication, fenced completion and post-unlink prefix, but they do block CPU
-recovery and recurrence of the first hardware-owned event.
+The scheduler-side recycle transaction and next-anchor functions are now the
+shortest closure roots. They do not block the already source-ordered
+preparation, publication, fenced completion and post-unlink prefix, but they
+do block role-level CPU recovery and recurrence of the first hardware-owned
+event.

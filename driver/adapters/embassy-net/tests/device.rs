@@ -11,7 +11,7 @@ use embassy_net_driver::{
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use embassy_net_driver::{
-    EgressAdmission, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
+    EgressAdmission, EgressGrantCompletion, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
 };
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 use embassy_net_driver::{EgressDemand, EgressDemandId, EgressDemandLevel, EgressDemandUpdate};
@@ -22,7 +22,7 @@ use open_esp_radio_embassy_net::PinnedNetworkTxFrame;
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 use open_esp_radio_embassy_net::{
     DefaultEgressControlPlane, DefaultEgressNetworkScheduler, DefaultEgressNetworkState,
-    DefaultEgressRadioScheduler, EgressGrantKey,
+    DefaultEgressRadioScheduler, EgressBurstGrant, EgressGrantKey, EgressGrantProgress,
 };
 use open_esp_radio_embassy_net::{
     DualPinnedNetworkRunner, ETHERNET_HEADER_LEN, FrameLengthError, NetworkEndpointConfig,
@@ -561,6 +561,97 @@ fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
     assert_eq!(control.snapshot().demand_publications, 2);
     assert_eq!(control.snapshot().radio_demand_updates, 2);
     assert_eq!(control.snapshot().radio_demand_rejected, 0);
+}
+
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+#[test]
+fn affine_grant_starts_after_sram_materialization_and_closes_exactly() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (network_control, radio_control) = control.split();
+    let network_state = Box::leak(Box::new(DefaultEgressNetworkState::new()));
+    let network_control = Box::leak(Box::new(DefaultEgressNetworkScheduler::new(
+        network_control,
+        network_state,
+    )));
+    let (provider, consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(0);
+    let (device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let mut device = device.with_egress_control(network_control);
+    radio.set_link_state(LinkState::Up);
+    let schedule = device.egress_schedule().unwrap();
+    assert_eq!(schedule.grant_mode(), EgressGrantMode::Shadow);
+    let key = device.egress_key(EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 2]),
+        traffic_class: 0,
+    });
+    let id = EgressDemandId::new(schedule.epoch(), core::num::NonZeroU32::new(1).unwrap());
+    let demand = EgressDemand::new(
+        id,
+        key,
+        EgressDemandLevel::new(core::num::NonZeroU16::new(2).unwrap(), false),
+    );
+    let mut cx = context();
+    device.update_egress_demand(
+        &mut cx,
+        EgressDemandUpdate::Reset {
+            schedule_epoch: schedule.epoch(),
+        },
+    );
+    device.update_egress_demand(&mut cx, EgressDemandUpdate::Active(demand));
+
+    let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
+    assert!(radio_control.service_shadow());
+    let grant = EgressBurstGrant::new(
+        core::num::NonZeroU32::new(7).unwrap(),
+        demand,
+        core::num::NonZeroU8::new(2).unwrap(),
+        core::num::NonZeroU32::new(1_000).unwrap(),
+    );
+    radio_control.try_issue_grant(grant).unwrap();
+    let observed = device.poll_egress_grant(&mut cx).unwrap();
+    assert_eq!(observed.serial(), grant.serial());
+    assert_eq!(observed.demand(), demand);
+
+    let token = match device.transmit_for(&mut cx, key) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("the unchanged shadow path must materialize one SRAM owner"),
+    };
+    token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5a));
+    assert_eq!(consumer.queue_len_for(interface), 1);
+
+    let remaining = EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false);
+    device.finish_egress_grant(
+        &mut cx,
+        EgressGrantCompletion::new(grant.serial(), 1, Some(remaining)),
+    );
+    let mut progress = std::vec::Vec::new();
+    assert!(radio_control.service_shadow_control_observed(|_| {}, |update| progress.push(update)));
+    assert_eq!(
+        progress,
+        std::vec![
+            EgressGrantProgress::Started {
+                serial: grant.serial(),
+            },
+            EgressGrantProgress::Finished {
+                serial: grant.serial(),
+                used_frames: 1,
+                remaining: Some(remaining),
+            },
+        ]
+    );
+    assert_eq!(control.snapshot().network_grants, 1);
+    assert_eq!(control.snapshot().grant_progress_publications, 2);
+    assert_eq!(control.snapshot().radio_grant_updates, 2);
 }
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]

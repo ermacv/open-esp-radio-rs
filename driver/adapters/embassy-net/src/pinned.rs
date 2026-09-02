@@ -17,7 +17,8 @@ use embassy_net_driver::{
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use embassy_net_driver::{
-    EgressAdmission, EgressDemandUpdate, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
+    EgressAdmission, EgressBurstGrant as DriverEgressBurstGrant, EgressDemandUpdate,
+    EgressGrantCompletion, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
 };
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
@@ -38,7 +39,9 @@ use crate::EgressShadowGrant;
 #[cfg(feature = "tx-egress-scheduling")]
 use crate::egress_control::egress_control_enabled;
 #[cfg(feature = "tx-egress-scheduling")]
-use crate::{AssociatedEgressIdentity, DefaultEgressNetworkScheduler};
+use crate::{
+    AssociatedEgressIdentity, DefaultEgressNetworkScheduler, EgressBurstGrant, EgressGrantProgress,
+};
 use crate::{
     ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
 };
@@ -1274,6 +1277,8 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 egress_demand_active: false,
                 #[cfg(feature = "tx-egress-scheduling")]
                 egress_demand_flush_pending: false,
+                #[cfg(feature = "tx-egress-scheduling")]
+                egress_grant: None,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
                 shadow_grant_serial: 0,
                 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1460,6 +1465,8 @@ pub struct SplitPinnedDevice<
     egress_demand_active: bool,
     #[cfg(feature = "tx-egress-scheduling")]
     egress_demand_flush_pending: bool,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_grant: Option<PinnedEgressGrantState>,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
     shadow_grant_serial: u32,
     #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
@@ -1480,6 +1487,33 @@ pub struct SplitPinnedDevice<
     shadow_grant_unclassified: u32,
     checksum: ChecksumCapabilities,
     tx_reservation: (),
+}
+
+/// Core1-local owner of one radio-issued observational quantum.
+///
+/// The state remains next to the permanent device rather than in an async
+/// stack frame. A token increments `materialized` only after its final SRAM
+/// backing has been written. Full control transport retains the lifecycle in
+/// this owner for retry; shadow mode never turns it into admission authority.
+#[cfg(feature = "tx-egress-scheduling")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PinnedEgressGrantState {
+    grant: EgressBurstGrant,
+    materialized: u8,
+    started_published: bool,
+    completion: Option<EgressGrantCompletion>,
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl PinnedEgressGrantState {
+    const fn new(grant: EgressBurstGrant) -> Self {
+        Self {
+            grant,
+            materialized: 0,
+            started_published: false,
+            completion: None,
+        }
+    }
 }
 
 impl<
@@ -1524,6 +1558,48 @@ impl<
             self.egress_demand_active && control.egress_demand_flush_pending();
         self.egress_control = Some(control);
         self
+    }
+
+    /// Retry retained grant lifecycle records without changing packet
+    /// admission. A full transport leaves the exact record in the permanent
+    /// Core1 owner and the radio capacity edge wakes this device again.
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn flush_egress_grant_progress(&mut self) {
+        let Some(control) = self.egress_control.as_deref_mut() else {
+            return;
+        };
+
+        let pending_start = self.egress_grant.as_ref().and_then(|state| {
+            (state.materialized != 0 && !state.started_published).then_some(
+                EgressGrantProgress::Started {
+                    serial: state.grant.serial(),
+                },
+            )
+        });
+        if let Some(progress) = pending_start {
+            if control.try_publish_grant_progress(progress).is_err() {
+                return;
+            }
+            self.egress_grant
+                .as_mut()
+                .expect("the retained grant cannot disappear while publishing its start")
+                .started_published = true;
+        }
+
+        let pending_finish = self
+            .egress_grant
+            .as_ref()
+            .and_then(|state| state.completion);
+        if let Some(completion) = pending_finish {
+            let progress = EgressGrantProgress::Finished {
+                serial: completion.serial(),
+                used_frames: completion.used_frames(),
+                remaining: completion.remaining(),
+            };
+            if control.try_publish_grant_progress(progress).is_ok() {
+                self.egress_grant = None;
+            }
+        }
     }
 
     /// Keep one TX credit unavailable to ordinary application egress so an
@@ -1687,6 +1763,10 @@ impl<
             tx_tokens_in_flight: self.tx_tokens_in_flight,
             tx_pool: self.tx_pool,
             lease: Some(lease),
+            #[cfg(feature = "tx-egress-scheduling")]
+            egress_grant: &mut self.egress_grant,
+            #[cfg(feature = "tx-egress-scheduling")]
+            egress_control: &mut self.egress_control,
             _reservation: &mut self.tx_reservation,
         }
     }
@@ -2228,6 +2308,11 @@ pub struct PinnedTransmitToken<
     tx_tokens_in_flight: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     lease: Option<PinnedTransmitLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_grant: &'device mut Option<PinnedEgressGrantState>,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_control:
+        &'device mut Option<&'resources mut DefaultEgressNetworkScheduler<'resources, M>>,
     _reservation: &'device mut (),
 }
 
@@ -2427,6 +2512,25 @@ impl<
                 (index, true, result)
             }
         };
+        #[cfg(feature = "tx-egress-scheduling")]
+        if let (Some(egress), Some(state)) =
+            (self.metadata.egress_key(), self.egress_grant.as_mut())
+            && state.completion.is_none()
+            && state.grant.demand().key() == egress
+            && state.materialized < state.grant.frame_credits().get()
+        {
+            state.materialized = state.materialized.saturating_add(1);
+            if state.materialized == 1
+                && let Some(control) = self.egress_control.as_deref_mut()
+                && control
+                    .try_publish_grant_progress(EgressGrantProgress::Started {
+                        serial: state.grant.serial(),
+                    })
+                    .is_ok()
+            {
+                state.started_published = true;
+            }
+        }
         #[cfg(feature = "tx-staging-copy-probe")]
         let (ready, index) = if staged {
             self.staged_metadata[usize::from(index)].publish(self.metadata);
@@ -2683,6 +2787,7 @@ impl<
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_schedule(&mut self) -> Option<EgressSchedule> {
+        self.flush_egress_grant_progress();
         if self.egress_demand_active
             && self.egress_demand_flush_pending
             && let Some(control) = self.egress_control.as_mut()
@@ -2695,7 +2800,11 @@ impl<
                 NonZeroU8::new(32).unwrap(),
                 NonZeroU8::new(crate::keyed_egress_dispatch_quantum()).unwrap(),
                 epoch,
-                EgressGrantMode::StackSelected,
+                if self.egress_demand_active && self.egress_control.is_some() {
+                    EgressGrantMode::Shadow
+                } else {
+                    EgressGrantMode::StackSelected
+                },
             ))
         } else {
             // A permanent network stack survives radio role epochs. Returning
@@ -2708,6 +2817,7 @@ impl<
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn update_egress_demand(&mut self, cx: &mut Context<'_>, update: EgressDemandUpdate) {
+        self.flush_egress_grant_progress();
         if self.egress_demand_active
             && let Some(control) = self.egress_control.as_mut()
         {
@@ -2717,6 +2827,38 @@ impl<
             if let Ok(pending) = control.update_egress_demand(cx, update) {
                 self.egress_demand_flush_pending = pending;
             }
+        }
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn poll_egress_grant(&mut self, cx: &mut Context<'_>) -> Option<DriverEgressBurstGrant> {
+        self.flush_egress_grant_progress();
+        if !self.egress_demand_active || self.egress_grant.is_some() {
+            return None;
+        }
+        let grant = self.egress_control.as_deref_mut()?.try_receive_grant(cx)?;
+        self.egress_grant = Some(PinnedEgressGrantState::new(grant));
+        Some(DriverEgressBurstGrant::new(
+            grant.serial(),
+            grant.demand(),
+            grant.frame_credits(),
+            grant.airtime_hundred_nanoseconds(),
+        ))
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn finish_egress_grant(&mut self, _cx: &mut Context<'_>, completion: EgressGrantCompletion) {
+        self.flush_egress_grant_progress();
+        // A completion can only name a grant returned by `poll_egress_grant`,
+        // which remains retained until this exact serial closes. A mismatch
+        // is ignored as a duplicate/foreign callback and cannot close the
+        // live affine owner.
+        if let Some(state) = self.egress_grant.as_mut()
+            && state.grant.serial() == completion.serial()
+            && state.completion.is_none()
+        {
+            state.completion = Some(completion);
+            self.flush_egress_grant_progress();
         }
     }
 
@@ -2845,6 +2987,16 @@ impl<
     #[cfg(feature = "tx-egress-scheduling")]
     fn update_egress_demand(&mut self, cx: &mut Context<'_>, update: EgressDemandUpdate) {
         self.inner.update_egress_demand(cx, update);
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn poll_egress_grant(&mut self, cx: &mut Context<'_>) -> Option<DriverEgressBurstGrant> {
+        self.inner.poll_egress_grant(cx)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn finish_egress_grant(&mut self, cx: &mut Context<'_>, completion: EgressGrantCompletion) {
+        self.inner.finish_egress_grant(cx, completion);
     }
 
     fn hardware_address(&self) -> HardwareAddress {

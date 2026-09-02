@@ -159,6 +159,7 @@ pub struct EgressControlSnapshot {
     pub grant_full: u32,
     pub network_grants: u32,
     pub grant_progress_publications: u32,
+    pub grant_progress_full: u32,
     pub radio_grant_updates: u32,
     pub radio_demand_updates: u32,
     pub radio_demand_rejected: u32,
@@ -185,6 +186,9 @@ impl EgressControlSnapshot {
             grant_progress_publications: self
                 .grant_progress_publications
                 .wrapping_sub(earlier.grant_progress_publications),
+            grant_progress_full: self
+                .grant_progress_full
+                .wrapping_sub(earlier.grant_progress_full),
             radio_grant_updates: self
                 .radio_grant_updates
                 .wrapping_sub(earlier.radio_grant_updates),
@@ -219,6 +223,7 @@ struct EgressControlTelemetry {
     grant_full: AtomicU32,
     network_grants: AtomicU32,
     grant_progress_publications: AtomicU32,
+    grant_progress_full: AtomicU32,
     radio_grant_updates: AtomicU32,
     radio_demand_updates: AtomicU32,
     radio_demand_rejected: AtomicU32,
@@ -239,6 +244,7 @@ impl EgressControlTelemetry {
             grant_full: AtomicU32::new(0),
             network_grants: AtomicU32::new(0),
             grant_progress_publications: AtomicU32::new(0),
+            grant_progress_full: AtomicU32::new(0),
             radio_grant_updates: AtomicU32::new(0),
             radio_demand_updates: AtomicU32::new(0),
             radio_demand_rejected: AtomicU32::new(0),
@@ -258,6 +264,7 @@ impl EgressControlTelemetry {
             grant_full: self.grant_full.load(Ordering::Acquire),
             network_grants: self.network_grants.load(Ordering::Acquire),
             grant_progress_publications: self.grant_progress_publications.load(Ordering::Acquire),
+            grant_progress_full: self.grant_progress_full.load(Ordering::Acquire),
             radio_grant_updates: self.radio_grant_updates.load(Ordering::Acquire),
             radio_demand_updates: self.radio_demand_updates.load(Ordering::Acquire),
             radio_demand_rejected: self.radio_demand_rejected.load(Ordering::Acquire),
@@ -451,6 +458,10 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressNetworkPort<'_, M, DEMAND_DEP
         {
             self.radio_update_send_blocked
                 .store(true, Ordering::Release);
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.telemetry
+                .grant_progress_full
+                .fetch_add(1, Ordering::Relaxed);
             return Err(progress);
         }
         #[cfg(feature = "tx-phase-telemetry")]
@@ -1312,6 +1323,32 @@ mod tests {
             assert_eq!(snapshot.grant_progress_publications, 2);
             assert_eq!(snapshot.radio_grant_updates, 2);
         }
+    }
+
+    #[test]
+    fn full_progress_transport_is_counted_and_retryable() {
+        let control = EgressControlPlane::<NoopRawMutex, 1>::new();
+        let (network, radio) = control.split();
+        let mut state = EgressNetworkState::new();
+        let mut network = EgressNetworkScheduler::new(network, &mut state);
+        let mut radio = EgressRadioScheduler::new(radio);
+        let context = Context::from_waker(Waker::noop());
+        network
+            .update_egress_demand(&context, EgressDemandUpdate::Reset { schedule_epoch: 7 })
+            .unwrap();
+        let progress = EgressGrantProgress::Started {
+            serial: NonZeroU32::new(1).unwrap(),
+        };
+
+        assert_eq!(network.try_publish_grant_progress(progress), Err(progress));
+        #[cfg(feature = "tx-phase-telemetry")]
+        assert_eq!(control.snapshot().grant_progress_full, 1);
+
+        assert!(radio.service_shadow());
+        network.try_publish_grant_progress(progress).unwrap();
+        let mut observed = None;
+        assert!(radio.service_shadow_control_observed(|_| {}, |value| observed = Some(value)));
+        assert_eq!(observed, Some(progress));
     }
 
     #[test]

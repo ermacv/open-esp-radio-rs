@@ -1349,7 +1349,36 @@ independent channels. A full grant queue retains the rejected value at Core0;
 when Core1 returns capacity it level-latches a Core0 retry. A grant publication
 wakes the permanent network task after the value is visible. Host tests prove
 the ordered record sequence and the full/return/retry edge. No production
-device consumes these grants yet, and no admission outcome has changed.
+device consumed these grants at that checkpoint, and no admission outcome had
+changed.
+
+The next dependency/API checkpoint pins Xarxa
+`bada2fb00646d8e44c5a072bbc96dff29a05db3a` and Embassy
+`2d869890bf0f2c38ec6b7b63d3d1261f1b35d44a`. Xarxa now has explicit
+`StackSelected`, `Shadow` and `Authoritative` modes. In `Shadow`, the stack
+observes one radio grant for a complete interface dispatch round, preserves
+its existing key choice, counts only matching final emissions and closes the
+grant with `used_frames` plus a freshly reconciled exact remaining demand.
+`Authoritative` exists only as a host-tested API/state-machine path; the Wi-Fi
+composition does not select it.
+
+The pinned adapter now consumes the Core0-to-Core1 grant transport when the
+same-ELF egress-control switch is enabled and advertises only `Shadow`. It
+retains the affine grant next to the permanent Core1 device. A matching
+`TxToken` records the first `Started` edge after the final SRAM buffer is
+written and before its index is published to Core0. Xarxa's terminal callback
+then publishes `Finished`; a dropped, unused token cannot create `Started`.
+Full progress publication is retained for retry and has a distinct
+`grant_progress_full` counter. Until HIL proves both demand and progress-full
+counters remain zero, the shared-stream ordering under a prolonged stalled
+Core0 is a shadow validity gate rather than production authority.
+
+This is still not a scheduling cutover: Core0 does not issue production
+grants yet, `transmit_for` remains the sole SRAM admission authority, and
+packet selection/order are unchanged. The next implementation boundary is to
+make the physical Core0 policy issue one already-modeled grant, consume
+`Started`/`Finished`, and retain its airtime receipt through terminal radio
+completion while the stack remains in `Shadow`.
 
 - issue one demand-id-bound frame/airtime quantum from Core0 per burst, never
   one request/reply per packet;

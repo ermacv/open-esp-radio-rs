@@ -6,12 +6,14 @@ use core::{
 };
 use std::{sync::Arc, task::Wake};
 
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+use embassy_net_driver::EgressGrantCompletion;
 use embassy_net_driver::{
     Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _,
 };
 #[cfg(feature = "tx-egress-scheduling")]
 use embassy_net_driver::{
-    EgressAdmission, EgressGrantCompletion, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
+    EgressAdmission, EgressGrantMode, EgressKey, EgressRoute, EgressSchedule,
 };
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 use embassy_net_driver::{EgressDemand, EgressDemandId, EgressDemandLevel, EgressDemandUpdate};

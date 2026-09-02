@@ -1353,12 +1353,14 @@ device consumed these grants at that checkpoint, and no admission outcome had
 changed.
 
 The next dependency/API checkpoint pins Xarxa
-`bada2fb00646d8e44c5a072bbc96dff29a05db3a` and Embassy
-`2d869890bf0f2c38ec6b7b63d3d1261f1b35d44a`. Xarxa now has explicit
+`319df1664e33d8013ffe3528e3f0350c87e03575` and Embassy
+`c4d871089d22be1398e2f2d62b23298b900a6d62`. Xarxa now has explicit
 `StackSelected`, `Shadow` and `Authoritative` modes. In `Shadow`, the stack
-observes one radio grant for a complete interface dispatch round, preserves
-its existing key choice, counts only matching final emissions and closes the
-grant with `used_frames` plus a freshly reconciled exact remaining demand.
+preserves its existing key choice and counts only matching final emissions.
+A radio grant is a cross-round credit lease: a smaller stack dispatch quantum
+does not close it, and only exhausted frame credits, vanished exact demand,
+schedule-epoch replacement or mode disable ends its lifetime. Close carries
+`used_frames` plus a freshly reconciled exact remaining demand.
 `Authoritative` exists only as a host-tested API/state-machine path; the Wi-Fi
 composition does not select it.
 

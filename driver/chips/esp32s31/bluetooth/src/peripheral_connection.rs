@@ -37,6 +37,12 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothNonScanningRxMemoryModelAddress, BluetoothPeripheralConnectionMemoryGraphModelAddress,
 };
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    BluetoothPeripheralConnectionMemoryGraphRunning,
+    BluetoothPeripheralConnectionMemoryGraphRxPublished,
+};
 
 use crate::BluetoothSchedulerInstant;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -410,7 +416,7 @@ impl BluetoothPeripheralConnectionFirstEventPrepared {
         dead_code,
         reason = "the next connection scheduler-admission transition consumes this projection"
     )]
-    #[expect(
+    #[allow(
         clippy::result_large_err,
         reason = "the no-alloc projection failure returns the complete affine event owner"
     )]
@@ -756,6 +762,22 @@ impl BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared {
         self.graph.scheduler_head()
     }
 
+    /// Freeze SRAM initialization before the selector-two publication edge.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn prepare_publication(
+        self,
+    ) -> BluetoothPeripheralConnectionFirstEventPublicationPrepared {
+        BluetoothPeripheralConnectionFirstEventPublicationPrepared {
+            graph: self.graph.prepare_publication(),
+            remainder: BluetoothPeripheralConnectionFirstEventPublicationRemainder {
+                event: self.event,
+                first_window: self.first_window,
+                requested_window: self.requested_window,
+                resolved_window: self.resolved_window,
+            },
+        }
+    }
+
     pub(crate) fn cancel(self) -> BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
         BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
             graph: self.graph.cancel(),
@@ -764,6 +786,109 @@ impl BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared {
             requested_window: self.requested_window,
             resolved_window: self.resolved_window,
         }
+    }
+}
+
+/// CPU-owned connection graph frozen for selector-two publication.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the frozen connection graph must be published or retained"]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventPublicationPrepared {
+    graph: BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    remainder: BluetoothPeripheralConnectionFirstEventPublicationRemainder,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionFirstEventPublicationPrepared {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+        BluetoothPeripheralConnectionFirstEventPublicationRemainder,
+    ) {
+        (self.graph, self.remainder)
+    }
+}
+
+/// Protocol and timing owners retained while the memory graph crosses MMIO.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the connection publication remainder must rejoin its exact graph"]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventPublicationRemainder {
+    event: LePeripheralConnectionEventPrepared,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionFirstEventPublicationRemainder {
+    pub(crate) fn join_rx_publication(
+        self,
+        graph: BluetoothPeripheralConnectionMemoryGraphRxPublished,
+    ) -> BluetoothPeripheralConnectionFirstEventRxPublished {
+        BluetoothPeripheralConnectionFirstEventRxPublished {
+            graph,
+            event: self.event,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
+        }
+    }
+}
+
+/// First connection event whose selector-two RX list is hardware-visible.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the RX-published connection event must enter the common scheduler"]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventRxPublished {
+    graph: BluetoothPeripheralConnectionMemoryGraphRxPublished,
+    event: LePeripheralConnectionEventPrepared,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionFirstEventRxPublished {
+    pub(crate) const fn scheduler_head(
+        &self,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress {
+        self.graph.scheduler_head()
+    }
+
+    pub(crate) fn into_running(
+        self,
+        run: &open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothPeripheralConnectionFirstEventRunning {
+        BluetoothPeripheralConnectionFirstEventRunning {
+            graph: self.graph.into_running(run),
+            event: self.event,
+            _first_window: self.first_window,
+            _requested_window: self.requested_window,
+            _resolved_window: self.resolved_window,
+        }
+    }
+}
+
+/// Hardware-owned first peripheral connection event.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the running connection event must advance through owned completion"]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventRunning {
+    graph: BluetoothPeripheralConnectionMemoryGraphRunning,
+    event: LePeripheralConnectionEventPrepared,
+    _first_window: BluetoothPeripheralConnectionFirstWindow,
+    _requested_window: BluetoothSchedulerRawWindow,
+    _resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionFirstEventRunning {
+    pub(crate) const fn scheduler_item_address(
+        &self,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress {
+        self.graph.scheduler_item_address()
+    }
+
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
     }
 }
 

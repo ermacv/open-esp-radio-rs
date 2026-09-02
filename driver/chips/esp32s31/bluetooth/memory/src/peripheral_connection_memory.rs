@@ -14,6 +14,8 @@ use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothMemoryListSelector, BluetoothRxMemoryListPublished,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -22,6 +24,7 @@ use crate::{
     direction_finding_workspace::BluetoothDirectionFindingWorkspaceLink,
     le_tx_power::rounded_tx_power,
     non_scanning_rx_memory::BluetoothNonScanningRxMemoryCpuOwned,
+    rx_memory_list::BluetoothRxMemoryListClass,
     scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW,
@@ -1106,6 +1109,13 @@ impl BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
         self.prepared.prepared.binding.scheduler_items[selected_index].controller_address()
     }
 
+    /// Freeze the complete SRAM graph before selector-two publication.
+    pub fn prepare_publication(
+        self,
+    ) -> BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
+        BluetoothPeripheralConnectionMemoryGraphPublicationPrepared { prepared: self }
+    }
+
     /// Restore the exact private free chain before any MMIO publication.
     pub fn cancel(mut self) -> BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
         let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
@@ -1116,6 +1126,169 @@ impl BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
         graph.scheduler_items[selected_index].restore_cpu_owned_status();
         graph.link_state.install_scheduler_head(selected);
         self.prepared
+    }
+}
+
+/// Complete connection graph ready for selector-two RX-list publication.
+#[must_use = "the prepared connection graph must be published or retained"]
+pub struct BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
+    /// Memory-layer mapping for an ordinary non-scanning connection item.
+    #[doc(hidden)]
+    pub const fn selector(&self) -> BluetoothMemoryListSelector {
+        BluetoothRxMemoryListClass::NonScanning.selector()
+    }
+
+    /// Validated first receive header retained by this affine graph.
+    #[doc(hidden)]
+    pub const fn receive_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.prepared.prepared.pool.head()
+    }
+
+    /// Exact detached event item retained by this affine graph.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.scheduler_head()
+    }
+
+    /// Consume a matching selector-two HAL publication into hardware ownership.
+    #[doc(hidden)]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc mismatch returns both exact affine owners"
+        )
+    )]
+    pub fn into_rx_published(
+        self,
+        publication: BluetoothRxMemoryListPublished,
+    ) -> Result<
+        BluetoothPeripheralConnectionMemoryGraphRxPublished,
+        BluetoothPeripheralConnectionMemoryGraphPublicationMismatch,
+    > {
+        let error = if publication.selector() != self.selector() {
+            Some(BluetoothPeripheralConnectionMemoryGraphPublicationError::SelectorMismatch)
+        } else if publication.head() != self.receive_head() {
+            Some(BluetoothPeripheralConnectionMemoryGraphPublicationError::HeadMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(
+                BluetoothPeripheralConnectionMemoryGraphPublicationMismatch {
+                    prepared: self,
+                    publication,
+                    error,
+                },
+            );
+        }
+        Ok(BluetoothPeripheralConnectionMemoryGraphRxPublished {
+            prepared: self.prepared,
+            rx_publication: publication,
+        })
+    }
+}
+
+/// Why a receive-list publication does not name this connection graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPeripheralConnectionMemoryGraphPublicationError {
+    /// The publication belongs to another positional memory list.
+    SelectorMismatch,
+    /// The publication names another pinned receive pool.
+    HeadMismatch,
+}
+
+/// Failed selector-two publication join retaining both affine owners.
+#[must_use = "a mismatched publication still owns the graph and HAL token"]
+pub struct BluetoothPeripheralConnectionMemoryGraphPublicationMismatch {
+    prepared: BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    publication: BluetoothRxMemoryListPublished,
+    error: BluetoothPeripheralConnectionMemoryGraphPublicationError,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphPublicationMismatch {
+    /// Finite reason why the two affine owners did not match.
+    pub const fn error(&self) -> BluetoothPeripheralConnectionMemoryGraphPublicationError {
+        self.error
+    }
+
+    /// Recover both unchanged owners.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+        BluetoothRxMemoryListPublished,
+    ) {
+        (self.prepared, self.publication)
+    }
+}
+
+impl core::fmt::Debug for BluetoothPeripheralConnectionMemoryGraphPublicationMismatch {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothPeripheralConnectionMemoryGraphPublicationMismatch")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Connection graph whose selector-two RX list is hardware-visible.
+#[must_use = "the RX-published connection graph must enter the common scheduler"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRxPublished {
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+    rx_publication: BluetoothRxMemoryListPublished,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRxPublished {
+    /// Exact detached scheduler item paired with this RX publication.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.scheduler_head()
+    }
+
+    /// Borrow the retained selector-two publication proof.
+    #[doc(hidden)]
+    pub const fn rx_publication(&self) -> &BluetoothRxMemoryListPublished {
+        &self.rx_publication
+    }
+
+    /// Join the exact common RUN proof and retain hardware ownership.
+    pub fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothPeripheralConnectionMemoryGraphRunning {
+        assert_eq!(
+            run.index(),
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            "the first connection event uses the primary scheduler list"
+        );
+        assert_eq!(
+            run.head().address(),
+            Some(self.scheduler_head()),
+            "the RUN proof must retain this connection item"
+        );
+        BluetoothPeripheralConnectionMemoryGraphRunning {
+            prepared: self.prepared,
+            _rx_publication: self.rx_publication,
+        }
+    }
+}
+
+/// Hardware-owned connection graph admitted through the common RUN transaction.
+#[must_use = "the running connection graph must advance through fenced completion"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRunning {
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+    _rx_publication: BluetoothRxMemoryListPublished,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRunning {
+    /// Exact selected scheduler item retained by the hardware-owned graph.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.prepared.scheduler_head()
     }
 }
 

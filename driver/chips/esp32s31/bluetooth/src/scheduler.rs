@@ -18,6 +18,11 @@ use crate::peripheral_connection::{
     BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
     BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
 };
+#[cfg(target_arch = "riscv32")]
+use crate::peripheral_connection::{
+    BluetoothPeripheralConnectionFirstEventRunning,
+    BluetoothPeripheralConnectionFirstEventRxPublished,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
     BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
@@ -395,7 +400,7 @@ pub(crate) struct BluetoothPeripheralConnectionFirstPreSequence {
 /// Why one CPU-owned connection candidate could not complete scheduler preparation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) enum BluetoothPeripheralConnectionFirstEventPreparationError {
+pub enum BluetoothPeripheralConnectionFirstEventPreparationError {
     Timeline(BluetoothSchedulerReservationError),
     Sequence(BluetoothSchedulerSequenceAuthorizationError),
     Descriptor,
@@ -428,7 +433,7 @@ pub(crate) struct BluetoothPeripheralConnectionEventPrepared {
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(test)]
 impl BluetoothPeripheralConnectionEventPrepared {
     pub(crate) const fn requested_window(&self) -> crate::BluetoothSchedulerRawWindow {
         self.event.requested_window()
@@ -461,7 +466,7 @@ impl BluetoothPeripheralConnectionEmptySchedulerMergeFailure {
 /// Detached connection item joined to the source-owned empty scheduler list.
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the connection merge must be published or cancelled"]
-pub(crate) struct BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
+pub struct BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
     event: BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
@@ -474,6 +479,103 @@ impl BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
 
     pub(crate) const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         BluetoothSchedulerHardwareListIndex::ZERO
+    }
+}
+
+/// Lossless rejection before any connection or scheduler MMIO publication.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the unchanged CPU-owned connection merge can be retried or cancelled"]
+pub struct BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
+    error: BluetoothSchedulerHeadPublicationError,
+    merged: BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
+    /// Exact reason the common scheduler head could not be prepared.
+    pub const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
+        self.error
+    }
+
+    /// Recover the unchanged merge. No MMIO was performed.
+    pub fn into_merged(self) -> BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
+        self.merged
+    }
+}
+
+/// Connection RX list and scheduler head made hardware-visible in one order.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the connection head must advance through the common RUN suffix"]
+pub struct BluetoothPeripheralConnectionSchedulerHeadPublished {
+    event: BluetoothPeripheralConnectionFirstEventRxPublished,
+    publication: BluetoothSchedulerHardwareListHeadPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerHeadPublished {
+    /// Exact selected event item retained by both hardware publications.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_head()
+    }
+
+    /// Hardware list containing the first connection item.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.publication.index()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionFirstEventRxPublished,
+        BluetoothSchedulerHardwareListHeadPublished,
+        BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+    ) {
+        (self.event, self.publication, self.reservation)
+    }
+}
+
+/// First peripheral connection event admitted through the common RUN suffix.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the running connection event must advance through owned completion"]
+pub struct BluetoothPeripheralConnectionSchedulerRunning {
+    event: BluetoothPeripheralConnectionFirstEventRunning,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerRunning {
+    pub(crate) fn new(
+        event: BluetoothPeripheralConnectionFirstEventRxPublished,
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+        reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+    ) -> Self {
+        Self {
+            event: event.into_running(&run),
+            run,
+            reservation,
+        }
+    }
+
+    /// Exact hardware-owned scheduler item.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    /// Hardware list containing the running connection item.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+
+    /// Link Layer event counter, not advanced before completion.
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    /// Common-timeline reservation retained until completion or teardown.
+    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.reservation.window()
     }
 }
 
@@ -2731,12 +2833,9 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Admit one causal first-connection window into the common timeline.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure returns the exact affine connection candidate"
-        )
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the exact affine connection candidate"
     )]
     pub(crate) fn admit_peripheral_connection_first_event(
         &mut self,
@@ -2771,12 +2870,9 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Authorize the second deadline and encode only the resolved connection window.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure returns the exact affine connection candidate"
-        )
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the exact affine connection candidate"
     )]
     pub(crate) fn prepare_peripheral_connection_first_event(
         &mut self,
@@ -2852,12 +2948,9 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Join the selected connection item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure retains the complete affine connection event"
-        )
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains the complete affine connection event"
     )]
     pub(crate) fn prepare_peripheral_connection_empty_list_merge(
         &mut self,
@@ -2883,12 +2976,9 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Restore an unpublished connection merge through the same scheduler epoch.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc cancellation failure retains the complete affine merge"
-        )
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc cancellation failure retains the complete affine merge"
     )]
     pub(crate) fn cancel_peripheral_connection_empty_list_merge(
         &mut self,
@@ -4101,6 +4191,46 @@ impl<const SCHEDULER_CAPACITY: usize>
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
         Ok(BluetoothPassiveScanSchedulerHeadPublished {
             graph,
+            publication,
+            reservation,
+        })
+    }
+
+    /// Publish selector-two RX memory and the exact connection scheduler head.
+    ///
+    /// Common-list identity is validated before the first irreversible MMIO.
+    /// The remaining RX/head suffix is therefore infallible and ordered.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        clippy::result_large_err,
+        reason = "the powered task owner and exact connection graph retain every PAC publication prerequisite"
+    )]
+    pub(crate) fn publish_peripheral_connection_scheduler_head(
+        &mut self,
+        merged: BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    ) -> Result<
+        BluetoothPeripheralConnectionSchedulerHeadPublished,
+        BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
+    > {
+        let address = merged.scheduler_item_address();
+        let index = merged.hardware_list_index();
+        let head = match self.validate_first_scheduler_item_head(address) {
+            Ok(head) => head,
+            Err(error) => {
+                return Err(
+                    BluetoothPeripheralConnectionSchedulerHeadPublicationFailure { error, merged },
+                );
+            }
+        };
+        let BluetoothPeripheralConnectionEmptySchedulerMergePrepared { event, reservation } =
+            merged;
+        let (graph, remainder) = event.prepare_publication().into_parts();
+        let graph = unsafe { self.task.publish_peripheral_connection_rx_memory(graph) };
+        let event = remainder.join_rx_publication(graph);
+        let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
+        Ok(BluetoothPeripheralConnectionSchedulerHeadPublished {
+            event,
             publication,
             reservation,
         })

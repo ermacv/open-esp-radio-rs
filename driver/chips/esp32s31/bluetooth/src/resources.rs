@@ -46,6 +46,8 @@ use crate::controller_time::{
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPassiveScanMemoryGraphCommandPublished,
     BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
+    BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    BluetoothPeripheralConnectionMemoryGraphRxPublished,
 };
 
 /// Opaque singleton root for one standalone Bluetooth lifecycle.
@@ -251,6 +253,34 @@ impl BluetoothTaskResources {
         match prepared.into_published(publication) {
             Ok(published) => published,
             Err(_) => unreachable!("the publication was built from this exact scanner graph"),
+        }
+    }
+
+    /// Publish selector-two RX memory for one exact connection graph.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the pinned connection graph, its detached
+    /// scheduler item and the sole powered task epoch across this transaction.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper connection lifecycle retains graph lifetime and exclusive task MMIO"
+    )]
+    pub(crate) unsafe fn publish_peripheral_connection_rx_memory(
+        &mut self,
+        prepared: BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    ) -> BluetoothPeripheralConnectionMemoryGraphRxPublished {
+        let selector = prepared.selector();
+        let head = prepared.receive_head();
+        let publication = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_rx_memory_list_initial_head(selector, head)
+        };
+        match prepared.into_rx_published(publication) {
+            Ok(published) => published,
+            Err(_) => unreachable!("the publication was built from this exact connection graph"),
         }
     }
 

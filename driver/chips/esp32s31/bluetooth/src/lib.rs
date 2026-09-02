@@ -210,7 +210,13 @@ pub use controller_start::{
     BluetoothPassiveScanControllerPreparationStep,
     BluetoothPassiveScanControllerPreparationTerminal, BluetoothPassiveScanPostUnlinkArmStep,
     BluetoothPassiveScanSchedulerStartFailure,
-    BluetoothPassiveScanSoftwareListRemovalPublishedStep, BluetoothSchedulerRunInterruptStorage,
+    BluetoothPassiveScanSoftwareListRemovalPublishedStep,
+    BluetoothPeripheralConnectionControllerPreparationError,
+    BluetoothPeripheralConnectionControllerPreparationOutcome,
+    BluetoothPeripheralConnectionControllerPreparationPending,
+    BluetoothPeripheralConnectionControllerPreparationStep,
+    BluetoothPeripheralConnectionControllerPreparationTerminal,
+    BluetoothPeripheralConnectionSchedulerStartFailure, BluetoothSchedulerRunInterruptStorage,
     BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -520,7 +526,9 @@ pub use scheduler::{
     BluetoothLegacyAdvertisingEmptySchedulerMergeFailure,
     BluetoothLegacyAdvertisingEmptySchedulerMergePrepared,
     BluetoothPassiveScanEmptySchedulerMergeFailure,
-    BluetoothPassiveScanEmptySchedulerMergePrepared, BluetoothSchedulerEmptyListMergeError,
+    BluetoothPassiveScanEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionFirstEventPreparationError, BluetoothSchedulerEmptyListMergeError,
     BluetoothSchedulerHeadPublicationError, BluetoothSchedulerInitialized,
 };
 #[cfg(target_arch = "riscv32")]
@@ -554,6 +562,9 @@ pub use scheduler::{
     BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck,
     BluetoothPassiveScanSchedulerSoftwareListUnlinkStep,
     BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
+    BluetoothPeripheralConnectionSchedulerHeadPublished,
+    BluetoothPeripheralConnectionSchedulerRunning,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{

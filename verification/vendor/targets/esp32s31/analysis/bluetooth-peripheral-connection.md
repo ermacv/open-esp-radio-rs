@@ -205,9 +205,16 @@ selector-two class rather than a connection-private vendor allocation, so a
 future response-capable advertiser can transfer the exact affine owner after
 accepting `CONNECT_IND`. Pre-publication cancellation clears the link-state RX
 endpoints and recovers both the pristine connection allocation and the intact
-pool. The resulting graph reaches a reversible common-list merge, but still
-has no PAC/HAL scheduler `HEAD`, RX selector-two publication, `RUN` or
-completion transition.
+pool. The resulting graph reaches a reversible common-list merge and now
+crosses the complete first publication prefix. Before the first
+irreversible MMIO, the common-list identity and encoded HEAD are validated
+together. The infallible suffix publishes the pool through the non-scanning
+selector-two PAC/HAL accessor, publishes that exact item as the common
+scheduler HEAD, prepares dynamic interrupts and consumes the matching RUN
+proof into hardware-owned connection state. No raw selector, address or
+register image crosses the memory/HAL boundary. There is deliberately no
+software rollback after selector-two or HEAD becomes hardware-visible;
+completion and post-unlink ownership must recover that same affine graph.
 
 Production retention now treats that graph and pool as one reusable affine
 allocation. Cold start binds the physical default transmit-power policy once,
@@ -246,17 +253,18 @@ truncated absolute projections. The selected private scheduler item is now
 detached and reversibly merged into the exclusive common list. The shortest
 remaining path to one real peripheral event is:
 
-1. attach the now-static shared RX pool and selector-two RX publication to the
-   response-capable connectable-advertising graph, then transfer the pool and
-   accepted packet to the existing task-service normalizer;
-2. publish the accepted pool through the selector-two PAC/HAL accessor and
-   publish the already-merged item through the common `HEAD`/interrupt/`RUN`
-   sequence;
-3. extend the existing completion and post-unlink ownership pipeline to the
+1. attach the now-static shared RX pool to the response-capable
+   connectable-advertising graph, then transfer the pool and accepted packet to
+   the existing task-service normalizer;
+2. extend the existing completion and post-unlink ownership pipeline to the
    connection item and return the detached item to its private free list;
+3. add recurrence from the completed event's negotiated interval and next data
+   channel through the same typed publication path;
 4. add SN/NESN, retransmission and supervision before exposing ACL success;
 5. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
-The completion and next-anchor functions remain important evidence roots, but
-they do not block the now timing-complete, still unpublished first-event owner.
+The completion and next-anchor functions are now the shortest evidence roots.
+They do not block the already source-ordered preparation and publication
+prefix, but they do block recovery and recurrence of the first hardware-owned
+event.

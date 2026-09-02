@@ -252,6 +252,32 @@ pub struct BluetoothPassiveScanSchedulerStartFailure<E> {
     head: crate::BluetoothPassiveScanSchedulerHeadPublished,
 }
 
+/// Failed connection scheduler start before the synchronous RUN suffix began.
+#[must_use = "a failed connection start still owns its published graph"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionSchedulerStartFailure<E> {
+    error: E,
+    head: crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<E> BluetoothPeripheralConnectionSchedulerStartFailure<E> {
+    /// Inspect the stable interrupt-storage rejection.
+    pub const fn error(&self) -> &E {
+        &self.error
+    }
+
+    /// Recover the error and unchanged published connection graph.
+    pub fn into_parts(
+        self,
+    ) -> (
+        E,
+        crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
+    ) {
+        (self.error, self.head)
+    }
+}
+
 #[cfg(target_arch = "riscv32")]
 impl<E> BluetoothPassiveScanSchedulerStartFailure<E> {
     /// Inspect the exact stable interrupt-storage rejection.
@@ -1401,7 +1427,7 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: &'runtime mut crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: &'runtime mut crate::BluetoothPassiveScanRuntimeResources,
-    _peripheral_connection_resources:
+    peripheral_connection_resources:
         &'runtime mut crate::BluetoothPeripheralConnectionRuntimeResources,
     direction_finding_workspace:
         open_esp_radio_esp32s31_bluetooth_memory::BluetoothDirectionFindingWorkspaceLink,
@@ -2078,6 +2104,111 @@ pub(crate) enum BluetoothPassiveScanControllerInitialPreparationFailure<
         error: BluetoothPassiveScanControllerPreparationError,
     },
     Terminal(BluetoothPassiveScanControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>),
+}
+
+/// Finite reason a checked-out connection event returned to CPU ownership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionControllerPreparationError {
+    ControllerTime(crate::BluetoothControllerTimeAcquisitionError),
+    TimingWindow,
+    Event(crate::scheduler::BluetoothPeripheralConnectionFirstEventPreparationError),
+    EmptyList(crate::BluetoothSchedulerEmptyListMergeError),
+}
+
+/// Terminal result of one source-ordered first connection preparation.
+#[must_use = "publish the connection item or retain every returned owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionControllerPreparationOutcome {
+    /// The sole allocation was already checked out; no input was consumed.
+    RuntimeUnavailable {
+        error: crate::BluetoothPeripheralConnectionRuntimeBeginError,
+        connection: open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+        packet_start: crate::BluetoothLe1MPacketStartTiming,
+    },
+    /// Preparation was rejected after consuming the packet-time input.
+    Rejected {
+        error: BluetoothPeripheralConnectionControllerPreparationError,
+        connection: open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+    },
+    /// The selected item is joined to the CPU-owned common scheduler list.
+    Prepared(crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared),
+}
+
+#[cfg(target_arch = "riscv32")]
+enum BluetoothPeripheralConnectionControllerPreparationPhase {
+    Sequence(crate::scheduler::BluetoothPeripheralConnectionFirstPreSequence),
+}
+
+#[cfg(target_arch = "riscv32")]
+struct BluetoothPeripheralConnectionControllerPreparationTimeOwner<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    phase: Option<BluetoothPeripheralConnectionControllerPreparationPhase>,
+    cancelled: Option<BluetoothPeripheralConnectionControllerPreparationOutcome>,
+}
+
+/// One exact in-flight sequence-deadline observation for a connection event.
+#[must_use = "recheck or explicitly cancel the exact connection time request"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionControllerPreparationPending<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    core: BluetoothControllerTimePendingCore<
+        BluetoothPeripheralConnectionControllerPreparationTimeOwner<
+            'runtime,
+            S,
+            SCHEDULER_CAPACITY,
+        >,
+    >,
+}
+
+/// Terminal connection preparation with the exact task service retained.
+#[must_use = "the task owner and connection outcome must be handled together"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionControllerPreparationTerminal<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+    outcome: BluetoothPeripheralConnectionControllerPreparationOutcome,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Recover the retained Controller and exact connection outcome.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothPeripheralConnectionControllerPreparationOutcome,
+    ) {
+        (self.controller, self.outcome)
+    }
+}
+
+/// Result of one bounded connection sequence-time observation.
+#[must_use = "retain Pending or consume the terminal task and connection result"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionControllerPreparationStep<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Pending(
+        BluetoothPeripheralConnectionControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    Terminal(
+        BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
 }
 
 /// Terminal result of one source-ordered DTM preparation transaction.
@@ -2772,6 +2903,183 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendin
 
 #[cfg(target_arch = "riscv32")]
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothPeripheralConnectionControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>
+{
+    fn terminal(
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        outcome: BluetoothPeripheralConnectionControllerPreparationOutcome,
+    ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+            BluetoothPeripheralConnectionControllerPreparationTerminal {
+                controller: BluetoothControllerSchedulerEpochRetained { controller },
+                outcome,
+            },
+        )
+    }
+
+    /// Perform one bounded observation of the connection sequence deadline.
+    pub fn recheck(
+        self,
+    ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let (mut owner, sample) = match self.core.recheck() {
+            Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
+                return BluetoothPeripheralConnectionControllerPreparationStep::Pending(Self {
+                    core,
+                });
+            }
+            Ok(BluetoothControllerTimePendingCoreStep::Ready { owner, sample }) => (owner, sample),
+            Err(failure) => {
+                let (mut owner, error) = failure.into_parts();
+                let phase = owner
+                    .phase
+                    .take()
+                    .expect("failed connection time recheck retains its exact phase");
+                let outcome = owner
+                    .controller
+                    .cancel_peripheral_connection_preparation_phase(
+                        phase,
+                        controller_time_event_error(error),
+                    );
+                return Self::terminal(owner.controller, outcome);
+            }
+        };
+        let phase = owner
+            .phase
+            .take()
+            .expect("completed connection time request retains its exact phase");
+        let mut controller = owner.controller;
+        match phase {
+            BluetoothPeripheralConnectionControllerPreparationPhase::Sequence(admitted) => {
+                let default_tx_power = controller
+                    .peripheral_connection_resources
+                    .default_tx_power_dbm();
+                let direction_finding_workspace = controller.direction_finding_workspace;
+                let prepared = match controller
+                    .runtime
+                    .prepare_peripheral_connection_first_event(
+                        admitted,
+                        crate::scheduler::BluetoothPeripheralConnectionSequenceObservation {
+                            sample,
+                        },
+                        default_tx_power,
+                        direction_finding_workspace,
+                    ) {
+                    Ok(prepared) => prepared,
+                    Err(failure) => {
+                        let error = failure.error();
+                        let (allocation, connection) = failure.into_candidate().cancel();
+                        controller.restore_peripheral_connection_allocation(allocation);
+                        return Self::terminal(
+                            controller,
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error:
+                                    BluetoothPeripheralConnectionControllerPreparationError::Event(
+                                        error,
+                                    ),
+                                connection,
+                            },
+                        );
+                    }
+                };
+                match controller
+                    .runtime
+                    .prepare_peripheral_connection_empty_list_merge(prepared)
+                {
+                    Ok(merged) => Self::terminal(
+                        controller,
+                        BluetoothPeripheralConnectionControllerPreparationOutcome::Prepared(merged),
+                    ),
+                    Err(failure) => {
+                        let error = failure.error();
+                        let (allocation, connection) = controller
+                            .runtime
+                            .cancel_peripheral_connection_first_event(failure.into_prepared());
+                        controller.restore_peripheral_connection_allocation(allocation);
+                        Self::terminal(
+                            controller,
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error: BluetoothPeripheralConnectionControllerPreparationError::EmptyList(
+                                    error,
+                                ),
+                                connection,
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Cancel the unpublished sequence request and restore the connection allocation.
+    pub fn cancel(
+        self,
+    ) -> BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let mut owner = match self.core.cancel() {
+            Ok(owner) => owner,
+            Err(failure) => failure.into_parts().0,
+        };
+        let outcome = owner
+            .cancelled
+            .take()
+            .expect("explicit connection time cancellation records its restored outcome");
+        BluetoothPeripheralConnectionControllerPreparationTerminal {
+            controller: BluetoothControllerSchedulerEpochRetained {
+                controller: owner.controller,
+            },
+            outcome,
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
+    for BluetoothPeripheralConnectionControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>
+{
+    fn recheck_owned_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
+        BluetoothControllerTimePendingOwner::recheck_owned_controller_time(
+            &mut self.controller,
+            request,
+        )
+    }
+
+    fn cancel_owned_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<(), BluetoothControllerTimeEventError> {
+        let result = BluetoothControllerTimePendingOwner::cancel_owned_controller_time(
+            &mut self.controller,
+            request,
+        );
+        let error = match result {
+            Ok(()) => crate::BluetoothControllerTimeAcquisitionError::Cancelled,
+            Err(error) => controller_time_event_error(error),
+        };
+        let phase = self
+            .phase
+            .take()
+            .expect("private connection time owner retains one exact preparation phase");
+        self.cancelled = Some(
+            self.controller
+                .cancel_peripheral_connection_preparation_phase(phase, error),
+        );
+        result
+    }
+
+    fn drain_orphan_controller_time(
+        &mut self,
+    ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
+        BluetoothControllerTimePendingOwner::drain_orphan_controller_time(&mut self.controller)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Borrow the exact role-specific terminal result.
@@ -3319,6 +3627,72 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         })
     }
 
+    fn restore_peripheral_connection_allocation(
+        &mut self,
+        allocation: crate::BluetoothPeripheralConnectionRuntimeAllocation,
+    ) {
+        if self
+            .peripheral_connection_resources
+            .restore_idle(allocation)
+            .is_err()
+        {
+            panic!("a connection phase returned an allocation to a different runtime");
+        }
+    }
+
+    fn cancel_peripheral_connection_preparation_phase(
+        &mut self,
+        phase: BluetoothPeripheralConnectionControllerPreparationPhase,
+        error: crate::BluetoothControllerTimeAcquisitionError,
+    ) -> BluetoothPeripheralConnectionControllerPreparationOutcome {
+        let (allocation, connection) = match phase {
+            BluetoothPeripheralConnectionControllerPreparationPhase::Sequence(admitted) => self
+                .runtime
+                .cancel_peripheral_connection_first_pre_sequence(admitted),
+        };
+        self.restore_peripheral_connection_allocation(allocation);
+        BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+            error: BluetoothPeripheralConnectionControllerPreparationError::ControllerTime(error),
+            connection,
+        }
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the Controller and restored connection allocation"
+    )]
+    fn begin_peripheral_connection_preparation_time(
+        mut self,
+        phase: BluetoothPeripheralConnectionControllerPreparationPhase,
+    ) -> Result<
+        BluetoothPeripheralConnectionControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    > {
+        let request = match self.runtime.request_controller_time() {
+            Ok(request) => request,
+            Err(error) => {
+                let outcome = self.cancel_peripheral_connection_preparation_phase(
+                    phase,
+                    controller_time_begin_error(error),
+                );
+                return Err(BluetoothPeripheralConnectionControllerPreparationTerminal {
+                    controller: BluetoothControllerSchedulerEpochRetained { controller: self },
+                    outcome,
+                });
+            }
+        };
+        Ok(BluetoothPeripheralConnectionControllerPreparationPending {
+            core: BluetoothControllerTimePendingCore::new(
+                BluetoothPeripheralConnectionControllerPreparationTimeOwner {
+                    controller: self,
+                    phase: Some(phase),
+                    cancelled: None,
+                },
+                request,
+            ),
+        })
+    }
+
     /// Return the exact cancelled or stopped session graph to this Controller.
     ///
     /// The embedded runtime rejects an occupied slot or a graph minted from
@@ -3838,6 +4212,93 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .map_err(BluetoothPassiveScanControllerInitialPreparationFailure::Terminal)
     }
 
+    /// Begin the first peripheral connection event from its causal packet time.
+    ///
+    /// The current sample authorizes timeline admission. A distinct later
+    /// request authorizes descriptor sequencing after overlap resolution. Every
+    /// rejection restores the exact connection allocation before returning the
+    /// retained Controller epoch.
+    pub fn begin_peripheral_connection_first_event(
+        self,
+        connection: open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+        packet_start: crate::BluetoothLe1MPacketStartTiming,
+    ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let Self {
+            mut controller,
+            epoch,
+            sample,
+        } = self;
+        let allocation = match controller.peripheral_connection_resources.begin_event() {
+            Ok(allocation) => allocation,
+            Err(error) => {
+                return BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+                    BluetoothPeripheralConnectionControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome:
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::RuntimeUnavailable {
+                                error,
+                                connection,
+                                packet_start,
+                            },
+                    },
+                );
+            }
+        };
+        let prepared = allocation.prepare_first_event(connection, packet_start);
+        let candidate = match prepared
+            .project_scheduler_window(epoch, controller.runtime.scheduler_config())
+        {
+            Ok(candidate) => candidate,
+            Err(prepared) => {
+                let (allocation, connection) = prepared.cancel();
+                controller.restore_peripheral_connection_allocation(allocation);
+                return BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+                    BluetoothPeripheralConnectionControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome:
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error: BluetoothPeripheralConnectionControllerPreparationError::TimingWindow,
+                                connection,
+                            },
+                    },
+                );
+            }
+        };
+        let admitted = match controller.runtime.admit_peripheral_connection_first_event(
+            candidate,
+            crate::scheduler::BluetoothPeripheralConnectionAdmissionObservation { sample },
+        ) {
+            Ok(admitted) => admitted,
+            Err(failure) => {
+                let error = failure.error();
+                let (allocation, connection) = failure.into_candidate().cancel();
+                controller.restore_peripheral_connection_allocation(allocation);
+                return BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+                    BluetoothPeripheralConnectionControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome:
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error:
+                                    BluetoothPeripheralConnectionControllerPreparationError::Event(
+                                        error,
+                                    ),
+                                connection,
+                            },
+                    },
+                );
+            }
+        };
+        match controller.begin_peripheral_connection_preparation_time(
+            BluetoothPeripheralConnectionControllerPreparationPhase::Sequence(admitted),
+        ) {
+            Ok(pending) => BluetoothPeripheralConnectionControllerPreparationStep::Pending(pending),
+            Err(terminal) => {
+                BluetoothPeripheralConnectionControllerPreparationStep::Terminal(terminal)
+            }
+        }
+    }
+
     /// Begin source-ordered initial transmitter preparation.
     ///
     /// The private current is retained while the always-awake BLE-PHY owner
@@ -4131,7 +4592,7 @@ where
             dtm_resources,
             legacy_advertising_resources,
             passive_scan_resources,
-            _peripheral_connection_resources: peripheral_connection_resources,
+            peripheral_connection_resources,
             direction_finding_workspace,
             ble_phy_timing,
             scheduler_epoch,
@@ -4439,6 +4900,47 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     > {
         self.runtime.publish_passive_scan_scheduler_head(merged)
     }
+
+    /// Publish selector-two RX memory and the first connection scheduler head.
+    #[allow(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection returns the complete no-alloc connection graph"
+    )]
+    pub fn publish_peripheral_connection_scheduler_head(
+        &mut self,
+        merged: crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
+        crate::BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
+    > {
+        self.runtime
+            .publish_peripheral_connection_scheduler_head(merged)
+    }
+
+    /// Cancel an unpublished connection merge and restore its sole allocation.
+    ///
+    /// A scheduler-identity mismatch returns the unchanged merge, because this
+    /// Controller cannot safely restore an item owned by another list epoch.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity rejection retains the complete connection merge"
+    )]
+    pub fn cancel_peripheral_connection_scheduler_merge(
+        &mut self,
+        merged: crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    ) -> Result<
+        open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+        crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    > {
+        let prepared = self
+            .runtime
+            .cancel_peripheral_connection_empty_list_merge(merged)?;
+        let (allocation, connection) = self
+            .runtime
+            .cancel_peripheral_connection_first_event(prepared);
+        self.restore_peripheral_connection_allocation(allocation);
+        Ok(connection)
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -4689,6 +5191,37 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
         Ok(crate::BluetoothPassiveScanSchedulerRunning::new(
             graph,
+            run,
+            reservation,
+        ))
+    }
+
+    /// Admit one RX/head-published connection event through the common RUN suffix.
+    #[allow(
+        clippy::result_large_err,
+        reason = "stable-storage rejection returns the complete published connection graph"
+    )]
+    pub fn start_peripheral_connection_scheduler(
+        &mut self,
+        head: crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionSchedulerRunning,
+        BluetoothPeripheralConnectionSchedulerStartFailure<S::Error>,
+    >
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
+            Ok(interrupts) => interrupts,
+            Err(error) => {
+                return Err(BluetoothPeripheralConnectionSchedulerStartFailure { error, head });
+            }
+        };
+        let address = head.scheduler_item_address();
+        let (event, publication, reservation) = head.into_parts();
+        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
+        Ok(crate::BluetoothPeripheralConnectionSchedulerRunning::new(
+            event,
             run,
             reservation,
         ))

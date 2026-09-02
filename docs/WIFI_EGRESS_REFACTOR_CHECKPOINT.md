@@ -434,10 +434,12 @@ The separate Core0 shadow policy now derives BA, power-save, rate and modeled
 airtime opportunity for each visible physical transaction, but it returns no
 grant and does not alter packet order. Packet admission therefore remains
 under the existing direct-SRAM arbiter. The paired HIL gate proves that the
-current recommendation is requested too late to choose a VIF and that its
-demand mirror can omit an actually transmitted key. The next policy boundary
-must resolve both defects before it can issue an affine quantum from real
-Core0 state; it must not resurrect an echo of a Core1 packet request.
+current recommendation is requested too late to choose a VIF. It also proves
+that a physical owner may outlive the software demand from which it was
+materialized, as the ownership model permits. The next policy boundary must
+issue an affine quantum before final SRAM admission and retain a separate
+admission receipt afterward; it must not resurrect an echo of a Core1 packet
+request.
 
 ## Reviewed selectable-work boundary
 
@@ -726,9 +728,43 @@ paired owner first chooses a VIF with its historical admitted-frame counter,
 then removes that VIF's frame, and only afterwards asks the independent
 airtime-DRR policy for a recommendation. A disagreement is therefore an
 expected policy comparison, not a packet-identity race. The `demand missing`
-outcomes are a second issue: demand lifecycle visibility is not coherent with
-the actual TX selection boundary. That lifetime/frontier must be explained
-and repaired before a selection-before-claim experiment.
+outcomes expose a second boundary problem: software readiness is being queried
+after the corresponding packet may already have crossed into physical SRAM
+ownership. The two frontiers must be separated before a
+selection-before-claim experiment.
+
+Source inspection and a focused ownership regression now explain that second
+issue without treating it as a lost update. Xarxa reconciles its demand before
+socket egress. It may then consume the final software packet and construct it
+in a pinned SRAM owner. On the next stack observation the software queue is
+empty, so Xarxa legitimately publishes `Inactive`; Core0 may consume that
+ordered lifecycle transition before it removes the already-published SRAM
+owner from the independent TX queue. The regression
+`software_demand_can_close_before_its_pinned_radio_owner_is_consumed` proves
+the complete valid sequence:
+
+```text
+Active(key)
+    -> final SRAM materialization(key)
+    -> Inactive(key)
+    -> Core0 consumes the still-live SRAM owner(key)
+```
+
+Therefore `demand missing` is not evidence that the SPSC mirror lost an
+activation. It exposes a category error in the shadow comparison: software
+readiness and already-admitted physical work are different frontiers. Keeping
+software demand artificially active until radio completion would merge
+`QueueCredit` and `DmaCredit` again and is rejected.
+
+The selection-before-claim design must instead create an affine bridge. Core0
+selects an active demand and issues one bounded burst/airtime grant. Core1
+spends that grant while materializing final SRAM owners and binds the grant's
+demand identity to those admissions. A later `Inactive` ends only unadmitted
+software readiness; it cannot erase an already-admitted receipt. Physical TX
+and terminal BA/retry completion then reconcile the receipt. The current
+post-materialization recommendation remains useful as a failing diagnostic
+sentinel, but its zero-mismatch criterion is not the authority gate for that
+future protocol; typed admission/grant correspondence must become the gate.
 
 ## Rejected candidate/grant experiment
 
@@ -960,8 +996,9 @@ not a wholesale stack rewrite.
 
 1. **Radio policy.** STA and AP demand reach one Core0 shadow airtime policy,
    but the historical frame-count arbiter still chooses the actual VIF first.
-   Paired HIL therefore observes both policy disagreement and actual keys
-   absent from the demand mirror. The shadow has no admission authority.
+   Paired HIL therefore observes both policy disagreement and physical owners
+   whose software demand has legitimately ended. The shadow has no admission
+   authority and currently compares different resource frontiers.
 2. **Grant contract.** The rejected echo deliberately left no compatibility
    API. A real grant still needs key/lifecycle identity, bounded frame and
    airtime horizons, unused-quantum return/expiry, and completion accounting.
@@ -1142,8 +1179,10 @@ not satisfy the architectural goal.
   hardware work. Simultaneous two-VIF typed telemetry and a fail-closed HIL
   gate are now implemented. The gate currently rejects the shadow policy:
   production frame-count VIF arbitration disagrees with airtime DRR, and some
-  actual transaction keys are absent from the radio-side demand view. No
-  authoritative cutover is permitted until both boundaries are repaired.
+  physical owners remain after their software demand lifetime ends. This is
+  now proven valid ownership ordering, not a lost mirror update. No
+  authoritative cutover is permitted until recommendation moves before SRAM
+  claim and admitted work receives its own affine receipt.
 - hierarchical VIF then peer/TID weighted airtime DRR;
 - AQL-like estimated pending airtime charged at successful SRAM admission;
 - completion reconciliation from exact published PHY/length and retry/BA
@@ -1283,6 +1322,12 @@ mirror remained exact, proving the runtime switch isolates the new boundary.
 
 ### Phase 5: authoritative cutover
 
+- issue one demand-id-bound frame/airtime quantum from Core0 per burst, never
+  one request/reply per packet;
+- consume that grant locally in Core1 before final SRAM construction and bind
+  the resulting physical owners to an admission receipt;
+- let `Inactive` revoke only unused grant credit while already-admitted
+  receipts survive until terminal BA/retry completion;
 - make missing or exhausted key grants return `KeyDeferred`;
 - prove the empty-pipeline bootstrap through demand activation;
 - prove immediate sparse dispatch without waiting for a full aggregate;

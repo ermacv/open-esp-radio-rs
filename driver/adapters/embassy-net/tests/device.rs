@@ -562,6 +562,99 @@ fn pinned_device_forwards_coalesced_demand_without_changing_admission() {
 
 #[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
 #[test]
+fn software_demand_can_close_before_its_pinned_radio_owner_is_consumed() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (network_control, radio_control) = control.split();
+    let network_state = Box::leak(Box::new(DefaultEgressNetworkState::new()));
+    let network_control = Box::leak(Box::new(DefaultEgressNetworkScheduler::new(
+        network_control,
+        network_state,
+    )));
+    let (provider, consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(0);
+    let (device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let mut device = device.with_egress_control(network_control);
+    radio.set_link_state(LinkState::Up);
+    let schedule = device.egress_schedule().unwrap();
+    let key = device.egress_key(EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 2]),
+        traffic_class: 0,
+    });
+    let id = EgressDemandId::new(schedule.epoch(), core::num::NonZeroU32::new(1).unwrap());
+    let mut cx = context();
+    device.update_egress_demand(
+        &mut cx,
+        EgressDemandUpdate::Reset {
+            schedule_epoch: schedule.epoch(),
+        },
+    );
+    device.update_egress_demand(
+        &mut cx,
+        EgressDemandUpdate::Active(EgressDemand::new(
+            id,
+            key,
+            EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false),
+        )),
+    );
+
+    match device.transmit_for(&mut cx, key) {
+        EgressAdmission::Granted(token) => {
+            token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5a));
+        }
+        _ => panic!("active software demand must materialize one pinned frame"),
+    }
+    assert_eq!(consumer.queue_len_for(interface), 1);
+
+    // Xarxa legitimately reports only its remaining software backlog. Once
+    // the final packet has moved into the SRAM owner above, the next stack
+    // observation may end the demand lifetime before Core0 consumes that
+    // owner. Demand and admitted-radio-work are therefore different
+    // frontiers; an authoritative design must bind the latter to a grant or
+    // admission receipt instead of extending software demand artificially.
+    device.update_egress_demand(&mut cx, EgressDemandUpdate::Inactive { id, key });
+    let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
+    let mut updates = std::vec::Vec::new();
+    assert!(radio_control.service_shadow_observed(|update| updates.push(update)));
+    assert_eq!(
+        updates,
+        std::vec![
+            EgressDemandUpdate::Reset {
+                schedule_epoch: schedule.epoch(),
+            },
+            EgressDemandUpdate::Active(EgressDemand::new(
+                id,
+                key,
+                EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false),
+            )),
+            EgressDemandUpdate::Inactive { id, key },
+        ]
+    );
+    assert_eq!(consumer.queue_len_for(interface), 1);
+    let frame = consumer
+        .for_interface(interface)
+        .try_receive_direct()
+        .unwrap();
+    assert_eq!(
+        consumer
+            .for_interface(interface)
+            .direct_metadata(&frame)
+            .egress_key(),
+        Some(key)
+    );
+}
+
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+#[test]
 fn shadow_grant_spends_local_credits_without_changing_real_admission() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;

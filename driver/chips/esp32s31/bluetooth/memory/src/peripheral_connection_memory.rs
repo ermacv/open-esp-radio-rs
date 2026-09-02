@@ -657,10 +657,9 @@ impl BluetoothPeripheralConnectionMemoryGraphModelAddress {
     }
 }
 
-/// Immutable geometry retained by the peripheral-connection graph owner.
-pub struct BluetoothPeripheralConnectionMemoryGraphBinding {
-    base: BluetoothControllerSramAddress,
-    end_exclusive: u32,
+/// Immutable geometry retained privately by the connection memory codec.
+struct BluetoothPeripheralConnectionMemoryGraphBinding {
+    identity: BluetoothPeripheralConnectionMemoryGraphIdentity,
     link_state: BluetoothControllerSramLinkAddress,
     scheduler_context: BluetoothControllerSramLinkAddress,
     scheduler_items:
@@ -668,9 +667,33 @@ pub struct BluetoothPeripheralConnectionMemoryGraphBinding {
     tx_sentinel: BluetoothControllerSramLinkAddress,
 }
 
+/// Opaque identity of one exact statically pinned connection graph.
+///
+/// This is only an equality witness. It exposes neither its storage pointer
+/// nor any controller-SRAM address and grants no memory or publication access.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionMemoryGraphIdentity(usize);
+
+impl BluetoothPeripheralConnectionMemoryGraphIdentity {
+    fn for_storage(storage: &BluetoothPeripheralConnectionMemoryGraphStorage) -> Self {
+        Self(core::ptr::addr_of!(*storage).addr())
+    }
+}
+
+impl core::fmt::Debug for BluetoothPeripheralConnectionMemoryGraphIdentity {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothPeripheralConnectionMemoryGraphIdentity")
+            .finish_non_exhaustive()
+    }
+}
+
 impl BluetoothPeripheralConnectionMemoryGraphBinding {
-    fn new(base: u32) -> Result<Self, BluetoothPeripheralConnectionMemoryGraphBindError> {
-        let base_address = BluetoothControllerSramAddress::new(base)
+    fn new(
+        identity: BluetoothPeripheralConnectionMemoryGraphIdentity,
+        base: u32,
+    ) -> Result<Self, BluetoothPeripheralConnectionMemoryGraphBindError> {
+        BluetoothControllerSramAddress::new(base)
             .map_err(BluetoothPeripheralConnectionMemoryGraphBindError::InvalidBase)?;
         if base < BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW
             || GRAPH_BYTES > BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH.saturating_sub(base)
@@ -702,8 +725,7 @@ impl BluetoothPeripheralConnectionMemoryGraphBinding {
         };
 
         Ok(Self {
-            base: base_address,
-            end_exclusive: base + GRAPH_BYTES,
+            identity,
             link_state: link(LINK_STATE_OFFSET)?,
             scheduler_context: link(SCHEDULER_CONTEXT_OFFSET)?,
             scheduler_items: [scheduler_item(0)?, scheduler_item(1)?],
@@ -711,24 +733,8 @@ impl BluetoothPeripheralConnectionMemoryGraphBinding {
         })
     }
 
-    pub const fn range(&self) -> (u32, u32) {
-        (self.base.address(), self.end_exclusive)
-    }
-
-    pub const fn link_state_address(&self) -> BluetoothControllerSramLinkAddress {
-        self.link_state
-    }
-
-    pub const fn scheduler_head_address(&self) -> BluetoothControllerSramLinkAddress {
-        self.scheduler_items[1]
-    }
-
-    pub const fn scheduler_context_address(&self) -> BluetoothControllerSramAddress {
-        self.scheduler_context.controller_address()
-    }
-
-    pub const fn tx_sentinel_address(&self) -> BluetoothControllerSramLinkAddress {
-        self.tx_sentinel
+    const fn identity(&self) -> BluetoothPeripheralConnectionMemoryGraphIdentity {
+        self.identity
     }
 }
 
@@ -740,8 +746,9 @@ pub struct BluetoothPeripheralConnectionMemoryGraphCpuOwned {
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphCpuOwned {
-    pub const fn binding(&self) -> &BluetoothPeripheralConnectionMemoryGraphBinding {
-        &self.binding
+    /// Equality witness for the exact pinned storage object.
+    pub const fn identity(&self) -> BluetoothPeripheralConnectionMemoryGraphIdentity {
+        self.binding.identity()
     }
 
     /// The recovered allocation starts without any receive buffer owner.
@@ -1161,7 +1168,8 @@ impl BluetoothPeripheralConnectionMemoryGraphStorage {
         BluetoothPeripheralConnectionMemoryGraphCpuOwned,
         BluetoothPeripheralConnectionMemoryGraphBindFailure,
     > {
-        let binding = match BluetoothPeripheralConnectionMemoryGraphBinding::new(base) {
+        let identity = BluetoothPeripheralConnectionMemoryGraphIdentity::for_storage(storage);
+        let binding = match BluetoothPeripheralConnectionMemoryGraphBinding::new(identity, base) {
             Ok(binding) => binding,
             Err(error) => {
                 return Err(BluetoothPeripheralConnectionMemoryGraphBindFailure::new(

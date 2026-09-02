@@ -137,7 +137,7 @@ pub use non_scanning_rx_memory::BluetoothNonScanningRxMemoryModelAddress;
 pub use non_scanning_rx_memory::{
     BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, BluetoothNonScanningRxMemoryBindError,
     BluetoothNonScanningRxMemoryBindFailure, BluetoothNonScanningRxMemoryCpuOwned,
-    BluetoothNonScanningRxMemoryStorage,
+    BluetoothNonScanningRxMemoryIdentity, BluetoothNonScanningRxMemoryStorage,
 };
 pub use passive_scanning_event_image::{
     BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanPrimaryChannel,
@@ -175,10 +175,10 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIdentity,
     BluetoothPeripheralConnectionIntervalTicks, BluetoothPeripheralConnectionMemoryGraphBindError,
     BluetoothPeripheralConnectionMemoryGraphBindFailure,
-    BluetoothPeripheralConnectionMemoryGraphBinding,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
     BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
+    BluetoothPeripheralConnectionMemoryGraphIdentity,
     BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
     BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
     BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,

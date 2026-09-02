@@ -20,9 +20,9 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothControllerPhyTrackingFailure, BluetoothControllerRuntimeResources,
     BluetoothDtmRuntimeConfig, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
     BluetoothLegacyAdvertisingRuntimeResources, BluetoothPassiveScanRuntimeConfig,
-    BluetoothPassiveScanRuntimeResources, BluetoothPeripheralConnectionRuntimeResources,
-    BluetoothPhyInitializationConfig, BluetoothPhyInitializationReport, BluetoothRadioHardware,
-    BluetoothStopped,
+    BluetoothPassiveScanRuntimeResources, BluetoothPeripheralConnectionRuntimeConfig,
+    BluetoothPeripheralConnectionRuntimeResources, BluetoothPhyInitializationConfig,
+    BluetoothPhyInitializationReport, BluetoothRadioHardware, BluetoothStopped,
 };
 use open_esp_radio_esp32s31_bluetooth_embassy::{
     EmbassyBluetoothDtmAbsoluteRecheck, EmbassyBluetoothDtmRecheckPeriod,
@@ -776,7 +776,13 @@ pub async fn start_esp32s31_bluetooth<
             ));
         }
     };
-    let peripheral_connection_runtime = match claim_production_peripheral_connection_runtime() {
+    let peripheral_connection_runtime = match claim_production_peripheral_connection_runtime(
+        BluetoothPeripheralConnectionRuntimeConfig::new(
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionDefaultTxPowerDbm::new(
+                dtm.default_tx_power_dbm().dbm(),
+            ),
+        ),
+    ) {
         Ok(runtime) => runtime,
         Err(error) => {
             return Err(Esp32s31BluetoothColdStartError::PeripheralConnectionMemory(

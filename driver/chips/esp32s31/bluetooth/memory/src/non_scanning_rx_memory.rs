@@ -45,11 +45,15 @@ struct BluetoothNonScanningRxNodeBinding {
 }
 
 struct BluetoothNonScanningRxMemoryBinding {
+    identity: BluetoothNonScanningRxMemoryIdentity,
     nodes: [BluetoothNonScanningRxNodeBinding; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT],
 }
 
 impl BluetoothNonScanningRxMemoryBinding {
-    fn new(base: u32) -> Result<Self, BluetoothNonScanningRxMemoryBindError> {
+    fn new(
+        identity: BluetoothNonScanningRxMemoryIdentity,
+        base: u32,
+    ) -> Result<Self, BluetoothNonScanningRxMemoryBindError> {
         let end_exclusive = base
             .checked_add(STORAGE_BYTES)
             .ok_or(BluetoothNonScanningRxMemoryBindError::ExtentOutsidePhysicalSram)?;
@@ -82,8 +86,30 @@ impl BluetoothNonScanningRxMemoryBinding {
         };
 
         Ok(Self {
+            identity,
             nodes: [node(0)?, node(1)?],
         })
+    }
+}
+
+/// Opaque identity of one exact statically pinned non-scanning RX pool.
+///
+/// This value supports equality only and exposes no address or dereference
+/// operation to the controller layer.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct BluetoothNonScanningRxMemoryIdentity(usize);
+
+impl BluetoothNonScanningRxMemoryIdentity {
+    fn for_storage(storage: &BluetoothNonScanningRxMemoryStorage) -> Self {
+        Self(core::ptr::addr_of!(*storage).addr())
+    }
+}
+
+impl core::fmt::Debug for BluetoothNonScanningRxMemoryIdentity {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothNonScanningRxMemoryIdentity")
+            .finish_non_exhaustive()
     }
 }
 
@@ -160,6 +186,11 @@ pub struct BluetoothNonScanningRxMemoryCpuOwned {
 }
 
 impl BluetoothNonScanningRxMemoryCpuOwned {
+    /// Equality witness for the exact pinned storage object.
+    pub const fn identity(&self) -> BluetoothNonScanningRxMemoryIdentity {
+        self.binding.identity
+    }
+
     pub(crate) const fn head(&self) -> BluetoothControllerSramAddress {
         self.binding.nodes[0].header.controller_address()
     }
@@ -243,7 +274,8 @@ impl BluetoothNonScanningRxMemoryStorage {
         storage: &'static mut Self,
         base: u32,
     ) -> Result<BluetoothNonScanningRxMemoryCpuOwned, BluetoothNonScanningRxMemoryBindFailure> {
-        let binding = match BluetoothNonScanningRxMemoryBinding::new(base) {
+        let identity = BluetoothNonScanningRxMemoryIdentity::for_storage(storage);
+        let binding = match BluetoothNonScanningRxMemoryBinding::new(identity, base) {
             Ok(binding) => binding,
             Err(error) => {
                 return Err(BluetoothNonScanningRxMemoryBindFailure::new(storage, error));

@@ -209,6 +209,16 @@ pool. The resulting graph reaches a reversible common-list merge, but still
 has no PAC/HAL scheduler `HEAD`, RX selector-two publication, `RUN` or
 completion transition.
 
+Production retention now treats that graph and pool as one reusable affine
+allocation. Cold start binds the physical default transmit-power policy once,
+and the sole task runtime must check out both owners before preparing an event.
+The runtime slot remains observably vacant until cancellation or a future
+completed recycle returns the same pair of opaque storage identities. A
+foreign graph or RX pool cannot fill the slot, even if a native model assigned
+it the same synthetic controller address. Thus no borrowed production runtime
+can copy, replace or silently recreate connection memory while an event owns
+it.
+
 The same exact correspondence identifies
 `r_sym_ble_1KGaCqPI03xSu9c6Rh0G` as `ble_lll_conn_update_link_state`. Together
 with the default and custom aborted-opcode writers, its complete body replaces

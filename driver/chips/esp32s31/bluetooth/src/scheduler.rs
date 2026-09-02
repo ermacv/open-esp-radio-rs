@@ -2825,7 +2825,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &mut self,
         prepared: BluetoothPeripheralConnectionEventPrepared,
     ) -> (
-        crate::BluetoothPeripheralConnectionRuntimeResources,
+        crate::BluetoothPeripheralConnectionRuntimeAllocation,
         open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
     ) {
         let BluetoothPeripheralConnectionEventPrepared { event, reservation } = prepared;
@@ -2839,7 +2839,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &mut self,
         admitted: BluetoothPeripheralConnectionFirstPreSequence,
     ) -> (
-        crate::BluetoothPeripheralConnectionRuntimeResources,
+        crate::BluetoothPeripheralConnectionRuntimeAllocation,
         open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
     ) {
         let BluetoothPeripheralConnectionFirstPreSequence {
@@ -5773,6 +5773,7 @@ mod tests {
     }
 
     fn peripheral_connection_candidate() -> (
+        crate::BluetoothPeripheralConnectionRuntimeResources,
         crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventCandidate,
         BluetoothDirectionFindingWorkspaceLink,
     ) {
@@ -5786,11 +5787,14 @@ mod tests {
             .expect("the model connection graph base is valid");
         let receive_base = BluetoothNonScanningRxMemoryModelAddress::new(0x2f00_5000)
             .expect("the model receive-pool base is valid");
-        let runtime = crate::BluetoothPeripheralConnectionRuntimeResources::claim_static_model(
+        let mut runtime = crate::BluetoothPeripheralConnectionRuntimeResources::claim_static_model(
             graph_storage,
             graph_base,
             receive_storage,
             receive_base,
+            crate::BluetoothPeripheralConnectionRuntimeConfig::new(
+                BluetoothPeripheralConnectionDefaultTxPowerDbm::new(0),
+            ),
         )
         .expect("the connection graph and receive pool fit controller SRAM");
         let request = LeLegacyConnectionRequest::decode(&connection_request())
@@ -5802,6 +5806,8 @@ mod tests {
             scale,
         );
         let candidate = runtime
+            .begin_event()
+            .expect("the sole connection allocation starts idle")
             .prepare_first_event(
                 LePeripheralConnection::from_request(request),
                 crate::BluetoothLe1MPacketStartTiming::from_scheduler_micros(21_000),
@@ -5822,7 +5828,7 @@ mod tests {
             workspace_base,
         )
         .expect("the direction-finding workspace fits controller SRAM");
-        (candidate, workspace.binding().link())
+        (runtime, candidate, workspace.binding().link())
     }
 
     fn connection_request() -> [u8; LEGACY_CONNECT_IND_PDU_BYTES] {
@@ -6053,7 +6059,7 @@ mod tests {
                     BluetoothControllerRuntimeResources::<1, 1>::new(),
                 );
         let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
-        let (candidate, _) = peripheral_connection_candidate();
+        let (mut connection_runtime, candidate, _) = peripheral_connection_candidate();
         let admission_sample = candidate.requested_window().start().wrapping_sub(1_000);
         let admitted = task
             .admit_peripheral_connection_first_event(
@@ -6063,9 +6069,13 @@ mod tests {
                 },
             )
             .unwrap_or_else(|_| panic!("the first connection window must be admitted"));
-        let (runtime, connection) = task.cancel_peripheral_connection_first_pre_sequence(admitted);
+        let (allocation, connection) =
+            task.cancel_peripheral_connection_first_pre_sequence(admitted);
 
-        assert!(runtime.allocation_is_idle());
+        connection_runtime
+            .restore_idle(allocation)
+            .unwrap_or_else(|_| panic!("the exact allocation returns to its runtime"));
+        assert!(connection_runtime.allocation_is_idle());
         assert_eq!(connection.event_counter(), 0);
         drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());
@@ -6088,7 +6098,7 @@ mod tests {
                     BluetoothControllerRuntimeResources::<1, 1>::new(),
                 );
         let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
-        let (candidate, workspace) = peripheral_connection_candidate();
+        let (mut connection_runtime, candidate, workspace) = peripheral_connection_candidate();
         let requested = candidate.requested_window();
         let admitted = task
             .admit_peripheral_connection_first_event(
@@ -6131,9 +6141,12 @@ mod tests {
         let event = task
             .cancel_peripheral_connection_empty_list_merge(merged)
             .unwrap_or_else(|_| panic!("the repeated merge must remain reversible"));
-        let (runtime, connection) = task.cancel_peripheral_connection_first_event(event);
+        let (allocation, connection) = task.cancel_peripheral_connection_first_event(event);
 
-        assert!(runtime.allocation_is_idle());
+        connection_runtime
+            .restore_idle(allocation)
+            .unwrap_or_else(|_| panic!("the exact allocation returns to its runtime"));
+        assert!(connection_runtime.allocation_is_idle());
         assert_eq!(connection.event_counter(), 0);
         drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());
@@ -6156,7 +6169,7 @@ mod tests {
                     BluetoothControllerRuntimeResources::<1, 1>::new(),
                 );
         let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
-        let (candidate, _) = peripheral_connection_candidate();
+        let (mut connection_runtime, candidate, _) = peripheral_connection_candidate();
         let requested = candidate.requested_window();
         let blocker = task
             .runtime
@@ -6190,8 +6203,11 @@ mod tests {
                 super::BluetoothSchedulerReservationError::TimelineFull,
             )
         );
-        let (runtime, connection) = failure.into_candidate().cancel();
-        assert!(runtime.allocation_is_idle());
+        let (allocation, connection) = failure.into_candidate().cancel();
+        connection_runtime
+            .restore_idle(allocation)
+            .unwrap_or_else(|_| panic!("the exact allocation returns to its runtime"));
+        assert!(connection_runtime.allocation_is_idle());
         assert_eq!(connection.event_counter(), 0);
         task.release_scheduler_reservation(blocker);
 
@@ -6216,7 +6232,7 @@ mod tests {
                     BluetoothControllerRuntimeResources::<1, 1>::new(),
                 );
         let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
-        let (candidate, workspace) = peripheral_connection_candidate();
+        let (mut connection_runtime, candidate, workspace) = peripheral_connection_candidate();
         let requested = candidate.requested_window();
         let admitted = task
             .admit_peripheral_connection_first_event(
@@ -6257,8 +6273,11 @@ mod tests {
         );
         let event = failure.into_prepared();
         assert!(task._scheduler_list.cancel_first_item(occupied));
-        let (runtime, connection) = task.cancel_peripheral_connection_first_event(event);
-        assert!(runtime.allocation_is_idle());
+        let (allocation, connection) = task.cancel_peripheral_connection_first_event(event);
+        connection_runtime
+            .restore_idle(allocation)
+            .unwrap_or_else(|_| panic!("the exact allocation returns to its runtime"));
+        assert!(connection_runtime.allocation_is_idle());
         assert_eq!(connection.event_counter(), 0);
 
         drop((interrupt, task, modem_timer));

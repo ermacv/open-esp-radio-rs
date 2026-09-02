@@ -489,7 +489,9 @@ pub use passive_scanning_runner::{
 pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
 pub use peripheral_connection::{
     BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionFirstEventPrepared,
-    BluetoothPeripheralConnectionRuntimeClaimError, BluetoothPeripheralConnectionRuntimeResources,
+    BluetoothPeripheralConnectionRuntimeAllocation, BluetoothPeripheralConnectionRuntimeBeginError,
+    BluetoothPeripheralConnectionRuntimeClaimError, BluetoothPeripheralConnectionRuntimeConfig,
+    BluetoothPeripheralConnectionRuntimeResources,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{

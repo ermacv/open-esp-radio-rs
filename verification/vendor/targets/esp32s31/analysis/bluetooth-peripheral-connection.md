@@ -167,15 +167,19 @@ transmit window fits its short descriptor form, whose encoding is now private
 to `BluetoothPeripheralConnectionReceiveWait`. No upper layer accepts the
 duration/configuration word.
 
-This transition remains deliberately partial. The vendor reset always binds a
-direction-finding sample workspace and touches the CTE register block even for
-the ordinary connection constructor. The open driver has not yet established
-whether a CTE-disabled first event may retain a zero workspace pointer or must
-own an initialized disabled workspace. That decision and the exact first-event
-task admission/publication edge are not yet proven as one complete runnable
-contract. In particular, the descriptor uses the common scheduler's resolved
-window rather than the requested window: overlap insertion is allowed to
-displace the initial candidate.
+This transition remains deliberately partial. Complete current and named
+same-chip direction-finding bodies prove that ordinary advertising, sync and
+connection link states all retain one controller-global `0x20`-byte
+environment even when IQ sampling is disabled. The open driver now claims and
+initializes that separate static workspace before MMIO, publishes its disabled
+descriptor through CTE buffer zero, clears software ownership through generated
+PAC accessors and retains the joined SRAM/HAL owner for the complete powered
+epoch. It does not reproduce the vendor allocator or make the workspace
+connection-private. Installing the resulting opaque environment link into the
+connection descriptor and the exact first-event task admission/publication edge
+remain before one complete runnable contract. In particular, the descriptor
+uses the common scheduler's resolved window rather than the requested window:
+overlap insertion is allowed to displace the initial candidate.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
 event image. The Rust owner now also attaches a separate statically allocated
@@ -216,8 +220,8 @@ The shortest remaining path to one real peripheral event is:
 1. attach the now-static shared RX pool and selector-two RX publication to the
    response-capable connectable-advertising graph, then transfer the pool and
    accepted packet to the existing task-service normalizer;
-2. close the CTE-disabled direction-finding workspace policy without importing
-   the vendor allocator or exposing its pointer image;
+2. install the already-owned CTE-disabled global-workspace link through the
+   private connection memory codec;
 3. consume the complete raw reservation through common task-side admission and
    only then lower the resolved window into the descriptor;
 4. join the complete graph to publication, completion and post-unlink owners;

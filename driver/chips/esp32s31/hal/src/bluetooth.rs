@@ -795,6 +795,15 @@ pub struct BluetoothRxMemoryListPublished {
     head: BluetoothControllerSramAddress,
 }
 
+/// HAL ownership of the controller-global disabled-CTE publication.
+///
+/// The restricted PAC proof remains private, so upper Controller layers can
+/// retain the hardware epoch without depending on a register-level type.
+#[must_use = "the disabled-CTE publication must retain its pinned workspace"]
+pub struct BluetoothDirectionFindingDisabledBaselineOwner {
+    _prepared: BluetoothDirectionFindingDisabledBaselinePrepared,
+}
+
 impl BluetoothRxMemoryListPublished {
     /// Return the positional hardware-list selector chosen by the memory
     /// layer.
@@ -872,10 +881,13 @@ impl BluetoothControllerHal<'_> {
     pub unsafe fn prepare_direction_finding_disabled_baseline(
         &mut self,
         descriptor: BluetoothControllerSramAddress,
-    ) -> BluetoothDirectionFindingDisabledBaselinePrepared {
-        unsafe {
+    ) -> BluetoothDirectionFindingDisabledBaselineOwner {
+        let prepared = unsafe {
             self.registers
                 .prepare_direction_finding_disabled_baseline(descriptor)
+        };
+        BluetoothDirectionFindingDisabledBaselineOwner {
+            _prepared: prepared,
         }
     }
 

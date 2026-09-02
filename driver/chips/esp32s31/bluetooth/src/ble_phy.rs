@@ -5,7 +5,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyLe1MPacketStartCalibration,
-    BluetoothLePacketCapturedTime,
+    BluetoothDirectionFindingWorkspaceCpuOwned, BluetoothLePacketCapturedTime,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerLowPowerHardwareInitializedOwner;
@@ -16,6 +16,18 @@ use open_esp_radio_esp32s31_hal::BluetoothPhyRegisterInitInputs;
 use crate::baseband::BluetoothControllerBasebandInitialized;
 #[cfg(target_arch = "riscv32")]
 use crate::resources::BluetoothInterruptBankOwner;
+
+/// Controller-global DF storage after its disabled-CTE descriptor is visible to hardware.
+///
+/// The memory and exact PAC publication proof remain joined for the complete
+/// powered epoch. Only an opaque ordinary-role link can be copied out; CPU
+/// access and raw descriptor images remain inaccessible.
+#[must_use = "hardware-owned direction-finding storage must remain retained"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothDirectionFindingWorkspaceHardwareOwned {
+    _storage: BluetoothDirectionFindingWorkspaceCpuOwned,
+    _publication: open_esp_radio_esp32s31_hal::BluetoothDirectionFindingDisabledBaselineOwner,
+}
 
 /// Source-owned normal BLE PHY policy for the reviewed ESP32-S31 baseline.
 ///
@@ -161,6 +173,7 @@ pub struct BluetoothControllerBlePhyEngineInitialized<
         PACKET_CAPACITY,
     >,
     storage: BluetoothBlePhyEngineCpuOwned,
+    _direction_finding: BluetoothDirectionFindingWorkspaceHardwareOwned,
     report: BluetoothBlePhyInitializationReport,
 }
 
@@ -272,6 +285,7 @@ where
     pub fn initialize_ble_phy_engine(
         mut self,
         storage: BluetoothBlePhyEngineCpuOwned,
+        direction_finding: BluetoothDirectionFindingWorkspaceCpuOwned,
     ) -> BluetoothControllerBlePhyEngineInitialized<
         P,
         M,
@@ -293,10 +307,26 @@ where
                     .enable_ble_base_stack_hardware(inputs);
             }
         });
+        let descriptor = direction_finding
+            .binding()
+            .disabled_cte_descriptor_address();
+        // SAFETY: the complete powered Controller remains in `self`; the
+        // initialized static workspace is consumed into the returned state,
+        // which retains it together with the exact PAC publication proof.
+        let publication = unsafe {
+            self.initialized
+                .controller
+                .task_mut()
+                .prepare_direction_finding_disabled_baseline(descriptor)
+        };
 
         BluetoothControllerBlePhyEngineInitialized {
             initialized: self,
             storage,
+            _direction_finding: BluetoothDirectionFindingWorkspaceHardwareOwned {
+                _storage: direction_finding,
+                _publication: publication,
+            },
             report,
         }
     }

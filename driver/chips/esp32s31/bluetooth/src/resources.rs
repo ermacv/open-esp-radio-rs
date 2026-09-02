@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListsCleared;
 use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
+    BluetoothControllerSramAddress, BluetoothDirectionFindingDisabledBaselineOwner,
     BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
     BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
@@ -561,6 +562,28 @@ impl BluetoothTaskResources {
     ) {
         unsafe {
             self.registers.enable_ble_base_stack_hardware(inputs);
+        }
+    }
+
+    /// Publish the controller-global disabled-CTE descriptor baseline.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the initialized pinned workspace and this
+    /// powered Controller epoch until a future reviewed retirement transition.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper BLE-PHY lifecycle retains the workspace and powered task owner"
+    )]
+    pub(crate) unsafe fn prepare_direction_finding_disabled_baseline(
+        &mut self,
+        descriptor: BluetoothControllerSramAddress,
+    ) -> BluetoothDirectionFindingDisabledBaselineOwner {
+        unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .prepare_direction_finding_disabled_baseline(descriptor)
         }
     }
 

@@ -21,6 +21,7 @@
 extern crate std;
 
 mod ble_phy_engine;
+mod direction_finding_workspace;
 mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
@@ -45,6 +46,15 @@ pub use ble_phy_engine::{
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineBinding,
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
     BluetoothBlePhyLe1MPacketStartCalibration,
+};
+
+#[cfg(not(target_arch = "riscv32"))]
+pub use direction_finding_workspace::BluetoothDirectionFindingWorkspaceModelAddress;
+pub use direction_finding_workspace::{
+    BLUETOOTH_DIRECTION_FINDING_WORKSPACE_BYTES, BluetoothDirectionFindingWorkspaceBindError,
+    BluetoothDirectionFindingWorkspaceBindFailure, BluetoothDirectionFindingWorkspaceBinding,
+    BluetoothDirectionFindingWorkspaceCpuOwned, BluetoothDirectionFindingWorkspaceLink,
+    BluetoothDirectionFindingWorkspaceStorage,
 };
 
 pub use dtm_event_image::{

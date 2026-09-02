@@ -75,7 +75,7 @@ gaps = [
 [[capabilities]]
 id = "controller-initialization"
 title = "Complete LE Controller initialization"
-scope = "Non-cancellable production cold start from an owned radio root through BLE PHY controller-output preparation runtime-timer start stable interrupt-owner publication final placement standard HCI facade and sole hardware runner while retaining a private affine standalone always-awake selection"
+scope = "Non-cancellable production cold start from an owned radio root through BLE PHY and controller-global disabled-CTE workspace publication controller-output preparation runtime-timer start stable interrupt-owner publication final placement standard HCI facade and sole hardware runner while retaining a private affine standalone always-awake selection"
 implementation = "complete"
 host = "covered"
 async = "bounded"
@@ -129,7 +129,7 @@ gaps = [
 [[capabilities]]
 id = "ble-phy-engine"
 title = "BLE PHY engine register initialization"
-scope = "Complete reviewed BLE PHY register transaction with affine static environment and resolving-list storage"
+scope = "Complete reviewed BLE PHY register transaction with affine static environment resolving-list storage and a separate controller-global disabled-CTE workspace retained with its HAL publication proof"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"

@@ -39466,7 +39466,7 @@ pub mod btmac_ble_phy_init {
         init_dynamic_image_04a0: InitDynamicImage04a0,
         init_bytes_04a4: InitBytes04a4,
         init_bytes_04a8: InitBytes04a8,
-        init_value_04ac: InitValue04ac,
+        connection_abort_control: ConnectionAbortControl,
         _reserved15: [u8; 0x90],
         init_value_0540: InitValue0540,
         _reserved16: [u8; 0x08],
@@ -39547,10 +39547,10 @@ pub mod btmac_ble_phy_init {
         pub const fn init_bytes_04a8(&self) -> &InitBytes04a8 {
             &self.init_bytes_04a8
         }
-        #[doc = "0x4ac - BLE PHY register initialization writes the finite complete image 0x00FF0002."]
+        #[doc = "0x4ac - Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags."]
         #[inline(always)]
-        pub const fn init_value_04ac(&self) -> &InitValue04ac {
-            &self.init_value_04ac
+        pub const fn connection_abort_control(&self) -> &ConnectionAbortControl {
+            &self.connection_abort_control
         }
         #[doc = "0x540 - BLE PHY register initialization writes the finite complete image 2000."]
         #[inline(always)]
@@ -40344,42 +40344,61 @@ pub mod btmac_ble_phy_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_VALUE_04AC (rw) register accessor: BLE PHY register initialization writes the finite complete image 0x00FF0002.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_04ac::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_04ac::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_value_04ac`] module"]
-    #[doc(alias = "INIT_VALUE_04AC")]
-    pub type InitValue04ac = crate::Reg<init_value_04ac::InitValue04acSpec>;
-    #[doc = "BLE PHY register initialization writes the finite complete image 0x00FF0002."]
-    pub mod init_value_04ac {
-        #[doc = "Register `INIT_VALUE_04AC` reader"]
-        pub type R = crate::R<InitValue04acSpec>;
-        #[doc = "Register `INIT_VALUE_04AC` writer"]
-        pub type W = crate::W<InitValue04acSpec>;
-        #[doc = "Field `INIT_IMAGE` reader - "]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - "]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "CONNECTION_ABORT_CONTROL (rw) register accessor: Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags.\n\nYou can [`read`](crate::Reg::read) this register and get [`connection_abort_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`connection_abort_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@connection_abort_control`] module"]
+    #[doc(alias = "CONNECTION_ABORT_CONTROL")]
+    pub type ConnectionAbortControl =
+        crate::Reg<connection_abort_control::ConnectionAbortControlSpec>;
+    #[doc = "Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags."]
+    pub mod connection_abort_control {
+        #[doc = "Register `CONNECTION_ABORT_CONTROL` reader"]
+        pub type R = crate::R<ConnectionAbortControlSpec>;
+        #[doc = "Register `CONNECTION_ABORT_CONTROL` writer"]
+        pub type W = crate::W<ConnectionAbortControlSpec>;
+        #[doc = "Field `CUSTOM_OPCODE_ENABLED` reader - "]
+        pub type CustomOpcodeEnabledR = crate::BitReader;
+        #[doc = "Field `CUSTOM_OPCODE_ENABLED` writer - "]
+        pub type CustomOpcodeEnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LINK_STATE_CONTROL` reader - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+        pub type LinkStateControlR = crate::BitReader;
+        #[doc = "Field `LINK_STATE_CONTROL` writer - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+        pub type LinkStateControlW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
+            pub fn custom_opcode_enabled(&self) -> CustomOpcodeEnabledR {
+                CustomOpcodeEnabledR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+            #[inline(always)]
+            pub fn link_state_control(&self) -> LinkStateControlR {
+                LinkStateControlR::new(((self.bits >> 1) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitValue04acSpec> {
-                InitImageW::new(self, 0)
+            pub fn custom_opcode_enabled(
+                &mut self,
+            ) -> CustomOpcodeEnabledW<'_, ConnectionAbortControlSpec> {
+                CustomOpcodeEnabledW::new(self, 0)
+            }
+            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+            #[inline(always)]
+            pub fn link_state_control(
+                &mut self,
+            ) -> LinkStateControlW<'_, ConnectionAbortControlSpec> {
+                LinkStateControlW::new(self, 1)
             }
         }
-        #[doc = "BLE PHY register initialization writes the finite complete image 0x00FF0002.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_04ac::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_04ac::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitValue04acSpec;
-        impl crate::RegisterSpec for InitValue04acSpec {
+        #[doc = "Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags.\n\nYou can [`read`](crate::Reg::read) this register and get [`connection_abort_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`connection_abort_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ConnectionAbortControlSpec;
+        impl crate::RegisterSpec for ConnectionAbortControlSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_value_04ac::R`](R) reader structure"]
-        impl crate::Readable for InitValue04acSpec {}
-        #[doc = "`write(|w| ..)` method takes [`init_value_04ac::W`](W) writer structure"]
-        impl crate::Writable for InitValue04acSpec {
+        #[doc = "`read()` method returns [`connection_abort_control::R`](R) reader structure"]
+        impl crate::Readable for ConnectionAbortControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`connection_abort_control::W`](W) writer structure"]
+        impl crate::Writable for ConnectionAbortControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -59675,7 +59694,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00ff0002` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_04AC`.
+    /// Publish the SVD-qualified image `0x00ff0002` to `BTMAC_BLE_PHY_INIT`.`CONNECTION_ABORT_CONTROL`.
     #[inline]
     pub fn publish_ble_phy_init_value_04ac(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
@@ -59683,7 +59702,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_value_04ac()
+                .connection_abort_control()
                 .write_with_zero(|writer| writer.bits(0x00ff0002));
         }
     }
@@ -62860,6 +62879,28 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.start().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields [LINK_STATE_CONTROL] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ble_connection_link_state_control(registers: &crate::BtmacBlePhyInit) {
+        registers.connection_abort_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.link_state_control().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields [LINK_STATE_CONTROL] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_ble_connection_link_state_control(registers: &crate::BtmacBlePhyInit) {
+        registers.connection_abort_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.link_state_control().bit((input & 0x00000001) != 0)
         });
     }
 

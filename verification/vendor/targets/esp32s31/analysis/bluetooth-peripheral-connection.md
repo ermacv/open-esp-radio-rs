@@ -97,9 +97,11 @@ the resulting absolute first window beside the still-unsubmitted connection
 event and identity-prepared SRAM graph. Cancellation returns both the pristine
 graph and event counter zero; there is no `now()` input on this path.
 
-`r_sym_ble_DCD5eVhcHQ9ueSpewKn1`, reviewed as
-`ble_lll_conn_peripheral_new`, proves that the first event additionally depends
-on all of the following:
+Exact normalized-body correspondence between the current obfuscated archive
+and the older named same-chip archive identifies
+`r_sym_ble_DCD5eVhcHQ9ueSpewKn1` as `ble_lll_conn_peripheral_new`. Its current
+ESP32-S31 body proves that the first event additionally depends on all of the
+following:
 
 - a live controller-time observation used with the connection interval to
   derive the first anchor;
@@ -114,6 +116,22 @@ These dependencies explain why Access Address plus CRCInit is not a runnable
 event image. The current Rust identity-prepared owner has no scheduler
 publication or `RUN` transition and can only be cancelled back to the pristine
 allocation.
+
+The same exact correspondence identifies
+`r_sym_ble_1KGaCqPI03xSu9c6Rh0G` as `ble_lll_conn_update_link_state`. Together
+with the default and custom aborted-opcode writers, its complete body replaces
+the former opaque word at `BTMAC_BLE_PHY_INIT + 0x4ac` with a narrower reviewed
+contract. Bit 0 selects the custom aborted-opcode path. Link-state refresh
+independently replaces bit 1, clearing it exactly when both private connection
+flags are set and setting it on every other path. The register is therefore
+published as `CONNECTION_ABORT_CONTROL` with field accessors; the inner
+hardware meaning of bit 1 remains deliberately unnamed.
+
+This MMIO fact is not a blocker for an unencrypted first event. It belongs to
+the later connection link-state refresh/encryption transition, which must
+consume semantic connection state and choose one PAC accessor. No raw
+register image or private vendor flag layout is allowed to cross into the
+portable Link Layer.
 
 ## Next closure order
 

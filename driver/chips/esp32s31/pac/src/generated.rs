@@ -3155,6 +3155,18 @@ pub(crate) fn clear_bluetooth_scheduler_insertion_command_1_start(
     );
 }
 
+/// Typed bridge for the reviewed `set_ble_connection_link_state_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_ble_connection_link_state_control(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::set_ble_connection_link_state_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_ble_connection_link_state_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_ble_connection_link_state_control(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::clear_ble_connection_link_state_control(registers);
+}
+
 /// Typed bridge for the reviewed `clear_agc_baseband_update_mode` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_agc_baseband_update_mode(registers: &crate::svd::PhyAgcOracle) {

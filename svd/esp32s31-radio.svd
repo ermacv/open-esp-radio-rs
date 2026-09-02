@@ -17160,16 +17160,22 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_VALUE_04AC</name>
-          <description>BLE PHY register initialization writes the finite complete image 0x00FF0002.</description>
+          <name>CONNECTION_ABORT_CONTROL</name>
+          <description>Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags.</description>
           <addressOffset>0x4AC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
+              <name>CUSTOM_OPCODE_ENABLED</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LINK_STATE_CONTROL</name>
+              <description>The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

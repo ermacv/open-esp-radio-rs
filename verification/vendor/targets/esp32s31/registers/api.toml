@@ -1899,9 +1899,27 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[fixed-register-images]]
 name = "publish_ble_phy_init_value_04ac"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_VALUE_04AC"
+register = "CONNECTION_ABORT_CONTROL"
 value = 0x00ff0002
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "set_ble_connection_link_state_control"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "CONNECTION_ABORT_CONTROL"
+fields = [{ field = "LINK_STATE_CONTROL", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL"]
+
+[[field-replace-modifies]]
+name = "clear_ble_connection_link_state_control"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "CONNECTION_ABORT_CONTROL"
+fields = [{ field = "LINK_STATE_CONTROL", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL"]
 
 [[fixed-register-images]]
 name = "publish_ble_phy_init_value_045c"

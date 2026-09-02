@@ -1908,11 +1908,29 @@ This rejects BA/retry loss, wrong route, wrong channel and average CPU
 saturation as explanations for the current enabled/disabled delta. Source
 order places synchronous progress service and successor-grant preparation
 after terminal BA and before publication of the already prepared standby
-aggregate. The observed +40.7 us median cadence shift is consistent with the
-27.4 us explicit Core0 service, the same-image terminal/publication phase
-delta and the additional Core1 admission bookkeeping. The next architectural
-experiment is therefore to publish the validated standby transaction first,
-then service completed-grant accounting and refill the grant horizon while
-that new radio transaction is in flight. Stop, role-control and RX priority
-checks must remain before publication; sparse/no-standby progress must retain
-the ordinary idle-boundary service path.
+aggregate. The observed +40.7 us median cadence shift made that ordering a
+specific causal candidate, but correlation was not treated as proof.
+
+The follow-up exact-image A/B moved completed-grant service and horizon refill
+after hardware publication of the already validated standby. Enabled run
+`1788356998525-0020df0c` and disabled replay
+`1788357310413-002106f0` used the same application image. The experiment was
+negative: enabled/disabled host means were 119.349/121.009 Mbit/s, device
+means were 118.890/121.129 Mbit/s, and median peer BlockAck interarrival
+remained 3120/3075 us. Core0 radio residence was 38.864/38.123% and Core1
+`network + udp_tx` residence was 76.923/76.549%. The captures contained
+11,140/11,500 full BlockAck frames, only 9/7 hole frames and no tail or
+backward starts. Publishing before control work therefore did not reduce the
+air gap or the enabled-path work. The source change was removed rather than
+retained as an unproven optimization.
+
+Completed-BA service is consequently not the localized cause of the current
+45 us median cadence difference. The next localization boundary is the
+authoritative Core1 materialization path: Xarxa checks the active key/credit,
+the Embassy adapter independently validates the same affine grant and peer
+epoch in `transmit_for`, and both owners maintain a used-frame count. The
+driver validation remains the actual SRAM admission authority, so this cannot
+be deleted mechanically. The intended experiment must consolidate the
+interface selection and device admission contract while retaining one
+fail-closed owner, then repeat the same-image task-residence and independent
+air A/B.

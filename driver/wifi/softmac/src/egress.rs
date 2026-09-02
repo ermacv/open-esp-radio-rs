@@ -281,6 +281,12 @@ pub struct WifiEgressAirtimeScheduler<K: Copy + Eq, const VIFS: usize, const QUE
     global_pending_airtime: u64,
     selection_serial: u32,
     selection_outstanding: bool,
+    /// Exact single active demand, maintained only on lifecycle changes.
+    ///
+    /// The common one-peer path must not rescan the maximum queue table for
+    /// every A-MPDU. `None` deliberately represents both zero and multiple
+    /// active demands; those cases use the ordinary bounded DRR scan.
+    sole_active_slot: Option<usize>,
 }
 
 impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
@@ -296,6 +302,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
             global_pending_airtime: 0,
             selection_serial: 0,
             selection_outstanding: false,
+            sole_active_slot: None,
         }
     }
 
@@ -320,6 +327,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
             queue.version = next_version(queue.version);
             self.queues[slot] = (queue.pending_airtime != 0).then_some(queue);
         }
+        self.refresh_active_summary();
         Ok(())
     }
 
@@ -351,6 +359,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
             });
             queue.version = next_version(queue.version);
             self.queues[slot] = Some(queue);
+            self.refresh_active_summary();
             return Ok(());
         }
 
@@ -370,6 +379,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
             pending_airtime: 0,
             version: 1,
         });
+        self.refresh_active_summary();
         Ok(())
     }
 
@@ -385,6 +395,7 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         queue.deficit = 0;
         queue.version = next_version(queue.version);
         self.queues[slot] = (queue.pending_airtime != 0).then_some(queue);
+        self.refresh_active_summary();
     }
 
     pub fn demand(&self, vif: u8, key: K) -> Option<WifiEgressDemand<K>> {
@@ -405,6 +416,52 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
     ) -> Result<Option<WifiEgressSelection<K>>, WifiEgressAirtimeError> {
         if self.selection_outstanding {
             return Err(WifiEgressAirtimeError::SelectionOutstanding);
+        }
+
+        if let Some(slot) = self.sole_active_slot {
+            let mut queue = self.queues[slot].expect("sole active queue remains owned");
+            let demand = queue.demand.expect("sole active queue retains demand");
+            let demand = WifiEgressDemand::new(queue.vif, demand.id, queue.key, demand.level);
+            let Some(opportunity) = opportunity_for(demand) else {
+                return Ok(None);
+            };
+            if u16::from(opportunity.frame_limit.get()) > demand.level.ready_frames.get() {
+                return Err(WifiEgressAirtimeError::OpportunityExceedsDemand);
+            }
+            let vif = usize::from(queue.vif);
+            if !can_admit(
+                self.global_pending_airtime,
+                opportunity.estimated_airtime,
+                self.config.global_pending_limit,
+            ) || !can_admit(
+                self.vifs[vif].pending_airtime,
+                opportunity.estimated_airtime,
+                self.config.vif_pending_limit[vif],
+            ) || !can_admit(
+                queue.pending_airtime,
+                opportunity.estimated_airtime,
+                opportunity.queue_pending_limit,
+            ) {
+                return Ok(None);
+            }
+
+            // These are exactly the single-eligible branches of `select_vif`
+            // and `select_queue`. Preserve their deficit evolution while
+            // avoiding two maximum-capacity scans and a temporary
+            // opportunities table for every radio transaction.
+            if self.vifs[vif].deficit <= 0 {
+                self.vifs[vif].deficit = self.vifs[vif].deficit.saturating_add(i64::from(
+                    self.config.vif_quantum[vif].hundred_nanoseconds(),
+                ));
+            }
+            if queue.deficit <= 0 {
+                queue.deficit = queue.deficit.saturating_add(weighted_queue_quantum(
+                    self.config.queue_quantum,
+                    opportunity,
+                ));
+            }
+            self.queues[slot] = Some(queue);
+            return self.make_selection(slot, demand, opportunity).map(Some);
         }
 
         let mut opportunities = [None; QUEUES];
@@ -447,18 +504,12 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         let opportunity = opportunities[slot].expect("selected queue retains an opportunity");
         let queue = self.queues[slot].expect("selected queue remains owned");
         let demand = queue.demand.expect("selected demand remains active");
-        self.selection_serial = self
-            .selection_serial
-            .checked_add(1)
-            .ok_or(WifiEgressAirtimeError::CounterOverflow)?;
-        self.selection_outstanding = true;
-        Ok(Some(WifiEgressSelection {
-            serial: self.selection_serial,
+        self.make_selection(
             slot,
-            slot_version: queue.version,
-            demand: WifiEgressDemand::new(queue.vif, demand.id, queue.key, demand.level),
+            WifiEgressDemand::new(queue.vif, demand.id, queue.key, demand.level),
             opportunity,
-        }))
+        )
+        .map(Some)
     }
 
     pub fn cancel_selection(
@@ -599,6 +650,42 @@ impl<K: Copy + Eq, const VIFS: usize, const QUEUES: usize>
         self.queues
             .iter()
             .position(|queue| queue.is_some_and(|queue| queue.vif == vif && queue.key == key))
+    }
+
+    fn refresh_active_summary(&mut self) {
+        let mut sole = None;
+        for (slot, queue) in self.queues.iter().copied().enumerate() {
+            if !queue.is_some_and(|queue| queue.demand.is_some()) {
+                continue;
+            }
+            if sole.is_some() {
+                self.sole_active_slot = None;
+                return;
+            }
+            sole = Some(slot);
+        }
+        self.sole_active_slot = sole;
+    }
+
+    fn make_selection(
+        &mut self,
+        slot: usize,
+        demand: WifiEgressDemand<K>,
+        opportunity: WifiEgressOpportunity,
+    ) -> Result<WifiEgressSelection<K>, WifiEgressAirtimeError> {
+        let queue = self.queues[slot].expect("selected queue remains owned");
+        self.selection_serial = self
+            .selection_serial
+            .checked_add(1)
+            .ok_or(WifiEgressAirtimeError::CounterOverflow)?;
+        self.selection_outstanding = true;
+        Ok(WifiEgressSelection {
+            serial: self.selection_serial,
+            slot,
+            slot_version: queue.version,
+            demand,
+            opportunity,
+        })
     }
 
     fn take_selection(
@@ -870,6 +957,34 @@ mod tests {
 
         assert_eq!(*selected.demand().key(), 9);
         assert_eq!(selected.opportunity().frame_limit().get(), 1);
+    }
+
+    #[test]
+    fn lifecycle_tracks_the_exact_sole_active_queue_for_constant_time_selection() {
+        let mut scheduler = WifiEgressAirtimeScheduler::<u8, 2, 8>::new(config());
+        scheduler.reset_vif(0, 1).unwrap();
+        scheduler.reset_vif(1, 1).unwrap();
+        let first = demand(0, 1, 1, 11, 32);
+        let second = demand(1, 1, 2, 22, 32);
+
+        scheduler.upsert_demand(first).unwrap();
+        assert_eq!(scheduler.sole_active_slot, Some(0));
+        assert_eq!(serve(&mut scheduler, |_| 10_000), 11);
+
+        scheduler.upsert_demand(second).unwrap();
+        assert_eq!(scheduler.sole_active_slot, None);
+        scheduler.remove_demand(1, second.id(), *second.key());
+        assert_eq!(scheduler.sole_active_slot, Some(0));
+        assert_eq!(serve(&mut scheduler, |_| 10_000), 11);
+
+        scheduler.reset_vif(0, 2).unwrap();
+        assert_eq!(scheduler.sole_active_slot, None);
+        assert!(
+            scheduler
+                .select_next(|_| panic!("a reset scheduler has no active demand"))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

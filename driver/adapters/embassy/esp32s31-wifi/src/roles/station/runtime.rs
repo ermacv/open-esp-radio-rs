@@ -27,7 +27,8 @@ use crate::{
     datapath::rx::staging::Esp32s31StagedRxFrame,
     datapath::tx::resources::AggregateTxResources,
     datapath::{
-        DatapathControlContext, DatapathControlProgress, DatapathRxProgress, WifiTxProgress,
+        DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathTxStart,
+        WifiTxProgress,
         network::DatapathNetworkRx,
         paired::{
             DatapathPairRole, DatapathPairedNetworkTxService, DatapathPairedPhysicalTx,
@@ -1097,7 +1098,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
             if self.tx_mut().is_parked() {
                 self.activate_tx(physical)
@@ -1114,7 +1115,7 @@ where
                 .tx()
                 .active()
                 .is_some_and(Esp32s31ConnectedTx::has_prepared_network_tx);
-            if progress == WifiTxProgress::Complete && !retained {
+            if progress.progress() == WifiTxProgress::Complete && !retained {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApStationTxError::Ownership)?;
             }
@@ -1245,7 +1246,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         let progress = self
             .tx_mut()
             .active_mut()
@@ -1258,7 +1259,7 @@ where
             .tx()
             .active()
             .is_some_and(Esp32s31ConnectedTx::has_prepared_network_tx);
-        if progress == WifiTxProgress::Complete && !retained {
+        if progress.progress() == WifiTxProgress::Complete && !retained {
             self.park_tx(physical)
                 .map_err(Esp32s31StaApStationTxError::Ownership)?;
         }
@@ -1490,7 +1491,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         self.tx_mut().start(hardware, frame, network)
     }
 
@@ -1535,7 +1536,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         self.tx_mut().start_prepared(hardware, network)
     }
 

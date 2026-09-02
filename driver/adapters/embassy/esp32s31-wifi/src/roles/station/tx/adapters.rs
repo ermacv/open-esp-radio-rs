@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use crate::datapath::DatapathTxStart;
 
 impl<
     M: RawMutex,
@@ -394,13 +395,19 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
+            #[cfg(feature = "tx-egress-scheduling")]
+            let metadata = network.metadata(&frame);
             let frame = match network.try_promote(frame) {
                 Ok(frame) => frame,
                 Err(_) => panic!("station aggregate selected without a free DMA credit"),
             };
-            self.start_network(hardware, frame, network)
+            let progress = self.start_network(hardware, frame, network)?;
+            let start = DatapathTxStart::new(progress);
+            #[cfg(feature = "tx-egress-scheduling")]
+            let start = start.with_egress_metadata(metadata);
+            Ok(start)
         }
     }
 
@@ -448,7 +455,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         self.start_prepared_network(hardware, network)
     }
 

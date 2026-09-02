@@ -16,6 +16,8 @@ use embassy_futures::{
     yield_now,
 };
 use embassy_time::{Duration, Instant, Timer};
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::PinnedTxMetadata;
 use open_esp_radio_embassy_net::{
     LinkState, NetworkInterfaceId, PinnedNetworkTxFrame, PinnedRxPublisher,
     PinnedTxInterfaceConsumer, RawMutex,
@@ -25,6 +27,50 @@ pub use open_esp_radio_esp32s31_wifi::datapath::{
     DatapathStopProgress,
 };
 pub use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
+
+/// Result of publishing one concrete network transaction to the radio owner.
+///
+/// The physical egress identity belongs to this result rather than to the
+/// long-lived role owner. That makes stale identity from an earlier
+/// transaction unrepresentable and keeps optional scheduling metadata out of
+/// the async owner graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DatapathTxStart {
+    progress: WifiTxProgress,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_metadata: Option<PinnedTxMetadata>,
+}
+
+impl DatapathTxStart {
+    pub const fn new(progress: WifiTxProgress) -> Self {
+        Self {
+            progress,
+            #[cfg(feature = "tx-egress-scheduling")]
+            egress_metadata: None,
+        }
+    }
+
+    pub const fn progress(self) -> WifiTxProgress {
+        self.progress
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    pub const fn with_egress_metadata(mut self, metadata: PinnedTxMetadata) -> Self {
+        self.egress_metadata = Some(metadata);
+        self
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    pub const fn egress_metadata(self) -> Option<PinnedTxMetadata> {
+        self.egress_metadata
+    }
+}
+
+impl From<WifiTxProgress> for DatapathTxStart {
+    fn from(progress: WifiTxProgress) -> Self {
+        Self::new(progress)
+    }
+}
 
 #[cfg(feature = "tx-egress-scheduling")]
 pub mod egress;
@@ -495,7 +541,7 @@ pub trait DatapathServices<
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a;
 
     /// Number of network leases claimed by the most recent successful
     /// [`Self::start_tx`] call.
@@ -586,8 +632,8 @@ pub trait DatapathServices<
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
-        Ok(WifiTxProgress::Complete)
+    ) -> Result<DatapathTxStart, Self::Error> {
+        Ok(WifiTxProgress::Complete.into())
     }
 
     fn cancel_prepared_tx(

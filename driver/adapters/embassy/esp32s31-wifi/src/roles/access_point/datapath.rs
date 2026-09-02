@@ -810,13 +810,13 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
             let progress = self
                 .network_tx
                 .start(self.aggregate, self.control, self.hardware, frame, network)
                 .await?;
-            if progress == WifiTxProgress::Pending {
+            if progress.progress() == WifiTxProgress::Pending {
                 #[cfg(feature = "diagnostics")]
                 {
                     debug_assert!(self.network_tx_pending.is_none());
@@ -918,11 +918,11 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         let progress =
             self.network_tx
                 .start_prepared(self.aggregate, self.control, self.hardware, network)?;
-        if progress == WifiTxProgress::Pending {
+        if progress.progress() == WifiTxProgress::Pending {
             #[cfg(feature = "diagnostics")]
             {
                 debug_assert!(self.network_tx_pending.is_none());

@@ -11,6 +11,7 @@ pub struct EgressPolicyShadowSnapshot {
     pub recommendations: u32,
     pub exact_recommendations: u32,
     pub different_recommendations: u32,
+    pub cancelled_recommendations: u32,
     pub unavailable_actual: u32,
     pub rejected_updates: u32,
     pub rejected_observations: u32,
@@ -35,6 +36,9 @@ impl EgressPolicyShadowSnapshot {
             different_recommendations: self
                 .different_recommendations
                 .wrapping_sub(earlier.different_recommendations),
+            cancelled_recommendations: self
+                .cancelled_recommendations
+                .wrapping_sub(earlier.cancelled_recommendations),
             unavailable_actual: self
                 .unavailable_actual
                 .wrapping_sub(earlier.unavailable_actual),
@@ -63,6 +67,7 @@ pub(crate) struct EgressPolicyShadowCounters {
     recommendations: AtomicU32,
     exact_recommendations: AtomicU32,
     different_recommendations: AtomicU32,
+    cancelled_recommendations: AtomicU32,
     unavailable_actual: AtomicU32,
     rejected_updates: AtomicU32,
     rejected_observations: AtomicU32,
@@ -83,6 +88,7 @@ impl EgressPolicyShadowCounters {
             recommendations: AtomicU32::new(0),
             exact_recommendations: AtomicU32::new(0),
             different_recommendations: AtomicU32::new(0),
+            cancelled_recommendations: AtomicU32::new(0),
             unavailable_actual: AtomicU32::new(0),
             rejected_updates: AtomicU32::new(0),
             rejected_observations: AtomicU32::new(0),
@@ -108,6 +114,11 @@ impl EgressPolicyShadowCounters {
 
     pub(crate) fn different_recommendation(&self) {
         self.different_recommendations
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn cancelled_recommendation(&self) {
+        self.cancelled_recommendations
             .fetch_add(1, Ordering::Relaxed);
     }
 
@@ -153,6 +164,7 @@ impl EgressPolicyShadowCounters {
             recommendations: self.recommendations.load(Ordering::Relaxed),
             exact_recommendations: self.exact_recommendations.load(Ordering::Relaxed),
             different_recommendations: self.different_recommendations.load(Ordering::Relaxed),
+            cancelled_recommendations: self.cancelled_recommendations.load(Ordering::Relaxed),
             unavailable_actual: self.unavailable_actual.load(Ordering::Relaxed),
             rejected_updates: self.rejected_updates.load(Ordering::Relaxed),
             rejected_observations: self.rejected_observations.load(Ordering::Relaxed),

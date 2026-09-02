@@ -182,6 +182,7 @@ pub struct DatapathEgressAirtimePolicy {
     recommendations: u32,
     exact_recommendations: u32,
     different_recommendations: u32,
+    cancelled_recommendations: u32,
     unavailable_actual: u32,
     rejected_observations: u32,
 }
@@ -200,6 +201,7 @@ impl DatapathEgressAirtimePolicy {
             recommendations: 0,
             exact_recommendations: 0,
             different_recommendations: 0,
+            cancelled_recommendations: 0,
             unavailable_actual: 0,
             rejected_observations: 0,
         }
@@ -261,15 +263,16 @@ impl DatapathEgressAirtimePolicy {
         snapshot.opportunity(demand.level().ready_frames().get())
     }
 
-    fn cancel_recommendation(&mut self) {
+    fn cancel_recommendation(&mut self) -> bool {
         let Some(recommendation) = self.recommendation.take() else {
-            return;
+            return false;
         };
         if self.scheduler.cancel_selection(recommendation).is_err() {
             self.rejected_observations = self.rejected_observations.saturating_add(1);
             #[cfg(feature = "tx-phase-telemetry")]
             crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.rejected_observation();
         }
+        true
     }
 
     fn prepare_recommendation(
@@ -321,21 +324,34 @@ impl DatapathEgressAirtimePolicy {
             crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
             return false;
         };
-        let Some(actual) = self.scheduler.demand(interface, key) else {
-            let _ = self.scheduler.cancel_selection(recommendation);
-            self.unavailable_actual = self.unavailable_actual.saturating_add(1);
-            #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
-            return false;
-        };
-        let Some(opportunity) = opportunity_for(actual)
-            .and_then(|snapshot| snapshot.opportunity(actual.level().ready_frames().get()))
-        else {
-            let _ = self.scheduler.cancel_selection(recommendation);
-            self.unavailable_actual = self.unavailable_actual.saturating_add(1);
-            #[cfg(feature = "tx-phase-telemetry")]
-            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
-            return false;
+        // The selected demand and its role-derived opportunity are immutable
+        // for the lifetime of one outstanding recommendation. Reusing both
+        // on the overwhelmingly common exact path avoids a second role
+        // snapshot query at every physical transaction boundary. A genuinely
+        // different production choice must still be revalidated against its
+        // own current BA/rate/power-save state.
+        let (actual, opportunity) = if recommendation.demand().vif() == interface
+            && *recommendation.demand().key() == key
+        {
+            (*recommendation.demand(), recommendation.opportunity())
+        } else {
+            let Some(actual) = self.scheduler.demand(interface, key) else {
+                let _ = self.scheduler.cancel_selection(recommendation);
+                self.unavailable_actual = self.unavailable_actual.saturating_add(1);
+                #[cfg(feature = "tx-phase-telemetry")]
+                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
+                return false;
+            };
+            let Some(opportunity) = opportunity_for(actual)
+                .and_then(|snapshot| snapshot.opportunity(actual.level().ready_frames().get()))
+            else {
+                let _ = self.scheduler.cancel_selection(recommendation);
+                self.unavailable_actual = self.unavailable_actual.saturating_add(1);
+                #[cfg(feature = "tx-phase-telemetry")]
+                crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.unavailable_actual();
+                return false;
+            };
+            (actual, opportunity)
         };
         let estimated = opportunity.estimated_airtime();
         match self
@@ -384,6 +400,7 @@ impl DatapathEgressAirtimePolicy {
             recommendations: self.recommendations,
             exact_recommendations: self.exact_recommendations,
             different_recommendations: self.different_recommendations,
+            cancelled_recommendations: self.cancelled_recommendations,
             unavailable_actual: self.unavailable_actual,
             rejected_observations: self.rejected_observations,
         }
@@ -397,6 +414,7 @@ pub struct DatapathEgressShadowObservation {
     pub recommendations: u32,
     pub exact_recommendations: u32,
     pub different_recommendations: u32,
+    pub cancelled_recommendations: u32,
     pub unavailable_actual: u32,
     pub rejected_observations: u32,
 }
@@ -422,6 +440,14 @@ pub trait DatapathEgressPolicyOwner {
         ) -> Option<DatapathHtEgressSnapshot>,
     ) -> bool;
 
+    /// Return one unconsumed shadow selection to the scheduler.
+    ///
+    /// A role may accept or retain a queue head without publishing a physical
+    /// radio transaction. That is not an unavailable actual decision: the
+    /// provisional scheduler selection simply did not cross the hardware
+    /// boundary and must be cancelled explicitly.
+    fn cancel_recommendation(&mut self);
+
     fn observe_actual(
         &mut self,
         interface: u8,
@@ -443,6 +469,8 @@ impl DatapathEgressPolicyOwner for () {
     ) -> bool {
         false
     }
+
+    fn cancel_recommendation(&mut self) {}
 
     fn observe_actual(
         &mut self,
@@ -468,6 +496,14 @@ impl DatapathEgressPolicyOwner for DatapathEgressAirtimePolicy {
         ) -> Option<DatapathHtEgressSnapshot>,
     ) -> bool {
         DatapathEgressAirtimePolicy::prepare_recommendation(self, opportunity_for)
+    }
+
+    fn cancel_recommendation(&mut self) {
+        if DatapathEgressAirtimePolicy::cancel_recommendation(self) {
+            self.cancelled_recommendations = self.cancelled_recommendations.saturating_add(1);
+            #[cfg(feature = "tx-phase-telemetry")]
+            crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.cancelled_recommendation();
+        }
     }
 
     fn observe_actual(
@@ -615,15 +651,35 @@ mod tests {
             1_600,
             u16::MAX,
         );
-        assert!(policy.prepare_recommendation(&mut |_| Some(snapshot)));
-        assert!(policy.observe_actual(0, Some(first), &mut |_| Some(snapshot)));
+        let mut prepare_queries = 0;
+        assert!(policy.prepare_recommendation(&mut |_| {
+            prepare_queries += 1;
+            Some(snapshot)
+        }));
+        let mut actual_queries = 0;
+        assert!(policy.observe_actual(0, Some(first), &mut |_| {
+            actual_queries += 1;
+            Some(snapshot)
+        }));
+        assert!(prepare_queries != 0);
+        assert_eq!(actual_queries, 0, "exact admission reuses selected facts");
         assert_eq!(policy.scheduler.global_pending_airtime(), 0);
 
         // The exact first admission debits VIF 0 and advances the DRR cursor
         // to VIF 1. Feed the unchanged production FIFO's VIF-0 choice to the
         // second recommendation and prove that disagreement is observational.
-        assert!(policy.prepare_recommendation(&mut |_| Some(snapshot)));
-        assert!(policy.observe_actual(0, Some(first), &mut |_| Some(snapshot)));
+        assert!(policy.prepare_recommendation(&mut |_| {
+            prepare_queries += 1;
+            Some(snapshot)
+        }));
+        assert!(policy.observe_actual(0, Some(first), &mut |_| {
+            actual_queries += 1;
+            Some(snapshot)
+        }));
+        assert_eq!(
+            actual_queries, 1,
+            "a different actual queue requires its own role snapshot"
+        );
         assert_eq!(policy.scheduler.global_pending_airtime(), 0);
         assert_eq!(
             policy.shadow_observation(),
@@ -631,9 +687,43 @@ mod tests {
                 recommendations: 2,
                 exact_recommendations: 1,
                 different_recommendations: 1,
+                cancelled_recommendations: 0,
                 unavailable_actual: 0,
                 rejected_observations: 0,
             }
         );
+    }
+
+    #[test]
+    fn unpublished_physical_transaction_cancels_without_forging_unavailable_actual() {
+        let mut policy = DatapathEgressAirtimePolicy::new();
+        let first = key(1);
+        policy.observe_update(0, EgressDemandUpdate::Reset { schedule_epoch: 7 });
+        policy.observe_update(0, active(7, 1, first, 32));
+        let snapshot = DatapathHtEgressSnapshot::new(
+            HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ),
+            NonZeroU8::new(32).unwrap(),
+            1_600,
+            u16::MAX,
+        );
+
+        assert!(policy.prepare_recommendation(&mut |_| Some(snapshot)));
+        DatapathEgressPolicyOwner::cancel_recommendation(&mut policy);
+        assert_eq!(
+            policy.shadow_observation(),
+            DatapathEgressShadowObservation {
+                recommendations: 1,
+                exact_recommendations: 0,
+                different_recommendations: 0,
+                cancelled_recommendations: 1,
+                unavailable_actual: 0,
+                rejected_observations: 0,
+            }
+        );
+        assert!(policy.prepare_recommendation(&mut |_| Some(snapshot)));
     }
 }

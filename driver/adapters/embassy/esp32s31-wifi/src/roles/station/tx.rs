@@ -19,8 +19,9 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
+use crate::datapath::DatapathTxStart;
 #[cfg(feature = "tx-egress-scheduling")]
-use open_esp_radio_embassy_net::DecodedEgressKey;
+use open_esp_radio_embassy_net::{DecodedEgressKey, PinnedTxMetadata};
 use open_esp_radio_embassy_net::{
     PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
 };
@@ -284,6 +285,8 @@ struct AggregatePrepared<const SLOTS: usize> {
     original_subframes: u8,
     first_sequence: u16,
     build_stop: AggregateBuildStop,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_metadata: PinnedTxMetadata,
     #[cfg(any(feature = "diagnostics", test))]
     preparation_micros: u64,
 }

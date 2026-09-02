@@ -312,6 +312,8 @@ where
         cookie: TxCookie,
         traffic: AggregateTraffic,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+        #[cfg(feature = "tx-egress-scheduling")]
+        let egress_metadata = network.direct_metadata(&first);
         self.push_candidate(first, network, AggregateFrameAdmission::FreshExact, traffic)?;
         let frame_limit = self.aggregate_frame_limit(traffic.tid());
 
@@ -364,6 +366,8 @@ where
             original_subframes: aggregate.subframes,
             first_sequence,
             build_stop,
+            #[cfg(feature = "tx-egress-scheduling")]
+            egress_metadata,
             #[cfg(any(feature = "diagnostics", test))]
             preparation_micros: 0,
         };
@@ -662,7 +666,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, AggregateTxError> {
+    ) -> Result<DatapathTxStart, AggregateTxError> {
         if self.active() {
             return Err(AggregateTxError::ActiveTransaction);
         }
@@ -682,8 +686,16 @@ where
                 .deferred_network
                 .take()
                 .ok_or(AggregateTxError::InvalidPublicationState)?;
-            return self.start_network(hardware, first, network);
+            #[cfg(feature = "tx-egress-scheduling")]
+            let metadata = network.direct_metadata(&first);
+            let progress = self.start_network(hardware, first, network)?;
+            let start = DatapathTxStart::new(progress);
+            #[cfg(feature = "tx-egress-scheduling")]
+            let start = start.with_egress_metadata(metadata);
+            return Ok(start);
         };
+        #[cfg(feature = "tx-egress-scheduling")]
+        let egress_metadata = prepared.egress_metadata;
         #[cfg(any(feature = "diagnostics", test))]
         self.observe_prepared(&prepared);
         #[cfg(any(feature = "diagnostics", test))]
@@ -702,7 +714,11 @@ where
             observer.observe(AggregateTxObservation::StandbyPublished);
         }
         self.activate_prepared(prepared)?;
-        self.publish_initial(hardware)
+        let progress = self.publish_initial(hardware)?;
+        let start = DatapathTxStart::new(progress);
+        #[cfg(feature = "tx-egress-scheduling")]
+        let start = start.with_egress_metadata(egress_metadata);
+        Ok(start)
     }
 
     fn can_push(

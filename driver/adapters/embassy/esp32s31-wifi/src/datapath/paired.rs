@@ -11,6 +11,7 @@
 
 use core::future::{Future, pending};
 
+use crate::datapath::DatapathTxStart;
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 use open_esp_radio_embassy_net::{
@@ -560,7 +561,7 @@ pub trait DatapathPairedNetworkTxService<
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a;
 
     fn last_started_frame_count(&self) -> usize {
         1
@@ -626,8 +627,8 @@ pub trait DatapathPairedNetworkTxService<
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
-        Ok(WifiTxProgress::Complete)
+    ) -> Result<DatapathTxStart, Self::Error> {
+        Ok(WifiTxProgress::Complete.into())
     }
 
     fn cancel_prepared(
@@ -1025,7 +1026,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
             let role = self.role_for(network.interface());
             assert_eq!(*frame.tag(), network.interface());
@@ -1046,7 +1047,7 @@ where
                 DatapathPairRole::Second => self.second_tx.last_started_frame_count(),
             }
             .max(1);
-            self.active = (progress == WifiTxProgress::Pending).then_some(role);
+            self.active = (progress.progress() == WifiTxProgress::Pending).then_some(role);
             self.prepared =
                 unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
             Ok(progress)
@@ -1200,7 +1201,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         let role = self
             .prepared
             .or_else(|| {
@@ -1219,7 +1220,7 @@ where
                 .map_err(DatapathPairedServiceError::SecondTx)?,
         };
         self.prepared = None;
-        self.active = (progress == WifiTxProgress::Pending).then_some(role);
+        self.active = (progress.progress() == WifiTxProgress::Pending).then_some(role);
         self.prepared =
             unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
         Ok(progress)

@@ -989,7 +989,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
             self.activate_tx(physical)
                 .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
@@ -1005,7 +1005,7 @@ where
                 )
                 .await
                 .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
-            if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
+            if progress.progress() == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
             }
@@ -1177,7 +1177,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         let active =
             self.protocol
                 .active_mut()
@@ -1193,7 +1193,7 @@ where
                 network,
             )
             .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
-        if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
+        if progress.progress() == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
             self.park_tx(physical)
                 .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
         }

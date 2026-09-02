@@ -1093,10 +1093,11 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     let policy = open_esp_radio_esp32s31_embassy_wifi::egress_policy_shadow_snapshot()
         .wrapping_delta_since(earlier_policy);
     runtime_log_reliably(format_args!(
-        "ONTXES recommendations={} exact={} different={} unavailable={} rejected_updates={} rejected_observations={} snapshot_queries={} snapshot_ready={} key_rejected={} identity_rejected={} traffic_class_rejected={} role_unavailable={} non_ht_rate={} no_block_ack={} invalid_geometry={}",
+        "ONTXES recommendations={} exact={} different={} cancelled={} unavailable={} rejected_updates={} rejected_observations={} snapshot_queries={} snapshot_ready={} key_rejected={} identity_rejected={} traffic_class_rejected={} role_unavailable={} non_ht_rate={} no_block_ack={} invalid_geometry={}",
         policy.recommendations,
         policy.exact_recommendations,
         policy.different_recommendations,
+        policy.cancelled_recommendations,
         policy.unavailable_actual,
         policy.rejected_updates,
         policy.rejected_observations,

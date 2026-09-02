@@ -744,7 +744,8 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
-        tx.start_prepared_network(&mut hardware, &network.tx_consumer()),
+        tx.start_prepared_network(&mut hardware, &network.tx_consumer())
+            .map(DatapathTxStart::progress),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(
@@ -1258,7 +1259,8 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     assert!(tx.has_prepared_network_tx());
     assert_eq!(hardware.ht_publications, 2);
     assert_eq!(
-        tx.start_prepared_network(&mut hardware, &network.tx_consumer()),
+        tx.start_prepared_network(&mut hardware, &network.tx_consumer())
+            .map(DatapathTxStart::progress),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 3);
@@ -1360,7 +1362,8 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
     assert_eq!(tx.block_ack_window(0), None);
     assert!(!tx.block_ack_amsdu(0));
     assert_eq!(
-        tx.start_prepared_network(&mut hardware, &network.tx_consumer()),
+        tx.start_prepared_network(&mut hardware, &network.tx_consumer())
+            .map(DatapathTxStart::progress),
         Err(AggregateTxError::BlockAckAgreementChanged { tid: 0 })
     );
     assert_eq!(hardware.he_publications, 1);
@@ -1497,7 +1500,8 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
-        tx.start_prepared_network(&mut hardware, &network.tx_consumer()),
+        tx.start_prepared_network(&mut hardware, &network.tx_consumer())
+            .map(DatapathTxStart::progress),
         Err(AggregateTxError::Ordinary(
             SingleMpduTxError::EthernetFrameTooShort
         ))

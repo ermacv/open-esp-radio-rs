@@ -29,6 +29,8 @@ use super::*;
 #[derive(Default)]
 struct RecordingEgressPolicy {
     recommendation_calls: usize,
+    cancellation_calls: usize,
+    observation_calls: usize,
 }
 
 #[cfg(feature = "tx-egress-scheduling")]
@@ -46,6 +48,10 @@ impl super::egress::DatapathEgressPolicyOwner for RecordingEgressPolicy {
         true
     }
 
+    fn cancel_recommendation(&mut self) {
+        self.cancellation_calls += 1;
+    }
+
     fn observe_actual(
         &mut self,
         _interface: u8,
@@ -55,6 +61,7 @@ impl super::egress::DatapathEgressPolicyOwner for RecordingEgressPolicy {
         )
             -> Option<super::egress::DatapathHtEgressSnapshot>,
     ) -> bool {
+        self.observation_calls += 1;
         true
     }
 }
@@ -74,6 +81,67 @@ impl EgressRadioControlOwner for SilentEgressRadio {
 
     fn wait_or<F: Future<Output = ()>>(&self, payload: F) -> impl Future<Output = ()> {
         payload
+    }
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+struct EgressBoundaryBackend {
+    irq: &'static EmbassyMacIrqRuntime<NoopRawMutex>,
+    publish_transaction: bool,
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for EgressBoundaryBackend
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn DatapathNetworkRxSet,
+        _context: DatapathRxServiceContext,
+    ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        frame: PinnedNetworkTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        network: &'a PinnedTxInterfaceConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
+        if self.publish_transaction {
+            self.irq.publish(EVENT_TX_COMPLETE);
+            ready(Ok(DatapathTxStart::new(WifiTxProgress::Pending)
+                .with_egress_metadata(network.metadata(&frame))))
+        } else {
+            ready(Ok(WifiTxProgress::Complete.into()))
+        }
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        ready(Ok(WifiTxProgress::Complete))
     }
 }
 
@@ -142,9 +210,48 @@ fn mutable_network_reference_forwards_physical_egress_policy() {
 
     let mut borrowed = &mut controlled;
     assert!(prepare_recommendation_through_network(&mut borrowed));
+    borrowed.cancel_egress_recommendation();
 
     let (_, _, policy) = controlled.into_parts();
     assert_eq!(policy.recommendation_calls, 1);
+    assert_eq!(policy.cancellation_calls, 1);
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+fn run_egress_boundary_case(publish_transaction: bool) -> RecordingEgressPolicy {
+    let resources = Box::leak(Box::new(Resources::new()));
+    let pool = Pool::pin_static(Box::leak(Box::new(Pool::new())));
+    let (mut device, network) = split_network!(resources, pool);
+    enqueue_frame(&mut device);
+    let network = EgressControlledNetwork::new(network, SilentEgressRadio)
+        .with_policy(RecordingEgressPolicy::default());
+    let irq = Box::leak(Box::new(EmbassyMacIrqRuntime::<NoopRawMutex>::new()));
+    let services = EgressBoundaryBackend {
+        irq,
+        publish_transaction,
+    };
+    let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
+    let mut run = Box::pin(runner.run());
+    let mut context = Context::from_waker(core::task::Waker::noop());
+    assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
+    drop(run);
+    let (network, _endpoints, _services) = runner.into_complete_parts();
+    let (_network, _radio, policy) = network.into_parts();
+    policy
+}
+
+#[cfg(feature = "tx-egress-scheduling")]
+#[test]
+fn egress_shadow_observes_only_a_role_published_transaction() {
+    let published = run_egress_boundary_case(true);
+    assert_eq!(published.recommendation_calls, 1);
+    assert_eq!(published.observation_calls, 1);
+    assert_eq!(published.cancellation_calls, 0);
+
+    let retained_without_publication = run_egress_boundary_case(false);
+    assert_eq!(retained_without_publication.recommendation_calls, 1);
+    assert_eq!(retained_without_publication.observation_calls, 0);
+    assert_eq!(retained_without_publication.cancellation_calls, 1);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -507,9 +614,9 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         self.irq.publish(EVENT_TX_COMPLETE);
-        ready(Ok(WifiTxProgress::Pending))
+        ready(Ok(WifiTxProgress::Pending.into()))
     }
 
     fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
@@ -603,12 +710,12 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
             if self.publish_irq {
                 self.irq.publish(EVENT_TX_COMPLETE | EVENT_RX_SUCCESS);
             }
-            Ok(WifiTxProgress::Pending)
+            Ok(WifiTxProgress::Pending.into())
         }
     }
 
@@ -768,7 +875,7 @@ impl
             TRAILER,
             2,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
             assert_eq!(*frame.tag(), self.interface);
             assert_eq!(network.interface(), self.interface);
@@ -782,7 +889,7 @@ impl
             ordinary.lends.push(self.interface);
             physical_tx.restore(role, ordinary, aggregate).unwrap();
             self.order.lock().unwrap().push(self.interface);
-            Ok(WifiTxProgress::Complete)
+            Ok(WifiTxProgress::Complete.into())
         }
     }
 
@@ -917,7 +1024,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         pending()
     }
 
@@ -973,7 +1080,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         pending()
     }
 
@@ -1028,7 +1135,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         pending()
     }
 
@@ -1105,7 +1212,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         pending()
     }
 
@@ -1162,9 +1269,9 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         self.irq.publish(EVENT_RX_SUCCESS);
-        ready(Ok(WifiTxProgress::Pending))
+        ready(Ok(WifiTxProgress::Pending.into()))
     }
 
     fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
@@ -1229,7 +1336,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         pending()
     }
 
@@ -1281,8 +1388,8 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async { Ok(WifiTxProgress::Pending) }
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
+        async { Ok(WifiTxProgress::Pending.into()) }
     }
 
     fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
@@ -1383,7 +1490,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         pending()
     }
 
@@ -1412,7 +1519,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         self.prepared = false;
         self.order[self.count] = 2;
         self.count += 1;

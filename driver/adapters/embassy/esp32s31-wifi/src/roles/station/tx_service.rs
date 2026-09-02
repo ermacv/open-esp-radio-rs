@@ -13,7 +13,9 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
 };
 
-use crate::datapath::{WifiTxProgress, WifiTxWake, services::DatapathNetworkTxService};
+use crate::datapath::{
+    DatapathTxStart, WifiTxProgress, WifiTxWake, services::DatapathNetworkTxService,
+};
 
 impl<
     'resources,
@@ -51,14 +53,19 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
+            #[cfg(feature = "tx-egress-scheduling")]
+            let metadata = _network.metadata(&frame);
             let progress = Esp32s31SingleMpduTx::start(self, hardware, frame.as_slice())?;
             // Ordinary TX copied the complete Ethernet body into its private
             // pinned slot before publishing DMA, so the network lease is no
             // longer hardware-visible at this boundary.
             drop(frame);
-            Ok(progress)
+            let start = DatapathTxStart::new(progress);
+            #[cfg(feature = "tx-egress-scheduling")]
+            let start = start.with_egress_metadata(metadata);
+            Ok(start)
         }
     }
 

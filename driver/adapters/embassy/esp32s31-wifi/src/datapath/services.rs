@@ -17,7 +17,7 @@ use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 
 use crate::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
-    DatapathRxWorkCounters, DatapathServices, WifiTxProgress, WifiTxWake,
+    DatapathRxWorkCounters, DatapathServices, DatapathTxStart, WifiTxProgress, WifiTxWake,
     network::DatapathNetworkRxSet,
 };
 
@@ -184,7 +184,7 @@ pub trait DatapathNetworkTxService<
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a;
 
     /// Network leases claimed by the most recent successful start.
     fn last_started_frame_count(&self) -> usize {
@@ -248,8 +248,8 @@ pub trait DatapathNetworkTxService<
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
-        Ok(WifiTxProgress::Complete)
+    ) -> Result<DatapathTxStart, Self::Error> {
+        Ok(WifiTxProgress::Complete.into())
     }
 
     /// Release a software-owned standby batch at stop/disconnect.
@@ -546,7 +546,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<DatapathTxStart, Self::Error>> + 'a {
         async move {
             self.role
                 .tx
@@ -629,7 +629,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    ) -> Result<DatapathTxStart, Self::Error> {
         self.role
             .tx
             .start_prepared(&mut self.hardware, network)

@@ -304,9 +304,14 @@ where
         self.account_tx_frames(admitted);
         self.account_pair_tx_frames(interface, admitted);
         let network_tx = self.tx_consumer_for(interface);
+        #[cfg(feature = "tx-egress-scheduling")]
+        let recommendation_prepared = self.prepare_physical_egress_recommendation();
         #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
-        let progress = self.services.start_prepared_tx(&network_tx)?;
+        let start = self.services.start_prepared_tx(&network_tx)?;
+        #[cfg(feature = "tx-egress-scheduling")]
+        self.finish_physical_egress_recommendation(recommendation_prepared, start);
+        let progress = start.progress();
         #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Publish,

@@ -359,6 +359,8 @@ struct PreparedStandby {
     admission: Esp32s31ApAggregateAdmission,
     policy: HtAmpduTxRolePolicy,
     admitted: usize,
+    #[cfg(feature = "tx-egress-scheduling")]
+    egress_metadata: PinnedTxMetadata,
     #[cfg(feature = "tx-phase-telemetry")]
     egress_identity: Option<AssociatedEgressIdentity>,
     #[cfg(feature = "tx-phase-telemetry")]
@@ -1806,7 +1808,7 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Esp32s31AccessPointDatapathError>
+    ) -> Result<DatapathTxStart, Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
@@ -1820,15 +1822,21 @@ where
         let _ = self.stage_dtim_group_release(control)?;
         self.retain_active_frame(control.mac.engine_mut(), network, frame)?;
         if self.prepared_group_release.is_some() {
-            return self.start_prepared_group_release(control, hardware);
+            return self
+                .start_prepared_group_release(control, hardware)
+                .map(DatapathTxStart::new);
         }
         let _ = self.stage_awake_buffered_release(control)?;
         if self.prepared_buffered_release.is_some() {
-            return self.start_prepared_buffered_release(control, hardware);
+            return self
+                .start_prepared_buffered_release(control, hardware)
+                .map(DatapathTxStart::new);
         }
         let Some((flow_key, frame)) = self.pop_scheduled_active(control.mac.engine()) else {
-            return Ok(WifiTxProgress::Complete);
+            return Ok(WifiTxProgress::Complete.into());
         };
+        #[cfg(feature = "tx-egress-scheduling")]
+        let egress_metadata = network.metadata(&frame);
         let admission = control.mac.aggregate_admission(frame.as_slice());
         let mut retained_aggregate_second = None;
 
@@ -1848,7 +1856,10 @@ where
             match control.start_network_amsdu_pair(hardware, frame.as_slice(), second.as_slice()) {
                 Ok(Some(progress)) => {
                     self.last_started_frames = 2;
-                    return Ok(progress);
+                    let start = DatapathTxStart::new(progress);
+                    #[cfg(feature = "tx-egress-scheduling")]
+                    let start = start.with_egress_metadata(egress_metadata);
+                    return Ok(start);
                 }
                 Ok(None) => {
                     if admission.is_some() {
@@ -1882,9 +1893,13 @@ where
                     network,
                 )?
                 else {
-                    return control
+                    let progress = control
                         .start_network_tx(hardware, frame.as_slice())
-                        .map_err(Esp32s31AccessPointDatapathError::Control);
+                        .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                    let start = DatapathTxStart::new(progress);
+                    #[cfg(feature = "tx-egress-scheduling")]
+                    let start = start.with_egress_metadata(egress_metadata);
+                    return Ok(start);
                 };
                 second
             };
@@ -1908,7 +1923,7 @@ where
                 Ok(frame) => frame,
                 Err(frame) => {
                     self.restore_active_pair_front(flow_key, frame, second);
-                    return Ok(WifiTxProgress::Complete);
+                    return Ok(WifiTxProgress::Complete.into());
                 }
             };
             let mut second = match network.try_promote(second) {
@@ -1919,7 +1934,7 @@ where
                         PinnedNetworkTxFrame::Direct(frame),
                         second,
                     );
-                    return Ok(WifiTxProgress::Complete);
+                    return Ok(WifiTxProgress::Complete.into());
                 }
             };
             let first_offset = frame.ethernet_offset();
@@ -2044,12 +2059,19 @@ where
             control.observe_ht_aggregate(policy.rate());
             self.last_started_frames = admitted;
             self.prepare_ready_standby(aggregate, control, network)?;
-            return Ok(WifiTxProgress::Pending);
+            let start = DatapathTxStart::new(WifiTxProgress::Pending);
+            #[cfg(feature = "tx-egress-scheduling")]
+            let start = start.with_egress_metadata(egress_metadata);
+            return Ok(start);
         }
 
-        control
+        let progress = control
             .start_network_tx(hardware, frame.as_slice())
-            .map_err(Esp32s31AccessPointDatapathError::Control)
+            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+        let start = DatapathTxStart::new(progress);
+        #[cfg(feature = "tx-egress-scheduling")]
+        let start = start.with_egress_metadata(egress_metadata);
+        Ok(start)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2512,6 +2534,8 @@ where
             return Ok(true);
         };
         let association = admission.association();
+        #[cfg(feature = "tx-egress-scheduling")]
+        let egress_metadata = network.metadata(&first);
         #[cfg(feature = "tx-phase-telemetry")]
         let egress_identity = self.bind_aggregate_egress_identity(network, &first, first_key);
         {
@@ -2602,6 +2626,8 @@ where
             admission,
             policy,
             admitted: 2,
+            #[cfg(feature = "tx-egress-scheduling")]
+            egress_metadata,
             #[cfg(feature = "tx-phase-telemetry")]
             egress_identity,
             #[cfg(feature = "tx-phase-telemetry")]
@@ -2656,7 +2682,7 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> Result<WifiTxProgress, Esp32s31AccessPointDatapathError>
+    ) -> Result<DatapathTxStart, Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
@@ -2668,10 +2694,14 @@ where
     {
         let _ = self.stage_dtim_group_release(control)?;
         if self.prepared_group_release.is_some() {
-            return self.start_prepared_group_release(control, hardware);
+            return self
+                .start_prepared_group_release(control, hardware)
+                .map(DatapathTxStart::new);
         }
         if self.prepared_buffered_release.is_some() {
-            return self.start_prepared_buffered_release(control, hardware);
+            return self
+                .start_prepared_buffered_release(control, hardware)
+                .map(DatapathTxStart::new);
         }
         self.prepare_ready_standby(aggregate, control, network)?;
         #[cfg(feature = "tx-phase-telemetry")]
@@ -2679,7 +2709,7 @@ where
         let Some(batch) = self.prepared_standby.take() else {
             loop {
                 let Some(frame) = self.prepared_first.take() else {
-                    return Ok(WifiTxProgress::Complete);
+                    return Ok(WifiTxProgress::Complete.into());
                 };
                 let key = self
                     .prepared_first_key
@@ -2700,9 +2730,15 @@ where
                     drop(frame);
                     continue;
                 }
-                return control
+                #[cfg(feature = "tx-egress-scheduling")]
+                let metadata = network.metadata(&frame);
+                let progress = control
                     .start_network_tx(hardware, frame.as_slice())
-                    .map_err(Esp32s31AccessPointDatapathError::Control);
+                    .map_err(Esp32s31AccessPointDatapathError::Control)?;
+                let start = DatapathTxStart::new(progress);
+                #[cfg(feature = "tx-egress-scheduling")]
+                let start = start.with_egress_metadata(metadata);
+                return Ok(start);
             }
         };
         #[cfg(any(feature = "diagnostics", test))]
@@ -2752,7 +2788,10 @@ where
         if self.prepared_standby.is_none() {
             self.clear_shadow_grant();
         }
-        Ok(WifiTxProgress::Pending)
+        let start = DatapathTxStart::new(WifiTxProgress::Pending);
+        #[cfg(feature = "tx-egress-scheduling")]
+        let start = start.with_egress_metadata(batch.egress_metadata);
+        Ok(start)
     }
 
     pub(super) fn cancel_prepared<

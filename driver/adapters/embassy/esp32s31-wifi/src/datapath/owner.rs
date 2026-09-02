@@ -233,41 +233,58 @@ where
         self.try_receive_egress_head_for(interface)
     }
 
-    /// Remove the head of one new radio transaction through the unchanged
-    /// production queue while the new policy observes the decision.
+    /// Remove one immutable producer head.
     ///
-    /// Aggregate continuation frames deliberately bypass this method. The
-    /// shadow control cost is therefore O(transactions), not O(packets), just
-    /// like the intended burst-grant protocol.
+    /// This is not necessarily the physical transaction identity: AP may
+    /// retain the head and select another peer/TID from its role-owned arena.
+    /// Egress observation therefore occurs only after `start_tx` or
+    /// `start_prepared_tx` exposes the transaction actually published.
     pub(super) fn try_receive_egress_head_for(
         &mut self,
         interface: NetworkInterfaceId,
     ) -> Option<
         PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     > {
-        #[cfg(feature = "tx-egress-scheduling")]
-        let recommendation_prepared = {
-            let services = &self.services;
-            let network = &mut self.network;
-            network.prepare_egress_recommendation(&mut |demand| {
-                let snapshot = services.egress_radio_snapshot(demand);
-                super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
-                snapshot
-            })
-        };
-        let frame = self.network.try_receive_tx(interface)?;
-        #[cfg(feature = "tx-egress-scheduling")]
-        if recommendation_prepared {
-            let metadata = self.network.tx_consumer(interface).metadata(&frame);
-            let services = &self.services;
-            let network = &mut self.network;
-            let _ = network.observe_actual_egress(metadata, &mut |demand| {
-                let snapshot = services.egress_radio_snapshot(demand);
-                super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
-                snapshot
-            });
+        self.network.try_receive_tx(interface)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    #[inline(never)]
+    pub(super) fn prepare_physical_egress_recommendation(&mut self) -> bool {
+        let services = &self.services;
+        let network = &mut self.network;
+        network.prepare_egress_recommendation(&mut |demand| {
+            let snapshot = services.egress_radio_snapshot(demand);
+            super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
+            snapshot
+        })
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    #[inline(never)]
+    pub(super) fn finish_physical_egress_recommendation(
+        &mut self,
+        recommendation_prepared: bool,
+        start: DatapathTxStart,
+    ) {
+        if !recommendation_prepared {
+            return;
         }
-        Some(frame)
+        if start.progress() != WifiTxProgress::Pending {
+            self.network.cancel_egress_recommendation();
+            return;
+        }
+        let Some(metadata) = start.egress_metadata() else {
+            self.network.cancel_egress_recommendation();
+            return;
+        };
+        let services = &self.services;
+        let network = &mut self.network;
+        let _ = network.observe_actual_egress(metadata, &mut |demand| {
+            let snapshot = services.egress_radio_snapshot(demand);
+            super::egress::record_ht_egress_snapshot_query(snapshot.is_some());
+            snapshot
+        });
     }
 
     pub(super) fn account_pair_tx_frames(&mut self, interface: NetworkInterfaceId, frames: usize) {

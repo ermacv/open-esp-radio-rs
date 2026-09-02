@@ -273,8 +273,8 @@ pub trait DatapathNetwork<
     /// plane return `false`.
     fn service_egress_control(&mut self) -> bool;
 
-    /// Select one radio-policy recommendation immediately before the
-    /// unchanged production queue chooses its next packet.
+    /// Select one radio-policy recommendation immediately before a role may
+    /// publish its next physical network transaction.
     #[cfg(feature = "tx-egress-scheduling")]
     fn prepare_egress_recommendation(
         &mut self,
@@ -285,8 +285,13 @@ pub trait DatapathNetwork<
         false
     }
 
-    /// Compare the recommendation with immutable metadata of the packet the
-    /// existing production scheduler actually removed from the SRAM queue.
+    /// Cancel one recommendation when no physical network transaction was
+    /// published by the role.
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn cancel_egress_recommendation(&mut self) {}
+
+    /// Compare the recommendation with immutable metadata returned by the
+    /// role for the physical network transaction it actually published.
     #[cfg(feature = "tx-egress-scheduling")]
     fn observe_actual_egress(
         &mut self,
@@ -716,6 +721,11 @@ where
         policy.prepare_recommendation(opportunity_for)
     }
 
+    fn cancel_egress_recommendation(&mut self) {
+        let (_, _, policy) = self.parts_mut();
+        policy.cancel_recommendation();
+    }
+
     fn observe_actual_egress(
         &mut self,
         metadata: PinnedTxMetadata,
@@ -991,6 +1001,11 @@ where
         ) -> Option<DatapathHtEgressSnapshot>,
     ) -> bool {
         N::prepare_egress_recommendation(*self, opportunity_for)
+    }
+
+    #[cfg(feature = "tx-egress-scheduling")]
+    fn cancel_egress_recommendation(&mut self) {
+        N::cancel_egress_recommendation(*self);
     }
 
     #[cfg(feature = "tx-egress-scheduling")]

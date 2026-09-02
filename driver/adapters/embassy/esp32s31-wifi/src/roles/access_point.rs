@@ -15,12 +15,10 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
-#[cfg(feature = "tx-egress-scheduling")]
-use open_esp_radio_embassy_net::DecodedEgressKey;
 #[cfg(feature = "tx-phase-telemetry")]
-use open_esp_radio_embassy_net::{
-    AssociatedEgressIdentity, EgressGrantKey, EgressShadowGrant, PinnedTxMetadata,
-};
+use open_esp_radio_embassy_net::{AssociatedEgressIdentity, EgressGrantKey, EgressShadowGrant};
+#[cfg(feature = "tx-egress-scheduling")]
+use open_esp_radio_embassy_net::{DecodedEgressKey, PinnedTxMetadata};
 use open_esp_radio_embassy_net::{
     FrameLengthError, LinkState, PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer,
     RxEnqueueError,
@@ -109,6 +107,7 @@ pub fn access_point_egress_shadow_grant() -> &'static EgressShadowGrant {
     &AP_EGRESS_SHADOW_GRANT
 }
 
+use crate::datapath::DatapathTxStart;
 #[cfg(any(feature = "diagnostics", test))]
 use crate::datapath::irq::Esp32s31MacInterruptEpochDrain;
 #[cfg(any(feature = "diagnostics", test))]

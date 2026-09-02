@@ -2251,10 +2251,10 @@ pub enum BluetoothDtmSchedulerHardwareHeadRetirementStep<Role> {
 /// The bounded software timeline is retained in the runtime owner, while
 /// scheduler-item hardware publication, remaining hardware initialization and
 /// stable ISR publication are still missing. This state therefore exposes no
-/// PHY, BTBB, IRQ, Controller or Link-Layer readiness. The next consuming
-/// transition may bind a pristine HCI bootstrap epoch, but still establishes no
-/// operational HCI or radio capability. Dropping this state is fail-stop because
-/// no verified rollback exists after scheduler MMIO mutation.
+/// PHY, BTBB, IRQ, Controller or Link-Layer readiness. HCI remains outside the
+/// hardware boot chain until stable interrupt-owner publication completes.
+/// Dropping this state is fail-stop because no verified rollback exists after
+/// scheduler MMIO mutation.
 #[must_use = "the initialized scheduler retains every powered Bluetooth owner"]
 pub struct BluetoothSchedulerInitialized<
     P,

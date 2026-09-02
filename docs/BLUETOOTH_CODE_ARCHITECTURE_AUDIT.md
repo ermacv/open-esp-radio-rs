@@ -77,6 +77,14 @@ returns both affine owners without rollback MMIO. The obsolete pre-hardware
 `initialize_hci` transition and HCI-carrying boot typestates were removed
 without compatibility aliases.
 
+This boundary is currently enforced by the shape of the typestate graph, not
+by a crate dependency edge: pre-publication boot and the post-publication HCI
+bridge still live in the same chip crate. The later hardening step is a small
+pre-publication hardware crate with no `embassy-sync` or portable-HCI
+dependency. CI can then validate its dependency closure from Cargo metadata.
+That is a compiler/manifest boundary and must not be replaced with a regex
+test over type or symbol names.
+
 The target internal hierarchy is:
 
     Embassy actor: wait, wake, select, cancellation

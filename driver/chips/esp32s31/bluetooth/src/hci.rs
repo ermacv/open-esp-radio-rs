@@ -283,7 +283,7 @@ pub struct BluetoothControllerLowPowerHardwareInitialized<
 }
 
 /// Lossless failure to initialize the disjoint modem low-power timer owner.
-#[must_use = "the powered HCI Controller remains owned after a rejected transition"]
+#[must_use = "the powered scheduler remains owned after a rejected transition"]
 pub struct BluetoothControllerLowPowerHardwareInitializationFailure<
     P,
     const MODEM_TIMER_CAPACITY: usize,
@@ -315,9 +315,9 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
 /// All borrowed runtime endpoints from one powered Controller epoch.
 ///
-/// Named fields keep interrupt, task and HCI roles explicit. The mutable task
-/// and combined Controller command endpoint prevent a second split while this
-/// value is alive.
+/// Named fields keep interrupt, task and modem-timer roles explicit. HCI is not
+/// part of this hardware-only split and is joined only after stable interrupt
+/// publication.
 #[must_use = "all runtime endpoints belong to one powered Controller epoch"]
 pub struct BluetoothControllerRuntimeEndpoints<
     'runtime,

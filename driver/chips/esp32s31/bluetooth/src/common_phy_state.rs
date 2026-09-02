@@ -1,6 +1,5 @@
 //! Retained Controller ownership after common PHY initialization.
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_phy::{
     PhyCalibrationCache, PhyRegisterOutcome, RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
 };
@@ -27,7 +26,7 @@ pub struct BluetoothPhyInitializationReport {
 /// Powered Controller after complete target shared-PHY registration.
 ///
 /// Construction is possible only from the state that already retains the
-/// scheduler, HCI resources and completed modem low-power hardware component.
+/// scheduler and completed modem low-power hardware component.
 /// The target-issued registration proof remains coupled to that exact powered
 /// Controller epoch, but the Bluetooth client has not yet been acquired. This
 /// state therefore cannot enter BTBB initialization.
@@ -38,49 +37,18 @@ pub struct BluetoothPhyInitializationReport {
 #[must_use = "registered common PHY state retains every Bluetooth hardware owner"]
 pub struct BluetoothControllerPhyRegistered<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    pub(crate) controller: BluetoothControllerLowPowerHardwareInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    pub(crate) controller:
+        BluetoothControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     pub(crate) phy: RegisteredBluetoothPhy,
     pub(crate) calibration_cache: Option<PhyCalibrationCache>,
     pub(crate) report: BluetoothPhyInitializationReport,
 }
 
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerPhyRegistered<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPhyRegistered<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the value-only registration result without obtaining hardware authority.
     pub const fn report(&self) -> BluetoothPhyInitializationReport {
@@ -108,49 +76,18 @@ where
 #[must_use = "settled Bluetooth PHY client retains every powered Controller owner"]
 pub struct BluetoothControllerPhyInitialized<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    pub(crate) controller: BluetoothControllerLowPowerHardwareInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    pub(crate) controller:
+        BluetoothControllerLowPowerHardwareInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     pub(crate) phy: RegisteredBluetoothPhyClient,
     pub(crate) calibration_cache: Option<PhyCalibrationCache>,
     pub(crate) report: BluetoothPhyInitializationReport,
 }
 
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerPhyInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPhyInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the value-only target registration result.
     pub const fn report(&self) -> BluetoothPhyInitializationReport {

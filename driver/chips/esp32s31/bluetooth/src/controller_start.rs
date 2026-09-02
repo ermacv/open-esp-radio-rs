@@ -61,24 +61,11 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerOutputTimerStarted<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    pub(crate) initialized: BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    pub(crate) initialized:
+        BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     _interrupt_output: BluetoothInterruptOutputPreparedOwner,
     pub(crate) timer: BluetoothModemLpTimerCounterStartedOwner,
 }
@@ -93,24 +80,11 @@ pub struct BluetoothControllerOutputTimerStarted<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnersReady<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    initialized: BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    initialized:
+        BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     _interrupts: BluetoothInterruptRegistersOwner,
     _timer: BluetoothModemLpTimerInterruptReadyOwner,
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
@@ -842,25 +816,12 @@ where
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnersPublished<
     P,
-    M,
     S,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    initialized: BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    initialized:
+        BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     _storage: S,
     post_unlink_mailbox: BluetoothDtmPostUnlinkMailbox,
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
@@ -869,6 +830,78 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
     peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
+}
+
+/// Hardware/task endpoints prepared after stable interrupt-owner publication.
+///
+/// HCI is intentionally absent: protocol resources are bound only after this
+/// hardware ownership graph has reached its final movable state.
+#[must_use = "published hardware endpoints must remain in one live runtime epoch"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothControllerPublishedHardwareRuntimeEndpoints<
+    'runtime,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    pub(crate) interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
+    pub(crate) task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    pub(crate) modem_timer: BluetoothControllerModemTimerTask<'runtime, S, MODEM_TIMER_CAPACITY>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPublishedHardwareRuntimeEndpoints<
+        'runtime,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+    >
+{
+    pub(crate) fn bind_hci<M, const H2C: usize, const C2H: usize, const PC: usize>(
+        self,
+        mut hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<'runtime, M, H2C, C2H, PC>,
+    ) -> BluetoothControllerPublishedRuntimeSplit<
+        'runtime,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        H2C,
+        C2H,
+        PC,
+    >
+    where
+        M: RawMutex,
+    {
+        let Self {
+            interrupt,
+            task,
+            modem_timer,
+        } = self;
+        match hci.controller.claim_initial_command_ready(task) {
+            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::Ready(ready) => {
+                BluetoothControllerPublishedRuntimeSplit::Ready(
+                    BluetoothControllerPublishedRuntimeEndpoints {
+                        interrupt,
+                        task: BluetoothControllerIdleCommandTask::from_ready(ready),
+                        modem_timer,
+                        hci,
+                    },
+                )
+            }
+            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::AlreadyClaimed(task) => {
+                BluetoothControllerPublishedRuntimeSplit::CommandReadyUnavailable(
+                    BluetoothControllerPublishedRuntimeSplitFailure {
+                        _interrupt: interrupt,
+                        _task: task,
+                        _modem_timer: modem_timer,
+                        _hci: hci,
+                    },
+                )
+            }
+        }
+    }
 }
 
 /// Disjoint runtime endpoints borrowed from one statically placed final
@@ -4514,26 +4547,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnerPublicationFailure<
     P,
-    M,
     S,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
 > where
-    M: RawMutex,
     S: BluetoothInterruptOwnerStorage,
 {
-    controller: BluetoothControllerInterruptOwnersReady<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+    controller:
+        BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     storage: S,
     dtm_resources: crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
@@ -4543,26 +4564,8 @@ pub struct BluetoothControllerInterruptOwnerPublicationFailure<
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerOutputTimerStarted<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the BLE PHY input retained by this exact powered epoch.
     pub const fn ble_phy_report(&self) -> crate::BluetoothBlePhyInitializationReport {
@@ -4586,47 +4589,23 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
+impl<P, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerInterruptOwnersPublished<P, S, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 where
-    M: RawMutex,
     S: BluetoothModemLpTimerSoftwareOwnerStorage,
 {
-    /// Borrow the complete final Controller and DTM runtime as disjoint
-    /// interrupt, task and HCI endpoints.
+    /// Borrow the published hardware graph as disjoint interrupt and task endpoints.
     ///
     /// The caller must retain this owner in stable storage for the complete
-    /// routed lifetime. The task endpoint uniquely borrows its embedded DTM
-    /// runtime; no endpoint can cross-wire a graph from another composition.
-    pub fn split_runtime<'runtime>(
+    /// routed lifetime. HCI remains a separate protocol resource until the
+    /// post-publication binding transition.
+    pub(crate) fn split_hardware_runtime<'runtime>(
         &'runtime mut self,
-    ) -> BluetoothControllerPublishedRuntimeSplit<
+    ) -> BluetoothControllerPublishedHardwareRuntimeEndpoints<
         'runtime,
-        M,
         S,
         MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
     > {
         let Self {
             initialized,
@@ -4645,7 +4624,6 @@ where
                 interrupt,
                 task,
                 modem_timer,
-                hci,
             },
             ble_phy_timing,
         ) = initialized.split_runtime();
@@ -4667,28 +4645,10 @@ where
             scheduler_epoch,
         };
         let modem_timer = BluetoothControllerModemTimerTask::new(_storage, modem_timer);
-        let mut hci = hci;
-        match hci.controller.claim_initial_command_ready(task) {
-            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::Ready(ready) => {
-                BluetoothControllerPublishedRuntimeSplit::Ready(
-                    BluetoothControllerPublishedRuntimeEndpoints {
-                        interrupt,
-                        task: BluetoothControllerIdleCommandTask::from_ready(ready),
-                        modem_timer,
-                        hci,
-                    },
-                )
-            }
-            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::AlreadyClaimed(task) => {
-                BluetoothControllerPublishedRuntimeSplit::CommandReadyUnavailable(
-                    BluetoothControllerPublishedRuntimeSplitFailure {
-                        _interrupt: interrupt,
-                        _task: task,
-                        _modem_timer: modem_timer,
-                        _hci: hci,
-                    },
-                )
-            }
+        BluetoothControllerPublishedHardwareRuntimeEndpoints {
+            interrupt,
+            task,
+            modem_timer,
         }
     }
 
@@ -5078,28 +5038,14 @@ impl<S> BluetoothControllerPublishedInterruptService<'_, S> {
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
+impl<P, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerInterruptOwnerPublicationFailure<
         P,
-        M,
         S,
         MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
     >
 where
-    M: RawMutex,
     S: BluetoothInterruptOwnerStorage,
 {
     /// Inspect the exact platform rejection.
@@ -5111,15 +5057,7 @@ where
     pub fn into_parts(
         self,
     ) -> (
-        BluetoothControllerInterruptOwnersReady<
-            P,
-            M,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
         S,
         crate::BluetoothDtmRuntimeResources,
         crate::BluetoothLegacyAdvertisingRuntimeResources,
@@ -5140,26 +5078,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerInterruptOwnersReady<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the BLE PHY input retained by this exact powered epoch.
     pub const fn ble_phy_report(&self) -> crate::BluetoothBlePhyInitializationReport {
@@ -5190,10 +5110,6 @@ where
         clippy::result_large_err,
         reason = "the no-alloc failure must return every affine powered owner"
     )]
-    #[expect(
-        clippy::type_complexity,
-        reason = "the return type preserves the exact Controller and platform-storage states"
-    )]
     pub fn publish_interrupt_owners<S>(
         self,
         storage: S,
@@ -5204,23 +5120,15 @@ where
     ) -> Result<
         BluetoothControllerInterruptOwnersPublished<
             P,
-            M,
             S::Published,
             MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
         >,
         BluetoothControllerInterruptOwnerPublicationFailure<
             P,
-            M,
             S,
             MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
         >,
     >
     where
@@ -5265,26 +5173,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerOutputTimerStarted<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Transfer both disjoint register owners into their pre-route states.
     ///
@@ -5292,15 +5182,7 @@ where
     /// claim stable placement or a live interrupt epoch.
     pub fn stage_interrupt_owners(
         self,
-    ) -> BluetoothControllerInterruptOwnersReady<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         let Self {
             initialized,
             _interrupt_output: interrupt_output,
@@ -5317,31 +5199,13 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Prepare Controller IRQ output and then start the runtime timer once.
     ///
     /// The consuming BLE-PHY state proves that controller HAL, scheduler,
-    /// HCI, low-power hardware, common PHY, BTBB and BLE PHY initialization
+    /// low-power hardware, common PHY, BTBB and BLE PHY initialization
     /// all belong to this epoch. CPU routes remain inaccessible, so the lower
     /// unsafe interrupt prerequisite is discharged here and never exported.
     #[allow(
@@ -5350,15 +5214,7 @@ where
     )]
     pub fn prepare_controller_output_and_start_runtime_timer(
         mut self,
-    ) -> BluetoothControllerOutputTimerStarted<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         let (interrupts, timer) = self.take_activation_owners();
         let (interrupt_output, timer) = prepare_output_then_start_timer(
             interrupts,

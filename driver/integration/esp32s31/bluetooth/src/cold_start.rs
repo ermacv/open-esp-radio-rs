@@ -13,7 +13,7 @@ use open_esp_radio_bluetooth_hci::{
 };
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothBasebandInitializationReport, BluetoothBlePhyInitializationReport,
-    BluetoothClockEnableFailure, BluetoothControllerHciInitializationFailure,
+    BluetoothClockEnableFailure, BluetoothControllerHciBindFailure,
     BluetoothControllerInterruptOwnerPublicationFailure, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerLowPowerHardwareInitializationFailure,
     BluetoothControllerPhyClientAcquireFailure, BluetoothControllerPhyInitializationFailure,
@@ -60,15 +60,16 @@ type HciResources<const H2C: usize, const C2H: usize, const PC: usize> =
 type Slot<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize> =
     Esp32s31BluetoothSystemSlot<Platform, MT, SC, H2C, C2H, PC>;
 
-type HciInitializationFailure<
+type HciBindFailure<
     const MT: usize,
     const SC: usize,
     const H2C: usize,
     const C2H: usize,
     const PC: usize,
-> = BluetoothControllerHciInitializationFailure<
+> = BluetoothControllerHciBindFailure<
     Platform,
     CriticalSectionRawMutex,
+    open_esp_radio_esp32s31_radio_platform_esp_hal::PublishedEspHalBluetoothInterruptOwners,
     MT,
     SC,
     H2C,
@@ -76,94 +77,28 @@ type HciInitializationFailure<
     PC,
 >;
 
-type LowPowerInitializationFailure<
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> = BluetoothControllerLowPowerHardwareInitializationFailure<
-    Platform,
-    CriticalSectionRawMutex,
-    MT,
-    SC,
-    H2C,
-    C2H,
-    PC,
->;
+type LowPowerInitializationFailure<const MT: usize, const SC: usize> =
+    BluetoothControllerLowPowerHardwareInitializationFailure<Platform, MT, SC>;
 
-type PhyInitializationFailure<
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> = BluetoothControllerPhyInitializationFailure<
-    Platform,
-    CriticalSectionRawMutex,
-    MT,
-    SC,
-    H2C,
-    C2H,
-    PC,
->;
+type PhyInitializationFailure<const MT: usize, const SC: usize> =
+    BluetoothControllerPhyInitializationFailure<Platform, MT, SC>;
 
-type PhyClientAcquireFailure<
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> = BluetoothControllerPhyClientAcquireFailure<
-    Platform,
-    CriticalSectionRawMutex,
-    MT,
-    SC,
-    H2C,
-    C2H,
-    PC,
->;
+type PhyClientAcquireFailure<const MT: usize, const SC: usize> =
+    BluetoothControllerPhyClientAcquireFailure<Platform, MT, SC>;
 
-type PhyTrackingFailure<
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> = BluetoothControllerPhyTrackingFailure<Platform, CriticalSectionRawMutex, MT, SC, H2C, C2H, PC>;
+type PhyTrackingFailure<const MT: usize, const SC: usize> =
+    BluetoothControllerPhyTrackingFailure<Platform, MT, SC>;
 
-type InterruptPublicationFailure<
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> = BluetoothControllerInterruptOwnerPublicationFailure<
-    Platform,
-    CriticalSectionRawMutex,
-    EspHalBluetoothInterruptStorage,
-    MT,
-    SC,
-    H2C,
-    C2H,
-    PC,
->;
+type InterruptPublicationFailure<const MT: usize, const SC: usize> =
+    BluetoothControllerInterruptOwnerPublicationFailure<
+        Platform,
+        EspHalBluetoothInterruptStorage,
+        MT,
+        SC,
+    >;
 
-type InterruptOwnersReady<
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> = BluetoothControllerInterruptOwnersReady<
-    Platform,
-    CriticalSectionRawMutex,
-    MT,
-    SC,
-    H2C,
-    C2H,
-    PC,
->;
+type InterruptOwnersReady<const MT: usize, const SC: usize> =
+    BluetoothControllerInterruptOwnersReady<Platform, MT, SC>;
 
 /// Every product input for one production Controller epoch.
 ///
@@ -357,7 +292,7 @@ pub struct Esp32s31BluetoothRecheckStartFailure<
     const PC: usize,
 > {
     error: EmbassyBluetoothDtmRecheckStartError,
-    _controller: InterruptOwnersReady<MT, SC, H2C, C2H, PC>,
+    _controller: InterruptOwnersReady<MT, SC>,
     _dtm: open_esp_radio_esp32s31_bluetooth::BluetoothDtmRuntimeResources,
     _legacy_advertising: BluetoothLegacyAdvertisingRuntimeResources,
     _passive_scan: BluetoothPassiveScanRuntimeResources,
@@ -524,10 +459,10 @@ pub enum Esp32s31BluetoothColdStartError<
             PC,
         >,
     ),
-    /// A supposedly pristine HCI epoch was rejected by the scheduler owner.
+    /// A supposedly pristine HCI epoch was rejected after interrupt publication.
     HciBind(
         Esp32s31BluetoothReservedFailure<
-            Esp32s31BluetoothPoweredFailure<HciInitializationFailure<MT, SC, H2C, C2H, PC>>,
+            HciBindFailure<MT, SC, H2C, C2H, PC>,
             MT,
             SC,
             H2C,
@@ -538,7 +473,7 @@ pub enum Esp32s31BluetoothColdStartError<
     /// The disjoint source-127 hardware owner rejected initialization.
     LowPower(
         Esp32s31BluetoothReservedFailure<
-            Esp32s31BluetoothPoweredFailure<LowPowerInitializationFailure<MT, SC, H2C, C2H, PC>>,
+            Esp32s31BluetoothPoweredFailure<LowPowerInitializationFailure<MT, SC>>,
             MT,
             SC,
             H2C,
@@ -549,7 +484,7 @@ pub enum Esp32s31BluetoothColdStartError<
     /// Common-PHY registration failed after entering the powered epoch.
     PhyInitialization(
         Esp32s31BluetoothReservedFailure<
-            Esp32s31BluetoothPoweredFailure<PhyInitializationFailure<MT, SC, H2C, C2H, PC>>,
+            Esp32s31BluetoothPoweredFailure<PhyInitializationFailure<MT, SC>>,
             MT,
             SC,
             H2C,
@@ -560,7 +495,7 @@ pub enum Esp32s31BluetoothColdStartError<
     /// The registered PHY owner rejected Bluetooth-client acquisition.
     PhyClientAcquire(
         Esp32s31BluetoothReservedFailure<
-            Esp32s31BluetoothPoweredFailure<PhyClientAcquireFailure<MT, SC, H2C, C2H, PC>>,
+            Esp32s31BluetoothPoweredFailure<PhyClientAcquireFailure<MT, SC>>,
             MT,
             SC,
             H2C,
@@ -571,7 +506,7 @@ pub enum Esp32s31BluetoothColdStartError<
     /// Due initial parameter tracking failed and poisoned the powered epoch.
     PhyTracking(
         Esp32s31BluetoothReservedFailure<
-            Esp32s31BluetoothPoweredFailure<PhyTrackingFailure<MT, SC, H2C, C2H, PC>>,
+            Esp32s31BluetoothPoweredFailure<PhyTrackingFailure<MT, SC>>,
             MT,
             SC,
             H2C,
@@ -592,14 +527,7 @@ pub enum Esp32s31BluetoothColdStartError<
     ),
     /// Stable publication of the two interrupt owners was rejected.
     InterruptPublication(
-        Esp32s31BluetoothReservedFailure<
-            InterruptPublicationFailure<MT, SC, H2C, C2H, PC>,
-            MT,
-            SC,
-            H2C,
-            C2H,
-            PC,
-        >,
+        Esp32s31BluetoothReservedFailure<InterruptPublicationFailure<MT, SC>, MT, SC, H2C, C2H, PC>,
     ),
     /// The published owner could not complete its one-time runtime split/bind.
     SystemBuild(Esp32s31BluetoothSystemBuildError<MT, SC, H2C, C2H, PC>),
@@ -823,15 +751,7 @@ pub async fn start_esp32s31_bluetooth<
     let scheduler = clocked
         .initialize_controller_hal()
         .initialize_scheduler(BluetoothControllerRuntimeResources::<MT, SC>::new());
-    let hci = match scheduler.initialize_hci(hci) {
-        Ok(hci) => hci,
-        Err(failure) => {
-            return Err(Esp32s31BluetoothColdStartError::HciBind(reserved_powered(
-                failure, memory, slot,
-            )));
-        }
-    };
-    let low_power = match hci.initialize_modem_lp_timer_hardware() {
+    let low_power = match scheduler.initialize_modem_lp_timer_hardware() {
         Ok(low_power) => low_power,
         Err(failure) => {
             return Err(Esp32s31BluetoothColdStartError::LowPower(reserved_powered(
@@ -937,8 +857,16 @@ pub async fn start_esp32s31_bluetooth<
             ));
         }
     };
+    let bound = match published.bind_hci(hci) {
+        Ok(bound) => bound,
+        Err(failure) => {
+            return Err(Esp32s31BluetoothColdStartError::HciBind(
+                Esp32s31BluetoothReservedFailure::new(failure, slot),
+            ));
+        }
+    };
     let system = slot
-        .compose(published, recheck)
+        .compose(bound, recheck)
         .map_err(Esp32s31BluetoothColdStartError::SystemBuild)?;
 
     Ok(Esp32s31BluetoothColdStartOutput {

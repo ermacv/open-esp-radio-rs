@@ -3,7 +3,7 @@
 use core::mem::MaybeUninit;
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use open_esp_radio_esp32s31_bluetooth::BluetoothControllerInterruptOwnersPublished;
+use open_esp_radio_esp32s31_bluetooth::BluetoothControllerHciBound;
 use open_esp_radio_esp32s31_bluetooth_embassy::{
     EmbassyBluetoothDtmAbsoluteRecheck, EmbassyBluetoothRuntimeWakers,
 };
@@ -24,7 +24,7 @@ pub type Esp32s31BluetoothPublishedController<
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
-> = BluetoothControllerInterruptOwnersPublished<
+> = BluetoothControllerHciBound<
     P,
     CriticalSectionRawMutex,
     PublishedEspHalBluetoothInterruptOwners,

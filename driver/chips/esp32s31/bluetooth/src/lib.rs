@@ -338,10 +338,13 @@ pub use dtm_tx_packet::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES,
     BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothDtmPreparedTxGraph, BluetoothDtmTxGraphPrepare,
 };
+#[cfg(target_arch = "riscv32")]
+pub use hci::{
+    BluetoothControllerHciBindError, BluetoothControllerHciBindFailure, BluetoothControllerHciBound,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use hci::{
-    BluetoothControllerHciInitializationError, BluetoothControllerHciInitializationFailure,
-    BluetoothControllerHciInitialized, BluetoothControllerLowPowerHardwareInitializationFailure,
+    BluetoothControllerLowPowerHardwareInitializationFailure,
     BluetoothControllerLowPowerHardwareInitialized, BluetoothControllerRuntimeEndpoints,
 };
 pub use interrupt::{

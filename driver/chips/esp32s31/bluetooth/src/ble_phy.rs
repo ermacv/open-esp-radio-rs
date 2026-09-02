@@ -1,8 +1,6 @@
 //! Owned BLE PHY engine activation after common PHY and BTBB initialization.
 
 #[cfg(target_arch = "riscv32")]
-use embassy_sync::blocking_mutex::raw::RawMutex;
-#[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyLe1MPacketStartCalibration,
     BluetoothDirectionFindingWorkspaceCpuOwned, BluetoothDirectionFindingWorkspaceLink,
@@ -162,50 +160,19 @@ impl BluetoothBlePhyTimingAuthority {
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerBlePhyEngineInitialized<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    initialized: BluetoothControllerBasebandInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    initialized:
+        BluetoothControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     storage: BluetoothBlePhyEngineCpuOwned,
     direction_finding: BluetoothDirectionFindingWorkspaceHardwareOwned,
     report: BluetoothBlePhyInitializationReport,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Observe completion of the source-owned normal BLE PHY transaction.
     pub const fn report(&self) -> BluetoothBlePhyInitializationReport {
@@ -241,20 +208,12 @@ where
         (interrupts, timer)
     }
 
-    /// Split the already initialized scheduler and HCI resources after this
+    /// Split the already initialized hardware runtime after this
     /// complete BLE-PHY owner has reached stable final placement.
     pub(crate) fn split_runtime(
         &mut self,
     ) -> (
-        crate::BluetoothControllerRuntimeEndpoints<
-            '_,
-            M,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        crate::BluetoothControllerRuntimeEndpoints<'_, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
         BluetoothBlePhyTimingAuthority,
     ) {
         let calibration = self.storage.le_1m_packet_start_calibration();
@@ -266,26 +225,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerBasebandInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Publish the recovered BLE PHY register transaction while consuming and
     /// retaining the complete address-bound allocation graph.
@@ -301,17 +242,10 @@ where
         mut self,
         storage: BluetoothBlePhyEngineCpuOwned,
         direction_finding: BluetoothDirectionFindingWorkspaceCpuOwned,
-    ) -> BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+    {
         let report = apply_register_init(&storage, |inputs| {
-            // SAFETY: `self` retains the powered scheduler/HCI, low-power,
+            // SAFETY: `self` retains the powered scheduler, low-power,
             // common-PHY and BTBB owners. `storage` is a consumed static owner
             // for the complete published allocation graph and is moved into
             // the return state.

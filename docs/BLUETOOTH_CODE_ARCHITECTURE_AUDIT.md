@@ -60,22 +60,22 @@ There are three hierarchy weaknesses:
    intentionally Embassy-only. Waiting policy and task selection must still
    stay in the adapter.
 
-The first weakness has one concrete priority-zero inversion: HCI queue
-resources and their `RawMutex` are currently joined to the controller typestate
-before modem low-power timing, common PHY, baseband and BLE PHY initialization
-finish. Hardware readiness must not depend on a transport or executor mutex.
-The clean cut is a transport-free `BluetoothControllerHardwareReady` owner,
-followed by a separate Controller composition step which joins HCI resources.
-This should be corrected before expanding the HCI command surface.
+The first weakness had one concrete priority-zero inversion: HCI queue
+resources and their `RawMutex` were joined to the controller typestate before
+modem low-power timing, common PHY, baseband and BLE PHY initialization
+finished. This is now corrected. Hardware readiness no longer depends on a
+transport or executor mutex.
 
 The exact safe cut is after interrupt-owner publication and before production
 system composition. Up to `BluetoothControllerInterruptOwnersPublished`, the
 chain should carry only platform, timer, scheduler, PHY and interrupt-storage
-types. A final `BluetoothControllerHciBound` should then join the already
-published hardware owner to `LeControllerHciResources`; only that type and its
-runtime endpoints may carry `RawMutex` and HCI queue capacities. CPU interrupt
-routes are still inactive at this seam, and no HCI endpoint borrow exists, so
-failure can return both affine owners without rollback MMIO.
+types. A final `BluetoothControllerHciBound` now joins the already published
+hardware owner to `LeControllerHciResources`; only that type and its runtime
+endpoints carry `RawMutex` and HCI queue capacities. CPU interrupt routes are
+still inactive at this seam, and no HCI endpoint borrow exists, so failure
+returns both affine owners without rollback MMIO. The obsolete pre-hardware
+`initialize_hci` transition and HCI-carrying boot typestates were removed
+without compatibility aliases.
 
 The target internal hierarchy is:
 
@@ -223,6 +223,15 @@ moved to `InFlight` at RUN and intentionally remains unadvanced after recycle:
 the separate connection-destroy/status policy must be closed before one LL
 completion can be committed.
 
+The connection link-state also contains one hardware-reused timing location.
+Before `RUN`, the memory codec now requires a semantic connection-event span;
+after fenced completion the same private storage is returned as an opaque
+captured-anchor observation. Raw position and encoding remain private to the
+codec. The chip role retains the capture for later PHY/time normalization; it
+is not substituted with an RX-packet timestamp and is not published to the
+portable LL as controller ticks. Recurrence must use the normalized actual
+phase rather than the planned first window or a fresh `now()` sample.
+
 The connection-memory file is also the first codec split: raw SRAM storage,
 offsets, masks, address binding and word transforms live in the private
 `peripheral_connection_memory/codec.rs`; the parent module contains semantic
@@ -243,11 +252,10 @@ monoliths.
 6. Split the portable command-order and memory-codec files after the hardware
    lifecycle is complete.
 
-Before step 5, remove the boot-chain inversion as one atomic refactor:
+The boot-chain inversion is now removed as one atomic refactor:
 `Scheduler -> LowPower -> PHY -> Baseband -> BLE PHY -> interrupt publication`
-must be HCI-free, followed by the single final HCI bind. This is a hierarchy
-repair rather than a new feature and must not leave aliases for the old
-HCI-carrying boot typestates.
+is HCI-free, followed by the single final HCI bind. No aliases remain for the
+old HCI-carrying boot typestates.
 
 Each step must preserve focused host tests, target checks and the source-only
 audit. File moves must not add tests that merely restate generated masks,
@@ -256,7 +264,8 @@ addresses or symbol names.
 ## Driver readiness impact
 
 The refactor does not replace missing functionality. The next functional edge
-is connection completion classification, exactly one accepted LL event advance,
-then provisional skipped-event recurrence and controller-runner integration.
-The split is worthwhile before that work because recurrence would otherwise
-add another copy of the largest duplicated pipeline.
+is normalization of the hardware-captured connection anchor, connection
+completion/destroy classification, exactly one accepted LL event advance, then
+provisional skipped-event recurrence and controller-runner integration. The
+split is worthwhile before that work because recurrence would otherwise add
+another copy of the largest duplicated pipeline.

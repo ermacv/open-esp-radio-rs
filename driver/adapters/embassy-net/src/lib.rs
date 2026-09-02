@@ -65,14 +65,15 @@ pub use egress_control::EgressControlSnapshot;
 pub use egress_control::configure_egress_control_for_diagnostics;
 #[cfg(feature = "tx-egress-scheduling")]
 pub use egress_control::{
-    DEFAULT_EGRESS_CONTROL_DEPTH, DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET,
-    DEFAULT_EGRESS_RADIO_SERVICE_BUDGET, DefaultDualEgressControlledNetwork,
-    DefaultDualEgressRadioOwner, DefaultEgressControlPlane, DefaultEgressControlledNetwork,
-    DefaultEgressNetworkPort, DefaultEgressNetworkScheduler, DefaultEgressNetworkState,
-    DefaultEgressRadioOwner, DefaultEgressRadioPort, DefaultEgressRadioScheduler,
-    DefaultEgressRadioWake, DualEgressRadioOwner, EgressControlPlane, EgressControlledNetwork,
-    EgressNetworkPort, EgressNetworkScheduler, EgressNetworkState, EgressRadioControlOwner,
-    EgressRadioOwner, EgressRadioPort, EgressRadioScheduler, EgressRadioWake,
+    DEFAULT_EGRESS_CONTROL_DEPTH, DEFAULT_EGRESS_GRANT_DEPTH,
+    DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET, DEFAULT_EGRESS_RADIO_SERVICE_BUDGET,
+    DefaultDualEgressControlledNetwork, DefaultDualEgressRadioOwner, DefaultEgressControlPlane,
+    DefaultEgressControlledNetwork, DefaultEgressNetworkPort, DefaultEgressNetworkScheduler,
+    DefaultEgressNetworkState, DefaultEgressRadioOwner, DefaultEgressRadioPort,
+    DefaultEgressRadioScheduler, DefaultEgressRadioWake, DualEgressRadioOwner, EgressBurstGrant,
+    EgressControlPlane, EgressControlledNetwork, EgressGrantProgress, EgressNetworkPort,
+    EgressNetworkScheduler, EgressNetworkState, EgressRadioControlOwner, EgressRadioOwner,
+    EgressRadioPort, EgressRadioScheduler, EgressRadioUpdate, EgressRadioWake,
     EgressSharedRadioWake,
 };
 #[cfg(feature = "tx-phase-telemetry")]

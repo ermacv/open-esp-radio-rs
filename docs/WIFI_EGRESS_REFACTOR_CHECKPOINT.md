@@ -1341,6 +1341,16 @@ Core1-to-Core0 control stream. The host state tests cover sparse grants,
 unrelated demand churn, unused-grant invalidation, epoch reset after start,
 receipt tombstones and post-materialization demand installation.
 
+The adapter now also has the non-authoritative transport primitive required
+by that model. Core0-to-Core1 grants use a two-entry affine SPSC queue per
+logical interface. Core1-to-Core0 demand and `Started`/`Finished` grant
+records share the existing bounded ordered queue rather than racing through
+independent channels. A full grant queue retains the rejected value at Core0;
+when Core1 returns capacity it level-latches a Core0 retry. A grant publication
+wakes the permanent network task after the value is visible. Host tests prove
+the ordered record sequence and the full/return/retry edge. No production
+device consumes these grants yet, and no admission outcome has changed.
+
 - issue one demand-id-bound frame/airtime quantum from Core0 per burst, never
   one request/reply per packet;
 - consume that grant locally in Core1 before final SRAM construction and bind

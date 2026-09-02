@@ -11,12 +11,13 @@
 use core::sync::atomic::AtomicU32;
 use core::{
     future::Future,
+    num::{NonZeroU8, NonZeroU32},
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
 };
 
-use embassy_net_driver::EgressDemandUpdate;
+use embassy_net_driver::{EgressDemand, EgressDemandLevel, EgressDemandUpdate};
 use embassy_sync::{blocking_mutex::raw::RawMutex, signal::Signal, waitqueue::GenericAtomicWaker};
 use open_esp_radio_dma::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
@@ -54,6 +55,10 @@ pub(crate) fn egress_control_enabled() -> bool {
 /// This is a control-plane horizon, not packet storage and not a promise that
 /// every active key owns a DMA credit.
 pub const DEFAULT_EGRESS_CONTROL_DEPTH: usize = 16;
+/// At most one current and one immediately superseding quantum can be in
+/// transit for one logical interface. This is permission metadata, not packet
+/// storage.
+pub const DEFAULT_EGRESS_GRANT_DEPTH: usize = 2;
 /// Maximum lifecycle transitions consumed in one Core0 turn.
 pub const DEFAULT_EGRESS_RADIO_SERVICE_BUDGET: usize = 4;
 /// Maximum lifecycle transitions published in one Core1 callback.
@@ -79,11 +84,82 @@ pub type DefaultEgressNetworkState = EgressNetworkState<DEFAULT_EGRESS_CONTROL_D
 pub type DefaultEgressNetworkScheduler<'resources, M> =
     EgressNetworkScheduler<'resources, 'resources, M, DEFAULT_EGRESS_CONTROL_DEPTH>;
 
+/// Copyable value transported from the physical-radio owner to the network
+/// owner. The serial is affine at the endpoints even though the wire value is
+/// copyable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EgressBurstGrant {
+    serial: NonZeroU32,
+    demand: EgressDemand,
+    frame_credits: NonZeroU8,
+    airtime_hundred_nanoseconds: NonZeroU32,
+}
+
+impl EgressBurstGrant {
+    pub const fn new(
+        serial: NonZeroU32,
+        demand: EgressDemand,
+        frame_credits: NonZeroU8,
+        airtime_hundred_nanoseconds: NonZeroU32,
+    ) -> Self {
+        Self {
+            serial,
+            demand,
+            frame_credits,
+            airtime_hundred_nanoseconds,
+        }
+    }
+
+    pub const fn serial(self) -> NonZeroU32 {
+        self.serial
+    }
+
+    pub const fn demand(self) -> EgressDemand {
+        self.demand
+    }
+
+    pub const fn frame_credits(self) -> NonZeroU8 {
+        self.frame_credits
+    }
+
+    pub const fn airtime_hundred_nanoseconds(self) -> NonZeroU32 {
+        self.airtime_hundred_nanoseconds
+    }
+}
+
+/// Grant lifecycle records sharing the ordered Core1-to-Core0 stream with
+/// ordinary demand transitions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EgressGrantProgress {
+    /// The first final-SRAM packet was materialized. Core0 can now charge the
+    /// complete bounded quantum before that owner becomes physically visible.
+    Started { serial: NonZeroU32 },
+    /// Core1 has stopped spending the quantum. `remaining` is its exact
+    /// post-materialization software-demand snapshot.
+    Finished {
+        serial: NonZeroU32,
+        used_frames: u8,
+        remaining: Option<EgressDemandLevel>,
+    },
+}
+
+/// One ordered Core1-to-Core0 control record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EgressRadioUpdate {
+    Demand(EgressDemandUpdate),
+    Grant(EgressGrantProgress),
+}
+
 #[cfg(feature = "tx-phase-telemetry")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct EgressControlSnapshot {
     pub demand_publications: u32,
     pub demand_full: u32,
+    pub grant_publications: u32,
+    pub grant_full: u32,
+    pub network_grants: u32,
+    pub grant_progress_publications: u32,
+    pub radio_grant_updates: u32,
     pub radio_demand_updates: u32,
     pub radio_demand_rejected: u32,
     pub radio_wakes: u32,
@@ -101,6 +177,17 @@ impl EgressControlSnapshot {
                 .demand_publications
                 .wrapping_sub(earlier.demand_publications),
             demand_full: self.demand_full.wrapping_sub(earlier.demand_full),
+            grant_publications: self
+                .grant_publications
+                .wrapping_sub(earlier.grant_publications),
+            grant_full: self.grant_full.wrapping_sub(earlier.grant_full),
+            network_grants: self.network_grants.wrapping_sub(earlier.network_grants),
+            grant_progress_publications: self
+                .grant_progress_publications
+                .wrapping_sub(earlier.grant_progress_publications),
+            radio_grant_updates: self
+                .radio_grant_updates
+                .wrapping_sub(earlier.radio_grant_updates),
             radio_demand_updates: self
                 .radio_demand_updates
                 .wrapping_sub(earlier.radio_demand_updates),
@@ -128,6 +215,11 @@ impl EgressControlSnapshot {
 struct EgressControlTelemetry {
     demand_publications: AtomicU32,
     demand_full: AtomicU32,
+    grant_publications: AtomicU32,
+    grant_full: AtomicU32,
+    network_grants: AtomicU32,
+    grant_progress_publications: AtomicU32,
+    radio_grant_updates: AtomicU32,
     radio_demand_updates: AtomicU32,
     radio_demand_rejected: AtomicU32,
     radio_wakes: AtomicU32,
@@ -143,6 +235,11 @@ impl EgressControlTelemetry {
         Self {
             demand_publications: AtomicU32::new(0),
             demand_full: AtomicU32::new(0),
+            grant_publications: AtomicU32::new(0),
+            grant_full: AtomicU32::new(0),
+            network_grants: AtomicU32::new(0),
+            grant_progress_publications: AtomicU32::new(0),
+            radio_grant_updates: AtomicU32::new(0),
             radio_demand_updates: AtomicU32::new(0),
             radio_demand_rejected: AtomicU32::new(0),
             radio_wakes: AtomicU32::new(0),
@@ -157,6 +254,11 @@ impl EgressControlTelemetry {
         EgressControlSnapshot {
             demand_publications: self.demand_publications.load(Ordering::Acquire),
             demand_full: self.demand_full.load(Ordering::Acquire),
+            grant_publications: self.grant_publications.load(Ordering::Acquire),
+            grant_full: self.grant_full.load(Ordering::Acquire),
+            network_grants: self.network_grants.load(Ordering::Acquire),
+            grant_progress_publications: self.grant_progress_publications.load(Ordering::Acquire),
+            radio_grant_updates: self.radio_grant_updates.load(Ordering::Acquire),
             radio_demand_updates: self.radio_demand_updates.load(Ordering::Acquire),
             radio_demand_rejected: self.radio_demand_rejected.load(Ordering::Acquire),
             radio_wakes: self.radio_wakes.load(Ordering::Acquire),
@@ -191,11 +293,13 @@ impl<const DEMAND_DEPTH: usize> Default for EgressNetworkState<DEMAND_DEPTH> {
 
 /// Static storage for one lifecycle stream and its cross-core wake state.
 pub struct EgressControlPlane<M: RawMutex, const DEMAND_DEPTH: usize> {
-    demands: AffineSpscQueue<EgressDemandUpdate, DEMAND_DEPTH>,
+    radio_updates: AffineSpscQueue<EgressRadioUpdate, DEMAND_DEPTH>,
+    grants: AffineSpscQueue<EgressBurstGrant, DEFAULT_EGRESS_GRANT_DEPTH>,
     radio_progress: Signal<M, ()>,
     radio_progress_pending: AtomicBool,
     radio_waiting: AtomicBool,
-    demand_send_blocked: AtomicBool,
+    radio_update_send_blocked: AtomicBool,
+    grant_send_blocked: AtomicBool,
     network_progress: GenericAtomicWaker<M>,
     #[cfg(feature = "tx-phase-telemetry")]
     telemetry: EgressControlTelemetry,
@@ -219,11 +323,13 @@ impl<M: RawMutex> Copy for EgressSharedRadioWake<'_, M> {}
 impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressControlPlane<M, DEMAND_DEPTH> {
     pub const fn new() -> Self {
         Self {
-            demands: AffineSpscQueue::new(),
+            radio_updates: AffineSpscQueue::new(),
+            grants: AffineSpscQueue::new(),
             radio_progress: Signal::new(),
             radio_progress_pending: AtomicBool::new(false),
             radio_waiting: AtomicBool::new(false),
-            demand_send_blocked: AtomicBool::new(false),
+            radio_update_send_blocked: AtomicBool::new(false),
+            grant_send_blocked: AtomicBool::new(false),
             network_progress: GenericAtomicWaker::new(M::INIT),
             #[cfg(feature = "tx-phase-telemetry")]
             telemetry: EgressControlTelemetry::new(),
@@ -255,24 +361,29 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressControlPlane<M, DEMAND_DEPTH>
         EgressNetworkPort<'control, M, DEMAND_DEPTH>,
         EgressRadioPort<'control, M, DEMAND_DEPTH>,
     ) {
-        let (demand_tx, demand_rx) = self.demands.split();
+        let (radio_update_tx, radio_update_rx) = self.radio_updates.split();
+        let (grant_tx, grant_rx) = self.grants.split();
         (
             EgressNetworkPort {
-                demand_tx,
+                radio_update_tx,
+                grant_rx,
                 radio_progress: wake.signal,
                 radio_progress_pending: wake.progress,
                 radio_waiting: wake.waiting,
-                demand_send_blocked: &self.demand_send_blocked,
+                radio_update_send_blocked: &self.radio_update_send_blocked,
+                grant_send_blocked: &self.grant_send_blocked,
                 network_progress: &self.network_progress,
                 #[cfg(feature = "tx-phase-telemetry")]
                 telemetry: &self.telemetry,
             },
             EgressRadioPort {
-                demand_rx,
+                radio_update_rx,
+                grant_tx,
                 radio_progress: wake.signal,
                 radio_progress_pending: wake.progress,
                 radio_waiting: wake.waiting,
-                demand_send_blocked: &self.demand_send_blocked,
+                radio_update_send_blocked: &self.radio_update_send_blocked,
+                grant_send_blocked: &self.grant_send_blocked,
                 network_progress: &self.network_progress,
                 #[cfg(feature = "tx-phase-telemetry")]
                 telemetry: &self.telemetry,
@@ -294,11 +405,13 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> Default for EgressControlPlane<M, D
 
 /// Sole Core1 endpoint for lifecycle demand publication.
 pub struct EgressNetworkPort<'control, M: RawMutex, const DEMAND_DEPTH: usize> {
-    demand_tx: AffineSpscSender<'control, EgressDemandUpdate, DEMAND_DEPTH>,
+    radio_update_tx: AffineSpscSender<'control, EgressRadioUpdate, DEMAND_DEPTH>,
+    grant_rx: AffineSpscReceiver<'control, EgressBurstGrant, DEFAULT_EGRESS_GRANT_DEPTH>,
     radio_progress: &'control Signal<M, ()>,
     radio_progress_pending: &'control AtomicBool,
     radio_waiting: &'control AtomicBool,
-    demand_send_blocked: &'control AtomicBool,
+    radio_update_send_blocked: &'control AtomicBool,
+    grant_send_blocked: &'control AtomicBool,
     network_progress: &'control GenericAtomicWaker<M>,
     #[cfg(feature = "tx-phase-telemetry")]
     telemetry: &'control EgressControlTelemetry,
@@ -310,8 +423,12 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressNetworkPort<'_, M, DEMAND_DEP
     }
 
     fn try_send_demand(&mut self, update: EgressDemandUpdate) -> Result<(), EgressDemandUpdate> {
-        if let Err(AffineSpscTrySendError(update)) = self.demand_tx.try_send(update) {
-            self.demand_send_blocked.store(true, Ordering::Release);
+        if let Err(AffineSpscTrySendError(EgressRadioUpdate::Demand(update))) = self
+            .radio_update_tx
+            .try_send(EgressRadioUpdate::Demand(update))
+        {
+            self.radio_update_send_blocked
+                .store(true, Ordering::Release);
             #[cfg(feature = "tx-phase-telemetry")]
             self.telemetry.demand_full.fetch_add(1, Ordering::Relaxed);
             return Err(update);
@@ -322,6 +439,41 @@ impl<M: RawMutex, const DEMAND_DEPTH: usize> EgressNetworkPort<'_, M, DEMAND_DEP
             .fetch_add(1, Ordering::Relaxed);
         self.request_radio_progress();
         Ok(())
+    }
+
+    fn try_send_grant_progress(
+        &mut self,
+        progress: EgressGrantProgress,
+    ) -> Result<(), EgressGrantProgress> {
+        if let Err(AffineSpscTrySendError(EgressRadioUpdate::Grant(progress))) = self
+            .radio_update_tx
+            .try_send(EgressRadioUpdate::Grant(progress))
+        {
+            self.radio_update_send_blocked
+                .store(true, Ordering::Release);
+            return Err(progress);
+        }
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.telemetry
+            .grant_progress_publications
+            .fetch_add(1, Ordering::Relaxed);
+        self.request_radio_progress();
+        Ok(())
+    }
+
+    fn try_receive_grant(&mut self) -> Option<EgressBurstGrant> {
+        let grant = match self.grant_rx.try_receive() {
+            Ok(grant) => grant,
+            Err(AffineSpscTryReceiveError::Empty) => return None,
+        };
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.telemetry
+            .network_grants
+            .fetch_add(1, Ordering::Relaxed);
+        if self.grant_send_blocked.swap(false, Ordering::AcqRel) {
+            self.request_radio_progress();
+        }
+        Some(grant)
     }
 
     fn request_radio_progress(&self) {
@@ -390,15 +542,35 @@ impl<'control, 'state, M: RawMutex, const DEMAND_DEPTH: usize>
     pub(crate) fn egress_demand_flush_pending(&self) -> bool {
         self.state.flush_pending
     }
+
+    /// Observe one radio-issued quantum after registering the permanent
+    /// network task waker. Queue state is the level; a wake is only a prompt
+    /// to inspect it.
+    pub fn try_receive_grant(&mut self, context: &Context<'_>) -> Option<EgressBurstGrant> {
+        self.port.register_network_waker(context);
+        self.port.try_receive_grant()
+    }
+
+    /// Publish one grant lifecycle record into the same ordered stream as
+    /// demand. The future local grant owner must retain and retry a full
+    /// result; this low-level method never drops it.
+    pub fn try_publish_grant_progress(
+        &mut self,
+        progress: EgressGrantProgress,
+    ) -> Result<(), EgressGrantProgress> {
+        self.port.try_send_grant_progress(progress)
+    }
 }
 
 /// Sole Core0 endpoint for demand consumption.
 pub struct EgressRadioPort<'control, M: RawMutex, const DEMAND_DEPTH: usize> {
-    demand_rx: AffineSpscReceiver<'control, EgressDemandUpdate, DEMAND_DEPTH>,
+    radio_update_rx: AffineSpscReceiver<'control, EgressRadioUpdate, DEMAND_DEPTH>,
+    grant_tx: AffineSpscSender<'control, EgressBurstGrant, DEFAULT_EGRESS_GRANT_DEPTH>,
     radio_progress: &'control Signal<M, ()>,
     radio_progress_pending: &'control AtomicBool,
     radio_waiting: &'control AtomicBool,
-    demand_send_blocked: &'control AtomicBool,
+    radio_update_send_blocked: &'control AtomicBool,
+    grant_send_blocked: &'control AtomicBool,
     network_progress: &'control GenericAtomicWaker<M>,
     #[cfg(feature = "tx-phase-telemetry")]
     telemetry: &'control EgressControlTelemetry,
@@ -460,19 +632,30 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize> EgressRadioPort<'control,
         }
     }
 
-    fn try_receive_demand(&mut self) -> Option<EgressDemandUpdate> {
-        let update = match self.demand_rx.try_receive() {
+    fn try_receive_update(&mut self) -> Option<EgressRadioUpdate> {
+        let update = match self.radio_update_rx.try_receive() {
             Ok(update) => update,
             Err(AffineSpscTryReceiveError::Empty) => return None,
         };
-        #[cfg(feature = "tx-phase-telemetry")]
-        self.telemetry
-            .radio_demand_updates
-            .fetch_add(1, Ordering::Relaxed);
-        if self.demand_send_blocked.swap(false, Ordering::AcqRel) {
+        if self.radio_update_send_blocked.swap(false, Ordering::AcqRel) {
             self.network_progress.wake();
         }
         Some(update)
+    }
+
+    pub fn try_send_grant(&mut self, grant: EgressBurstGrant) -> Result<(), EgressBurstGrant> {
+        if let Err(AffineSpscTrySendError(grant)) = self.grant_tx.try_send(grant) {
+            self.grant_send_blocked.store(true, Ordering::Release);
+            #[cfg(feature = "tx-phase-telemetry")]
+            self.telemetry.grant_full.fetch_add(1, Ordering::Relaxed);
+            return Err(grant);
+        }
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.telemetry
+            .grant_publications
+            .fetch_add(1, Ordering::Relaxed);
+        self.network_progress.wake();
+        Ok(())
     }
 
     pub async fn wait_progress(&self) {
@@ -500,20 +683,37 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
         self.port.wake_handle()
     }
 
+    /// Publish one bounded quantum to the sole network-side consumer.
+    pub fn try_issue_grant(&mut self, grant: EgressBurstGrant) -> Result<(), EgressBurstGrant> {
+        self.port.try_send_grant(grant)
+    }
+
     /// Consume one finite shadow demand turn without influencing TX admission.
     pub fn service_shadow(&mut self) -> bool {
-        self.service_shadow_observed(|_| {})
+        self.service_shadow_control_observed(|_| {}, |_| {})
     }
 
     /// Consume one finite turn and expose only transitions accepted by the
     /// radio-side lifecycle mirror.
     pub fn service_shadow_observed(&mut self, mut observe: impl FnMut(EgressDemandUpdate)) -> bool {
+        self.service_shadow_control_observed(&mut observe, |_| {})
+    }
+
+    /// Consume one finite ordered control turn, exposing demand transitions
+    /// only after the lifecycle mirror accepts them and grant progress in the
+    /// exact same Core1 publication order.
+    pub fn service_shadow_control_observed(
+        &mut self,
+        mut observe_demand: impl FnMut(EgressDemandUpdate),
+        mut observe_grant: impl FnMut(EgressGrantProgress),
+    ) -> bool {
         let wake = self.port.wake_handle();
         let _ = wake.progress_signal().try_take();
         if !wake.progress_flag().swap(false, Ordering::AcqRel) {
             return false;
         }
-        let (progressed, revisit) = self.service_shadow_turn(&mut observe);
+        let (progressed, revisit) =
+            self.service_shadow_turn(&mut observe_demand, &mut observe_grant);
         if revisit {
             wake.progress_flag().store(true, Ordering::Release);
         }
@@ -522,7 +722,8 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
 
     fn service_shadow_turn(
         &mut self,
-        observe: &mut impl FnMut(EgressDemandUpdate),
+        observe_demand: &mut impl FnMut(EgressDemandUpdate),
+        observe_grant: &mut impl FnMut(EgressGrantProgress),
     ) -> (bool, bool) {
         #[cfg(feature = "tx-phase-telemetry")]
         self.port
@@ -531,7 +732,7 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
             .fetch_add(1, Ordering::Relaxed);
         let mut progressed = false;
         for _ in 0..DEFAULT_EGRESS_RADIO_SERVICE_BUDGET {
-            let Some(update) = self.port.try_receive_demand() else {
+            let Some(update) = self.port.try_receive_update() else {
                 return (progressed, false);
             };
             if !progressed {
@@ -542,14 +743,31 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
                     .fetch_add(1, Ordering::Relaxed);
             }
             progressed = true;
-            if self.demands.apply(update).is_err() {
-                #[cfg(feature = "tx-phase-telemetry")]
-                self.port
-                    .telemetry
-                    .radio_demand_rejected
-                    .fetch_add(1, Ordering::Relaxed);
-            } else {
-                observe(update);
+            match update {
+                EgressRadioUpdate::Demand(update) => {
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    self.port
+                        .telemetry
+                        .radio_demand_updates
+                        .fetch_add(1, Ordering::Relaxed);
+                    if self.demands.apply(update).is_err() {
+                        #[cfg(feature = "tx-phase-telemetry")]
+                        self.port
+                            .telemetry
+                            .radio_demand_rejected
+                            .fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        observe_demand(update);
+                    }
+                }
+                EgressRadioUpdate::Grant(progress) => {
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    self.port
+                        .telemetry
+                        .radio_grant_updates
+                        .fetch_add(1, Ordering::Relaxed);
+                    observe_grant(progress);
+                }
             }
         }
         (progressed, true)
@@ -712,7 +930,7 @@ impl<'control, M: RawMutex, const DEMAND_DEPTH: usize>
     ) -> (bool, bool) {
         #[cfg(feature = "tx-phase-telemetry")]
         let started = TxPerformanceSample::read();
-        let result = scheduler.service_shadow_turn(&mut |update| observe(vif, update));
+        let result = scheduler.service_shadow_turn(&mut |update| observe(vif, update), &mut |_| {});
         #[cfg(feature = "tx-phase-telemetry")]
         scheduler
             .wake_handle()
@@ -893,7 +1111,7 @@ mod tests {
 
     use core::{
         future::{pending, poll_fn, ready},
-        num::{NonZeroU16, NonZeroU32},
+        num::{NonZeroU8, NonZeroU16, NonZeroU32},
         pin::pin,
         sync::atomic::{AtomicUsize, Ordering},
         task::{Context, Poll, Waker},
@@ -912,6 +1130,15 @@ mod tests {
                 NonZeroU16::new(ready).unwrap(),
                 ready >= 32,
             ),
+        )
+    }
+
+    fn grant(serial: u32, activation: u32) -> EgressBurstGrant {
+        EgressBurstGrant::new(
+            NonZeroU32::new(serial).unwrap(),
+            demand(7, activation, 32),
+            NonZeroU8::new(32).unwrap(),
+            NonZeroU32::new(20_000).unwrap(),
         )
     }
 
@@ -1036,6 +1263,83 @@ mod tests {
         ));
         assert!(matches!(observed[1], EgressDemandUpdate::Active(_)));
         assert_eq!(radio.active_demand_count(), 1);
+    }
+
+    #[test]
+    fn grant_progress_shares_demand_publication_order() {
+        let control = EgressControlPlane::<NoopRawMutex, 8>::new();
+        let (network, radio) = control.split();
+        let mut state = EgressNetworkState::new();
+        let mut network = EgressNetworkScheduler::new(network, &mut state);
+        let mut radio = EgressRadioScheduler::new(radio);
+        let context = Context::from_waker(Waker::noop());
+        let demand = demand(7, 1, 32);
+
+        network
+            .update_egress_demand(&context, EgressDemandUpdate::Reset { schedule_epoch: 7 })
+            .unwrap();
+        network
+            .update_egress_demand(&context, EgressDemandUpdate::Active(demand))
+            .unwrap();
+        assert!(radio.service_shadow());
+
+        let grant = grant(1, 1);
+        radio.try_issue_grant(grant).unwrap();
+        assert_eq!(network.try_receive_grant(&context), Some(grant));
+        let started = EgressGrantProgress::Started {
+            serial: grant.serial(),
+        };
+        let finished = EgressGrantProgress::Finished {
+            serial: grant.serial(),
+            used_frames: 29,
+            remaining: Some(embassy_net_driver::EgressDemandLevel::new(
+                NonZeroU16::new(3).unwrap(),
+                false,
+            )),
+        };
+        network.try_publish_grant_progress(started).unwrap();
+        network.try_publish_grant_progress(finished).unwrap();
+        let mut reports = std::vec::Vec::new();
+        assert!(radio.service_shadow_control_observed(|_| {}, |report| reports.push(report)));
+        assert_eq!(reports, [started, finished]);
+        assert_eq!(radio.active_demand_count(), 1);
+
+        #[cfg(feature = "tx-phase-telemetry")]
+        {
+            let snapshot = control.snapshot();
+            assert_eq!(snapshot.grant_publications, 1);
+            assert_eq!(snapshot.network_grants, 1);
+            assert_eq!(snapshot.grant_progress_publications, 2);
+            assert_eq!(snapshot.radio_grant_updates, 2);
+        }
+    }
+
+    #[test]
+    fn full_grant_transport_rearms_core0_when_core1_returns_capacity() {
+        let control = EgressControlPlane::<NoopRawMutex, 1>::new();
+        let (network, radio) = control.split();
+        let mut state = EgressNetworkState::new();
+        let mut network = EgressNetworkScheduler::new(network, &mut state);
+        let mut radio = EgressRadioScheduler::new(radio);
+        let context = Context::from_waker(Waker::noop());
+        let first = grant(1, 1);
+        let second = grant(2, 2);
+        let third = grant(3, 3);
+
+        radio.try_issue_grant(first).unwrap();
+        radio.try_issue_grant(second).unwrap();
+        assert_eq!(radio.try_issue_grant(third), Err(third));
+        assert!(!control.radio_progress_pending.load(Ordering::Acquire));
+
+        assert_eq!(network.try_receive_grant(&context), Some(first));
+        assert!(control.radio_progress_pending.load(Ordering::Acquire));
+        assert!(radio.try_issue_grant(third).is_ok());
+        #[cfg(feature = "tx-phase-telemetry")]
+        {
+            let snapshot = control.snapshot();
+            assert_eq!(snapshot.grant_full, 1);
+            assert_eq!(snapshot.grant_publications, 3);
+        }
     }
 
     #[derive(Default)]

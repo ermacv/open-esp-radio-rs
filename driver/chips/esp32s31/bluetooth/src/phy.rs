@@ -23,7 +23,7 @@ use crate::{
         BluetoothControllerPhyInitialized, BluetoothControllerPhyRegistered,
         BluetoothPhyInitializationReport,
     },
-    hci::BluetoothControllerLowPowerHardwareInitialized,
+    low_power::BluetoothControllerLowPowerHardwareInitialized,
 };
 
 type Controller<P, const MT: usize, const SC: usize> =

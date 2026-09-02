@@ -4,7 +4,7 @@ use open_esp_radio_esp32s31_phy::{
     PhyCalibrationCache, PhyRegisterOutcome, RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
 };
 
-use crate::hci::BluetoothControllerLowPowerHardwareInitialized;
+use crate::low_power::BluetoothControllerLowPowerHardwareInitialized;
 
 /// Observable, value-only result of the full common-PHY transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

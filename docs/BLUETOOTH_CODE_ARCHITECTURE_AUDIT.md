@@ -85,14 +85,16 @@ dependency. CI can then validate its dependency closure from Cargo metadata.
 That is a compiler/manifest boundary and must not be replaced with a regex
 test over type or symbol names.
 
-The physical crate split is deliberately deferred until three internal cycles
-are removed. `BluetoothControllerInterruptOwnersPublished` still owns role
-runtimes, the neutral powered task type still has operational role impls in the
-mixed scheduler module, and interrupt storage is still defined in the mixed
-controller-start module. The compileable order is therefore: split
-`hci.rs` into low-power and bind layers, isolate scheduler boot/runtime core,
-isolate interrupt publication, move role-resource attachment after hardware
-publication, and only then create the dependency-enforced hardware crate.
+The physical crate split is deliberately deferred until the remaining internal
+cycles are removed. Hardware-only modem low-power ownership now lives in
+`low_power.rs`; it has no HCI or executor-mutex dependency. `hci.rs` contains
+only the post-publication bind. `BluetoothControllerInterruptOwnersPublished`
+still owns role runtimes, the neutral powered task type still has operational
+role impls in the mixed scheduler module, and interrupt storage is still
+defined in the mixed controller-start module. The compileable order is
+therefore: isolate scheduler boot/runtime core, isolate interrupt publication,
+move role-resource attachment after hardware publication, and only then create
+the dependency-enforced hardware crate.
 
 The target internal hierarchy is:
 
@@ -262,7 +264,8 @@ monoliths.
 1. Extract operational scheduler service from controller_start.rs (done in
    the audit change).
 2. Split scheduler.rs by role and isolate the exclusive-list epoch
-   (in progress: connection states and transitions are isolated).
+   (in progress: connection states and transitions are isolated; DTM is being
+   extracted from the common scheduler facade).
 3. Generalize and rename the post-unlink mailbox without legacy aliases.
 4. Finish connection recycle and recurrence against those shared primitives
    (SRAM/RX plus scheduler release done; status/destroy classification, LL
@@ -271,10 +274,10 @@ monoliths.
 6. Split the portable command-order after the hardware lifecycle is complete;
    the DTM memory codec split is done.
 
-The boot-chain inversion is now removed as one atomic refactor:
+The boot-chain inversion is now removed and reflected in physical modules:
 `Scheduler -> LowPower -> PHY -> Baseband -> BLE PHY -> interrupt publication`
-is HCI-free, followed by the single final HCI bind. No aliases remain for the
-old HCI-carrying boot typestates.
+is HCI-free in `low_power.rs`, followed by the single final bind in `hci.rs`.
+No aliases remain for the old HCI-carrying boot typestates.
 
 Each step must preserve focused host tests, target checks and the source-only
 audit. File moves must not add tests that merely restate generated masks,

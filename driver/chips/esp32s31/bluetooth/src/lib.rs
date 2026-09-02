@@ -121,6 +121,8 @@ mod legacy_advertising_recurring;
 mod legacy_advertising_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod legacy_advertising_timing;
+#[cfg(any(target_arch = "riscv32", test))]
+mod low_power;
 mod modem_lp_timer_queue;
 mod nrt_interrupt;
 mod passive_scanning;
@@ -343,11 +345,6 @@ pub use dtm_tx_packet::{
 pub use hci::{
     BluetoothControllerHciBindError, BluetoothControllerHciBindFailure, BluetoothControllerHciBound,
 };
-#[cfg(any(target_arch = "riscv32", test))]
-pub use hci::{
-    BluetoothControllerLowPowerHardwareInitializationFailure,
-    BluetoothControllerLowPowerHardwareInitialized, BluetoothControllerRuntimeEndpoints,
-};
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,
     BluetoothInterruptHandlerResidency,
@@ -437,6 +434,11 @@ pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingEventWindow;
 pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingRecurringTimingObservation;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingTimingObservation;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use low_power::{
+    BluetoothControllerLowPowerHardwareInitializationFailure,
+    BluetoothControllerLowPowerHardwareInitialized, BluetoothControllerRuntimeEndpoints,
+};
 pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
     BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,

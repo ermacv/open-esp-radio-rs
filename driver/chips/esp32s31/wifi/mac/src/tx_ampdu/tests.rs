@@ -1107,6 +1107,83 @@ fn ht_ampdu_length_is_bounded_and_removes_only_the_tail_trailer() {
 }
 
 #[test]
+fn repeated_ht_prefix_closed_form_matches_incremental_accounting_at_boundaries() {
+    fn incremental_prefix(
+        requested: u8,
+        maximum_bytes: u16,
+        payload_word: u32,
+        empty_delimiters: u8,
+        hardware_he_control: bool,
+    ) -> Option<HtAmpduLength> {
+        let mut length = HtAmpduLengthAccumulator::new(requested, maximum_bytes).ok()?;
+        let mut admitted = false;
+        for _ in 0..requested {
+            if length
+                .push_with_hardware_he_control(payload_word, empty_delimiters, hardware_he_control)
+                .is_err()
+            {
+                break;
+            }
+            admitted = true;
+        }
+        admitted.then(|| length.finish().unwrap())
+    }
+
+    for payload_word in [1, 2, 3, 4, 5, 100, 1_500, 1_554, 0xffff_3fff] {
+        for empty_delimiters in [0, 1, 7, u8::MAX] {
+            for hardware_he_control in [false, true] {
+                for requested in 1..=32 {
+                    let mut boundary_source =
+                        HtAmpduLengthAccumulator::new(requested, u16::MAX).unwrap();
+                    let mut ceilings = [1_u16; 97];
+                    let mut ceiling_count = 1;
+                    for _ in 0..requested {
+                        if boundary_source
+                            .push_with_hardware_he_control(
+                                payload_word,
+                                empty_delimiters,
+                                hardware_he_control,
+                            )
+                            .is_err()
+                        {
+                            break;
+                        }
+                        let bytes = boundary_source.finish().unwrap().bytes;
+                        for ceiling in [bytes.saturating_sub(1), bytes, bytes.saturating_add(1)] {
+                            ceilings[ceiling_count] = ceiling;
+                            ceiling_count += 1;
+                        }
+                    }
+
+                    for maximum_bytes in ceilings[..ceiling_count].iter().copied().chain([u16::MAX])
+                    {
+                        let incremental = incremental_prefix(
+                            requested,
+                            maximum_bytes,
+                            payload_word,
+                            empty_delimiters,
+                            hardware_he_control,
+                        );
+                        let closed = HtAmpduLengthAccumulator::largest_repeated_prefix(
+                            requested,
+                            maximum_bytes,
+                            payload_word,
+                            empty_delimiters,
+                            hardware_he_control,
+                        )
+                        .ok();
+                        assert_eq!(
+                            closed, incremental,
+                            "payload_word={payload_word:#x}, empty={empty_delimiters}, he={hardware_he_control}, requested={requested}, max={maximum_bytes}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn basic_ht_assembly_matches_the_s31_hardware_oracle() {
     assert_eq!(
         basic_ht_ampdu_assembly(BasicHtAmpduAssemblyInput {

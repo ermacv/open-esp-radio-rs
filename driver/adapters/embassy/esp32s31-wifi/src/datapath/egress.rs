@@ -156,16 +156,15 @@ pub fn conservative_ht_data_ppdu_opportunity(
         return None;
     }
 
-    let mut length = HtAmpduLengthAccumulator::new(requested, maximum_aggregate_bytes).ok()?;
-    let mut admitted = 0_u8;
-    for _ in 0..requested {
-        if length.push(u32::from(psdu_bytes), 0).is_err() {
-            break;
-        }
-        admitted += 1;
-    }
-    let admitted = NonZeroU8::new(admitted)?;
-    let aggregate = length.finish().ok()?;
+    let aggregate = HtAmpduLengthAccumulator::largest_repeated_prefix(
+        requested,
+        maximum_aggregate_bytes,
+        u32::from(psdu_bytes),
+        0,
+        false,
+    )
+    .ok()?;
+    let admitted = NonZeroU8::new(aggregate.subframes)?;
     let duration = ModeledHtAmpduPpduDuration::from_published_ampdu(rate, aggregate).ok()?;
     Some(WifiEgressOpportunity::new(
         admitted,

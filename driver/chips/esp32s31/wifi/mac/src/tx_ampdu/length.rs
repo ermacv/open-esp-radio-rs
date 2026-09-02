@@ -114,6 +114,58 @@ impl HtAmpduLengthAccumulator {
             subframes: self.count,
         })
     }
+
+    /// Return the largest prefix of identical MPDUs accepted by the supplied
+    /// window and byte ceiling.
+    ///
+    /// A conservative scheduler opportunity models every queued frame with
+    /// the same maximum size. Replaying [`Self::push_with_hardware_he_control`]
+    /// for every prospective subframe makes grant preparation linear in the
+    /// BA window even though the first and following contributions are
+    /// constant. This is the exact closed form of that replay: the final MPDU
+    /// has no alignment or empty-delimiter tail, while every preceding MPDU
+    /// contributes that tail once a successor is present.
+    pub const fn largest_repeated_prefix(
+        max_subframes: u8,
+        max_bytes: u16,
+        payload_word: u32,
+        empty_delimiters: u8,
+        hardware_he_control: bool,
+    ) -> Result<HtAmpduLength, HtAmpduLengthError> {
+        if max_subframes == 0 || max_subframes as usize > TX_AMPDU_SLOT_CAPACITY || max_bytes == 0 {
+            return Err(HtAmpduLengthError::InvalidLimits);
+        }
+        let mpdu_bytes = payload_word & HT_MPDU_LENGTH_MASK;
+        if mpdu_bytes == 0 {
+            return Err(HtAmpduLengthError::ZeroMpduLength);
+        }
+
+        let inserted_bytes = if hardware_he_control {
+            HARDWARE_HE_CONTROL_LENGTH as u32
+        } else {
+            0
+        };
+        let first = 4 + mpdu_bytes + inserted_bytes;
+        if first > max_bytes as u32 {
+            return Err(HtAmpduLengthError::AggregateTooLong(first));
+        }
+        let tail = ((4 - (mpdu_bytes & 3)) & 3) + (empty_delimiters as u32) * 4;
+        let following = first + tail;
+        let additional_capacity = (max_bytes as u32 - first) / following;
+        let window_capacity = (max_subframes - 1) as u32;
+        let additional = if additional_capacity < window_capacity {
+            additional_capacity
+        } else {
+            window_capacity
+        };
+        let subframes = 1 + additional as u8;
+        let bytes = first + additional * following;
+
+        Ok(HtAmpduLength {
+            bytes: bytes as u16,
+            subframes,
+        })
+    }
 }
 
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {

@@ -1,0 +1,22 @@
+schema = 4
+id = "diagnostic-station-access-point-tx-egress-control-disabled-task-residence"
+description = "Fail-closed same-ELF simultaneous STA+AP TX residence control with affine egress disabled at startup"
+repetitions = 3
+image = "diagnostic-task-residence"
+isolation = "reset"
+data_plane = "split-radio-network"
+tx_buffer = "direct-dma-egress-control-disabled-diagnostic"
+tags = ["diagnostic", "wifi", "sta-ap", "udp", "tx", "task-residence", "psram-stack", "egress-control"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "station-access-point"
+timeout_seconds = 30
+duration_seconds = 15
+direction = "tx"
+rate_bps_per_flow = 32500000
+minimum_bps_per_flow = 30000000
+maximum_fairness_skew_percent = 50
+payload_bytes = 1472

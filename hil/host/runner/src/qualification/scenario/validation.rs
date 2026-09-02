@@ -104,6 +104,9 @@ impl Scenario {
                 Workload::Udp {
                     direction: Direction::Tx,
                     ..
+                } | Workload::StationAccessPoint {
+                    direction: Direction::Tx,
+                    ..
                 }
             ))))
         {

@@ -504,6 +504,30 @@ fn ap_egress_control_task_poll_probe_omits_intrusive_control_counters() {
 }
 
 #[test]
+fn paired_egress_control_residence_control_changes_only_the_startup_switch() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let enabled = catalog
+        .get("station-access-point-tx-task-residence")
+        .unwrap();
+    let disabled = catalog
+        .get("diagnostic-station-access-point-tx-egress-control-disabled-task-residence")
+        .unwrap();
+
+    assert_eq!(enabled.image, ImageClass::DiagnosticTaskResidence);
+    assert_eq!(enabled.image, disabled.image);
+    assert_eq!(enabled.workload, disabled.workload);
+    assert_eq!(enabled.link, disabled.link);
+    assert_eq!(enabled.criteria, disabled.criteria);
+    assert_eq!(enabled.evidence, disabled.evidence);
+    assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
+    assert_eq!(
+        disabled.tx_buffer,
+        WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+    );
+}
+
+#[test]
 fn checksum_control_changes_only_the_runtime_checksum_policy() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();

@@ -1,6 +1,7 @@
 schema = 4
 id = "station-access-point-tx-task-residence"
-description = "Production-like Core0 residence with simultaneous STA and AP UDP egress at a 65 Mbit/s aggregate offer"
+description = "Fail-closed Core0 residence gate for stable simultaneous STA and AP UDP egress at a 65 Mbit/s aggregate offer"
+repetitions = 3
 image = "diagnostic-task-residence"
 isolation = "reset"
 data_plane = "split-radio-network"
@@ -15,6 +16,6 @@ timeout_seconds = 30
 duration_seconds = 15
 direction = "tx"
 rate_bps_per_flow = 32500000
-minimum_bps_per_flow = 5000000
+minimum_bps_per_flow = 30000000
 maximum_fairness_skew_percent = 50
 payload_bytes = 1472

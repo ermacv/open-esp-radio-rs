@@ -179,12 +179,24 @@ epoch. It does not reproduce the vendor allocator or make the workspace
 connection-private. A distinct memory-layer transition now consumes the
 resulting opaque environment link, privately installs the `workspace + 8`
 configuration endpoint and adjacent disabled-CTE policy, and returns a new
-affine graph state. Cancellation removes that unpublished link before
-recovering the prior first-event owner. The exact first-event task admission
-and publication edge remains before one complete runnable contract. In
-particular, the descriptor uses the common scheduler's resolved window rather
-than the requested window: overlap insertion is allowed to displace the
-initial candidate.
+affine graph state. The task-side transition first reserves the requested
+window in the common timeline, obtains the separate sequence-deadline
+observation, and only then writes the overlap-resolved window into the private
+descriptor. Cancellation at either CPU-owned frontier restores the timeline,
+graph and protocol event. In particular, the descriptor uses the common
+scheduler's resolved window rather than the requested window: overlap
+insertion is allowed to displace the initial candidate.
+
+Exact correspondence also identifies the current allocation suffix with the
+named same-chip `ble_lll_conn_slave_new`. The connection link state's selected
+scheduler head is the item at the private free-list head. Allocation reads that
+item's compressed predecessor, advances the private head to the predecessor,
+detaches the selected item and passes only that item to the common scheduler;
+it does not publish the complete two-item private chain. The memory codec now
+models that transition explicitly. The task service can join the detached
+item to its exclusive empty common list, and a failed join or pre-publication
+cancellation restores both the selected item's predecessor and the original
+private head. No compressed pointer or list word leaves the memory crate.
 
 These dependencies explain why Access Address plus CRCInit is not a runnable
 event image. The Rust owner now also attaches a separate statically allocated
@@ -193,8 +205,9 @@ selector-two class rather than a connection-private vendor allocation, so a
 future response-capable advertiser can transfer the exact affine owner after
 accepting `CONNECT_IND`. Pre-publication cancellation clears the link-state RX
 endpoints and recovers both the pristine connection allocation and the intact
-pool. The resulting graph still has no scheduler publication or `RUN`
-transition.
+pool. The resulting graph reaches a reversible common-list merge, but still
+has no PAC/HAL scheduler `HEAD`, RX selector-two publication, `RUN` or
+completion transition.
 
 The same exact correspondence identifies
 `r_sym_ble_1KGaCqPI03xSu9c6Rh0G` as `ble_lll_conn_update_link_state`. Together
@@ -214,24 +227,25 @@ portable Link Layer.
 
 ## Next closure order
 
-Packet timestamp conversion, the causal absolute first-window contract and the
-reviewed channel/interval/power/priority/window descriptor subset are closed.
-The retained scheduler epoch projects the window into a validated raw
-Controller interval and converts the negotiated interval independently as a
-duration, avoiding subtraction of two truncated absolute projections. This is
-still a CPU-only candidate; it is not yet composed into task-side admission.
-The shortest remaining path to one real peripheral event is:
+Packet timestamp conversion, the causal absolute first-window contract, the
+reviewed channel/interval/power/priority/window descriptor subset and
+task-side common-timeline admission are closed. The retained scheduler epoch
+projects the window into a validated raw Controller interval and converts the
+negotiated interval independently as a duration, avoiding subtraction of two
+truncated absolute projections. The selected private scheduler item is now
+detached and reversibly merged into the exclusive common list. The shortest
+remaining path to one real peripheral event is:
 
 1. attach the now-static shared RX pool and selector-two RX publication to the
    response-capable connectable-advertising graph, then transfer the pool and
    accepted packet to the existing task-service normalizer;
-2. install the already-owned CTE-disabled global-workspace link through the
-   private connection memory codec;
-3. consume the complete raw reservation through common task-side admission and
-   only then lower the resolved window into the descriptor;
-4. join the complete graph to publication, completion and post-unlink owners;
-5. add SN/NESN, retransmission and supervision before exposing ACL success;
-6. add only the mandatory LL control procedures needed by the supported HCI
+2. publish the accepted pool through the selector-two PAC/HAL accessor and
+   publish the already-merged item through the common `HEAD`/interrupt/`RUN`
+   sequence;
+3. extend the existing completion and post-unlink ownership pipeline to the
+   connection item and return the detached item to its private free list;
+4. add SN/NESN, retransmission and supervision before exposing ACL success;
+5. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
 The completion and next-anchor functions remain important evidence roots, but

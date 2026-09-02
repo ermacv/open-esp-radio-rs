@@ -13,6 +13,12 @@ use crate::legacy_advertising::{
     BluetoothLegacyAdvertisingRunningEventCompletionObservation,
 };
 #[cfg(any(target_arch = "riscv32", test))]
+use crate::peripheral_connection::{
+    BluetoothPeripheralConnectionFirstEventCandidate,
+    BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
+    BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
+};
+#[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
     BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
     BluetoothSchedulerWindowReservation,
@@ -362,6 +368,113 @@ impl BluetoothPassiveScanEmptySchedulerMergeFailure {
 pub struct BluetoothPassiveScanEmptySchedulerMergePrepared {
     graph: BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+/// Fresh initial-admission sample sealed by the controller-time worker.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh connection admission observation must be consumed or retained"]
+pub(crate) struct BluetoothPeripheralConnectionAdmissionObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// Fresh post-overlap sequence sample sealed by the controller-time worker.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the fresh connection sequence observation must be consumed or retained"]
+pub(crate) struct BluetoothPeripheralConnectionSequenceObservation {
+    pub(crate) sample: BluetoothControllerTimeSample,
+}
+
+/// First connection event after timeline admission and before sequence authorization.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the admitted connection event must pass sequence authorization or be cancelled"]
+pub(crate) struct BluetoothPeripheralConnectionFirstPreSequence {
+    candidate: BluetoothPeripheralConnectionFirstEventCandidate,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerInitialAdmissionResolved>,
+}
+
+/// Why one CPU-owned connection candidate could not complete scheduler preparation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) enum BluetoothPeripheralConnectionFirstEventPreparationError {
+    Timeline(BluetoothSchedulerReservationError),
+    Sequence(BluetoothSchedulerSequenceAuthorizationError),
+    Descriptor,
+}
+
+/// Lossless failure before connection scheduler-list publication.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the unchanged connection candidate must be retried, cancelled, or retained"]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventPreparationFailure {
+    candidate: BluetoothPeripheralConnectionFirstEventCandidate,
+    error: BluetoothPeripheralConnectionFirstEventPreparationError,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionFirstEventPreparationFailure {
+    pub(crate) const fn error(&self) -> BluetoothPeripheralConnectionFirstEventPreparationError {
+        self.error
+    }
+
+    pub(crate) fn into_candidate(self) -> BluetoothPeripheralConnectionFirstEventCandidate {
+        self.candidate
+    }
+}
+
+/// Sequence-authorized connection image paired with its exact timeline slot.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the prepared connection event must be merged, cancelled, or retained"]
+pub(crate) struct BluetoothPeripheralConnectionEventPrepared {
+    event: BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionEventPrepared {
+    pub(crate) const fn requested_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.event.requested_window()
+    }
+
+    pub(crate) const fn resolved_window(&self) -> crate::BluetoothSchedulerRawWindow {
+        self.event.resolved_window()
+    }
+}
+
+/// Lossless rejection while joining one detached connection item to the empty list.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the unchanged connection event remains prepared and CPU-owned"]
+pub(crate) struct BluetoothPeripheralConnectionEmptySchedulerMergeFailure {
+    error: BluetoothSchedulerEmptyListMergeError,
+    prepared: BluetoothPeripheralConnectionEventPrepared,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionEmptySchedulerMergeFailure {
+    pub(crate) const fn error(&self) -> BluetoothSchedulerEmptyListMergeError {
+        self.error
+    }
+
+    pub(crate) fn into_prepared(self) -> BluetoothPeripheralConnectionEventPrepared {
+        self.prepared
+    }
+}
+
+/// Detached connection item joined to the source-owned empty scheduler list.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the connection merge must be published or cancelled"]
+pub(crate) struct BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
+    event: BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_head()
+    }
+
+    pub(crate) const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        BluetoothSchedulerHardwareListIndex::ZERO
+    }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -2614,6 +2727,188 @@ impl<const SCHEDULER_CAPACITY: usize>
         } = admitted;
         self.release_scheduler_reservation(reservation);
         candidate.cancel()
+    }
+
+    /// Admit one causal first-connection window into the common timeline.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure returns the exact affine connection candidate"
+        )
+    )]
+    pub(crate) fn admit_peripheral_connection_first_event(
+        &mut self,
+        candidate: BluetoothPeripheralConnectionFirstEventCandidate,
+        admission: BluetoothPeripheralConnectionAdmissionObservation,
+    ) -> Result<
+        BluetoothPeripheralConnectionFirstPreSequence,
+        BluetoothPeripheralConnectionFirstEventPreparationFailure,
+    > {
+        let requested = candidate.requested_window();
+        let timing_policy =
+            BluetoothSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        match self
+            .runtime
+            .scheduler_timeline_mut()
+            .reserve_initial_window(
+                requested.start(),
+                requested.end(),
+                timing_policy,
+                admission.sample,
+            ) {
+            Ok(reservation) => Ok(BluetoothPeripheralConnectionFirstPreSequence {
+                candidate,
+                reservation,
+            }),
+            Err(error) => Err(BluetoothPeripheralConnectionFirstEventPreparationFailure {
+                candidate,
+                error: BluetoothPeripheralConnectionFirstEventPreparationError::Timeline(error),
+            }),
+        }
+    }
+
+    /// Authorize the second deadline and encode only the resolved connection window.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure returns the exact affine connection candidate"
+        )
+    )]
+    pub(crate) fn prepare_peripheral_connection_first_event(
+        &mut self,
+        admitted: BluetoothPeripheralConnectionFirstPreSequence,
+        sequence: BluetoothPeripheralConnectionSequenceObservation,
+        default_tx_power: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionDefaultTxPowerDbm,
+        direction_finding_workspace: open_esp_radio_esp32s31_bluetooth_memory::BluetoothDirectionFindingWorkspaceLink,
+    ) -> Result<
+        BluetoothPeripheralConnectionEventPrepared,
+        BluetoothPeripheralConnectionFirstEventPreparationFailure,
+    > {
+        let BluetoothPeripheralConnectionFirstPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        let reservation = match reservation.authorize_sequence(sequence.sample) {
+            Ok(reservation) => reservation,
+            Err(failure) => {
+                let error = failure.error();
+                self.release_scheduler_reservation(failure.into_reservation());
+                return Err(BluetoothPeripheralConnectionFirstEventPreparationFailure {
+                    candidate,
+                    error: BluetoothPeripheralConnectionFirstEventPreparationError::Sequence(error),
+                });
+            }
+        };
+        let resolved_window = reservation.window();
+        match candidate.prepare_resolved_event_fields(resolved_window, default_tx_power) {
+            Ok(event) => Ok(BluetoothPeripheralConnectionEventPrepared {
+                event: event.install_direction_finding_workspace(direction_finding_workspace),
+                reservation,
+            }),
+            Err(candidate) => {
+                self.release_scheduler_reservation(reservation);
+                Err(BluetoothPeripheralConnectionFirstEventPreparationFailure {
+                    candidate,
+                    error: BluetoothPeripheralConnectionFirstEventPreparationError::Descriptor,
+                })
+            }
+        }
+    }
+
+    /// Release one unpublished connection event and its exact timeline slot.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel_peripheral_connection_first_event(
+        &mut self,
+        prepared: BluetoothPeripheralConnectionEventPrepared,
+    ) -> (
+        crate::BluetoothPeripheralConnectionRuntimeResources,
+        open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+    ) {
+        let BluetoothPeripheralConnectionEventPrepared { event, reservation } = prepared;
+        self.release_scheduler_reservation(reservation);
+        event.cancel()
+    }
+
+    /// Release an admitted connection candidate before sequence authorization.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel_peripheral_connection_first_pre_sequence(
+        &mut self,
+        admitted: BluetoothPeripheralConnectionFirstPreSequence,
+    ) -> (
+        crate::BluetoothPeripheralConnectionRuntimeResources,
+        open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+    ) {
+        let BluetoothPeripheralConnectionFirstPreSequence {
+            candidate,
+            reservation,
+        } = admitted;
+        self.release_scheduler_reservation(reservation);
+        candidate.cancel()
+    }
+
+    /// Join the selected connection item to this epoch's empty scheduler list.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc failure retains the complete affine connection event"
+        )
+    )]
+    pub(crate) fn prepare_peripheral_connection_empty_list_merge(
+        &mut self,
+        prepared: BluetoothPeripheralConnectionEventPrepared,
+    ) -> Result<
+        BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+        BluetoothPeripheralConnectionEmptySchedulerMergeFailure,
+    > {
+        let BluetoothPeripheralConnectionEventPrepared { event, reservation } = prepared;
+        let event = event.prepare_scheduler_admission();
+        let address = event.scheduler_head();
+        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+            return Err(BluetoothPeripheralConnectionEmptySchedulerMergeFailure {
+                error,
+                prepared: BluetoothPeripheralConnectionEventPrepared {
+                    event: event.cancel(),
+                    reservation,
+                },
+            });
+        }
+        Ok(BluetoothPeripheralConnectionEmptySchedulerMergePrepared { event, reservation })
+    }
+
+    /// Restore an unpublished connection merge through the same scheduler epoch.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc cancellation failure retains the complete affine merge"
+        )
+    )]
+    pub(crate) fn cancel_peripheral_connection_empty_list_merge(
+        &mut self,
+        merged: BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    ) -> Result<
+        BluetoothPeripheralConnectionEventPrepared,
+        BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    > {
+        if !self
+            ._scheduler_list
+            .cancel_first_item(merged.scheduler_item_address())
+        {
+            return Err(merged);
+        }
+        let BluetoothPeripheralConnectionEmptySchedulerMergePrepared { event, reservation } =
+            merged;
+        Ok(BluetoothPeripheralConnectionEventPrepared {
+            event: event.cancel(),
+            reservation,
+        })
     }
 
     /// Join one prepared advertising item to this epoch's empty scheduler list.
@@ -5395,23 +5690,34 @@ mod tests {
             AdvertisingInterval, LegacyAdvertisingData, LegacyNonconnectableAdvertisement,
             LegacyNonconnectableAdvertisingSet, PrimaryAdvertisingChannelMap,
         },
+        connection::{
+            LEGACY_CONNECT_IND_PAYLOAD_BYTES, LEGACY_CONNECT_IND_PDU_BYTES,
+            LeLegacyConnectionRequest, LePeripheralConnection,
+        },
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
-        BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
+        BluetoothDirectionFindingWorkspaceLink, BluetoothDirectionFindingWorkspaceModelAddress,
+        BluetoothDirectionFindingWorkspaceStorage, BluetoothLegacyAdvertisingMemoryGraphCpuOwned,
         BluetoothLegacyAdvertisingMemoryGraphModelAddress,
-        BluetoothLegacyAdvertisingMemoryGraphStorage, BluetoothPassiveScanDefaultTxPowerDbm,
+        BluetoothLegacyAdvertisingMemoryGraphStorage, BluetoothNonScanningRxMemoryModelAddress,
+        BluetoothNonScanningRxMemoryStorage, BluetoothPassiveScanDefaultTxPowerDbm,
         BluetoothPassiveScanMemoryGraphModelAddress, BluetoothPassiveScanMemoryGraphStorage,
         BluetoothPassiveScanPrimaryChannel, BluetoothPassiveScanResetConfig,
         BluetoothPassiveScanSchedulerAllocationConfig,
+        BluetoothPeripheralConnectionDefaultTxPowerDbm,
+        BluetoothPeripheralConnectionMemoryGraphModelAddress,
+        BluetoothPeripheralConnectionMemoryGraphStorage,
     };
     use open_esp_radio_esp32s31_hal::BluetoothControllerLatchedTime;
+    use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use crate::{
         BluetoothClockedResources, BluetoothControllerRuntimeResources,
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmPhy, BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerItemEvent, BluetoothRadioHardware, BluetoothSchedulerInstant,
-        BluetoothStopped, controller_time::BluetoothControllerSchedulerNow,
+        BluetoothDtmSchedulerItemEvent, BluetoothRadioHardware,
+        BluetoothSchedulerHardwareListIndex, BluetoothSchedulerInstant, BluetoothStopped,
+        controller_time::BluetoothControllerSchedulerNow,
     };
 
     fn legacy_advertiser_enabled()
@@ -5464,6 +5770,76 @@ mod tests {
                 .expect("the scanner window is non-empty and forward"),
             BluetoothControllerLatchedTime::from_bits(10_100),
         )
+    }
+
+    fn peripheral_connection_candidate() -> (
+        crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventCandidate,
+        BluetoothDirectionFindingWorkspaceLink,
+    ) {
+        let graph_storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothPeripheralConnectionMemoryGraphStorage::new(),
+        ));
+        let receive_storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothNonScanningRxMemoryStorage::new(),
+        ));
+        let graph_base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(0x2f00_3000)
+            .expect("the model connection graph base is valid");
+        let receive_base = BluetoothNonScanningRxMemoryModelAddress::new(0x2f00_5000)
+            .expect("the model receive-pool base is valid");
+        let runtime = crate::BluetoothPeripheralConnectionRuntimeResources::claim_static_model(
+            graph_storage,
+            graph_base,
+            receive_storage,
+            receive_base,
+        )
+        .expect("the connection graph and receive pool fit controller SRAM");
+        let request = LeLegacyConnectionRequest::decode(&connection_request())
+            .expect("the fixed CONNECT_IND is valid");
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let epoch = BluetoothControllerSchedulerEpoch::new(
+            BluetoothControllerTimeSample::for_validation(300),
+            20_000,
+            scale,
+        );
+        let candidate = runtime
+            .prepare_first_event(
+                LePeripheralConnection::from_request(request),
+                crate::BluetoothLe1MPacketStartTiming::from_scheduler_micros(21_000),
+            )
+            .project_scheduler_window(
+                epoch,
+                crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            )
+            .unwrap_or_else(|_| panic!("the fixed first connection window projects"));
+
+        let workspace_storage = std::boxed::Box::leak(std::boxed::Box::new(
+            BluetoothDirectionFindingWorkspaceStorage::new(),
+        ));
+        let workspace_base = BluetoothDirectionFindingWorkspaceModelAddress::new(0x2f00_7000)
+            .expect("the model direction-finding workspace base is valid");
+        let workspace = BluetoothDirectionFindingWorkspaceStorage::pin_static_model(
+            workspace_storage,
+            workspace_base,
+        )
+        .expect("the direction-finding workspace fits controller SRAM");
+        (candidate, workspace.binding().link())
+    }
+
+    fn connection_request() -> [u8; LEGACY_CONNECT_IND_PDU_BYTES] {
+        let mut pdu = [0; LEGACY_CONNECT_IND_PDU_BYTES];
+        pdu[0] = 0x25;
+        pdu[1] = LEGACY_CONNECT_IND_PAYLOAD_BYTES as u8;
+        pdu[2..8].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        pdu[8..14].copy_from_slice(&[7, 8, 9, 10, 11, 12]);
+        pdu[14..18].copy_from_slice(&0xa1b2_c3d4u32.to_le_bytes());
+        pdu[18..21].copy_from_slice(&[0x33, 0x22, 0x11]);
+        pdu[21] = 2;
+        pdu[22..24].copy_from_slice(&1u16.to_le_bytes());
+        pdu[24..26].copy_from_slice(&24u16.to_le_bytes());
+        pdu[28..30].copy_from_slice(&200u16.to_le_bytes());
+        pdu[30..35].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x1f]);
+        pdu[35] = 5;
+        pdu
     }
 
     #[test]
@@ -5656,6 +6032,235 @@ mod tests {
             )
             .unwrap_or_else(|_| panic!("the first scanner candidate must be admitted"));
         let _graph = task.cancel_passive_scan_first_pre_sequence(admitted);
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
+    }
+
+    #[test]
+    fn connection_pre_sequence_cancellation_releases_the_timeline() {
+        struct ConnectionPlatform;
+
+        let stopped = BluetoothStopped::from_hardware(
+            ConnectionPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let (candidate, _) = peripheral_connection_candidate();
+        let admission_sample = candidate.requested_window().start().wrapping_sub(1_000);
+        let admitted = task
+            .admit_peripheral_connection_first_event(
+                candidate,
+                super::BluetoothPeripheralConnectionAdmissionObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(admission_sample),
+                },
+            )
+            .unwrap_or_else(|_| panic!("the first connection window must be admitted"));
+        let (runtime, connection) = task.cancel_peripheral_connection_first_pre_sequence(admitted);
+
+        assert!(runtime.allocation_is_idle());
+        assert_eq!(connection.event_counter(), 0);
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
+    }
+
+    #[test]
+    fn connection_merge_cancellation_restores_private_and_common_lists() {
+        struct ConnectionPlatform;
+
+        let stopped = BluetoothStopped::from_hardware(
+            ConnectionPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let (candidate, workspace) = peripheral_connection_candidate();
+        let requested = candidate.requested_window();
+        let admitted = task
+            .admit_peripheral_connection_first_event(
+                candidate,
+                super::BluetoothPeripheralConnectionAdmissionObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(
+                        requested.start().wrapping_sub(1_000),
+                    ),
+                },
+            )
+            .unwrap_or_else(|_| panic!("the first connection window must be admitted"));
+        let event = task
+            .prepare_peripheral_connection_first_event(
+                admitted,
+                super::BluetoothPeripheralConnectionSequenceObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(
+                        requested.start().wrapping_sub(500),
+                    ),
+                },
+                BluetoothPeripheralConnectionDefaultTxPowerDbm::new(0),
+                workspace,
+            )
+            .unwrap_or_else(|_| panic!("the second connection deadline must remain open"));
+        assert_eq!(event.requested_window(), requested);
+        assert_eq!(event.resolved_window(), requested);
+
+        let merged = task
+            .prepare_peripheral_connection_empty_list_merge(event)
+            .unwrap_or_else(|_| panic!("the empty common list must accept the connection item"));
+        assert_eq!(
+            merged.hardware_list_index(),
+            BluetoothSchedulerHardwareListIndex::ZERO
+        );
+        let event = task
+            .cancel_peripheral_connection_empty_list_merge(merged)
+            .unwrap_or_else(|_| panic!("the same epoch must restore the connection item"));
+        let merged = task
+            .prepare_peripheral_connection_empty_list_merge(event)
+            .unwrap_or_else(|_| panic!("restoration must reopen both scheduler lists"));
+        let event = task
+            .cancel_peripheral_connection_empty_list_merge(merged)
+            .unwrap_or_else(|_| panic!("the repeated merge must remain reversible"));
+        let (runtime, connection) = task.cancel_peripheral_connection_first_event(event);
+
+        assert!(runtime.allocation_is_idle());
+        assert_eq!(connection.event_counter(), 0);
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
+    }
+
+    #[test]
+    fn connection_admission_failure_returns_the_unchanged_candidate() {
+        struct ConnectionPlatform;
+
+        let stopped = BluetoothStopped::from_hardware(
+            ConnectionPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let (candidate, _) = peripheral_connection_candidate();
+        let requested = candidate.requested_window();
+        let blocker = task
+            .runtime
+            .scheduler_timeline_mut()
+            .reserve_initial_window(
+                requested.start(),
+                requested.end(),
+                super::BluetoothSchedulerTimingPolicy::from_scheduler_config(
+                    task.config,
+                    task.time_scale,
+                ),
+                BluetoothControllerTimeSample::for_validation(
+                    requested.start().wrapping_sub(1_000),
+                ),
+            )
+            .expect("the pristine timeline accepts the blocking window");
+        let failure = match task.admit_peripheral_connection_first_event(
+            candidate,
+            super::BluetoothPeripheralConnectionAdmissionObservation {
+                sample: BluetoothControllerTimeSample::for_validation(
+                    requested.start().wrapping_sub(1_000),
+                ),
+            },
+        ) {
+            Ok(_) => panic!("the occupied timeline must reject the connection window"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            super::BluetoothPeripheralConnectionFirstEventPreparationError::Timeline(
+                super::BluetoothSchedulerReservationError::TimelineFull,
+            )
+        );
+        let (runtime, connection) = failure.into_candidate().cancel();
+        assert!(runtime.allocation_is_idle());
+        assert_eq!(connection.event_counter(), 0);
+        task.release_scheduler_reservation(blocker);
+
+        drop((interrupt, task, modem_timer));
+        assert!(scheduler.runtime_is_pristine());
+    }
+
+    #[test]
+    fn connection_merge_failure_preserves_the_prepared_event() {
+        struct ConnectionPlatform;
+
+        let stopped = BluetoothStopped::from_hardware(
+            ConnectionPlatform,
+            BluetoothRadioHardware::for_validation(),
+        );
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let (interrupt, mut task, modem_timer) = scheduler.split_runtime();
+        let (candidate, workspace) = peripheral_connection_candidate();
+        let requested = candidate.requested_window();
+        let admitted = task
+            .admit_peripheral_connection_first_event(
+                candidate,
+                super::BluetoothPeripheralConnectionAdmissionObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(
+                        requested.start().wrapping_sub(1_000),
+                    ),
+                },
+            )
+            .unwrap_or_else(|_| panic!("the first connection window must be admitted"));
+        let event = task
+            .prepare_peripheral_connection_first_event(
+                admitted,
+                super::BluetoothPeripheralConnectionSequenceObservation {
+                    sample: BluetoothControllerTimeSample::for_validation(
+                        requested.start().wrapping_sub(500),
+                    ),
+                },
+                BluetoothPeripheralConnectionDefaultTxPowerDbm::new(0),
+                workspace,
+            )
+            .unwrap_or_else(|_| panic!("the second connection deadline must remain open"));
+        let occupied =
+            open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(0x2f00_0100)
+                .expect("the occupying item lies in controller SRAM");
+        task._scheduler_list
+            .prepare_first_item(occupied)
+            .expect("the common list starts empty");
+
+        let failure = match task.prepare_peripheral_connection_empty_list_merge(event) {
+            Ok(_) => panic!("the occupied common list must reject the connection item"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothSchedulerEmptyListMergeError::ListNotEmpty
+        );
+        let event = failure.into_prepared();
+        assert!(task._scheduler_list.cancel_first_item(occupied));
+        let (runtime, connection) = task.cancel_peripheral_connection_first_event(event);
+        assert!(runtime.allocation_is_idle());
+        assert_eq!(connection.event_counter(), 0);
+
         drop((interrupt, task, modem_timer));
         assert!(scheduler.runtime_is_pristine());
     }

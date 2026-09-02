@@ -18,6 +18,7 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionIntervalTicks,
     BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
+    BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
     BluetoothPeripheralConnectionReceiveWait, BluetoothPeripheralConnectionSchedulerPriority,
     BluetoothPeripheralConnectionSchedulerWindow,
 };
@@ -582,6 +583,19 @@ impl BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
         self.graph.direction_finding_workspace()
     }
 
+    /// Detach the exact first-event item from its connection-private free list.
+    pub(crate) fn prepare_scheduler_admission(
+        self,
+    ) -> BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared {
+        BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared {
+            graph: self.graph.prepare_scheduler_admission(),
+            event: self.event,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
+        }
+    }
+
     pub(crate) fn cancel(
         self,
     ) -> (
@@ -596,6 +610,44 @@ impl BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
             resolved_window: self.resolved_window,
         }
         .cancel()
+    }
+}
+
+/// DF-linked first event with one item detached for common-list admission.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the detached connection item must be merged or restored"]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-publication transition consumes this owner"
+)]
+pub(crate) struct BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared {
+    graph: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+    event: LePeripheralConnectionEventPrepared,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(
+    dead_code,
+    reason = "the next connection scheduler-publication transition consumes this owner"
+)]
+impl BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared {
+    pub(crate) const fn scheduler_head(
+        &self,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress {
+        self.graph.scheduler_head()
+    }
+
+    pub(crate) fn cancel(self) -> BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
+        BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared {
+            graph: self.graph.cancel(),
+            event: self.event,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
+        }
     }
 }
 

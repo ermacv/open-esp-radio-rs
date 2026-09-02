@@ -159,6 +159,10 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         self.words[LINK_STATE_SCHEDULER_HEAD].get() == head.controller_address().address()
     }
 
+    fn install_scheduler_head(&self, head: BluetoothControllerSramLinkAddress) {
+        self.words[LINK_STATE_SCHEDULER_HEAD].set(head.controller_address().address());
+    }
+
     fn prepare_identity(&self, identity: BluetoothPeripheralConnectionIdentity) {
         self.words[LINK_STATE_CRC_INITIALIZATION]
             .set(u32::from_le_bytes(identity.crc_initialization_word()));
@@ -484,6 +488,24 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
                 == scheduler_context.compressed_image()
             && self.words[SCHEDULER_ITEM_LINK_STATE].get() & SCHEDULER_ITEM_LINK_MASK
                 == link_state.compressed_image()
+    }
+
+    fn detach_hardware_predecessor(&self) {
+        self.words[SCHEDULER_ITEM_NEXT]
+            .set(self.words[SCHEDULER_ITEM_NEXT].get() & !SCHEDULER_ITEM_LINK_MASK);
+    }
+
+    fn restore_hardware_predecessor(&self, predecessor: BluetoothControllerSramLinkAddress) {
+        self.words[SCHEDULER_ITEM_NEXT]
+            .set(SCHEDULER_ITEM_ALLOCATION_PREFIX | predecessor.compressed_image());
+    }
+
+    fn mark_in_flight(&self) {
+        self.words[SCHEDULER_ITEM_STATUS].set(u32::MAX);
+    }
+
+    fn restore_cpu_owned_status(&self) {
+        self.words[SCHEDULER_ITEM_STATUS].set(0);
     }
 
     fn prepare_reviewed_first_event_fields(
@@ -1034,6 +1056,23 @@ impl BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
         self.workspace
     }
 
+    /// Detach the selected event item from the connection-private free chain.
+    ///
+    /// This reproduces only the reviewed allocation ownership transition: the
+    /// private head advances to its predecessor, the selected item becomes a
+    /// detached in-flight candidate and no MMIO is performed.
+    pub fn prepare_scheduler_admission(
+        mut self,
+    ) -> BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
+        let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
+        let predecessor = self.prepared.binding.scheduler_items[selected_index - 1];
+        let graph = self.prepared.storage.as_mut().project();
+        graph.scheduler_items[selected_index].detach_hardware_predecessor();
+        graph.scheduler_items[selected_index].mark_in_flight();
+        graph.link_state.install_scheduler_head(predecessor);
+        BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared { prepared: self }
+    }
+
     /// Remove the unpublished workspace link and recover the prior exact state.
     pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
         self.prepared
@@ -1042,6 +1081,33 @@ impl BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
             .get_ref()
             .link_state
             .remove_direction_finding_workspace();
+        self.prepared
+    }
+}
+
+/// DF-linked event whose selected item is detached from the private free list.
+#[must_use = "the detached connection item must be published or restored"]
+pub struct BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
+    prepared: BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
+    /// Exact selected item that may enter the common scheduler list.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
+        self.prepared.prepared.binding.scheduler_items[selected_index].controller_address()
+    }
+
+    /// Restore the exact private free chain before any MMIO publication.
+    pub fn cancel(mut self) -> BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
+        let selected_index = BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1;
+        let selected = self.prepared.prepared.binding.scheduler_items[selected_index];
+        let predecessor = self.prepared.prepared.binding.scheduler_items[selected_index - 1];
+        let graph = self.prepared.prepared.storage.as_mut().project();
+        graph.scheduler_items[selected_index].restore_hardware_predecessor(predecessor);
+        graph.scheduler_items[selected_index].restore_cpu_owned_status();
+        graph.link_state.install_scheduler_head(selected);
         self.prepared
     }
 }

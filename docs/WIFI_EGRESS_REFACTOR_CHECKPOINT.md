@@ -1836,3 +1836,83 @@ the enabled path. The construction-credit explanation for the historical
 123--124 Mbit/s ceiling loss is therefore rejected for this implementation.
 The production geometry remains 67 slots; the one-credit experiment is kept
 only as replayable evidence, not as shipping SRAM growth.
+
+### Completed-BA critical-path localization
+
+The next checkpoint removed two known linear/duplicated costs without changing
+the scheduling contract. Xarxa commit
+`da6f118c7978a540ca9cb59128c7131c930e7904` keeps the full authoritative key
+and credit validation in `prepare`, but no longer repeats it in release-mode
+`commit` after the same synchronous emission transaction has already been
+accepted. Main commit `92922b5ff777de962d14584ee54ce90d4a3a0852`
+replaces the prospective BA-window replay in the conservative HT opportunity
+model with its exact closed form. An exhaustive boundary test proves equality
+with the incremental accumulator for every supported window, byte boundary,
+empty-delimiter count and hardware HE-Control mode. These changes are retained
+as bounded-work improvements; different-ELF cycle totals are not used as
+causal performance evidence.
+
+The clean production-like same-ELF task-residence pair is enabled run
+`1788353786804-00204a64` and disabled replay
+`1788354104951-00204f1c`. Both use application SHA-256
+`5cd4e1ed48a19a30d119ca61076a64c089471544467c01116565f402d6e48a02`
+and runtime ELF SHA-256
+`a82813712f6c02713faed291098fe2c866ed26b81f1baf6270158516f8671283`.
+The result still misses the throughput gate: enabled/disabled device means are
+118.560/121.010 Mbit/s. Core0 residence improves relative to the previous
+checkpoint, but the control plane still adds approximately 0.73 percentage
+points in this pair. Core1 work was not increased: normalized
+`network + udp_tx` residence is lower in the enabled samples, so the missing
+throughput is not explained by moving radio work onto Core1.
+
+The intrusive exact-image phase pair, enabled run
+`1788354550482-00205851` and disabled replay
+`1788354929966-00207866`, establishes the remaining control granularity. Every
+enabled repetition used one exact 32-frame grant per aggregate, with zero
+unused, rejected, overflow or progress-without-grant records. Across all three
+repetitions the STA control stream costs 8,225 cycles and 702.5 retired
+instructions per grant. The always-polled idle AP half of the dual owner adds
+about 549 cycles and 22 instructions, for approximately 8,774 cycles or 27.4
+microseconds of explicit Core0 control work per BA32 transaction at 320 MHz.
+Disabled mode performs none of this work. The large cycles/instruction change
+against an older ELF is classified as a stall/layout observation, not as an
+algorithmic regression; this counter surrounds progress service and does not
+include the HT opportunity function.
+
+TX-only HIL now optionally records independent target-oriented air timing. It
+keeps the raw bounded PCAPNG, a typed JSON summary and Markdown output. For
+station TX it decodes peer BlockAck cadence and bitmaps without requiring the
+OpenWrt transmitter tap used for downlink correlation. The exact firmware was
+replayed with the new host observer in enabled run
+`1788356017244-0020abb7` and disabled run
+`1788356192108-0020b007`. The route remained Ethernet, laptop managed WLAN was
+down, and OpenWrt remained channel 13/HT40 with one associated station.
+
+| Metric | authoritative enabled | same-ELF disabled | enabled minus disabled |
+| --- | ---: | ---: | ---: |
+| host throughput, mean | 119.320 Mbit/s | 120.418 Mbit/s | -0.91% |
+| device throughput, mean | 119.053 Mbit/s | 120.553 Mbit/s | -1.24% |
+| Core0 radio task residence | 38.833% | 37.851% | +0.982 pp |
+| Core1 `network + udp_tx` residence | 74.610% | 77.529% | -2.919 pp |
+| peer BlockAck interarrival, mean | 3179.89 us | 3157.81 us | +22.08 us |
+| peer BlockAck interarrival, p50 | 3120.00 us | 3079.33 us | +40.67 us |
+
+The observer recorded 11,293 full and four hole BlockAck frames enabled versus
+11,411 full and four hole frames disabled, with no tail BlockAck or backward
+start in either mode. Unique acknowledged MPDUs track the transport totals at
+the capture boundaries. The adapter cannot decode the target's HT40 A-MPDU
+data records, so direct `BlockAck -> next data` pairing remains unavailable;
+the direction-neutral BlockAck cadence and response bitmaps remain valid.
+
+This rejects BA/retry loss, wrong route, wrong channel and average CPU
+saturation as explanations for the current enabled/disabled delta. Source
+order places synchronous progress service and successor-grant preparation
+after terminal BA and before publication of the already prepared standby
+aggregate. The observed +40.7 us median cadence shift is consistent with the
+27.4 us explicit Core0 service, the same-image terminal/publication phase
+delta and the additional Core1 admission bookkeeping. The next architectural
+experiment is therefore to publish the validated standby transaction first,
+then service completed-grant accounting and refill the grant horizon while
+that new radio transaction is in flight. Stop, role-control and RX priority
+checks must remain before publication; sparse/no-standby progress must retain
+the ordinary idle-boundary service path.

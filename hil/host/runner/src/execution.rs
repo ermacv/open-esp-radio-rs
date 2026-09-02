@@ -178,9 +178,16 @@ fn execute_workload_inner(
                         arguments,
                         output,
                         lab,
-                        selected.criteria.exact_delivery,
-                        selected.criteria.require_no_beacon_loss,
-                        selected.image.requires_driver_observation(),
+                        traffic::tx_traffic::EvidencePolicy {
+                            require_exact_delivery: selected.criteria.exact_delivery,
+                            require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
+                            require_driver_observation: selected
+                                .image
+                                .requires_driver_observation(),
+                            capture_independent_laptop_air_monitor: selected
+                                .evidence
+                                .independent_laptop_air_monitor,
+                        },
                     )
                 }
                 Direction::Bidirectional => {

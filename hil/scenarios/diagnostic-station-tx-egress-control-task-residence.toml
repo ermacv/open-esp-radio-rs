@@ -23,3 +23,6 @@ exact_delivery = false
 require_no_beacon_loss = false
 minimum_tx_bps = 90000000
 maximum_idle_channel_utilization_255 = 64
+
+[evidence]
+independent_laptop_air_monitor = true

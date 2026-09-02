@@ -23,6 +23,9 @@ use crate::{
     },
     traffic::host_network::BenchmarkIpv4Route,
     transport::lab_config::{LabConfig, StationFixtureConfig},
+    transport::local_air_monitor::{
+        AirIntervalSummary, LocalAirMonitorCapture, LocalAirMonitorEvidence,
+    },
     transport::local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
     transport::openwrt_fixture::{
         ChannelUtilization, OpenWrtStationLinkEvidence, require_idle_channel_utilization,
@@ -92,6 +95,14 @@ struct ActiveBurst {
     lowest_sequence: u32,
     highest_sequence: u32,
     seen_sequences: HashSet<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct EvidencePolicy {
+    pub(crate) require_exact_delivery: bool,
+    pub(crate) require_no_beacon_loss: bool,
+    pub(crate) require_driver_observation: bool,
+    pub(crate) capture_independent_laptop_air_monitor: bool,
 }
 
 impl ActiveBurst {
@@ -186,9 +197,7 @@ pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
-    require_exact_delivery: bool,
-    require_no_beacon_loss: bool,
-    require_driver_observation: bool,
+    evidence_policy: EvidencePolicy,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
@@ -261,6 +270,19 @@ pub(crate) fn run(
         )?),
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,
     };
+    let independent_air_capture = if evidence_policy.capture_independent_laptop_air_monitor {
+        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+            return Err("independent laptop evidence requires an OpenWrt station fixture".into());
+        };
+        Some(LocalAirMonitorCapture::start(
+            config,
+            options.device,
+            options.duration,
+            output,
+        )?)
+    } else {
+        None
+    };
 
     let session = match capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
@@ -307,6 +329,15 @@ pub(crate) fn run(
     let local_ingress = local_ingress_capture
         .map(LocalLinuxTxCapture::finish)
         .transpose()?;
+    let independent_air = independent_air_capture
+        .map(LocalAirMonitorCapture::finish)
+        .transpose()?;
+    if let Some(evidence) = independent_air.as_ref() {
+        fs::write(
+            output.join("independent-air.json"),
+            serde_json::to_vec_pretty(evidence)?,
+        )?;
+    }
     let openwrt_link = match &lab.station_fixture {
         StationFixtureConfig::OpenWrt(config) => Some(station_link(config, options.device)?),
         StationFixtureConfig::LocalLinux(_) | StationFixtureConfig::External(_) => None,
@@ -314,7 +345,9 @@ pub(crate) fn run(
     if let Some(evidence) = local_ingress.as_ref() {
         write_local_ingress_evidence(output, evidence)?;
     }
-    let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
+    let beacon_loss = evidence_policy
+        .require_no_beacon_loss
+        .then(|| capture.require_no_beacon_loss());
     let log = capture.finish_to(output)?;
     if let Some(result) = beacon_loss {
         result?;
@@ -355,7 +388,7 @@ pub(crate) fn run(
         local_ingress.as_ref(),
         openwrt_link.as_ref(),
     )?;
-    if !require_driver_observation {
+    if !evidence_policy.require_driver_observation {
         if structured.radio.is_some()
             || structured.tx_timing.is_some()
             || structured.rx_delivery.is_some()
@@ -406,6 +439,7 @@ pub(crate) fn run(
                 tx_phases: TxPhaseEvidence::from_log(&log),
                 ap_egress_identity: ApEgressIdentityEvidence::from_log(&log),
                 ap_modeled_airtime: ApModeledAirtimeEvidence::from_log(&log),
+                independent_air: independent_air.as_ref(),
                 failure: throughput_failure.as_deref(),
             },
         )?;
@@ -429,7 +463,8 @@ pub(crate) fn run(
         sample_count: 1,
         ampdu: AmpduEvidence::from_typed(typed_tx, typed_timing),
     };
-    if require_exact_delivery && (missing != 0 || reordered != 0 || duplicates != 0) {
+    if evidence_policy.require_exact_delivery && (missing != 0 || reordered != 0 || duplicates != 0)
+    {
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
         let lowest_sequence = qualified
             .iter()
@@ -516,7 +551,7 @@ pub(crate) fn run(
             )
             .into());
         }
-        if require_exact_delivery
+        if evidence_policy.require_exact_delivery
             && let Some(local) = local_ingress.as_ref()
             && local.udp_packets != evidence.transport.tx_units
         {
@@ -526,7 +561,7 @@ pub(crate) fn run(
             )
             .into());
         }
-        if require_exact_delivery
+        if evidence_policy.require_exact_delivery
             && (evidence.transport.tx_bytes != received_bytes
                 || evidence.transport.tx_units != received_datagrams)
         {
@@ -555,10 +590,11 @@ pub(crate) fn run(
             ampdu: tx.ampdu,
             structured,
             host_receive_buffer_bytes,
-            require_exact_delivery,
+            require_exact_delivery: evidence_policy.require_exact_delivery,
             link_report: &link_report,
             pre_workload_channel_utilization,
             task_polls: task_polls_from_log(&log),
+            independent_air: independent_air.as_ref(),
         },
     )?;
     eprintln!(
@@ -791,6 +827,7 @@ struct TxPerformanceReport<'a> {
     tx_phases: Option<TxPhaseEvidence>,
     ap_egress_identity: Option<ApEgressIdentityEvidence>,
     ap_modeled_airtime: Option<ApModeledAirtimeEvidence>,
+    independent_air: Option<&'a LocalAirMonitorEvidence>,
     failure: Option<&'a str>,
 }
 
@@ -1112,6 +1149,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         tx_phases,
         ap_egress_identity,
         ap_modeled_airtime,
+        independent_air,
         failure,
     } = report;
     let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
@@ -1147,6 +1185,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
     let ap_modeled_airtime_report = ap_modeled_airtime
         .map(ApModeledAirtimeEvidence::markdown)
         .unwrap_or_default();
+    let independent_air_report = tx_air_timing_markdown(independent_air);
     fs::write(
         output.join("report.md"),
         format!(
@@ -1170,6 +1209,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
              {tx_phase_report}\
              {ap_egress_identity_report}\
              {ap_modeled_airtime_report}\
+             {independent_air_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.device,
             bursts.len(),
@@ -1205,6 +1245,59 @@ struct TxReport<'a> {
     link_report: &'a str,
     pre_workload_channel_utilization: Option<ChannelUtilization>,
     task_polls: TaskPollSet,
+    independent_air: Option<&'a LocalAirMonitorEvidence>,
+}
+
+fn air_interval_markdown(label: &str, interval: Option<AirIntervalSummary>) -> String {
+    interval.map_or_else(
+        || format!("- {label}: `unavailable`\n"),
+        |interval| {
+            let average = interval.total_micros as f64 / f64::from(interval.samples.max(1));
+            format!(
+                "- {label}: samples `{}`; average/min/p50/p95/p99/max `{average:.2}` / `{}` / `{}` / `{}` / `{}` / `{}` us\n",
+                interval.samples,
+                interval.minimum_micros,
+                interval.p50_micros,
+                interval.p95_micros,
+                interval.p99_micros,
+                interval.maximum_micros,
+            )
+        },
+    )
+}
+
+fn tx_air_timing_markdown(independent: Option<&LocalAirMonitorEvidence>) -> String {
+    let Some(independent) = independent else {
+        return String::from("## Independent TX air timing\n\nNot collected.\n\n");
+    };
+    let timing = &independent.target_egress;
+    format!(
+        "## Independent TX air timing\n\n\
+         - Capture frames/kernel drops: `{}` / `{}`\n\
+         - Target data records / peer BlockAck records: `{}` / `{}`\n\
+         - Peer BlockAck full/tail/hole/unique MPDUs/backward starts: `{}` / `{}` / `{}` / `{}` / `{}`\n\
+         - Exact target-data/BlockAck pairing available: `{}`\n\
+         {}{}{}\n",
+        independent.captured_frames,
+        independent.kernel_dropped,
+        timing.target_data_frames,
+        timing.peer_block_ack_frames,
+        timing.peer_full_block_ack_frames,
+        timing.peer_tail_block_ack_frames,
+        timing.peer_hole_block_ack_frames,
+        timing.peer_unique_block_acked_mpdus,
+        timing.peer_backward_block_ack_starts,
+        timing.target_data_pairing_available,
+        air_interval_markdown(
+            "Peer BlockAck interarrival",
+            timing.peer_block_ack_interarrival,
+        ),
+        air_interval_markdown("Final target data to BlockAck", timing.data_to_block_ack),
+        air_interval_markdown(
+            "BlockAck to next target data",
+            timing.block_ack_to_next_data,
+        ),
+    )
 }
 
 fn format_channel_utilization(utilization: Option<ChannelUtilization>) -> String {
@@ -1261,6 +1354,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
     let pre_workload_channel_utilization =
         format_channel_utilization(report.pre_workload_channel_utilization);
     let task_poll_report = task_poll_markdown(report.task_polls);
+    let independent_air_report = tx_air_timing_markdown(report.independent_air);
     fs::write(
         output.join("report.md"),
         format!(
@@ -1296,6 +1390,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Sampled publication-to-IRQ flight average/max: `{:.2}` / `{}` us across `{}` samples\n\n\
              - Standby prepared/published/cancelled: `{}` / `{}` / `{}`\n\n\
              {task_poll_report}\
+             {independent_air_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             if report.require_exact_delivery {
                 "exact"

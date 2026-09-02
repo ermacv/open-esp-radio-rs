@@ -233,12 +233,26 @@ impl Scenario {
                 ..
             } | Workload::StationAccessPoint { .. }
         );
+        // A station TX-only workload needs no second transmitter-side tap to
+        // establish its target-oriented cadence. The independent observer can
+        // pair frames whose transmitter is the target with BlockAck responses
+        // addressed to it and directly measure BlockAck-to-next-data gaps.
+        // RX and bidirectional station evidence still require the OpenWrt tap
+        // when they use the observer for downlink delivery correlation.
+        let independent_station_tx_air = matches!(
+            self.workload,
+            Workload::Udp {
+                direction: Direction::Tx,
+                ..
+            }
+        );
         if self.evidence.independent_laptop_air_monitor
             && !self.evidence.openwrt_tx_monitor_rx
             && !independent_ap_air
+            && !independent_station_tx_air
         {
             return Err(format!(
-                "{}: independent laptop air evidence requires either correlated OpenWrt TX-monitor evidence or an OpenWrt-client AP workload",
+                "{}: independent laptop air evidence requires correlated OpenWrt TX-monitor evidence, a station TX-only workload, or an OpenWrt-client AP workload",
                 self.source.display()
             )
             .into());

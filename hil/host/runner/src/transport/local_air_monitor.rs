@@ -56,6 +56,11 @@ pub(crate) struct AirIntervalSummary {
 pub(crate) struct TargetEgressAirTimingEvidence {
     pub(crate) target_data_frames: u32,
     pub(crate) peer_block_ack_frames: u32,
+    pub(crate) peer_full_block_ack_frames: u32,
+    pub(crate) peer_tail_block_ack_frames: u32,
+    pub(crate) peer_hole_block_ack_frames: u32,
+    pub(crate) peer_unique_block_acked_mpdus: u32,
+    pub(crate) peer_backward_block_ack_starts: u32,
     /// Whether the observer decoded enough target data records to pair every
     /// peer BlockAck with a target transmission. Pair-derived intervals stay
     /// absent when this is false; sparse target decoding must not manufacture
@@ -369,6 +374,10 @@ fn parse_target_egress_capture(
             "wlan.fc.type",
             "-e",
             "wlan.fc.subtype",
+            "-e",
+            "wlan.fixed.ssc.sequence",
+            "-e",
+            "wlan.ba.bm",
         ])
         .output()?;
     if !output.status.success() {
@@ -392,14 +401,17 @@ fn target_egress_timing_from_fields(fields: &str) -> TargetEgressAirTimingEviden
     let mut peer_block_ack_interarrival = Vec::new();
     let mut data_to_block_ack = Vec::new();
     let mut block_ack_to_next_data = Vec::new();
+    let mut block_ack = BlockAckTracker::default();
 
     for line in fields.lines() {
-        let mut fields = line.splitn(3, '\t');
+        let mut fields = line.splitn(5, '\t');
         let Some(timestamp) = fields.next().and_then(epoch_micros) else {
             continue;
         };
         let frame_type = fields.next().and_then(parse_tshark_u8);
         let subtype = fields.next().and_then(parse_tshark_u8);
+        let block_ack_start = fields.next().and_then(|value| value.parse::<u16>().ok());
+        let block_ack_bitmap = fields.next().and_then(decode_block_ack_bitmap);
         match (frame_type, subtype) {
             (Some(2), _) => {
                 target_data_frames = target_data_frames.saturating_add(1);
@@ -415,6 +427,9 @@ fn target_egress_timing_from_fields(fields: &str) -> TargetEgressAirTimingEviden
             }
             (Some(1), Some(9)) => {
                 peer_block_ack_frames = peer_block_ack_frames.saturating_add(1);
+                if let Some((start, bitmap)) = block_ack_start.zip(block_ack_bitmap) {
+                    block_ack.observe(start, bitmap);
+                }
                 if let Some(previous) = previous_block_ack
                     && let Some(interval) = timestamp.checked_sub(previous)
                 {
@@ -437,6 +452,12 @@ fn target_egress_timing_from_fields(fields: &str) -> TargetEgressAirTimingEviden
     TargetEgressAirTimingEvidence {
         target_data_frames,
         peer_block_ack_frames,
+        peer_full_block_ack_frames: block_ack.full_frames,
+        peer_tail_block_ack_frames: block_ack.tail_frames,
+        peer_hole_block_ack_frames: block_ack.hole_frames,
+        peer_unique_block_acked_mpdus: u32::try_from(block_ack.acknowledged.len())
+            .unwrap_or(u32::MAX),
+        peer_backward_block_ack_starts: block_ack.backward_starts,
         target_data_pairing_available,
         peer_block_ack_interarrival: summarize_intervals(peer_block_ack_interarrival),
         data_to_block_ack: target_data_pairing_available
@@ -731,13 +752,18 @@ mod tests {
     fn block_ack_cadence_survives_missing_target_data_decode() {
         let evidence = target_egress_timing_from_fields(
             "100.000000\t2\t8\n\
-             100.000100\t1\t9\n\
-             100.000500\t1\t9\n\
-             100.001100\t1\t9\n",
+             100.000100\t1\t9\t100\tffffffffffffffff\n\
+             100.000500\t1\t9\t164\tffffffffffffffff\n\
+             100.001100\t1\t9\t228\tffffffffffffffff\n",
         );
 
         assert_eq!(evidence.target_data_frames, 1);
         assert_eq!(evidence.peer_block_ack_frames, 3);
+        assert_eq!(evidence.peer_full_block_ack_frames, 3);
+        assert_eq!(evidence.peer_tail_block_ack_frames, 0);
+        assert_eq!(evidence.peer_hole_block_ack_frames, 0);
+        assert_eq!(evidence.peer_unique_block_acked_mpdus, 192);
+        assert_eq!(evidence.peer_backward_block_ack_starts, 0);
         assert!(!evidence.target_data_pairing_available);
         assert_eq!(evidence.data_to_block_ack, None);
         assert_eq!(evidence.block_ack_to_next_data, None);

@@ -115,6 +115,34 @@ impl BluetoothLe1MPacketStartTiming {
     }
 }
 
+/// PHY-calibrated on-air packet start captured during one connection event.
+///
+/// This value is distinct from the advertising packet timing which forms the
+/// first connection window. It remains bound to the recycled connection until
+/// completion classification decides whether the captured phase may continue.
+#[derive(Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the connection packet-start timing must remain bound to its recycled event"]
+pub struct BluetoothPeripheralConnectionPacketStartTiming {
+    packet_start: BluetoothSchedulerInstant,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionPacketStartTiming {
+    pub(crate) const fn from_scheduler_micros(micros: u32) -> Self {
+        Self {
+            packet_start: BluetoothSchedulerInstant::from_image(micros),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn elapsed_since(&self, earlier: &Self) -> u32 {
+        self.packet_start
+            .image()
+            .wrapping_sub(earlier.packet_start.image())
+    }
+}
+
 /// Absolute first receive window and containing event reservation.
 ///
 /// The positions stay private to the S31 scheduler boundary. Portable Link
@@ -1230,6 +1258,16 @@ pub(crate) struct BluetoothPeripheralConnectionRecycledEvent {
     resolved_window: BluetoothSchedulerRawWindow,
 }
 
+/// Recycled connection event paired with its normalized on-air packet start.
+///
+/// Status, Link Layer and recurring phase remain deliberately unclassified.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the normalized connection event must enter completion classification"]
+pub(crate) struct BluetoothPeripheralConnectionPacketStartNormalizedEvent {
+    recycled: BluetoothPeripheralConnectionRecycledEvent,
+    packet_start: BluetoothPeripheralConnectionPacketStartTiming,
+}
+
 #[cfg(target_arch = "riscv32")]
 impl BluetoothPeripheralConnectionRecycledEvent {
     pub(crate) const fn event_counter(&self) -> u16 {
@@ -1248,16 +1286,41 @@ impl BluetoothPeripheralConnectionRecycledEvent {
         self.batch
     }
 
-    /// Hardware-captured connection timing retained for PHY normalization.
-    #[allow(
-        dead_code,
-        reason = "the recurring-event timing transition consumes this retained capture"
-    )]
-    pub(crate) const fn captured_anchor_time(
+    pub(crate) fn normalize_packet_start(
+        self,
+        normalize: impl FnOnce(
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
+        ) -> BluetoothPeripheralConnectionPacketStartTiming,
+    ) -> BluetoothPeripheralConnectionPacketStartNormalizedEvent {
+        let packet_start = normalize(self.captured_anchor);
+        BluetoothPeripheralConnectionPacketStartNormalizedEvent {
+            recycled: self,
+            packet_start,
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionPacketStartNormalizedEvent {
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.recycled.event_counter()
+    }
+
+    pub(crate) const fn status(
         &self,
-    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionSchedulerItemCompletionStatus
     {
-        self.captured_anchor
+        self.recycled.status()
+    }
+
+    pub(crate) const fn received(
+        &self,
+    ) -> BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
+        self.recycled.received()
+    }
+
+    pub(crate) const fn packet_start(&self) -> &BluetoothPeripheralConnectionPacketStartTiming {
+        &self.packet_start
     }
 }
 

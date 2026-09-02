@@ -23,6 +23,7 @@ pub use peripheral_connection::{
     BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
     BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
     BluetoothPeripheralConnectionSchedulerHeadPublished,
+    BluetoothPeripheralConnectionSchedulerPacketStartNormalized,
     BluetoothPeripheralConnectionSchedulerRecycleStep,
     BluetoothPeripheralConnectionSchedulerRecycled, BluetoothPeripheralConnectionSchedulerRunning,
     BluetoothPeripheralConnectionSchedulerRunningDrainStep,
@@ -59,7 +60,9 @@ use crate::peripheral_connection::{
     BluetoothPeripheralConnectionFirstEventCompletionObservation,
     BluetoothPeripheralConnectionFirstEventCompletionObserved,
     BluetoothPeripheralConnectionFirstEventRunning,
-    BluetoothPeripheralConnectionFirstEventRxPublished, BluetoothPeripheralConnectionRecycledEvent,
+    BluetoothPeripheralConnectionFirstEventRxPublished,
+    BluetoothPeripheralConnectionPacketStartNormalizedEvent,
+    BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{

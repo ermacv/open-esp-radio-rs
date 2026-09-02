@@ -437,6 +437,49 @@ impl BluetoothPeripheralConnectionSchedulerRecycled {
     > {
         self.event.received()
     }
+
+    pub(crate) fn normalize_packet_start(
+        self,
+        normalize: impl FnOnce(
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
+        ) -> BluetoothPeripheralConnectionPacketStartTiming,
+    ) -> BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
+        BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
+            event: self.event.normalize_packet_start(normalize),
+        }
+    }
+}
+
+/// Recycled connection whose capture entered scheduler time and PHY calibration.
+///
+/// Hardware status and portable Link Layer continuation remain unclassified.
+#[must_use = "the normalized connection must enter completion classification"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
+    event: BluetoothPeripheralConnectionPacketStartNormalizedEvent,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
+    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.event.status()
+    }
+
+    pub const fn received(
+        &self,
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedBatch<
+        { open_esp_radio_esp32s31_bluetooth_memory::BLUETOOTH_NON_SCANNING_RX_NODE_COUNT },
+    > {
+        self.event.received()
+    }
+
+    pub const fn packet_start(&self) -> &BluetoothPeripheralConnectionPacketStartTiming {
+        self.event.packet_start()
+    }
 }
 
 /// One atomic attempt to release connection memory, timeline and list owners.

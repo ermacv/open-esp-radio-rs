@@ -310,6 +310,13 @@ and its positional reuse remain private to the codec. The capture is not the
 first completed RX packet timestamp and remains available even when the copied
 RX batch is empty.
 
+The chip timing path now consumes the whole recycled owner into a distinct
+packet-start-normalized typestate. It projects the connection capture through
+the retained scheduler epoch and the existing LE 1M PHY calibration without a
+fresh time sample or epoch reanchor. An unavailable epoch returns the complete
+unchanged recycled owner. The transition retains status, RX batch, memory and
+the in-flight portable LL event without interpreting or advancing any of them.
+
 The first completion must correct the recurring phase from the captured
 packet-start. On the software window-widening path, the actual start replaces
 the committed anchor, the proposed anchor moves by the same delta, the
@@ -342,18 +349,17 @@ peripheral connection is:
 1. attach the now-static shared RX pool to the response-capable
    connectable-advertising graph, then transfer the pool and accepted packet to
    the existing task-service normalizer;
-2. normalize the retained connection capture through the existing PHY/time
-   authority and correct the planned phase to the actual on-air packet start;
-3. classify the independent event/destroy branches and commit exactly one
+2. classify the independent event/destroy branches and commit exactly one
    completed portable LL event where continuation is valid;
-4. add recurrence from the corrected phase through a provisional
+3. correct the planned phase to the normalized actual packet start and add
+   recurrence through a provisional
    `skipped + 1` LL transition and the same typed publication path;
-5. add SN/NESN, retransmission and supervision before exposing ACL success;
-6. add only the mandatory LL control procedures needed by the supported HCI
+4. add SN/NESN, retransmission and supervision before exposing ACL success;
+5. add only the mandatory LL control procedures needed by the supported HCI
    surface.
 
-Capture normalization, continuation/destroy classification and next-anchor
-proposal are now the shortest closure roots. They do not block the already
+Continuation/destroy classification and next-anchor proposal are now the
+shortest closure roots. They do not block the already
 source-ordered preparation, publication, fenced completion, post-unlink and
 CPU-recovery path, but they do block recurrence of the first hardware-owned
 event.

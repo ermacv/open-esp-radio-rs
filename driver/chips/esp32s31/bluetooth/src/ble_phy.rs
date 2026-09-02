@@ -1,10 +1,12 @@
 //! Owned BLE PHY engine activation after common PHY and BTBB initialization.
 
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyLe1MPacketStartCalibration;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyLe1MPacketStartCalibration,
-    BluetoothDirectionFindingWorkspaceCpuOwned, BluetoothDirectionFindingWorkspaceLink,
-    BluetoothLePacketCapturedTime,
+    BluetoothBlePhyEngineCpuOwned, BluetoothDirectionFindingWorkspaceCpuOwned,
+    BluetoothDirectionFindingWorkspaceLink, BluetoothLePacketCapturedTime,
+    BluetoothPeripheralConnectionCapturedAnchorTime,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerLowPowerHardwareInitializedOwner;
@@ -146,6 +148,28 @@ impl BluetoothBlePhyTimingAuthority {
                 .normalize_controller_micros(captured_micros),
         )
     }
+
+    pub(crate) fn complete_le_1m_peripheral_connection_packet_start(
+        &mut self,
+        epoch: crate::BluetoothControllerSchedulerEpoch,
+        captured: BluetoothPeripheralConnectionCapturedAnchorTime,
+    ) -> crate::peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming {
+        let captured_micros = epoch.project_peripheral_connection_capture(captured);
+        normalize_le_1m_peripheral_connection_packet_start(
+            self.le_1m_packet_start_calibration,
+            captured_micros,
+        )
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+fn normalize_le_1m_peripheral_connection_packet_start(
+    calibration: BluetoothBlePhyLe1MPacketStartCalibration,
+    captured_micros: u32,
+) -> crate::peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming {
+    crate::peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming::from_scheduler_micros(
+        calibration.normalize_controller_micros(captured_micros),
+    )
 }
 
 /// Powered Controller after the complete BLE PHY register transaction.
@@ -296,7 +320,10 @@ mod tests {
         BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
     };
 
-    use super::{BluetoothBlePhyInitializationReport, apply_register_init};
+    use super::{
+        BluetoothBlePhyInitializationReport, apply_register_init,
+        normalize_le_1m_peripheral_connection_packet_start,
+    };
 
     #[test]
     fn register_transition_consumes_one_complete_input_set() {
@@ -313,5 +340,21 @@ mod tests {
         assert_eq!(calls, 1);
         assert_eq!(report, BluetoothBlePhyInitializationReport);
         assert!(owner.binding().range().0 < owner.binding().range().1);
+    }
+
+    #[test]
+    fn connection_packet_start_normalization_preserves_elapsed_time() {
+        let storage =
+            std::boxed::Box::leak(std::boxed::Box::new(BluetoothBlePhyEngineStorage::new()));
+        let base = BluetoothBlePhyEngineModelAddress::new(0x2f00_4000)
+            .expect("model base uses the controller-SRAM encoding");
+        let owner = BluetoothBlePhyEngineStorage::pin_static_model(storage, base)
+            .expect("complete model storage fits physical SRAM");
+        let calibration = owner.le_1m_packet_start_calibration();
+
+        let first = normalize_le_1m_peripheral_connection_packet_start(calibration, 20_000);
+        let second = normalize_le_1m_peripheral_connection_packet_start(calibration, 20_017);
+
+        assert_eq!(second.elapsed_since(&first), 17);
     }
 }

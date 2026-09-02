@@ -216,6 +216,7 @@ pub use controller_start::{
     BluetoothPeripheralConnectionControllerPreparationPending,
     BluetoothPeripheralConnectionControllerPreparationStep,
     BluetoothPeripheralConnectionControllerPreparationTerminal,
+    BluetoothPeripheralConnectionPacketStartNormalizationStep,
     BluetoothPeripheralConnectionPostUnlinkArmStep,
     BluetoothPeripheralConnectionSchedulerStartFailure,
     BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep,
@@ -500,6 +501,8 @@ pub use passive_scanning_runner::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
+#[cfg(target_arch = "riscv32")]
+pub use peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming;
 pub use peripheral_connection::{
     BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionFirstEventPrepared,
     BluetoothPeripheralConnectionRuntimeAllocation, BluetoothPeripheralConnectionRuntimeBeginError,
@@ -573,6 +576,7 @@ pub use scheduler::{
     BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
     BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
     BluetoothPeripheralConnectionSchedulerHeadPublished,
+    BluetoothPeripheralConnectionSchedulerPacketStartNormalized,
     BluetoothPeripheralConnectionSchedulerRecycleStep,
     BluetoothPeripheralConnectionSchedulerRecycled, BluetoothPeripheralConnectionSchedulerRunning,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,

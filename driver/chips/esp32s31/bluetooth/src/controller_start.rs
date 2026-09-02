@@ -1546,6 +1546,14 @@ pub enum BluetoothLePacketStartTimingError {
     SchedulerEpochUnavailable,
 }
 
+/// Result of binding one recycled connection to its PHY-normalized packet start.
+#[must_use = "retain the unchanged recycled owner or normalized connection"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionPacketStartNormalizationStep {
+    SchedulerEpochUnavailable(crate::BluetoothPeripheralConnectionSchedulerRecycled),
+    Normalized(crate::BluetoothPeripheralConnectionSchedulerPacketStartNormalized),
+}
+
 /// Why an affine post-enable controller-time acquisition did not start.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(target_arch = "riscv32")]
@@ -4704,6 +4712,27 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         Ok(self
             .ble_phy_timing
             .complete_le_1m_packet_start(epoch, packet.captured_time()))
+    }
+
+    /// Normalize the dedicated capture retained by one recycled LE 1M connection event.
+    ///
+    /// This pure transition neither samples current time nor interprets status,
+    /// advances portable Link Layer state or commits a recurring phase.
+    pub fn normalize_peripheral_connection_packet_start(
+        &mut self,
+        recycled: crate::BluetoothPeripheralConnectionSchedulerRecycled,
+    ) -> BluetoothPeripheralConnectionPacketStartNormalizationStep {
+        let Some(epoch) = *self.scheduler_epoch else {
+            return BluetoothPeripheralConnectionPacketStartNormalizationStep::SchedulerEpochUnavailable(
+                recycled,
+            );
+        };
+        BluetoothPeripheralConnectionPacketStartNormalizationStep::Normalized(
+            recycled.normalize_packet_start(|captured| {
+                self.ble_phy_timing
+                    .complete_le_1m_peripheral_connection_packet_start(epoch, captured)
+            }),
+        )
     }
 
     /// Move this exact task service into its initialized scheduler epoch.

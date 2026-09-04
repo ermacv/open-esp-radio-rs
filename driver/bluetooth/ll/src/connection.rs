@@ -222,6 +222,21 @@ impl LeSleepClockAccuracy {
     pub const fn encoded(self) -> u8 {
         self.0
     }
+
+    /// Worst-case Central sleep-clock error represented by this SCA class.
+    pub const fn worst_case_ppm(self) -> u16 {
+        match self.0 {
+            0 => 500,
+            1 => 250,
+            2 => 150,
+            3 => 100,
+            4 => 75,
+            5 => 50,
+            6 => 30,
+            7 => 20,
+            _ => unreachable!(),
+        }
+    }
 }
 
 /// Validated first transmit window and recurring connection timing.
@@ -1022,10 +1037,26 @@ mod tests {
         assert_eq!(request.channel_map().used_channel_count(), 37);
         assert_eq!(request.hop_increment(), 5);
         assert_eq!(request.sleep_clock_accuracy().encoded(), 4);
+        assert_eq!(request.sleep_clock_accuracy().worst_case_ppm(), 75);
         assert_eq!(
             request.channel_selection(),
             LeChannelSelectionAlgorithm::AlgorithmTwo
         );
+    }
+
+    #[test]
+    fn every_sleep_clock_accuracy_class_exposes_its_worst_case_ppm() {
+        for (encoded, expected_ppm) in [500, 250, 150, 100, 75, 50, 30, 20].into_iter().enumerate()
+        {
+            let mut pdu = connection_request(false);
+            pdu[35] = 5 | ((encoded as u8) << 5);
+            let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
+
+            assert_eq!(
+                request.sleep_clock_accuracy().worst_case_ppm(),
+                expected_ppm
+            );
+        }
     }
 
     #[test]

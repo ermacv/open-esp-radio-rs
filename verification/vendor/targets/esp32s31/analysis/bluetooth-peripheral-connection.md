@@ -289,6 +289,40 @@ Recurring events use a different profile from the first event:
 - missed intervals advance the proposed event counter by `skipped + 1`, while
   admission retries remain provisional until one candidate commits.
 
+The complete named bodies make the software-widening arithmetic exact rather
+than heuristic. `ble_lll_conn_move_to_next_event` calls
+`ble_ll_utils_calc_window_widening` with the proposed anchor, the last actual
+anchor and the two SCA indexes. That helper converts the positive elapsed time
+to microseconds, truncates it to whole milliseconds, multiplies it by the sum
+of the two worst-case PPM table entries, and divides by 1,000 again. Both
+divisions are unsigned truncation, so the controller uses floor rather than a
+conservative ceiling. The move body then adds private-options byte `+0x26`;
+the byte-identical current and named default options objects contain 63 there.
+
+The software branch of named `ble_lll_conn_reschedule_event` subtracts the
+preparation lead, private-options byte `+0x20`, the current widening and one
+CPU-time boundary tick from the proposed anchor. The reviewed default at
+`+0x20` is 10 and S31 CPU-time conversion is identity, so that boundary tick
+is one microsecond. Its receive-wait duration is the same 10-microsecond fixed
+guard plus accumulated anchor uncertainty, twice the current widening and
+`os_cputime_ticks_to_usecs(2)`, which is two microseconds on S31. This is
+deliberately distinct from the 61-microsecond final allowance used by
+`ble_lll_conn_slave_new` for the initial event. The recurrence must not carry
+that initial-only 61-microsecond term forward. The move body obtains the
+minimum event duration before adding accumulated uncertainty and current
+widening to its proposed end; the complete LE 1M duration branch is the same
+5,154 microseconds used by the first-event reservation. Thus the recurring
+window ends at `proposed - preparation + 5,154 + accumulated + widening`,
+without either the start-only 10-microsecond guard or the initial-only
+61-microsecond allowance.
+
+The first source-owned recurrence slice is intentionally narrower than that
+full state space. It admits only software widening immediately after the
+actual-anchor correction, where the accumulated anchor uncertainty is known
+to be zero. There is not yet a typed chip source for a later nonzero
+accumulation or for the automatic-widening mode, so either state must fail
+closed rather than entering timing as an unreviewed integer or raw mode flag.
+
 The link-state timing word at the reviewed `+0x34` position is a hardware
 input/output location, not an ordinary persistent field. Current
 `r_sym_ble_DCD5eVhcHQ9ueSpewKn1` and named `ble_lll_conn_slave_new` write the

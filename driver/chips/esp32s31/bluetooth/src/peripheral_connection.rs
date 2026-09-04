@@ -9,6 +9,9 @@
 #![forbid(unsafe_code)]
 
 #[cfg(any(target_arch = "riscv32", test))]
+mod recurring;
+
+#[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventPeerActivity;
 use open_esp_radio_bluetooth_ll::connection::{
     LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeConnectionTiming, LeDataChannelIndex,
@@ -138,6 +141,11 @@ impl BluetoothPeripheralConnectionPacketStartTiming {
         Self {
             packet_start: BluetoothSchedulerInstant::from_image(micros),
         }
+    }
+
+    /// Borrow the normalized position only inside the chip timing boundary.
+    pub(crate) const fn scheduler_instant(&self) -> BluetoothSchedulerInstant {
+        self.packet_start
     }
 
     #[cfg(test)]

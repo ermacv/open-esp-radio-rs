@@ -3538,6 +3538,20 @@ exposure = "raw-only"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[zero-based-field-writes]]
+name = "ble_controller_address_slot_low"
+peripheral = "BLE_CONTROLLER_ADDRESS_SLOTS"
+register = "SLOT%s_LOW"
+fields = ["OCTETS_0_TO_3"]
+sources = ["BLOB_LIBBLE_CONTROLLER_ADDRESS_SLOTS"]
+
+[[zero-based-field-writes]]
+name = "ble_controller_address_slot_high"
+peripheral = "BLE_CONTROLLER_ADDRESS_SLOTS"
+register = "SLOT%s_HIGH"
+fields = ["OCTETS_4_TO_5"]
+sources = ["BLOB_LIBBLE_CONTROLLER_ADDRESS_SLOTS"]
+
+[[zero-based-field-writes]]
 name = "publish_ble_phy_resolving_list_base_pointer"
 peripheral = "BLE_HW_RESOLVING_LIST"
 register = "BASE_POINTER"

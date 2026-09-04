@@ -27,6 +27,10 @@ description = "The complete low word assembled from input bytes zero through thr
 bitOffset = 0
 bitWidth = 32
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
+
 [[peripherals.registers]]
 [peripherals.registers.register]
 dim = 3
@@ -43,6 +47,10 @@ name = "OCTETS_4_TO_5"
 description = "Input bytes four and five packed in little-endian order."
 bitOffset = 0
 bitWidth = 16
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
 
 [[review]]
 entity = "BLE_CONTROLLER_ADDRESS_SLOTS"

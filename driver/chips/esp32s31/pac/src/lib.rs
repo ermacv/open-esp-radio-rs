@@ -8,6 +8,7 @@ mod agc;
 mod agc_runtime;
 mod baseband;
 mod bluetooth_baseband;
+mod bluetooth_controller_address;
 mod bluetooth_controller_hal_init;
 mod bluetooth_controller_time;
 mod bluetooth_direction_finding;

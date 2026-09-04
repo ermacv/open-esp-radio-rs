@@ -783,6 +783,60 @@ pub struct BluetoothControllerHal<'registers> {
     registers: &'registers mut PacBluetoothTaskRegisters,
 }
 
+/// Public Bluetooth Controller identity in canonical display order.
+///
+/// Keeping the canonical representation in this type makes the sole reversal
+/// into the Controller's least-significant-octet-first order an internal HAL
+/// concern. It cannot be confused with a random address already decoded from
+/// an HCI command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothControllerPublicAddress {
+    canonical_octets: [u8; 6],
+}
+
+impl BluetoothControllerPublicAddress {
+    /// Construct a public identity from canonical EUI-48 display order.
+    pub const fn from_canonical_bytes(canonical_octets: [u8; 6]) -> Self {
+        Self { canonical_octets }
+    }
+
+    /// Return the canonical EUI-48 display order unchanged.
+    pub const fn canonical_bytes(self) -> [u8; 6] {
+        self.canonical_octets
+    }
+
+    const fn controller_wire_octets(self) -> [u8; 6] {
+        let [octet_0, octet_1, octet_2, octet_3, octet_4, octet_5] = self.canonical_octets;
+        [octet_5, octet_4, octet_3, octet_2, octet_1, octet_0]
+    }
+}
+
+/// Random Bluetooth Controller identity in HCI/Link-Layer wire order.
+///
+/// `LE Set Random Address` already carries the least-significant address octet
+/// first. This distinct type prevents that representation from being reversed
+/// a second time before publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothControllerRandomAddress {
+    hci_wire_octets: [u8; 6],
+}
+
+impl BluetoothControllerRandomAddress {
+    /// Construct a random identity from an HCI `BD_ADDR` payload.
+    pub const fn from_hci_wire_bytes(hci_wire_octets: [u8; 6]) -> Self {
+        Self { hci_wire_octets }
+    }
+
+    /// Return the HCI/Link-Layer order unchanged.
+    pub const fn hci_wire_bytes(self) -> [u8; 6] {
+        self.hci_wire_octets
+    }
+
+    const fn controller_wire_octets(self) -> [u8; 6] {
+        self.hci_wire_octets
+    }
+}
+
 /// One initialized receive-memory list published to the controller.
 ///
 /// The token is intentionally affine. It records the positional list and its
@@ -877,6 +931,32 @@ impl BluetoothRxMemoryListInitialPublication for PacBluetoothRxMemoryListInitial
 }
 
 impl BluetoothControllerHal<'_> {
+    /// Publish the public identity through the Controller's fixed public slot.
+    ///
+    /// The owning lifecycle must retain the powered BLE Controller epoch and
+    /// prove that no active advertising, scanning or connection operation can
+    /// consume the address pair during replacement. Cold start must invoke
+    /// this after BLE PHY initialization and before interrupt publication or
+    /// radio work.
+    #[doc(hidden)]
+    pub fn program_public_device_address(&mut self, address: BluetoothControllerPublicAddress) {
+        self.registers
+            .program_bluetooth_public_device_address(address.controller_wire_octets());
+    }
+
+    /// Publish the selected random identity through its fixed Controller slot.
+    ///
+    /// The owning lifecycle must retain the powered BLE Controller epoch and
+    /// prove that no active advertising, scanning or connection operation can
+    /// consume the address pair during replacement. A role-start path must
+    /// perform this while idle and before publishing its scheduler head or
+    /// `RUN`.
+    #[doc(hidden)]
+    pub fn program_random_device_address(&mut self, address: BluetoothControllerRandomAddress) {
+        self.registers
+            .program_bluetooth_random_device_address(address.controller_wire_octets());
+    }
+
     /// Publish the controller-global CTE-disabled descriptor baseline.
     ///
     /// # Safety
@@ -1257,7 +1337,8 @@ mod tests {
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
     use super::{
-        BluetoothColdOwner, BluetoothControllerHalBorrow, BluetoothRxMemoryListInitialPublication,
+        BluetoothColdOwner, BluetoothControllerHalBorrow, BluetoothControllerPublicAddress,
+        BluetoothControllerRandomAddress, BluetoothRxMemoryListInitialPublication,
         BluetoothTaskOwnerReuniteError, execute_rx_memory_list_initial_publication,
     };
 
@@ -1295,6 +1376,19 @@ mod tests {
                 RxListPublicationStep::NextHeadCleared,
             ]
         );
+    }
+
+    #[test]
+    fn public_and_hci_random_forms_converge_on_one_controller_identity() {
+        let public = BluetoothControllerPublicAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]);
+        let random = BluetoothControllerRandomAddress::from_hci_wire_bytes([6, 5, 4, 3, 2, 1]);
+
+        assert_eq!(
+            public.controller_wire_octets(),
+            random.controller_wire_octets()
+        );
+        assert_eq!(public.canonical_bytes(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(random.hci_wire_bytes(), [6, 5, 4, 3, 2, 1]);
     }
 
     #[test]

@@ -18,6 +18,7 @@ pub mod channel;
 pub mod coex;
 pub(crate) mod ieee802154;
 #[cfg(any(test, feature = "validation-probes"))]
+#[cfg(feature = "validation-probes")]
 mod ieee802154_ed_event_probe;
 #[cfg(any(test, feature = "validation-probes"))]
 mod ieee802154_event_status_probe;
@@ -51,6 +52,7 @@ pub mod wifi_mac;
 pub use bluetooth::{
     BluetoothColdOwner, BluetoothColdOwnerReleaseFailure, BluetoothControllerHal,
     BluetoothControllerHalBorrow, BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
+    BluetoothControllerPublicAddress, BluetoothControllerRandomAddress,
     BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
     BluetoothControllerTimeLatchStepError, BluetoothDirectionFindingDisabledBaselineOwner,
     BluetoothInterruptOutputAfterRoutesOwner, BluetoothInterruptOutputPreparedOwner,

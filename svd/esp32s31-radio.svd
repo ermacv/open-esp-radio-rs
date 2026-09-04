@@ -19736,6 +19736,12 @@ random-address use of slot one; slot two remains intentionally unnamed.
               <description>The complete low word assembled from input bytes zero through three.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -19754,6 +19760,12 @@ random-address use of slot one; slot two remains intentionally unnamed.
               <description>Input bytes four and five packed in little-endian order.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

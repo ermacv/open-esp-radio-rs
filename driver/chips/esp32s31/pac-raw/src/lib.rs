@@ -46710,7 +46710,7 @@ pub mod ble_controller_address_slots {
         #[doc = "Register `SLOT%s_LOW` writer"]
         pub type W = crate::W<SlotLowSpec>;
         #[doc = "Field `OCTETS_0_TO_3` writer - The complete low word assembled from input bytes zero through three."]
-        pub type Octets0To3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type Octets0To3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31 - The complete low word assembled from input bytes zero through three."]
             #[inline(always)]
@@ -46725,7 +46725,7 @@ pub mod ble_controller_address_slots {
         }
         #[doc = "`write(|w| ..)` method takes [`slot_low::W`](W) writer structure"]
         impl crate::Writable for SlotLowSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "SLOT_HIGH (w) register accessor: Bytes four and five of the selected six-byte value in bits 0..15; the complete write clears bits 16..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`slot_high::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@slot_high`] module"]
@@ -46736,7 +46736,7 @@ pub mod ble_controller_address_slots {
         #[doc = "Register `SLOT%s_HIGH` writer"]
         pub type W = crate::W<SlotHighSpec>;
         #[doc = "Field `OCTETS_4_TO_5` writer - Input bytes four and five packed in little-endian order."]
-        pub type Octets4To5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type Octets4To5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl W {
             #[doc = "Bits 0:15 - Input bytes four and five packed in little-endian order."]
             #[inline(always)]
@@ -61935,6 +61935,40 @@ pub mod zero_based_field_write {
             registers
                 .power_detector_reference()
                 .write_with_zero(|writer| writer.reference_code().set(value));
+        }
+    }
+
+    /// Write `OCTETS_0_TO_3` in `BLE_CONTROLLER_ADDRESS_SLOTS`.`SLOT%s_LOW` while publishing zero to every other register bit.
+    #[inline]
+    pub fn ble_controller_address_slot_low(
+        registers: &crate::BleControllerAddressSlots,
+        index: usize,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .slot_low(index)
+                .write_with_zero(|writer| writer.octets_0_to_3().set(value));
+        }
+    }
+
+    /// Write `OCTETS_4_TO_5` in `BLE_CONTROLLER_ADDRESS_SLOTS`.`SLOT%s_HIGH` while publishing zero to every other register bit.
+    #[inline]
+    pub fn ble_controller_address_slot_high(
+        registers: &crate::BleControllerAddressSlots,
+        index: usize,
+        value: u16,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .slot_high(index)
+                .write_with_zero(|writer| writer.octets_4_to_5().set(value));
         }
     }
 

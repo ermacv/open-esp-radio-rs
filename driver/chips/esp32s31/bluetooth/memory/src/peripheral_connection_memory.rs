@@ -704,12 +704,10 @@ impl BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
     pub fn prepare_scheduler_admission(
         self,
     ) -> BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
-        self.prepared
-            .storage
-            .as_ref()
-            .get_ref()
-            .prepare_scheduler_admission(&self.prepared.binding);
-        BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared { prepared: self }
+        let prepared = BluetoothPeripheralConnectionMemoryGraphPreparedEvent::First(self);
+        let prepared =
+            BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore::new(prepared);
+        BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared { prepared }
     }
 
     /// Remove the unpublished workspace link and recover the prior exact state.
@@ -723,42 +721,186 @@ impl BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
     }
 }
 
+/// One fully prepared connection event before common scheduler publication.
+///
+/// First and recurring events retain different cancellation frontiers, while
+/// the detached item, RX publication and RUN ownership protocol is identical.
+enum BluetoothPeripheralConnectionMemoryGraphPreparedEvent {
+    First(BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared),
+    Recurring(BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared),
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphPreparedEvent {
+    fn storage(&self) -> &BluetoothPeripheralConnectionMemoryGraphStorage {
+        match self {
+            Self::First(first) => first.prepared.storage.as_ref().get_ref(),
+            Self::Recurring(recurring) => recurring.active.storage.as_ref().get_ref(),
+        }
+    }
+
+    const fn binding(&self) -> &BluetoothPeripheralConnectionMemoryGraphBinding {
+        match self {
+            Self::First(first) => &first.prepared.binding,
+            Self::Recurring(recurring) => &recurring.active.binding,
+        }
+    }
+
+    const fn receive_head(&self) -> BluetoothControllerSramAddress {
+        match self {
+            Self::First(first) => first.prepared.pool.head(),
+            Self::Recurring(recurring) => recurring.active.pool.head(),
+        }
+    }
+
+    const fn receive_pool(&self) -> &BluetoothNonScanningRxMemoryCpuOwned {
+        match self {
+            Self::First(first) => &first.prepared.pool,
+            Self::Recurring(recurring) => &recurring.active.pool,
+        }
+    }
+
+    fn into_active(self) -> BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+        match self {
+            Self::First(first) => {
+                let BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
+                    prepared,
+                    workspace,
+                } = first;
+                let BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
+                    storage,
+                    binding,
+                    pool,
+                    channel: _,
+                    interval: _,
+                    event_span: _,
+                    window: _,
+                    receive_wait: _,
+                    default_tx_power: _,
+                    priority: _,
+                } = prepared;
+                BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+                    storage,
+                    binding,
+                    pool,
+                    workspace,
+                }
+            }
+            Self::Recurring(recurring) => recurring.active,
+        }
+    }
+}
+
+/// Shared detached-event owner used by both first and recurring lifecycles.
+struct BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore {
+    prepared: BluetoothPeripheralConnectionMemoryGraphPreparedEvent,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore {
+    fn new(prepared: BluetoothPeripheralConnectionMemoryGraphPreparedEvent) -> Self {
+        prepared
+            .storage()
+            .prepare_scheduler_admission(prepared.binding());
+        Self { prepared }
+    }
+
+    const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.binding().scheduler_head()
+    }
+
+    const fn receive_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.receive_head()
+    }
+
+    fn storage(&self) -> &BluetoothPeripheralConnectionMemoryGraphStorage {
+        self.prepared.storage()
+    }
+
+    const fn receive_pool(&self) -> &BluetoothNonScanningRxMemoryCpuOwned {
+        self.prepared.receive_pool()
+    }
+
+    fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphPreparedEvent {
+        self.prepared
+            .storage()
+            .restore_scheduler_admission(self.prepared.binding());
+        self.prepared
+    }
+
+    fn into_active(self) -> BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+        self.prepared.into_active()
+    }
+}
+
 /// DF-linked event whose selected item is detached from the private free list.
 #[must_use = "the detached connection item must be published or restored"]
 pub struct BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
-    prepared: BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared {
     /// Exact selected item that may enter the common scheduler list.
     #[doc(hidden)]
     pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
-        self.prepared.prepared.binding.scheduler_head()
+        self.prepared.scheduler_head()
     }
 
     /// Freeze the complete SRAM graph before selector-two publication.
     pub fn prepare_publication(
         self,
     ) -> BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
-        BluetoothPeripheralConnectionMemoryGraphPublicationPrepared { prepared: self }
+        BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
+            prepared: self.prepared,
+        }
     }
 
     /// Restore the exact private free chain before any MMIO publication.
     pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
-        self.prepared
-            .prepared
-            .storage
-            .as_ref()
-            .get_ref()
-            .restore_scheduler_admission(&self.prepared.prepared.binding);
-        self.prepared
+        let BluetoothPeripheralConnectionMemoryGraphPreparedEvent::First(prepared) =
+            self.prepared.cancel()
+        else {
+            unreachable!("the first-event admission wrapper retains a first event")
+        };
+        prepared
+    }
+}
+
+/// Recurring event whose selected item is detached for common-list admission.
+#[must_use = "the detached recurring connection item must be published or restored"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRecurringSchedulerAdmissionPrepared {
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRecurringSchedulerAdmissionPrepared {
+    /// Exact selected item that may enter the common scheduler list.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.scheduler_head()
+    }
+
+    /// Converge on the common frozen publication lifecycle.
+    pub fn prepare_publication(
+        self,
+    ) -> BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
+        BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
+            prepared: self.prepared,
+        }
+    }
+
+    /// Restore the private chain and recover the recurring preparation owner.
+    pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared {
+        let BluetoothPeripheralConnectionMemoryGraphPreparedEvent::Recurring(prepared) =
+            self.prepared.cancel()
+        else {
+            unreachable!("the recurring admission wrapper retains a recurring event")
+        };
+        prepared
     }
 }
 
 /// Complete connection graph ready for selector-two RX-list publication.
 #[must_use = "the prepared connection graph must be published or retained"]
 pub struct BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
-    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
@@ -768,10 +910,10 @@ impl BluetoothPeripheralConnectionMemoryGraphPublicationPrepared {
         BluetoothRxMemoryListClass::NonScanning.selector()
     }
 
-    /// Validated first receive header retained by this affine graph.
+    /// Validated receive header retained by this affine graph.
     #[doc(hidden)]
     pub const fn receive_head(&self) -> BluetoothControllerSramAddress {
-        self.prepared.prepared.prepared.pool.head()
+        self.prepared.receive_head()
     }
 
     /// Exact detached event item retained by this affine graph.
@@ -865,7 +1007,7 @@ impl core::fmt::Debug for BluetoothPeripheralConnectionMemoryGraphPublicationMis
 /// Connection graph whose selector-two RX list is hardware-visible.
 #[must_use = "the RX-published connection graph must enter the common scheduler"]
 pub struct BluetoothPeripheralConnectionMemoryGraphRxPublished {
-    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore,
     rx_publication: BluetoothRxMemoryListPublished,
 }
 
@@ -890,7 +1032,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxPublished {
         assert_eq!(
             run.index(),
             BluetoothSchedulerHardwareListIndex::ZERO,
-            "the first connection event uses the primary scheduler list"
+            "connection events use the primary scheduler list"
         );
         assert_eq!(
             run.head().address(),
@@ -907,7 +1049,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxPublished {
 /// Hardware-owned connection graph admitted through the common RUN transaction.
 #[must_use = "the running connection graph must advance through fenced completion"]
 pub struct BluetoothPeripheralConnectionMemoryGraphRunning {
-    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+    prepared: BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore,
     _rx_publication: BluetoothRxMemoryListPublished,
 }
 
@@ -932,15 +1074,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRunning {
                 observed,
             };
         }
-        let Some(completion) = self
-            .prepared
-            .prepared
-            .prepared
-            .storage
-            .as_ref()
-            .get_ref()
-            .scheduler_completion_observation()
-        else {
+        let Some(completion) = self.prepared.storage().scheduler_completion_observation() else {
             return BluetoothPeripheralConnectionMemoryGraphCompletionObservation::StillInFlight(
                 self,
             );
@@ -1023,11 +1157,7 @@ impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
         let capture = self
             .running
             .prepared
-            .prepared
-            .prepared
-            .storage
-            .as_ref()
-            .get_ref()
+            .storage()
             .captured_anchor_availability(self.completion);
         Ok(BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
             completed: self,
@@ -1111,9 +1241,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
             .completed
             .running
             .prepared
-            .prepared
-            .prepared
-            .pool
+            .receive_pool()
             .extract_completed_rx_batch()
         {
             Ok(batch) => batch,
@@ -1184,30 +1312,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
             prepared,
             _rx_publication: _,
         } = running;
-        let BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared { prepared } =
-            prepared;
-        let BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
-            prepared,
-            workspace,
-        } = prepared;
-        let BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
-            storage,
-            binding,
-            pool,
-            channel: _,
-            interval: _,
-            event_span: _,
-            window: _,
-            receive_wait: _,
-            default_tx_power: _,
-            priority: _,
-        } = prepared;
-        let mut graph = BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
-            storage,
-            binding,
-            pool,
-            workspace,
-        };
+        let mut graph = prepared.into_active();
         graph.restore_after_event();
         BluetoothPeripheralConnectionMemoryGraphRecycled {
             graph,
@@ -1335,6 +1440,16 @@ impl BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared {
 
     pub const fn priority(&self) -> BluetoothPeripheralConnectionSchedulerPriority {
         self.priority
+    }
+
+    /// Detach the selected recurring item for the common admission lifecycle.
+    pub fn prepare_scheduler_admission(
+        self,
+    ) -> BluetoothPeripheralConnectionMemoryGraphRecurringSchedulerAdmissionPrepared {
+        let prepared = BluetoothPeripheralConnectionMemoryGraphPreparedEvent::Recurring(self);
+        let prepared =
+            BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionCore::new(prepared);
+        BluetoothPeripheralConnectionMemoryGraphRecurringSchedulerAdmissionPrepared { prepared }
     }
 
     /// Roll back before publication without replacing any persistent owner.
@@ -1521,14 +1636,11 @@ mod tests {
         assert!(
             prepared
                 .prepared
-                .prepared
-                .storage
-                .as_ref()
-                .get_ref()
+                .storage()
                 .model_controller_complete_event(event_span, status, capture)
         );
         let running = BluetoothPeripheralConnectionMemoryGraphRunning {
-            prepared,
+            prepared: prepared.prepared,
             _rx_publication: BluetoothRxMemoryListPublished::from_parts_for_validation(
                 BluetoothRxMemoryListClass::NonScanning.selector(),
                 scheduler_item_address,
@@ -1659,12 +1771,115 @@ mod tests {
             BluetoothPeripheralConnectionSchedulerPriority::RECURRING_BASELINE
         );
 
-        let active = prepared.cancel();
+        let admission = prepared.prepare_scheduler_admission();
+        let scheduler_head = admission.scheduler_head();
+        let prepared = admission.cancel();
+        assert_eq!(prepared.channel(), channel);
+        assert_eq!(prepared.event_span(), event_span);
+        assert_eq!(prepared.window(), window);
+        assert_eq!(prepared.receive_wait(), receive_wait);
+        assert_eq!(
+            prepared.priority(),
+            BluetoothPeripheralConnectionSchedulerPriority::RECURRING_BASELINE
+        );
+
+        let repeated_admission = prepared.prepare_scheduler_admission();
+        assert_eq!(repeated_admission.scheduler_head(), scheduler_head);
+        let active = repeated_admission.cancel().cancel();
         assert_eq!(active.identity(), graph_identity);
         assert_eq!(active.receive_identity(), receive_identity);
         assert_eq!(active.connection_identity(), connection_identity);
         assert_eq!(active.direction_finding_workspace(), workspace);
         assert!(active.event_resources_are_recycled());
+    }
+
+    #[test]
+    fn recurring_event_converges_on_the_common_publication_and_completion_lifecycle() {
+        let active = active_graph(0x2f01_5000);
+        let graph_identity = active.identity();
+        let receive_identity = active.receive_identity();
+        let connection_identity = active.connection_identity();
+        let workspace = active.direction_finding_workspace();
+        let event_span = BluetoothPeripheralConnectionEventSpan::new(41_000)
+            .expect("the recurring event span is nonempty");
+        let admission = active
+            .prepare_reviewed_recurring_event_fields(
+                BluetoothPeripheralConnectionDataChannel::new(7)
+                    .expect("data channel seven is valid"),
+                event_span,
+                BluetoothPeripheralConnectionSchedulerWindow::new(8_000, 9_250)
+                    .expect("the recurring scheduler window is nonempty"),
+                BluetoothPeripheralConnectionRecurringReceiveWait::new(8_750)
+                    .expect("the recurring wait has exact short representation"),
+                BluetoothPeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+            )
+            .prepare_scheduler_admission();
+        let scheduler_head = admission.scheduler_head();
+        let publication = admission.prepare_publication();
+        let receive_head = publication.receive_head();
+        let published = publication
+            .into_rx_published(BluetoothRxMemoryListPublished::from_parts_for_validation(
+                BluetoothRxMemoryListClass::NonScanning.selector(),
+                receive_head,
+            ))
+            .unwrap_or_else(|_| panic!("the matching RX publication must join this graph"));
+        assert_eq!(published.scheduler_head(), scheduler_head);
+        assert!(
+            published
+                .prepared
+                .storage()
+                .model_controller_complete_event(
+                    event_span,
+                    BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+                    BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+                )
+        );
+        let super::BluetoothPeripheralConnectionMemoryGraphRxPublished {
+            prepared,
+            rx_publication,
+        } = published;
+        let running = BluetoothPeripheralConnectionMemoryGraphRunning {
+            prepared,
+            _rx_publication: rx_publication,
+        };
+        let observation =
+            BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0])
+                .expect("list zero is representable");
+        let BluetoothSchedulerFinishedListPop::List { observed, .. } = observation.pop_lowest()
+        else {
+            panic!("the semantic observation contains list zero")
+        };
+        let completed = match running.observe_completion(observed) {
+            BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the recurring event must use the common completion lifecycle"),
+        };
+        let recycled = completed
+            .prepare_recycle_after_software_list_removal(removal_ready(
+                BluetoothSchedulerHardwareListIndex::ZERO,
+                scheduler_head,
+            ))
+            .unwrap_or_else(|_| panic!("the exact removal proof authorizes reclamation"))
+            .extract_received()
+            .unwrap_or_else(|_| panic!("an event without a received packet is valid"))
+            .commit();
+        let (active, batch, status, capture) = recycled.into_parts();
+
+        assert_eq!(active.identity(), graph_identity);
+        assert_eq!(active.receive_identity(), receive_identity);
+        assert_eq!(active.connection_identity(), connection_identity);
+        assert_eq!(active.direction_finding_workspace(), workspace);
+        assert!(active.event_resources_are_recycled());
+        assert!(batch.is_empty());
+        assert_eq!(
+            status,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero
+        );
+        assert_eq!(
+            capture,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent
+        );
     }
 
     #[test]

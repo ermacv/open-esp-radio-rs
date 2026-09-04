@@ -191,6 +191,7 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
     BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
     BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared,
+    BluetoothPeripheralConnectionMemoryGraphRecurringSchedulerAdmissionPrepared,
     BluetoothPeripheralConnectionMemoryGraphRecycleError,
     BluetoothPeripheralConnectionMemoryGraphRecycleFailure,
     BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,

@@ -329,7 +329,7 @@ impl<'a> LegacyConnectableAdvertisingEvent<'a> {
 
 /// Prepared `ADV_IND` plus its complete primary-channel plan.
 #[derive(Debug, Eq, PartialEq)]
-#[must_use = "submit, admit a response, or cancel the prepared event"]
+#[must_use = "submit to a backend or cancel the prepared event"]
 pub struct LegacyPreparedConnectableAdvertisingEvent<'a> {
     event: LegacyConnectableAdvertisingEvent<'a>,
 }
@@ -378,6 +378,25 @@ impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
         self.event
     }
 
+    /// Mark the exact point where a backend accepted this event for execution.
+    ///
+    /// A chip backend must call this only after publishing its non-forgeable
+    /// hardware `RUN` proof, then retain the returned owner privately until
+    /// that exact event completes. Portable code deliberately cannot mint or
+    /// interpret a chip-specific hardware proof.
+    pub fn into_submitted(self) -> LegacyConnectableAdvertisingEventInFlight<'a> {
+        LegacyConnectableAdvertisingEventInFlight { prepared: self }
+    }
+}
+
+/// Protocol continuation retained while one response-capable event is in flight.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "admit received connection requests or complete the submitted event"]
+pub struct LegacyConnectableAdvertisingEventInFlight<'a> {
+    prepared: LegacyPreparedConnectableAdvertisingEvent<'a>,
+}
+
+impl<'a> LegacyConnectableAdvertisingEventInFlight<'a> {
     /// Validate one received `CONNECT_IND` without losing the event on failure.
     pub fn admit_connection_request(
         self,
@@ -388,18 +407,18 @@ impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
             Err(error) => {
                 return LegacyConnectableConnectionRequestAdmission::Rejected(
                     LegacyConnectableConnectionRequestRejected {
-                        prepared: self,
+                        in_flight: self,
                         error: LegacyConnectableConnectionRequestRejection::Malformed(error),
                     },
                 );
             }
         };
 
-        let advertisement = self.event.set.advertisement;
+        let advertisement = self.prepared.event.set.advertisement;
         if !request.is_addressed_to(advertisement.advertiser()) {
             return LegacyConnectableConnectionRequestAdmission::Rejected(
                 LegacyConnectableConnectionRequestRejected {
-                    prepared: self,
+                    in_flight: self,
                     error: LegacyConnectableConnectionRequestRejection::DifferentAdvertiser,
                 },
             );
@@ -410,7 +429,7 @@ impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
         {
             return LegacyConnectableConnectionRequestAdmission::Rejected(
                 LegacyConnectableConnectionRequestRejected {
-                    prepared: self,
+                    in_flight: self,
                     error:
                         LegacyConnectableConnectionRequestRejection::UnsupportedChannelSelectionAlgorithmTwo,
                 },
@@ -419,7 +438,7 @@ impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
 
         LegacyConnectableConnectionRequestAdmission::Accepted(
             LegacyConnectableConnectionRequestAccepted {
-                set: self.event.set,
+                set: self.prepared.event.set,
                 connection: LePeripheralConnection::from_request(request),
             },
         )
@@ -428,7 +447,7 @@ impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
     /// Close an event in which no acceptable connection request was received.
     pub fn complete_without_connection(self) -> LegacyConnectableAdvertisingEventComplete<'a> {
         LegacyConnectableAdvertisingEventComplete {
-            set: self.event.set,
+            set: self.prepared.event.set,
         }
     }
 }
@@ -459,11 +478,11 @@ impl<'a> LegacyConnectableConnectionRequestAccepted<'a> {
     }
 }
 
-/// Failed admission with the exact prepared advertising event retained.
+/// Failed admission with the exact in-flight advertising event retained.
 #[derive(Debug, Eq, PartialEq)]
-#[must_use = "inspect the error and retain or retry the prepared event"]
+#[must_use = "inspect the error and retain or retry the in-flight event"]
 pub struct LegacyConnectableConnectionRequestRejected<'a> {
-    prepared: LegacyPreparedConnectableAdvertisingEvent<'a>,
+    in_flight: LegacyConnectableAdvertisingEventInFlight<'a>,
     error: LegacyConnectableConnectionRequestRejection,
 }
 
@@ -472,8 +491,8 @@ impl<'a> LegacyConnectableConnectionRequestRejected<'a> {
         self.error
     }
 
-    pub fn into_prepared(self) -> LegacyPreparedConnectableAdvertisingEvent<'a> {
-        self.prepared
+    pub fn into_in_flight(self) -> LegacyConnectableAdvertisingEventInFlight<'a> {
+        self.in_flight
     }
 }
 
@@ -613,12 +632,13 @@ mod tests {
     }
 
     #[test]
-    fn rejected_response_retains_the_exact_event_for_a_later_packet() {
-        let prepared = advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported)
+    fn rejected_response_retains_the_exact_in_flight_event_for_a_later_packet() {
+        let in_flight = advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported)
             .begin_event()
-            .prepare();
+            .prepare()
+            .into_submitted();
         let LegacyConnectableConnectionRequestAdmission::Rejected(rejected) =
-            prepared.admit_connection_request(&connection_request([9; 6], true))
+            in_flight.admit_connection_request(&connection_request([9; 6], true))
         else {
             panic!("a request for another advertiser must be rejected");
         };
@@ -628,7 +648,7 @@ mod tests {
         );
 
         let accepted = rejected
-            .into_prepared()
+            .into_in_flight()
             .admit_connection_request(&connection_request(ADVERTISER_BYTES, true));
         let LegacyConnectableConnectionRequestAdmission::Accepted(accepted) = accepted else {
             panic!("the retained event must admit a valid request");
@@ -643,12 +663,13 @@ mod tests {
     }
 
     #[test]
-    fn algorithm_two_requires_advertised_support_without_losing_the_event() {
-        let prepared = advertiser(LeChannelSelectionAlgorithmTwoSupport::Unsupported)
+    fn algorithm_two_rejection_keeps_the_submitted_event_in_flight() {
+        let in_flight = advertiser(LeChannelSelectionAlgorithmTwoSupport::Unsupported)
             .begin_event()
-            .prepare();
+            .prepare()
+            .into_submitted();
         let LegacyConnectableConnectionRequestAdmission::Rejected(rejected) =
-            prepared.admit_connection_request(&connection_request(ADVERTISER_BYTES, true))
+            in_flight.admit_connection_request(&connection_request(ADVERTISER_BYTES, true))
         else {
             panic!("algorithm two cannot be negotiated without advertised support");
         };
@@ -657,7 +678,11 @@ mod tests {
             LegacyConnectableConnectionRequestRejection::UnsupportedChannelSelectionAlgorithmTwo
         );
         assert_eq!(
-            rejected.into_prepared().channels(),
+            rejected
+                .into_in_flight()
+                .complete_without_connection()
+                .into_set()
+                .channels(),
             PrimaryAdvertisingChannelMap::all()
         );
     }
@@ -667,6 +692,7 @@ mod tests {
         let scheduled = advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported)
             .begin_event()
             .prepare()
+            .into_submitted()
             .complete_without_connection()
             .schedule_next(AdvertisingDelay::from_micros(7_500).unwrap());
         assert_eq!(scheduled.start_offset_micros(), 27_500);

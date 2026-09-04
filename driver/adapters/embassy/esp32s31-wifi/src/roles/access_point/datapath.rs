@@ -887,10 +887,9 @@ where
                     }
                 }
             }
-            let progress = self
-                .network_tx
-                .service(self.aggregate, self.control, self.hardware, wake)
-                .await?;
+            let progress =
+                self.network_tx
+                    .service(self.aggregate, self.control, self.hardware, wake)?;
             self.observe_role_state();
             self.observe_tx_started();
             self.observe_tx_terminal();

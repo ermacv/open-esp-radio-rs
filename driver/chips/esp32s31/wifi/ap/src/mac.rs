@@ -804,7 +804,7 @@ where
         Ok(())
     }
 
-    pub async fn service_tx<H: TxHardware>(
+    pub fn service_tx<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
@@ -813,7 +813,7 @@ where
         if self.pending.is_none() {
             return Err(Esp32s31ApMacError::ServiceWithoutPublication);
         }
-        let progress = self.transmit.service(hardware, wake).await?;
+        let progress = self.transmit.service(hardware, wake)?;
         if progress == WifiTxProgress::Pending {
             return Ok((progress, Esp32s31ApTxCompletionAction::None));
         }
@@ -1107,7 +1107,6 @@ mod tests {
     use core::{
         future::{Future, ready},
         pin::pin,
-        task::{Context, Poll},
     };
 
     use open_esp_radio_esp32s31_hal::types::{
@@ -1133,17 +1132,6 @@ mod tests {
     use open_esp_radio_wpa2::{Pmk, frames::Wpa2Gtk};
 
     use super::*;
-
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let mut future = pin!(future);
-        let mut context = Context::from_waker(core::task::Waker::noop());
-        loop {
-            match future.as_mut().poll(&mut context) {
-                Poll::Ready(output) => return output,
-                Poll::Pending => std::thread::yield_now(),
-            }
-        }
-    }
 
     #[derive(Default)]
     struct Hardware {
@@ -1285,14 +1273,15 @@ mod tests {
         mac.publish_beacon(&mut hardware, 102_400).unwrap();
         assert_eq!(mac.observation().beacons_transmitted, 0);
         hardware.completion = Some(MacTxCompletionObservation::new_model(0, 0));
-        let (progress, action) = block_on(mac.service_tx(
-            &mut hardware,
-            WifiTxWake::Interrupt {
-                events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
-            },
-            1,
-        ))
-        .unwrap();
+        let (progress, action) = mac
+            .service_tx(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                },
+                1,
+            )
+            .unwrap();
         assert_eq!(progress, WifiTxProgress::Complete);
         assert_eq!(action, Esp32s31ApTxCompletionAction::None);
         assert_eq!(mac.observation().beacons_transmitted, 1);

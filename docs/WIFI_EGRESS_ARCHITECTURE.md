@@ -91,11 +91,11 @@ concrete Embassy pinned lease. Its aggregate builder consumes
 `PhysicalTxSource`; the complete-frame materializer supplies that interface
 automatically. Research reserved batches supply it directly without software
 Ethernet objects or a compatibility materialization copy. The STA runtime is
-still housed in the Embassy adapter. Ordinary TX (shared by STA/AP) and STA
+still housed in the Embassy adapter. Ordinary TX (shared by STA/AP) and STA/AP
 aggregate `service` are synchronous; timeout-abort is retained state with an
 explicit next deadline. Executor adapters wait outside those transitions.
-AP aggregate service and the complete runner's IRQ/time integration still
-need the corresponding extraction.
+The complete runner's IRQ/time integration still needs extraction; synchronous
+TX methods alone do not make the complete radio runner executor-neutral.
 
 STA, AP and STA+AP policy are generic over those owners. Adapter mutexes,
 queue dimensions, Xarxa packet types and Embassy runner lifetimes are not part
@@ -301,6 +301,11 @@ the hardware settle deadline, then detach and release (or quarantine on failed
 detach). The interval starts after the abort request. Repeated/early wakes and
 late completion cannot bypass it. Cancellation of a polling wait must leave
 the transaction in its owner rather than dropping state stored in the future.
+The AP aggregate owner now follows this topology, including terminal deadline
+overflow without releasing hardware-owned storage. Published-event ordering is
+still role-specific: AP checks timeout/collision before completion, while STA
+can prefer observed completion. Unifying that policy requires separate hardware
+evidence; it is not implied by sharing the synchronous service topology.
 
 ## Rejected designs
 

@@ -7,6 +7,9 @@ use super::*;
 use crate::datapath::software_tx_queue::{IndexedLeaseArena, RoundRobinTxQueues};
 use core::marker::PhantomData;
 
+mod service_phase;
+use service_phase::{AggregateServiceAction, AggregateServicePhase};
+
 // Retention is deliberately bounded independently of the physical producer
 // pool. Active and standby aggregates own their leases outside this arena;
 // growing the DMA frontier must not multiply scheduler metadata per peer.
@@ -325,7 +328,7 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
     observer: Option<&'observer dyn AggregateTxObserver>,
     #[cfg(not(any(feature = "diagnostics", test)))]
     observer_lifetime: PhantomData<&'observer ()>,
-    deadline_micros: Option<u64>,
+    aggregate_phase: Option<AggregateServicePhase>,
     #[cfg(any(feature = "diagnostics", test))]
     exchange_started_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))]
@@ -364,7 +367,7 @@ where
             observer,
             #[cfg(not(any(feature = "diagnostics", test)))]
             observer_lifetime: PhantomData,
-            deadline_micros: None,
+            aggregate_phase: None,
             #[cfg(any(feature = "diagnostics", test))]
             exchange_started_micros: None,
             #[cfg(any(feature = "diagnostics", test))]
@@ -388,7 +391,7 @@ where
     }
 
     pub(super) const fn aggregate_pending(&self) -> bool {
-        self.deadline_micros.is_some()
+        self.aggregate_phase.is_some()
     }
 
     pub(super) fn has_prepared(&self) -> bool {
@@ -490,7 +493,7 @@ where
                     && batch.admitted < usize::from(batch.policy.frame_limit())
             }
             None => {
-                (self.deadline_micros.is_some()
+                (self.aggregate_phase.is_some()
                     || self.active_frames.len() != 0
                     || self.prepared_first.is_some())
                     && self.prepared_second.is_none()
@@ -1531,7 +1534,7 @@ where
             let deadline_micros = ordinary
                 .now_micros()
                 .saturating_add(ordinary.publication_timeout_micros());
-            self.deadline_micros = Some(deadline_micros);
+            self.aggregate_phase = Some(AggregateServicePhase::Published(deadline_micros));
             #[cfg(any(feature = "diagnostics", test))]
             control.observe_ht_aggregate(policy.rate());
             self.last_started_frames = admitted;
@@ -2075,7 +2078,9 @@ where
             .publish_standby(ordinary, hardware)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         let now = ordinary.now_micros();
-        self.deadline_micros = Some(now.saturating_add(ordinary.publication_timeout_micros()));
+        self.aggregate_phase = Some(AggregateServicePhase::Published(
+            now.saturating_add(ordinary.publication_timeout_micros()),
+        ));
         #[cfg(any(feature = "diagnostics", test))]
         {
             self.exchange_started_micros = publication_started;
@@ -2185,7 +2190,8 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        if let Some(deadline) = self.deadline_micros {
+        if let Some(phase) = self.aggregate_phase {
+            let deadline = phase.deadline();
             let (_, ordinary) = control
                 .mac
                 .try_aggregate_adapter()
@@ -2196,7 +2202,7 @@ where
         }
     }
 
-    pub(super) async fn service<
+    pub(super) fn service<
         P,
         E,
         T,
@@ -2230,8 +2236,8 @@ where
             + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
-        if self.deadline_micros.is_none() {
-            let progress = match control.service_tx(hardware, wake).await {
+        if self.aggregate_phase.is_none() {
+            let progress = match control.service_tx(hardware, wake) {
                 Ok(progress) => progress,
                 Err(error) => {
                     if self.active_group_release.is_some() {
@@ -2262,11 +2268,43 @@ where
             return Ok(progress);
         }
 
-        let service_event = AggregateTxServiceEvent::classify(wake).map_err(|error| {
-            Esp32s31AccessPointDatapathError::Aggregate(
-                Esp32s31ApAmpduError::ConflictingInterruptEvents(error.events),
-            )
+        let phase = self
+            .aggregate_phase
+            .expect("ordinary service returned above");
+        let action = phase.action(wake, || {
+            let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+                Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
+                    error,
+                ))
+            })?;
+            Ok(ordinary.now_micros())
         })?;
+        let service_event = match action {
+            AggregateServiceAction::Wait => return Ok(WifiTxProgress::Pending),
+            AggregateServiceAction::Observe(event) => event,
+            AggregateServiceAction::FinishAbort => {
+                let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+                    Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
+                        error,
+                    ))
+                })?;
+                aggregate
+                    .active_mut()
+                    .finish_timeout_abort(hardware)
+                    .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                ordinary.reset_aggregate_contention();
+                self.aggregate_phase = None;
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.exchange_started_micros = None;
+                }
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.observer {
+                    observer.observe(AggregateTxObservation::HardwareTimeout);
+                }
+                return Ok(WifiTxProgress::Complete);
+            }
+        };
         if service_event == AggregateTxServiceEvent::Collision {
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
@@ -2283,7 +2321,7 @@ where
                 ));
             }
             ordinary.reset_aggregate_contention();
-            self.deadline_micros = None;
+            self.aggregate_phase = None;
             #[cfg(any(feature = "diagnostics", test))]
             {
                 self.exchange_started_micros = None;
@@ -2312,22 +2350,10 @@ where
                     error,
                 ))
             })?;
-            ordinary.after_micros(16).await;
-            aggregate
-                .active_mut()
-                .finish_timeout_abort(hardware)
-                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-            ordinary.reset_aggregate_contention();
-            self.deadline_micros = None;
-            #[cfg(any(feature = "diagnostics", test))]
-            {
-                self.exchange_started_micros = None;
-            }
-            #[cfg(any(feature = "diagnostics", test))]
-            if let Some(observer) = self.observer {
-                observer.observe(AggregateTxObservation::HardwareTimeout);
-            }
-            return Ok(WifiTxProgress::Complete);
+            // Sample after the abort request; no wait future owns this phase.
+            self.aggregate_phase = Some(AggregateServicePhase::ResetRequired);
+            self.aggregate_phase = Some(AggregateServicePhase::after_abort(ordinary.now_micros())?);
+            return Ok(WifiTxProgress::Pending);
         }
 
         let aggregate_progress = {
@@ -2387,7 +2413,7 @@ where
                     debug_assert!(self.terminal_acknowledged.is_none());
                     self.terminal_acknowledged = Some(completion.acknowledged);
                 }
-                self.deadline_micros = None;
+                self.aggregate_phase = None;
                 #[cfg(any(feature = "diagnostics", test))]
                 {
                     self.exchange_started_micros = None;
@@ -2404,11 +2430,11 @@ where
                         error,
                     ))
                 })?;
-                self.deadline_micros = Some(
+                self.aggregate_phase = Some(AggregateServicePhase::Published(
                     ordinary
                         .now_micros()
                         .saturating_add(ordinary.publication_timeout_micros()),
-                );
+                ));
                 Ok(WifiTxProgress::Pending)
             }
             Esp32s31ApAmpduProgress::Pending => {

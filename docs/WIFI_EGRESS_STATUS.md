@@ -76,13 +76,17 @@ the real research SRAM owners through STA encode, partial BA, retry and terminal
 release; no software-frame materializer is implemented by the research batch.
 This is a tested buffer seam, not yet an executor-neutral radio runner.
 
-Shared ordinary TX and STA aggregate service now execute synchronously.
+Shared ordinary TX and STA/AP aggregate service now execute synchronously.
 Timeout-abort returns `Pending` with retained state and a settle deadline;
 late completion/repeated wakes cannot return credits before detach. Host tests
 also prove that cancelling a polling wait preserves its in-progress ordinary
-transaction. Existing Embassy adapters remain responsible for waiting. AP
-aggregate service still has its own asynchronous settle path and is the next
-state-machine cutover; the fused research runner is not yet implemented.
+transaction. Existing Embassy adapters remain responsible for waiting. AP now
+retains its own publication/abort-settle phase across calls, with fail-closed
+deadline overflow. Host tests cover the production timing gate and separately
+the retained A-MPDU owner's release/quarantine behavior. They do not constitute
+end-to-end AP hardware qualification. The fused research runner is not yet
+implemented. AP's existing timeout/collision-before-completion ordering is
+preserved; its difference from STA needs a separate event-policy audit.
 
 Each retained TX phase has one actionable deadline. An intermediate layout
 with separate publication/settle deadlines failed the 50 KiB image-frame gate;
@@ -162,19 +166,23 @@ scheduler because that scheduler no longer exists.
 At the current source checkpoint:
 
 - `cargo check --workspace` passes;
+- `cargo test --workspace` passes;
 - `open-esp-radio-embassy-net`: all 6 owned unit tests pass;
 - `open-esp-radio-embassy-net-compat`: all 8 compatibility device/lifecycle
   tests pass;
 - `open-esp-radio-esp32s31-wifi-embassy-compat`: all 3 shared-radio bridge
   tests pass;
-- `open-esp-radio-esp32s31-wifi-embassy`: all 249 unit tests and 5 physical
+- `open-esp-radio-esp32s31-wifi-embassy`: all 254 unit tests and 5 physical
   ownership/materialization boundary tests pass;
 - `open-esp-radio-wifi-datapath`: all 4 queue/ownership tests pass;
 - `open-esp-radio-research-datapath`: all 10 protocol/physical-source tests pass;
 - `open-esp-radio-esp32s31-wifi-sta`: all 73 tests pass, including retained
   timeout service and polling-wait cancellation;
 - `open-esp-radio-esp32s31-wifi-ap`: all 27 tests pass;
-- the same radio crate without the optimized network feature passes 226 host
+- the lower MAC retained-abort regression verifies no release on abort request,
+  release after successful detach, stale repeated finish and quarantine on
+  failed detach;
+- the Embassy radio adapter without the optimized network feature passes 231 host
   unit tests and warning-free all-target clippy;
 - product integration cross-checks for both mutually exclusive network
   compositions on `riscv32imafc-unknown-none-elf` pass;
@@ -224,7 +232,7 @@ They do not prove the performance of the current owned path.
 9. HIL module/document cleanup beyond removed TX selectors remains a separate
    audit item.
 10. The one-time `embassy_net::new` path still materializes Xarxa's complete
-    stack value before writing it into static resources. Its 18 KiB HIL
+    stack value before writing it into static resources. Its approximately 17 KiB HIL
     composition frame is explicitly bounded today; an in-place constructor is
     the correct future fork API if initialization stack use must be reduced.
 11. The standalone station example source composes with both network leaves,
@@ -253,9 +261,9 @@ The research crate binds a whole reserved batch transactionally to the real
 pinned-SRAM ownership primitive. Its direct physical-source implementation is
 covered by partial-build/drop tests and by a STA partial-BA/retry test. The
 remaining composition gate is a fused Core0 runner with synchronous radio
-service and external executor waits. Ordinary/STA TX service is now synchronous;
-AP aggregate service and runner composition remain. Until those exist and HIL
-runs, this is architectural code, not evidence of lower CPU use.
+service and external executor waits. Ordinary/STA/AP TX service is now
+synchronous; runner composition remains. Until that exists and HIL runs, this
+is architectural code, not evidence of lower CPU use.
 
 Current UDP enqueue copies caller payload into inline canonical work storage;
 final emission then copies that payload into SRAM. There is no intermediate
@@ -263,8 +271,9 @@ complete Ethernet frame, but application-to-radio one-copy is not implemented.
 
 ## Next decision gates
 
-The immediate code gate is extracting synchronous radio service and composing
-the fused research runner. This does not require completing product fairness
+The immediate code gate is composing bounded synchronous radio service into
+the fused research runner, with external IRQ/timer waits and an explicit next
+deadline. This does not require completing product fairness
 first. Correctness/resource HIL qualification of the owned one-copy path and
 the research composition follows; micro-optimization is not the current gate.
 

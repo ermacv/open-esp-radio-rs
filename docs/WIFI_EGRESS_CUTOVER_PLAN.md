@@ -93,7 +93,8 @@ This phase is not performance-qualified until Phase 5.
   - [x] STA A-MPDU: synchronous service, retained abort state and deadline query.
   - [x] Test early/repeated wakes, late completion, cancelled polling wait and
     failed-detach quarantine without returning physical credits.
-  - [ ] Apply the same state topology to AP A-MPDU service.
+  - [x] Apply the same state topology to AP A-MPDU service; host-test its timing
+    gate and lower retained-owner abort release/quarantine.
   - [ ] Compose bounded runner turns with external IRQ/timer waits.
 
 The completed buffer boundary consists of `SoftwareTxFrame`,
@@ -104,14 +105,15 @@ The current owned adapter supplies those details only in its concrete
 implementation. `DatapathNetwork` likewise contains only associated
 capability/owner types; the old adapter geometry parameters have been removed.
 The concrete runner still uses Embassy IRQ/time/future integration. Ordinary
-and STA aggregate service no longer await; the complete executor-neutral owner
-turn is not yet composed. Timer capabilities still reside in the owner graph.
+and STA/AP aggregate service no longer await; the complete executor-neutral
+owner turn is not yet composed. Timer capabilities still reside in the owner
+graph.
 
 Next synchronous-service cutover:
 
-1. Finish AP aggregate abort-settle state extraction; shared ordinary and STA
-   aggregate transitions are complete. Never release DMA owners during the
-   settle interval or replace the wait with a busy loop.
+1. Shared ordinary and STA/AP aggregate transitions are synchronous. Keep DMA
+   owners retained during the settle interval; no busy loop or future-local
+   transaction state. End-to-end AP timeout HIL remains a qualification gate.
 2. Compose bounded service calls using captured events and a clock, with
    progress/next-deadline queries; keep executor waiting outside transitions.
 3. Preserve role-specific completion/timeout priority, standby state and

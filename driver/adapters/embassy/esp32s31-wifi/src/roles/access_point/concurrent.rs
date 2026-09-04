@@ -989,7 +989,6 @@ where
             let progress = self
                 .network_tx
                 .service(&mut active.aggregate, &mut active.processor, hardware, wake)
-                .await
                 .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
             if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
                 self.park_tx(physical)

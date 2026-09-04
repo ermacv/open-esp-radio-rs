@@ -126,7 +126,7 @@ where
         Ok(true)
     }
 
-    pub async fn service_tx<H>(
+    pub fn service_tx<H>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
@@ -136,8 +136,7 @@ where
     {
         let (progress, action) = self
             .mac
-            .service_tx(hardware, wake, Instant::now().as_micros())
-            .await?;
+            .service_tx(hardware, wake, Instant::now().as_micros())?;
         if progress == WifiTxProgress::Complete {
             self.last_terminal_tx_succeeded = Some(
                 action != Esp32s31ApTxCompletionAction::PublicationFailed,

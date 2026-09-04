@@ -32,6 +32,7 @@ open-esp-radio-rs-wifi
   base:              d66b3101 (origin/main)
   architecture:      9e85b3f6
   main test fix:     9235657f
+  pre-code checkpoint: d2e1009b
 
 Open-radio scheduling oracle
   branch: refactor/wifi-interface-egress-scheduler
@@ -43,7 +44,8 @@ Xarxa scheduling prototype
   base:   old line at 1f332ac32cc33d86aefc8e1c1a9749b93234a6de
 
 Xarxa current main
-  HEAD:   9d32976c3f3349235bab4f91922b81e5b04326b3
+  owned foundation branch: refactor/owned-packet-pools
+  pushed HEAD:             f42f16aef73572cc834a6f0298fd275def607bcc
   merge base with prototype: none
 
 Embassy scheduling prototype
@@ -51,8 +53,9 @@ Embassy scheduling prototype
   HEAD:   ab8d91a5ddd2d9a4596a74f4ea89acda66cace1d
 
 Embassy current main
-  HEAD:   98d847be57f3ea022ce05fe9b95ab3639a1e0a93
-  Xarxa pin: old 1f332ac token-based line
+  owned foundation branch: refactor/xarxa-owned-driver
+  pushed HEAD:             b5b4eff4a6b1f90b126f4a9e025614dfc17b6707
+  Xarxa pin:                f42f16ae owned line
 ```
 
 The production branch starts directly at `origin/main`; it does not carry the
@@ -249,21 +252,75 @@ This solves several prototype problems:
   duplicated by a scheduling observer;
 - one driver-side per-key queue topology covers UDP, TCP, raw and control.
 
-### Current new-main blocker
+### Owned foundation now implemented
 
-`PacketBuf` is not yet heterogeneous:
+The former single-global-pool blocker is resolved on the pushed Xarxa owned
+foundation branch:
 
-- it allocates from one private static pool;
-- the handle stores only a pointer to that pool's private slot;
-- `Drop` derives an index relative to that same global pool;
-- the capacity and alignment are global build settings;
-- an external driver-owned DMA buffer cannot be adopted;
-- a caller cannot select PSRAM versus SRAM backing.
+- a `PacketBuf` is one pointer and carries its pool origin privately;
+- multiple independently placed static pools share one packet type;
+- final drop, including on another host thread/core, returns exactly one slot
+  to the creating pool;
+- pool storage placement and packet alignment are explicit composition
+  choices;
+- stack-created owners use an explicit general allocator, while driver RX
+  owners can originate in a dedicated internal-SRAM pool;
+- headroom, metadata and payload mutation retain origin.
 
-Consequently, placing the pool in SRAM makes all software backlog consume
-scarce DMA memory. Placing it in PSRAM forces copies on both TX and RX. The
-owned abstraction is the right foundation, but it needs origin-aware static
-pools before it is a complete S31 solution.
+Xarxa also now exposes `poll_bounded` with independent ingress and socket-TX
+budgets and round-robin continuation. The ordinary synchronous `poll` remains
+an intentional full-drain API. The pushed Embassy owned branch wraps the
+minimal owned driver, applies a configurable cooperative budget, self-wakes
+when that budget—not the driver—stopped progress, and sleeps only on durable
+driver/timer state. It also owns the general pool's unique asynchronous waiter:
+if protocol output finds no `PacketBuf`, a later final drop wakes the runner
+even when the driver queue never became full and therefore has no capacity
+edge to signal. The waiter uses register-then-recheck semantics, and separate
+independently polled stacks require separate general pools.
+
+Host evidence for those branches includes 565 Xarxa tests plus driver and
+doctests, minimal/async UDP/TCP/defmt feature checks, and representative
+Embassy IPv4, IPv6/802.15.4 and STM32 driver checks. Current-Rust Clippy still
+reports unrelated pre-existing lints outside the changed paths; the new owned
+paths themselves pass focused `-D warnings` checks.
+
+The remaining Phase 2/3 target proof is composition, not buffer semantics:
+the HIL image must place the general pool in PSRAM and RX pool in internal
+SRAM, then demonstrate the complete return path and linker/load-image gates.
+
+## Current open-radio cutover implementation
+
+The open-radio adapter now has a sibling owned endpoint compiled directly
+against Embassy `b5b4eff4` and Xarxa `f42f16ae`. It deliberately contains no
+peer scheduler and no compatibility translation of the old public grant API.
+
+Its current owner graph is:
+
+```text
+general Xarxa PacketBuf
+  -> bounded Core1-to-Core0 owner channel
+  -> OwnedNetworkTxFrame on the radio side
+
+radio Ethernet RX
+  -> dedicated RX-pool PacketBuf
+  -> bounded Core0-to-Core1 owner channel
+  -> Xarxa
+  -> final drop to the RX pool
+```
+
+The endpoint attaches a link epoch to queued owners. A Down-to-Up transition
+invalidates old-lifetime packets rather than retargeting them to a new AP/STA
+association. Its wake condition is backed by channel/link level state;
+full-to-not-full TX wakes the network runner. Host tests cover origin return,
+RX handoff, stale epoch rejection, the synchronous
+`can_transmit -> transmit` guarantee across concurrent link-down, and actual
+construction of the new Embassy stack with a configured bounded poll budget.
+
+This endpoint is the migration boundary, not the final TX scheduler. The next
+vertical slice must claim its owners on Core0, classify them into one private
+VIF/peer-generation/TID topology and promote only the selected burst into the
+existing fixed SRAM slots. Waiting for a BA-sized queue is intentionally not
+part of the endpoint API; sparse work becomes eligible immediately.
 
 ## Measured facts retained from the experiment history
 

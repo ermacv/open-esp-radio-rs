@@ -46,6 +46,7 @@ mod egress_grant;
 #[cfg(feature = "tx-egress-scheduling")]
 mod egress_key;
 mod egress_peer;
+mod owned;
 mod pinned;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
@@ -74,6 +75,10 @@ pub use egress_grant::{EgressShadowGrant, EgressShadowGrantError, EgressShadowGr
 pub use egress_key::EgressGrantKey;
 pub use egress_peer::{
     EgressPeerDirectory, EgressPeerDirectoryError, EgressPeerIdentity, EgressPeerResolver,
+};
+pub use owned::{
+    OwnedEndpointResources, OwnedLinkController, OwnedNetworkDevice, OwnedNetworkRunner,
+    OwnedNetworkTxFrame, OwnedRxEnqueueError, OwnedRxPublisher,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use pinned::PinnedTxOwnershipSnapshot;

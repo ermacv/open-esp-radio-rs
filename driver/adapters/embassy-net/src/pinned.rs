@@ -36,7 +36,8 @@ use crate::egress_control::{EgressBurstLease, egress_control_enabled};
 #[cfg(feature = "tx-egress-scheduling")]
 use crate::{DefaultEgressNetworkScheduler, EgressGrantKey};
 use crate::{
-    ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, RxEnqueueError, SharedLinkState,
+    ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, OwnedNetworkTxFrame, RxEnqueueError,
+    SharedLinkState,
 };
 
 /// Opaque identity of one logical network endpoint sharing a physical radio.
@@ -954,7 +955,6 @@ impl<
             },
             PinnedTxConsumer {
                 free_tx: resources.free_tx.sender(),
-                #[cfg(feature = "tx-staging-copy-probe")]
                 free_tx_claim: resources.free_tx.receiver(),
                 ready_tx: &resources.ready_tx,
                 #[cfg(feature = "tx-staging-copy-probe")]
@@ -3047,7 +3047,6 @@ pub struct PinnedTxConsumer<
     const QUEUE_DEPTH: usize,
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    #[cfg(feature = "tx-staging-copy-probe")]
     free_tx_claim: Receiver<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     #[cfg(feature = "tx-staging-copy-probe")]
@@ -3422,6 +3421,77 @@ impl<
     const QUEUE_DEPTH: usize,
 > PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
+    /// Promote one selected general-memory owner into final DMA SRAM.
+    ///
+    /// The source remains unchanged in `Err` when no physical credit is
+    /// available. On success the copy completes before the source owner is
+    /// dropped back to its originating Xarxa pool. This is the single-copy
+    /// bridge for the owned-egress cutover; selection must already have
+    /// happened before calling it.
+    pub fn try_promote_owned(
+        &self,
+        frame: OwnedNetworkTxFrame,
+    ) -> Result<
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        OwnedNetworkTxFrame,
+    > {
+        assert_eq!(
+            frame.interface(),
+            self.interface,
+            "owned TX frame crossed its logical interface"
+        );
+        assert!(
+            frame.ethernet().len() <= FRAME_CAPACITY,
+            "owned network frame exceeds physical TX capacity"
+        );
+        #[cfg(feature = "tx-phase-telemetry")]
+        let promotion_started = TxPerformanceSample::read();
+        let Ok(index) = self.physical.free_tx_claim.try_receive() else {
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE
+                .record_promotion_no_credit(promotion_started, TxPerformanceSample::read());
+            return Err(frame);
+        };
+        #[cfg(feature = "tx-phase-telemetry")]
+        let credit_acquired = TxPerformanceSample::read();
+        let length = frame.ethernet().len();
+        let lease = self.physical.tx_pool.claim_network(index);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let destination_claimed = TxPerformanceSample::read();
+        #[cfg(feature = "tx-phase-telemetry")]
+        let publication_started = TxPerformanceSample::read();
+        #[cfg(feature = "tx-phase-telemetry")]
+        let mut copy = TxPerformanceSample::default();
+        let (index, ()) = lease.publish(length, |dma| {
+            #[cfg(feature = "tx-phase-telemetry")]
+            let copy_started = TxPerformanceSample::read();
+            dma.copy_from_slice(frame.ethernet());
+            #[cfg(feature = "tx-phase-telemetry")]
+            {
+                copy = TxPerformanceSample::read().wrapping_delta_since(copy_started);
+            }
+        });
+        #[cfg(feature = "tx-phase-telemetry")]
+        let published = TxPerformanceSample::read();
+        drop(frame);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let source_released = TxPerformanceSample::read();
+        let promoted = self.physical.claim(self.interface, index);
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_promotion(
+            length,
+            promotion_started,
+            credit_acquired,
+            destination_claimed,
+            copy,
+            publication_started,
+            published,
+            source_released,
+            TxPerformanceSample::read(),
+        );
+        Ok(promoted)
+    }
+
     pub const fn interface(self) -> NetworkInterfaceId {
         self.interface
     }

@@ -21,17 +21,19 @@ into new Xarxa or stabilize its optional methods in `embassy-net-driver` unless
 the owned one-copy candidate fails an explicit resource gate and a direct-SRAM
 pre-materialization path is then proved necessary.
 
-The owned-buffer base itself needs one deliberate extension: a `PacketBuf`
-must be able to remember and return to its originating static pool. The current
-new Xarxa `main` has one private homogeneous global pool; that cannot express
-both general PSRAM packets and driver-owned RX DMA SRAM packets. Pool-aware
-ownership is the required cross-stack change. Radio scheduling is not.
+The owned-buffer base required one deliberate extension: a `PacketBuf` must be
+able to remember and return to its originating static pool. That extension is
+now implemented on the owned Xarxa branch: one uniform pointer-sized owner can
+originate in the general PSRAM pool or a driver RX SRAM pool and returns to the
+correct pool on final drop. Pool-aware ownership was the required cross-stack
+change. Radio scheduling remains private to the Wi-Fi driver.
 
 ## Why the decision changed
 
 The scheduling work was built on Xarxa commit `1f332ac`, continued by the
-project branch at `3ac0e58`. Xarxa `main` is `9d32976` and has no merge base
-with that branch. The two lines are different architectures:
+project branch at `3ac0e58`. The audited owned line began at Xarxa `9d32976`,
+which has no merge base with that branch, and now continues at `f42f16ae`.
+The two lines are different architectures:
 
 | Old line | Current `main` |
 |---|---|

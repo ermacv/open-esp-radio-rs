@@ -23,6 +23,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic-waker"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -461,6 +470,14 @@ checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 name = "embassy-net-driver"
 version = "0.2.0"
 source = "git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272#3b91c62054669719af1cfc97110ae6ddb5498272"
+
+[[package]]
+name = "embassy-net-driver"
+version = "0.2.0"
+source = "git+https://github.com/ermacv/embassy.git?rev=b5b4eff4a6b1f90b126f4a9e025614dfc17b6707#b5b4eff4a6b1f90b126f4a9e025614dfc17b6707"
+dependencies = [
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=f42f16aef73572cc834a6f0298fd275def607bcc)",
+]
 
 [[package]]
 name = "embassy-sync"
@@ -1338,9 +1355,11 @@ name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=b5b4eff4a6b1f90b126f4a9e025614dfc17b6707)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
  "pin-project-lite",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=f42f16aef73572cc834a6f0298fd275def607bcc)",
 ]
 
 [[package]]
@@ -2269,13 +2288,23 @@ dependencies = [
  "cfg-if",
  "heapless 0.9.3",
  "managed",
- "xarxa-driver",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=56840265711547e3ad8e24d602fc7a6e89258642)",
 ]
 
 [[package]]
 name = "xarxa-driver"
 version = "0.1.0"
 source = "git+https://github.com/ermacv/xarxa.git?rev=56840265711547e3ad8e24d602fc7a6e89258642#56840265711547e3ad8e24d602fc7a6e89258642"
+
+[[package]]
+name = "xarxa-driver"
+version = "0.1.0"
+source = "git+https://github.com/ermacv/xarxa.git?rev=f42f16aef73572cc834a6f0298fd275def607bcc#f42f16aef73572cc834a6f0298fd275def607bcc"
+dependencies = [
+ "atomic-waker",
+ "document-features",
+ "portable-atomic",
+]
 
 [[package]]
 name = "xtensa-lx"

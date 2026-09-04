@@ -31,9 +31,11 @@ tx-egress-scheduling = ["embassy-net-driver/tx-egress-metadata"]
 
 [dependencies]
 embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272" }
+owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "b5b4eff4a6b1f90b126f4a9e025614dfc17b6707" }
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
 pin-project-lite = "0.2.17"
+xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "f42f16aef73572cc834a6f0298fd275def607bcc" }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }
@@ -42,6 +44,7 @@ riscv = { version = "0.15", optional = true }
 embassy-executor = { version = "0.10.0", features = ["executor-thread", "platform-std"] }
 embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272", features = ["icmp", "iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "std", "tx-egress-metadata", "udp"] }
 embassy-time = { version = "0.5.0", features = ["std"] }
+owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "b5b4eff4a6b1f90b126f4a9e025614dfc17b6707", features = ["medium-ethernet", "proto-ipv4", "std", "udp"] }
 
 [lints]
 workspace = true

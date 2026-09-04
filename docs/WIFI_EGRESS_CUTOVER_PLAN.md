@@ -63,6 +63,13 @@ Gate:
 
 ## Phase 2: owned Xarxa/Embassy foundation
 
+Status: the host-side implementation is complete and pushed as Xarxa
+`f42f16ae` and Embassy `b5b4eff4`. Origin-aware heterogeneous pools, explicit
+stack allocators, bounded polling, fair continuation, pool-recovery wake and
+executor self-wake are tested. The remaining gate is target composition:
+PSRAM/general and internal-SRAM/RX placement plus end-to-end return evidence
+in the first owned Wi-Fi HIL image.
+
 Create new sibling feature branches from Xarxa current `main` and Embassy
 current `main`. Do not merge or cherry-pick the old scheduling implementation
 as a block.
@@ -78,6 +85,9 @@ as a block.
 - Permit the Wi-Fi driver to allocate RX packet owners from its dedicated DMA
   pool and pass them to the stack.
 - Keep protocols independent of pool memory class.
+- Give each independently polled stack one general pool wake registration.
+  A released owner must wake a stack that previously failed allocation even
+  when driver TX capacity never changed.
 
 The preferred implementation keeps one uniform `PacketBuf` type and stores
 private pool origin in the slot/owner. An arbitrary external-slice callback API
@@ -118,6 +128,11 @@ Target gates:
   descriptor ownership audits.
 
 ## Phase 3: minimal owned Wi-Fi adapter
+
+Status: in progress. A sibling open-radio endpoint now implements the new
+Embassy owned-driver trait and transfers `PacketBuf` owners through bounded
+queues with link-epoch invalidation. It is not yet wired into the physical
+AP/STA datapath and it does not yet contain the private per-key TXQ.
 
 Implement the simplest complete one-copy TX owner graph.
 

@@ -42,21 +42,21 @@ Gate:
 
 ## Phase 1: synchronize the production base
 
-The open-radio feature branch is behind `origin/main`. Integrate current main
-before building the new ownership path so the migration does not accumulate on
-an obsolete radio tree.
+Status: the scheduling oracle is frozen and pushed at `0e7cbdf9`. Production
+branch `refactor/wifi-owned-egress` starts directly from `origin/main` at
+`d66b3101` and carries only the canonical documents and independent main test
+correction. Its first correctness image passes source, placement and post-LTO
+stack audits; STA and AP runtime smoke remain pending.
 
-- Merge `origin/main` into the pushed feature branch without rewriting the
-  oracle commits.
-- Resolve only real conflicts; do not carry obsolete compatibility modes into
-  main-side code.
-- Run the workspace, formatting, Clippy, source-only and direct target checks.
-- Run one clean STA and AP smoke HIL to distinguish merge regressions from the
-  subsequent Xarxa migration.
+- Preserve the old scheduling implementation and its exact dependencies only
+  on the remote oracle branches.
+- Run workspace, formatting, Clippy, source-only and direct target checks on
+  the direct-main production branch.
+- Run clean STA and AP smoke HIL before the Xarxa migration.
 
 Gate:
 
-- clean pushed branch based on current open-radio main;
+- clean pushed production branch based directly on current open-radio main;
 - no lifecycle, placement or role regression;
 - baseline report records exact source/dependency state.
 

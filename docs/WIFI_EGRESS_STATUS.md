@@ -24,15 +24,18 @@ an executable semantic oracle while the owned-buffer cutover is built.
 
 ## Repository snapshot
 
-After refreshing remote refs:
+Production cutover snapshot:
 
 ```text
 open-esp-radio-rs-wifi
+  production branch: refactor/wifi-owned-egress
+  base:              d66b3101 (origin/main)
+  architecture:      9e85b3f6
+  main test fix:     9235657f
+
+Open-radio scheduling oracle
   branch: refactor/wifi-interface-egress-scheduler
-  HEAD:   ba22b8cdd61d9abc45758c9898af5bc712960ecc
-  origin/main: d66b3101
-  divergence: 58 feature commits / 61 main commits
-  merge base: 8905f4e80f19ceaa49b37a2ca511691f3d46702d
+  frozen and pushed: 0e7cbdf9
 
 Xarxa scheduling prototype
   branch: refactor/interface-egress-scheduler
@@ -52,9 +55,23 @@ Embassy current main
   Xarxa pin: old 1f332ac token-based line
 ```
 
-The open-radio feature branch is pushed. Immediately before this architecture
-checkpoint, its only uncommitted work was documentation; this document set
-replaces that superseded draft.
+The production branch starts directly at `origin/main`; it does not carry the
+62 public demand/grant experiment commits merely to delete them later. The
+oracle branch remains reconstructable in the remote repository.
+
+The oracle's attempted clean correctness build stopped before flashing on
+three post-LTO stack gates. Comparison with archived run
+`1788272869730-00138fba` isolates the material difference to the old
+Xarxa/Embassy scheduling revision advance, not the `origin/main` merge. The
+radio fault-owner types, compiler, LLVM and stack policy were unchanged. We do
+not raise stack limits or refactor terminal radio owners to accommodate an API
+which is not part of the target architecture.
+
+The first correctness image on the direct-main production branch passes
+placement, source-graph and stack-frame audits. The same three frames return to
+50,432, 17,792 and 8,336 bytes respectively. This is direct evidence that the
+branch separation removed the obsolete scheduling-state cost without changing
+radio ownership or relaxing a gate. STA and AP runtime smoke remain pending.
 
 The HIL wire protocol is currently 79. A historical firmware using an older
 protocol cannot be replayed by the current runner merely because its binary

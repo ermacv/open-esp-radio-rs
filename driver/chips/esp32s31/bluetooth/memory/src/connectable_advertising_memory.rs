@@ -1,8 +1,9 @@
 //! CPU-owned ESP32-S31 memory for one response-capable legacy advertisement.
 //!
-//! This boundary stops before scheduler admission. It binds the two transmit
-//! PDUs and the reusable non-scanning receive pool into one private graph, but
-//! deliberately exposes no scheduler-item address or publication operation.
+//! This boundary binds the two transmit PDUs and the reusable non-scanning
+//! receive pool into one private graph, then prepares the sole scheduler item
+//! up to an empty-list candidate. It exposes that item's typed identity to the
+//! chip scheduler but owns no list-head/RX publication, MMIO, or RUN operation.
 
 #![forbid(unsafe_code)]
 
@@ -10,7 +11,6 @@ mod codec;
 
 use core::{marker::PhantomPinned, pin::Pin};
 
-#[cfg(not(target_arch = "riscv32"))]
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddressError;
 use pin_project::pin_project;
@@ -28,6 +28,8 @@ use crate::{
 use self::codec::{
     BluetoothLegacyConnectableAdvertisingGraphBinding,
     BluetoothLegacyConnectableAdvertisingGraphStorage,
+    BluetoothLegacyConnectableAdvertisingSchedulerBookkeepingSnapshot,
+    BluetoothLegacyConnectableAdvertisingSoftwareLinkSnapshot,
 };
 
 const LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES: usize = 37;
@@ -375,6 +377,35 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
             .scan_response_pdu(self.scan_response_length)
     }
 
+    /// Lower the sole selected channel into one CPU-owned scheduler item.
+    ///
+    /// `raw_start` and `raw_end` must come from the chip scheduler's accepted
+    /// controller-epoch window. This crate stores them but does not interpret
+    /// controller time or reserve a common timeline slot.
+    pub fn prepare_event_fields(
+        self,
+        raw_start: u32,
+        raw_end: u32,
+    ) -> Result<
+        BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure,
+    > {
+        if let Err(error) = self.storage.as_ref().get_ref().graph.prepare_event_fields(
+            &self.binding,
+            self.primary_channel,
+            raw_start,
+            raw_end,
+        ) {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure {
+                    owner: self,
+                    error,
+                },
+            );
+        }
+        Ok(BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared { prepared: self })
+    }
+
     /// Whether all private TX and RX links still form the prepared topology.
     pub fn is_ready_for_scheduler_lowering(&self) -> bool {
         self.pool.is_initialized()
@@ -399,6 +430,164 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
         };
         owner.reinitialize_graph();
         (owner, self.pool)
+    }
+}
+
+/// Why the sole connectable-advertising scheduler item was not writable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError {
+    /// The response graph no longer retains its private scheduler-item head.
+    SchedulerHeadMismatch,
+    /// The sole scheduler item already points at another hardware item.
+    NonTerminalSchedulerItem,
+}
+
+/// Failed event-field lowering retaining the exact prepared graph and RX pool.
+#[must_use = "the unchanged prepared graph and receive pool remain owned"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure {
+    owner: BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+    error: BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure {
+    pub const fn error(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError {
+        self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError,
+    ) {
+        (self.owner, self.error)
+    }
+}
+
+impl core::fmt::Debug
+    for BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure
+{
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct(
+                "BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareFailure",
+            )
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Complete one-item event fields before common scheduler bookkeeping.
+#[must_use = "the event fields must advance, be cancelled, or remain retained"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared {
+    /// Exact CPU-owned item eligible for later common-list admission.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.prepared.binding.scheduler_item_address()
+    }
+
+    /// Install the common status sentinel and completed-list baseline.
+    pub fn prepare_scheduler_bookkeeping(
+        self,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+        let previous = self
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .prepare_scheduler_bookkeeping();
+        BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+            event: self,
+            previous,
+        }
+    }
+
+    /// Restore the prepared response graph before any common-list admission.
+    pub fn cancel(self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
+        self.prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .restore_event_fields(&self.prepared.binding);
+        self.prepared
+    }
+}
+
+/// One-item event with common scheduler bookkeeping but no list ownership.
+#[must_use = "the scheduler-prepared graph must advance or be cancelled"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+    event: BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared,
+    previous: BluetoothLegacyConnectableAdvertisingSchedulerBookkeepingSnapshot,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.event.scheduler_item_address()
+    }
+
+    /// Clear the software-list successor before empty-list head publication.
+    pub fn prepare_empty_list_link(
+        self,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
+        let previous_software_link = self
+            .event
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .prepare_empty_list_link();
+        BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
+            bookkeeping: self,
+            previous_software_link,
+        }
+    }
+
+    /// Restore the exact scheduler fields observed before bookkeeping.
+    pub fn cancel(self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared {
+        self.event
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .restore_scheduler_bookkeeping(self.previous);
+        self.event
+    }
+}
+
+/// One-item graph with a null software successor and full rollback authority.
+#[must_use = "the empty-list candidate must be published or cancelled"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
+    bookkeeping: BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerBookkeepingPrepared,
+    previous_software_link: BluetoothLegacyConnectableAdvertisingSoftwareLinkSnapshot,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.bookkeeping.scheduler_item_address()
+    }
+
+    /// Restore the exact software-list successor without disturbing bookkeeping.
+    pub fn cancel(
+        self,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+        self.bookkeeping
+            .event
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .restore_empty_list_link(self.previous_software_link);
+        self.bookkeeping
     }
 }
 
@@ -588,6 +777,86 @@ mod tests {
             BluetoothLegacyAdvertisingPrimaryChannel::Channel37
         );
         assert!(prepared.is_ready_for_scheduler_lowering());
+
+        let (owner, pool) = prepared.cancel();
+        assert_eq!(owner.identity(), graph_identity);
+        assert_eq!(pool.identity(), pool_identity);
+        assert!(pool.is_initialized());
+    }
+
+    #[test]
+    fn event_fields_and_common_list_preparation_cancel_in_reverse() {
+        let owner = owner(0x2f00_1000);
+        let graph_identity = owner.identity();
+        let pool = pool(0x2f00_5000);
+        let pool_identity = pool.identity();
+        let prepared = owner
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel38),
+                pool,
+                -4,
+            )
+            .expect("the disjoint response graph is supported");
+
+        let event = prepared
+            .prepare_event_fields(1_200, 1_400)
+            .expect("the pristine one-item graph accepts event fields");
+        let scheduler_item = event.scheduler_item_address();
+        let bookkeeping = event.prepare_scheduler_bookkeeping();
+        assert_eq!(bookkeeping.scheduler_item_address(), scheduler_item);
+        let empty = bookkeeping.prepare_empty_list_link();
+        assert_eq!(empty.scheduler_item_address(), scheduler_item);
+
+        let bookkeeping = empty.cancel();
+        let event = bookkeeping.cancel();
+        let prepared = event.cancel();
+        assert!(prepared.is_ready_for_scheduler_lowering());
+        assert_eq!(prepared.identity(), graph_identity);
+        assert_eq!(prepared.receive_identity(), pool_identity);
+        assert_eq!(prepared.adv_ind_pdu(), &ADV_IND_PDU);
+        assert_eq!(prepared.scan_response_pdu(), &SCAN_RESPONSE_PDU);
+
+        let (owner, pool) = prepared.cancel();
+        assert_eq!(owner.identity(), graph_identity);
+        assert_eq!(pool.identity(), pool_identity);
+        assert!(pool.is_initialized());
+    }
+
+    #[test]
+    fn event_field_rejection_retains_both_affine_owners() {
+        let owner = owner(0x2f00_2000);
+        let graph_identity = owner.identity();
+        let pool = pool(0x2f00_6000);
+        let pool_identity = pool.identity();
+        let prepared = owner
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel39),
+                pool,
+                0,
+            )
+            .expect("the disjoint response graph is supported");
+        prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .emulate_missing_scheduler_head();
+
+        let failure = match prepared.prepare_event_fields(2_000, 2_200) {
+            Ok(_) => panic!("a graph without its private scheduler head must fail closed"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError::SchedulerHeadMismatch
+        );
+        let (prepared, error) = failure.into_parts();
+        assert_eq!(
+            error,
+            BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError::SchedulerHeadMismatch
+        );
+        assert_eq!(prepared.identity(), graph_identity);
+        assert_eq!(prepared.receive_identity(), pool_identity);
 
         let (owner, pool) = prepared.cancel();
         assert_eq!(owner.identity(), graph_identity);

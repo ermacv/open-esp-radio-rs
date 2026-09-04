@@ -13,6 +13,7 @@ use crate::{
     },
     legacy_advertising_event_image::{
         BluetoothLegacyAdvertisingLinkStateWords, BluetoothLegacyAdvertisingOwnAddress,
+        BluetoothLegacyAdvertisingPrimaryChannel, BluetoothLegacyAdvertisingSchedulerItemWords,
     },
     scheduler_context::BluetoothSchedulerContextStorage,
     sram_link::{
@@ -23,6 +24,7 @@ use crate::{
 
 use super::{
     AdvertisingTxPacketLength, BluetoothLegacyConnectableAdvertisingMemoryGraphBindError,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError,
     BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity,
     BluetoothLegacyConnectableAdvertisingMemoryGraphStorage,
     BluetoothLegacyConnectableAdvertisingSchedulerSpan, LEGACY_ADVERTISING_TX_PACKET_BYTES,
@@ -62,6 +64,15 @@ const LINK_STATE_WORD_60: usize = 0x60 / 4;
 const SCHEDULER_ITEM_HARDWARE_NEXT: usize = 0;
 const SCHEDULER_ITEM_CONTEXT: usize = 1;
 const SCHEDULER_ITEM_LINK_STATE: usize = 0x08 / 4;
+const SCHEDULER_ITEM_WORD_14: usize = 0x14 / 4;
+const SCHEDULER_ITEM_WORD_18: usize = 0x18 / 4;
+const SCHEDULER_ITEM_WORD_38: usize = 0x38 / 4;
+const SCHEDULER_ITEM_RAW_START: usize = 0x44 / 4;
+const SCHEDULER_ITEM_RAW_END: usize = 0x48 / 4;
+const SCHEDULER_ITEM_CONTROL: usize = 0x4c / 4;
+const SCHEDULER_ITEM_SOFTWARE_NEXT: usize = 0x50 / 4;
+const SCHEDULER_ITEM_COMPLETED_LINK: usize = 0x54 / 4;
+const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0010_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x0060_0000;
 
@@ -139,6 +150,18 @@ impl LinkStateStorage {
         self.words[LINK_STATE_WORD_60].set(words.word_60);
     }
 
+    fn scheduler_head(&self) -> u32 {
+        self.words[LINK_STATE_SCHEDULER_HEAD].get()
+    }
+
+    fn detach_scheduler_item(&self) {
+        self.words[LINK_STATE_SCHEDULER_HEAD].set(0);
+    }
+
+    fn restore_scheduler_item(&self, scheduler_item: BluetoothControllerSramAddress) {
+        self.words[LINK_STATE_SCHEDULER_HEAD].set(scheduler_item.address());
+    }
+
     fn prepare_profile(
         &self,
         binding: &BluetoothLegacyConnectableAdvertisingGraphBinding,
@@ -208,6 +231,34 @@ impl SchedulerItemStorage {
             .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
     }
 
+    fn is_terminal(&self) -> bool {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT].get() & SCHEDULER_ITEM_HARDWARE_NEXT_MASK == 0
+    }
+
+    fn reviewed_words(&self) -> BluetoothLegacyAdvertisingSchedulerItemWords {
+        BluetoothLegacyAdvertisingSchedulerItemWords {
+            word_00: self.words[SCHEDULER_ITEM_HARDWARE_NEXT].get(),
+            word_04: self.words[SCHEDULER_ITEM_CONTEXT].get(),
+            word_14: self.words[SCHEDULER_ITEM_WORD_14].get(),
+            word_18: self.words[SCHEDULER_ITEM_WORD_18].get(),
+            word_38: self.words[SCHEDULER_ITEM_WORD_38].get(),
+            raw_start_word_44: self.words[SCHEDULER_ITEM_RAW_START].get(),
+            raw_end_word_48: self.words[SCHEDULER_ITEM_RAW_END].get(),
+            word_4c: self.words[SCHEDULER_ITEM_CONTROL].get(),
+        }
+    }
+
+    fn write_reviewed_words(&self, words: BluetoothLegacyAdvertisingSchedulerItemWords) {
+        self.words[SCHEDULER_ITEM_HARDWARE_NEXT].set(words.word_00);
+        self.words[SCHEDULER_ITEM_CONTEXT].set(words.word_04);
+        self.words[SCHEDULER_ITEM_WORD_14].set(words.word_14);
+        self.words[SCHEDULER_ITEM_WORD_18].set(words.word_18);
+        self.words[SCHEDULER_ITEM_WORD_38].set(words.word_38);
+        self.words[SCHEDULER_ITEM_RAW_START].set(words.raw_start_word_44);
+        self.words[SCHEDULER_ITEM_RAW_END].set(words.raw_end_word_48);
+        self.words[SCHEDULER_ITEM_CONTROL].set(words.word_4c);
+    }
+
     fn retains_graph(
         &self,
         context: BluetoothControllerSramLinkAddress,
@@ -219,6 +270,16 @@ impl SchedulerItemStorage {
                 == SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image()
     }
 }
+
+#[derive(Clone, Copy)]
+pub(super) struct BluetoothLegacyConnectableAdvertisingSchedulerBookkeepingSnapshot {
+    control: u32,
+    status: u32,
+    completed_link: u32,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct BluetoothLegacyConnectableAdvertisingSoftwareLinkSnapshot(u32);
 
 #[repr(C)]
 pub(super) struct BluetoothLegacyConnectableAdvertisingGraphStorage {
@@ -295,6 +356,87 @@ impl BluetoothLegacyConnectableAdvertisingGraphStorage {
         );
     }
 
+    pub(super) fn prepare_event_fields(
+        &self,
+        binding: &BluetoothLegacyConnectableAdvertisingGraphBinding,
+        primary_channel: BluetoothLegacyAdvertisingPrimaryChannel,
+        raw_start: u32,
+        raw_end: u32,
+    ) -> Result<(), BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError> {
+        if self.link_state.scheduler_head() != binding.scheduler_item.controller_address().address()
+        {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError::SchedulerHeadMismatch,
+            );
+        }
+        if !self.scheduler_item.is_terminal() {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError::NonTerminalSchedulerItem,
+            );
+        }
+
+        let words = self.scheduler_item.reviewed_words().prepare_event_item(
+            self.link_state.reviewed_words(),
+            primary_channel,
+            None,
+            raw_start,
+            raw_end,
+        );
+        self.scheduler_item.write_reviewed_words(words);
+        self.link_state.detach_scheduler_item();
+        Ok(())
+    }
+
+    pub(super) fn restore_event_fields(
+        &self,
+        binding: &BluetoothLegacyConnectableAdvertisingGraphBinding,
+    ) {
+        self.scheduler_item
+            .initialize_graph(binding.scheduler_context, binding.link_state);
+        self.link_state
+            .restore_scheduler_item(binding.scheduler_item.controller_address());
+    }
+
+    pub(super) fn prepare_scheduler_bookkeeping(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingSchedulerBookkeepingSnapshot {
+        let snapshot = BluetoothLegacyConnectableAdvertisingSchedulerBookkeepingSnapshot {
+            control: self.scheduler_item.words[SCHEDULER_ITEM_CONTROL].get(),
+            status: self.scheduler_item.words[SCHEDULER_ITEM_WORD_38].get(),
+            completed_link: self.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK].get(),
+        };
+        self.scheduler_item.words[SCHEDULER_ITEM_CONTROL].set(snapshot.control & !0xff);
+        self.scheduler_item.words[SCHEDULER_ITEM_WORD_38].set(u32::MAX);
+        self.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK].set(0);
+        snapshot
+    }
+
+    pub(super) fn restore_scheduler_bookkeeping(
+        &self,
+        snapshot: BluetoothLegacyConnectableAdvertisingSchedulerBookkeepingSnapshot,
+    ) {
+        self.scheduler_item.words[SCHEDULER_ITEM_CONTROL].set(snapshot.control);
+        self.scheduler_item.words[SCHEDULER_ITEM_WORD_38].set(snapshot.status);
+        self.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK].set(snapshot.completed_link);
+    }
+
+    pub(super) fn prepare_empty_list_link(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingSoftwareLinkSnapshot {
+        let snapshot = BluetoothLegacyConnectableAdvertisingSoftwareLinkSnapshot(
+            self.scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT].get(),
+        );
+        self.scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT].set(0);
+        snapshot
+    }
+
+    pub(super) fn restore_empty_list_link(
+        &self,
+        snapshot: BluetoothLegacyConnectableAdvertisingSoftwareLinkSnapshot,
+    ) {
+        self.scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT].set(snapshot.0);
+    }
+
     pub(super) fn adv_ind_pdu(&self, length: AdvertisingTxPacketLength) -> &[u8] {
         self.adv_ind_packet.prepared_pdu(length)
     }
@@ -326,6 +468,11 @@ impl BluetoothLegacyConnectableAdvertisingGraphStorage {
     #[cfg(test)]
     pub(super) fn emulate_missing_rx_consumer_link(&self) {
         self.link_state.emulate_missing_rx_consumer_link();
+    }
+
+    #[cfg(test)]
+    pub(super) fn emulate_missing_scheduler_head(&self) {
+        self.link_state.detach_scheduler_item();
     }
 }
 
@@ -435,6 +582,10 @@ impl BluetoothLegacyConnectableAdvertisingGraphBinding {
 
     pub(super) const fn range(&self) -> (u32, u32) {
         (self.base.address(), self.end_exclusive)
+    }
+
+    pub(super) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.scheduler_item.controller_address()
     }
 
     pub(super) const fn is_disjoint_from_receive_pool(

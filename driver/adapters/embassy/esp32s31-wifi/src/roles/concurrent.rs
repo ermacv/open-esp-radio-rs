@@ -11,7 +11,7 @@ use open_esp_radio_dma::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
     AffineSpscTrySendError, TaggedStableDmaBacking,
 };
-use open_esp_radio_embassy_net::{NetworkInterfaceId, PinnedRxPublisher, RawMutex};
+use open_esp_radio_embassy_net::{NetworkInterfaceId, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::MacInterface;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxError, RxIngressConfig, RxSegment, view_normalized_rx_frame,
@@ -123,8 +123,24 @@ pub type Esp32s31StaApDatapathRunner<
     RX_QUEUE_DEPTH,
     TX_QUEUE_DEPTH,
     DatapathNetworkRxEndpoints<
-        PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
-        PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+        <N as DatapathNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >>::RxPublisher,
+        <N as DatapathNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >>::RxPublisher,
     >,
 >;
 
@@ -171,8 +187,8 @@ where
             TRAILER,
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
-            RxPublisher = PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
         >,
+    N::RxPublisher: crate::datapath::network::DatapathNetworkRx,
     Services: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     let endpoints = DatapathNetworkRxEndpoints::new(

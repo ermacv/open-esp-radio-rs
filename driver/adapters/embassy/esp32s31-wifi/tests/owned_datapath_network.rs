@@ -3,7 +3,7 @@ use open_esp_radio_embassy_net::{
     LinkState, NetworkInterfaceId, OwnedEndpointResources, PinnedTxPool, PinnedTxResources,
 };
 use open_esp_radio_esp32s31_wifi_embassy::datapath::network::{
-    DatapathNetwork, OwnedDatapathNetwork,
+    DatapathNetwork, DualOwnedDatapathNetwork, OwnedDatapathNetwork,
 };
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
@@ -75,4 +75,82 @@ fn owned_backlog_and_physical_dma_credits_remain_independent() {
     assert_eq!(second.as_slice(), &[0x42; 14]);
     assert!(general.try_alloc().is_some());
     drop(returned_first);
+}
+
+#[test]
+fn dual_owned_endpoints_keep_logical_backlogs_separate_from_one_dma_horizon() {
+    const FRAME_CAPACITY: usize = 64;
+    const HEADROOM: usize = 16;
+    const TRAILER: usize = 8;
+    const RX_QUEUE_DEPTH: usize = 1;
+    const NETWORK_TX_DEPTH: usize = 2;
+    const TX_QUEUE_DEPTH: usize = 1;
+    type Endpoint = OwnedEndpointResources<NoopRawMutex, RX_QUEUE_DEPTH, NETWORK_TX_DEPTH>;
+    type PhysicalPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    type PhysicalResources =
+        PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+
+    let station_interface = NetworkInterfaceId::new(0);
+    let access_point_interface = NetworkInterfaceId::new(1);
+    let station_endpoint = Box::leak(Box::new(Endpoint::new()));
+    let access_point_endpoint = Box::leak(Box::new(Endpoint::new()));
+    let (mut station_device, station_radio) = station_endpoint.split(
+        station_interface,
+        [2, 0, 0, 0, 0, 1],
+        allocator::<RX_QUEUE_DEPTH>(),
+    );
+    let (mut access_point_device, access_point_radio) = access_point_endpoint.split(
+        access_point_interface,
+        [2, 0, 0, 0, 0, 2],
+        allocator::<RX_QUEUE_DEPTH>(),
+    );
+    let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
+    let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
+    let (_unused_direct_provider, physical) = physical_resources.split(physical_pool);
+    let network = DualOwnedDatapathNetwork::new(station_radio, access_point_radio, physical);
+
+    network.set_link_state(station_interface, LinkState::Up);
+    assert!(station_device.link_is_up());
+    assert!(!access_point_device.link_is_up());
+    network.set_link_state(access_point_interface, LinkState::Up);
+
+    let station_general = allocator::<1>();
+    let access_point_general = allocator::<2>();
+    station_device
+        .transmit(packet(station_general, 0x51))
+        .unwrap();
+    access_point_device
+        .transmit(packet(access_point_general, 0x61))
+        .unwrap();
+    access_point_device
+        .transmit(packet(access_point_general, 0x62))
+        .unwrap();
+
+    assert_eq!(network.tx_queue_len(station_interface), 1);
+    assert_eq!(network.tx_queue_len(access_point_interface), 2);
+    assert_eq!(network.physical_tx_queue_len(), 3);
+
+    let station = network
+        .try_receive_tx(station_interface)
+        .expect("station owns its queue head");
+    let access_point = network
+        .try_receive_tx(access_point_interface)
+        .expect("access point owns its queue head");
+    assert_eq!(station.as_slice(), &[0x51; 14]);
+    assert_eq!(access_point.as_slice(), &[0x61; 14]);
+
+    let physical = network.tx_consumer(access_point_interface);
+    let promoted = physical
+        .try_promote(access_point)
+        .unwrap_or_else(|_| panic!("the shared physical horizon accepts one selected AP owner"));
+    let remaining = network
+        .try_receive_tx(access_point_interface)
+        .expect("the second AP owner remains independently selectable");
+    assert_eq!(remaining.as_slice(), &[0x62; 14]);
+    assert!(physical.try_promote(remaining).is_err());
+
+    drop(station);
+    drop(promoted);
+    assert!(station_general.try_alloc().is_some());
+    assert!(access_point_general.try_alloc().is_some());
 }

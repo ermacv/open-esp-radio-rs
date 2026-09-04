@@ -138,7 +138,12 @@ fn rebase(
     let from = revision::load_operand(session, &arguments.from)?;
     let to = revision::load_operand(session, &arguments.to)?;
     revision::validate_operand_pair(&session.project.id, &from, &to)?;
-    let report = revision::rebase(&from, &to)?;
+    let lineage = arguments
+        .lineage
+        .as_deref()
+        .map(crate::symbol_lineage::load_rebase_evidence)
+        .transpose()?;
+    let report = revision::rebase(&from, &to, lineage.as_ref())?;
     if let Some(path) = arguments.output.as_deref() {
         generated_file::write_or_check_json(
             path,
@@ -289,6 +294,17 @@ fn render_diff(report: &revision::RevisionDiffReport) {
 
 fn render_rebase(report: &revision::RevisionRebaseReport) {
     outputln!("{}", output::heading("Revision rebase"));
+    if let Some(lineage) = &report.lineage {
+        outputln!(
+            "Lineage: {} mappings, report sha256:{} ({}@{} → {}@{})",
+            lineage.mappings,
+            lineage.report_sha256,
+            lineage.source.source,
+            lineage.source.sha256,
+            lineage.target.source,
+            lineage.target.sha256,
+        );
+    }
     outputln!(
         "\n{}",
         if report.summary.review_required == 0 {
@@ -329,15 +345,27 @@ fn render_rebase(report: &revision::RevisionRebaseReport) {
         outputln!(
             "{}",
             table::render(
-                ["ID", "Kind", "Status", "Proposed subject"],
+                ["ID", "Kind", "Status", "Proposed subject / occurrence"],
                 report.records.iter().map(|record| [
                     record.id.clone(),
                     record.kind.clone(),
                     format!("{:?}", record.status).to_ascii_lowercase(),
-                    record
-                        .proposed_subject
-                        .clone()
-                        .unwrap_or_else(|| "manual review".to_owned()),
+                    [
+                        record
+                            .proposed_subject
+                            .clone()
+                            .unwrap_or_else(|| "manual review".to_owned()),
+                        record
+                            .proposed_occurrence
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_default(),
+                        record.proposed_locator.clone().unwrap_or_default(),
+                    ]
+                    .into_iter()
+                    .filter(|value| !value.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
                 ]),
             )
         );

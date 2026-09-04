@@ -16,6 +16,8 @@
   ownership-first migration, deletion ledger and acceptance gates.
 - [`../tools/blobray/README.md`](../tools/blobray/README.md):
   Blobray workflow and canonical documentation.
+- [`BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md`](BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md):
+  Bluetooth layer boundaries, monolith findings and refactor order.
 - [`../qualification/`](../qualification/README.md): machine-readable claims
   and dated hardware evidence.
 - [`../verification/`](../verification/README.md): structured vendor evidence,

@@ -21,6 +21,8 @@
 extern crate std;
 
 mod ble_phy_engine;
+mod connectable_advertising_memory;
+mod direction_finding_workspace;
 mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
@@ -30,6 +32,7 @@ mod le_tx_packet;
 mod le_tx_power;
 mod legacy_advertising_event_image;
 mod legacy_advertising_storage;
+mod non_scanning_rx_memory;
 mod passive_scanning_event_image;
 mod passive_scanning_memory;
 mod peripheral_connection_memory;
@@ -44,6 +47,34 @@ pub use ble_phy_engine::{
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineBinding,
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
     BluetoothBlePhyLe1MPacketStartCalibration,
+};
+
+#[cfg(not(target_arch = "riscv32"))]
+pub use connectable_advertising_memory::BluetoothLegacyConnectableAdvertisingMemoryGraphModelAddress;
+pub use connectable_advertising_memory::{
+    BluetoothLegacyConnectableAdvIndPacketInput,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphBindError,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphBindFailure,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphStorage,
+    BluetoothLegacyConnectableAdvertisingMemoryInput,
+    BluetoothLegacyConnectableAdvertisingOwnAddress,
+    BluetoothLegacyConnectableAdvertisingPduFitError,
+    BluetoothLegacyConnectableAdvertisingSchedulerSpan,
+    BluetoothLegacyConnectableScanResponsePacketInput,
+};
+
+#[cfg(not(target_arch = "riscv32"))]
+pub use direction_finding_workspace::BluetoothDirectionFindingWorkspaceModelAddress;
+pub use direction_finding_workspace::{
+    BLUETOOTH_DIRECTION_FINDING_WORKSPACE_BYTES, BluetoothDirectionFindingWorkspaceBindError,
+    BluetoothDirectionFindingWorkspaceBindFailure, BluetoothDirectionFindingWorkspaceBinding,
+    BluetoothDirectionFindingWorkspaceCpuOwned, BluetoothDirectionFindingWorkspaceLink,
+    BluetoothDirectionFindingWorkspaceStorage,
 };
 
 pub use dtm_event_image::{
@@ -62,8 +93,7 @@ pub use dtm_storage::{
     BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
     BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_RX_PACKET_PREFIX_BYTES,
     BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
-    BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
-    BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
+    BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphBindFailure,
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphEmptyListLinkPrepared,
     BluetoothDtmMemoryGraphHeadPublished, BluetoothDtmMemoryGraphIdentity,
@@ -78,10 +108,12 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
     BluetoothDtmMemoryGraphTxPacketPrepareFailure, BluetoothDtmMemoryGraphTxPacketPrepared,
     BluetoothDtmPositionalEventSeed, BluetoothDtmSchedulerAllocationConfig,
-    BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemStorage,
-    BluetoothDtmTxPacketPrepareError,
+    BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmTxPacketPrepareError,
 };
-pub use le_rx_packet::{BluetoothLePacketCapturedTime, BluetoothLeReceivedPdu};
+pub use le_rx_packet::{
+    BluetoothLePacketCapturedTime, BluetoothLeReceivedBatch, BluetoothLeReceivedPdu,
+    BluetoothLeRxError,
+};
 pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES,
     BluetoothLeTxPacketPrepareError, BluetoothLeTxPacketPreparedLength, BluetoothLeTxPacketStorage,
@@ -121,6 +153,13 @@ pub use legacy_advertising_storage::{
     BluetoothLegacyAdvertisingMemoryGraphStorage,
     BluetoothLegacyAdvertisingSchedulerItemCompletionStatus,
 };
+#[cfg(not(target_arch = "riscv32"))]
+pub use non_scanning_rx_memory::BluetoothNonScanningRxMemoryModelAddress;
+pub use non_scanning_rx_memory::{
+    BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, BluetoothNonScanningRxMemoryBindError,
+    BluetoothNonScanningRxMemoryBindFailure, BluetoothNonScanningRxMemoryCpuOwned,
+    BluetoothNonScanningRxMemoryIdentity, BluetoothNonScanningRxMemoryStorage,
+};
 pub use passive_scanning_event_image::{
     BluetoothPassiveScanDefaultTxPowerDbm, BluetoothPassiveScanPrimaryChannel,
     BluetoothPassiveScanResetConfig, BluetoothPassiveScanSchedulerWindow,
@@ -143,8 +182,7 @@ pub use passive_scanning_memory::{
     BluetoothPassiveScanMemoryGraphRunning, BluetoothPassiveScanMemoryGraphRxExtracted,
     BluetoothPassiveScanMemoryGraphRxExtractionFailure,
     BluetoothPassiveScanMemoryGraphSchedulerAdmissionPrepared,
-    BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanReceivedBatch,
-    BluetoothPassiveScanRxError, BluetoothPassiveScanSchedulerAllocationConfig,
+    BluetoothPassiveScanMemoryGraphStorage, BluetoothPassiveScanSchedulerAllocationConfig,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 #[cfg(not(target_arch = "riscv32"))]
@@ -153,13 +191,40 @@ pub use peripheral_connection_memory::{
     BLUETOOTH_PERIPHERAL_CONNECTION_LINK_STATE_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
-    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES, BluetoothPeripheralConnectionIdentity,
+    BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
+    BluetoothPeripheralConnectionCapturedAnchorAvailability,
+    BluetoothPeripheralConnectionCapturedAnchorTime, BluetoothPeripheralConnectionDataChannel,
+    BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionEventSpan,
+    BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,
+    BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
     BluetoothPeripheralConnectionMemoryGraphBindError,
     BluetoothPeripheralConnectionMemoryGraphBindFailure,
-    BluetoothPeripheralConnectionMemoryGraphBinding,
+    BluetoothPeripheralConnectionMemoryGraphCompletionObservation,
+    BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
     BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+    BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
+    BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
+    BluetoothPeripheralConnectionMemoryGraphIdentity,
     BluetoothPeripheralConnectionMemoryGraphIdentityPrepared,
-    BluetoothPeripheralConnectionMemoryGraphStorage,
+    BluetoothPeripheralConnectionMemoryGraphPublicationError,
+    BluetoothPeripheralConnectionMemoryGraphPublicationMismatch,
+    BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
+    BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared,
+    BluetoothPeripheralConnectionMemoryGraphRecurringSchedulerAdmissionPrepared,
+    BluetoothPeripheralConnectionMemoryGraphRecycleError,
+    BluetoothPeripheralConnectionMemoryGraphRecycleFailure,
+    BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
+    BluetoothPeripheralConnectionMemoryGraphRecycled,
+    BluetoothPeripheralConnectionMemoryGraphRunning,
+    BluetoothPeripheralConnectionMemoryGraphRxExtracted,
+    BluetoothPeripheralConnectionMemoryGraphRxExtractionFailure,
+    BluetoothPeripheralConnectionMemoryGraphRxPublished,
+    BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
+    BluetoothPeripheralConnectionMemoryGraphStorage, BluetoothPeripheralConnectionReceiveWait,
+    BluetoothPeripheralConnectionRecurringReceiveWait,
+    BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use scheduler_context::{BLUETOOTH_SCHEDULER_CONTEXT_BYTES, BluetoothSchedulerContextStorage};

@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v66.
+//! Complete owned DTO for linked-IR schema v68.
 
 #![allow(
     dead_code,
@@ -160,6 +160,11 @@ pub(crate) struct StoredReportSummary {
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredDataObject {
     pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
+    pub(crate) locator: String,
+    pub(crate) occurrence: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    pub(crate) semantic: Option<String>,
     pub(crate) member: Option<String>,
     section: String,
     pub(crate) symbol: String,
@@ -200,6 +205,10 @@ pub(crate) struct StoredDataObjectXref {
 pub(crate) struct StoredFunction {
     pub(crate) source: String,
     pub(crate) artifact_sha256: String,
+    pub(crate) locator: String,
+    pub(crate) occurrence: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    pub(crate) semantic: Option<String>,
     pub(crate) identity: String,
     pub(crate) selection: String,
     pub(crate) member: Option<String>,
@@ -468,6 +477,10 @@ pub(crate) struct StoredFlowValue {
 pub(crate) struct StoredFunctionReviewProjection {
     pub(crate) source: String,
     pub(crate) artifact_sha256: String,
+    pub(crate) locator: String,
+    pub(crate) occurrence: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    pub(crate) semantic: Option<String>,
     pub(crate) identity: String,
     pub(crate) selection: String,
     pub(crate) member: Option<String>,
@@ -499,6 +512,8 @@ pub(crate) struct StoredReviewDirectEffect {
     pub(crate) site: Option<u32>,
     pub(crate) operation: String,
     pub(crate) target: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    pub(crate) semantic_target: Option<String>,
     pub(crate) width: Option<u8>,
     pub(crate) value: Option<String>,
     pub(crate) modified_mask: Option<u32>,

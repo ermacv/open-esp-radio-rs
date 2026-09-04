@@ -13,6 +13,8 @@ use open_esp_radio_esp32s31_hal::{
 };
 use vcell::VolatileCell;
 
+use crate::sram_link::BluetoothControllerSramLinkAddress;
+
 /// Bytes in one common controller RX/TX buffer header.
 pub const BLUETOOTH_LE_BUFFER_HEADER_BYTES: usize = 0x18;
 /// Bytes preceding the maximum Link Layer payload in a controller TX allocation.
@@ -155,8 +157,16 @@ impl BluetoothLeTxBufferHeaderStorage {
         &self,
         packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
     ) {
+        self.initialize_bound_tx_with_successor(packet, None);
+    }
+
+    pub(super) fn initialize_bound_tx_with_successor<const ALLOCATION_BYTES: usize>(
+        &self,
+        packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
+        successor: Option<BluetoothControllerSramLinkAddress>,
+    ) {
         self.install([
-            0,
+            successor.map_or(0, BluetoothControllerSramLinkAddress::compressed_image),
             packet.base_link().image(),
             0x80a0_0000 | packet.pdu_target_link().image(),
             0,
@@ -178,6 +188,19 @@ impl BluetoothLeTxBufferHeaderStorage {
         packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
     ) -> bool {
         self.read_word(4) & Self::ALLOCATION_EXTENT_MASK == packet.allocation_extent_image()
+    }
+
+    pub(super) fn retains_bound_tx_with_successor<const ALLOCATION_BYTES: usize>(
+        &self,
+        packet: BluetoothLeTxPacketAddress<ALLOCATION_BYTES>,
+        successor: Option<BluetoothControllerSramLinkAddress>,
+    ) -> bool {
+        let expected_successor =
+            successor.map_or(0, BluetoothControllerSramLinkAddress::compressed_image);
+        self.read_word(0) & Self::COMPRESSED_LINK_MASK == expected_successor
+            && self.packet_base_link() == Some(packet.base_link())
+            && self.pdu_target_link() == Some(packet.pdu_target_link())
+            && self.retains_allocation_extent(packet)
     }
 
     #[cfg(test)]
@@ -227,6 +250,64 @@ pub enum BluetoothLeTxPacketPrepareError {
     EncodedPduTooShort { available: usize },
     /// The encoded length field does not describe all supplied payload bytes.
     EncodedPduLengthMismatch { declared: u8, actual: usize },
+}
+
+/// Complete encoded PDU proved to fit one controller allocation class.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BluetoothLeTxPacketPreparedInput<'a, const ALLOCATION_BYTES: usize> {
+    pdu: &'a [u8],
+    payload_length: u8,
+}
+
+impl<'a, const ALLOCATION_BYTES: usize> BluetoothLeTxPacketPreparedInput<'a, ALLOCATION_BYTES> {
+    pub(super) fn new(pdu: &'a [u8]) -> Result<Self, BluetoothLeTxPacketPrepareError> {
+        if ALLOCATION_BYTES < BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES {
+            return Err(BluetoothLeTxPacketPrepareError::AllocationTooSmall {
+                available: ALLOCATION_BYTES,
+            });
+        }
+        if pdu.len() < 2 {
+            return Err(BluetoothLeTxPacketPrepareError::EncodedPduTooShort {
+                available: pdu.len(),
+            });
+        }
+        let actual = pdu.len() - 2;
+        let declared = pdu[1];
+        if usize::from(declared) != actual {
+            return Err(BluetoothLeTxPacketPrepareError::EncodedPduLengthMismatch {
+                declared,
+                actual,
+            });
+        }
+        let capacity = ALLOCATION_BYTES
+            .saturating_sub(BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES)
+            .min(u8::MAX as usize);
+        if actual > capacity {
+            return Err(BluetoothLeTxPacketPrepareError::PayloadTooLong {
+                length: actual,
+                capacity,
+            });
+        }
+        Ok(Self {
+            pdu,
+            payload_length: declared,
+        })
+    }
+
+    pub(super) const fn from_validated_encoded_pdu(pdu: &'a [u8], payload_length: u8) -> Self {
+        Self {
+            pdu,
+            payload_length,
+        }
+    }
+
+    pub(super) const fn as_bytes(self) -> &'a [u8] {
+        self.pdu
+    }
+
+    pub(super) const fn payload_bytes(self) -> u8 {
+        self.payload_length
+    }
 }
 
 /// Opaque length accepted by the controller TX-packet codec.
@@ -309,20 +390,23 @@ impl<const ALLOCATION_BYTES: usize> BluetoothLeTxPacketStorage<ALLOCATION_BYTES>
         pdu: &[u8],
     ) -> Result<BluetoothLeTxPacketPreparedLength<ALLOCATION_BYTES>, BluetoothLeTxPacketPrepareError>
     {
-        if pdu.len() < 2 {
-            return Err(BluetoothLeTxPacketPrepareError::EncodedPduTooShort {
-                available: pdu.len(),
-            });
-        }
-        let actual = pdu.len() - 2;
-        let declared = pdu[1];
-        if usize::from(declared) != actual {
-            return Err(BluetoothLeTxPacketPrepareError::EncodedPduLengthMismatch {
-                declared,
-                actual,
-            });
-        }
-        self.prepare_pdu(pdu[0], &pdu[2..])
+        let packet = BluetoothLeTxPacketPreparedInput::new(pdu)?;
+        Ok(self.prepare_validated_encoded_pdu(packet))
+    }
+
+    pub(super) fn prepare_validated_encoded_pdu(
+        &mut self,
+        packet: BluetoothLeTxPacketPreparedInput<'_, ALLOCATION_BYTES>,
+    ) -> BluetoothLeTxPacketPreparedLength<ALLOCATION_BYTES> {
+        let pdu = packet.as_bytes();
+        let length = packet.payload_bytes();
+        self.bytes[ALLOCATION_CLASS_BYTE] = 2;
+        self.bytes[ALLOCATION_STATE_BYTE] = 0;
+        self.bytes[PDU_HEADER_BYTE] = pdu[0];
+        self.bytes[PDU_LENGTH_BYTE] = length;
+        self.bytes[BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES..][..usize::from(length)]
+            .copy_from_slice(&pdu[2..]);
+        BluetoothLeTxPacketPreparedLength(length)
     }
 
     /// Borrow the semantic Link Layer PDU installed by the enclosing owner.

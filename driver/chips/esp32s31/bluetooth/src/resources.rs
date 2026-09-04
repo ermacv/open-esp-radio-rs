@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListsCleared;
 use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
+    BluetoothControllerSramAddress, BluetoothDirectionFindingDisabledBaselineOwner,
     BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
     BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
@@ -45,6 +46,8 @@ use crate::controller_time::{
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPassiveScanMemoryGraphCommandPublished,
     BluetoothPassiveScanMemoryGraphPublicationPrepared, BluetoothPassiveScanMemoryGraphPublished,
+    BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    BluetoothPeripheralConnectionMemoryGraphRxPublished,
 };
 
 /// Opaque singleton root for one standalone Bluetooth lifecycle.
@@ -250,6 +253,34 @@ impl BluetoothTaskResources {
         match prepared.into_published(publication) {
             Ok(published) => published,
             Err(_) => unreachable!("the publication was built from this exact scanner graph"),
+        }
+    }
+
+    /// Publish selector-two RX memory for one exact connection graph.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the pinned connection graph, its detached
+    /// scheduler item and the sole powered task epoch across this transaction.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper connection lifecycle retains graph lifetime and exclusive task MMIO"
+    )]
+    pub(crate) unsafe fn publish_peripheral_connection_rx_memory(
+        &mut self,
+        prepared: BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
+    ) -> BluetoothPeripheralConnectionMemoryGraphRxPublished {
+        let selector = prepared.selector();
+        let head = prepared.receive_head();
+        let publication = unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .publish_rx_memory_list_initial_head(selector, head)
+        };
+        match prepared.into_rx_published(publication) {
+            Ok(published) => published,
+            Err(_) => unreachable!("the publication was built from this exact connection graph"),
         }
     }
 
@@ -561,6 +592,28 @@ impl BluetoothTaskResources {
     ) {
         unsafe {
             self.registers.enable_ble_base_stack_hardware(inputs);
+        }
+    }
+
+    /// Publish the controller-global disabled-CTE descriptor baseline.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the initialized pinned workspace and this
+    /// powered Controller epoch until a future reviewed retirement transition.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper BLE-PHY lifecycle retains the workspace and powered task owner"
+    )]
+    pub(crate) unsafe fn prepare_direction_finding_disabled_baseline(
+        &mut self,
+        descriptor: BluetoothControllerSramAddress,
+    ) -> BluetoothDirectionFindingDisabledBaselineOwner {
+        unsafe {
+            self.registers
+                .borrow_bluetooth_controller()
+                .prepare_direction_finding_disabled_baseline(descriptor)
         }
     }
 

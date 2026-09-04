@@ -8,7 +8,8 @@
 use crate::{
     LeDeviceAddress, LeDeviceAddressKind,
     advertising::{
-        AdvertisingDelay, AdvertisingInterval, LegacyAdvertisingData, LegacyAdvertisingEncodeError,
+        AdvertisingDelay, AdvertisingInterval, LEGACY_ADVERTISING_PDU_CAPACITY,
+        LegacyAdvertisingData, LegacyAdvertisingDataError, LegacyAdvertisingEncodeError,
         PrimaryAdvertisingChannelMap,
     },
     connection::{
@@ -20,6 +21,7 @@ use crate::{
 const ADVERTISING_HEADER_LENGTH: usize = 2;
 const DEVICE_ADDRESS_LENGTH: usize = 6;
 const ADV_IND_TYPE: u8 = 0;
+const SCAN_RSP_TYPE: u8 = 4;
 const PDU_TYPE_MASK: u8 = 0x0f;
 const RESERVED_HEADER_BITS: u8 = (1 << 4) | (1 << 7);
 const CHANNEL_SELECTION_TWO: u8 = 1 << 5;
@@ -151,6 +153,108 @@ impl<'a> LegacyConnectableAdvertisement<'a> {
     }
 }
 
+/// Semantic Host data carried by the matching legacy `SCAN_RSP`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyScanResponseData<'a>(LegacyAdvertisingData<'a>);
+
+impl<'a> LegacyScanResponseData<'a> {
+    /// Validate caller-owned scan-response data without copying it.
+    pub const fn new(bytes: &'a [u8]) -> Result<Self, LegacyAdvertisingDataError> {
+        match LegacyAdvertisingData::new(bytes) {
+            Ok(data) => Ok(Self(data)),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Borrow the validated response data.
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
+    /// Number of response-data octets.
+    pub const fn len(self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether the response carries no Host data after AdvA.
+    pub const fn is_empty(self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl LegacyScanResponseData<'static> {
+    /// Copy one ephemeral Host response into an async-safe owner.
+    pub const fn new_owned(bytes: &[u8]) -> Result<Self, LegacyAdvertisingDataError> {
+        match LegacyAdvertisingData::new_owned(bytes) {
+            Ok(data) => Ok(Self(data)),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// Complete bounded `ADV_IND` wire image produced by a prepared event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyConnectableAdvIndPdu {
+    bytes: [u8; LEGACY_ADVERTISING_PDU_CAPACITY],
+    length: u8,
+}
+
+impl LegacyConnectableAdvIndPdu {
+    /// Complete two-byte header and declared payload.
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.bytes.split_at(self.length as usize).0
+    }
+
+    /// Link Layer payload length following the two-byte header.
+    pub const fn payload_length(self) -> u8 {
+        self.length - ADVERTISING_HEADER_LENGTH as u8
+    }
+}
+
+/// Complete bounded `SCAN_RSP` wire image paired with one prepared event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyScanResponsePdu {
+    bytes: [u8; LEGACY_ADVERTISING_PDU_CAPACITY],
+    length: u8,
+}
+
+impl LegacyScanResponsePdu {
+    /// Complete two-byte header and declared payload.
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.bytes.split_at(self.length as usize).0
+    }
+
+    /// Link Layer payload length following the two-byte header.
+    pub const fn payload_length(self) -> u8 {
+        self.length - ADVERTISING_HEADER_LENGTH as u8
+    }
+}
+
+fn encode_prepared_pdu(
+    advertiser: LeDeviceAddress,
+    data: &[u8],
+    pdu_type: u8,
+    channel_selection_two: LeChannelSelectionAlgorithmTwoSupport,
+) -> ([u8; LEGACY_ADVERTISING_PDU_CAPACITY], u8) {
+    let mut bytes = [0; LEGACY_ADVERTISING_PDU_CAPACITY];
+    bytes[0] = pdu_type
+        | match advertiser.kind() {
+            LeDeviceAddressKind::Public => 0,
+            LeDeviceAddressKind::Random => TX_ADD_RANDOM,
+        }
+        | match channel_selection_two {
+            LeChannelSelectionAlgorithmTwoSupport::Unsupported => 0,
+            LeChannelSelectionAlgorithmTwoSupport::Supported => CHANNEL_SELECTION_TWO,
+        };
+    bytes[1] = (DEVICE_ADDRESS_LENGTH + data.len()) as u8;
+    bytes[2..8].copy_from_slice(&advertiser.wire_bytes());
+    bytes[8..8 + data.len()].copy_from_slice(data);
+    (
+        bytes,
+        (ADVERTISING_HEADER_LENGTH + DEVICE_ADDRESS_LENGTH + data.len()) as u8,
+    )
+}
+
 /// Malformed or unsupported `ADV_IND` input.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LegacyConnectableAdvertisementDecodeError {
@@ -165,6 +269,7 @@ pub enum LegacyConnectableAdvertisementDecodeError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LegacyConnectableAdvertisingSet<'a> {
     advertisement: LegacyConnectableAdvertisement<'a>,
+    scan_response: LegacyScanResponseData<'a>,
     channels: PrimaryAdvertisingChannelMap,
     interval: AdvertisingInterval,
 }
@@ -172,11 +277,13 @@ pub struct LegacyConnectableAdvertisingSet<'a> {
 impl<'a> LegacyConnectableAdvertisingSet<'a> {
     pub const fn new(
         advertisement: LegacyConnectableAdvertisement<'a>,
+        scan_response: LegacyScanResponseData<'a>,
         channels: PrimaryAdvertisingChannelMap,
         interval: AdvertisingInterval,
     ) -> Self {
         Self {
             advertisement,
+            scan_response,
             channels,
             interval,
         }
@@ -184,6 +291,10 @@ impl<'a> LegacyConnectableAdvertisingSet<'a> {
 
     pub const fn advertisement(self) -> LegacyConnectableAdvertisement<'a> {
         self.advertisement
+    }
+
+    pub const fn scan_response(self) -> LegacyScanResponseData<'a> {
+        self.scan_response
     }
 
     pub const fn channels(self) -> PrimaryAdvertisingChannelMap {
@@ -228,8 +339,39 @@ impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
         self.event.set.channels
     }
 
+    pub const fn advertisement(&self) -> LegacyConnectableAdvertisement<'a> {
+        self.event.set.advertisement
+    }
+
+    pub const fn scan_response(&self) -> LegacyScanResponseData<'a> {
+        self.event.set.scan_response
+    }
+
     pub fn encode(&self, destination: &mut [u8]) -> Result<usize, LegacyAdvertisingEncodeError> {
         self.event.set.advertisement.encode(destination)
+    }
+
+    /// Produce the complete bounded `ADV_IND` selected by this event.
+    pub fn adv_ind_pdu(&self) -> LegacyConnectableAdvIndPdu {
+        let advertisement = self.event.set.advertisement;
+        let (bytes, length) = encode_prepared_pdu(
+            advertisement.advertiser(),
+            advertisement.data().as_bytes(),
+            ADV_IND_TYPE,
+            advertisement.channel_selection_two(),
+        );
+        LegacyConnectableAdvIndPdu { bytes, length }
+    }
+
+    /// Produce the matching bounded `SCAN_RSP` for this advertiser.
+    pub fn scan_response_pdu(&self) -> LegacyScanResponsePdu {
+        let (bytes, length) = encode_prepared_pdu(
+            self.event.set.advertisement.advertiser(),
+            self.event.set.scan_response.as_bytes(),
+            SCAN_RSP_TYPE,
+            LeChannelSelectionAlgorithmTwoSupport::Unsupported,
+        );
+        LegacyScanResponsePdu { bytes, length }
     }
 
     pub fn cancel(self) -> LegacyConnectableAdvertisingEvent<'a> {
@@ -407,6 +549,7 @@ mod tests {
                 LegacyAdvertisingData::new(&[2, 1, 6]).unwrap(),
                 support,
             ),
+            LegacyScanResponseData::new(&[3, 9, 8, 7]).unwrap(),
             PrimaryAdvertisingChannelMap::all(),
             AdvertisingInterval::new(32).unwrap(),
         )
@@ -446,6 +589,27 @@ mod tests {
         );
         assert_eq!(encoded[0], 0x60);
         assert_eq!(&encoded[2..8], &ADVERTISER_BYTES);
+    }
+
+    #[test]
+    fn prepared_event_owns_matching_adv_ind_and_scan_response_pdus() {
+        let prepared = advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported)
+            .begin_event()
+            .prepare();
+        let adv_ind = prepared.adv_ind_pdu();
+        let scan_response = prepared.scan_response_pdu();
+
+        assert_eq!(
+            LegacyConnectableAdvertisement::decode(adv_ind.as_bytes()),
+            Ok(prepared.advertisement())
+        );
+        assert_eq!(scan_response.as_bytes()[0], 0x44);
+        assert_eq!(&scan_response.as_bytes()[2..8], &ADVERTISER_BYTES);
+        assert_eq!(&scan_response.as_bytes()[8..], &[3, 9, 8, 7]);
+        assert_eq!(scan_response.payload_length(), 10);
+
+        let event = prepared.cancel();
+        assert_eq!(event.into_set().scan_response().as_bytes(), &[3, 9, 8, 7]);
     }
 
     #[test]

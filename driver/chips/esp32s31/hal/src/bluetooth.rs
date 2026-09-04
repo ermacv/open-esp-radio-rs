@@ -8,9 +8,9 @@
 
 use open_esp_radio_esp32s31_pac::{
     BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothControllerSramAddress,
-    BluetoothInterruptRegisters, BluetoothInterruptSetup as PacBluetoothInterruptSetup,
-    BluetoothLowPowerClockObservation, BluetoothMemoryListPointerImage,
-    BluetoothMemoryListSelector, BluetoothMemoryListSlot,
+    BluetoothDirectionFindingDisabledBaselinePrepared, BluetoothInterruptRegisters,
+    BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothLowPowerClockObservation,
+    BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
     BluetoothModemLpTimerCounterStarted as PacBluetoothModemLpTimerCounterStarted,
     BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
     BluetoothModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
@@ -795,7 +795,26 @@ pub struct BluetoothRxMemoryListPublished {
     head: BluetoothControllerSramAddress,
 }
 
+/// HAL ownership of the controller-global disabled-CTE publication.
+///
+/// The restricted PAC proof remains private, so upper Controller layers can
+/// retain the hardware epoch without depending on a register-level type.
+#[must_use = "the disabled-CTE publication must retain its pinned workspace"]
+pub struct BluetoothDirectionFindingDisabledBaselineOwner {
+    _prepared: BluetoothDirectionFindingDisabledBaselinePrepared,
+}
+
 impl BluetoothRxMemoryListPublished {
+    /// Construct a semantic publication proof for host ownership validation.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn from_parts_for_validation(
+        selector: BluetoothMemoryListSelector,
+        head: BluetoothControllerSramAddress,
+    ) -> Self {
+        Self { selector, head }
+    }
+
     /// Return the positional hardware-list selector chosen by the memory
     /// layer.
     pub const fn selector(&self) -> BluetoothMemoryListSelector {
@@ -858,6 +877,30 @@ impl BluetoothRxMemoryListInitialPublication for PacBluetoothRxMemoryListInitial
 }
 
 impl BluetoothControllerHal<'_> {
+    /// Publish the controller-global CTE-disabled descriptor baseline.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the powered Controller epoch and the matching
+    /// initialized pinned descriptor until a reviewed retirement transition.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains powered-controller and descriptor-lifetime prerequisites"
+    )]
+    pub unsafe fn prepare_direction_finding_disabled_baseline(
+        &mut self,
+        descriptor: BluetoothControllerSramAddress,
+    ) -> BluetoothDirectionFindingDisabledBaselineOwner {
+        let prepared = unsafe {
+            self.registers
+                .prepare_direction_finding_disabled_baseline(descriptor)
+        };
+        BluetoothDirectionFindingDisabledBaselineOwner {
+            _prepared: prepared,
+        }
+    }
+
     /// Publish one initialized receive-memory list in the reviewed cold order.
     ///
     /// The memory layer owns the semantic mapping from a controller role to

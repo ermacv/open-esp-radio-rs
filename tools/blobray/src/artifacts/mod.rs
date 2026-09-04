@@ -29,10 +29,12 @@ pub(crate) use linked_ir_bundle::{
     GraphSearchLimits, LinkedIrReader, LinkedIrReviewProjection, StoredGraphEdge, bundle_files,
     load_linked_ir_functions,
 };
-#[cfg(test)]
-pub(crate) use linked_ir_document::render_linked_ir_fixture;
 pub(crate) use linked_ir_document::{
-    StagedLinkedIrBundle, build_linked_ir_document, stage_linked_ir_bundle,
+    LinkedIrPublication, StagedLinkedIrBundle, build_linked_ir_document, stage_linked_ir_bundle,
+};
+#[cfg(test)]
+pub(crate) use linked_ir_document::{
+    render_linked_ir_fixture, render_linked_ir_fixture_with_bindings,
 };
 pub(crate) use linked_ir_read::{
     GuardedReturnClassification, GuardedReturnMatch, LinkedIrStoredDocument, StoredCall,
@@ -84,7 +86,7 @@ pub(crate) const CAPABILITY_CONTEXT: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 66,
+    version: 68,
     command: "ir export",
 };
 
@@ -147,7 +149,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 66,
+                version: 68,
                 command: "ir export",
             }
         );

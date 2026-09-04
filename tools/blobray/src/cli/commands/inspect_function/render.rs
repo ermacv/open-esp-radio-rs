@@ -1,6 +1,6 @@
 //! Human rendering for complete and compact function investigations.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{cli::output, function_investigation::FunctionInvestigationReport};
 
@@ -23,6 +23,9 @@ pub(super) fn human(report: &FunctionInvestigationReport, full: bool) {
         report.runtime.accounted_bytes,
         report.runtime.size
     ));
+    for semantic in semantic_labels(report) {
+        crate::cli::output::line(format_args!("SEMANTIC {semantic}"));
+    }
     crate::cli::output::line(format_args!("\nPROOF LEDGER"));
     for entry in &report.proof_ledger {
         crate::cli::output::line(format_args!(
@@ -578,6 +581,9 @@ pub(super) fn human(report: &FunctionInvestigationReport, full: bool) {
 fn render_summary(report: &FunctionInvestigationReport) {
     outputln!("{}", output::heading("Function investigation"));
     outputln!("Function: {}:{}", report.source, report.symbol);
+    for semantic in semantic_labels(report) {
+        outputln!("Semantic: {semantic}");
+    }
     if let Some(reviewed) = report
         .semantics
         .iter()
@@ -838,6 +844,14 @@ fn render_summary(report: &FunctionInvestigationReport) {
     } else {
         outputln!("2. use inspect flow to follow arguments and constants across callees");
     }
+}
+
+fn semantic_labels(report: &FunctionInvestigationReport) -> BTreeSet<&str> {
+    report
+        .semantics
+        .iter()
+        .filter_map(|evidence| evidence.semantic.as_deref())
+        .collect()
 }
 
 fn blocker_priority(kind: &str) -> u8 {

@@ -5,6 +5,7 @@
 
 mod analysis;
 mod application;
+mod artifact_occurrence;
 mod artifacts;
 mod blocker_resolution;
 mod chip_pack;
@@ -35,6 +36,7 @@ mod run_spec;
 mod shell;
 mod source_id;
 mod symbol_correspondence;
+mod symbol_lineage;
 mod target;
 #[cfg(test)]
 mod test_support;

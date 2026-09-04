@@ -121,6 +121,8 @@ mod legacy_advertising_recurring;
 mod legacy_advertising_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod legacy_advertising_timing;
+#[cfg(any(target_arch = "riscv32", test))]
+mod low_power;
 mod modem_lp_timer_queue;
 mod nrt_interrupt;
 mod passive_scanning;
@@ -210,8 +212,21 @@ pub use controller_start::{
     BluetoothPassiveScanControllerPreparationStep,
     BluetoothPassiveScanControllerPreparationTerminal, BluetoothPassiveScanPostUnlinkArmStep,
     BluetoothPassiveScanSchedulerStartFailure,
-    BluetoothPassiveScanSoftwareListRemovalPublishedStep, BluetoothSchedulerRunInterruptStorage,
-    BluetoothSharedInterruptDispatchStorage,
+    BluetoothPassiveScanSoftwareListRemovalPublishedStep,
+    BluetoothPeripheralConnectionCompletionStep,
+    BluetoothPeripheralConnectionControllerPreparationError,
+    BluetoothPeripheralConnectionControllerPreparationOutcome,
+    BluetoothPeripheralConnectionControllerPreparationPending,
+    BluetoothPeripheralConnectionControllerPreparationStep,
+    BluetoothPeripheralConnectionControllerPreparationTerminal,
+    BluetoothPeripheralConnectionPostUnlinkArmStep,
+    BluetoothPeripheralConnectionRecurringCandidateStep,
+    BluetoothPeripheralConnectionRecurringRetry,
+    BluetoothPeripheralConnectionRecurringSchedulerStartFailure,
+    BluetoothPeripheralConnectionRecurringSequenceCompletion,
+    BluetoothPeripheralConnectionSchedulerStartFailure,
+    BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use controller_time::{
@@ -270,6 +285,8 @@ pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep,
     BluetoothLegacyAdvertisingPostUnlinkAwaiting, BluetoothLegacyAdvertisingPostUnlinkCancelStep,
     BluetoothPassiveScanPostUnlinkAwaiting, BluetoothPassiveScanPostUnlinkCancelStep,
+    BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    BluetoothPeripheralConnectionPostUnlinkCancelStep,
 };
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
@@ -328,11 +345,9 @@ pub use dtm_tx_packet::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES,
     BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, BluetoothDtmPreparedTxGraph, BluetoothDtmTxGraphPrepare,
 };
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(target_arch = "riscv32")]
 pub use hci::{
-    BluetoothControllerHciInitializationError, BluetoothControllerHciInitializationFailure,
-    BluetoothControllerHciInitialized, BluetoothControllerLowPowerHardwareInitializationFailure,
-    BluetoothControllerLowPowerHardwareInitialized, BluetoothControllerRuntimeEndpoints,
+    BluetoothControllerHciBindError, BluetoothControllerHciBindFailure, BluetoothControllerHciBound,
 };
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,
@@ -423,6 +438,11 @@ pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingEventWindow;
 pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingRecurringTimingObservation;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingTimingObservation;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use low_power::{
+    BluetoothControllerLowPowerHardwareInitializationFailure,
+    BluetoothControllerLowPowerHardwareInitialized, BluetoothControllerRuntimeEndpoints,
+};
 pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
     BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
@@ -487,8 +507,14 @@ pub use passive_scanning_runner::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
+#[cfg(target_arch = "riscv32")]
+pub use peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use peripheral_connection::BluetoothPeripheralConnectionRecurringTimingError;
 pub use peripheral_connection::{
     BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionFirstEventPrepared,
+    BluetoothPeripheralConnectionRuntimeAllocation, BluetoothPeripheralConnectionRuntimeBeginError,
+    BluetoothPeripheralConnectionRuntimeClaimError, BluetoothPeripheralConnectionRuntimeConfig,
     BluetoothPeripheralConnectionRuntimeResources,
 };
 #[cfg(target_arch = "riscv32")]
@@ -518,7 +544,9 @@ pub use scheduler::{
     BluetoothLegacyAdvertisingEmptySchedulerMergeFailure,
     BluetoothLegacyAdvertisingEmptySchedulerMergePrepared,
     BluetoothPassiveScanEmptySchedulerMergeFailure,
-    BluetoothPassiveScanEmptySchedulerMergePrepared, BluetoothSchedulerEmptyListMergeError,
+    BluetoothPassiveScanEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionFirstEventPreparationError, BluetoothSchedulerEmptyListMergeError,
     BluetoothSchedulerHeadPublicationError, BluetoothSchedulerInitialized,
 };
 #[cfg(target_arch = "riscv32")]
@@ -552,6 +580,24 @@ pub use scheduler::{
     BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck,
     BluetoothPassiveScanSchedulerSoftwareListUnlinkStep,
     BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    BluetoothPeripheralConnectionRecurringCandidateError,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionRecurringEventCandidate,
+    BluetoothPeripheralConnectionRecurringEventPreparationError,
+    BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    BluetoothPeripheralConnectionRecurringEventPrepared,
+    BluetoothPeripheralConnectionRecurringPreSequence,
+    BluetoothPeripheralConnectionSchedulerCompleted,
+    BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
+    BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
+    BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
+    BluetoothPeripheralConnectionSchedulerHeadPublished,
+    BluetoothPeripheralConnectionSchedulerRecycleStep,
+    BluetoothPeripheralConnectionSchedulerRecycled, BluetoothPeripheralConnectionSchedulerRunning,
+    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
+    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep,
+    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{
@@ -567,6 +613,10 @@ pub use scheduler::{
     BluetoothPassiveScanSchedulerCompletionObserved,
     BluetoothPassiveScanSchedulerCompletionObservedDrainStep,
     BluetoothPassiveScanSchedulerCompletionStep, BluetoothPassiveScanSchedulerRunningDrainStep,
+    BluetoothPeripheralConnectionSchedulerCompletionObserved,
+    BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep,
+    BluetoothPeripheralConnectionSchedulerCompletionStep,
+    BluetoothPeripheralConnectionSchedulerRunningDrainStep,
     BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
 };
 #[cfg(any(target_arch = "riscv32", test))]

@@ -94,7 +94,7 @@ fn linked_test_function(
 }
 
 #[test]
-fn schema_v66_requires_artifact_provenance_and_frontier_fields() {
+fn schema_v68_requires_artifact_provenance_and_frontier_fields() {
     let render = || {
         crate::artifacts::render_linked_ir_fixture(
             vec![linked_test_function("rom", "worker", "global", Vec::new())],
@@ -111,6 +111,27 @@ fn schema_v66_requires_artifact_provenance_and_frontier_fields() {
         error
             .to_string()
             .contains("missing field `artifact_sha256`"),
+        "{error}"
+    );
+
+    let mut missing: serde_json::Value = serde_json::from_str(&render()).unwrap();
+    missing["functions"][0]
+        .as_object_mut()
+        .expect("function object")
+        .remove("semantic");
+    let error = crate::artifacts::parse_linked_ir(&missing.to_string()).unwrap_err();
+    assert!(
+        error.to_string().contains("missing field `semantic`"),
+        "{error}"
+    );
+
+    let mut forged: serde_json::Value = serde_json::from_str(&render()).unwrap();
+    forged["functions"][0]["locator"] = serde_json::json!("symbol:other/address:0x0");
+    let error = crate::artifacts::parse_linked_ir(&forged.to_string()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("does not match exact artifact locator"),
         "{error}"
     );
 
@@ -164,6 +185,54 @@ fn schema_v66_requires_artifact_provenance_and_frontier_fields() {
             .contains("unknown field `legacy_text_guard`"),
         "{error}"
     );
+}
+
+#[test]
+fn reviewed_function_binding_adds_semantic_identity_without_replacing_raw_provenance() {
+    let function = linked_test_function("rom", "r_sym_ble", "global", Vec::new());
+    let locator = crate::artifact_occurrence::function_locator(None, "r_sym_ble", 0);
+    let occurrence = crate::artifact_occurrence::derive(
+        open_radio_vendor_contracts::EntityDomain::Function,
+        "rom",
+        TEST_ARTIFACT_SHA256,
+        &locator,
+    )
+    .unwrap();
+    let semantic = open_radio_vendor_contracts::SemanticEntityId::function(
+        "esp-idf/ble/controller/advertising-start",
+    )
+    .unwrap();
+    let bindings = BTreeMap::from([(occurrence.clone(), semantic.clone())]);
+
+    let rendered = crate::artifacts::render_linked_ir_fixture_with_bindings(
+        vec![function],
+        Vec::new(),
+        &bindings,
+    );
+    let document: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+    let function = &document["functions"][0];
+    assert_eq!(function["identity"], "rom::r_sym_ble");
+    assert_eq!(function["symbol"], "r_sym_ble");
+    assert_eq!(function["locator"], locator);
+    assert_eq!(function["occurrence"], occurrence.to_string());
+    assert_eq!(function["semantic"], semantic.to_string());
+
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-reviewed-function-binding-{}",
+        std::process::id()
+    ));
+    crate::artifacts::write_fixture_bundle(&directory, &rendered).unwrap();
+    let reader = crate::artifacts::LinkedIrReader::open(&directory).unwrap();
+    let selected = reader
+        .get_function_by_identity(&semantic.to_string())
+        .unwrap()
+        .expect("semantic identity must resolve the raw function record");
+    assert_eq!(selected.identity, "rom::r_sym_ble");
+    assert_eq!(
+        selected.semantic.as_deref(),
+        Some(semantic.to_string().as_str())
+    );
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 fn projected_argument(

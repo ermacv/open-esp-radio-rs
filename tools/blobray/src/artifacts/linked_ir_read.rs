@@ -32,9 +32,33 @@ pub(crate) fn parse_linked_ir(input: &str) -> Result<LinkedIrStoredDocument> {
                 function.identity, function.source, function.artifact_sha256
             )));
         }
+        crate::artifact_occurrence::validate(
+            open_radio_vendor_contracts::EntityDomain::Function,
+            &function.source,
+            &function.artifact_sha256,
+            &function.locator,
+            &function.occurrence,
+            function.semantic.as_deref(),
+        )?;
         schema::validate_function_loops(&function.identity, &function.loops)?;
         schema::validate_call_arguments(&function.identity, &function.calls)?;
         schema::validate_return_frontiers(function)?;
+    }
+    for object in &document.data_objects {
+        if !artifacts.contains(&(object.source.as_str(), object.artifact_sha256.as_str())) {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR data object {}:{} refers to an undeclared source artifact {}@{}",
+                object.source, object.symbol, object.source, object.artifact_sha256
+            )));
+        }
+        crate::artifact_occurrence::validate(
+            open_radio_vendor_contracts::EntityDomain::MemoryObject,
+            &object.source,
+            &object.artifact_sha256,
+            &object.locator,
+            &object.occurrence,
+            object.semantic.as_deref(),
+        )?;
     }
     Ok(document)
 }

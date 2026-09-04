@@ -1350,3 +1350,13 @@ name = "ble_lll_conn_peripheral_new"
 role = "ble.connection.peripheral-create"
 summary = "Creates the peripheral-side connection graph, derives its first anchor and submits the first scheduled event."
 accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_ble_1KGaCqPI03xSu9c6Rh0G"
+status = "reviewed"
+name = "ble_lll_conn_update_link_state"
+role = "ble.connection.link-state-update"
+summary = "Refreshes connection link-state encryption material and flags, and selects the matching connection-abort control path through one fresh field-only MMIO update."
+accept-incomplete = true

@@ -1,6 +1,9 @@
 //! Controller-output and runtime-timer activation after BLE PHY initialization.
 
 #[cfg(target_arch = "riscv32")]
+mod scheduler_service;
+
+#[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
@@ -24,12 +27,19 @@ use crate::dtm_post_unlink::{
     BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkMailbox, BluetoothDtmPostUnlinkRearm,
     BluetoothDtmPostUnlinkTake, BluetoothLegacyAdvertisingPostUnlinkRearm,
     BluetoothLegacyAdvertisingPostUnlinkTake, BluetoothPassiveScanPostUnlinkRearm,
-    BluetoothPassiveScanPostUnlinkTake,
+    BluetoothPassiveScanPostUnlinkTake, BluetoothPeripheralConnectionPostUnlinkRearm,
+    BluetoothPeripheralConnectionPostUnlinkTake,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::modem_lp_timer_queue::{
     BluetoothModemLpTimerExpirationState, BluetoothModemLpTimerSoftwareState,
     BluetoothModemLpTimerSoftwareStateStep,
+};
+#[cfg(target_arch = "riscv32")]
+use crate::scheduler::{
+    BluetoothPeripheralConnectionSchedulerCompletionClassification,
+    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
+    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
@@ -52,24 +62,11 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerOutputTimerStarted<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    pub(crate) initialized: BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    pub(crate) initialized:
+        BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     _interrupt_output: BluetoothInterruptOutputPreparedOwner,
     pub(crate) timer: BluetoothModemLpTimerCounterStartedOwner,
 }
@@ -84,24 +81,11 @@ pub struct BluetoothControllerOutputTimerStarted<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnersReady<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    initialized: BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    initialized:
+        BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     _interrupts: BluetoothInterruptRegistersOwner,
     _timer: BluetoothModemLpTimerInterruptReadyOwner,
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
@@ -250,6 +234,46 @@ pub struct BluetoothLegacyAdvertisingSchedulerStartFailure<'a, E> {
 pub struct BluetoothPassiveScanSchedulerStartFailure<E> {
     error: E,
     head: crate::BluetoothPassiveScanSchedulerHeadPublished,
+}
+
+/// Failed connection scheduler start before the synchronous RUN suffix began.
+#[must_use = "a failed connection start still owns its published graph"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionSchedulerStartFailure<E> {
+    error: E,
+    head: crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
+}
+
+/// Recurring connection rejection before the atomic LL/phase commit.
+#[must_use = "the exact recurring merge remains cancellable and retryable"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionRecurringSchedulerStartFailure<E> {
+    Validation {
+        error: crate::BluetoothSchedulerHeadPublicationError,
+        merged: crate::scheduler::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    },
+    Interrupts {
+        error: E,
+        merged: crate::scheduler::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    },
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<E> BluetoothPeripheralConnectionSchedulerStartFailure<E> {
+    /// Inspect the stable interrupt-storage rejection.
+    pub const fn error(&self) -> &E {
+        &self.error
+    }
+
+    /// Recover the error and unchanged published connection graph.
+    pub fn into_parts(
+        self,
+    ) -> (
+        E,
+        crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
+    ) {
+        (self.error, self.head)
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -486,6 +510,66 @@ pub enum BluetoothPassiveScanSoftwareListRemovalPublishedStep {
     },
     Ready {
         ready: crate::BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+    },
+}
+
+/// Result of atomically unlinking a connection item and arming its return mailbox.
+#[must_use = "retain the empty-head connection graph or armed owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionPostUnlinkArmStep {
+    MailboxBusy(crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
+    MailboxIdentityExhausted(
+        crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
+    ),
+    GenerationExhausted(crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
+    SchedulerIdentityMismatch(
+        crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
+    ),
+    MailboxCommitMismatch(crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
+    Armed(crate::BluetoothPeripheralConnectionPostUnlinkAwaiting),
+}
+
+/// Controller result of consuming one connection post-unlink event pair.
+#[must_use = "every outcome retains the connection graph"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep {
+    MailboxAffinityMismatch(crate::BluetoothPeripheralConnectionPostUnlinkAwaiting),
+    Fault {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        fault: crate::BluetoothPrimaryControllerFault,
+    },
+    NoSchedulerWork {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PublishedPending {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    },
+    DirectPending {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    },
+    RecheckUnavailable {
+        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
+    },
+    NoSchedulerWorkRearmMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    PendingRearmMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    },
+    RecheckRearmMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    },
+    SchedulerIdentityMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    },
+    DirectSchedulerIdentityMismatch {
+        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    },
+    Ready {
+        ready: crate::BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
     },
 }
 
@@ -747,25 +831,12 @@ where
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnersPublished<
     P,
-    M,
     S,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    initialized: BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    initialized:
+        BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     _storage: S,
     post_unlink_mailbox: BluetoothDtmPostUnlinkMailbox,
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
@@ -774,6 +845,78 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
     peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
+}
+
+/// Hardware/task endpoints prepared after stable interrupt-owner publication.
+///
+/// HCI is intentionally absent: protocol resources are bound only after this
+/// hardware ownership graph has reached its final movable state.
+#[must_use = "published hardware endpoints must remain in one live runtime epoch"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothControllerPublishedHardwareRuntimeEndpoints<
+    'runtime,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    pub(crate) interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
+    pub(crate) task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    pub(crate) modem_timer: BluetoothControllerModemTimerTask<'runtime, S, MODEM_TIMER_CAPACITY>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPublishedHardwareRuntimeEndpoints<
+        'runtime,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+    >
+{
+    pub(crate) fn bind_hci<M, const H2C: usize, const C2H: usize, const PC: usize>(
+        self,
+        mut hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<'runtime, M, H2C, C2H, PC>,
+    ) -> BluetoothControllerPublishedRuntimeSplit<
+        'runtime,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        H2C,
+        C2H,
+        PC,
+    >
+    where
+        M: RawMutex,
+    {
+        let Self {
+            interrupt,
+            task,
+            modem_timer,
+        } = self;
+        match hci.controller.claim_initial_command_ready(task) {
+            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::Ready(ready) => {
+                BluetoothControllerPublishedRuntimeSplit::Ready(
+                    BluetoothControllerPublishedRuntimeEndpoints {
+                        interrupt,
+                        task: BluetoothControllerIdleCommandTask::from_ready(ready),
+                        modem_timer,
+                        hci,
+                    },
+                )
+            }
+            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::AlreadyClaimed(task) => {
+                BluetoothControllerPublishedRuntimeSplit::CommandReadyUnavailable(
+                    BluetoothControllerPublishedRuntimeSplitFailure {
+                        _interrupt: interrupt,
+                        _task: task,
+                        _modem_timer: modem_timer,
+                        _hci: hci,
+                    },
+                )
+            }
+        }
+    }
 }
 
 /// Disjoint runtime endpoints borrowed from one statically placed final
@@ -1401,8 +1544,10 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: &'runtime mut crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: &'runtime mut crate::BluetoothPassiveScanRuntimeResources,
-    _peripheral_connection_resources:
+    peripheral_connection_resources:
         &'runtime mut crate::BluetoothPeripheralConnectionRuntimeResources,
+    direction_finding_workspace:
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothDirectionFindingWorkspaceLink,
     ble_phy_timing: crate::ble_phy::BluetoothBlePhyTimingAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
@@ -1414,6 +1559,96 @@ pub enum BluetoothLePacketStartTimingError {
     /// The mandatory first live controller-time sample has not established the
     /// retained scheduler epoch yet.
     SchedulerEpochUnavailable,
+}
+
+/// Result of closing one recycled connection event against capture evidence.
+#[must_use = "retain the unchanged retry owner or completed connection"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionCompletionStep {
+    SchedulerEpochUnavailable(crate::BluetoothPeripheralConnectionSchedulerRecycled),
+    Completed(crate::BluetoothPeripheralConnectionSchedulerCompleted),
+}
+
+/// Production attempt to enter recurring preparation from one exact completion.
+#[must_use = "retain the prepared candidate or the exact retry owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionRecurringCandidateStep {
+    Prepared(crate::BluetoothPeripheralConnectionRecurringEventCandidate),
+    SchedulerEpochUnavailable(BluetoothPeripheralConnectionRecurringRetry),
+    TimingPolicyUnavailable(BluetoothPeripheralConnectionRecurringRetry),
+    Rejected {
+        error: crate::BluetoothPeripheralConnectionRecurringCandidateError,
+        retry: BluetoothPeripheralConnectionRecurringRetry,
+    },
+}
+
+/// Exact completed connection and typed event distance restored before admission.
+#[must_use = "retry recurrence or retain the exact completed connection"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionRecurringRetry {
+    completed: crate::BluetoothPeripheralConnectionSchedulerCompleted,
+    delta: open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionRecurringRetry {
+    fn new(
+        completed: crate::BluetoothPeripheralConnectionSchedulerCompleted,
+        delta: open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+    ) -> Self {
+        Self { completed, delta }
+    }
+
+    fn from_cancelled(
+        cancelled: (
+            crate::BluetoothPeripheralConnectionSchedulerCompleted,
+            open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+        ),
+    ) -> Self {
+        let (completed, delta) = cancelled;
+        Self::new(completed, delta)
+    }
+
+    pub const fn completed(&self) -> &crate::BluetoothPeripheralConnectionSchedulerCompleted {
+        &self.completed
+    }
+
+    pub const fn delta(
+        &self,
+    ) -> open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta {
+        self.delta
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        crate::BluetoothPeripheralConnectionSchedulerCompleted,
+        open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+    ) {
+        (self.completed, self.delta)
+    }
+}
+
+/// Result after a fresh sequence sample closes recurring preparation.
+#[must_use = "retain the task service and prepared or retryable recurring owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionRecurringSequenceCompletion<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Prepared {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        merged: crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    },
+    EventRejected {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        failure: crate::BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    },
+    EmptyListRejected {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        failure: crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    },
 }
 
 /// Why an affine post-enable controller-time acquisition did not start.
@@ -2076,6 +2311,111 @@ pub(crate) enum BluetoothPassiveScanControllerInitialPreparationFailure<
         error: BluetoothPassiveScanControllerPreparationError,
     },
     Terminal(BluetoothPassiveScanControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>),
+}
+
+/// Finite reason a checked-out connection event returned to CPU ownership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionControllerPreparationError {
+    ControllerTime(crate::BluetoothControllerTimeAcquisitionError),
+    TimingWindow,
+    Event(crate::scheduler::BluetoothPeripheralConnectionFirstEventPreparationError),
+    EmptyList(crate::BluetoothSchedulerEmptyListMergeError),
+}
+
+/// Terminal result of one source-ordered first connection preparation.
+#[must_use = "publish the connection item or retain every returned owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionControllerPreparationOutcome {
+    /// The sole allocation was already checked out; no input was consumed.
+    RuntimeUnavailable {
+        error: crate::BluetoothPeripheralConnectionRuntimeBeginError,
+        connection: open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+        packet_start: crate::BluetoothLe1MPacketStartTiming,
+    },
+    /// Preparation was rejected after consuming the packet-time input.
+    Rejected {
+        error: BluetoothPeripheralConnectionControllerPreparationError,
+        connection: open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+    },
+    /// The selected item is joined to the CPU-owned common scheduler list.
+    Prepared(crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared),
+}
+
+#[cfg(target_arch = "riscv32")]
+enum BluetoothPeripheralConnectionControllerPreparationPhase {
+    Sequence(crate::scheduler::BluetoothPeripheralConnectionFirstPreSequence),
+}
+
+#[cfg(target_arch = "riscv32")]
+struct BluetoothPeripheralConnectionControllerPreparationTimeOwner<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    phase: Option<BluetoothPeripheralConnectionControllerPreparationPhase>,
+    cancelled: Option<BluetoothPeripheralConnectionControllerPreparationOutcome>,
+}
+
+/// One exact in-flight sequence-deadline observation for a connection event.
+#[must_use = "recheck or explicitly cancel the exact connection time request"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionControllerPreparationPending<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    core: BluetoothControllerTimePendingCore<
+        BluetoothPeripheralConnectionControllerPreparationTimeOwner<
+            'runtime,
+            S,
+            SCHEDULER_CAPACITY,
+        >,
+    >,
+}
+
+/// Terminal connection preparation with the exact task service retained.
+#[must_use = "the task owner and connection outcome must be handled together"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionControllerPreparationTerminal<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+    outcome: BluetoothPeripheralConnectionControllerPreparationOutcome,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Recover the retained Controller and exact connection outcome.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothPeripheralConnectionControllerPreparationOutcome,
+    ) {
+        (self.controller, self.outcome)
+    }
+}
+
+/// Result of one bounded connection sequence-time observation.
+#[must_use = "retain Pending or consume the terminal task and connection result"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionControllerPreparationStep<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Pending(
+        BluetoothPeripheralConnectionControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    Terminal(
+        BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
 }
 
 /// Terminal result of one source-ordered DTM preparation transaction.
@@ -2770,6 +3110,183 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendin
 
 #[cfg(target_arch = "riscv32")]
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothPeripheralConnectionControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>
+{
+    fn terminal(
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        outcome: BluetoothPeripheralConnectionControllerPreparationOutcome,
+    ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+            BluetoothPeripheralConnectionControllerPreparationTerminal {
+                controller: BluetoothControllerSchedulerEpochRetained { controller },
+                outcome,
+            },
+        )
+    }
+
+    /// Perform one bounded observation of the connection sequence deadline.
+    pub fn recheck(
+        self,
+    ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let (mut owner, sample) = match self.core.recheck() {
+            Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
+                return BluetoothPeripheralConnectionControllerPreparationStep::Pending(Self {
+                    core,
+                });
+            }
+            Ok(BluetoothControllerTimePendingCoreStep::Ready { owner, sample }) => (owner, sample),
+            Err(failure) => {
+                let (mut owner, error) = failure.into_parts();
+                let phase = owner
+                    .phase
+                    .take()
+                    .expect("failed connection time recheck retains its exact phase");
+                let outcome = owner
+                    .controller
+                    .cancel_peripheral_connection_preparation_phase(
+                        phase,
+                        controller_time_event_error(error),
+                    );
+                return Self::terminal(owner.controller, outcome);
+            }
+        };
+        let phase = owner
+            .phase
+            .take()
+            .expect("completed connection time request retains its exact phase");
+        let mut controller = owner.controller;
+        match phase {
+            BluetoothPeripheralConnectionControllerPreparationPhase::Sequence(admitted) => {
+                let default_tx_power = controller
+                    .peripheral_connection_resources
+                    .default_tx_power_dbm();
+                let direction_finding_workspace = controller.direction_finding_workspace;
+                let prepared = match controller
+                    .runtime
+                    .prepare_peripheral_connection_first_event(
+                        admitted,
+                        crate::scheduler::BluetoothPeripheralConnectionSequenceObservation {
+                            sample,
+                        },
+                        default_tx_power,
+                        direction_finding_workspace,
+                    ) {
+                    Ok(prepared) => prepared,
+                    Err(failure) => {
+                        let error = failure.error();
+                        let (allocation, connection) = failure.into_candidate().cancel();
+                        controller.restore_peripheral_connection_allocation(allocation);
+                        return Self::terminal(
+                            controller,
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error:
+                                    BluetoothPeripheralConnectionControllerPreparationError::Event(
+                                        error,
+                                    ),
+                                connection,
+                            },
+                        );
+                    }
+                };
+                match controller
+                    .runtime
+                    .prepare_peripheral_connection_empty_list_merge(prepared)
+                {
+                    Ok(merged) => Self::terminal(
+                        controller,
+                        BluetoothPeripheralConnectionControllerPreparationOutcome::Prepared(merged),
+                    ),
+                    Err(failure) => {
+                        let error = failure.error();
+                        let (allocation, connection) = controller
+                            .runtime
+                            .cancel_peripheral_connection_first_event(failure.into_prepared());
+                        controller.restore_peripheral_connection_allocation(allocation);
+                        Self::terminal(
+                            controller,
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error: BluetoothPeripheralConnectionControllerPreparationError::EmptyList(
+                                    error,
+                                ),
+                                connection,
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Cancel the unpublished sequence request and restore the connection allocation.
+    pub fn cancel(
+        self,
+    ) -> BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let mut owner = match self.core.cancel() {
+            Ok(owner) => owner,
+            Err(failure) => failure.into_parts().0,
+        };
+        let outcome = owner
+            .cancelled
+            .take()
+            .expect("explicit connection time cancellation records its restored outcome");
+        BluetoothPeripheralConnectionControllerPreparationTerminal {
+            controller: BluetoothControllerSchedulerEpochRetained {
+                controller: owner.controller,
+            },
+            outcome,
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
+    for BluetoothPeripheralConnectionControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>
+{
+    fn recheck_owned_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
+        BluetoothControllerTimePendingOwner::recheck_owned_controller_time(
+            &mut self.controller,
+            request,
+        )
+    }
+
+    fn cancel_owned_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<(), BluetoothControllerTimeEventError> {
+        let result = BluetoothControllerTimePendingOwner::cancel_owned_controller_time(
+            &mut self.controller,
+            request,
+        );
+        let error = match result {
+            Ok(()) => crate::BluetoothControllerTimeAcquisitionError::Cancelled,
+            Err(error) => controller_time_event_error(error),
+        };
+        let phase = self
+            .phase
+            .take()
+            .expect("private connection time owner retains one exact preparation phase");
+        self.cancelled = Some(
+            self.controller
+                .cancel_peripheral_connection_preparation_phase(phase, error),
+        );
+        result
+    }
+
+    fn drain_orphan_controller_time(
+        &mut self,
+    ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
+        BluetoothControllerTimePendingOwner::drain_orphan_controller_time(&mut self.controller)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Borrow the exact role-specific terminal result.
@@ -3317,6 +3834,72 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         })
     }
 
+    fn restore_peripheral_connection_allocation(
+        &mut self,
+        allocation: crate::BluetoothPeripheralConnectionRuntimeAllocation,
+    ) {
+        if self
+            .peripheral_connection_resources
+            .restore_idle(allocation)
+            .is_err()
+        {
+            panic!("a connection phase returned an allocation to a different runtime");
+        }
+    }
+
+    fn cancel_peripheral_connection_preparation_phase(
+        &mut self,
+        phase: BluetoothPeripheralConnectionControllerPreparationPhase,
+        error: crate::BluetoothControllerTimeAcquisitionError,
+    ) -> BluetoothPeripheralConnectionControllerPreparationOutcome {
+        let (allocation, connection) = match phase {
+            BluetoothPeripheralConnectionControllerPreparationPhase::Sequence(admitted) => self
+                .runtime
+                .cancel_peripheral_connection_first_pre_sequence(admitted),
+        };
+        self.restore_peripheral_connection_allocation(allocation);
+        BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+            error: BluetoothPeripheralConnectionControllerPreparationError::ControllerTime(error),
+            connection,
+        }
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the Controller and restored connection allocation"
+    )]
+    fn begin_peripheral_connection_preparation_time(
+        mut self,
+        phase: BluetoothPeripheralConnectionControllerPreparationPhase,
+    ) -> Result<
+        BluetoothPeripheralConnectionControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothPeripheralConnectionControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    > {
+        let request = match self.runtime.request_controller_time() {
+            Ok(request) => request,
+            Err(error) => {
+                let outcome = self.cancel_peripheral_connection_preparation_phase(
+                    phase,
+                    controller_time_begin_error(error),
+                );
+                return Err(BluetoothPeripheralConnectionControllerPreparationTerminal {
+                    controller: BluetoothControllerSchedulerEpochRetained { controller: self },
+                    outcome,
+                });
+            }
+        };
+        Ok(BluetoothPeripheralConnectionControllerPreparationPending {
+            core: BluetoothControllerTimePendingCore::new(
+                BluetoothPeripheralConnectionControllerPreparationTimeOwner {
+                    controller: self,
+                    phase: Some(phase),
+                    cancelled: None,
+                },
+                request,
+            ),
+        })
+    }
+
     /// Return the exact cancelled or stopped session graph to this Controller.
     ///
     /// The embedded runtime rejects an occupied slot or a graph minted from
@@ -3735,6 +4318,48 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    /// Apply this fresh sequence sample to one reserved connection recurrence.
+    pub fn finish_peripheral_connection_recurring_event(
+        self,
+        admitted: crate::BluetoothPeripheralConnectionRecurringPreSequence,
+    ) -> BluetoothPeripheralConnectionRecurringSequenceCompletion<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let Self {
+            mut controller,
+            sample,
+            ..
+        } = self;
+        let prepared = match controller
+            .runtime
+            .prepare_peripheral_connection_recurring_event(
+                admitted,
+                crate::scheduler::BluetoothPeripheralConnectionSequenceObservation { sample },
+            ) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                return BluetoothPeripheralConnectionRecurringSequenceCompletion::EventRejected {
+                    task: controller,
+                    failure,
+                };
+            }
+        };
+        match controller
+            .runtime
+            .prepare_peripheral_connection_recurring_empty_list_merge(prepared)
+        {
+            Ok(merged) => BluetoothPeripheralConnectionRecurringSequenceCompletion::Prepared {
+                task: controller,
+                merged,
+            },
+            Err(failure) => {
+                BluetoothPeripheralConnectionRecurringSequenceCompletion::EmptyListRejected {
+                    task: controller,
+                    failure,
+                }
+            }
+        }
+    }
+
     /// Begin the source-ordered first legacy-advertising transaction.
     #[expect(
         clippy::result_large_err,
@@ -3834,6 +4459,93 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 },
             )
             .map_err(BluetoothPassiveScanControllerInitialPreparationFailure::Terminal)
+    }
+
+    /// Begin the first peripheral connection event from its causal packet time.
+    ///
+    /// The current sample authorizes timeline admission. A distinct later
+    /// request authorizes descriptor sequencing after overlap resolution. Every
+    /// rejection restores the exact connection allocation before returning the
+    /// retained Controller epoch.
+    pub fn begin_peripheral_connection_first_event(
+        self,
+        connection: open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+        packet_start: crate::BluetoothLe1MPacketStartTiming,
+    ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let Self {
+            mut controller,
+            epoch,
+            sample,
+        } = self;
+        let allocation = match controller.peripheral_connection_resources.begin_event() {
+            Ok(allocation) => allocation,
+            Err(error) => {
+                return BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+                    BluetoothPeripheralConnectionControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome:
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::RuntimeUnavailable {
+                                error,
+                                connection,
+                                packet_start,
+                            },
+                    },
+                );
+            }
+        };
+        let prepared = allocation.prepare_first_event(connection, packet_start);
+        let candidate = match prepared
+            .project_scheduler_window(epoch, controller.runtime.scheduler_config())
+        {
+            Ok(candidate) => candidate,
+            Err(prepared) => {
+                let (allocation, connection) = prepared.cancel();
+                controller.restore_peripheral_connection_allocation(allocation);
+                return BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+                    BluetoothPeripheralConnectionControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome:
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error: BluetoothPeripheralConnectionControllerPreparationError::TimingWindow,
+                                connection,
+                            },
+                    },
+                );
+            }
+        };
+        let admitted = match controller.runtime.admit_peripheral_connection_first_event(
+            candidate,
+            crate::scheduler::BluetoothPeripheralConnectionAdmissionObservation { sample },
+        ) {
+            Ok(admitted) => admitted,
+            Err(failure) => {
+                let error = failure.error();
+                let (allocation, connection) = failure.into_candidate().cancel();
+                controller.restore_peripheral_connection_allocation(allocation);
+                return BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
+                    BluetoothPeripheralConnectionControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome:
+                            BluetoothPeripheralConnectionControllerPreparationOutcome::Rejected {
+                                error:
+                                    BluetoothPeripheralConnectionControllerPreparationError::Event(
+                                        error,
+                                    ),
+                                connection,
+                            },
+                    },
+                );
+            }
+        };
+        match controller.begin_peripheral_connection_preparation_time(
+            BluetoothPeripheralConnectionControllerPreparationPhase::Sequence(admitted),
+        ) {
+            Ok(pending) => BluetoothPeripheralConnectionControllerPreparationStep::Pending(pending),
+            Err(terminal) => {
+                BluetoothPeripheralConnectionControllerPreparationStep::Terminal(terminal)
+            }
+        }
     }
 
     /// Begin source-ordered initial transmitter preparation.
@@ -3982,26 +4694,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnerPublicationFailure<
     P,
-    M,
     S,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
 > where
-    M: RawMutex,
     S: BluetoothInterruptOwnerStorage,
 {
-    controller: BluetoothControllerInterruptOwnersReady<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+    controller:
+        BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     storage: S,
     dtm_resources: crate::BluetoothDtmRuntimeResources,
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
@@ -4011,26 +4711,8 @@ pub struct BluetoothControllerInterruptOwnerPublicationFailure<
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerOutputTimerStarted<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the BLE PHY input retained by this exact powered epoch.
     pub const fn ble_phy_report(&self) -> crate::BluetoothBlePhyInitializationReport {
@@ -4054,47 +4736,23 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
+impl<P, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerInterruptOwnersPublished<P, S, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 where
-    M: RawMutex,
     S: BluetoothModemLpTimerSoftwareOwnerStorage,
 {
-    /// Borrow the complete final Controller and DTM runtime as disjoint
-    /// interrupt, task and HCI endpoints.
+    /// Borrow the published hardware graph as disjoint interrupt and task endpoints.
     ///
     /// The caller must retain this owner in stable storage for the complete
-    /// routed lifetime. The task endpoint uniquely borrows its embedded DTM
-    /// runtime; no endpoint can cross-wire a graph from another composition.
-    pub fn split_runtime<'runtime>(
+    /// routed lifetime. HCI remains a separate protocol resource until the
+    /// post-publication binding transition.
+    pub(crate) fn split_hardware_runtime<'runtime>(
         &'runtime mut self,
-    ) -> BluetoothControllerPublishedRuntimeSplit<
+    ) -> BluetoothControllerPublishedHardwareRuntimeEndpoints<
         'runtime,
-        M,
         S,
         MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
     > {
         let Self {
             initialized,
@@ -4107,12 +4765,12 @@ where
             peripheral_connection_resources,
             ..
         } = self;
+        let direction_finding_workspace = initialized.direction_finding_workspace_link();
         let (
             BluetoothControllerRuntimeEndpoints {
                 interrupt,
                 task,
                 modem_timer,
-                hci,
             },
             ble_phy_timing,
         ) = initialized.split_runtime();
@@ -4128,33 +4786,16 @@ where
             dtm_resources,
             legacy_advertising_resources,
             passive_scan_resources,
-            _peripheral_connection_resources: peripheral_connection_resources,
+            peripheral_connection_resources,
+            direction_finding_workspace,
             ble_phy_timing,
             scheduler_epoch,
         };
         let modem_timer = BluetoothControllerModemTimerTask::new(_storage, modem_timer);
-        let mut hci = hci;
-        match hci.controller.claim_initial_command_ready(task) {
-            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::Ready(ready) => {
-                BluetoothControllerPublishedRuntimeSplit::Ready(
-                    BluetoothControllerPublishedRuntimeEndpoints {
-                        interrupt,
-                        task: BluetoothControllerIdleCommandTask::from_ready(ready),
-                        modem_timer,
-                        hci,
-                    },
-                )
-            }
-            open_esp_radio_bluetooth_hci::LeControllerCommandReadyClaim::AlreadyClaimed(task) => {
-                BluetoothControllerPublishedRuntimeSplit::CommandReadyUnavailable(
-                    BluetoothControllerPublishedRuntimeSplitFailure {
-                        _interrupt: interrupt,
-                        _task: task,
-                        _modem_timer: modem_timer,
-                        _hci: hci,
-                    },
-                )
-            }
+        BluetoothControllerPublishedHardwareRuntimeEndpoints {
+            interrupt,
+            task,
+            modem_timer,
         }
     }
 
@@ -4183,6 +4824,19 @@ where
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Join this powered epoch's global DF workspace to one connection image.
+    #[allow(
+        dead_code,
+        reason = "the next peripheral scheduler-publication transition consumes this state"
+    )]
+    pub(crate) fn install_peripheral_connection_direction_finding_workspace(
+        &self,
+        prepared: crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventFieldsPrepared,
+    ) -> crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared
+    {
+        prepared.install_direction_finding_workspace(self.direction_finding_workspace)
+    }
+
     /// Normalize the hardware timestamp captured beside one received LE 1M PDU.
     ///
     /// This uses the persistent scheduler epoch and the calibration retained by
@@ -4197,6 +4851,155 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         Ok(self
             .ble_phy_timing
             .complete_le_1m_packet_start(epoch, packet.captured_time()))
+    }
+
+    /// Close one recycled LE 1M connection event against its capture evidence.
+    ///
+    /// An absent capture closes the event as missed without requiring an epoch.
+    /// An available capture is normalized and closes the event as observed. This
+    /// pure transition neither samples current time nor interprets hardware
+    /// status, and it does not schedule recurrence.
+    pub fn complete_peripheral_connection_event(
+        &mut self,
+        recycled: crate::BluetoothPeripheralConnectionSchedulerRecycled,
+    ) -> BluetoothPeripheralConnectionCompletionStep {
+        let epoch = *self.scheduler_epoch;
+        match recycled.classify_completion(|captured| {
+            epoch.map(|epoch| {
+                self.ble_phy_timing
+                    .complete_le_1m_peripheral_connection_packet_start(epoch, captured)
+            })
+        }) {
+            BluetoothPeripheralConnectionSchedulerCompletionClassification::NormalizationUnavailable(
+                recycled,
+            ) => BluetoothPeripheralConnectionCompletionStep::SchedulerEpochUnavailable(
+                recycled,
+            ),
+            BluetoothPeripheralConnectionSchedulerCompletionClassification::Completed(
+                completed,
+            ) => BluetoothPeripheralConnectionCompletionStep::Completed(completed),
+        }
+    }
+
+    /// Build one provisional recurrence from the real completed connection owner.
+    ///
+    /// The default runtime remains fail-closed because neither main-XTAL
+    /// selection nor PHY initialization proves a worst-case local SCA. A board
+    /// may opt in through its connection runtime config with an explicit ppm
+    /// bound; that same config explicitly selects the reviewed software-WW path.
+    pub fn prepare_peripheral_connection_recurring_candidate(
+        &mut self,
+        completed: crate::BluetoothPeripheralConnectionSchedulerCompleted,
+        delta: open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+    ) -> BluetoothPeripheralConnectionRecurringCandidateStep {
+        let Some(epoch) = *self.scheduler_epoch else {
+            return BluetoothPeripheralConnectionRecurringCandidateStep::SchedulerEpochUnavailable(
+                BluetoothPeripheralConnectionRecurringRetry::new(completed, delta),
+            );
+        };
+        let Some(timing_policy) = self
+            .peripheral_connection_resources
+            .config()
+            .recurring_timing_policy()
+        else {
+            return BluetoothPeripheralConnectionRecurringCandidateStep::TimingPolicyUnavailable(
+                BluetoothPeripheralConnectionRecurringRetry::new(completed, delta),
+            );
+        };
+        match completed.prepare_recurring_event_candidate(
+            delta,
+            epoch,
+            self.runtime.scheduler_config(),
+            timing_policy,
+        ) {
+            Ok(candidate) => {
+                BluetoothPeripheralConnectionRecurringCandidateStep::Prepared(candidate)
+            }
+            Err(failure) => {
+                let error = failure.error();
+                let (completed, delta) = failure.into_retry_parts();
+                let retry = BluetoothPeripheralConnectionRecurringRetry::new(completed, delta);
+                BluetoothPeripheralConnectionRecurringCandidateStep::Rejected { error, retry }
+            }
+        }
+    }
+
+    /// Reserve one provisional recurrence before acquiring its sequence sample.
+    #[allow(
+        clippy::result_large_err,
+        reason = "timeline rejection retains the complete recurring candidate"
+    )]
+    pub fn admit_peripheral_connection_recurring_candidate(
+        &mut self,
+        candidate: crate::BluetoothPeripheralConnectionRecurringEventCandidate,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionRecurringPreSequence,
+        crate::BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    > {
+        self.runtime
+            .admit_peripheral_connection_recurring_event(candidate)
+    }
+
+    /// Cancel one candidate which owns no scheduler reservation yet.
+    pub fn cancel_peripheral_connection_recurring_candidate(
+        &mut self,
+        candidate: crate::BluetoothPeripheralConnectionRecurringEventCandidate,
+    ) -> BluetoothPeripheralConnectionRecurringRetry {
+        BluetoothPeripheralConnectionRecurringRetry::from_cancelled(candidate.cancel())
+    }
+
+    /// Release a recurring reservation before sequence authorization.
+    pub fn cancel_peripheral_connection_recurring_pre_sequence(
+        &mut self,
+        admitted: crate::BluetoothPeripheralConnectionRecurringPreSequence,
+    ) -> BluetoothPeripheralConnectionRecurringRetry {
+        let cancelled = self
+            .runtime
+            .cancel_peripheral_connection_recurring_pre_sequence(admitted);
+        BluetoothPeripheralConnectionRecurringRetry::from_cancelled(cancelled)
+    }
+
+    /// Release a sequence-authorized recurring event and its timeline slot.
+    pub fn cancel_peripheral_connection_recurring_event(
+        &mut self,
+        prepared: crate::BluetoothPeripheralConnectionRecurringEventPrepared,
+    ) -> BluetoothPeripheralConnectionRecurringRetry {
+        let cancelled = self
+            .runtime
+            .cancel_peripheral_connection_recurring_event(prepared);
+        BluetoothPeripheralConnectionRecurringRetry::from_cancelled(cancelled)
+    }
+
+    /// Retry the infallible detach plus empty-list identity merge.
+    #[allow(
+        clippy::result_large_err,
+        reason = "list rejection retains the complete recurring event and reservation"
+    )]
+    pub fn prepare_peripheral_connection_recurring_empty_list_merge(
+        &mut self,
+        prepared: crate::BluetoothPeripheralConnectionRecurringEventPrepared,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    > {
+        self.runtime
+            .prepare_peripheral_connection_recurring_empty_list_merge(prepared)
+    }
+
+    /// Undo an unpublished empty-list merge while preserving its reservation.
+    #[allow(
+        clippy::result_large_err,
+        reason = "identity mismatch retains the complete recurring merge"
+    )]
+    pub fn cancel_peripheral_connection_recurring_empty_list_merge(
+        &mut self,
+        merged: crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionRecurringEventPrepared,
+        crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    > {
+        self.runtime
+            .cancel_peripheral_connection_recurring_empty_list_merge(merged)
     }
 
     /// Move this exact task service into its initialized scheduler epoch.
@@ -4422,876 +5225,46 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     > {
         self.runtime.publish_passive_scan_scheduler_head(merged)
     }
-}
 
-#[cfg(target_arch = "riscv32")]
-impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
-{
-    /// Durable general scheduler handoff for this powered epoch.
-    pub const fn scheduler_wake(&self) -> &crate::BluetoothSchedulerWakeCell {
-        self.runtime.scheduler_wake()
+    /// Publish selector-two RX memory and the first connection scheduler head.
+    #[allow(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection returns the complete no-alloc connection graph"
+    )]
+    pub fn publish_peripheral_connection_scheduler_head(
+        &mut self,
+        merged: crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
+        crate::BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
+    > {
+        self.runtime
+            .publish_peripheral_connection_scheduler_head(merged)
     }
 
-    /// Durable scheduler lock/modify handoff for this powered epoch.
-    pub const fn scheduler_lock_modify_events(
-        &self,
-    ) -> &crate::BluetoothSchedulerLockModifyEventCell {
-        self.runtime.scheduler_lock_modify_events()
-    }
-
-    /// Sole bounded finished-list worker for task-side draining.
-    pub fn scheduler_finished_lists(&mut self) -> &mut crate::BluetoothSchedulerFinishedListWorker {
-        self.runtime.scheduler_finished_lists()
-    }
-
-    /// Durable ready notification for the Controller-owned post-unlink mailbox.
+    /// Cancel an unpublished connection merge and restore its sole allocation.
     ///
-    /// Executor integrations register their waker before rechecking this cell.
-    /// The mailbox itself closes the epoch only when it consumes the ready
-    /// event, so cancellation of a waiter cannot discard notification state.
-    pub const fn post_unlink_wake(&self) -> &crate::BluetoothDtmPostUnlinkWakeCell {
-        self.mailbox.wake()
-    }
-
-    /// Rebuild one successor from the completed event's nominal phase.
-    pub(crate) fn prepare_legacy_advertising_recurring_candidate(
-        &self,
-        scheduled: crate::BluetoothLegacyAdvertisingNextEventScheduled<'static>,
-    ) -> Result<
-        crate::BluetoothLegacyAdvertisingRecurringEventCandidate<'static>,
-        BluetoothLegacyAdvertisingRecurringCandidateFailure,
-    > {
-        let Some(epoch) = *self.scheduler_epoch else {
-            return Err(
-                BluetoothLegacyAdvertisingRecurringCandidateFailure::SchedulerEpochUnavailable(
-                    scheduled,
-                ),
-            );
-        };
-        scheduled
-            .prepare_candidate(
-                self.legacy_advertising_resources.default_tx_power_dbm(),
-                crate::BluetoothLegacyAdvertisingRecurringTimingObservation::new(epoch),
-                self.runtime.scheduler_config(),
-            )
-            .map_err(BluetoothLegacyAdvertisingRecurringCandidateFailure::Preparation)
-    }
-
-    /// Retry only the finite packet/reset/timing projection of a successor.
-    pub(crate) fn retry_legacy_advertising_recurring_candidate(
-        &self,
-        failure: crate::BluetoothLegacyAdvertisingRecurringPreparationFailure<'static>,
-    ) -> Result<
-        crate::BluetoothLegacyAdvertisingRecurringEventCandidate<'static>,
-        BluetoothLegacyAdvertisingRecurringCandidateFailure,
-    > {
-        let Some(epoch) = *self.scheduler_epoch else {
-            return Err(BluetoothLegacyAdvertisingRecurringCandidateFailure::Preparation(failure));
-        };
-        failure
-            .retry(
-                self.legacy_advertising_resources.default_tx_power_dbm(),
-                crate::BluetoothLegacyAdvertisingRecurringTimingObservation::new(epoch),
-                self.runtime.scheduler_config(),
-            )
-            .map_err(BluetoothLegacyAdvertisingRecurringCandidateFailure::Preparation)
-    }
-
-    /// Reserve one recurring advertising window in the retained timeline.
-    pub(crate) fn admit_legacy_advertising_recurring_candidate(
-        &mut self,
-        candidate: crate::BluetoothLegacyAdvertisingRecurringEventCandidate<'static>,
-    ) -> Result<
-        crate::BluetoothLegacyAdvertisingRecurringPreSequence<'static>,
-        crate::BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'static>,
-    > {
-        self.runtime
-            .admit_legacy_advertising_recurring_event(candidate)
-    }
-
-    /// Release a recurring timeline reservation before sequence authorization.
-    pub(crate) fn cancel_legacy_advertising_recurring_pre_sequence(
-        &mut self,
-        admitted: crate::BluetoothLegacyAdvertisingRecurringPreSequence<'static>,
-    ) -> crate::BluetoothLegacyAdvertisingCancelled<'static> {
-        self.runtime
-            .cancel_legacy_advertising_recurring_pre_sequence(admitted)
-            .into_parts()
-            .0
-    }
-
-    /// Release a sequence-ready recurring descriptor before scheduler-list publication.
-    pub(crate) fn cancel_legacy_advertising_recurring_prepared(
-        &mut self,
-        prepared: crate::BluetoothLegacyAdvertisingEventPrepared<'static>,
-    ) -> crate::BluetoothLegacyAdvertisingCancelled<'static> {
-        self.runtime.cancel_legacy_advertising_first_event(prepared)
-    }
-
-    /// Undo one unpublished recurring empty-list merge.
-    pub(crate) fn cancel_legacy_advertising_recurring_merge(
-        &mut self,
-        merged: crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
-    ) -> Result<
-        crate::BluetoothLegacyAdvertisingCancelled<'static>,
-        crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
-    > {
-        self.runtime
-            .cancel_legacy_advertising_empty_list_merge(merged)
-            .map(|prepared| self.runtime.cancel_legacy_advertising_first_event(prepared))
-    }
-
-    /// Return an unpublished disabled successor to this exact runtime.
-    pub(crate) fn restore_legacy_advertising_cancelled_disabled(
-        &mut self,
-        cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
-    ) -> Result<(), crate::BluetoothLegacyAdvertisingCancelled<'static>> {
-        self.legacy_advertising_resources
-            .restore_cancelled(cancelled)
-    }
-
-    /// Observe one abandoned Controller-time request before publishing stop success.
-    pub(crate) fn drain_abandoned_recurring_controller_time(
-        &mut self,
-    ) -> Result<
-        crate::BluetoothControllerTimeOrphanDrainStep,
-        BluetoothControllerSchedulerCurrentError,
-    > {
-        match drain_controller_time_orphan(self) {
-            Ok(BluetoothControllerTimePendingOrphanStep::Idle) => {
-                Ok(crate::BluetoothControllerTimeOrphanDrainStep::Idle)
-            }
-            Ok(BluetoothControllerTimePendingOrphanStep::Waiting) => {
-                Ok(crate::BluetoothControllerTimeOrphanDrainStep::Waiting)
-            }
-            Ok(BluetoothControllerTimePendingOrphanStep::Drained) => {
-                Ok(crate::BluetoothControllerTimeOrphanDrainStep::Drained)
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    /// Retry the empty-list join without rebuilding or reauthorizing the event.
-    pub(crate) fn merge_legacy_advertising_recurring_event(
-        &mut self,
-        prepared: crate::BluetoothLegacyAdvertisingEventPrepared<'static>,
-    ) -> Result<
-        crate::BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'static>,
-        crate::BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'static>,
-    > {
-        self.runtime
-            .prepare_legacy_advertising_empty_list_merge(prepared)
-    }
-
-    /// Advance one finite scheduler lock/modify transaction.
-    pub fn step_scheduler_lock_modify(
-        &mut self,
-        event: crate::BluetoothSchedulerLockModifyEvent,
-    ) -> crate::BluetoothSchedulerLockModifyWorkerStep {
-        self.runtime.step_scheduler_lock_modify(event)
-    }
-
-    /// Admit one published DTM graph through the complete scheduler-run suffix.
-    ///
-    /// The exact order is dynamic interrupt preparation, synchronous BTMAC
-    /// scheduler-event publication and the final RUN command. The returned
-    /// state retains the graph and grants no CPU-side completion access.
+    /// A scheduler-identity mismatch returns the unchanged merge, because this
+    /// Controller cannot safely restore an item owned by another list epoch.
     #[expect(
         clippy::result_large_err,
-        reason = "a start rejection must return the complete affine published graph"
+        reason = "the no-alloc identity rejection retains the complete connection merge"
     )]
-    pub(crate) fn start_dtm_scheduler<Role>(
+    pub fn cancel_peripheral_connection_scheduler_merge(
         &mut self,
-        head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
+        merged: crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
     ) -> Result<
-        crate::BluetoothDtmSchedulerRunning<Role>,
-        BluetoothDtmSchedulerStartFailure<Role, S::Error>,
-    >
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
-            Ok(interrupts) => interrupts,
-            Err(error) => return Err(BluetoothDtmSchedulerStartFailure { error, head }),
-        };
-        let address = head.scheduler_item_address();
-        let (item, publication) = head.into_parts();
-        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
-        Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
-    }
-
-    /// Admit one published advertising graph through the common RUN suffix.
-    #[expect(
-        clippy::result_large_err,
-        reason = "a start rejection returns the complete published advertising graph"
-    )]
-    pub fn start_legacy_advertising_scheduler<'a>(
-        &mut self,
-        head: crate::BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
-    ) -> Result<
-        crate::BluetoothLegacyAdvertisingSchedulerRunning<'a>,
-        BluetoothLegacyAdvertisingSchedulerStartFailure<'a, S::Error>,
-    >
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
-            Ok(interrupts) => interrupts,
-            Err(error) => {
-                return Err(BluetoothLegacyAdvertisingSchedulerStartFailure { error, head });
-            }
-        };
-        let address = head.scheduler_item_address();
-        let (item, publication, reservation) = head.into_parts();
-        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
-        Ok(crate::BluetoothLegacyAdvertisingSchedulerRunning::new(
-            item,
-            run,
-            reservation,
-        ))
-    }
-
-    /// Admit one published passive-scanner graph through the common RUN suffix.
-    pub(crate) fn start_passive_scan_scheduler(
-        &mut self,
-        head: crate::BluetoothPassiveScanSchedulerHeadPublished,
-    ) -> Result<
-        crate::BluetoothPassiveScanSchedulerRunning,
-        BluetoothPassiveScanSchedulerStartFailure<S::Error>,
-    >
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
-            Ok(interrupts) => interrupts,
-            Err(error) => return Err(BluetoothPassiveScanSchedulerStartFailure { error, head }),
-        };
-        let address = head.scheduler_item_address();
-        let (graph, publication, reservation) = head.into_parts();
-        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
-        Ok(crate::BluetoothPassiveScanSchedulerRunning::new(
-            graph,
-            run,
-            reservation,
-        ))
-    }
-
-    fn publish_scheduler_run_suffix(
-        &mut self,
-        address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
-        publication: open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHeadPublished,
-        interrupts: BluetoothSchedulerRunInterruptsPrepared,
-    ) -> open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareRunCommandPublished {
-        let event = self
+        open_esp_radio_bluetooth_ll::connection::LePeripheralConnection,
+        crate::BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    > {
+        let prepared = self
             .runtime
-            .publish_scheduler_run_event(publication, interrupts);
-        let run = self.runtime.publish_scheduler_hardware_run_command(event);
-        self.runtime.retain_running_first_item(address);
-        run
-    }
-
-    /// Perform one fresh fenced completion-list transfer for advertising.
-    pub fn observe_legacy_advertising_completion<'a>(
-        &mut self,
-        running: crate::BluetoothLegacyAdvertisingSchedulerRunning<'a>,
-        wake: crate::BluetoothSchedulerWakeBatch,
-    ) -> crate::BluetoothLegacyAdvertisingSchedulerCompletionStep<'a> {
-        self.runtime
-            .observe_legacy_advertising_completion(running, wake)
-    }
-
-    /// Continue one retained finished-list capture while advertising runs.
-    pub fn continue_legacy_advertising_running_finished_list_drain<'a>(
-        &mut self,
-        pending: crate::BluetoothSchedulerFinishedListDrainPending<
-            crate::BluetoothLegacyAdvertisingSchedulerRunning<'a>,
-        >,
-    ) -> crate::BluetoothLegacyAdvertisingSchedulerRunningDrainStep<'a> {
-        self.runtime
-            .continue_legacy_advertising_running_finished_list_drain(pending)
-    }
-
-    /// Continue one retained capture after advertising completion was observed.
-    pub fn continue_legacy_advertising_completed_finished_list_drain<'a>(
-        &mut self,
-        pending: crate::BluetoothSchedulerFinishedListDrainPending<
-            crate::BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-    ) -> crate::BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'a> {
-        self.runtime
-            .continue_legacy_advertising_completed_finished_list_drain(pending)
-    }
-
-    /// Observe the post-picker hardware-head retirement barrier for advertising.
-    pub fn observe_legacy_advertising_hardware_head_retirement<'a>(
-        &mut self,
-        completed: crate::BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-    ) -> crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep<'a> {
-        self.runtime
-            .observe_legacy_advertising_hardware_head_retirement(completed)
-    }
-
-    /// Atomically unlink advertising and arm the shared post-unlink mailbox.
-    pub fn unlink_and_arm_legacy_advertising_software_list_removal<'a>(
-        &mut self,
-        observed: crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>,
-    ) -> BluetoothLegacyAdvertisingPostUnlinkArmStep<'a> {
-        let runtime = &mut self.runtime;
-        let mailbox = self.mailbox;
-        critical_section::with(|critical_section| {
-            let key = match mailbox.prepare_arm(critical_section) {
-                Ok(key) => key,
-                Err(BluetoothDtmPostUnlinkArmError::Busy) => {
-                    return BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxBusy(observed);
-                }
-                Err(BluetoothDtmPostUnlinkArmError::IdentityExhausted) => {
-                    return BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxIdentityExhausted(
-                        observed,
-                    );
-                }
-                Err(BluetoothDtmPostUnlinkArmError::GenerationExhausted) => {
-                    return BluetoothLegacyAdvertisingPostUnlinkArmStep::GenerationExhausted(
-                        observed,
-                    );
-                }
-            };
-            match runtime.unlink_legacy_advertising_software_list(observed) {
-                crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
-                    observed,
-                ) => BluetoothLegacyAdvertisingPostUnlinkArmStep::SchedulerIdentityMismatch(
-                    observed,
-                ),
-                crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep::Unlinked(
-                    unlinked,
-                ) => {
-                    if mailbox.commit_arm(critical_section, key) {
-                        BluetoothLegacyAdvertisingPostUnlinkArmStep::Armed(
-                            crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting::new(unlinked, key),
-                        )
-                    } else {
-                        BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxCommitMismatch(unlinked)
-                    }
-                }
-            }
-        })
-    }
-
-    /// Consume or directly recheck one armed advertising removal gate.
-    pub fn consume_published_legacy_advertising_software_list_removal<'a>(
-        &mut self,
-        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
-    ) -> BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep<'a>
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let runtime = &mut self.runtime;
-        let storage = self.storage;
-        let mailbox = self.mailbox;
-        critical_section::with(|critical_section| {
-            let (key, pending) = match mailbox.take_legacy_advertising(critical_section, awaiting) {
-                BluetoothLegacyAdvertisingPostUnlinkTake::Recheck { key, unlinked } => {
-                    return match runtime
-                        .recheck_legacy_advertising_software_list_removal(storage, unlinked)
-                    {
-                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked) => {
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch { unlinked }
-                        }
-                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::StorageUnavailable(unlinked) => {
-                            match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
-                                BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting },
-                                BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
-                            }
-                        }
-                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::Pending(unlinked) => {
-                            match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
-                                BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::DirectPending { awaiting },
-                                BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
-                            }
-                        }
-                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::Ready(ready) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Ready { ready },
-                    };
-                }
-                BluetoothLegacyAdvertisingPostUnlinkTake::AffinityMismatch(awaiting) => {
-                    return BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(awaiting);
-                }
-                BluetoothLegacyAdvertisingPostUnlinkTake::Ready { key, event } => (key, event),
-            };
-            let (unlinked, published) = pending.into_parts();
-            match published {
-                BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Fault {
-                        unlinked,
-                        fault,
-                    }
-                }
-                BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
-                    match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
-                        BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::NoSchedulerWork { awaiting, epoch },
-                        BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch { unlinked, epoch },
-                    }
-                }
-                BluetoothPrimaryPublishedInterruptStep::Scheduler { event, .. } => {
-                    match runtime.join_legacy_advertising_software_list_removal(unlinked, event) {
-                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch { unlinked, event } => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch { unlinked, event },
-                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::Pending(unlinked) => {
-                            match mailbox.rearm_legacy_advertising(critical_section, key, unlinked) {
-                                BluetoothLegacyAdvertisingPostUnlinkRearm::Armed(awaiting) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::PublishedPending { awaiting },
-                                BluetoothLegacyAdvertisingPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::PendingRearmMismatch { unlinked },
-                            }
-                        }
-                        crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::Ready(ready) => BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Ready { ready },
-                    }
-                }
-            }
-        })
-    }
-
-    /// Cancel an advertising post-unlink wait without discarding a ready event.
-    pub fn cancel_legacy_advertising_software_list_removal<'a>(
-        &mut self,
-        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
-    ) -> crate::BluetoothLegacyAdvertisingPostUnlinkCancelStep<'a> {
-        critical_section::with(|critical_section| {
-            self.mailbox
-                .cancel_legacy_advertising(critical_section, awaiting)
-        })
-    }
-
-    /// Return released advertising SRAM while retaining unresolved TX status.
-    pub fn recycle_legacy_advertising_completed<'a>(
-        &mut self,
-        ready: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
-    ) -> crate::BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
-        self.runtime.recycle_legacy_advertising_completed(ready)
-    }
-
-    /// Perform one fresh fenced completion-list transfer for passive scanning.
-    pub fn observe_passive_scan_completion(
-        &mut self,
-        running: crate::BluetoothPassiveScanSchedulerRunning,
-        wake: crate::BluetoothSchedulerWakeBatch,
-    ) -> crate::BluetoothPassiveScanSchedulerCompletionStep {
-        self.runtime.observe_passive_scan_completion(running, wake)
-    }
-
-    /// Continue one retained finished-list capture while the scanner runs.
-    pub fn continue_passive_scan_running_finished_list_drain(
-        &mut self,
-        pending: crate::BluetoothSchedulerFinishedListDrainPending<
-            crate::BluetoothPassiveScanSchedulerRunning,
-        >,
-    ) -> crate::BluetoothPassiveScanSchedulerRunningDrainStep {
-        self.runtime
-            .continue_passive_scan_running_finished_list_drain(pending)
-    }
-
-    /// Continue one retained capture after scanner completion was observed.
-    pub fn continue_passive_scan_completed_finished_list_drain(
-        &mut self,
-        pending: crate::BluetoothSchedulerFinishedListDrainPending<
-            crate::BluetoothPassiveScanSchedulerCompletionObserved,
-        >,
-    ) -> crate::BluetoothPassiveScanSchedulerCompletionObservedDrainStep {
-        self.runtime
-            .continue_passive_scan_completed_finished_list_drain(pending)
-    }
-
-    /// Observe the post-picker hardware-head retirement barrier for scanning.
-    pub fn observe_passive_scan_hardware_head_retirement(
-        &mut self,
-        completed: crate::BluetoothPassiveScanSchedulerCompletionObserved,
-    ) -> crate::BluetoothPassiveScanSchedulerHardwareHeadRetirementStep {
-        self.runtime
-            .observe_passive_scan_hardware_head_retirement(completed)
-    }
-
-    /// Atomically unlink the scanner item and arm the shared return mailbox.
-    pub fn unlink_and_arm_passive_scan_software_list_removal(
-        &mut self,
-        observed: crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved,
-    ) -> BluetoothPassiveScanPostUnlinkArmStep {
-        let runtime = &mut self.runtime;
-        let mailbox = self.mailbox;
-        critical_section::with(|critical_section| {
-            let key = match mailbox.prepare_arm(critical_section) {
-                Ok(key) => key,
-                Err(BluetoothDtmPostUnlinkArmError::Busy) => {
-                    return BluetoothPassiveScanPostUnlinkArmStep::MailboxBusy(observed);
-                }
-                Err(BluetoothDtmPostUnlinkArmError::IdentityExhausted) => {
-                    return BluetoothPassiveScanPostUnlinkArmStep::MailboxIdentityExhausted(
-                        observed,
-                    );
-                }
-                Err(BluetoothDtmPostUnlinkArmError::GenerationExhausted) => {
-                    return BluetoothPassiveScanPostUnlinkArmStep::GenerationExhausted(observed);
-                }
-            };
-            match runtime.unlink_passive_scan_software_list(observed) {
-                crate::BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(observed) => {
-                    BluetoothPassiveScanPostUnlinkArmStep::SchedulerIdentityMismatch(observed)
-                }
-                crate::BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::Unlinked(unlinked) => {
-                    if mailbox.commit_arm(critical_section, key) {
-                        BluetoothPassiveScanPostUnlinkArmStep::Armed(
-                            crate::BluetoothPassiveScanPostUnlinkAwaiting::new(unlinked, key),
-                        )
-                    } else {
-                        BluetoothPassiveScanPostUnlinkArmStep::MailboxCommitMismatch(unlinked)
-                    }
-                }
-            }
-        })
-    }
-
-    /// Consume or directly recheck one armed scanner removal gate.
-    pub fn consume_published_passive_scan_software_list_removal(
-        &mut self,
-        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
-    ) -> BluetoothPassiveScanSoftwareListRemovalPublishedStep
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let runtime = &mut self.runtime;
-        let storage = self.storage;
-        let mailbox = self.mailbox;
-        critical_section::with(|critical_section| {
-            let (key, pending) = match mailbox.take_passive_scan(critical_section, awaiting) {
-                BluetoothPassiveScanPostUnlinkTake::Recheck { key, unlinked } => {
-                    return match runtime
-                        .recheck_passive_scan_software_list_removal(storage, unlinked)
-                    {
-                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked) => {
-                            BluetoothPassiveScanSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch { unlinked }
-                        }
-                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::StorageUnavailable(unlinked) => {
-                            match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
-                                BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting },
-                                BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
-                            }
-                        }
-                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Pending(unlinked) => {
-                            match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
-                                BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::DirectPending { awaiting },
-                                BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
-                            }
-                        }
-                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Ready(ready) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::Ready { ready },
-                    };
-                }
-                BluetoothPassiveScanPostUnlinkTake::AffinityMismatch(awaiting) => {
-                    return BluetoothPassiveScanSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(awaiting);
-                }
-                BluetoothPassiveScanPostUnlinkTake::Ready { key, event } => (key, event),
-            };
-            let (unlinked, published) = pending.into_parts();
-            match published {
-                BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
-                    BluetoothPassiveScanSoftwareListRemovalPublishedStep::Fault { unlinked, fault }
-                }
-                BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
-                    match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
-                        BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::NoSchedulerWork { awaiting, epoch },
-                        BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch { unlinked, epoch },
-                    }
-                }
-                BluetoothPrimaryPublishedInterruptStep::Scheduler { event, .. } => {
-                    match runtime.join_passive_scan_software_list_removal(unlinked, event) {
-                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch { unlinked, event } => BluetoothPassiveScanSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch { unlinked, event },
-                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Pending(unlinked) => {
-                            match mailbox.rearm_passive_scan(critical_section, key, unlinked) {
-                                BluetoothPassiveScanPostUnlinkRearm::Armed(awaiting) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::PublishedPending { awaiting },
-                                BluetoothPassiveScanPostUnlinkRearm::AffinityMismatch(unlinked) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::PendingRearmMismatch { unlinked },
-                            }
-                        }
-                        crate::BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Ready(ready) => BluetoothPassiveScanSoftwareListRemovalPublishedStep::Ready { ready },
-                    }
-                }
-            }
-        })
-    }
-
-    /// Cancel a scanner post-unlink wait without discarding a ready event.
-    pub fn cancel_passive_scan_software_list_removal(
-        &mut self,
-        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
-    ) -> crate::BluetoothPassiveScanPostUnlinkCancelStep {
-        critical_section::with(|critical_section| {
-            self.mailbox.cancel_passive_scan(critical_section, awaiting)
-        })
-    }
-
-    /// Extract completed PDUs and return scanner SRAM to CPU ownership.
-    pub fn recycle_passive_scan_completed(
-        &mut self,
-        ready: crate::BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
-    ) -> crate::BluetoothPassiveScanSchedulerRecycleStep {
-        self.runtime.recycle_passive_scan_completed(ready)
-    }
-
-    pub(crate) fn restore_passive_scan_recycled(
-        &mut self,
-        recycled: crate::BluetoothPassiveScanSchedulerRecycled,
-    ) -> Result<
-        (
-            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanReceivedBatch,
-            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
-        ),
-        crate::passive_scanning::BluetoothPassiveScanRuntimeRestoreFailure,
-    >{
-        self.passive_scan_resources.restore_recycled(recycled)
-    }
-
-    /// Perform one fresh fenced completion-list transfer and immediately join
-    /// its affine result to this exact running DTM graph.
-    ///
-    /// A non-sentinel item status advances only to completion-observed. The
-    /// descriptor, packet and scheduler reservation remain hardware-owned
-    /// until the later unlink and recycle transaction is complete.
-    pub fn observe_dtm_completion<Role>(
-        &mut self,
-        running: crate::BluetoothDtmSchedulerRunning<Role>,
-        wake: crate::BluetoothSchedulerWakeBatch,
-    ) -> crate::BluetoothDtmSchedulerCompletionStep<Role> {
-        self.runtime.observe_dtm_completion(running, wake)
-    }
-
-    /// Continue an already captured finished-list drain while the DTM graph
-    /// remains running.
-    ///
-    /// The opaque input proves that the same capture retains another list. No
-    /// new hardware transfer occurs, and one retained list is returned per
-    /// call together with the unchanged running or newly completed graph.
-    pub fn continue_dtm_running_finished_list_drain<Role>(
-        &mut self,
-        pending: crate::BluetoothSchedulerFinishedListDrainPending<
-            crate::BluetoothDtmSchedulerRunning<Role>,
-        >,
-    ) -> crate::BluetoothDtmSchedulerRunningDrainStep<Role> {
-        self.runtime
-            .continue_dtm_running_finished_list_drain(pending)
-    }
-
-    /// Continue the captured finished-list drain after DTM completion was
-    /// observed while unrelated list tokens remained.
-    ///
-    /// The opaque input proves affinity to that exact capture. This consumes no
-    /// new hardware observation and returns every unrelated affine list token
-    /// losslessly.
-    pub fn continue_dtm_completed_finished_list_drain<Role>(
-        &mut self,
-        pending: crate::BluetoothSchedulerFinishedListDrainPending<
-            crate::BluetoothDtmSchedulerCompletionObserved<Role>,
-        >,
-    ) -> crate::BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {
-        self.runtime
-            .continue_dtm_completed_finished_list_drain(pending)
-    }
-
-    /// Observe the post-picker hardware-list retirement barrier.
-    ///
-    /// This operation never clears or republishes the head. It performs one
-    /// fresh typed read with a trailing device fence. Any nonempty result is a
-    /// fail-stop invariant violation; the affine owner is retained only for
-    /// diagnostic shutdown handling, never for a polling retry.
-    pub fn observe_dtm_hardware_head_retirement<Role>(
-        &mut self,
-        completed: crate::BluetoothDtmSchedulerCompletionObserved<Role>,
-    ) -> crate::BluetoothDtmSchedulerHardwareHeadRetirementStep<Role> {
-        self.runtime.observe_dtm_hardware_head_retirement(completed)
-    }
-
-    /// Remove the sole empty-head DTM item and arm its post-unlink mailbox in
-    /// one serialization boundary.
-    ///
-    /// A primary service cannot run between the ownership-only unlink and the
-    /// mailbox arm. A busy or exhausted mailbox rejects before unlinking.
-    pub fn unlink_and_arm_dtm_software_list_removal<Role>(
-        &mut self,
-        observed: crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>,
-    ) -> BluetoothDtmPostUnlinkArmStep<Role> {
-        let runtime = &mut self.runtime;
-        let mailbox = self.mailbox;
-        critical_section::with(|critical_section| {
-            let key = match mailbox.prepare_arm(critical_section) {
-                Ok(key) => key,
-                Err(BluetoothDtmPostUnlinkArmError::Busy) => {
-                    return BluetoothDtmPostUnlinkArmStep::MailboxBusy(observed);
-                }
-                Err(BluetoothDtmPostUnlinkArmError::IdentityExhausted) => {
-                    return BluetoothDtmPostUnlinkArmStep::MailboxIdentityExhausted(observed);
-                }
-                Err(BluetoothDtmPostUnlinkArmError::GenerationExhausted) => {
-                    return BluetoothDtmPostUnlinkArmStep::GenerationExhausted(observed);
-                }
-            };
-            match runtime.unlink_dtm_software_list(observed) {
-                crate::scheduler::BluetoothDtmSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
-                    observed,
-                ) => BluetoothDtmPostUnlinkArmStep::SchedulerIdentityMismatch(observed),
-                crate::scheduler::BluetoothDtmSchedulerSoftwareListUnlinkStep::Unlinked(
-                    unlinked,
-                ) => {
-                    if mailbox.commit_arm(critical_section, key) {
-                        BluetoothDtmPostUnlinkArmStep::Armed(
-                            crate::BluetoothDtmPostUnlinkAwaiting::new(unlinked, key),
-                        )
-                    } else {
-                        BluetoothDtmPostUnlinkArmStep::MailboxCommitMismatch(unlinked)
-                    }
-                }
-            }
-        })
-    }
-
-    /// Consume the exact primary event stored for one armed post-unlink owner.
-    ///
-    /// Mailbox take, finite command-status reads and any pending re-arm remain
-    /// inside the same serialization boundary used by primary service.
-    pub fn consume_published_dtm_software_list_removal<Role>(
-        &mut self,
-        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
-    ) -> BluetoothDtmSoftwareListRemovalPublishedStep<Role>
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let runtime = &mut self.runtime;
-        let storage = self.storage;
-        let mailbox = self.mailbox;
-        critical_section::with(|critical_section| {
-            let (key, pending) = match mailbox.take(critical_section, awaiting) {
-                BluetoothDtmPostUnlinkTake::Recheck { key, unlinked } => {
-                    return match runtime.recheck_dtm_software_list_removal(storage, unlinked) {
-                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(
-                            unlinked,
-                        ) => BluetoothDtmSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch {
-                            unlinked,
-                        },
-                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
-                            unlinked,
-                        ) => match mailbox.rearm(critical_section, key, unlinked) {
-                            BluetoothDtmPostUnlinkRearm::Armed(awaiting) => {
-                                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckUnavailable {
-                                    awaiting,
-                                }
-                            }
-                            BluetoothDtmPostUnlinkRearm::AffinityMismatch(unlinked) => {
-                                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckRearmMismatch {
-                                    unlinked,
-                                }
-                            }
-                        },
-                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::Pending(
-                            unlinked,
-                        ) => match mailbox.rearm(critical_section, key, unlinked) {
-                            BluetoothDtmPostUnlinkRearm::Armed(awaiting) => {
-                                BluetoothDtmSoftwareListRemovalPublishedStep::DirectPending {
-                                    awaiting,
-                                }
-                            }
-                            BluetoothDtmPostUnlinkRearm::AffinityMismatch(unlinked) => {
-                                BluetoothDtmSoftwareListRemovalPublishedStep::RecheckRearmMismatch {
-                                    unlinked,
-                                }
-                            }
-                        },
-                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalRecheck::Ready(
-                            ready,
-                        ) => BluetoothDtmSoftwareListRemovalPublishedStep::Ready { ready },
-                    };
-                }
-                BluetoothDtmPostUnlinkTake::AffinityMismatch(awaiting) => {
-                    return BluetoothDtmSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(
-                        awaiting,
-                    );
-                }
-                BluetoothDtmPostUnlinkTake::Ready { key, event } => (key, event),
-            };
-            let (unlinked, published) = pending.into_parts();
-            match published {
-                BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
-                    BluetoothDtmSoftwareListRemovalPublishedStep::Fault { unlinked, fault }
-                }
-                BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
-                    match mailbox.rearm(critical_section, key, unlinked) {
-                        BluetoothDtmPostUnlinkRearm::Armed(awaiting) => {
-                            BluetoothDtmSoftwareListRemovalPublishedStep::NoSchedulerWork {
-                                awaiting,
-                                epoch,
-                            }
-                        }
-                        BluetoothDtmPostUnlinkRearm::AffinityMismatch(unlinked) => {
-                            BluetoothDtmSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch {
-                                unlinked,
-                                epoch,
-                            }
-                        }
-                    }
-                }
-                BluetoothPrimaryPublishedInterruptStep::Scheduler { event, .. } => {
-                    match runtime.join_dtm_software_list_removal(unlinked, event) {
-                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
-                            unlinked,
-                            event,
-                        } => BluetoothDtmSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch {
-                            unlinked,
-                            event,
-                        },
-                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::Pending(
-                            unlinked,
-                        ) => match mailbox.rearm(critical_section, key, unlinked) {
-                            BluetoothDtmPostUnlinkRearm::Armed(awaiting) => {
-                                BluetoothDtmSoftwareListRemovalPublishedStep::PublishedPending {
-                                    awaiting,
-                                }
-                            }
-                            BluetoothDtmPostUnlinkRearm::AffinityMismatch(unlinked) => {
-                                BluetoothDtmSoftwareListRemovalPublishedStep::PendingRearmMismatch {
-                                    unlinked,
-                                }
-                            }
-                        },
-                        crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::Ready(
-                            ready,
-                        ) => BluetoothDtmSoftwareListRemovalPublishedStep::Ready { ready },
-                    }
-                }
-            }
-        })
-    }
-
-    /// Cancel an armed post-unlink wait without discarding a stored event.
-    pub fn cancel_dtm_software_list_removal<Role>(
-        &mut self,
-        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
-    ) -> crate::BluetoothDtmPostUnlinkCancelStep<Role> {
-        critical_section::with(|critical_section| self.mailbox.cancel(critical_section, awaiting))
-    }
-
-    /// Return TX or RX-non-success completion ownership to source-owned CPU
-    /// state after the exact removal-ready transition.
-    ///
-    /// RX success is rejected into its separate drain/account/re-arm method.
-    pub fn recycle_dtm_completed<Role>(
-        &mut self,
-        ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
-    ) -> crate::BluetoothDtmSchedulerRecycleStep<Role> {
-        self.runtime.recycle_dtm_completed(ready)
-    }
-
-    /// Drain, account and re-arm one successful removal-ready receiver event.
-    ///
-    /// The returned chain is validated before mutation. Every rejection keeps
-    /// the exact graph/session owner; success releases memory, timeline and
-    /// source-list ownership before exposing the re-armed session.
-    pub fn recycle_dtm_receiver_success(
-        &mut self,
-        ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<
-            crate::BluetoothDtmReceiverEvent,
-        >,
-    ) -> crate::BluetoothDtmSchedulerRxSuccessRecycleStep {
-        self.runtime.recycle_dtm_receiver_success(ready)
+            .cancel_peripheral_connection_empty_list_merge(merged)?;
+        let (allocation, connection) = self
+            .runtime
+            .cancel_peripheral_connection_first_event(prepared);
+        self.restore_peripheral_connection_allocation(allocation);
+        Ok(connection)
     }
 }
 
@@ -5361,28 +5334,14 @@ impl<S> BluetoothControllerPublishedInterruptService<'_, S> {
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
+impl<P, S, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerInterruptOwnerPublicationFailure<
         P,
-        M,
         S,
         MODEM_TIMER_CAPACITY,
         SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
     >
 where
-    M: RawMutex,
     S: BluetoothInterruptOwnerStorage,
 {
     /// Inspect the exact platform rejection.
@@ -5394,15 +5353,7 @@ where
     pub fn into_parts(
         self,
     ) -> (
-        BluetoothControllerInterruptOwnersReady<
-            P,
-            M,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
         S,
         crate::BluetoothDtmRuntimeResources,
         crate::BluetoothLegacyAdvertisingRuntimeResources,
@@ -5423,26 +5374,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerInterruptOwnersReady<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the BLE PHY input retained by this exact powered epoch.
     pub const fn ble_phy_report(&self) -> crate::BluetoothBlePhyInitializationReport {
@@ -5473,10 +5406,6 @@ where
         clippy::result_large_err,
         reason = "the no-alloc failure must return every affine powered owner"
     )]
-    #[expect(
-        clippy::type_complexity,
-        reason = "the return type preserves the exact Controller and platform-storage states"
-    )]
     pub fn publish_interrupt_owners<S>(
         self,
         storage: S,
@@ -5487,23 +5416,15 @@ where
     ) -> Result<
         BluetoothControllerInterruptOwnersPublished<
             P,
-            M,
             S::Published,
             MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
         >,
         BluetoothControllerInterruptOwnerPublicationFailure<
             P,
-            M,
             S,
             MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
         >,
     >
     where
@@ -5548,26 +5469,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerOutputTimerStarted<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Transfer both disjoint register owners into their pre-route states.
     ///
@@ -5575,15 +5478,7 @@ where
     /// claim stable placement or a live interrupt epoch.
     pub fn stage_interrupt_owners(
         self,
-    ) -> BluetoothControllerInterruptOwnersReady<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothControllerInterruptOwnersReady<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         let Self {
             initialized,
             _interrupt_output: interrupt_output,
@@ -5600,31 +5495,13 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerBlePhyEngineInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerBlePhyEngineInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Prepare Controller IRQ output and then start the runtime timer once.
     ///
     /// The consuming BLE-PHY state proves that controller HAL, scheduler,
-    /// HCI, low-power hardware, common PHY, BTBB and BLE PHY initialization
+    /// low-power hardware, common PHY, BTBB and BLE PHY initialization
     /// all belong to this epoch. CPU routes remain inaccessible, so the lower
     /// unsafe interrupt prerequisite is discharged here and never exported.
     #[allow(
@@ -5633,15 +5510,7 @@ where
     )]
     pub fn prepare_controller_output_and_start_runtime_timer(
         mut self,
-    ) -> BluetoothControllerOutputTimerStarted<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         let (interrupts, timer) = self.take_activation_owners();
         let (interrupt_output, timer) = prepare_output_then_start_timer(
             interrupts,

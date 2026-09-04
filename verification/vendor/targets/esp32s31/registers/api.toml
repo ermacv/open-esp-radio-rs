@@ -382,6 +382,13 @@ min = 0
 max = 0x000f_ffff
 sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
+[[bounded-domains]]
+name = "BluetoothCteSampleDescriptorPointerBits"
+description = "Low-twenty-bit compressed controller-SRAM pointer accepted by one CTE sample-ring descriptor slot."
+min = 0
+max = 0x000f_ffff
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+
 [[enum-domains]]
 name = "BluetoothHalSleepTimerShift"
 description = "Low-three-bit shift selected by the reviewed BTDM HAL scale and period domains."
@@ -1710,6 +1717,33 @@ register = "COMMAND_0"
 value = 0x100
 sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
 
+[[field-replace-modifies]]
+name = "configure_bluetooth_cte_six_buffer_limit"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+register = "RING_CONTROL"
+fields = [{ field = "MAX_BUFFER_NUMBER", source-bit-offset = 0 }]
+value = 6
+exposure = "facade"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_cte_sample_descriptor_pointer"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+register = "BUFFER_POINTER%s"
+fields = [{ field = "COMPRESSED_DESCRIPTOR_POINTER", source-bit-offset = 0 }]
+domain = "BluetoothCteSampleDescriptorPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_cte_buffer_software_ownership"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+register = "BUFFER_STATE%s"
+fields = [{ field = "SOFTWARE_OWNED", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+
 [[field-reads]]
 name = "observe_bluetooth_scheduler_hardware_list_head"
 peripheral = "BTDM_SCHEDULER_TABLE"
@@ -1899,9 +1933,27 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[fixed-register-images]]
 name = "publish_ble_phy_init_value_04ac"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_VALUE_04AC"
+register = "CONNECTION_ABORT_CONTROL"
 value = 0x00ff0002
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "set_ble_connection_link_state_control"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "CONNECTION_ABORT_CONTROL"
+fields = [{ field = "LINK_STATE_CONTROL", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL"]
+
+[[field-replace-modifies]]
+name = "clear_ble_connection_link_state_control"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "CONNECTION_ABORT_CONTROL"
+fields = [{ field = "LINK_STATE_CONTROL", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL"]
 
 [[fixed-register-images]]
 name = "publish_ble_phy_init_value_045c"

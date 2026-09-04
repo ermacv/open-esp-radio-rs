@@ -52,11 +52,12 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
         .selector
         .split_once(':')
         .ok_or_else(|| crate::Error::invalid("object selector must be SOURCE:SYMBOL"))?;
-    if source.is_empty() || symbol.is_empty() || symbol.contains(':') {
+    if source.is_empty() || symbol.is_empty() {
         return Err(crate::Error::invalid(
             "object selector must contain one non-empty SOURCE and SYMBOL",
         ));
     }
+    validate_object_selector(symbol)?;
     let offset = arguments.offset.as_deref().map(parse_offset).transpose()?;
     let mut observations = Vec::new();
     for profile in project
@@ -177,6 +178,25 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
     Ok(!report.observations.is_empty())
 }
 
+fn validate_object_selector(symbol: &str) -> Result<()> {
+    if !symbol.contains(':') {
+        return Ok(());
+    }
+    let semantic = symbol
+        .parse::<open_radio_vendor_contracts::SemanticEntityId>()
+        .map_err(|error| {
+            crate::Error::invalid(format!(
+                "object selector after SOURCE is neither a raw symbol nor a canonical semantic identity: {error}"
+            ))
+        })?;
+    if semantic.domain() != open_radio_vendor_contracts::EntityDomain::MemoryObject {
+        return Err(crate::Error::invalid(format!(
+            "inspect object requires a memory-object semantic identity, got {semantic}"
+        )));
+    }
+    Ok(())
+}
+
 fn render_human(report: &ObjectInvestigationReport) {
     outputln!("{}", crate::cli::output::heading("Memory object"));
     outputln!("Object:       {}:{}", report.source, report.symbol);
@@ -197,6 +217,10 @@ fn render_human(report: &ObjectInvestigationReport) {
             "Member:  {}",
             object.member.as_deref().unwrap_or("<linked-image>")
         );
+        if let Some(semantic) = &object.semantic {
+            outputln!("Semantic: {semantic}");
+            outputln!("Raw:      {}:{}", object.source, object.symbol);
+        }
         outputln!(
             "Address: {}",
             object.address.as_deref().unwrap_or("unresolved")
@@ -428,5 +452,18 @@ fn matches_object(
             pointer: object, ..
         } => matches_object(object, member, symbol, aliases),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_object_selector;
+
+    #[test]
+    fn object_selector_accepts_only_memory_object_identities() {
+        assert!(validate_object_selector("raw_symbol").is_ok());
+        assert!(validate_object_selector("memory-object:esp-idf/ble/state").is_ok());
+        assert!(validate_object_selector("function:esp-idf/ble/start").is_err());
+        assert!(validate_object_selector("memory-object:").is_err());
     }
 }

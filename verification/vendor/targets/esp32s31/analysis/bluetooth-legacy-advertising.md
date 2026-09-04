@@ -117,6 +117,65 @@ initial admission and duration-preserving overlap displacement, then applies a
 separate fresh sequence-deadline check. Rejection releases the exact slot and
 returns the unchanged affine candidate.
 
+## Reviewed response-capable memory profile
+
+The response-capable extension is derived from the same pinned current
+`libble_app.a` at commit `7f20740dd66ee774ffce5db0b55507892551aa31`,
+SHA-256
+`62dbe7216619f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195`.
+The earlier same-chip archive at commit
+`31c30949541a5d3abd4043a1cb66d55aa55577dd`, SHA-256
+`ec10a20eaf869f7cd2300100fe54826980525911f8417206af5a0745a9f85f63`,
+supplies names only. Complete object-body comparison maps current member
+`50.o:r_sym_ble_fxKAT8in6cXLv0gLB2W5` to
+`r_ble_lll_adv_reset_link_state`,
+`50.o:r_sym_ble_6qbuM1ANzD8Y0VbSNKNu` to
+`r_ble_lll_adv_pri_chan_txbuf_alloc_and_make`, and
+`50.o:r_sym_ble_nNcQpcbAvd2WhGX0WkCA` to
+`r_ble_lll_adv_alloc_rxbuf`. The compared bodies are respectively 840, 442
+and 124 bytes and are byte-identical between those revisions. Current
+member `15.o:r_sym_ble_GESyjhFJ89FTdFkUqASV` is likewise the byte-identical
+180-byte `r_ble_ll_adv_set_sched` body. Current bytes, rather than the old
+names, own every layout and arithmetic fact below.
+
+An `ADV_IND` event is a two-transmit-node graph, not the nonconnectable graph
+with an optional receive flag. The primary builder always allocates the first
+header and packet. Its response-capable branch allocates a second header and
+packet, encodes the second PDU as `SCAN_RSP`, links the primary header to that
+successor and installs the second header as TX tail. An empty scan-response
+data body still retains the second node. The reset body does not branch on
+response capability: it copies the graph RX head into the compressed RX
+consumer link and retains the full RX head/tail beside the two-node TX
+head/tail. Consequently a response-capable readiness predicate must validate
+both RX representations; checking only the full RX endpoints accepts an
+incomplete hardware graph.
+
+The scheduler-window body adds the halfword at private configuration-table
+offset `+0x2c`, whose current and named tables both contain `4`, to the LE 1M
+primary-PDU duration when response capability is present. This is retained as
+an opaque four-microsecond response-capable scheduler tail reserve. The
+evidence does not identify it as an inter-frame space, receive window or scan
+response airtime. The receive allocator prepares the non-scanning receive
+class and supplies the selected primary-channel count to vendor memory
+management, but it does not prove that the open fixed two-node pool safely
+covers a three-channel response event. The first open memory typestate
+therefore accepts exactly one primary channel and fails closed otherwise.
+
+The portable Link Layer owns the semantic advertisement, scan-response data
+and typed bounded `ADV_IND`/`SCAN_RSP` encodings. A later chip aggregate must
+retain that affine portable event while translating it into a short-lived S31
+memory input: two allocation-fit PDU borrows, the already selected own-address
+behavior and exactly one translated primary channel. The memory crate has no
+portable Link Layer dependency, does not retain that event and does not parse
+or revalidate Bluetooth wire semantics. It owns only the private two-header TX
+chain, the exact affine non-scanning RX pool, the common advertising reset
+projection, the compressed RX consumer link and the opaque scheduler duration.
+The joined memory owner remains non-publishable and losslessly returns only the
+graph and RX pool on cancellation or rejection. Scheduler admission, RX
+dispatch, accepted `CONNECT_IND` transfer and multi-channel buffering are
+separate later boundaries rather than implied capabilities of this memory
+profile.
+
 ## Minimum production admission contract
 
 One advertising transmission may enter production only when current-artifact

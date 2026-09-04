@@ -982,6 +982,7 @@ mod tests {
             site: Some(site),
             operation: "write:direct".to_owned(),
             target: "0x60000010".to_owned(),
+            semantic_target: None,
             width: Some(32),
             value: Some("0x00000001".to_owned()),
             modified_mask: Some(1),

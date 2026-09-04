@@ -59,16 +59,35 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
     let full = arguments.full;
     let focused_calls = arguments.calls || arguments.call.is_some();
     let call_filter = arguments.call.clone();
-    let (source, symbol) = arguments
+    let (source, selector) = arguments
         .selector
         .split_once(':')
         .ok_or_else(|| crate::Error::invalid("function selector must be SOURCE:SYMBOL"))?;
-    if source.is_empty() || symbol.is_empty() || symbol.contains(':') {
+    if source.is_empty() || selector.is_empty() {
         return Err(crate::Error::invalid(
             "function selector must contain one non-empty SOURCE and SYMBOL",
         ));
     }
-    let (symbol, runtime_address) = parse_exact_symbol(symbol)?;
+    let resolved = resolve_semantic_selector(project, source, selector)?;
+    let (symbol, runtime_address, resolved_member) = match &resolved {
+        Some(resolved) => (
+            resolved.symbol.as_str(),
+            resolved.address.map(u64::from),
+            resolved.member.as_deref(),
+        ),
+        None => {
+            let (symbol, runtime_address) = parse_exact_symbol(selector)?;
+            (symbol, runtime_address, None)
+        }
+    };
+    if let (Some(requested), Some(resolved)) = (arguments.member.as_deref(), resolved_member)
+        && requested != resolved
+    {
+        return Err(crate::Error::invalid(format!(
+            "semantic function selector {selector:?} resolves to archive member {resolved:?}, not requested member {requested:?}"
+        )));
+    }
+    let member = arguments.member.as_deref().or(resolved_member);
     if arguments.replacement {
         let mut replacements = replacement_evidence(source, symbol, project)?;
         if let Some(requested) = arguments.case.as_deref() {
@@ -101,7 +120,7 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
                         runtime_address,
                         artifact,
                         inventories: &arguments.inventory,
-                        member: arguments.member.as_deref(),
+                        member,
                         origin_member: arguments.origin_member.as_deref(),
                         graph_depth: 0,
                         include_callers: false,
@@ -140,7 +159,7 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
             runtime_address,
             artifact,
             inventories: &arguments.inventory,
-            member: arguments.member.as_deref(),
+            member,
             origin_member: arguments.origin_member.as_deref(),
             graph_depth: arguments.depth,
             include_callers: arguments.callers,
@@ -163,6 +182,77 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
         }
     }
     Ok(report.runtime.accounted_bytes == report.runtime.size)
+}
+
+struct ResolvedSemanticFunction {
+    symbol: String,
+    member: Option<String>,
+    address: Option<u32>,
+}
+
+fn resolve_semantic_selector(
+    project: &ProjectSpec,
+    source: &str,
+    selector: &str,
+) -> Result<Option<ResolvedSemanticFunction>> {
+    if !selector.contains(':') {
+        return Ok(None);
+    }
+    parse_semantic_selector(selector)?
+        .expect("a selector containing a colon must be a semantic identity");
+    let mut matches = std::collections::BTreeSet::new();
+    for profile in project
+        .ir_profiles
+        .iter()
+        .filter(|profile| profile.sources.iter().any(|candidate| candidate == source))
+        .filter(|profile| profile.output.is_dir())
+    {
+        let reader = crate::artifacts::LinkedIrReader::open(&profile.output)?;
+        if let Some(function) = reader.get_function_by_identity(selector)?
+            && function.source == source
+        {
+            matches.insert((function.symbol, function.member, function.address));
+        }
+    }
+    let (symbol, member, address) = match matches.len() {
+        0 => {
+            return Err(crate::Error::invalid(format!(
+                "no generated linked-IR profile resolves {source}:{selector}; rebuild project IR after accepting the pin"
+            )));
+        }
+        1 => matches.into_iter().next().expect("one match was counted"),
+        count => {
+            return Err(crate::Error::invalid(format!(
+                "generated linked-IR profiles resolve {source}:{selector} to {count} different raw functions"
+            )));
+        }
+    };
+    Ok(Some(ResolvedSemanticFunction {
+        symbol,
+        member,
+        address,
+    }))
+}
+
+fn parse_semantic_selector(
+    selector: &str,
+) -> Result<Option<open_radio_vendor_contracts::SemanticEntityId>> {
+    if !selector.contains(':') {
+        return Ok(None);
+    }
+    let semantic = selector
+        .parse::<open_radio_vendor_contracts::SemanticEntityId>()
+        .map_err(|error| {
+            crate::Error::invalid(format!(
+                "function selector after SOURCE is neither a raw symbol nor a canonical semantic identity: {error}"
+            ))
+        })?;
+    if semantic.domain() != open_radio_vendor_contracts::EntityDomain::Function {
+        return Err(crate::Error::invalid(format!(
+            "inspect function requires a function semantic identity, got {semantic}"
+        )));
+    }
+    Ok(Some(semantic))
 }
 
 fn direct_vendor_effects(
@@ -239,7 +329,7 @@ fn parse_exact_symbol(input: &str) -> Result<(&str, Option<u64>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_exact_symbol;
+    use super::{parse_exact_symbol, parse_semantic_selector};
 
     #[test]
     fn exact_identity_keeps_the_symbol_and_selects_the_linked_address() {
@@ -249,5 +339,19 @@ mod tests {
         );
         assert_eq!(parse_exact_symbol("ppTask").unwrap(), ("ppTask", None));
         assert!(parse_exact_symbol("ppTask@0xnot-hex").is_err());
+    }
+
+    #[test]
+    fn semantic_selector_accepts_only_function_identities() {
+        let semantic = parse_semantic_selector("function:esp-idf/ble/controller/start")
+            .unwrap()
+            .expect("semantic selector");
+        assert_eq!(
+            semantic.to_string(),
+            "function:esp-idf/ble/controller/start"
+        );
+        assert!(parse_semantic_selector("raw_symbol").unwrap().is_none());
+        assert!(parse_semantic_selector("memory-object:esp-idf/ble/state").is_err());
+        assert!(parse_semantic_selector("function:").is_err());
     }
 }

@@ -12,7 +12,7 @@ use open_esp_radio_bluetooth_hci::{
 };
 use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothControllerInterruptOwnersPublished, BluetoothControllerModemTimerBegin,
+    BluetoothControllerHciBound, BluetoothControllerModemTimerBegin,
     BluetoothControllerModemTimerRearm, BluetoothControllerModemTimerStep,
     BluetoothControllerModemTimerTask, BluetoothControllerPublishedRuntimeEndpoints,
     BluetoothControllerPublishedRuntimeSplit, BluetoothControllerPublishedRuntimeSplitFailure,
@@ -689,7 +689,7 @@ pub fn compose_esp32s31_bluetooth_system<
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
 >(
-    owner: &'static mut BluetoothControllerInterruptOwnersPublished<
+    owner: &'static mut BluetoothControllerHciBound<
         P,
         CriticalSectionRawMutex,
         PublishedStorage,

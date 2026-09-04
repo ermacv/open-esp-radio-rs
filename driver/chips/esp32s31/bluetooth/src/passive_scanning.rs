@@ -85,8 +85,7 @@ pub enum BluetoothPassiveScanRuntimeBeginError {
 pub(crate) struct BluetoothPassiveScanRuntimeRestoreFailure {
     pub(crate) graph:
         open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
-    pub(crate) received:
-        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanReceivedBatch,
+    pub(crate) received: open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedBatch,
     pub(crate) status:
         open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
 }
@@ -181,7 +180,7 @@ impl BluetoothPassiveScanRuntimeResources {
         recycled: crate::BluetoothPassiveScanSchedulerRecycled,
     ) -> Result<
         (
-            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanReceivedBatch,
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedBatch,
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
         ),
         BluetoothPassiveScanRuntimeRestoreFailure,

@@ -122,6 +122,30 @@ fn symbol_correspondence_needs_only_its_explicit_artifacts() {
     assert_eq!(arguments.from.source.as_str(), "named");
     assert_eq!(arguments.to.source.as_str(), "current");
 
+    let resolved = resolve_from(
+        parse(&[
+            "advanced",
+            "symbols",
+            "lineage",
+            "--source",
+            "ble-controller",
+            "--revision",
+            "named=old.a",
+            "--revision",
+            "middle=middle.a",
+            "--revision",
+            "current=new.a",
+        ]),
+        &directory,
+    )
+    .unwrap();
+    let ResolvedInvocation::SymbolLineage(arguments) = resolved else {
+        panic!("expected symbol-lineage arguments")
+    };
+    assert_eq!(arguments.source.as_str(), "ble-controller");
+    assert_eq!(arguments.revisions.len(), 3);
+    assert_eq!(arguments.revisions[1].label, "middle");
+
     std::fs::remove_dir_all(directory).unwrap();
 }
 

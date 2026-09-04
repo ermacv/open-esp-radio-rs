@@ -17160,16 +17160,22 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_VALUE_04AC</name>
-          <description>BLE PHY register initialization writes the finite complete image 0x00FF0002.</description>
+          <name>CONNECTION_ABORT_CONTROL</name>
+          <description>Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags.</description>
           <addressOffset>0x4AC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
+              <name>CUSTOM_OPCODE_ENABLED</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LINK_STATE_CONTROL</name>
+              <description>The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -20358,10 +20364,11 @@ semantics instead of promoting diagnostic strings to hardware truth.
     </peripheral>
     <peripheral>
       <name>BLE_HW_CTE_RING_CONTROL</name>
-      <description>Late direction-finding hardware state recovered from complete ESP32-S31
-ble_hw_cte.c leaves. The block is kept separate from the minimum standalone
-BLE controller: advertising, scanning and ordinary connections do not require
-CTE sample-ring support. Only observed reset and ring-limit fields are named.
+      <description>Direction-finding ring state recovered from complete ESP32-S31 ble_hw_cte.c
+leaves. Ordinary advertising, scanning and connection link states retain a
+controller-global disabled-CTE descriptor even when IQ sampling is not
+requested, so the baseline pointer and ownership fields are part of the
+minimum standalone BLE controller.
 </description>
       <baseAddress>0x2010199C</baseAddress>
       <registers>
@@ -20387,19 +20394,38 @@ CTE sample-ring support. Only observed reset and ring-limit fields are named.
           </fields>
         </register>
         <register>
-          <dim>12</dim>
-          <dimIncrement>0x4</dimIncrement>
-          <dimIndex>0-11</dimIndex>
-          <name>RESET_WORD%s</name>
-          <description>Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned.</description>
+          <dim>6</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-5</dimIndex>
+          <name>BUFFER_POINTER%s</name>
+          <description>Compressed controller-SRAM address of one CTE sample-ring descriptor. The setter replaces bits 0..19 and preserves the upper twelve bits.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
-          <access>write-only</access>
+          <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>COMPRESSED_DESCRIPTOR_POINTER</name>
+              <description>Low-twenty-bit controller-SRAM pointer reconstructed with the fixed 0x2f prefix and four-byte alignment.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>20</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>6</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-5</dimIndex>
+          <name>BUFFER_STATE%s</name>
+          <description>Hardware state paired with one CTE sample-ring descriptor. Only the software-ownership flag is currently assigned.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>SOFTWARE_OWNED</name>
+              <description>The named owner-clear/set leaves respectively clear and set bit 31; the paired query returns that bit.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

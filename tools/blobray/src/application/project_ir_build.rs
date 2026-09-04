@@ -1,7 +1,7 @@
 //! Project-level generation of reproducible linked-IR reports.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -127,6 +127,18 @@ fn build_project_ir_impl<'a>(
     let effective_code = crate::analysis::EffectiveCodeCatalog::load(project)?;
     let interfaces = linked_ir_export::load_project_interfaces(project, target)?;
     let interface_origins = linked_ir_export::load_project_interface_origins(project)?;
+    let reviewed_bindings =
+        open_radio_vendor_review::ReviewKnowledge::load_all(&project.reviewed_knowledge)
+            .and_then(|knowledge| knowledge.select_for(&project.review_context))
+            .map_err(|error| {
+                crate::Error::invalid(format!(
+                    "cannot select reviewed entity bindings for linked-IR publication: {error}"
+                ))
+            })?
+            .bindings()
+            .values()
+            .map(|binding| (binding.occurrence.clone(), binding.semantic.clone()))
+            .collect::<BTreeMap<_, _>>();
     let mut built = Vec::with_capacity(selected.len());
     let mut stale = Vec::new();
     for (profile, inputs) in selected.into_iter().zip(resolved) {
@@ -141,6 +153,7 @@ fn build_project_ir_impl<'a>(
                 effective_code: &effective_code,
                 interfaces: interfaces.as_ref(),
                 interface_origins: &interface_origins,
+                reviewed_bindings: &reviewed_bindings,
                 jobs: request.jobs,
                 function_fact_store: function_fact_store
                     .as_deref_mut()

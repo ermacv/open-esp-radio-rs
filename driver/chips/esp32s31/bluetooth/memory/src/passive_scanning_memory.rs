@@ -21,8 +21,8 @@ use vcell::VolatileCell;
 use crate::{
     le_rx_packet::{
         BLUETOOTH_LE_RX_PACKET_BYTES, BLUETOOTH_LE_RX_PACKET_PREFIX_BYTES,
-        BLUETOOTH_LE_RX_PAYLOAD_CAPACITY, BluetoothLeReceivedPdu, BluetoothLeRxNodeStorage,
-        BluetoothLeRxPacketAddress, BluetoothLeRxPacketError,
+        BLUETOOTH_LE_RX_PAYLOAD_CAPACITY, BluetoothLeReceivedBatch, BluetoothLeRxError,
+        BluetoothLeRxNodeStorage, BluetoothLeRxPacketAddress, extract_completed_rx_batch,
     },
     passive_scanning_event_image::{
         BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, BluetoothPassiveScanLinkStateImage,
@@ -109,66 +109,6 @@ impl BluetoothPassiveScanSchedulerAllocationConfig {
             .wrapping_add(1)
             .wrapping_add(self.connections as u32)
             .wrapping_add(index as u32)
-    }
-}
-
-/// Up to two completed packets owned by one restricted scanner event.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothPassiveScanReceivedBatch {
-    packets: [Option<BluetoothLeReceivedPdu>; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
-    len: u8,
-}
-
-impl BluetoothPassiveScanReceivedBatch {
-    const fn empty() -> Self {
-        Self {
-            packets: [None; BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT],
-            len: 0,
-        }
-    }
-
-    fn push(&mut self, packet: BluetoothLeReceivedPdu) {
-        self.packets[self.len as usize] = Some(packet);
-        self.len += 1;
-    }
-
-    /// Number of completed packets copied from this event.
-    pub const fn len(self) -> usize {
-        self.len as usize
-    }
-
-    /// Whether this event completed without a received packet.
-    pub const fn is_empty(self) -> bool {
-        self.len == 0
-    }
-
-    /// Borrow one packet in hardware list order.
-    pub const fn packet(&self, index: usize) -> Option<&BluetoothLeReceivedPdu> {
-        if index < self.len as usize {
-            self.packets[index].as_ref()
-        } else {
-            None
-        }
-    }
-}
-
-/// Malformed hardware result rejected before scanner graph reclamation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothPassiveScanRxError {
-    /// A completed header still points at an untouched producer sentinel.
-    ProducerSentinelRetained,
-    /// A completed header still points at an untouched receive-epoch sentinel.
-    EpochSentinelRetained,
-    /// A later node completed after an earlier incomplete node in the chain.
-    CompletionChainGap,
-}
-
-impl From<BluetoothLeRxPacketError> for BluetoothPassiveScanRxError {
-    fn from(error: BluetoothLeRxPacketError) -> Self {
-        match error {
-            BluetoothLeRxPacketError::ProducerSentinelRetained => Self::ProducerSentinelRetained,
-            BluetoothLeRxPacketError::EpochSentinelRetained => Self::EpochSentinelRetained,
-        }
     }
 }
 
@@ -1097,11 +1037,11 @@ impl BluetoothPassiveScanMemoryGraphRecyclePrepared {
 #[must_use = "the unchanged graph remains unavailable until fail-stop handling"]
 pub struct BluetoothPassiveScanMemoryGraphRxExtractionFailure {
     prepared: BluetoothPassiveScanMemoryGraphRecyclePrepared,
-    error: BluetoothPassiveScanRxError,
+    error: BluetoothLeRxError,
 }
 
 impl BluetoothPassiveScanMemoryGraphRxExtractionFailure {
-    pub const fn error(&self) -> BluetoothPassiveScanRxError {
+    pub const fn error(&self) -> BluetoothLeRxError {
         self.error
     }
 
@@ -1114,12 +1054,12 @@ impl BluetoothPassiveScanMemoryGraphRxExtractionFailure {
 #[must_use = "commit reclamation before reusing the scanner graph"]
 pub struct BluetoothPassiveScanMemoryGraphRxExtracted {
     prepared: BluetoothPassiveScanMemoryGraphRecyclePrepared,
-    batch: BluetoothPassiveScanReceivedBatch,
+    batch: BluetoothLeReceivedBatch,
 }
 
 impl BluetoothPassiveScanMemoryGraphRxExtracted {
     /// Copy of every completed Link Layer PDU in receive-list order.
-    pub const fn batch(&self) -> BluetoothPassiveScanReceivedBatch {
+    pub const fn batch(&self) -> BluetoothLeReceivedBatch {
         self.batch
     }
 
@@ -1158,7 +1098,7 @@ impl BluetoothPassiveScanMemoryGraphRxExtracted {
 #[must_use = "the graph and received batch must return to the scanner role owner"]
 pub struct BluetoothPassiveScanMemoryGraphRecycled {
     owner: BluetoothPassiveScanMemoryGraphCpuOwned,
-    batch: BluetoothPassiveScanReceivedBatch,
+    batch: BluetoothLeReceivedBatch,
     status: BluetoothPassiveScanSchedulerItemCompletionStatus,
 }
 
@@ -1167,7 +1107,7 @@ impl BluetoothPassiveScanMemoryGraphRecycled {
         self,
     ) -> (
         BluetoothPassiveScanMemoryGraphCpuOwned,
-        BluetoothPassiveScanReceivedBatch,
+        BluetoothLeReceivedBatch,
         BluetoothPassiveScanSchedulerItemCompletionStatus,
     ) {
         (self.owner, self.batch, self.status)
@@ -1192,20 +1132,9 @@ impl BluetoothPassiveScanMemoryGraphStorage {
 
     fn extract_received_batch(
         &self,
-    ) -> Result<BluetoothPassiveScanReceivedBatch, BluetoothPassiveScanRxError> {
-        let mut batch = BluetoothPassiveScanReceivedBatch::empty();
-        let mut incomplete_observed = false;
-        for node in &self.nodes {
-            if !node.header.completion_observed() {
-                incomplete_observed = true;
-                continue;
-            }
-            if incomplete_observed {
-                return Err(BluetoothPassiveScanRxError::CompletionChainGap);
-            }
-            batch.push(node.packet.received_pdu()?);
-        }
-        Ok(batch)
+    ) -> Result<BluetoothLeReceivedBatch<BLUETOOTH_PASSIVE_SCAN_RX_NODE_COUNT>, BluetoothLeRxError>
+    {
+        extract_completed_rx_batch(&self.nodes)
     }
 
     /// Bind the real address of one unique static S31 allocation.
@@ -1549,7 +1478,7 @@ mod tests {
 
         assert_eq!(
             storage.extract_received_batch(),
-            Err(super::BluetoothPassiveScanRxError::CompletionChainGap)
+            Err(super::BluetoothLeRxError::CompletionChainGap)
         );
     }
 

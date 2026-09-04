@@ -315,10 +315,27 @@ cargo blobray project revision diff vendor-2026-05 @live \
   --project path/to/vendor-project.toml --details
 cargo blobray project revision rebase vendor-2026-05 @live \
   --project path/to/vendor-project.toml \
+  --lineage generated/revisions/ble-symbol-lineage.json \
   --output generated/revisions/vendor-2026-08.rebase.json
 # after reviewing the delta and rebase plan, publish the immutable new snapshot
 cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
 ```
+
+`--lineage` is optional, but without it entity bindings remain review-required
+because their artifact-bound occurrences cannot survive a blob replacement by
+name alone. A `confirmed` direct-plus-chain mapping becomes a generated
+`carry-remapped` proposal with the exact target occurrence. `direct-only` and
+`chain-only` mappings include the proposed occurrence but remain
+`review-required`. The rebase command rebuilds the complete current-schema
+lineage from the artifact paths embedded in the report and requires canonical
+byte equality before trusting any `confirmed` status. It then validates the
+report digest, endpoint artifacts, occurrence domains, locators and one-to-one
+target ownership. A missing artifact or manually changed report fails closed.
+It never edits the reviewed pack.
+
+When a binding is remapped, only the lineage source artifact constraint is
+projected onto the target artifact; chip, chip-revision, ecosystem, lineage and
+any unrelated artifact constraints must still match the target snapshot.
 
 When a vendor regenerates private symbol names, correlate the public or older
 named archive with the obfuscated revision before reviewing the update:
@@ -330,29 +347,216 @@ cargo blobray advanced symbols correlate \
   --output generated/revisions/named-to-current.json
 ```
 
-The correlator hashes complete relocatable function bytes plus relocation
-offset/kind/addend while deliberately excluding relocation target names. It
-publishes an automatic match only when the normalized body is unique. An
+The correlator distinguishes a source name, a generated obfuscation token and
+a semantic identity. A unique non-generated name is an identity anchor even
+when its implementation changed. A generated 20-character token is an anchor
+only when archive-wide evidence proves that both artifacts belong to the same
+obfuscation epoch: in at least one domain, 64 tokens must overlap and at least
+90% of the smaller token set must survive. The report publishes the token
+counts, retention and `compatible`, `distinct` or `inconclusive` evidence
+separately for functions and data objects, plus one archive-wide decision. A
+strong function overlap can therefore prove the epoch even when data objects
+were aggressively removed; only exact unique shared data tokens are then
+carried. A hard token regeneration disables all token-based automatic matches
+instead of guessing across the boundary.
+
+The correlator also hashes complete relocatable function bytes plus relocation
+offset/kind/addend while deliberately excluding relocation target names. A
+body-only match is published only when that fingerprint is unique. An
 iterative second pass may resolve otherwise identical bodies when already
-unique caller/callee pairs prove the corresponding call edge. Ambiguous and
-changed bodies remain explicit review work; the report never rewrites the
-artifact or treats an obfuscated symbol as a stable semantic identity.
+unique caller/callee pairs prove the corresponding call edge. Disagreement
+between stable identity and unique-body evidence remains an explicit conflict.
+An aligned relocation site inside a uniquely mapped caller may also identify a
+changed callee when every observed site votes for the same target and the
+reverse relation is one-to-one. Multiple targets, many-to-one votes, missing
+definitions, or disagreement with a body candidate fail closed. Other
+ambiguous and changed bodies remain review work. For an otherwise unmatched
+function, the same number of call sites plus the exact multiset of already
+mapped callees may publish at most 16 unclaimed target functions as a bounded
+review-only shortlist. Even a one-item shortlist remains `ambiguous`; it never
+becomes a pin candidate without stronger evidence. Lineage retains these
+candidate symbols, locators, and occurrences at the exact blocking edge, and
+`--details` prints them. A stable generated token is a revision locator, not a
+semantic name; the report never rewrites the artifact or silently promotes it
+into reviewed knowledge.
+
+Exact one-to-one data-object correspondence is also used in the reverse
+direction. If aligned relocation slots in the mapped objects uniquely point
+from one source function to one target function, Blobray may recover that
+changed function and feed it back into call-graph and data-reference matching.
+The alternating refinement runs to a fixed point. Conflicting slots,
+many-to-one targets, non-unique symbols, or changed relocation shape fail
+closed; a table-shaped resemblance without an exact mapped object is not
+evidence.
 
 For archive revisions that replace alphabetically sorted source-object names
 with `0.o`, `1.o`, and so on, the report also publishes the complete inferred
 member-order table and measures it against unique exact-body matches. This is
-module provenance and a ranking signal only: functions can move between
-modules across releases, so member order never promotes an ambiguous function
-to an automatic match. Every function record includes an exact artifact-bound
-revision occurrence and its derivation locator for a later reviewed pin.
-Static data objects are correlated separately from functions using bounded
-initializer bytes, size/properties, and relocation shape with target names
-removed. Exact mapped function relocations may resolve otherwise identical or
-changed objects. Repeated zero-initialized state and tables without a unique
-reference remain ambiguous. The generated `pin-candidates` list contains both
-function and memory-object occurrences, but every candidate remains explicitly
-`review = required`; Blobray never promotes generated correspondence into a
-reviewed fact.
+module provenance and never promotes an ambiguous function: functions can
+move between modules across releases. When at least 64 exact function bodies
+support the table, at least 90% of all measured bodies agree, and none
+conflict, an ambiguous exact-body static object may be reduced to the single
+candidate in its proven renamed member. Member order cannot rescue a changed
+or absent object. Every function and object record includes an exact
+artifact-bound revision occurrence and its derivation locator for a later
+reviewed pin.
+
+When archive member counts no longer agree, Blobray does not extrapolate the
+old ordinal rule. Instead it may recover a partial one-to-one member map from
+at least two exact function correspondences per member. Members with split,
+merge, or reverse-ownership conflicts are omitted. This partial map can refine
+data only after the same archive-wide support gate, and otherwise serves as a
+review constraint for the residual dictionary rather than a function match.
+For a residual member containing at most 16 unclaimed target functions, each
+still-unmatched source function receives that bounded module-local shortlist.
+It remains `ambiguous` even when subtraction leaves one name and one target;
+member ownership is useful review evidence, not proof of function identity.
+
+Static data objects are correlated separately from functions using stable
+non-generated names, epoch-gated generated tokens, bounded initializer bytes,
+size/properties, and relocation shape with target names removed. Exact mapped
+function relocations may resolve otherwise identical or changed objects.
+Repeated zero-initialized state and tables without a unique identity or
+reference remain ambiguous. The complete data correspondence keeps local
+compiler labels such as `.LANCHOR*` and `.LC*` as provenance, but does not
+offer those unstable labels as semantic pin candidates. Generated obfuscation
+tokens are likewise excluded from semantic-name suggestions. The generated
+`pin-candidates` list contains only meaningfully named function and
+memory-object occurrences, but every candidate remains explicitly
+`review = required`;
+Blobray never promotes generated correspondence into a reviewed fact.
+
+When more than one obfuscation epoch or intermediate vendor release is
+available, build one lineage report instead of manually joining pairwise JSON:
+
+```console
+cargo blobray advanced symbols lineage \
+  --source ble-controller \
+  --revision named=/path/to/named.a \
+  --revision old-entry=/path/to/first-obfuscated.a \
+  --revision old-exit=/path/to/last-old-epoch.a \
+  --revision new-entry=/path/to/first-new-epoch.a \
+  --revision current=/path/to/current.a \
+  --output generated/revisions/ble-symbol-lineage.json
+```
+
+`--source` is the stable logical artifact identity used by project snapshots
+and rebase. Each `--revision` label is only the unique human-readable release,
+tag, or commit name shown in reports; labels such as `5e37d4d` are valid and do
+not change occurrence identity.
+
+Lineage runs every adjacent correlation plus an independent first-to-last
+correlation. It composes only unique one-to-one occurrences. Agreement is
+`confirmed`; a result available through only one route is `direct-only` or
+`chain-only`; disagreement is a `conflict` with no resolved target. Partial
+paths retain the exact edge, status, evidence basis and candidate count that
+blocked composition. The report stores artifact digests and every successful
+hop, but not vendor bytes or disassembly. Its pin candidates still require
+review and exclude generated token names.
+
+Schema 8 also publishes an explicit residual dictionary after every proven
+one-to-one mapping has consumed its source and target occurrence. For lineage,
+this is the remaining semantic-name set from the oldest artifact and the
+unclaimed function or data-object pool in the newest artifact. Ambiguous
+shortlists remain in both pools until reviewed; generated output never treats
+candidate exhaustion as proof. This makes the remaining bipartite matching
+problem available to tools without requiring them to reconstruct it from the
+full report. Where a proven full or partial member correspondence exists, the
+residual pool is also partitioned into old-member/new-member groups with exact
+function support counts. A `1 ↔ 1` group is still a review candidate, not an
+automatic identity claim.
+
+Schema 8 also retains the failed independent direct correspondence and ranks
+`review-frontiers` that lack any resolved target before routes that need only
+independent corroboration, then by reviewable semantic names and finally by
+all affected functions or objects. Compiler labels remain counted but cannot
+outrank a frontier that unlocks project-owned facts. An
+`adjacent-chain` frontier identifies the exact release boundary that blocks a
+complete history; `direct-endpoint` means the ordered history resolves the
+entity but the independent endpoint proof is absent; `endpoint-conflict`
+means both routes resolve to different targets. `--details` prints these
+frontiers highest-impact first and includes the direct endpoint comparison in
+the edge table.
+
+For `project revision rebase`, the first and last lineage artifact identities
+(the shared source ID plus each digest) must match artifacts in the accepted
+baseline and target snapshots.
+If the useful named archive predates that baseline, keep its naming lineage as
+research evidence and generate a second, smaller lineage beginning at the
+actual baseline artifact. Pass the project's logical source ID once with
+`--source`; the exact digest distinguishes its revisions.
+
+Accept a candidate only by adding a sparse `[[bindings]]` record to the
+project's reviewed-knowledge TOML. The record must repeat the target
+occurrence, assign a domain-matching `function:...` or `memory-object:...`
+semantic identity, constrain applicability to the exact artifact digest, and
+cite evidence whose locator re-derives that occurrence. The next Linked-IR
+build publishes `semantic` beside the raw symbol, member, artifact digest,
+locator and occurrence. Linked-IR indexes resolve either identity while raw
+call-graph and xref keys are retained. Changing the reviewed pack invalidates
+the Linked-IR cache. Missing, stale, cross-domain, forged or colliding bindings
+fail closed.
+
+One accepted candidate is the only project-owned growth required for one new
+fact. Copy `target_occurrence` and `target_locator` from the candidate and the
+target source/digest from the report header; choose the semantic path only
+after review:
+
+```toml
+schema = 2
+id = "esp32s31-ble-reviewed-identities"
+
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[[bindings]]
+id = "ble.scheduler-state.binding"
+occurrence = "occurrence:memory-object:sha256:<candidate-digest>"
+semantic = "memory-object:esp-idf/ble/controller/scheduler-state"
+
+[bindings.applies-to]
+artifacts = [
+  { source = "ble-controller", sha256 = "<report-target-sha256>" },
+]
+
+[[bindings.evidence]]
+source = "manual-symbol-correspondence-review"
+locator = "<candidate-target-locator>"
+occurrence = "occurrence:memory-object:sha256:<candidate-digest>"
+```
+
+Do not copy `suggested_name` into `semantic` mechanically. It is old-archive
+nomenclature and remains a review hint, not an accepted hardware or controller
+model.
+
+Revision snapshots use a reviewed function ID as the comparison key while
+retaining the raw identity, exact artifact digest, locator and occurrence as
+separate provenance. Calls to reviewed callees and effects on reviewed static
+objects use their semantic targets in fingerprints. A vendor-only rename then
+stays unchanged; changed behavior under the same reviewed identity remains a
+modification. Snapshot creation rejects stale generated semantics and requires
+the Linked-IR to be rebuilt after any accepted pin change.
+
+After rebuilding Linked IR, use reviewed identities directly instead of
+copying obfuscated names from generated files:
+
+```console
+cargo blobray inspect function \
+  ble:function:esp-idf/ble/controller/advertising-start \
+  --project radio-project/vendor-project.toml
+cargo blobray inspect flow \
+  ble:function:esp-idf/ble/controller/advertising-start \
+  --effects memory --project radio-project/vendor-project.toml
+cargo blobray inspect object \
+  ble:memory-object:esp-idf/ble/controller/advertising-state \
+  --project radio-project/vendor-project.toml
+```
+
+The generated reports retain both the semantic identity and the exact raw
+symbol/member. A missing or conflicting resolution fails closed and asks for
+a fresh IR build; Blobray never guesses a raw occurrence from a semantic path.
 
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and

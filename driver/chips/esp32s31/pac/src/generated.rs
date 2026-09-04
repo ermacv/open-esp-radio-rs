@@ -832,6 +832,29 @@ impl BluetoothSchedulerListHeadBits {
     }
 }
 
+/// Low-twenty-bit compressed controller-SRAM pointer accepted by one CTE sample-ring descriptor slot.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothCteSampleDescriptorPointerBits(u32);
+
+impl BluetoothCteSampleDescriptorPointerBits {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000fffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000fffff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// One complete runtime-derived byte accepted by the reviewed BTDM HAL initialization transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothHalInitByte(u32);
@@ -3110,6 +3133,39 @@ pub(crate) fn request_bluetooth_controller_time_latch(
     crate::svd::field_or_modify::request_bluetooth_controller_time_latch(registers);
 }
 
+/// Typed bridge for the reviewed `configure_bluetooth_cte_six_buffer_limit` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_bluetooth_cte_six_buffer_limit(
+    registers: &crate::svd::BleHwCteRingControl,
+) {
+    crate::svd::field_replace_modify::configure_bluetooth_cte_six_buffer_limit(registers);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_cte_sample_descriptor_pointer` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_cte_sample_descriptor_pointer(
+    registers: &crate::svd::BleHwCteRingControl,
+    index: usize,
+    value: BluetoothCteSampleDescriptorPointerBits,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_cte_sample_descriptor_pointer(
+        registers,
+        index,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_cte_buffer_software_ownership` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_cte_buffer_software_ownership(
+    registers: &crate::svd::BleHwCteRingControl,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_cte_buffer_software_ownership(
+        registers, index,
+    );
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_hardware_list_head` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_hardware_list_head(
@@ -3153,6 +3209,18 @@ pub(crate) fn clear_bluetooth_scheduler_insertion_command_1_start(
     crate::svd::field_replace_modify::clear_bluetooth_scheduler_insertion_command_1_start(
         registers,
     );
+}
+
+/// Typed bridge for the reviewed `set_ble_connection_link_state_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_ble_connection_link_state_control(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::set_ble_connection_link_state_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_ble_connection_link_state_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_ble_connection_link_state_control(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::clear_ble_connection_link_state_control(registers);
 }
 
 /// Typed bridge for the reviewed `clear_agc_baseband_update_mode` fixed field-replacement transaction.

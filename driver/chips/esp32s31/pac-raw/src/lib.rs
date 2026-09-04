@@ -39466,7 +39466,7 @@ pub mod btmac_ble_phy_init {
         init_dynamic_image_04a0: InitDynamicImage04a0,
         init_bytes_04a4: InitBytes04a4,
         init_bytes_04a8: InitBytes04a8,
-        init_value_04ac: InitValue04ac,
+        connection_abort_control: ConnectionAbortControl,
         _reserved15: [u8; 0x90],
         init_value_0540: InitValue0540,
         _reserved16: [u8; 0x08],
@@ -39547,10 +39547,10 @@ pub mod btmac_ble_phy_init {
         pub const fn init_bytes_04a8(&self) -> &InitBytes04a8 {
             &self.init_bytes_04a8
         }
-        #[doc = "0x4ac - BLE PHY register initialization writes the finite complete image 0x00FF0002."]
+        #[doc = "0x4ac - Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags."]
         #[inline(always)]
-        pub const fn init_value_04ac(&self) -> &InitValue04ac {
-            &self.init_value_04ac
+        pub const fn connection_abort_control(&self) -> &ConnectionAbortControl {
+            &self.connection_abort_control
         }
         #[doc = "0x540 - BLE PHY register initialization writes the finite complete image 2000."]
         #[inline(always)]
@@ -40344,42 +40344,61 @@ pub mod btmac_ble_phy_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_VALUE_04AC (rw) register accessor: BLE PHY register initialization writes the finite complete image 0x00FF0002.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_04ac::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_04ac::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_value_04ac`] module"]
-    #[doc(alias = "INIT_VALUE_04AC")]
-    pub type InitValue04ac = crate::Reg<init_value_04ac::InitValue04acSpec>;
-    #[doc = "BLE PHY register initialization writes the finite complete image 0x00FF0002."]
-    pub mod init_value_04ac {
-        #[doc = "Register `INIT_VALUE_04AC` reader"]
-        pub type R = crate::R<InitValue04acSpec>;
-        #[doc = "Register `INIT_VALUE_04AC` writer"]
-        pub type W = crate::W<InitValue04acSpec>;
-        #[doc = "Field `INIT_IMAGE` reader - "]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - "]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "CONNECTION_ABORT_CONTROL (rw) register accessor: Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags.\n\nYou can [`read`](crate::Reg::read) this register and get [`connection_abort_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`connection_abort_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@connection_abort_control`] module"]
+    #[doc(alias = "CONNECTION_ABORT_CONTROL")]
+    pub type ConnectionAbortControl =
+        crate::Reg<connection_abort_control::ConnectionAbortControlSpec>;
+    #[doc = "Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags."]
+    pub mod connection_abort_control {
+        #[doc = "Register `CONNECTION_ABORT_CONTROL` reader"]
+        pub type R = crate::R<ConnectionAbortControlSpec>;
+        #[doc = "Register `CONNECTION_ABORT_CONTROL` writer"]
+        pub type W = crate::W<ConnectionAbortControlSpec>;
+        #[doc = "Field `CUSTOM_OPCODE_ENABLED` reader - "]
+        pub type CustomOpcodeEnabledR = crate::BitReader;
+        #[doc = "Field `CUSTOM_OPCODE_ENABLED` writer - "]
+        pub type CustomOpcodeEnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LINK_STATE_CONTROL` reader - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+        pub type LinkStateControlR = crate::BitReader;
+        #[doc = "Field `LINK_STATE_CONTROL` writer - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+        pub type LinkStateControlW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
+            pub fn custom_opcode_enabled(&self) -> CustomOpcodeEnabledR {
+                CustomOpcodeEnabledR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+            #[inline(always)]
+            pub fn link_state_control(&self) -> LinkStateControlR {
+                LinkStateControlR::new(((self.bits >> 1) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitValue04acSpec> {
-                InitImageW::new(self, 0)
+            pub fn custom_opcode_enabled(
+                &mut self,
+            ) -> CustomOpcodeEnabledW<'_, ConnectionAbortControlSpec> {
+                CustomOpcodeEnabledW::new(self, 0)
+            }
+            #[doc = "Bit 1 - The complete connection link-state refresh clears this bit only when both of its private control flags are set and sets it on every other path. The inner hardware meaning remains unresolved."]
+            #[inline(always)]
+            pub fn link_state_control(
+                &mut self,
+            ) -> LinkStateControlW<'_, ConnectionAbortControlSpec> {
+                LinkStateControlW::new(self, 1)
             }
         }
-        #[doc = "BLE PHY register initialization writes the finite complete image 0x00FF0002.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_04ac::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_04ac::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitValue04acSpec;
-        impl crate::RegisterSpec for InitValue04acSpec {
+        #[doc = "Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags.\n\nYou can [`read`](crate::Reg::read) this register and get [`connection_abort_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`connection_abort_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ConnectionAbortControlSpec;
+        impl crate::RegisterSpec for ConnectionAbortControlSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_value_04ac::R`](R) reader structure"]
-        impl crate::Readable for InitValue04acSpec {}
-        #[doc = "`write(|w| ..)` method takes [`init_value_04ac::W`](W) writer structure"]
-        impl crate::Writable for InitValue04acSpec {
+        #[doc = "`read()` method returns [`connection_abort_control::R`](R) reader structure"]
+        impl crate::Readable for ConnectionAbortControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`connection_abort_control::W`](W) writer structure"]
+        impl crate::Writable for ConnectionAbortControlSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -48098,20 +48117,22 @@ pub mod ble_hw_runtime_control {
         }
     }
 }
-#[doc = "Late direction-finding hardware state recovered from complete ESP32-S31 ble_hw_cte.c leaves. The block is kept separate from the minimum standalone BLE controller: advertising, scanning and ordinary connections do not require CTE sample-ring support. Only observed reset and ring-limit fields are named."]
+#[doc = "Direction-finding ring state recovered from complete ESP32-S31 ble_hw_cte.c leaves. Ordinary advertising, scanning and connection link states retain a controller-global disabled-CTE descriptor even when IQ sampling is not requested, so the baseline pointer and ownership fields are part of the minimum standalone BLE controller."]
 pub type BleHwCteRingControl = crate::Periph<ble_hw_cte_ring_control::RegisterBlock, 0x2010_199c>;
 impl core::fmt::Debug for BleHwCteRingControl {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("BleHwCteRingControl").finish()
     }
 }
-#[doc = "Late direction-finding hardware state recovered from complete ESP32-S31 ble_hw_cte.c leaves. The block is kept separate from the minimum standalone BLE controller: advertising, scanning and ordinary connections do not require CTE sample-ring support. Only observed reset and ring-limit fields are named."]
+#[doc = "Direction-finding ring state recovered from complete ESP32-S31 ble_hw_cte.c leaves. Ordinary advertising, scanning and connection link states retain a controller-global disabled-CTE descriptor even when IQ sampling is not requested, so the baseline pointer and ownership fields are part of the minimum standalone BLE controller."]
 pub mod ble_hw_cte_ring_control {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
         ring_control: RingControl,
-        reset_word: [ResetWord; 12],
+        buffer_pointer: (),
+        _reserved2: [u8; 0x04],
+        buffer_state: (),
     }
     impl RegisterBlock {
         #[doc = "0x00 - Reset writes the complete word as zero; independent accessors update the ring index and maximum-buffer fields through halfword RMW operations."]
@@ -48119,16 +48140,55 @@ pub mod ble_hw_cte_ring_control {
         pub const fn ring_control(&self) -> &RingControl {
             &self.ring_control
         }
-        #[doc = "0x04..0x34 - Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned."]
+        #[doc = "0x04..0x1c - Compressed controller-SRAM address of one CTE sample-ring descriptor. The setter replaces bits 0..19 and preserves the upper twelve bits."]
         #[inline(always)]
-        pub const fn reset_word(&self, n: usize) -> &ResetWord {
-            &self.reset_word[n]
+        pub const fn buffer_pointer(&self, n: usize) -> &BufferPointer {
+            #[allow(clippy::no_effect)]
+            [(); 6][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x04..0x34 - Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned."]
+        #[doc = "0x04..0x1c - Compressed controller-SRAM address of one CTE sample-ring descriptor. The setter replaces bits 0..19 and preserves the upper twelve bits."]
         #[inline(always)]
-        pub fn reset_word_iter(&self) -> impl Iterator<Item = &ResetWord> {
-            self.reset_word.iter()
+        pub fn buffer_pointer_iter(&self) -> impl Iterator<Item = &BufferPointer> {
+            (0..6).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x08..0x20 - Hardware state paired with one CTE sample-ring descriptor. Only the software-ownership flag is currently assigned."]
+        #[inline(always)]
+        pub const fn buffer_state(&self, n: usize) -> &BufferState {
+            #[allow(clippy::no_effect)]
+            [(); 6][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x08..0x20 - Hardware state paired with one CTE sample-ring descriptor. Only the software-ownership flag is currently assigned."]
+        #[inline(always)]
+        pub fn buffer_state_iter(&self) -> impl Iterator<Item = &BufferState> {
+            (0..6).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(8 * n)
+                    .cast()
+            })
         }
     }
     #[doc = "RING_CONTROL (rw) register accessor: Reset writes the complete word as zero; independent accessors update the ring index and maximum-buffer fields through halfword RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`ring_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ring_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ring_control`] module"]
@@ -48186,29 +48246,83 @@ pub mod ble_hw_cte_ring_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RESET_WORD (w) register accessor: Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`reset_word::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@reset_word`] module"]
-    #[doc(alias = "RESET_WORD")]
-    pub type ResetWord = crate::Reg<reset_word::ResetWordSpec>;
-    #[doc = "Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned."]
-    pub mod reset_word {
-        #[doc = "Register `RESET_WORD%s` writer"]
-        pub type W = crate::W<ResetWordSpec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl W {
-            #[doc = "Bits 0:31"]
+    #[doc = "BUFFER_POINTER (rw) register accessor: Compressed controller-SRAM address of one CTE sample-ring descriptor. The setter replaces bits 0..19 and preserves the upper twelve bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`buffer_pointer::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`buffer_pointer::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@buffer_pointer`] module"]
+    #[doc(alias = "BUFFER_POINTER")]
+    pub type BufferPointer = crate::Reg<buffer_pointer::BufferPointerSpec>;
+    #[doc = "Compressed controller-SRAM address of one CTE sample-ring descriptor. The setter replaces bits 0..19 and preserves the upper twelve bits."]
+    pub mod buffer_pointer {
+        #[doc = "Register `BUFFER_POINTER%s` reader"]
+        pub type R = crate::R<BufferPointerSpec>;
+        #[doc = "Register `BUFFER_POINTER%s` writer"]
+        pub type W = crate::W<BufferPointerSpec>;
+        #[doc = "Field `COMPRESSED_DESCRIPTOR_POINTER` reader - Low-twenty-bit controller-SRAM pointer reconstructed with the fixed 0x2f prefix and four-byte alignment."]
+        pub type CompressedDescriptorPointerR = crate::FieldReader<u32>;
+        #[doc = "Field `COMPRESSED_DESCRIPTOR_POINTER` writer - Low-twenty-bit controller-SRAM pointer reconstructed with the fixed 0x2f prefix and four-byte alignment."]
+        pub type CompressedDescriptorPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        impl R {
+            #[doc = "Bits 0:19 - Low-twenty-bit controller-SRAM pointer reconstructed with the fixed 0x2f prefix and four-byte alignment."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, ResetWordSpec> {
-                ImageW::new(self, 0)
+            pub fn compressed_descriptor_pointer(&self) -> CompressedDescriptorPointerR {
+                CompressedDescriptorPointerR::new(self.bits & 0x000f_ffff)
             }
         }
-        #[doc = "Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`reset_word::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct ResetWordSpec;
-        impl crate::RegisterSpec for ResetWordSpec {
+        impl W {
+            #[doc = "Bits 0:19 - Low-twenty-bit controller-SRAM pointer reconstructed with the fixed 0x2f prefix and four-byte alignment."]
+            #[inline(always)]
+            pub fn compressed_descriptor_pointer(
+                &mut self,
+            ) -> CompressedDescriptorPointerW<'_, BufferPointerSpec> {
+                CompressedDescriptorPointerW::new(self, 0)
+            }
+        }
+        #[doc = "Compressed controller-SRAM address of one CTE sample-ring descriptor. The setter replaces bits 0..19 and preserves the upper twelve bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`buffer_pointer::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`buffer_pointer::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BufferPointerSpec;
+        impl crate::RegisterSpec for BufferPointerSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`reset_word::W`](W) writer structure"]
-        impl crate::Writable for ResetWordSpec {
+        #[doc = "`read()` method returns [`buffer_pointer::R`](R) reader structure"]
+        impl crate::Readable for BufferPointerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`buffer_pointer::W`](W) writer structure"]
+        impl crate::Writable for BufferPointerSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BUFFER_STATE (rw) register accessor: Hardware state paired with one CTE sample-ring descriptor. Only the software-ownership flag is currently assigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`buffer_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`buffer_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@buffer_state`] module"]
+    #[doc(alias = "BUFFER_STATE")]
+    pub type BufferState = crate::Reg<buffer_state::BufferStateSpec>;
+    #[doc = "Hardware state paired with one CTE sample-ring descriptor. Only the software-ownership flag is currently assigned."]
+    pub mod buffer_state {
+        #[doc = "Register `BUFFER_STATE%s` reader"]
+        pub type R = crate::R<BufferStateSpec>;
+        #[doc = "Register `BUFFER_STATE%s` writer"]
+        pub type W = crate::W<BufferStateSpec>;
+        #[doc = "Field `SOFTWARE_OWNED` reader - The named owner-clear/set leaves respectively clear and set bit 31; the paired query returns that bit."]
+        pub type SoftwareOwnedR = crate::BitReader;
+        #[doc = "Field `SOFTWARE_OWNED` writer - The named owner-clear/set leaves respectively clear and set bit 31; the paired query returns that bit."]
+        pub type SoftwareOwnedW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 31 - The named owner-clear/set leaves respectively clear and set bit 31; the paired query returns that bit."]
+            #[inline(always)]
+            pub fn software_owned(&self) -> SoftwareOwnedR {
+                SoftwareOwnedR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 31 - The named owner-clear/set leaves respectively clear and set bit 31; the paired query returns that bit."]
+            #[inline(always)]
+            pub fn software_owned(&mut self) -> SoftwareOwnedW<'_, BufferStateSpec> {
+                SoftwareOwnedW::new(self, 31)
+            }
+        }
+        #[doc = "Hardware state paired with one CTE sample-ring descriptor. Only the software-ownership flag is currently assigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`buffer_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`buffer_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BufferStateSpec;
+        impl crate::RegisterSpec for BufferStateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`buffer_state::R`](R) reader structure"]
+        impl crate::Readable for BufferStateSpec {}
+        #[doc = "`write(|w| ..)` method takes [`buffer_state::W`](W) writer structure"]
+        impl crate::Writable for BufferStateSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -59675,7 +59789,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00ff0002` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_04AC`.
+    /// Publish the SVD-qualified image `0x00ff0002` to `BTMAC_BLE_PHY_INIT`.`CONNECTION_ABORT_CONTROL`.
     #[inline]
     pub fn publish_ble_phy_init_value_04ac(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
@@ -59683,7 +59797,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_value_04ac()
+                .connection_abort_control()
                 .write_with_zero(|writer| writer.bits(0x00ff0002));
         }
     }
@@ -62809,6 +62923,49 @@ pub mod field_or_modify {
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
 pub mod field_replace_modify {
 
+    /// Replace BLE_HW_CTE_RING_CONTROL.RING_CONTROL fields [MAX_BUFFER_NUMBER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_bluetooth_cte_six_buffer_limit(registers: &crate::BleHwCteRingControl) {
+        registers.ring_control().modify(|_, writer| {
+            let input = 0x00000006_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.max_buffer_number().bits((input & 0x00000007) as u8) }
+        });
+    }
+
+    /// Replace BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER%s fields [COMPRESSED_DESCRIPTOR_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_cte_sample_descriptor_pointer(
+        registers: &crate::BleHwCteRingControl,
+        index: usize,
+        input: u32,
+    ) {
+        registers.buffer_pointer(index).modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .compressed_descriptor_pointer()
+                    .bits(input & 0x000fffff)
+            }
+        });
+    }
+
+    /// Replace BLE_HW_CTE_RING_CONTROL.BUFFER_STATE%s fields [SOFTWARE_OWNED] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_cte_buffer_software_ownership(
+        registers: &crate::BleHwCteRingControl,
+        index: usize,
+    ) {
+        registers.buffer_state(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.software_owned().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BTDM_SCHEDULER_TABLE.ENTRY%s fields [HEAD_POINTER] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_hardware_list_head(
@@ -62860,6 +63017,28 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.start().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields [LINK_STATE_CONTROL] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ble_connection_link_state_control(registers: &crate::BtmacBlePhyInit) {
+        registers.connection_abort_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.link_state_control().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL fields [LINK_STATE_CONTROL] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_ble_connection_link_state_control(registers: &crate::BtmacBlePhyInit) {
+        registers.connection_abort_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.link_state_control().bit((input & 0x00000001) != 0)
         });
     }
 

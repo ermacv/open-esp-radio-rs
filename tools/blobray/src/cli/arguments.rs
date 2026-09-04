@@ -4,7 +4,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use clap::{Args, ValueEnum};
 
-use super::{NamedAddressRange, ProjectInputBinding, SourcePath, SourceValue};
+use super::{NamedAddressRange, ProjectInputBinding, RevisionPath, SourcePath, SourceValue};
 use crate::source_id::SourceId;
 
 /// Bounded default proven to stay below the Blobray wrapper's 1-GiB limit
@@ -182,6 +182,9 @@ pub(crate) struct RevisionRebaseArgs {
     /// Target snapshot name/path, or @live for the current analyzed bindings.
     #[arg(value_name = "TO")]
     pub(crate) to: String,
+    /// Generated symbol lineage used to propose exact occurrence remaps.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) lineage: Option<PathBuf>,
     /// Optional generated rebase plan containing every old reviewed record.
     #[arg(long, value_name = "PATH")]
     pub(crate) output: Option<PathBuf>,
@@ -331,6 +334,22 @@ pub(crate) struct SymbolCorrelateArgs {
     #[arg(long)]
     pub(crate) output: Option<PathBuf>,
     /// Verify that the existing correspondence report is current.
+    #[arg(long, requires = "output")]
+    pub(crate) check: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct SymbolLineageArgs {
+    /// Stable logical artifact source shared by every revision.
+    #[arg(long, value_name = "SOURCE")]
+    pub(crate) source: SourceId,
+    /// Ordered labeled revisions from the oldest/named artifact to the current blob.
+    #[arg(long = "revision", required = true, value_name = "LABEL=PATH")]
+    pub(crate) revisions: Vec<RevisionPath>,
+    /// Write the machine-readable multi-revision lineage report.
+    #[arg(long)]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify that the existing lineage report is current.
     #[arg(long, requires = "output")]
     pub(crate) check: bool,
 }
@@ -588,8 +607,8 @@ pub(crate) struct InspectAnalyzeArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectFunctionArgs {
-    /// Project source and exact function symbol (`SOURCE:SYMBOL`).
-    #[arg(value_name = "SOURCE:SYMBOL")]
+    /// Project source plus a raw symbol or reviewed function identity.
+    #[arg(value_name = "SOURCE:SYMBOL|SOURCE:function:PATH")]
     pub(crate) selector: String,
     /// Authoritative linked image for the selected source.
     #[arg(long)]
@@ -646,8 +665,8 @@ pub(crate) enum InspectFlowEffectKind {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectFlowArgs {
-    /// Project source and root function (`SOURCE:SYMBOL`).
-    #[arg(value_name = "SOURCE:SYMBOL")]
+    /// Project source plus a raw symbol or reviewed function identity.
+    #[arg(value_name = "SOURCE:SYMBOL|SOURCE:function:PATH")]
     pub(crate) selector: Option<String>,
     /// Stop at a function identity or symbol.
     #[arg(long, value_name = "[SOURCE::]SYMBOL")]
@@ -677,8 +696,8 @@ pub(crate) struct InspectFlowArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectObjectArgs {
-    /// Project source and exact data-object symbol (`SOURCE:SYMBOL`).
-    #[arg(value_name = "SOURCE:SYMBOL")]
+    /// Project source plus a raw symbol or reviewed memory-object identity.
+    #[arg(value_name = "SOURCE:SYMBOL|SOURCE:memory-object:PATH")]
     pub(crate) selector: String,
     /// Restrict memory evidence to one signed byte offset (for example `0x74`).
     #[arg(long, value_name = "OFFSET")]

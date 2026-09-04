@@ -49,6 +49,27 @@ impl FromStr for SourcePath {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RevisionPath {
+    pub(crate) label: String,
+    pub(crate) path: PathBuf,
+}
+
+impl FromStr for RevisionPath {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let (label, path) = split_assignment(value, "LABEL=PATH")?;
+        if !stable_id(label) {
+            return Err(format!("invalid revision label {label:?}"));
+        }
+        Ok(Self {
+            label: label.to_owned(),
+            path: PathBuf::from(path),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceValue {
     pub(crate) source: SourceId,
     pub(crate) value: String,
@@ -141,6 +162,15 @@ mod tests {
         assert!("ROM=rom.elf".parse::<SourcePath>().is_err());
         assert!("wifi.rom=rom.elf".parse::<SourcePath>().is_err());
         assert!("rom=".parse::<SourcePath>().is_err());
+    }
+
+    #[test]
+    fn revision_paths_accept_commit_hash_labels() {
+        let revision = "5e37d4d=/tmp/libbt.a".parse::<RevisionPath>().unwrap();
+        assert_eq!(revision.label, "5e37d4d");
+        assert_eq!(revision.path, PathBuf::from("/tmp/libbt.a"));
+        assert!("bad/label=/tmp/libbt.a".parse::<RevisionPath>().is_err());
+        assert!("current=".parse::<RevisionPath>().is_err());
     }
 
     #[test]

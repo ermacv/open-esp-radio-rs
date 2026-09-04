@@ -5,8 +5,6 @@
 //! interrupts, HCI, or the Link Layer are ready.
 
 #[cfg(target_arch = "riscv32")]
-use embassy_sync::blocking_mutex::raw::RawMutex;
-#[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::PhyCalibrationCache;
 
 #[cfg(target_arch = "riscv32")]
@@ -35,48 +33,17 @@ pub struct BluetoothBasebandInitializationReport {
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerBasebandInitialized<
     P,
-    M,
     const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    pub(crate) initialized: BluetoothControllerPhyInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    pub(crate) initialized:
+        BluetoothControllerPhyInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     pub(crate) baseband_report: BluetoothBasebandInitializationReport,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerBasebandInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Inspect the completed common-PHY transition without hardware access.
     pub const fn phy_report(&self) -> BluetoothPhyInitializationReport {
@@ -95,26 +62,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerPhyInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPhyInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     /// Execute the exact finite MMIO effects of `bt_bb_v2_init_cmplx(1)`.
     ///
@@ -130,15 +79,7 @@ where
     )]
     pub fn initialize_baseband(
         self,
-    ) -> BluetoothControllerBasebandInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothControllerBasebandInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         let BluetoothControllerPhyInitialized {
             mut controller,
             phy,

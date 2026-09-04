@@ -640,6 +640,18 @@ impl BluetoothControllerSchedulerEpoch {
         self.project_raw_ticks(captured.wrapping_controller_ticks())
     }
 
+    /// Project the hardware capture retained by one completed connection event.
+    ///
+    /// Like an RX-packet capture, this is not a fresh time sample and cannot
+    /// advance the persistent scheduler epoch.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn project_peripheral_connection_capture(
+        self,
+        captured: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
+    ) -> u32 {
+        self.project_raw_ticks(captured.wrapping_controller_ticks())
+    }
+
     /// Advance the raw anchor while preserving this sample's scheduler image.
     ///
     /// The Controller does this after every live task-run reference update.
@@ -683,6 +695,16 @@ impl BluetoothControllerSchedulerEpoch {
                     .whole_ticks,
             )
         }
+    }
+
+    /// Convert a duration without applying either scheduler epoch anchor.
+    ///
+    /// Descriptor intervals are deltas, not absolute scheduler positions.
+    /// Keeping this operation on the retained epoch prevents callers from
+    /// reconstructing a duration by subtracting two independently truncated
+    /// absolute projections.
+    pub(crate) const fn raw_duration_ticks_for_micros(self, micros: u32) -> u32 {
+        self.scale.raw_ticks_from_micros(micros).whole_ticks
     }
 }
 

@@ -4,7 +4,6 @@
 //! are separate affine transitions. BTBB is reachable only after all lower
 //! obligations have settled.
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyTargetObserver,
     PhyTargetPortCounters, RegisteredBluetoothPhyClientAcquire,
@@ -24,18 +23,11 @@ use crate::{
         BluetoothControllerPhyInitialized, BluetoothControllerPhyRegistered,
         BluetoothPhyInitializationReport,
     },
-    hci::BluetoothControllerLowPowerHardwareInitialized,
+    low_power::BluetoothControllerLowPowerHardwareInitialized,
 };
 
-type Controller<
-    P,
-    M,
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> = BluetoothControllerLowPowerHardwareInitialized<P, M, MT, SC, H2C, C2H, PC>;
+type Controller<P, const MT: usize, const SC: usize> =
+    BluetoothControllerLowPowerHardwareInitialized<P, MT, SC>;
 
 /// Caller-owned inputs for one full common-PHY registration.
 pub struct BluetoothPhyInitializationConfig {
@@ -85,26 +77,12 @@ impl BluetoothPhyInitializationReport {
 
 /// Failed target registration retaining the complete outer Controller.
 #[must_use = "failed common PHY registration still owns Bluetooth hardware"]
-pub struct BluetoothControllerPhyInitializationFailure<
-    P,
-    M,
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> where
-    M: RawMutex,
-{
-    _controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+pub struct BluetoothControllerPhyInitializationFailure<P, const MT: usize, const SC: usize> {
+    _controller: Controller<P, MT, SC>,
     failure: TargetBluetoothPhyRegisterFailure,
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    BluetoothControllerPhyInitializationFailure<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> BluetoothControllerPhyInitializationFailure<P, MT, SC> {
     /// Inspect the exact lower target-registration failure.
     pub const fn error(&self) -> TargetBluetoothPhyRegisterError {
         self.failure.error()
@@ -118,28 +96,14 @@ where
 
 /// Successful client acquisition before its tracking continuation is settled.
 #[must_use = "Bluetooth client acquisition must advance or retain pending tracking"]
-pub struct BluetoothControllerPhyClientAcquire<
-    P,
-    M,
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> where
-    M: RawMutex,
-{
-    controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+pub struct BluetoothControllerPhyClientAcquire<P, const MT: usize, const SC: usize> {
+    controller: Controller<P, MT, SC>,
     acquisition: RegisteredBluetoothPhyClientAcquire,
     calibration_cache: Option<PhyCalibrationCache>,
     report: BluetoothPhyInitializationReport,
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    BluetoothControllerPhyClientAcquire<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> BluetoothControllerPhyClientAcquire<P, MT, SC> {
     /// Return the source-reviewed first-client acquisition ordering.
     pub const fn ordering(&self) -> PhyClientAcquireOrdering {
         self.acquisition.ordering()
@@ -158,8 +122,8 @@ where
     pub fn into_owner(
         self,
     ) -> Result<
-        BluetoothControllerPhyInitialized<P, M, MT, SC, H2C, C2H, PC>,
-        BluetoothControllerPhyPendingTrack<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyInitialized<P, MT, SC>,
+        BluetoothControllerPhyPendingTrack<P, MT, SC>,
     > {
         let Self {
             controller,
@@ -188,28 +152,14 @@ where
 ///
 /// This is fail-stop and exposes no lower recovery edge.
 #[must_use = "failed Bluetooth client acquisition retains the powered Controller"]
-pub struct BluetoothControllerPhyClientAcquireFailure<
-    P,
-    M,
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> where
-    M: RawMutex,
-{
-    _controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+pub struct BluetoothControllerPhyClientAcquireFailure<P, const MT: usize, const SC: usize> {
+    _controller: Controller<P, MT, SC>,
     failure: RegisteredBluetoothPhyClientAcquireFailure,
     _calibration_cache: Option<PhyCalibrationCache>,
     _report: BluetoothPhyInitializationReport,
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    BluetoothControllerPhyClientAcquireFailure<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> BluetoothControllerPhyClientAcquireFailure<P, MT, SC> {
     /// Inspect the exact source-owned acquisition rejection.
     pub const fn error(&self) -> PhyClientAcquireError {
         self.failure.error()
@@ -218,37 +168,21 @@ where
 
 /// Pending immediate tracking retaining the complete Controller epoch.
 #[must_use = "pending Bluetooth PHY tracking must begin"]
-pub struct BluetoothControllerPhyPendingTrack<
-    P,
-    M,
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> where
-    M: RawMutex,
-{
-    controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+pub struct BluetoothControllerPhyPendingTrack<P, const MT: usize, const SC: usize> {
+    controller: Controller<P, MT, SC>,
     pending: RegisteredBluetoothPhyPendingTrack,
     calibration_cache: Option<PhyCalibrationCache>,
     report: BluetoothPhyInitializationReport,
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    BluetoothControllerPhyPendingTrack<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> BluetoothControllerPhyPendingTrack<P, MT, SC> {
     /// Borrow the exact immediate tracking request.
     pub const fn request(&self) -> &PhyParamTrackRequest {
         self.pending.request()
     }
 
     /// Enter tracking with policy owned by the registered common-PHY epoch.
-    pub fn begin_tracking(
-        self,
-    ) -> BluetoothControllerPhyPendingTracking<P, M, MT, SC, H2C, C2H, PC> {
+    pub fn begin_tracking(self) -> BluetoothControllerPhyPendingTracking<P, MT, SC> {
         BluetoothControllerPhyPendingTracking {
             controller: self.controller,
             tracking: self.pending.begin_tracking(),
@@ -260,18 +194,8 @@ where
 
 /// In-flight immediate tracking retaining the complete Controller epoch.
 #[must_use = "Bluetooth PHY tracking must be driven to a terminal result"]
-pub struct BluetoothControllerPhyPendingTracking<
-    P,
-    M,
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> where
-    M: RawMutex,
-{
-    controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+pub struct BluetoothControllerPhyPendingTracking<P, const MT: usize, const SC: usize> {
+    controller: Controller<P, MT, SC>,
     tracking: RegisteredBluetoothPhyPendingTracking,
     calibration_cache: Option<PhyCalibrationCache>,
     report: BluetoothPhyInitializationReport,
@@ -279,28 +203,14 @@ pub struct BluetoothControllerPhyPendingTracking<
 
 /// Failed tracking retaining the outer Controller and poisoned lower owner.
 #[must_use = "failed Bluetooth PHY tracking retains the poisoned powered epoch"]
-pub struct BluetoothControllerPhyTrackingFailure<
-    P,
-    M,
-    const MT: usize,
-    const SC: usize,
-    const H2C: usize,
-    const C2H: usize,
-    const PC: usize,
-> where
-    M: RawMutex,
-{
-    _controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+pub struct BluetoothControllerPhyTrackingFailure<P, const MT: usize, const SC: usize> {
+    _controller: Controller<P, MT, SC>,
     failure: TargetBluetoothPhyParamTrackingFailure,
     _calibration_cache: Option<PhyCalibrationCache>,
     _report: BluetoothPhyInitializationReport,
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    BluetoothControllerPhyTrackingFailure<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> BluetoothControllerPhyTrackingFailure<P, MT, SC> {
     /// Inspect the exact target tracking failure.
     pub const fn error(&self) -> TargetPhyParamTrackingError {
         self.failure.error()
@@ -312,11 +222,7 @@ where
     }
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    BluetoothControllerPhyPendingTracking<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> BluetoothControllerPhyPendingTracking<P, MT, SC> {
     /// Complete due tracking through the borrowed concrete target port.
     ///
     /// Once polled, cancellation releases no reusable Controller state; an
@@ -329,8 +235,8 @@ where
         self,
         observer: O,
     ) -> Result<
-        BluetoothControllerPhyInitialized<P, M, MT, SC, H2C, C2H, PC>,
-        BluetoothControllerPhyTrackingFailure<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyInitialized<P, MT, SC>,
+        BluetoothControllerPhyTrackingFailure<P, MT, SC>,
     >
     where
         D: PhyAsyncDelay,
@@ -373,11 +279,7 @@ where
     }
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    BluetoothControllerPhyRegistered<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> BluetoothControllerPhyRegistered<P, MT, SC> {
     /// Acquire the source-owned Bluetooth PHY client without skipping tracking.
     #[allow(
         clippy::result_large_err,
@@ -387,8 +289,8 @@ where
         self,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<
-        BluetoothControllerPhyClientAcquire<P, M, MT, SC, H2C, C2H, PC>,
-        BluetoothControllerPhyClientAcquireFailure<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyClientAcquire<P, MT, SC>,
+        BluetoothControllerPhyClientAcquireFailure<P, MT, SC>,
     > {
         let BluetoothControllerPhyRegistered {
             controller,
@@ -413,11 +315,7 @@ where
     }
 }
 
-impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
-    Controller<P, M, MT, SC, H2C, C2H, PC>
-where
-    M: RawMutex,
-{
+impl<P, const MT: usize, const SC: usize> Controller<P, MT, SC> {
     /// Run target registration without treating it as Bluetooth-client enable.
     #[allow(
         clippy::result_large_err,
@@ -429,8 +327,8 @@ where
         config: BluetoothPhyInitializationConfig,
         observer: O,
     ) -> Result<
-        BluetoothControllerPhyRegistered<P, M, MT, SC, H2C, C2H, PC>,
-        BluetoothControllerPhyInitializationFailure<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyRegistered<P, MT, SC>,
+        BluetoothControllerPhyInitializationFailure<P, MT, SC>,
     >
     where
         D: PhyAsyncDelay,

@@ -4,10 +4,12 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
+    ops::Deref,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use open_radio_vendor_contracts::{RevisionOccurrenceId, SemanticEntityId};
 use serde::Serialize;
 
 use crate::{
@@ -247,6 +249,10 @@ struct DataObjectXrefDocument {
 #[derive(Clone, Serialize)]
 struct DataObjectDocument {
     source: String,
+    artifact_sha256: String,
+    locator: String,
+    occurrence: String,
+    semantic: Option<String>,
     member: Option<String>,
     section: String,
     symbol: String,
@@ -293,6 +299,7 @@ fn encode_hex(bytes: &[u8]) -> String {
 fn load_data_objects(
     artifacts: &[IrArtifactInput],
     report: &LinkedIrReport,
+    reviewed_bindings: &BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
 ) -> Result<Vec<DataObjectDocument>> {
     let mut xrefs = BTreeMap::<
         (String, Option<String>, String, String),
@@ -325,7 +332,23 @@ fn load_data_objects(
 
     let mut output = Vec::new();
     for artifact in artifacts {
+        let artifact_sha256 = crate::artifact_sha256(&artifact.path)?;
         for object in crate::artifact::load_data_objects(&artifact.path)? {
+            let locator = crate::artifact_occurrence::memory_object_locator(
+                object.member.as_deref(),
+                &object.section,
+                &object.name,
+                object.object_offset,
+                object.address,
+                object.size,
+            );
+            let occurrence = crate::artifact_occurrence::derive(
+                open_radio_vendor_contracts::EntityDomain::MemoryObject,
+                &artifact.source,
+                &artifact_sha256,
+                &locator,
+            )?;
+            let semantic = reviewed_bindings.get(&occurrence).map(ToString::to_string);
             let object_xrefs = xrefs
                 .iter()
                 .filter(|((source, member, symbol, _), _)| {
@@ -350,6 +373,10 @@ fn load_data_objects(
                 .collect();
             output.push(DataObjectDocument {
                 source: artifact.source.clone(),
+                artifact_sha256: artifact_sha256.clone(),
+                locator,
+                occurrence: occurrence.to_string(),
+                semantic,
                 member: object.member,
                 section: object.section,
                 symbol: object.name,
@@ -377,6 +404,23 @@ fn load_data_objects(
         }
     }
     Ok(output)
+}
+
+#[derive(Serialize)]
+struct FunctionDocument<'a> {
+    locator: String,
+    occurrence: String,
+    semantic: Option<String>,
+    #[serde(flatten)]
+    function: &'a LinkedIrFunction,
+}
+
+impl Deref for FunctionDocument<'_> {
+    type Target = LinkedIrFunction;
+
+    fn deref(&self) -> &Self::Target {
+        self.function
+    }
 }
 
 #[derive(Serialize)]
@@ -416,7 +460,7 @@ pub(crate) struct LinkedIrDocument<'a> {
     mmio_registers: &'a [LinkedMmioRegister],
     semantic_boundaries: &'a [SemanticBoundary],
     trampoline_slots: &'a [LinkedTrampolineSlot],
-    functions: &'a [LinkedIrFunction],
+    functions: Vec<FunctionDocument<'a>>,
 }
 
 const MAX_LINKED_IR_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
@@ -617,7 +661,7 @@ fn manifest_projection<'a>(document: &'a LinkedIrDocument<'a>) -> LinkedIrDocume
         mmio_registers: &[],
         semantic_boundaries: document.semantic_boundaries,
         trampoline_slots: document.trampoline_slots,
-        functions: &[],
+        functions: Vec::new(),
     }
 }
 
@@ -629,6 +673,9 @@ fn manifest_projection<'a>(document: &'a LinkedIrDocument<'a>) -> LinkedIrDocume
 struct FunctionOverviewDocument<'a> {
     source: &'a str,
     artifact_sha256: &'a str,
+    locator: &'a str,
+    occurrence: &'a str,
+    semantic: &'a Option<String>,
     identity: &'a str,
     selection: &'a str,
     member: &'a Option<String>,
@@ -655,6 +702,7 @@ struct FunctionOverviewDirectEffect {
     site: Option<u32>,
     operation: String,
     target: String,
+    semantic_target: Option<String>,
     width: Option<u8>,
     value: Option<String>,
     modified_mask: Option<u32>,
@@ -745,7 +793,10 @@ struct FunctionOverviewEventBinding<'a> {
 }
 
 impl<'a> FunctionOverviewDocument<'a> {
-    fn new(function: &'a LinkedIrFunction) -> Self {
+    fn new(
+        function: &'a FunctionDocument<'a>,
+        memory_semantics: &BTreeMap<(String, Option<String>, String), String>,
+    ) -> Self {
         let summary = &function.effect_summary;
         let mut direct_effects = function
             .instruction_effects
@@ -768,6 +819,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: Some(*site),
                     operation: format!("{access}:{mode}"),
                     target: format!("{address:#010x}"),
+                    semantic_target: None,
                     width: Some(*width),
                     value: value.clone(),
                     modified_mask: *modified_mask,
@@ -794,6 +846,12 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: Some(*site),
                     operation: (*access).to_owned(),
                     target: format!("{} {offset:+#x}", object.display_name()),
+                    semantic_target: semantic_memory_object_name(
+                        &function.source,
+                        object,
+                        memory_semantics,
+                    )
+                    .map(|object| format!("{object} {offset:+#x}")),
                     width: Some(*width),
                     value: value_pseudo.clone().or_else(|| value.clone()),
                     modified_mask: *write_mask,
@@ -813,6 +871,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: call.site,
                     operation: operation.clone(),
                     target: call.target.clone(),
+                    semantic_target: Some(operation.clone()),
                     width: None,
                     value: None,
                     modified_mask: None,
@@ -839,6 +898,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     site: None,
                     operation: "delay-micros".to_owned(),
                     target: delay.path.clone(),
+                    semantic_target: None,
                     width: None,
                     value: Some(delay.micros.clone()),
                     modified_mask: None,
@@ -857,6 +917,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     .receiver
                     .clone()
                     .unwrap_or_else(|| "<unknown>".to_owned()),
+                semantic_target: dispatch.receiver.clone(),
                 width: None,
                 value: Some(dispatch.execution_context.to_owned()),
                 modified_mask: None,
@@ -874,6 +935,9 @@ impl<'a> FunctionOverviewDocument<'a> {
         Self {
             source: &function.source,
             artifact_sha256: &function.artifact_sha256,
+            locator: &function.locator,
+            occurrence: &function.occurrence,
+            semantic: &function.semantic,
             identity: &function.identity,
             selection: function.selection,
             member: &function.member,
@@ -998,6 +1062,30 @@ impl<'a> FunctionOverviewDocument<'a> {
     }
 }
 
+fn semantic_memory_object_name(
+    source: &str,
+    object: &crate::LinkedMemoryObject,
+    semantics: &BTreeMap<(String, Option<String>, String), String>,
+) -> Option<String> {
+    match object {
+        crate::LinkedMemoryObject::Global { member, symbol } => semantics
+            .get(&(source.to_owned(), member.clone(), symbol.clone()))
+            .cloned(),
+        crate::LinkedMemoryObject::Dereferenced {
+            pointer,
+            pointer_offset,
+        } => semantic_memory_object_name(source, pointer, semantics)
+            .map(|pointer| format!("*({pointer} {pointer_offset:+#x})")),
+        crate::LinkedMemoryObject::Indexed {
+            object,
+            argument,
+            stride,
+        } => semantic_memory_object_name(source, object, semantics)
+            .map(|object| format!("{object}[arg{argument} * {stride:#x}]")),
+        _ => None,
+    }
+}
+
 #[derive(Serialize)]
 struct FunctionIndexDocument<'a> {
     schema_version: u32,
@@ -1010,6 +1098,9 @@ struct FunctionIndexRecord<'a> {
     identity: &'a str,
     source: &'a str,
     artifact_sha256: &'a str,
+    locator: &'a str,
+    occurrence: &'a str,
+    semantic: &'a Option<String>,
     member: &'a Option<String>,
     symbol: &'a str,
     address: Option<u32>,
@@ -1027,11 +1118,21 @@ struct DataObjectIndexDocument<'a> {
 #[derive(Serialize)]
 struct DataObjectIndexRecord<'a> {
     source: &'a str,
+    artifact_sha256: &'a str,
+    locator: &'a str,
+    occurrence: &'a str,
+    semantic: &'a Option<String>,
     member: &'a Option<String>,
     symbol: &'a str,
+    aliases: &'a [String],
     address: &'a Option<String>,
     offset: u64,
     length: u64,
+}
+
+pub(crate) struct LinkedIrPublication<'a> {
+    pub(crate) report: &'a LinkedIrReport,
+    pub(crate) reviewed_bindings: &'a BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
 }
 
 #[derive(Serialize)]
@@ -1062,10 +1163,42 @@ pub(crate) fn build_linked_ir_document<'a>(
     companions: &[PathBuf],
     symbol_prefix: &'a str,
     entry_contract: EntryContractRef,
-    report: &'a LinkedIrReport,
+    publication: LinkedIrPublication<'a>,
     include_reachable: bool,
 ) -> Result<LinkedIrDocument<'a>> {
-    let data_objects = load_data_objects(artifacts, report)?;
+    let LinkedIrPublication {
+        report,
+        reviewed_bindings,
+    } = publication;
+    let data_objects = load_data_objects(artifacts, report, reviewed_bindings)?;
+    let functions = report
+        .functions
+        .iter()
+        .map(|function| {
+            let locator = crate::artifact_occurrence::function_locator(
+                function.member.as_deref(),
+                &function.symbol,
+                function
+                    .address
+                    .map(u64::from)
+                    .unwrap_or(u64::from(function.object_offset)),
+            );
+            let occurrence = crate::artifact_occurrence::derive(
+                open_radio_vendor_contracts::EntityDomain::Function,
+                &function.source,
+                &function.artifact_sha256,
+                &locator,
+            )?;
+            let semantic = reviewed_bindings.get(&occurrence).map(ToString::to_string);
+            Ok(FunctionDocument {
+                locator,
+                occurrence: occurrence.to_string(),
+                semantic,
+                function,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    validate_semantic_collisions(&functions, &data_objects)?;
     Ok(LinkedIrDocument {
         schema_version: crate::artifacts::LINKED_IR.version,
         command: crate::artifacts::LINKED_IR.command,
@@ -1161,8 +1294,39 @@ pub(crate) fn build_linked_ir_document<'a>(
         mmio_registers: &report.mmio_registers,
         semantic_boundaries: &report.semantic_boundaries,
         trampoline_slots: &report.trampoline_slots,
-        functions: &report.functions,
+        functions,
     })
+}
+
+fn validate_semantic_collisions(
+    functions: &[FunctionDocument<'_>],
+    data_objects: &[DataObjectDocument],
+) -> Result<()> {
+    let mut semantics = BTreeMap::<&str, &str>::new();
+    for (semantic, occurrence) in functions
+        .iter()
+        .filter_map(|function| {
+            function
+                .semantic
+                .as_deref()
+                .map(|value| (value, function.occurrence.as_str()))
+        })
+        .chain(data_objects.iter().filter_map(|object| {
+            object
+                .semantic
+                .as_deref()
+                .map(|value| (value, object.occurrence.as_str()))
+        }))
+    {
+        if let Some(previous) = semantics.insert(semantic, occurrence)
+            && previous != occurrence
+        {
+            return Err(crate::Error::invalid(format!(
+                "reviewed semantic identity {semantic} is bound to multiple occurrences in one linked-IR profile: {previous} and {occurrence}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1196,7 +1360,7 @@ pub(crate) fn stage_linked_ir_bundle(
     {
         let mut functions = budget_writer(&root, "functions.jsonl", &mut total)?;
         let mut offset = 0_u64;
-        for function in document.functions {
+        for function in &document.functions {
             let mut record = RecordWriter {
                 inner: &mut functions,
                 written: 0,
@@ -1208,6 +1372,9 @@ pub(crate) fn stage_linked_ir_bundle(
                 identity: &function.identity,
                 source: &function.source,
                 artifact_sha256: &function.artifact_sha256,
+                locator: &function.locator,
+                occurrence: &function.occurrence,
+                semantic: &function.semantic,
                 member: &function.member,
                 symbol: &function.symbol,
                 address: function.address,
@@ -1227,8 +1394,33 @@ pub(crate) fn stage_linked_ir_bundle(
 
     {
         let mut overviews = budget_writer(&root, "function-overview.jsonl", &mut total)?;
-        for function in document.functions {
-            serde_json::to_writer(&mut overviews, &FunctionOverviewDocument::new(function))?;
+        let mut memory_semantics = BTreeMap::new();
+        for object in &document.data_objects {
+            let Some(semantic) = &object.semantic else {
+                continue;
+            };
+            for symbol in std::iter::once(object.symbol.as_str())
+                .chain(object.aliases.iter().map(String::as_str))
+            {
+                let key = (
+                    object.source.clone(),
+                    object.member.clone(),
+                    symbol.to_owned(),
+                );
+                if let Some(previous) = memory_semantics.insert(key, semantic.clone())
+                    && previous != *semantic
+                {
+                    return Err(crate::Error::invalid(format!(
+                        "linked-IR data symbol {symbol:?} resolves to conflicting reviewed semantic identities {previous} and {semantic}"
+                    )));
+                }
+            }
+        }
+        for function in &document.functions {
+            serde_json::to_writer(
+                &mut overviews,
+                &FunctionOverviewDocument::new(function, &memory_semantics),
+            )?;
             overviews.write_all(b"\n")?;
         }
         overviews.flush()?;
@@ -1260,8 +1452,13 @@ pub(crate) fn stage_linked_ir_bundle(
             record.write_all(b"\n")?;
             data_object_records.push(DataObjectIndexRecord {
                 source: &object.source,
+                artifact_sha256: &object.artifact_sha256,
+                locator: &object.locator,
+                occurrence: &object.occurrence,
+                semantic: &object.semantic,
                 member: &object.member,
                 symbol: &object.symbol,
+                aliases: &object.aliases,
                 address: &object.address,
                 offset,
                 length,
@@ -1329,6 +1526,15 @@ pub(crate) fn render_linked_ir_fixture(
     functions: Vec<LinkedIrFunction>,
     mmio_registers: Vec<LinkedMmioRegister>,
 ) -> String {
+    render_linked_ir_fixture_with_bindings(functions, mmio_registers, &BTreeMap::new())
+}
+
+#[cfg(test)]
+pub(crate) fn render_linked_ir_fixture_with_bindings(
+    functions: Vec<LinkedIrFunction>,
+    mmio_registers: Vec<LinkedMmioRegister>,
+    reviewed_bindings: &BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
+) -> String {
     use crate::EntryContractSpec;
 
     static ENTRY: EntryContractSpec = EntryContractSpec {
@@ -1385,7 +1591,10 @@ pub(crate) fn render_linked_ir_fixture(
         &[],
         "",
         crate::EntryContractRef::new(&ENTRY),
-        &report,
+        LinkedIrPublication {
+            report: &report,
+            reviewed_bindings,
+        },
         false,
     )
     .unwrap();
@@ -1459,6 +1668,7 @@ mod bundle_write_tests {
             site: Some(0x1000),
             operation: "write:static".to_owned(),
             target: "0x60000010".to_owned(),
+            semantic_target: None,
             width: Some(32),
             value: Some("0x00000001".to_owned()),
             modified_mask: Some(1),
@@ -1471,5 +1681,30 @@ mod bundle_write_tests {
         deduplicate_observable_effects(&mut effects);
 
         assert_eq!(effects, [effect]);
+    }
+
+    #[test]
+    fn reviewed_memory_object_identity_stabilizes_nested_effect_targets() {
+        let object = crate::LinkedMemoryObject::Indexed {
+            object: Box::new(crate::LinkedMemoryObject::Global {
+                member: Some("55.o".to_owned()),
+                symbol: "r_data_ble".to_owned(),
+            }),
+            argument: 1,
+            stride: 4,
+        };
+        let semantics = BTreeMap::from([(
+            (
+                "ble".to_owned(),
+                Some("55.o".to_owned()),
+                "r_data_ble".to_owned(),
+            ),
+            "memory-object:esp-idf/ble/controller-state".to_owned(),
+        )]);
+
+        assert_eq!(
+            semantic_memory_object_name("ble", &object, &semantics).as_deref(),
+            Some("memory-object:esp-idf/ble/controller-state[arg1 * 0x4]")
+        );
     }
 }

@@ -51,6 +51,7 @@ fn command_message(command: &Command) -> Option<&'static str> {
         Command::RegisterGenerateBindings(_) => "PAC binding generation",
         Command::SymbolInventory(_) => "Symbol inventory",
         Command::SymbolCorrelate(_) => "Symbol correspondence",
+        Command::SymbolLineage(_) => "Symbol lineage",
         Command::InterfaceDiscover(_) => "Interface discovery",
         Command::InterfaceValidate(_) => "Interface validation",
         Command::AuditImageTargets(_) => "Linked-image audit",

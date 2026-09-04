@@ -6,6 +6,8 @@
 //! HCI, an executor or an allocator. A chip backend must retain the affine
 //! event owner with its own hardware ticket before reporting completion.
 
+use core::num::NonZeroU16;
+
 use crate::{LeDeviceAddress, LeDeviceAddressKind};
 
 pub const LEGACY_CONNECT_IND_PDU_BYTES: usize = 36;
@@ -219,6 +221,21 @@ pub struct LeSleepClockAccuracy(u8);
 impl LeSleepClockAccuracy {
     pub const fn encoded(self) -> u8 {
         self.0
+    }
+
+    /// Worst-case Central sleep-clock error represented by this SCA class.
+    pub const fn worst_case_ppm(self) -> u16 {
+        match self.0 {
+            0 => 500,
+            1 => 250,
+            2 => 150,
+            3 => 100,
+            4 => 75,
+            5 => 50,
+            6 => 30,
+            7 => 20,
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -570,6 +587,104 @@ impl ConnectionChannelSelector {
             Self::Two(selector) => Self::Two(selector),
         }
     }
+
+    /// Advance past events which will not be submitted to the radio.
+    const fn skip(self, event_count: u16) -> Self {
+        match self {
+            Self::One {
+                channel_map,
+                hop_increment,
+                last_unmapped,
+            } => {
+                let hop_distance = (hop_increment as u16 * (event_count % 37)) % 37;
+                Self::One {
+                    channel_map,
+                    hop_increment,
+                    last_unmapped: ((last_unmapped as u16 + hop_distance) % 37) as u8,
+                }
+            }
+            Self::Two(selector) => Self::Two(selector),
+        }
+    }
+}
+
+/// Portable connection-establishment state retained between radio events.
+///
+/// Creation begins when the validated `CONNECT_IND` is accepted. The
+/// connection becomes established only after one event observes peer
+/// activity. The first such event remains distinct from the later activity
+/// anchor used by supervision policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LePeripheralConnectionState {
+    Created,
+    Established {
+        establishment_event_counter: u16,
+        supervision_anchor_event_counter: u16,
+    },
+}
+
+impl LePeripheralConnectionState {
+    pub const fn establishment_event_counter(self) -> Option<u16> {
+        match self {
+            Self::Created => None,
+            Self::Established {
+                establishment_event_counter,
+                ..
+            } => Some(establishment_event_counter),
+        }
+    }
+
+    pub const fn supervision_anchor_event_counter(self) -> Option<u16> {
+        match self {
+            Self::Created => None,
+            Self::Established {
+                supervision_anchor_event_counter,
+                ..
+            } => Some(supervision_anchor_event_counter),
+        }
+    }
+}
+
+/// Whether the completed connection event observed activity from the peer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LePeripheralConnectionEventPeerActivity {
+    Observed,
+    Missed,
+}
+
+/// Nonzero distance from one completed event to a recurring event.
+///
+/// A value of one means the immediately following event. Constructing the
+/// distance from a skipped-event count makes the scheduler relation explicit:
+/// `delta = skipped + 1`.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct LePeripheralConnectionEventDelta(NonZeroU16);
+
+impl LePeripheralConnectionEventDelta {
+    pub const fn new(delta: u16) -> Option<Self> {
+        match NonZeroU16::new(delta) {
+            Some(delta) => Some(Self(delta)),
+            None => None,
+        }
+    }
+
+    /// Form an event distance from the number of intervening events skipped.
+    ///
+    /// Returns `None` when `skipped + 1` is not representable as a `u16`.
+    pub const fn from_skipped(skipped: u16) -> Option<Self> {
+        match skipped.checked_add(1) {
+            Some(delta) => Self::new(delta),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0.get()
+    }
+
+    pub const fn skipped(self) -> u16 {
+        self.get() - 1
+    }
 }
 
 /// Portable peripheral connection between hardware events.
@@ -578,8 +693,9 @@ impl ConnectionChannelSelector {
 pub struct LePeripheralConnection {
     request: LeLegacyConnectionRequest,
     event_counter: u16,
-    first_event: bool,
+    initial_transmit_window_pending: bool,
     selector: ConnectionChannelSelector,
+    state: LePeripheralConnectionState,
 }
 
 impl LePeripheralConnection {
@@ -597,8 +713,9 @@ impl LePeripheralConnection {
         Self {
             request,
             event_counter: 0,
-            first_event: true,
+            initial_transmit_window_pending: true,
             selector,
+            state: LePeripheralConnectionState::Created,
         }
     }
 
@@ -608,6 +725,30 @@ impl LePeripheralConnection {
 
     pub const fn event_counter(&self) -> u16 {
         self.event_counter
+    }
+
+    pub const fn state(&self) -> LePeripheralConnectionState {
+        self.state
+    }
+
+    /// Wrapping event distance from establishment to the next event.
+    pub const fn next_event_distance_from_establishment(&self) -> Option<u16> {
+        match self.state.establishment_event_counter() {
+            Some(anchor) => Some(self.event_counter.wrapping_sub(anchor)),
+            None => None,
+        }
+    }
+
+    /// Wrapping event distance from the latest peer activity to the next event.
+    ///
+    /// This is exact protocol bookkeeping only. A later policy may combine it
+    /// with connection timing and a hardware time observation when deciding a
+    /// supervision timeout.
+    pub const fn next_event_distance_from_supervision_anchor(&self) -> Option<u16> {
+        match self.state.supervision_anchor_event_counter() {
+            Some(anchor) => Some(self.event_counter.wrapping_sub(anchor)),
+            None => None,
+        }
     }
 
     /// Prepare one exact event without advancing channel or counter state.
@@ -649,7 +790,7 @@ impl LePeripheralConnectionEventPrepared {
     }
 
     pub const fn first_transmit_window_micros(&self) -> Option<(u32, u32)> {
-        if self.connection.first_event {
+        if self.connection.initial_transmit_window_pending {
             Some((
                 self.timing().first_window_start_micros(),
                 self.timing().first_window_end_micros(),
@@ -686,17 +827,162 @@ impl LePeripheralConnectionEventInFlight {
         self.prepared.channel()
     }
 
-    /// Advance only after the paired lower owner proves the event closed.
-    pub const fn complete(self) -> LePeripheralConnection {
+    /// Advance exactly once after the paired lower owner proves the event closed.
+    ///
+    /// Both an observed peer packet and a missed event commit the same channel
+    /// and event-counter progression. Peer activity additionally establishes
+    /// the connection or refreshes its supervision anchor.
+    pub const fn complete(
+        self,
+        peer_activity: LePeripheralConnectionEventPeerActivity,
+    ) -> LePeripheralConnectionEventCompleted {
         let LePeripheralConnectionEventPrepared {
             mut connection,
+            channel,
             unmapped,
-            ..
         } = self.prepared;
+        let event_counter = connection.event_counter;
         connection.selector = connection.selector.complete(unmapped);
         connection.event_counter = connection.event_counter.wrapping_add(1);
-        connection.first_event = false;
-        connection
+        connection.initial_transmit_window_pending = false;
+        connection.state = match (connection.state, peer_activity) {
+            (
+                LePeripheralConnectionState::Created,
+                LePeripheralConnectionEventPeerActivity::Observed,
+            ) => LePeripheralConnectionState::Established {
+                establishment_event_counter: event_counter,
+                supervision_anchor_event_counter: event_counter,
+            },
+            (
+                LePeripheralConnectionState::Established {
+                    establishment_event_counter,
+                    ..
+                },
+                LePeripheralConnectionEventPeerActivity::Observed,
+            ) => LePeripheralConnectionState::Established {
+                establishment_event_counter,
+                supervision_anchor_event_counter: event_counter,
+            },
+            (state, LePeripheralConnectionEventPeerActivity::Missed) => state,
+        };
+        LePeripheralConnectionEventCompleted {
+            connection,
+            event_counter,
+            channel,
+            peer_activity,
+        }
+    }
+}
+
+/// One closed radio event paired with its uniquely advanced LL successor.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "inspect completion or retain its advanced connection successor"]
+pub struct LePeripheralConnectionEventCompleted {
+    connection: LePeripheralConnection,
+    event_counter: u16,
+    channel: LeDataChannelIndex,
+    peer_activity: LePeripheralConnectionEventPeerActivity,
+}
+
+impl LePeripheralConnectionEventCompleted {
+    pub const fn event_counter(&self) -> u16 {
+        self.event_counter
+    }
+
+    pub const fn channel(&self) -> LeDataChannelIndex {
+        self.channel
+    }
+
+    pub const fn peer_activity(&self) -> LePeripheralConnectionEventPeerActivity {
+        self.peer_activity
+    }
+
+    pub const fn connection_state(&self) -> LePeripheralConnectionState {
+        self.connection.state
+    }
+
+    /// Preview a recurring event without advancing the retained LL owner.
+    ///
+    /// The completed event already owns the successor at `n + 1`, so only the
+    /// `delta - 1` intervening events are skipped before previewing `n + delta`.
+    /// A lower scheduler can inspect this candidate and either cancel it or
+    /// accept it before the LL successor is committed.
+    pub const fn prepare_recurring_event(
+        self,
+        delta: LePeripheralConnectionEventDelta,
+    ) -> LePeripheralConnectionRecurringEventProvisional {
+        let skipped = delta.skipped();
+        let event_counter = self.connection.event_counter.wrapping_add(skipped);
+        let selector = self.connection.selector.skip(skipped);
+        let (channel, _) = selector.preview(event_counter);
+        LePeripheralConnectionRecurringEventProvisional {
+            completed: self,
+            delta,
+            event_counter,
+            channel,
+        }
+    }
+
+    /// Consume the completion record into the already advanced successor.
+    pub fn into_connection(self) -> LePeripheralConnection {
+        self.connection
+    }
+}
+
+/// Recurring-event candidate whose advanced successor is not yet committed.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "inspect and commit the recurring event, or recover its completion owner"]
+pub struct LePeripheralConnectionRecurringEventProvisional {
+    completed: LePeripheralConnectionEventCompleted,
+    delta: LePeripheralConnectionEventDelta,
+    event_counter: u16,
+    channel: LeDataChannelIndex,
+}
+
+impl LePeripheralConnectionRecurringEventProvisional {
+    pub const fn request(&self) -> LeLegacyConnectionRequest {
+        self.completed.connection.request
+    }
+
+    pub const fn delta(&self) -> LePeripheralConnectionEventDelta {
+        self.delta
+    }
+
+    pub const fn event_counter(&self) -> u16 {
+        self.event_counter
+    }
+
+    pub const fn channel(&self) -> LeDataChannelIndex {
+        self.channel
+    }
+
+    pub const fn timing(&self) -> LeConnectionTiming {
+        self.completed.connection.request.timing
+    }
+
+    /// Reject lower admission and recover the exact completed-event owner.
+    pub const fn cancel(self) -> LePeripheralConnectionEventCompleted {
+        self.completed
+    }
+
+    /// Commit the preview after lower admission and prepare the exact event.
+    pub const fn commit(self) -> LePeripheralConnectionEventPrepared {
+        let Self {
+            completed,
+            delta,
+            event_counter,
+            channel,
+        } = self;
+        let skipped = delta.skipped();
+        let mut connection = completed.connection;
+        connection.event_counter = event_counter;
+        connection.selector = connection.selector.skip(skipped);
+        let (_, unmapped) = connection.selector.preview(event_counter);
+        LePeripheralConnectionEventPrepared {
+            connection,
+            channel,
+            unmapped,
+        }
     }
 }
 
@@ -730,6 +1016,13 @@ mod tests {
         pdu
     }
 
+    fn complete_missed(connection: LePeripheralConnection) -> LePeripheralConnectionEventCompleted {
+        connection
+            .prepare_event()
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+    }
+
     #[test]
     fn complete_connect_ind_becomes_semantic_peripheral_input() {
         let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
@@ -744,10 +1037,26 @@ mod tests {
         assert_eq!(request.channel_map().used_channel_count(), 37);
         assert_eq!(request.hop_increment(), 5);
         assert_eq!(request.sleep_clock_accuracy().encoded(), 4);
+        assert_eq!(request.sleep_clock_accuracy().worst_case_ppm(), 75);
         assert_eq!(
             request.channel_selection(),
             LeChannelSelectionAlgorithm::AlgorithmTwo
         );
+    }
+
+    #[test]
+    fn every_sleep_clock_accuracy_class_exposes_its_worst_case_ppm() {
+        for (encoded, expected_ppm) in [500, 250, 150, 100, 75, 50, 30, 20].into_iter().enumerate()
+        {
+            let mut pdu = connection_request(false);
+            pdu[35] = 5 | ((encoded as u8) << 5);
+            let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
+
+            assert_eq!(
+                request.sleep_clock_accuracy().worst_case_ppm(),
+                expected_ppm
+            );
+        }
     }
 
     #[test]
@@ -836,10 +1145,100 @@ mod tests {
         assert_eq!(retry.event_counter(), 0);
         assert_eq!(retry.channel().get(), 2);
 
-        let second = retry.into_submitted().complete().prepare_event();
+        let completed = retry
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        assert_eq!(completed.event_counter(), 0);
+        assert_eq!(completed.channel().get(), 2);
+        assert_eq!(
+            completed.peer_activity(),
+            LePeripheralConnectionEventPeerActivity::Missed
+        );
+        assert_eq!(
+            completed.connection_state(),
+            LePeripheralConnectionState::Created
+        );
+
+        let second = completed.into_connection().prepare_event();
         assert_eq!(second.event_counter(), 1);
         assert_eq!(second.channel().get(), 1);
         assert_eq!(second.first_transmit_window_micros(), None);
+    }
+
+    #[test]
+    fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
+        let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+        let connection = LePeripheralConnection::from_request(request);
+        assert_eq!(connection.state(), LePeripheralConnectionState::Created);
+        assert_eq!(connection.next_event_distance_from_establishment(), None);
+        assert_eq!(
+            connection.next_event_distance_from_supervision_anchor(),
+            None
+        );
+
+        let first = connection.prepare_event();
+        let first_channel = first.channel();
+        let completed = first
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Observed);
+        assert_eq!(completed.event_counter(), 0);
+        assert_eq!(completed.channel(), first_channel);
+        assert_eq!(
+            completed.connection_state(),
+            LePeripheralConnectionState::Established {
+                establishment_event_counter: 0,
+                supervision_anchor_event_counter: 0,
+            }
+        );
+        let connection = completed.into_connection();
+        assert_eq!(connection.event_counter(), 1);
+        assert_eq!(connection.next_event_distance_from_establishment(), Some(1));
+        assert_eq!(
+            connection.next_event_distance_from_supervision_anchor(),
+            Some(1)
+        );
+
+        let second = connection.prepare_event();
+        let second_channel = second.channel();
+        let completed = second
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        assert_eq!(completed.event_counter(), 1);
+        assert_eq!(completed.channel(), second_channel);
+        assert_eq!(
+            completed.connection_state(),
+            LePeripheralConnectionState::Established {
+                establishment_event_counter: 0,
+                supervision_anchor_event_counter: 0,
+            }
+        );
+        let connection = completed.into_connection();
+        assert_eq!(connection.event_counter(), 2);
+        assert_eq!(connection.next_event_distance_from_establishment(), Some(2));
+        assert_eq!(
+            connection.next_event_distance_from_supervision_anchor(),
+            Some(2)
+        );
+
+        let third = connection.prepare_event();
+        let completed = third
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Observed);
+        assert_eq!(completed.event_counter(), 2);
+        assert_eq!(
+            completed.connection_state(),
+            LePeripheralConnectionState::Established {
+                establishment_event_counter: 0,
+                supervision_anchor_event_counter: 2,
+            }
+        );
+        let connection = completed.into_connection();
+        assert_eq!(connection.event_counter(), 3);
+        assert_eq!(connection.next_event_distance_from_establishment(), Some(3));
+        assert_eq!(
+            connection.next_event_distance_from_supervision_anchor(),
+            Some(1)
+        );
     }
 
     #[test]
@@ -850,6 +1249,127 @@ mod tests {
 
         let in_flight = connection.prepare_event().into_submitted();
         assert_eq!(in_flight.event_counter(), u16::MAX);
-        assert_eq!(in_flight.complete().event_counter(), 0);
+        let completed = in_flight.complete(LePeripheralConnectionEventPeerActivity::Missed);
+        assert_eq!(completed.event_counter(), u16::MAX);
+        assert_eq!(completed.into_connection().event_counter(), 0);
+    }
+
+    #[test]
+    fn recurring_event_delta_is_nonzero_and_rejects_skipped_overflow() {
+        assert_eq!(LePeripheralConnectionEventDelta::new(0), None);
+        assert_eq!(
+            LePeripheralConnectionEventDelta::from_skipped(0)
+                .unwrap()
+                .get(),
+            1
+        );
+        assert_eq!(
+            LePeripheralConnectionEventDelta::from_skipped(6)
+                .unwrap()
+                .skipped(),
+            6
+        );
+        assert_eq!(
+            LePeripheralConnectionEventDelta::from_skipped(u16::MAX),
+            None
+        );
+    }
+
+    #[test]
+    fn delta_one_prepares_immediate_csa1_successor_without_double_advance() {
+        let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
+        let completed = complete_missed(LePeripheralConnection::from_request(request));
+        let delta = LePeripheralConnectionEventDelta::from_skipped(0).unwrap();
+
+        let provisional = completed.prepare_recurring_event(delta);
+        assert_eq!(provisional.delta(), delta);
+        assert_eq!(provisional.request(), request);
+        assert_eq!(provisional.event_counter(), 1);
+        assert_eq!(provisional.channel().get(), 10);
+        assert_eq!(provisional.timing(), request.timing());
+
+        let prepared = provisional.commit();
+        assert_eq!(prepared.event_counter(), 1);
+        assert_eq!(prepared.channel().get(), 10);
+        let completed = prepared
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        assert_eq!(completed.event_counter(), 1);
+        assert_eq!(completed.into_connection().event_counter(), 2);
+    }
+
+    #[test]
+    fn csa1_skipped_events_match_repeated_advancement_and_commit_once() {
+        let mut pdu = connection_request(false);
+        pdu[30..35].copy_from_slice(&[0x06, 0, 0, 0, 0]);
+        let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
+
+        let completed = complete_missed(LePeripheralConnection::from_request(request));
+        let delta = LePeripheralConnectionEventDelta::from_skipped(3).unwrap();
+        let provisional = completed.prepare_recurring_event(delta);
+
+        let mut reference =
+            complete_missed(LePeripheralConnection::from_request(request)).into_connection();
+        for _ in 0..3 {
+            reference = complete_missed(reference).into_connection();
+        }
+        let reference_target = reference.prepare_event();
+        assert_eq!(
+            provisional.event_counter(),
+            reference_target.event_counter()
+        );
+        assert_eq!(provisional.channel(), reference_target.channel());
+        assert_eq!(provisional.event_counter(), 4);
+        assert_eq!(provisional.channel().get(), 2);
+
+        let prepared = provisional.commit();
+        assert_eq!(prepared.event_counter(), reference_target.event_counter());
+        assert_eq!(prepared.channel(), reference_target.channel());
+        let completed = prepared
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        let next = completed.into_connection().prepare_event();
+        assert_eq!(next.event_counter(), 5);
+        assert_eq!(next.channel().get(), 1);
+    }
+
+    #[test]
+    fn recurring_candidate_cancel_restores_exact_completed_owner() {
+        let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
+        let completed = complete_missed(LePeripheralConnection::from_request(request));
+        let expected = complete_missed(LePeripheralConnection::from_request(request));
+        let delta = LePeripheralConnectionEventDelta::from_skipped(3).unwrap();
+
+        let restored = completed.prepare_recurring_event(delta).cancel();
+
+        assert_eq!(restored, expected);
+        let immediate = restored.into_connection().prepare_event();
+        assert_eq!(immediate.event_counter(), 1);
+        assert_eq!(immediate.channel().get(), 10);
+    }
+
+    #[test]
+    fn csa2_recurring_preview_selects_the_final_wrapped_counter() {
+        let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+        let mut connection = LePeripheralConnection::from_request(request);
+        connection.event_counter = u16::MAX;
+        let completed = complete_missed(connection);
+        let delta = LePeripheralConnectionEventDelta::from_skipped(1).unwrap();
+
+        let provisional = completed.prepare_recurring_event(delta);
+
+        assert_eq!(provisional.event_counter(), 1);
+        assert_eq!(
+            provisional.channel(),
+            LeChannelSelectionAlgorithmTwo::new(request.access_address(), request.channel_map())
+                .select(1)
+        );
+        let prepared = provisional.commit();
+        assert_eq!(prepared.event_counter(), 1);
+        assert_eq!(
+            prepared.channel(),
+            LeChannelSelectionAlgorithmTwo::new(request.access_address(), request.channel_map())
+                .select(1)
+        );
     }
 }

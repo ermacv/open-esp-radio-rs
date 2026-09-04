@@ -51,4 +51,13 @@ if rg -q 'open-esp-radio-(dma|esp32s31)' driver/adapters/embassy-net/Cargo.toml;
     exit 1
 fi
 
+radio_policy_root="driver/adapters/embassy/esp32s31-wifi/src/roles"
+if rg -n \
+    --glob '!**/tests.rs' \
+    'OwnedNetworkTxFrame|DatapathTxConsumer' \
+    "${radio_policy_root}"; then
+    echo "radio policy acquired a concrete Xarxa/Embassy TX owner" >&2
+    exit 1
+fi
+
 echo "network adapter compile and dependency boundaries are clean"

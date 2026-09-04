@@ -47,7 +47,7 @@ where
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
     /// Run the production radio event loop until role policy reaches its
@@ -358,6 +358,7 @@ where
                                 Core0PerformanceSample::read(),
                             );
                         }
+                        drop(network_tx);
                         if self.services.prepared_tx_start_ready() {
                             let admitted = self.services.prepared_tx_frame_count().max(1);
                             self.start_prepared_network_tx(
@@ -378,6 +379,7 @@ where
                     #[cfg(feature = "tx-phase-telemetry")]
                     let tx_phase_started = Core0PerformanceSample::read();
                     let progress = self.services.start_tx(frame, &network_tx).await?;
+                    drop(network_tx);
                     #[cfg(feature = "tx-phase-telemetry")]
                     CORE0_PERFORMANCE.record_tx_phase(
                         Core0TxPhase::Start,

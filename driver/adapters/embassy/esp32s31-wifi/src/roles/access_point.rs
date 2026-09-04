@@ -15,11 +15,11 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
-use open_esp_radio_embassy_net::{
-    FrameLengthError, LinkState, OwnedNetworkTxFrame, RxEnqueueError,
-};
+use open_esp_radio_embassy_net::{FrameLengthError, LinkState, RxEnqueueError};
 
-use crate::datapath::{DatapathTxConsumer, PinnedTxFrame};
+use crate::datapath::{
+    MaterializedTxFrame, PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame,
+};
 use open_esp_radio_esp32s31_wifi::{
     ampdu_tx::HtAmpduTxRolePolicy,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},

@@ -52,7 +52,7 @@ where
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
     pub fn new_with_rx_set(
@@ -218,7 +218,7 @@ where
                 && self.retained_prepared_tx_interface() == interface)
     }
 
-    pub(super) fn try_receive_network_tx(&mut self) -> Option<OwnedNetworkTxFrame> {
+    pub(super) fn try_receive_network_tx(&mut self) -> Option<N::TxFrame> {
         let interface = self.next_network_tx_interface()?;
         if let DatapathInterfaceScope::Pair { first, second } = self.interfaces
             && self.prepared_tx_interface.is_none()
@@ -245,8 +245,8 @@ where
         charge_pair_tx_frames(&mut self.pair_tx_served_frames, slot, frames);
     }
 
-    pub(super) fn tx_interface_for(&self, frame: &OwnedNetworkTxFrame) -> NetworkInterfaceId {
-        let interface = *frame.tag();
+    pub(super) fn tx_interface_for(&self, frame: &N::TxFrame) -> NetworkInterfaceId {
+        let interface = frame.interface();
         assert!(
             self.interfaces.contains(interface),
             "tagged TX lease does not belong to this DATAPATH scope"
@@ -319,11 +319,11 @@ where
     /// capability that owns any out-of-core materialization request.
     pub(super) fn cancel_prepared_network_tx(&mut self) -> Result<(), B::Error> {
         if !self.services.has_prepared_tx() {
-            return self.services.cancel_prepared_tx(None);
+            return Ok(());
         }
         let interface = self.retained_prepared_tx_interface();
         let network = self.network.tx_consumer(interface);
-        self.services.cancel_prepared_tx(Some(&network))
+        self.services.cancel_prepared_tx(&network)
     }
 }
 
@@ -362,7 +362,7 @@ where
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
 {
     pub fn new(
         irq: &'irq EmbassyMacIrqRuntime<M>,

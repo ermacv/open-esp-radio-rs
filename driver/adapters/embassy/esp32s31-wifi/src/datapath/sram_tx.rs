@@ -20,15 +20,20 @@ use open_esp_radio_dma::{
 };
 
 #[cfg(feature = "tx-phase-telemetry")]
+use super::tx::materialization::MaterializationOwnershipSnapshot;
+use super::tx::materialization::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
+#[cfg(feature = "tx-phase-telemetry")]
 use super::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
 use open_esp_radio_embassy_net::{NetworkInterfaceId, OwnedNetworkTxFrame, OwnedTxFrameSource};
 
-/// Snapshot of the physical TX execution pool.
-#[cfg(feature = "tx-phase-telemetry")]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PinnedTxOwnershipSnapshot {
-    pub free: usize,
-    pub radio_owned: usize,
+impl SoftwareTxFrame for OwnedNetworkTxFrame {
+    fn interface(&self) -> NetworkInterfaceId {
+        OwnedNetworkTxFrame::interface(self)
+    }
+
+    fn ethernet(&self) -> &[u8] {
+        OwnedNetworkTxFrame::ethernet(self)
+    }
 }
 
 /// Permanently located storage for DMA-visible TX frames.
@@ -200,10 +205,10 @@ impl<
         }
     }
 
-    fn promote_reserved(
+    fn promote_reserved<F: SoftwareTxFrame>(
         &self,
         index: u8,
-        frame: OwnedNetworkTxFrame,
+        frame: F,
     ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         assert_eq!(
             frame.interface(),
@@ -265,13 +270,11 @@ impl<
         promoted
     }
 
-    pub fn try_promote_owned(
+    pub fn try_promote_owned<F: SoftwareTxFrame>(
         &self,
-        frame: OwnedNetworkTxFrame,
-    ) -> Result<
-        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        OwnedNetworkTxFrame,
-    > {
+        frame: F,
+    ) -> Result<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>, F>
+    {
         let Ok(index) = self.physical.free_claim.try_receive() else {
             #[cfg(feature = "tx-phase-telemetry")]
             {
@@ -297,9 +300,9 @@ impl<
     }
 
     /// Reserve all occupied destinations before moving any source owner.
-    pub fn try_promote_owned_batch<const BATCH: usize>(
+    pub fn try_promote_owned_batch<F: SoftwareTxFrame, const BATCH: usize>(
         &self,
-        sources: &mut [Option<OwnedNetworkTxFrame>; BATCH],
+        sources: &mut [Option<F>; BATCH],
         destinations: &mut [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
                  BATCH],
     ) -> bool {
@@ -348,12 +351,68 @@ impl<
     }
 
     #[cfg(feature = "tx-phase-telemetry")]
-    pub fn ownership_snapshot(&self) -> PinnedTxOwnershipSnapshot {
+    pub fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
         let free = self.physical.free_claim.len();
-        PinnedTxOwnershipSnapshot {
+        MaterializationOwnershipSnapshot {
             free,
             radio_owned: QUEUE_DEPTH.saturating_sub(free),
         }
+    }
+}
+
+impl<
+    'source,
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> SelectedBurstMaterializer
+    for DatapathTxConsumer<'source, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    type SoftwareFrame = OwnedNetworkTxFrame;
+    type PhysicalFrame =
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+
+    fn interface(&self) -> NetworkInterfaceId {
+        DatapathTxConsumer::interface(self)
+    }
+
+    fn queue_len(&self) -> usize {
+        DatapathTxConsumer::queue_len(self)
+    }
+
+    fn try_take(&self) -> Option<Self::SoftwareFrame> {
+        DatapathTxConsumer::try_receive(self)
+    }
+
+    fn try_materialize(
+        &self,
+        frame: Self::SoftwareFrame,
+    ) -> Result<Self::PhysicalFrame, Self::SoftwareFrame> {
+        DatapathTxConsumer::try_promote(self, frame)
+    }
+
+    fn try_materialize_next(&self) -> Option<Self::PhysicalFrame> {
+        DatapathTxConsumer::try_receive_direct(self)
+    }
+
+    fn materialization_capacity(&self) -> usize {
+        DatapathTxConsumer::promotion_capacity(self)
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
+        DatapathTxConsumer::ownership_snapshot(self)
+    }
+
+    fn try_materialize_batch<const BATCH: usize>(
+        &self,
+        sources: &mut [Option<Self::SoftwareFrame>; BATCH],
+        destinations: &mut [Option<Self::PhysicalFrame>; BATCH],
+    ) -> bool {
+        DatapathTxConsumer::try_promote_batch(self, sources, destinations)
     }
 }
 
@@ -482,7 +541,7 @@ impl<
     }
 
     #[cfg(feature = "tx-phase-telemetry")]
-    pub fn ownership_snapshot(&self) -> PinnedTxOwnershipSnapshot {
+    pub fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
         self.physical.ownership_snapshot()
     }
 }
@@ -526,3 +585,24 @@ pub type PinnedTxFrame<
     NetworkInterfaceId,
     PinnedTxBacking<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 >;
+
+impl<
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> MaterializedTxFrame for PinnedTxFrame<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    fn ethernet(&self) -> &[u8] {
+        core::ops::Deref::deref(self).ethernet()
+    }
+
+    fn ethernet_offset(&self) -> usize {
+        core::ops::Deref::deref(self).ethernet_offset()
+    }
+
+    fn ethernet_length(&self) -> usize {
+        core::ops::Deref::deref(self).ethernet_length()
+    }
+}

@@ -74,7 +74,7 @@ where
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     RX: crate::datapath::network::DatapathNetworkRxSet,
 {
     type Network = N;

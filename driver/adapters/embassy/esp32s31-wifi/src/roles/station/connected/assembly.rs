@@ -227,7 +227,7 @@ where
             Esp32s31ConnectedControl<'control, M, CONTROL_CAPACITY>,
         >,
     ) -> B,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
 {
     let Esp32s31ConnectedDriverAssemblyResources {
         plan,

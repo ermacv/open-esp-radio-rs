@@ -189,7 +189,7 @@ where
             TX_QUEUE_DEPTH,
         >,
     N::RxPublisher: crate::datapath::network::DatapathNetworkRx,
-    Services: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    Services: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
 {
     let endpoints = DatapathNetworkRxEndpoints::new(
         STA_NETWORK_INTERFACE_ID,

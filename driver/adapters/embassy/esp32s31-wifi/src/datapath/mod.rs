@@ -16,9 +16,7 @@ use embassy_futures::{
     yield_now,
 };
 use embassy_time::{Duration, Instant, Timer};
-use open_esp_radio_embassy_net::{
-    LinkState, NetworkInterfaceId, OwnedNetworkTxFrame, OwnedRxPublisher, RawMutex,
-};
+use open_esp_radio_embassy_net::{LinkState, NetworkInterfaceId, OwnedRxPublisher, RawMutex};
 pub use open_esp_radio_esp32s31_wifi::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
     DatapathStopProgress,
@@ -35,12 +33,13 @@ pub mod tx;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
-#[cfg(feature = "tx-phase-telemetry")]
-pub use sram_tx::PinnedTxOwnershipSnapshot;
 pub use sram_tx::{
     DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool,
     PinnedTxResources,
 };
+#[cfg(feature = "tx-phase-telemetry")]
+pub use tx::materialization::MaterializationOwnershipSnapshot;
+pub use tx::materialization::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
 #[cfg(feature = "tx-phase-telemetry")]
 pub use tx_performance::{
     TX_PERFORMANCE, TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot,
@@ -331,17 +330,13 @@ impl DatapathInterfaceScope {
 /// A method may await a timer edge needed by a typed transaction, but it must
 /// release every mutable PAC borrow before that edge. RX-before-TX arbitration
 /// and the lifetime of a pinned network lease belong to [`DatapathRunner::run`].
-pub trait DatapathServices<
-    'resources,
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const TX_QUEUE_DEPTH: usize,
->
+pub trait DatapathServices<SoftwareFrame, PhysicalFrame>
+where
+    SoftwareFrame: SoftwareTxFrame,
+    PhysicalFrame: MaterializedTxFrame,
 {
-    type Error;
-    type Exit;
+    type Error: 'static;
+    type Exit: 'static;
 
     /// Drain one snapshotted RX-success frontier into independent ownership.
     fn service_rx<'a>(
@@ -405,10 +400,7 @@ pub trait DatapathServices<
         &'a mut self,
         _context: DatapathControlContext,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a
-    where
-        'resources: 'a,
-        M: 'a,
-    {
+where {
         ready(Ok(DatapathControlProgress::Idle))
     }
 
@@ -462,11 +454,7 @@ pub trait DatapathServices<
 
     /// Wake the outer scheduler for a control timer or independently
     /// published control event. Backends without such a source never wake it.
-    fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a
-    where
-        'resources: 'a,
-        M: 'a,
-    {
+    fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a {
         pending()
     }
 
@@ -476,19 +464,14 @@ pub trait DatapathServices<
     /// ordinary copy-based transmitter may release the lease immediately;
     /// a referenced A-MPDU owner may retain it, claim further ready leases
     /// from `network`, and return all of them only after BlockAck/detach.
-    fn start_tx<'a>(
+    fn start_tx<'a, I>(
         &'a mut self,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a;
 
     /// Number of network leases claimed by the most recent successful
     /// [`Self::start_tx`] call.
@@ -544,18 +527,10 @@ pub trait DatapathServices<
 
     /// Advance a retained software-only preparation edge without claiming a
     /// new network frame. Ordinary synchronous roles need no such edge.
-    fn advance_prepared_tx(
-        &mut self,
-        _network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn advance_prepared_tx<I>(&mut self, _network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         Ok(())
     }
 
@@ -570,35 +545,17 @@ pub trait DatapathServices<
     ) {
     }
 
-    fn start_prepared_tx(
-        &mut self,
-        _network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    fn start_prepared_tx<I>(&mut self, _network: &I) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         Ok(WifiTxProgress::Complete)
     }
 
-    fn cancel_prepared_tx(
-        &mut self,
-        _network: Option<
-            &DatapathTxConsumer<
-                '_,
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                TX_QUEUE_DEPTH,
-            >,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx<I>(&mut self, _network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         Ok(())
     }
 
@@ -606,19 +563,15 @@ pub trait DatapathServices<
         false
     }
 
-    fn prepare_tx<'a>(
+    fn prepare_tx<'a, I>(
         &'a mut self,
-        _frame: OwnedNetworkTxFrame,
-        _network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        _frame: SoftwareFrame,
+        _network: &'a I,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a,
+    {
         ready(Ok(()))
     }
 }

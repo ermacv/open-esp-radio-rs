@@ -19,8 +19,8 @@ use crate::datapath::{
 };
 
 pub trait Esp32s31StaApStationControlRole<H, PhysicalTx> {
-    type Error;
-    type Exit;
+    type Error: 'static;
+    type Exit: 'static;
 
     fn service_station_control<'a>(
         &'a mut self,
@@ -46,7 +46,7 @@ pub enum Esp32s31StaApAccessPointControlProgress {
 }
 
 pub trait Esp32s31StaApAccessPointControlRole<H, PhysicalTx> {
-    type Error;
+    type Error: 'static;
 
     fn beacon_publication_due(&self, now_micros: u32) -> bool;
 

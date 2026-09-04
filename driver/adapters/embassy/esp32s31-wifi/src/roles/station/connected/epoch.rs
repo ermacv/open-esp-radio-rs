@@ -265,15 +265,7 @@ where
             TX_QUEUE_DEPTH,
         >,
     RX: crate::datapath::network::DatapathNetworkRxSet,
-    B: DatapathServices<
-            'resources,
-            RM,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-            Exit = ConnectedDisconnectReason,
-        >,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame, Exit = ConnectedDisconnectReason>,
 {
     let requested_command = core::cell::Cell::new(None);
     let station_stop = async {

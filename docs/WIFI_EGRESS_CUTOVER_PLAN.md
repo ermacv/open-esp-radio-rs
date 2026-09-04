@@ -61,14 +61,20 @@ This phase is not performance-qualified until Phase 5.
 
 ### 4B. Shared radio-native ingress
 
-- [ ] Define one internal selected-burst/materialization trait owned by
+- [x] Define one internal selected-burst/materialization trait owned by
   open-radio.
-- [ ] Make current owned software queues implement it without exposing Xarxa
+- [x] Make current owned software queues implement it without exposing Xarxa
   types to radio policy.
 - [ ] Remove the remaining trait-object call from the measured hot path if HIL
   shows meaningful cost; otherwise retain the simpler boundary.
-- [ ] Confirm STA and AP use one common data-frame admission implementation,
+- [x] Make STA, AP and paired services consume the same physical materializer,
   with role-specific peer/lifecycle policy outside it.
+
+The completed boundary consists of `SoftwareTxFrame`, `MaterializedTxFrame`
+and `SelectedBurstMaterializer`. Radio services no longer carry an Embassy
+mutex, queue depth, frame layout or resource lifetime in their trait contract.
+The current owned adapter supplies those details only in its concrete
+implementation.
 
 ## Phase 5: owned-path HIL qualification
 

@@ -6,7 +6,9 @@
 //! Embassy DATAPATH binding for one active AP role.
 
 use super::*;
-use crate::datapath::rx::turn::FusedRxTurn;
+use crate::datapath::{
+    MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame, rx::turn::FusedRxTurn,
+};
 
 // Match the stable standalone-STA and same-channel paired-owner bound. An
 // active aggregate must expose its TX completion after a small protocol turn,
@@ -154,7 +156,7 @@ where
     T: WifiTxTimer,
     O: FnMut(AccessPointServiceStatus),
     L: FnMut(LinkState),
-    B: StableDmaBacking,
+    B: MaterializedTxFrame,
 {
     fn tx_pending(&self) -> bool {
         self.network_tx.aggregate_pending() || self.control.tx_pending()
@@ -337,8 +339,6 @@ where
 }
 
 impl<
-    'resources,
-    M,
     RX,
     C,
     P,
@@ -348,23 +348,21 @@ impl<
     O,
     S,
     L,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const TX_QUEUE_DEPTH: usize,
+    B,
+    N,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
     const TX_BUFFER_SIZE: usize,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
-> DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+> DatapathServices<N, B>
     for Esp32s31AccessPointDatapathServices<
         '_,
         '_,
         '_,
         '_,
-        'resources,
+        '_,
         RX,
         C,
         P,
@@ -374,8 +372,8 @@ impl<
         O,
         S,
         L,
-        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        OwnedNetworkTxFrame,
+        B,
+        N,
         COUNT,
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
@@ -384,7 +382,8 @@ impl<
         AMPDU_BUFFER_SIZE,
     >
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
+    N: SoftwareTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
@@ -691,11 +690,7 @@ where
     fn service_control<'a>(
         &'a mut self,
         _context: DatapathControlContext,
-    ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a
-    where
-        'resources: 'a,
-        M: 'a,
-    {
+    ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a {
         async move {
             let now_micros = Instant::now().as_micros();
             let progress = self
@@ -745,27 +740,18 @@ where
         Ok(progress)
     }
 
-    fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a
-    where
-        'resources: 'a,
-        M: 'a,
-    {
+    fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a {
         Timer::at(Instant::from_micros(self.next_control_deadline_micros))
     }
 
-    fn start_tx<'a>(
+    fn start_tx<'a, I>(
         &'a mut self,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: N,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B> + 'a,
+    {
         async move {
             let progress = self
                 .network_tx
@@ -808,18 +794,10 @@ where
         self.network_tx.prepared_start_ready()
     }
 
-    fn advance_prepared_tx(
-        &mut self,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn advance_prepared_tx<I>(&mut self, network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    {
         self.network_tx
             .advance_prepared(self.aggregate, self.control, network)
     }
@@ -839,37 +817,24 @@ where
             .can_prepare(self.aggregate, self.control.tx_pending())
     }
 
-    fn prepare_tx<'a>(
+    fn prepare_tx<'a, I>(
         &'a mut self,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        frame: N,
+        network: &'a I,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B> + 'a,
+    {
         async move {
             self.network_tx
                 .prepare(self.aggregate, self.control, frame, network)
         }
     }
 
-    fn start_prepared_tx(
-        &mut self,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    fn start_prepared_tx<I>(&mut self, network: &I) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    {
         let progress =
             self.network_tx
                 .start_prepared(self.aggregate, self.control, self.hardware, network)?;
@@ -887,20 +852,10 @@ where
         Ok(progress)
     }
 
-    fn cancel_prepared_tx(
-        &mut self,
-        network: Option<
-            &DatapathTxConsumer<
-                '_,
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                TX_QUEUE_DEPTH,
-            >,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx<I>(&mut self, network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    {
         self.network_tx
             .cancel_prepared(self.aggregate, self.control, network)
     }

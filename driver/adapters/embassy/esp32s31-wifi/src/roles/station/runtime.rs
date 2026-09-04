@@ -11,7 +11,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, RawMutex};
+use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::WifiTxWake,
@@ -34,7 +34,7 @@ use crate::{
         },
         services::{DatapathNetworkTxService, SingleRoleServices},
     },
-    datapath::{DatapathTxConsumer, PinnedTxFrame},
+    datapath::{MaterializedTxFrame, PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame},
     roles::station::connected::port::{Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaReport},
     roles::station::tx::{AggregateTxError, Esp32s31ConnectedTx, Esp32s31ConnectedTxParked},
     roles::{
@@ -953,6 +953,7 @@ impl<
     T,
     Rx,
     Control,
+    SoftwareFrame,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -962,8 +963,6 @@ impl<
     const ORDINARY_BUFFER_SIZE: usize,
 >
     DatapathPairedNetworkTxService<
-        'resources,
-        M,
         H,
         Esp32s31StaApStationPhysicalTx<
             'resources,
@@ -981,10 +980,8 @@ impl<
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
+        SoftwareFrame,
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     >
     for StationRoleRuntime<
         Rx,
@@ -1016,6 +1013,7 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
     'resources: 'ampdu,
+    SoftwareFrame: SoftwareTxFrame,
 {
     type Error = Esp32s31StaApStationTxError;
 
@@ -1025,7 +1023,7 @@ where
             .map_or(1, Esp32s31ConnectedTx::active_network_frame_count)
     }
 
-    fn start<'a>(
+    fn start<'a, I>(
         &'a mut self,
         hardware: &'a mut H,
         physical: &'a mut Esp32s31StaApStationPhysicalTx<
@@ -1044,17 +1042,22 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
+    {
         async move {
             if self.tx_mut().is_parked() {
                 self.activate_tx(physical)
@@ -1175,7 +1178,7 @@ where
         }
     }
 
-    fn start_prepared(
+    fn start_prepared<I>(
         &mut self,
         hardware: &mut H,
         physical: &mut Esp32s31StaApStationPhysicalTx<
@@ -1194,16 +1197,21 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+        network: &I,
+    ) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         let progress = self
             .tx_mut()
             .active_mut()
@@ -1223,7 +1231,7 @@ where
         Ok(progress)
     }
 
-    fn cancel_prepared(
+    fn cancel_prepared<I>(
         &mut self,
         physical: &mut Esp32s31StaApStationPhysicalTx<
             'resources,
@@ -1241,10 +1249,21 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        network: Option<
-            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        >,
-    ) -> Result<(), Self::Error> {
+        network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         <Esp32s31StaApConnectedTx<
             'resources,
             'slot,
@@ -1261,13 +1280,9 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         > as DatapathNetworkTxService<
-            'resources,
-            M,
             H,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
+            SoftwareFrame,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >>::cancel_prepared(
             self.tx_mut()
                 .active_mut()
@@ -1317,18 +1332,14 @@ where
                 AMPDU_BUFFER_SIZE,
                 ORDINARY_BUFFER_SIZE,
             > as DatapathNetworkTxService<
-                'resources,
-                M,
                 H,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
+                SoftwareFrame,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
             >>::can_prepare(active)
         })
     }
 
-    fn prepare<'a>(
+    fn prepare<'a, I>(
         &'a mut self,
         physical: &'a mut Esp32s31StaApStationPhysicalTx<
             'resources,
@@ -1346,19 +1357,22 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        frame: SoftwareFrame,
+        network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
     {
         async move {
             if self.tx_mut().is_parked() {
@@ -1381,13 +1395,9 @@ where
                 AMPDU_BUFFER_SIZE,
                 ORDINARY_BUFFER_SIZE,
             > as DatapathNetworkTxService<
-                'resources,
-                M,
                 H,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
+                SoftwareFrame,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
             >>::prepare(
                 self.tx_mut()
                     .active_mut()
@@ -1401,39 +1411,26 @@ where
     }
 }
 
-impl<
-    'resources,
-    M,
-    H,
-    Rx,
-    Tx,
-    Control,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> DatapathNetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+impl<H, Rx, Tx, Control, SoftwareFrame, PhysicalFrame>
+    DatapathNetworkTxService<H, SoftwareFrame, PhysicalFrame>
     for StationRoleRuntime<Rx, Tx, Control>
 where
-    M: RawMutex,
-    Tx: DatapathNetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    SoftwareFrame: SoftwareTxFrame,
+    PhysicalFrame: MaterializedTxFrame,
+    Tx: DatapathNetworkTxService<H, SoftwareFrame, PhysicalFrame>,
 {
     type Error = Tx::Error;
 
-    fn start<'a>(
+    fn start<'a, I>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a,
+    {
         self.tx_mut().start(hardware, frame, network)
     }
 
@@ -1467,28 +1464,21 @@ where
             .mark_prepared_scheduler_phase(phase, at_micros);
     }
 
-    fn start_prepared(
+    fn start_prepared<I>(
         &mut self,
         hardware: &mut H,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+        network: &I,
+    ) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         self.tx_mut().start_prepared(hardware, network)
     }
 
-    fn cancel_prepared(
-        &mut self,
-        network: Option<
-            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn cancel_prepared<I>(&mut self, network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         self.tx_mut().cancel_prepared(network)
     }
 
@@ -1496,21 +1486,15 @@ where
         self.tx().can_prepare()
     }
 
-    fn prepare<'a>(
+    fn prepare<'a, I>(
         &'a mut self,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        frame: SoftwareFrame,
+        network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a,
     {
         self.tx_mut().prepare(frame, network)
     }

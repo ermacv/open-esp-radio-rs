@@ -65,6 +65,20 @@ software queues report durable work
 The protocol is synchronous within an owner turn and batch-oriented across a
 core boundary. It is never a per-packet request/reply RPC.
 
+The code-level boundary has three deliberately small traits:
+
+- `SoftwareTxFrame`: affine software ownership plus interface and Ethernet
+  view;
+- `MaterializedTxFrame`: stable DMA ownership plus the exact Ethernet geometry
+  used by descriptor/A-MPDU construction;
+- `SelectedBurstMaterializer`: queue observation, owner removal and
+  reserve-before-remove single/batch materialization.
+
+STA, AP and STA+AP policy are generic over those owners. Adapter mutexes,
+queue dimensions, Xarxa packet types and Embassy runner lifetimes are not part
+of the radio-service traits. This is the seam used by all three integrations;
+it is not a public Xarxa/Embassy scheduling protocol.
+
 ## Memory and ownership model
 
 Long-lived backlog and physical execution storage are different resources.

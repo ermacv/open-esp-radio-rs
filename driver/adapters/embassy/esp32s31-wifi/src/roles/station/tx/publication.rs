@@ -43,20 +43,25 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    pub fn start_network<H: HtAmpduHardware>(
+    pub fn start_network<H, I>(
         &mut self,
         hardware: &mut H,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
+        network: &I,
+    ) -> Result<WifiTxProgress, AggregateTxError>
+    where
+        H: HtAmpduHardware,
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
         >,
-    ) -> Result<WifiTxProgress, AggregateTxError> {
+    {
         if self.active() || self.has_prepared_network_tx() {
             return Err(AggregateTxError::ActiveTransaction);
         }
@@ -266,20 +271,24 @@ where
         );
     }
 
-    fn prepare_aggregate(
+    fn prepare_aggregate<I>(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        network: &I,
         traffic: AggregateTraffic,
-    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError>
+    where
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    {
         let first_sequence = self
             .ordinary
             .peek_qos_sequence(traffic.tid())
@@ -301,22 +310,26 @@ where
         result
     }
 
-    fn prepare_reserved(
+    fn prepare_reserved<I>(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        network: &I,
         first_sequence: u16,
         cookie: TxCookie,
         traffic: AggregateTraffic,
-    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError>
+    where
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    {
         self.push_candidate(first, network, AggregateFrameAdmission::FreshExact, traffic)?;
         let frame_limit = self.aggregate_frame_limit(traffic.tid());
 
@@ -330,7 +343,7 @@ where
             if !self.can_push(FRAME_CAPACITY, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
-            let Some(frame) = network.try_receive_direct() else {
+            let Some(frame) = network.try_materialize_next() else {
                 break AggregateBuildStop::QueueEmpty;
             };
             if !self.frame_matches_traffic(&frame, traffic) {
@@ -375,20 +388,24 @@ where
         Ok(prepared)
     }
 
-    fn extend_reserved(
+    fn extend_reserved<I>(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        network: &I,
         mut prepared: AggregatePrepared<SLOTS>,
-    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError>
+    where
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    {
         let traffic = prepared.traffic;
         if !self.frame_matches_traffic(&first, traffic) {
             self.defer_network_frame(first);
@@ -412,7 +429,7 @@ where
             if !self.can_push(FRAME_CAPACITY, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
-            let Some(frame) = network.try_receive_direct() else {
+            let Some(frame) = network.try_materialize_next() else {
                 break AggregateBuildStop::QueueEmpty;
             };
             if !self.frame_matches_traffic(&frame, traffic) {
@@ -483,18 +500,19 @@ where
     /// Fill the software-owned second arena after the current aggregate has
     /// already been published. No descriptor from this arena becomes visible
     /// to MAC hardware at this edge.
-    fn prepare_standby(
-        &mut self,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
+    fn prepare_standby<I>(&mut self, network: &I)
+    where
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
         >,
-    ) {
+    {
         if !self.can_prepare_network_tx() {
             return;
         }
@@ -506,7 +524,7 @@ where
         if network.queue_len() < minimum_frames {
             return;
         }
-        let Some(first) = network.try_receive_direct() else {
+        let Some(first) = network.try_materialize_next() else {
             return;
         };
 
@@ -583,19 +601,22 @@ where
         }
     }
 
-    pub(super) fn prepare_network_standby(
+    pub(super) fn prepare_network_standby<I>(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
+        network: &I,
+    ) where
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
         >,
-    ) {
+    {
         if !self.can_prepare_network_tx() {
             drop(first);
             return;
@@ -691,19 +712,24 @@ where
         }
     }
 
-    pub(super) fn start_prepared_network<H: HtAmpduHardware>(
+    pub(super) fn start_prepared_network<H, I>(
         &mut self,
         hardware: &mut H,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
+        network: &I,
+    ) -> Result<WifiTxProgress, AggregateTxError>
+    where
+        H: HtAmpduHardware,
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
         >,
-    ) -> Result<WifiTxProgress, AggregateTxError> {
+    {
         if self.active() {
             return Err(AggregateTxError::ActiveTransaction);
         }
@@ -819,24 +845,28 @@ where
         }
     }
 
-    fn push_candidate(
+    fn push_candidate<I>(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        network: &I,
         admission: AggregateFrameAdmission,
         traffic: AggregateTraffic,
-    ) -> Result<(), AggregateTxError> {
+    ) -> Result<(), AggregateTxError>
+    where
+        I: SelectedBurstMaterializer<
+            PhysicalFrame = PinnedTxFrame<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
+        >,
+    {
         if self.block_ack_amsdu(traffic.tid())
             && self.can_push_amsdu_pair(first.ethernet_length(), FRAME_CAPACITY, traffic)?
-            && let Some(second) = network.try_receive_direct()
+            && let Some(second) = network.try_materialize_next()
         {
             if self.frame_matches_traffic(&second, traffic) {
                 return self.push_amsdu_pair(first, second, traffic);

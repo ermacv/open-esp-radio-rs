@@ -43,7 +43,7 @@ pub trait Esp32s31StaApStationRxRole<
 >
 {
     type Dispatch;
-    type Error;
+    type Error: 'static;
 
     fn publish_pending_rx(
         &mut self,
@@ -74,7 +74,7 @@ pub trait Esp32s31StaApAccessPointRxRole<
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 >
 {
-    type Error;
+    type Error: 'static;
 
     fn publish_pending_rx(
         &mut self,

@@ -3,7 +3,9 @@ use open_esp_radio_embassy_net::{LinkState, NetworkInterfaceId, OwnedEndpointRes
 use open_esp_radio_esp32s31_wifi_embassy::datapath::network::{
     DatapathNetwork, DualOwnedDatapathNetwork, OwnedDatapathNetwork,
 };
-use open_esp_radio_esp32s31_wifi_embassy::datapath::{PinnedTxPool, PinnedTxResources};
+use open_esp_radio_esp32s31_wifi_embassy::datapath::{
+    PinnedTxPool, PinnedTxResources, SoftwareTxFrame,
+};
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
 fn allocator<const N: usize>() -> PacketBufAllocator {
@@ -16,6 +18,46 @@ fn packet(allocator: PacketBufAllocator, marker: u8) -> PacketBuf {
     packet.set_len(14);
     packet.fill(marker);
     packet
+}
+
+struct AlternateSoftwareFrame {
+    interface: NetworkInterfaceId,
+    ethernet: [u8; 14],
+}
+
+impl SoftwareTxFrame for AlternateSoftwareFrame {
+    fn interface(&self) -> NetworkInterfaceId {
+        self.interface
+    }
+
+    fn ethernet(&self) -> &[u8] {
+        &self.ethernet
+    }
+}
+
+#[test]
+fn physical_materializer_accepts_a_non_xarxa_software_owner() {
+    const FRAME_CAPACITY: usize = 64;
+    const HEADROOM: usize = 16;
+    const TRAILER: usize = 8;
+    const TX_QUEUE_DEPTH: usize = 1;
+    type PhysicalPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    type PhysicalResources =
+        PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+
+    let interface = NetworkInterfaceId::new(3);
+    let resources = Box::leak(Box::new(PhysicalResources::new()));
+    let pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
+    let materializer = resources.split(pool).for_interface(interface);
+    let frame = AlternateSoftwareFrame {
+        interface,
+        ethernet: [0x7a; 14],
+    };
+
+    let physical = materializer
+        .try_promote_owned(frame)
+        .unwrap_or_else(|_| panic!("one physical credit is available"));
+    assert_eq!(physical.as_slice(), &[0x7a; 14]);
 }
 
 #[test]

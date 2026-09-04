@@ -387,13 +387,27 @@ type ConnectedDriverServices = Esp32s31ConnectedDriverServices<
     ConnectedLiveTx,
     CONTROL_QUEUE_DEPTH,
 >;
-type ConnectedDatapathError = <ConnectedDriverServices as DatapathServices<
+type ConnectedSoftwareTxFrame = <NetworkRunner as DatapathNetwork<
     'static,
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
+    NETWORK_RX_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
+>>::TxFrame;
+type ConnectedPhysicalTxFrame = <NetworkRunner as DatapathNetwork<
+    'static,
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    NETWORK_TX_HEADROOM,
+    NETWORK_TX_TRAILER,
+    NETWORK_RX_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
+>>::PhysicalTxFrame;
+type ConnectedDatapathError = <ConnectedDriverServices as DatapathServices<
+    ConnectedSoftwareTxFrame,
+    ConnectedPhysicalTxFrame,
 >>::Error;
 type ConnectedDatapathRunner = DatapathRunner<
     'static,

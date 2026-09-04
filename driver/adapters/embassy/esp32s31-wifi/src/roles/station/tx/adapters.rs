@@ -339,6 +339,7 @@ impl<
     P,
     E,
     T,
+    SoftwareFrame,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -346,7 +347,12 @@ impl<
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
-> DatapathNetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+>
+    DatapathNetworkTxService<
+        H,
+        SoftwareFrame,
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    >
     for Esp32s31ConnectedTx<
         'slot,
         'ampdu,
@@ -369,25 +375,31 @@ where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
+    SoftwareFrame: SoftwareTxFrame,
 {
     type Error = AggregateTxError;
 
-    fn start<'a>(
+    fn start<'a, I>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
+    {
         async move {
-            let frame = match network.try_promote(frame) {
+            let frame = match network.try_materialize(frame) {
                 Ok(frame) => frame,
                 Err(_) => panic!("station aggregate selected without a free DMA credit"),
             };
@@ -428,28 +440,41 @@ where
         Esp32s31ConnectedTx::mark_prepared_scheduler_phase(self, phase, at_micros);
     }
 
-    fn start_prepared(
+    fn start_prepared<I>(
         &mut self,
         hardware: &mut H,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+        network: &I,
+    ) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         self.start_prepared_network(hardware, network)
     }
 
-    fn cancel_prepared(
-        &mut self,
-        _network: Option<
-            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn cancel_prepared<I>(&mut self, _network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         self.cancel_prepared_network()
     }
 
@@ -457,24 +482,27 @@ where
         self.can_prepare_network_tx()
     }
 
-    fn prepare<'a>(
+    fn prepare<'a, I>(
         &'a mut self,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        frame: SoftwareFrame,
+        network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
     {
         async move {
-            let frame = match network.try_promote(frame) {
+            let frame = match network.try_materialize(frame) {
                 Ok(frame) => frame,
                 Err(_) => panic!("station standby selected without a free DMA credit"),
             };

@@ -49,7 +49,7 @@ where
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
@@ -307,6 +307,7 @@ where
         #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         let progress = self.services.start_prepared_tx(&network_tx)?;
+        drop(network_tx);
         #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Publish,

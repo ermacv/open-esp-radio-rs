@@ -117,6 +117,14 @@ where
                 TRAILER,
                 RX_QUEUE_DEPTH,
                 TX_QUEUE_DEPTH,
+                PhysicalTxFrame = PinnedTxFrame<
+                    'resources,
+                    NM,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    TX_QUEUE_DEPTH,
+                >,
             >,
         H: RxDma
             + TxHardware

@@ -788,6 +788,7 @@ impl<
     T,
     Security,
     StatusObserver,
+    SoftwareFrame,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -798,8 +799,6 @@ impl<
     const AMPDU_BUFFER_SIZE: usize,
 >
     DatapathPairedNetworkTxService<
-        'resources,
-        M,
         H,
         DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -817,10 +816,8 @@ impl<
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
+        SoftwareFrame,
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     >
     for AccessPointRoleRuntime<
         DatapathPairedRoleOwner<
@@ -850,7 +847,7 @@ impl<
         network_tx::Esp32s31AccessPointNetworkTx<
             'ampdu,
             PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            OwnedNetworkTxFrame,
+            SoftwareFrame,
         >,
         Security,
         StatusObserver,
@@ -865,6 +862,7 @@ where
         + RxBlockAckHardware
         + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     'resources: 'ampdu,
+    SoftwareFrame: SoftwareTxFrame,
 {
     type Error = Esp32s31StaApAccessPointTxError;
 
@@ -872,7 +870,7 @@ where
         self.network_tx.last_started_frame_count()
     }
 
-    fn start<'a>(
+    fn start<'a, I>(
         &'a mut self,
         hardware: &'a mut H,
         physical: &'a mut DatapathPairedPhysicalTx<
@@ -891,17 +889,22 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
+    {
         async move {
             self.activate_tx(physical)
                 .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
@@ -1017,7 +1020,7 @@ where
         self.network_tx.prepared_start_ready()
     }
 
-    fn advance_prepared(
+    fn advance_prepared<I>(
         &mut self,
         _hardware: &mut H,
         _physical: &mut DatapathPairedPhysicalTx<
@@ -1036,16 +1039,21 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<(), Self::Error> {
+        network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         let active =
             self.protocol
                 .active_mut()
@@ -1063,7 +1071,7 @@ where
             .mark_prepared_scheduler_phase(phase, at_micros);
     }
 
-    fn start_prepared(
+    fn start_prepared<I>(
         &mut self,
         hardware: &mut H,
         physical: &mut DatapathPairedPhysicalTx<
@@ -1082,16 +1090,21 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: &DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+        network: &I,
+    ) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         let active =
             self.protocol
                 .active_mut()
@@ -1114,7 +1127,7 @@ where
         Ok(progress)
     }
 
-    fn cancel_prepared(
+    fn cancel_prepared<I>(
         &mut self,
         physical: &mut DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -1132,10 +1145,21 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: Option<
-            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        >,
-    ) -> Result<(), Self::Error> {
+        network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         let active =
             self.protocol
                 .active_mut()
@@ -1174,7 +1198,7 @@ where
         })
     }
 
-    fn prepare<'a>(
+    fn prepare<'a, I>(
         &'a mut self,
         _physical: &'a mut DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -1192,19 +1216,22 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: OwnedNetworkTxFrame,
-        network: &'a DatapathTxConsumer<
-            '_,
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        frame: SoftwareFrame,
+        network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
     {
         async move {
             let active =

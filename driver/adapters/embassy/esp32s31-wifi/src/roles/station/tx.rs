@@ -19,8 +19,8 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use crate::datapath::{DatapathTxConsumer, PinnedTxFrame};
-use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, RawMutex};
+use crate::datapath::{PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
+use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_hal::types::MacInterface;
 use open_esp_radio_esp32s31_wifi::ampdu_tx::{
     AmpduTxRoleAdapter, HtAmpduPublicationInputs, HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError,

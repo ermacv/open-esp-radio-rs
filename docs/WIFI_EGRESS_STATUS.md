@@ -35,6 +35,21 @@ The network boundaries are now separate crates and dependency graphs:
 `tools/check-network-adapter-boundaries.sh` compiles each boundary independently
 and rejects dependency leakage back into the compatibility or owned crates.
 
+The ESP32-S31 radio adapter now exposes a private, static-dispatch boundary:
+
+- `SoftwareTxFrame` is an independently owned, adapter-neutral Ethernet frame;
+- `MaterializedTxFrame` is the final DMA-stable owner with explicit Ethernet
+  offset and length;
+- `SelectedBurstMaterializer` owns synchronous, all-or-none movement between
+  those domains.
+
+The role-neutral runner, standalone and paired services, STA aggregate builder,
+and AP multi-peer/power-save TX use these contracts. They no longer name
+`OwnedNetworkTxFrame`, `DatapathTxConsumer`, an Embassy mutex, queue sizes or
+the Xarxa resource lifetime. Those types remain only in the current owned
+adapter implementation. A host regression test also materializes a non-Xarxa
+software owner through the same physical pool.
+
 ## Current optimized TX path
 
 ```text
@@ -102,8 +117,8 @@ At the current source checkpoint:
 - `cargo check --workspace` passes;
 - `open-esp-radio-embassy-net`: all 6 owned unit tests pass;
 - `open-esp-radio-embassy-net-compat`: all 3 compatibility tests pass;
-- `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests and 4 physical
-  boundary tests pass;
+- `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests and 5 physical
+  ownership/materialization boundary tests pass;
 - product integration cross-checks for `riscv32imafc-unknown-none-elf` pass;
 - the base HIL runtime cross-check passes;
 - the HIL hardware/memory architecture feature set cross-check passes;

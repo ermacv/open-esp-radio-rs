@@ -9,7 +9,9 @@ use open_esp_radio_embassy_net::{
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
-use super::{DatapathTxConsumer, PinnedTxConsumer};
+use super::{
+    DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame,
+};
 
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.
@@ -250,21 +252,24 @@ pub trait DatapathNetwork<
 {
     type LinkController: DatapathNetworkLink + Copy;
     type RxPublisher: DatapathNetworkRxSet;
+    type TxFrame: SoftwareTxFrame;
+    type PhysicalTxFrame: crate::datapath::MaterializedTxFrame;
+    type TxConsumer<'network>: SelectedBurstMaterializer<
+            SoftwareFrame = Self::TxFrame,
+            PhysicalFrame = Self::PhysicalTxFrame,
+        >
+    where
+        Self: 'network;
 
     fn link_controller(&self) -> Self::LinkController;
 
     fn rx_publisher(&self, interface: NetworkInterfaceId) -> Self::RxPublisher;
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState);
     fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize;
-    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<OwnedNetworkTxFrame>;
-    fn receive_tx(
-        &self,
-        interface: NetworkInterfaceId,
-    ) -> impl Future<Output = OwnedNetworkTxFrame> + '_;
-    fn tx_consumer(
-        &self,
-        interface: NetworkInterfaceId,
-    ) -> DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<Self::TxFrame>;
+    fn receive_tx(&self, interface: NetworkInterfaceId)
+    -> impl Future<Output = Self::TxFrame> + '_;
+    fn tx_consumer(&self, interface: NetworkInterfaceId) -> Self::TxConsumer<'_>;
     fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_;
     fn wait_tx_queue_len_at_least(
         &self,
@@ -523,6 +528,21 @@ impl<
 {
     type LinkController = OwnedLinkController<'resources, M>;
     type RxPublisher = OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>;
+    type TxFrame = OwnedNetworkTxFrame;
+    type PhysicalTxFrame =
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    type TxConsumer<'network>
+        = DatapathTxConsumer<
+        'network,
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        TX_QUEUE_DEPTH,
+    >
+    where
+        Self: 'network;
 
     fn link_controller(&self) -> Self::LinkController {
         self.network.link_controller()
@@ -632,6 +652,21 @@ impl<
 {
     type LinkController = OwnedNetworkLinkControllers<'resources, M>;
     type RxPublisher = OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>;
+    type TxFrame = OwnedNetworkTxFrame;
+    type PhysicalTxFrame =
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    type TxConsumer<'network>
+        = DatapathTxConsumer<
+        'network,
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        TX_QUEUE_DEPTH,
+    >
+    where
+        Self: 'network;
 
     fn link_controller(&self) -> Self::LinkController {
         OwnedNetworkLinkControllers::new(
@@ -717,6 +752,12 @@ where
 {
     type LinkController = N::LinkController;
     type RxPublisher = N::RxPublisher;
+    type TxFrame = N::TxFrame;
+    type PhysicalTxFrame = N::PhysicalTxFrame;
+    type TxConsumer<'network>
+        = N::TxConsumer<'network>
+    where
+        Self: 'network;
 
     fn link_controller(&self) -> Self::LinkController {
         N::link_controller(*self)
@@ -734,22 +775,18 @@ where
         N::tx_queue_len(*self, interface)
     }
 
-    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<OwnedNetworkTxFrame> {
+    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<Self::TxFrame> {
         N::try_receive_tx(*self, interface)
     }
 
     fn receive_tx(
         &self,
         interface: NetworkInterfaceId,
-    ) -> impl Future<Output = OwnedNetworkTxFrame> + '_ {
+    ) -> impl Future<Output = Self::TxFrame> + '_ {
         N::receive_tx(*self, interface)
     }
 
-    fn tx_consumer(
-        &self,
-        interface: NetworkInterfaceId,
-    ) -> DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
-    {
+    fn tx_consumer(&self, interface: NetworkInterfaceId) -> Self::TxConsumer<'_> {
         N::tx_consumer(*self, interface)
     }
 
@@ -795,6 +832,12 @@ where
 {
     type LinkController = N::LinkController;
     type RxPublisher = N::RxPublisher;
+    type TxFrame = N::TxFrame;
+    type PhysicalTxFrame = N::PhysicalTxFrame;
+    type TxConsumer<'network>
+        = N::TxConsumer<'network>
+    where
+        Self: 'network;
 
     fn link_controller(&self) -> Self::LinkController {
         N::link_controller(*self)
@@ -812,22 +855,18 @@ where
         N::tx_queue_len(*self, interface)
     }
 
-    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<OwnedNetworkTxFrame> {
+    fn try_receive_tx(&self, interface: NetworkInterfaceId) -> Option<Self::TxFrame> {
         N::try_receive_tx(*self, interface)
     }
 
     fn receive_tx(
         &self,
         interface: NetworkInterfaceId,
-    ) -> impl Future<Output = OwnedNetworkTxFrame> + '_ {
+    ) -> impl Future<Output = Self::TxFrame> + '_ {
         N::receive_tx(*self, interface)
     }
 
-    fn tx_consumer(
-        &self,
-        interface: NetworkInterfaceId,
-    ) -> DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
-    {
+    fn tx_consumer(&self, interface: NetworkInterfaceId) -> Self::TxConsumer<'_> {
         N::tx_consumer(*self, interface)
     }
 

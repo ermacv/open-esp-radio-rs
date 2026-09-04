@@ -16,8 +16,8 @@
 use core::future::Future;
 
 use embassy_futures::select::{Either, select};
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::crypto::{
     CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot,
 };

@@ -1,0 +1,11 @@
+[package]
+name = "open-esp-radio-network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Network integration value types shared by open ESP radio adapters"
+
+[lints]
+workspace = true

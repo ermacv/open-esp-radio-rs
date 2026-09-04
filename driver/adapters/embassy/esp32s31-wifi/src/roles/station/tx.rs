@@ -20,7 +20,7 @@ use core::{
 };
 
 use crate::datapath::{PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_hal::types::MacInterface;
 use open_esp_radio_esp32s31_wifi::ampdu_tx::{
     AmpduTxRoleAdapter, HtAmpduPublicationInputs, HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError,
@@ -28,6 +28,7 @@ use open_esp_radio_esp32s31_wifi::ampdu_tx::{
 };
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 #[cfg(test)]
+#[cfg(all(test, feature = "owned-network"))]
 use open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE;
 use open_esp_radio_esp32s31_wifi_mac::{
     rate_control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
@@ -401,5 +402,5 @@ mod publication;
 mod resources;
 use crate::datapath::tx::aggregate::AggregateTxServiceEvent;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "owned-network"))]
 mod tests;

@@ -197,7 +197,7 @@ impl<
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "owned-network"))]
 mod tests {
     use core::sync::atomic::{AtomicU64, Ordering};
     use open_esp_radio_embassy_net::{NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources};

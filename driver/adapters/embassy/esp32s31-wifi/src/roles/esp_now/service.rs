@@ -15,7 +15,7 @@ use embassy_futures::{
     select::{Either, Either3, Either4, select, select3, select4},
     yield_now,
 };
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi::{
     esp_now::{Esp32s31EspNowTxConfig, Esp32s31EspNowTxError},
     tx::{WifiTxProgress, WifiTxWake},

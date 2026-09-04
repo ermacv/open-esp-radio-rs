@@ -19,11 +19,11 @@ use core::{
 };
 
 use embassy_futures::select::{Either, select};
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::{
     blocking_mutex::Mutex as BlockingMutex,
     channel::{Channel, Receiver, Sender, TrySendError},
 };
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxConfig;
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 use open_esp_radio_esp32s31_wifi_sta::{

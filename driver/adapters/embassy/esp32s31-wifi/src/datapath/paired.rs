@@ -13,7 +13,7 @@ use core::future::{Future, pending};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
-use open_esp_radio_embassy_net::NetworkInterfaceId;
+use open_esp_radio_network::NetworkInterfaceId;
 
 use super::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,

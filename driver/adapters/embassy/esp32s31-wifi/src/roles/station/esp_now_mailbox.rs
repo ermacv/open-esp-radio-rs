@@ -6,11 +6,11 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::{
     blocking_mutex::Mutex as BlockingMutex,
     channel::{Channel, Receiver, Sender, TrySendError},
 };
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 use open_esp_radio_esp32s31_wifi_sta::standalone_esp_now_rx::{

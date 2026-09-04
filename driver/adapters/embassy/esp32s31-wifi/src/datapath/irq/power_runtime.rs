@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use open_esp_radio_embassy_net::{RawMutex, Signal};
+use embassy_sync::{blocking_mutex::raw::RawMutex, signal::Signal};
 use open_esp_radio_esp32s31_hal::MacPowerInterruptObservation;
 use open_esp_radio_esp32s31_wifi_mac::irq::PowerIrqSink;
 

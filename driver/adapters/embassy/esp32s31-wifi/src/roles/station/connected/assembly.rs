@@ -126,21 +126,7 @@ pub fn assemble_esp32s31_connected_driver<
         F,
     >,
 ) -> Result<
-    Esp32s31ConnectedDriverAssembly<
-        DatapathRunner<
-            'resources,
-            'irq,
-            M,
-            N,
-            B,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-            N::RxPublisher,
-        >,
-    >,
+    Esp32s31ConnectedDriverAssembly<DatapathRunner<'irq, M, N, B, N::RxPublisher>>,
     Esp32s31ConnectedDriverAssemblyFailure<
         N,
         Esp32s31ConnectedStaCompositionFailure<
@@ -176,15 +162,7 @@ pub fn assemble_esp32s31_connected_driver<
 >
 where
     M: RawMutex,
-    N: crate::datapath::network::DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    N: crate::datapath::network::DatapathNetwork,
     S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,

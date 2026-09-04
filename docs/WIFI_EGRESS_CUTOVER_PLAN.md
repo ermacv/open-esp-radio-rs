@@ -50,6 +50,8 @@ This phase is not performance-qualified until Phase 5.
 
 ### 4A. Separate crates
 
+- [x] Define adapter-neutral network values in a no-std crate with no driver,
+  queue, executor or allocator dependency.
 - [x] Create an upstream-clean compatibility adapter crate.
 - [x] Keep the owned Xarxa adapter in a distinct crate with only the two forked
   dependencies it requires.
@@ -58,6 +60,8 @@ This phase is not performance-qualified until Phase 5.
 - [x] Ensure Cargo feature unification cannot pull owned/research code into the
   compatibility binary.
 - [x] Add compile and dependency checks for each adapter independently.
+- [x] Compile the radio policy/materialization crate without the owned network
+  feature and reject Xarxa/owned-Embassy dependencies in that normal graph.
 
 ### 4B. Shared radio-native ingress
 
@@ -74,7 +78,8 @@ The completed boundary consists of `SoftwareTxFrame`, `MaterializedTxFrame`
 and `SelectedBurstMaterializer`. Radio services no longer carry an Embassy
 mutex, queue depth, frame layout or resource lifetime in their trait contract.
 The current owned adapter supplies those details only in its concrete
-implementation.
+implementation. `DatapathNetwork` likewise contains only associated
+capability/owner types; the old adapter geometry parameters have been removed.
 
 ## Phase 5: owned-path HIL qualification
 

@@ -12,22 +12,39 @@ fi
 cargo check --manifest-path driver/adapters/embassy-net-compat/Cargo.toml --all-targets
 cargo check --manifest-path driver/adapters/embassy-net/Cargo.toml --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy --all-targets
+cargo check -p open-esp-radio-esp32s31-wifi-embassy --no-default-features --all-targets
 
 metadata="$(cargo metadata --format-version 1 --no-deps)"
 
-compatibility_non_registry="$({
+neutral_network_dependencies="$({
+    jq -r '
+        .packages[]
+        | select(.name == "open-esp-radio-network")
+        | .dependencies[]
+        | select(.kind != "dev")
+        | .name
+    ' <<<"${metadata}"
+} || true)"
+if [[ -n "${neutral_network_dependencies}" ]]; then
+    echo "adapter-neutral network values acquired a production dependency:" >&2
+    echo "${neutral_network_dependencies}" >&2
+    exit 1
+fi
+
+compatibility_forbidden_dependency="$({
     jq -r '
         .packages[]
         | select(.name == "open-esp-radio-embassy-net-compat")
         | .dependencies[]
         | select(.kind != "dev")
         | select((.source // "") | startswith("registry+") | not)
+        | select(.name != "open-esp-radio-network")
         | .name
     ' <<<"${metadata}"
 } || true)"
-if [[ -n "${compatibility_non_registry}" ]]; then
-    echo "compatibility adapter acquired non-registry dependencies:" >&2
-    echo "${compatibility_non_registry}" >&2
+if [[ -n "${compatibility_forbidden_dependency}" ]]; then
+    echo "compatibility adapter acquired a non-neutral local dependency:" >&2
+    echo "${compatibility_forbidden_dependency}" >&2
     exit 1
 fi
 
@@ -48,6 +65,19 @@ fi
 
 if rg -q 'open-esp-radio-(dma|esp32s31)' driver/adapters/embassy-net/Cargo.toml; then
     echo "optimized owned adapter acquired a physical radio dependency" >&2
+    exit 1
+fi
+
+radio_core_dependencies="$(
+    cargo tree \
+        -p open-esp-radio-esp32s31-wifi-embassy \
+        --no-default-features \
+        --edges normal \
+        --prefix none
+)"
+if rg -q '^(open-esp-radio-embassy-net|owned-embassy-net-driver|xarxa(-driver)?) ' \
+    <<<"${radio_core_dependencies}"; then
+    echo "radio core acquired an optimized Xarxa/Embassy network dependency" >&2
     exit 1
 fi
 

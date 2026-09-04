@@ -79,6 +79,14 @@ queue dimensions, Xarxa packet types and Embassy runner lifetimes are not part
 of the radio-service traits. This is the seam used by all three integrations;
 it is not a public Xarxa/Embassy scheduling protocol.
 
+The shared value vocabulary lives in `open-esp-radio-network`. It contains
+only logical interface identity, link state and frame/admission errors. It has
+no driver trait, executor, queue or packet allocator. The radio adapter builds
+with `--no-default-features` without Xarxa, either Embassy network driver, or
+the optimized owned adapter in its normal dependency graph. `DatapathNetwork`
+uses associated ownership types only; external resource lifetimes, mutexes and
+queue geometry remain properties of a concrete integration.
+
 ## Memory and ownership model
 
 Long-lived backlog and physical execution storage are different resources.

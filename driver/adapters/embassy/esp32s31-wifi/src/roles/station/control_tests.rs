@@ -3,7 +3,7 @@ use core::{
     pin::Pin,
 };
 
-use open_esp_radio_embassy_net::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyTxProgram, MacStaReceivePolicySnapshot,
     MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,

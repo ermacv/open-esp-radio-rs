@@ -14,7 +14,6 @@ default = []
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 open-esp-radio-dma = { path = "../../../common/dma" }
-open-esp-radio-embassy-net = { path = "../../embassy-net" }
 open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
 
 [dev-dependencies]

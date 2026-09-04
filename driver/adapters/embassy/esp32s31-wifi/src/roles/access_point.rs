@@ -15,7 +15,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
-use open_esp_radio_embassy_net::{FrameLengthError, LinkState, RxEnqueueError};
+use open_esp_radio_network::{FrameLengthError, LinkState, RxEnqueueError};
 
 use crate::datapath::{
     MaterializedTxFrame, PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame,

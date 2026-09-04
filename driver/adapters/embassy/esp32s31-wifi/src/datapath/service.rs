@@ -13,42 +13,9 @@ use crate::diagnostics::core0_rx_cycles::Core0RxRunnerCycleProfile;
 ))]
 use crate::diagnostics::core0_rx_performance::Core0PerformanceRunnerProfile as Core0RxRunnerCycleProfile;
 
-impl<
-    'resources,
-    'irq,
-    M: RawMutex + 'resources,
-    N,
-    B,
-    R,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    DatapathRunner<
-        'resources,
-        'irq,
-        M,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-        R,
-    >
+impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
 where
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {

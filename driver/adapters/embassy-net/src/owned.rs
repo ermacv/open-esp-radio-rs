@@ -14,7 +14,7 @@ use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::GenericAtomicWaker;
 use owned_embassy_net_driver::{
-    Capabilities, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
+    Capabilities, ChecksumCapabilities, Driver, HardwareAddress, LinkState as DriverLinkState,
 };
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPoolWaiter};
 
@@ -287,11 +287,11 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> Driv
         HardwareAddress::Ethernet(self.hardware_address)
     }
 
-    fn link_state(&mut self) -> LinkState {
+    fn link_state(&mut self) -> DriverLinkState {
         if self.link_is_up() {
-            LinkState::Up
+            DriverLinkState::Up
         } else {
-            LinkState::Down
+            DriverLinkState::Down
         }
     }
 

@@ -11,42 +11,9 @@ use crate::diagnostics::core0_rx_cycles::{
     cycle_count,
 };
 
-impl<
-    'resources,
-    'irq,
-    M: RawMutex + 'resources,
-    N,
-    B,
-    R,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    DatapathRunner<
-        'resources,
-        'irq,
-        M,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-        R,
-    >
+impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
 where
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
@@ -144,7 +111,7 @@ where
                             continue;
                         }
                         DatapathControlProgress::Exit(exit) => {
-                            self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                            self.set_scope_link_state(open_esp_radio_network::LinkState::Down);
                             return Ok(DatapathRunnerExit::Role(exit));
                         }
                         DatapathControlProgress::Idle => {}
@@ -161,7 +128,7 @@ where
                         continue;
                     }
                     DatapathStopProgress::Stopped => {
-                        self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                        self.set_scope_link_state(open_esp_radio_network::LinkState::Down);
                         return Ok(DatapathRunnerExit::Stopped);
                     }
                 }
@@ -227,7 +194,7 @@ where
                     DatapathControlProgress::Exit(exit) => {
                         self.cancel_prepared_network_tx()?;
                         self.prepared_tx_interface = None;
-                        self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                        self.set_scope_link_state(open_esp_radio_network::LinkState::Down);
                         return Ok(DatapathRunnerExit::Role(exit));
                     }
                     DatapathControlProgress::Idle => {}

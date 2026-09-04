@@ -2,7 +2,7 @@ use core::cell::Cell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_embassy_net::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_esp32s31_hal::types::{
     MacInterruptEvents, MacInterruptObservation, MacPowerInterruptObservation,
 };

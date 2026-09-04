@@ -10,12 +10,12 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     channel::{Channel, Receiver, Sender, TrySendError},
     mutex::{Mutex, MutexGuard},
 };
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxSegment;
 pub use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{
     RxBlockAckIdentity, RxBlockAckSnapshot, RxReorderCommand, RxReorderCommandError,
@@ -288,7 +288,7 @@ pub fn try_receive_rx_reorder_command<M: RawMutex>(
 
 #[cfg(test)]
 mod tests {
-    use open_esp_radio_embassy_net::NoopRawMutex;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use super::*;
 

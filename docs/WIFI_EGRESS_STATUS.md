@@ -23,6 +23,8 @@ result exists yet, so current throughput and CPU targets are not claimed.
 
 The network boundaries are now separate crates and dependency graphs:
 
+- `open-esp-radio-network` contains only adapter-neutral interface/link/error
+  values and has no network driver, queue, executor or allocator dependency;
 - `open-esp-radio-embassy-net-compat` implements only the copied-frame
   released `embassy-net-driver 0.2.0` contract and has no Git or radio/DMA
   dependency;
@@ -34,6 +36,8 @@ The network boundaries are now separate crates and dependency graphs:
 
 `tools/check-network-adapter-boundaries.sh` compiles each boundary independently
 and rejects dependency leakage back into the compatibility or owned crates.
+It also compiles the ESP32-S31 radio adapter with `--no-default-features` and
+rejects Xarxa or optimized Embassy-network dependencies in that normal graph.
 
 The ESP32-S31 radio adapter now exposes a private, static-dispatch boundary:
 
@@ -48,7 +52,9 @@ and AP multi-peer/power-save TX use these contracts. They no longer name
 `OwnedNetworkTxFrame`, `DatapathTxConsumer`, an Embassy mutex, queue sizes or
 the Xarxa resource lifetime. Those types remain only in the current owned
 adapter implementation. A host regression test also materializes a non-Xarxa
-software owner through the same physical pool.
+software owner through the same physical pool. The shared `DatapathNetwork`
+contract now uses only associated ownership/capability types; its former
+adapter lifetime, mutex and queue/layout parameters have been deleted.
 
 ## Current optimized TX path
 
@@ -119,6 +125,8 @@ At the current source checkpoint:
 - `open-esp-radio-embassy-net-compat`: all 3 compatibility tests pass;
 - `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests and 5 physical
   ownership/materialization boundary tests pass;
+- the same radio crate without the optimized network feature passes 226 host
+  unit tests and warning-free all-target clippy;
 - product integration cross-checks for `riscv32imafc-unknown-none-elf` pass;
 - the base HIL runtime cross-check passes;
 - the HIL hardware/memory architecture feature set cross-check passes;

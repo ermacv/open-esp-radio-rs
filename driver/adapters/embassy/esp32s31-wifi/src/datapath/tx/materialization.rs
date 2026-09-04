@@ -7,7 +7,7 @@
 //! adapter's queue representation to STA/AP policy.
 
 use open_esp_radio_dma::StableDmaBacking;
-use open_esp_radio_embassy_net::NetworkInterfaceId;
+use open_esp_radio_network::NetworkInterfaceId;
 
 /// Two owners that must cross a materialization boundary atomically.
 pub type FramePair<Frame> = (Frame, Frame);

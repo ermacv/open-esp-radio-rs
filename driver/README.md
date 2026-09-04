@@ -81,6 +81,8 @@ module for the former vendor-derived `wdev` naming.
 - `integration/esp32s31/embassy-wifi`: production composition and the only
   place applications enter the current ESP32-S31 station/AP/monitor service
   or its explicit ESP-NOW composition hooks.
+- `common/network`: adapter-neutral interface/link/error values with no stack,
+  driver, executor, queue or packet-allocation policy.
 - `common/dma`: audited generic pinned-memory foundation.
 
 `embassy-net::Stack`, DHCP, sockets and network tasks are application-owned.

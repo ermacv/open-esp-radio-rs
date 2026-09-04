@@ -21,11 +21,16 @@ use open_esp_radio_dma::{
 
 #[cfg(feature = "tx-phase-telemetry")]
 use super::tx::materialization::MaterializationOwnershipSnapshot;
-use super::tx::materialization::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
+#[cfg(feature = "owned-network")]
+use super::tx::materialization::SelectedBurstMaterializer;
+use super::tx::materialization::{MaterializedTxFrame, SoftwareTxFrame};
 #[cfg(feature = "tx-phase-telemetry")]
 use super::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
-use open_esp_radio_embassy_net::{NetworkInterfaceId, OwnedNetworkTxFrame, OwnedTxFrameSource};
+#[cfg(feature = "owned-network")]
+use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, OwnedTxFrameSource};
+use open_esp_radio_network::NetworkInterfaceId;
 
+#[cfg(feature = "owned-network")]
 impl SoftwareTxFrame for OwnedNetworkTxFrame {
     fn interface(&self) -> NetworkInterfaceId {
         OwnedNetworkTxFrame::interface(self)
@@ -287,6 +292,7 @@ impl<
     }
 
     /// Reserve SRAM first, then remove one software owner.
+    #[cfg(feature = "owned-network")]
     pub fn try_promote_owned_from(
         &self,
         next: impl FnOnce() -> Option<OwnedNetworkTxFrame>,
@@ -360,6 +366,7 @@ impl<
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<
     'source,
     'resources,
@@ -417,6 +424,7 @@ impl<
 }
 
 /// Radio-side composition of an owned software frontier and physical SRAM.
+#[cfg(feature = "owned-network")]
 pub struct DatapathTxConsumer<
     'source,
     'resources,
@@ -431,6 +439,7 @@ pub struct DatapathTxConsumer<
         PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Clone
     for DatapathTxConsumer<'_, '_, M, F, H, T, Q>
 {
@@ -439,11 +448,13 @@ impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Copy
     for DatapathTxConsumer<'_, '_, M, F, H, T, Q>
 {
 }
 
+#[cfg(feature = "owned-network")]
 impl<
     'source,
     'resources,

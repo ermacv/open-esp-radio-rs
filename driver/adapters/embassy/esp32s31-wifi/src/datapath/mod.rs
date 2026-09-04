@@ -15,13 +15,14 @@ use embassy_futures::{
     select::{Either, Either3, Either4, select, select3, select4},
     yield_now,
 };
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Duration, Instant, Timer};
-use open_esp_radio_embassy_net::{LinkState, NetworkInterfaceId, OwnedRxPublisher, RawMutex};
 pub use open_esp_radio_esp32s31_wifi::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
     DatapathStopProgress,
 };
 pub use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
+use open_esp_radio_network::{LinkState, NetworkInterfaceId};
 
 pub mod irq;
 pub mod network;
@@ -33,9 +34,10 @@ pub mod tx;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
+#[cfg(feature = "owned-network")]
+pub use sram_tx::DatapathTxConsumer;
 pub use sram_tx::{
-    DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool,
-    PinnedTxResources,
+    PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxResources,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use tx::materialization::MaterializationOwnershipSnapshot;
@@ -577,20 +579,7 @@ where {
 }
 
 /// Single Embassy owner for RX DMA, control, network TX and MAC IRQ order.
-pub struct DatapathRunner<
-    'resources,
-    'irq,
-    M: RawMutex,
-    N,
-    B,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-    R = OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>,
-> {
-    resources: core::marker::PhantomData<&'resources ()>,
+pub struct DatapathRunner<'irq, M: RawMutex, N, B, R> {
     irq: &'irq EmbassyMacIrqRuntime<M>,
     network: N,
     interfaces: DatapathInterfaceScope,
@@ -622,5 +611,5 @@ pub mod paired;
 mod scheduler;
 mod service;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "owned-network"))]
 mod owned_tests;

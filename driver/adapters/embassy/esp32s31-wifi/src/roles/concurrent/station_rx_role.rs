@@ -7,13 +7,13 @@
 
 use core::future::{Future, ready};
 
-use open_esp_radio_embassy_net::{FrameLengthError, RxEnqueueError};
 use open_esp_radio_esp32s31_wifi_mac::rx_pool::VENDOR_LARGE_RX_PAYLOAD_CAPACITY;
 #[cfg(test)]
 use open_esp_radio_esp32s31_wifi_mac::rx_pool::VENDOR_LARGE_RX_SLOT_COUNT;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxDispatch, ConnectedRxEvent, ConnectedRxSink,
 };
+use open_esp_radio_network::{FrameLengthError, RxEnqueueError};
 
 use super::{Esp32s31StaApStationRxRole, Esp32s31StagedRxFrame};
 use crate::{
@@ -205,7 +205,7 @@ impl<'pool, M, O, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS
         REORDER_SLOTS,
     >
 where
-    M: open_esp_radio_embassy_net::RawMutex,
+    M: embassy_sync::blocking_mutex::raw::RawMutex,
     O: ConnectedRxSink,
 {
     type Dispatch = Option<ConnectedRxDispatch>;

@@ -11,7 +11,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::WifiTxWake,

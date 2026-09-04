@@ -81,7 +81,6 @@ where
         const FRAME_CAPACITY: usize,
         const HEADROOM: usize,
         const TRAILER: usize,
-        const RX_QUEUE_DEPTH: usize,
         const TX_QUEUE_DEPTH: usize,
         const AMPDU_SLOTS: usize,
         const AMPDU_BUFFER_SIZE: usize,
@@ -110,13 +109,6 @@ where
         IR: MacInterruptRoute,
         NM: RawMutex,
         NR: crate::datapath::network::DatapathNetwork<
-                'resources,
-                NM,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                RX_QUEUE_DEPTH,
-                TX_QUEUE_DEPTH,
                 PhysicalTxFrame = PinnedTxFrame<
                     'resources,
                     NM,

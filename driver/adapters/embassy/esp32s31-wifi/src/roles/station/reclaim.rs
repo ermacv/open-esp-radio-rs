@@ -7,7 +7,7 @@
 //! phase; callers may retain it for board-level fault policy and cannot
 //! mistake it for stopped Wi-Fi.
 
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 use open_esp_radio_esp32s31_hal::radio_arena::{
     Esp32s31RadioOwnerArenaError, Esp32s31RadioOwnerRepublish,

@@ -16,42 +16,9 @@ fn charge_pair_tx_frames(served: &mut [u64; 2], slot: usize, frames: usize) {
     served[1] -= shared;
 }
 
-impl<
-    'resources,
-    'irq,
-    M: RawMutex + 'resources,
-    N,
-    B,
-    R,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    DatapathRunner<
-        'resources,
-        'irq,
-        M,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-        R,
-    >
+impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
 where
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
@@ -80,7 +47,6 @@ where
         services: B,
     ) -> Self {
         Self {
-            resources: core::marker::PhantomData,
             irq,
             network,
             interfaces,
@@ -327,41 +293,9 @@ where
     }
 }
 
-impl<
-    'resources,
-    'irq,
-    M: RawMutex + 'resources,
-    N,
-    B,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    DatapathRunner<
-        'resources,
-        'irq,
-        M,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-        N::RxPublisher,
-    >
+impl<'irq, M: RawMutex, N, B> DatapathRunner<'irq, M, N, B, N::RxPublisher>
 where
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
 {
     pub fn new(

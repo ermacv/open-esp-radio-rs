@@ -2,16 +2,20 @@
 
 use core::future::Future;
 
+#[cfg(feature = "owned-network")]
 use embassy_futures::select::select;
+#[cfg(feature = "owned-network")]
+use embassy_sync::blocking_mutex::raw::RawMutex;
+#[cfg(feature = "owned-network")]
 use open_esp_radio_embassy_net::{
-    LinkState, NetworkInterfaceId, OwnedLinkController, OwnedNetworkRunner, OwnedNetworkTxFrame,
-    OwnedRxPublisher, RawMutex, RxEnqueueError,
+    OwnedLinkController, OwnedNetworkRunner, OwnedNetworkTxFrame, OwnedRxPublisher,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+use open_esp_radio_network::{LinkState, NetworkInterfaceId, RxEnqueueError};
 
-use super::{
-    DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame,
-};
+#[cfg(feature = "owned-network")]
+use super::{DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame};
+use super::{SelectedBurstMaterializer, SoftwareTxFrame};
 
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.
@@ -69,6 +73,7 @@ pub trait DatapathNetworkRxSet {
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRxSet
     for OwnedRxPublisher<'_, M, RX_QUEUE_DEPTH>
 {
@@ -183,6 +188,7 @@ impl<A: DatapathNetworkRx, B: DatapathNetworkRx> DatapathNetworkRxSet
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRx
     for OwnedRxPublisher<'_, M, RX_QUEUE_DEPTH>
 {
@@ -240,16 +246,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRx
 /// Single-VIF owners expose one RX endpoint. A dual owner selects between
 /// permanent STA/AP RX endpoints while retaining the sole tagged TX consumer.
 /// Role-specific semantics remain outside this scheduler contract.
-pub trait DatapathNetwork<
-    'resources,
-    M: RawMutex + 'resources,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-{
+pub trait DatapathNetwork {
     type LinkController: DatapathNetworkLink + Copy;
     type RxPublisher: DatapathNetworkRxSet;
     type TxFrame: SoftwareTxFrame;
@@ -284,6 +281,7 @@ pub trait DatapathNetworkLink {
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState);
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex> DatapathNetworkLink for OwnedLinkController<'_, M> {
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
         assert_eq!(
@@ -301,19 +299,23 @@ impl<M: RawMutex> DatapathNetworkLink for OwnedLinkController<'_, M> {
 /// STA+AP epochs. A role transition can therefore change only its addressed
 /// logical interface and cannot accidentally publish link state through the
 /// other endpoint.
+#[cfg(feature = "owned-network")]
 pub struct OwnedNetworkLinkControllers<'resources, M: RawMutex> {
     first: OwnedLinkController<'resources, M>,
     second: OwnedLinkController<'resources, M>,
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex> Clone for OwnedNetworkLinkControllers<'_, M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex> Copy for OwnedNetworkLinkControllers<'_, M> {}
 
+#[cfg(feature = "owned-network")]
 impl<'resources, M: RawMutex> OwnedNetworkLinkControllers<'resources, M> {
     fn new(
         first: OwnedLinkController<'resources, M>,
@@ -328,6 +330,7 @@ impl<'resources, M: RawMutex> OwnedNetworkLinkControllers<'resources, M> {
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<M: RawMutex> DatapathNetworkLink for OwnedNetworkLinkControllers<'_, M> {
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
         let controller = if interface == self.first.interface() {
@@ -350,6 +353,7 @@ impl<M: RawMutex> DatapathNetworkLink for OwnedNetworkLinkControllers<'_, M> {
 /// selection. `TX_QUEUE_DEPTH` bounds DMA-capable execution storage. Keeping
 /// the dimensions independent prevents software backlog policy from silently
 /// consuming additional physical radio credits as peer count grows.
+#[cfg(feature = "owned-network")]
 pub struct OwnedDatapathNetwork<
     'resources,
     M: RawMutex,
@@ -371,6 +375,7 @@ pub struct OwnedDatapathNetwork<
 /// owner, then promotes only the selected frame or burst through `physical`.
 /// Associated-peer count therefore changes software queue metadata/backlog,
 /// never the number of DMA-capable SRAM slots.
+#[cfg(feature = "owned-network")]
 pub struct DualOwnedDatapathNetwork<
     'resources,
     M: RawMutex,
@@ -386,6 +391,7 @@ pub struct DualOwnedDatapathNetwork<
     physical: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 }
 
+#[cfg(feature = "owned-network")]
 impl<
     'resources,
     M: RawMutex,
@@ -448,6 +454,7 @@ impl<
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<
     'resources,
     M: RawMutex,
@@ -505,6 +512,7 @@ impl<
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<
     'resources,
     M: RawMutex + 'resources,
@@ -514,7 +522,7 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const NETWORK_TX_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
-> DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+> DatapathNetwork
     for OwnedDatapathNetwork<
         'resources,
         M,
@@ -600,6 +608,7 @@ impl<
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<
     'resources,
     M: RawMutex + 'resources,
@@ -629,6 +638,7 @@ impl<
     }
 }
 
+#[cfg(feature = "owned-network")]
 impl<
     'resources,
     M: RawMutex + 'resources,
@@ -638,7 +648,7 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const NETWORK_TX_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
-> DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+> DatapathNetwork
     for DualOwnedDatapathNetwork<
         'resources,
         M,
@@ -727,28 +737,9 @@ impl<
     }
 }
 
-impl<
-    'resources,
-    M,
-    N,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-> DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
-    for &N
+impl<N> DatapathNetwork for &N
 where
-    M: RawMutex + 'resources,
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        > + ?Sized,
+    N: DatapathNetwork + ?Sized,
 {
     type LinkController = N::LinkController;
     type RxPublisher = N::RxPublisher;
@@ -807,28 +798,9 @@ where
     }
 }
 
-impl<
-    'resources,
-    M,
-    N,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-> DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
-    for &mut N
+impl<N> DatapathNetwork for &mut N
 where
-    M: RawMutex + 'resources,
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        > + ?Sized,
+    N: DatapathNetwork + ?Sized,
 {
     type LinkController = N::LinkController;
     type RxPublisher = N::RxPublisher;

@@ -5,7 +5,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{PUBLIC_HEADER_SIZE, RxDescriptorSnapshot, RxDma, RxRingHalted, RxRingLive, RxSegment},
     rx_pool::{RxStagePool, RxStageTransactionError},

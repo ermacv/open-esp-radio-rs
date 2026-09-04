@@ -6,7 +6,7 @@ use core::{
 };
 
 use embassy_futures::block_on;
-use open_esp_radio_embassy_net::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_dma::{
     descriptor::{BIT_30, BIT_31, LENGTH_SHIFT},
     rx_ring::RxDmaArenaState,

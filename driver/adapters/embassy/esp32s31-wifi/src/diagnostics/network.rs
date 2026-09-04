@@ -1,11 +1,11 @@
 //! Role-neutral network publication observations.
 
 #[cfg(feature = "diagnostics")]
-use open_esp_radio_embassy_net::RxEnqueueError;
-#[cfg(feature = "diagnostics")]
 use open_esp_radio_esp32s31_wifi_mac::rx::PUBLIC_HEADER_SIZE;
 #[cfg(feature = "diagnostics")]
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+#[cfg(feature = "diagnostics")]
+use open_esp_radio_network::RxEnqueueError;
 
 /// Stable, decoded Ethernet view exposed to diagnostic consumers.
 #[cfg(feature = "diagnostics")]

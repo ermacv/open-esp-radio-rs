@@ -2,6 +2,7 @@
 members = [
     "hil/protocol",
     "driver/common/dma",
+    "driver/common/network",
     "driver/radio",
     "driver/adapters/embassy-net",
     "driver/adapters/embassy-net-compat",

@@ -6,7 +6,7 @@
 //! asynchronous frontier before driver teardown.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex as NetworkRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::crypto::CcmpKeyHardware;
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 
@@ -37,43 +37,10 @@ pub trait Esp32s31ConnectedEpochRunnerOwner: Sized {
     fn into_connected_epoch_parts(self) -> (Self::Network, Self::Services);
 }
 
-impl<
-    'resources,
-    'irq,
-    M,
-    N,
-    B,
-    RX,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-> Esp32s31ConnectedEpochRunnerOwner
-    for DatapathRunner<
-        'resources,
-        'irq,
-        M,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-        RX,
-    >
+impl<'irq, M, N, B, RX> Esp32s31ConnectedEpochRunnerOwner for DatapathRunner<'irq, M, N, B, RX>
 where
-    M: NetworkRawMutex + 'resources,
-    N: crate::datapath::network::DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    M: NetworkRawMutex,
+    N: crate::datapath::network::DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     RX: crate::datapath::network::DatapathNetworkRxSet,
 {

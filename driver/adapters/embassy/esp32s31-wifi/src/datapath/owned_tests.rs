@@ -1,7 +1,7 @@
 use core::task::{Context, Poll};
 
-use open_esp_radio_embassy_net::{NetworkInterfaceId, RxEnqueueError};
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+use open_esp_radio_network::{NetworkInterfaceId, RxEnqueueError};
 
 use super::network::{DatapathNetworkRx, DatapathNetworkRxEndpoints, DatapathNetworkRxSet};
 

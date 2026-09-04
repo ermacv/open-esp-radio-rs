@@ -116,7 +116,7 @@ where
         })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "owned-network"))]
     pub(super) fn new_for_test(
         ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
         ampdu: AggregateTxResources<

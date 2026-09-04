@@ -6,7 +6,7 @@
 //! ordinary/A-MPDU TX, BlockAck control and the final [`SingleRoleServices`].
 
 use crate::datapath::PinnedTxFrame;
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,

@@ -22,18 +22,18 @@ use core::{
     task::{Context, Poll},
 };
 
-pub use embassy_net_driver::{Driver, LinkState, TxToken};
+pub use embassy_net_driver::{Driver, TxToken};
 pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
 pub use embassy_sync::signal::Signal;
+pub use open_esp_radio_network::{
+    ETHERNET_HEADER_LEN, FrameLengthError, LinkState, NetworkInterfaceId, RxEnqueueError,
+};
 
-use embassy_net_driver::{Capabilities, HardwareAddress};
+use embassy_net_driver::{Capabilities, HardwareAddress, LinkState as DriverLinkState};
 use embassy_sync::{
     channel::{Channel, Receiver, Sender, TrySendError},
     waitqueue::GenericAtomicWaker,
 };
-
-/// Ethernet header length, excluding an FCS.
-pub const ETHERNET_HEADER_LEN: usize = 14;
 
 /// Breaks an unbounded network-stack ingress drain at the
 /// adapter's physical queue boundary.
@@ -148,28 +148,6 @@ impl<const CAPACITY: usize> EthernetFrame<CAPACITY> {
     }
 }
 
-/// Why a byte slice cannot be represented by an owned Ethernet frame.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FrameLengthError {
-    /// The slice is shorter than an Ethernet header.
-    TooShort,
-    /// The slice exceeds the configured frame storage.
-    TooLong,
-}
-
-/// Why a received frame was not admitted to the network stack.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxEnqueueError {
-    /// The supplied Ethernet frame length is invalid.
-    InvalidLength(FrameLengthError),
-    /// The fixed receive queue is full.
-    QueueFull,
-    /// The dedicated receive packet pool has no free owner.
-    PoolExhausted,
-    /// The logical network interface is not active.
-    LinkDown,
-}
-
 pub(crate) struct SharedLinkState<M: RawMutex> {
     // Bit zero is the link state. The upper 31 bits are a wrapping egress
     // lifecycle epoch incremented on every Down -> Up transition. Publishing
@@ -214,14 +192,14 @@ impl<M: RawMutex> SharedLinkState<M> {
         }
     }
 
-    pub(crate) fn get(&self, cx: &mut Context<'_>) -> LinkState {
+    pub(crate) fn get(&self, cx: &mut Context<'_>) -> DriverLinkState {
         // Register first, then load: a concurrent change either wakes this
         // waker or is observed by the following acquire load.
         self.waker.register(cx.waker());
         if self.state.load(Ordering::Acquire) & 1 != 0 {
-            LinkState::Up
+            DriverLinkState::Up
         } else {
-            LinkState::Down
+            DriverLinkState::Down
         }
     }
 }
@@ -455,7 +433,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
             })
     }
 
-    fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
+    fn link_state(&mut self, cx: &mut Context<'_>) -> DriverLinkState {
         self.link.get(cx)
     }
 

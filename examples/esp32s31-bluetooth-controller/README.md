@@ -10,8 +10,8 @@ an application must own it:
 - a standard `bt-hci::Controller` read loop is polled concurrently with typed
   Host commands.
 
-The board smoke sequence uses only the upstream `bt-hci` 0.10 typed command
-API. It performs:
+The default board smoke sequence uses only the upstream `bt-hci` 0.10.1 typed
+command API. It performs:
 
 1. HCI Reset;
 2. LE Receiver Test v2 on test channel 0, LE 1M, standard modulation index;
@@ -32,6 +32,9 @@ Every command prints a `submitted` marker before it crosses HCI and a
 `running` or `complete` marker after the typed response. A two-second command
 timeout turns a lost Controller response into a bounded failure, so a board run
 can distinguish command-intake, event-start and Test End liveness failures.
+Before commands, `application entered`, `executor starting`, and
+`Bluetooth Controller cold start submitted` markers distinguish application,
+executor and radio startup; `Bluetooth Controller ready` closes cold start.
 
 This is a board smoke sequence, not recorded HIL evidence. Meaningful RF
 validation still requires a suitable peer or tester, controlled RF conditions
@@ -45,3 +48,25 @@ cargo build --release
 
 With an ESP32-S31 connected, `cargo run --release` flashes it and opens the
 serial monitor.
+
+Build the separate advertising smoke sequence with:
+
+```console
+cargo build --release --features advertising-smoke
+```
+
+This feature replaces the DTM commands. After initial Reset, it exercises
+nonconnectable `ADV_NONCONN_IND`, then connectable `ADV_IND`, each with a static
+random address, 100 ms intervals, all three advertising channels and the local
+name `open-radio`. Each case configures address/parameters/data, enables for one
+second, disables, re-enables for one second, resets while enabled, reconfigures,
+enables for one second and finally disables. Run without a connecting peer:
+accepted connections exercise a separate, incomplete peripheral lifecycle.
+
+Commands print `advertising <command> submitted` and `complete` markers, with
+the command name in failures and two-second timeouts. Case and dwell markers
+identify the last reached step. These observations establish HCI lifecycle
+progress only: a successful Enable response or elapsed dwell does not prove
+scheduler RUN, repeated events or RF transmission. Use scheduler evidence and a
+BLE observer for those claims. `cargo run --release --features advertising-smoke`
+flashes this variant and opens the monitor.

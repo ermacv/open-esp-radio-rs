@@ -12,7 +12,6 @@ use open_esp_radio_bluetooth_hci::{
     LeControllerActiveLegacyAdvertisingCommandRoute as HciCommandRoute,
     LeControllerClassifiedCommand, LeControllerCommandEndpoint, LeControllerCommandIntake,
     LeControllerCommandReady, LeControllerEndpointMismatch, LeControllerResponsePending,
-    LeControllerResponsePublication,
 };
 use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 
@@ -407,75 +406,6 @@ impl<'runtime, Phase> BluetoothLegacyConnectableAdvertisingRecurringCommandReady
                 handler.non_command(
                     BluetoothLegacyConnectableAdvertisingRecurringHci::from_parts(phase, order),
                     frame,
-                )
-            }
-        }
-    }
-}
-
-impl<'runtime, Phase>
-    BluetoothLegacyConnectableAdvertisingRecurringResponsePending<'runtime, Phase>
-{
-    pub async fn wait_response_capacity<
-        M: RawMutex,
-        const H2C: usize,
-        const C2H: usize,
-        const PACKET: usize,
-    >(
-        &self,
-        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
-    ) -> Result<(), LeControllerEndpointMismatch> {
-        controller.wait_response_capacity(&self.order).await
-    }
-
-    /// Attempt publication without consuming or pausing the recurrence phase.
-    pub fn try_publish_response_with<
-        M: RawMutex,
-        const H2C: usize,
-        const C2H: usize,
-        const PACKET: usize,
-        R,
-    >(
-        self,
-        controller: &LeControllerCommandEndpoint<'_, M, H2C, C2H, PACKET>,
-        published: impl FnOnce(
-            BluetoothLegacyConnectableAdvertisingRecurringCommandReady<'runtime, Phase>,
-        ) -> R,
-        pending: impl FnOnce(Self) -> R,
-        endpoint_mismatch: impl FnOnce(Self) -> R,
-        fault: impl FnOnce(Self, HciChannelError) -> R,
-    ) -> R {
-        match self
-            .order
-            .map_owner(|()| self.phase)
-            .try_publish(controller)
-        {
-            LeControllerResponsePublication::Published(ordered) => {
-                let (phase, order) = ordered.into_parts();
-                published(
-                    BluetoothLegacyConnectableAdvertisingRecurringHci::from_parts(phase, order),
-                )
-            }
-            LeControllerResponsePublication::Pending(transaction) => {
-                let (phase, response) = transaction.into_parts();
-                pending(
-                    BluetoothLegacyConnectableAdvertisingRecurringHci::from_parts(phase, response),
-                )
-            }
-            LeControllerResponsePublication::EndpointMismatch(transaction) => {
-                let (phase, response) = transaction.into_parts();
-                endpoint_mismatch(
-                    BluetoothLegacyConnectableAdvertisingRecurringHci::from_parts(phase, response),
-                )
-            }
-            LeControllerResponsePublication::Fault {
-                pending: transaction,
-                error,
-            } => {
-                let (phase, response) = transaction.into_parts();
-                fault(
-                    BluetoothLegacyConnectableAdvertisingRecurringHci::from_parts(phase, response),
-                    error,
                 )
             }
         }

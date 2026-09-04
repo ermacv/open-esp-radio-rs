@@ -2,12 +2,15 @@
 #![no_std]
 #![recursion_limit = "256"]
 
+#[cfg(not(feature = "advertising-smoke"))]
+use bt_hci::cmd::le::{LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2};
+#[cfg(feature = "advertising-smoke")]
 use bt_hci::{
-    cmd::{
-        SyncCmd,
-        controller_baseband::Reset,
-        le::{LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2},
-    },
+    cmd::le::{LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr},
+    param::{AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr, Duration as HciDuration},
+};
+use bt_hci::{
+    cmd::{SyncCmd, controller_baseband::Reset},
     controller::Controller,
 };
 use embassy_time::{Duration, Timer, with_timeout};
@@ -43,11 +46,6 @@ const SCHEDULER_CAPACITY: usize = 1;
 const HOST_TO_CONTROLLER_DEPTH: usize = 4;
 const CONTROLLER_TO_HOST_DEPTH: usize = 4;
 const PACKET_CAPACITY: usize = 258;
-const LE_TEST_CHANNEL: u8 = 0;
-const LE_PHY_1M: u8 = 1;
-const LE_MODULATION_INDEX_STANDARD: u8 = 0;
-const LE_PAYLOAD_PRBS9: u8 = 0;
-const LE_TX_PAYLOAD_LENGTH: u8 = 37;
 const LE_TEST_DWELL: Duration = Duration::from_secs(1);
 const HCI_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -72,6 +70,7 @@ static BLUETOOTH_STORAGE: BluetoothStorage = BluetoothStorage::new();
 #[esp_hal::main]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
+    esp_println::println!("open-radio: application entered");
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
@@ -89,6 +88,7 @@ fn main() -> ! {
     let hardware =
         BluetoothRadioHardware::take().expect("Bluetooth radio must have a unique owner");
     let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
+    esp_println::println!("open-radio: executor starting");
     executor.run(|spawner| {
         spawner.spawn(
             bluetooth_controller_task(platform, hardware)
@@ -115,6 +115,7 @@ async fn bluetooth_controller_task(
         .expect("the Controller-time recheck period must be nonzero");
     let config =
         Esp32s31BluetoothColdStartConfig::new(251, 4, None, dtm, passive_scan, recheck_period);
+    esp_println::println!("open-radio: Bluetooth Controller cold start submitted");
     let output =
         match start_esp32s31_bluetooth(platform, hardware, &BLUETOOTH_STORAGE, config).await {
             Ok(output) => output,
@@ -124,7 +125,18 @@ async fn bluetooth_controller_task(
     let hardware_runner = runners.hardware;
     esp_println::println!("open-radio: Bluetooth Controller ready");
 
+    #[cfg(feature = "advertising-smoke")]
     let commands = async {
+        advertising_smoke(&hci).await;
+        core::future::pending::<()>().await;
+    };
+    #[cfg(not(feature = "advertising-smoke"))]
+    let commands = async {
+        const LE_TEST_CHANNEL: u8 = 0;
+        const LE_PHY_1M: u8 = 1;
+        const LE_MODULATION_INDEX_STANDARD: u8 = 0;
+        const LE_PAYLOAD_PRBS9: u8 = 0;
+        const LE_TX_PAYLOAD_LENGTH: u8 = 37;
         esp_println::println!("open-radio: HCI Reset submitted");
         match with_timeout(HCI_COMMAND_TIMEOUT, Reset::new().exec(&hci)).await {
             Ok(Ok(_)) => esp_println::println!("open-radio: HCI Reset complete"),
@@ -193,6 +205,86 @@ async fn bluetooth_controller_task(
         embassy_futures::join::join3(commands, pump_unsolicited_hci(&hci), hardware_runner.run())
             .await;
     match hardware_never {}
+}
+
+#[cfg(feature = "advertising-smoke")]
+async fn advertising_command<E: core::fmt::Debug>(
+    name: &'static str,
+    command: impl core::future::Future<Output = Result<(), E>>,
+) {
+    esp_println::println!("open-radio: advertising {} submitted", name);
+    match with_timeout(HCI_COMMAND_TIMEOUT, command).await {
+        Ok(Ok(())) => esp_println::println!("open-radio: advertising {} complete", name),
+        Ok(Err(error)) => panic!("advertising {} failed: {:?}", name, error),
+        Err(_) => panic!("advertising {} timed out", name),
+    }
+}
+
+#[cfg(feature = "advertising-smoke")]
+async fn configure_advertising(hci: &BluetoothHost, kind: AdvKind) {
+    // HCI address bytes are least-significant first; C2 makes this static random.
+    advertising_command(
+        "Set Random Address",
+        LeSetRandomAddr::new(BdAddr::new([0x31, 0x53, 0x50, 0x45, 0x52, 0xc2])).exec(hci),
+    )
+    .await;
+    advertising_command(
+        "Set Parameters",
+        LeSetAdvParams::new(
+            HciDuration::from_millis(100),
+            HciDuration::from_millis(100),
+            kind,
+            AddrKind::RANDOM,
+            AddrKind::PUBLIC,
+            BdAddr::default(),
+            AdvChannelMap::ALL,
+            AdvFilterPolicy::Unfiltered,
+        )
+        .exec(hci),
+    )
+    .await;
+    // Complete local name, suitable for either advertising kind.
+    let name = b"open-radio";
+    let mut data = [0; 31];
+    data[0] = (name.len() + 1) as u8;
+    data[1] = 0x09;
+    data[2..2 + name.len()].copy_from_slice(name);
+    advertising_command(
+        "Set Data",
+        LeSetAdvData::new((name.len() + 2) as u8, data).exec(hci),
+    )
+    .await;
+}
+
+#[cfg(feature = "advertising-smoke")]
+async fn advertising_dwell() {
+    esp_println::println!("open-radio: advertising dwell started");
+    Timer::after(LE_TEST_DWELL).await;
+    esp_println::println!("open-radio: advertising dwell complete");
+}
+
+#[cfg(feature = "advertising-smoke")]
+async fn advertising_smoke(hci: &BluetoothHost) {
+    advertising_command("initial Reset", Reset::new().exec(hci)).await;
+    for (label, kind) in [
+        ("nonconnectable", AdvKind::AdvNonconnInd),
+        ("connectable", AdvKind::AdvInd),
+    ] {
+        esp_println::println!("open-radio: advertising {} smoke started", label);
+        configure_advertising(hci, kind).await;
+        advertising_command("Enable", LeSetAdvEnable::new(true).exec(hci)).await;
+        advertising_dwell().await;
+        advertising_command("Disable", LeSetAdvEnable::new(false).exec(hci)).await;
+        advertising_command("re-enable", LeSetAdvEnable::new(true).exec(hci)).await;
+        advertising_dwell().await;
+        advertising_command("active Reset", Reset::new().exec(hci)).await;
+        configure_advertising(hci, kind).await;
+        advertising_command("Enable after Reset", LeSetAdvEnable::new(true).exec(hci)).await;
+        advertising_dwell().await;
+        advertising_command("final Disable", LeSetAdvEnable::new(false).exec(hci)).await;
+        esp_println::println!("open-radio: advertising {} smoke complete", label);
+    }
+    esp_println::println!("open-radio: advertising smoke complete (HCI lifecycle only)");
 }
 
 async fn pump_unsolicited_hci(hci: &BluetoothHost) {

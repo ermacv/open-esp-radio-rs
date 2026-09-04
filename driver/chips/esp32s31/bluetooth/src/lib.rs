@@ -94,7 +94,7 @@ mod legacy_connectable_advertising_hci;
 mod legacy_connectable_advertising_recurring;
 #[cfg(target_arch = "riscv32")]
 mod legacy_connectable_advertising_recurring_hci;
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 mod legacy_connectable_advertising_recurring_hci_state;
 #[cfg(target_arch = "riscv32")]
 mod legacy_connectable_advertising_runner;

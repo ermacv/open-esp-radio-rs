@@ -6,6 +6,9 @@ rust-version = "1.97.1"
 license = "MIT OR Apache-2.0"
 publish = false
 
+[features]
+advertising-smoke = []
+
 [dependencies]
 embassy-time = "0.5.1"
 static_cell = "2.1.1"

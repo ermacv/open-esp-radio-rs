@@ -302,8 +302,9 @@ monoliths.
    and scanning still occupy the common scheduler facade).
 3. Generalize and rename the post-unlink mailbox without legacy aliases.
 4. Finish connection recycle and recurrence against those shared primitives
-   (SRAM/RX plus scheduler release done; status/destroy classification, LL
-   commit and recurrence remain).
+   (done through capture-aware completion, provisional LL advance, recurring
+   admission and the atomic LL/phase commit; the active connection runner
+   remains).
 5. Split the Embassy actor by role while retaining one task and one state slot.
 6. Split the portable command-order after the hardware lifecycle is complete;
    the DTM memory codec split is done.
@@ -387,3 +388,104 @@ private-item detach and empty-list merge, then one atomic commit of both the LL
 provisional state and the proposed phase. Head publication before that joint
 commit would make rollback impossible; LL commit before merge would let
 channel/counter state diverge from the hardware event.
+
+## Post-recurrence hierarchy audit
+
+The recurring closure changed the status of the last paragraph: that exact
+transaction now exists. The LL successor and proposed timing phase remain
+private and provisional through timeline reservation, sequence authorization,
+SRAM preparation, empty-list merge, common-list/head validation and stable
+interrupt preparation. They commit together only before the infallible
+RX/head/event/RUN suffix. A missed first event fails closed because no actual
+peer-selected anchor has yet been observed inside `WinSize`; a later miss may
+continue from the last captured anchor.
+
+The five audited Bluetooth roots now contain 86,964 Rust lines including
+tests. Raw line count is only a navigation signal, but it confirms that the
+remaining size is concentrated in integration layers rather than register or
+descriptor access:
+
+| File | Lines | Boundary that is currently mixed |
+|---|---:|---|
+| chip `controller_start.rs` | 5,578 | startup, HCI transaction, role routing, time acquisition, role preparation |
+| Embassy `controller_command_task.rs` | 4,163 | single actor plus every role handler and fault owner |
+| chip `scheduler.rs` | 4,042 | neutral list epoch plus advertising/scanning and shared publication mechanics |
+| portable HCI `dtm_order.rs` | 2,995 | controller command epoch plus three role orderings |
+| chip `scheduler/dtm.rs` | 2,450 | all DTM scheduler phases in one role file |
+| chip `dtm_event_prepare.rs` | 2,283 | DTM semantic lowering plus scheduler transaction |
+| memory `peripheral_connection_memory.rs` | 2,060 | semantic graph lifecycle; raw codec is already separate |
+| chip `legacy_advertising_active.rs` | 2,054 | active runner vocabulary and transition reducer |
+| chip `dtm_active.rs` | 2,025 | active runner vocabulary and transition reducer |
+| memory `dtm_storage.rs` | 2,015 | semantic lifecycle; raw codec is already separate |
+
+### Decisions
+
+1. `controller_start.rs` is the first required cut. Connection preparation and
+   recurrence currently add a complete role machine to a boot/composition
+   module. Move that machine to a child module first; then separate neutral HCI
+   command transaction, idle role routing, controller-time service and startup.
+   `BluetoothControllerIdleCommandRoute` must leave `dtm_runner.rs`: it routes
+   DTM, advertising and scanning and is not a DTM type.
+2. Keep one Embassy actor. Move each role's state vocabulary and drive function
+   to a child handler, while the parent alone owns selection, cancellation,
+   the affine Controller slot and unowned-finished-list dispatch. Multiple
+   actors would introduce a new arbitration protocol and are not a valid file
+   split.
+3. Break the remaining source dependency between `runtime_resources` and
+   `scheduler`. The neutral exclusive-list epoch, head identity, drain state
+   and RUN publication belong in `scheduler/core` (with a small `epoch`
+   module). Role implementations may depend on that core; runtime storage must
+   not depend on a role facade which implements operations back on it.
+4. Keep role-specific scheduler typestates distinct, but factor their private
+   publication/completion suffix. Do not replace them with a public generic
+   trait. The current connection subtree should become `first_event`,
+   `completion` and `recurring`; only a future connection runner should expose
+   the outer step enum. Its current public pre-sequence and empty-merge types
+   are a temporary orchestration surface, not a stable API.
+5. Move `BluetoothDtmActiveRadio` from `dtm_active_session.rs` to a neutral
+   DTM radio-owner module before splitting the DTM runners. Quiescence, reset
+   and stopping all consume that owner; making any one of those phases its home
+   creates a conceptual cycle.
+6. Continue the memory pattern already established for DTM, peripheral
+   connection and connectable advertising: raw SRAM offsets, masks and
+   volatile operations stay in private `codec` modules; semantic inputs and
+   affine ownership remain in the parent. Large semantic lifecycle files can
+   later split by `allocation`, `publication`, `completion` and `recycle`, but
+   must not leak raw words upward.
+7. Defer root `lib.rs` export cleanup until the production connection runner
+   exists. Removing intermediate exports now would only move the same flat
+   typestate surface elsewhere. At runner closure, export commands, terminal
+   outcomes and stable capabilities; keep admission and scheduler handoff
+   states crate-private, with no aliases for removed names.
+
+### Functional implications
+
+Recurring scheduling is no longer the immediate connection blocker. The next
+bottom-up functional edge is the chip connectable-advertising aggregate:
+portable `ADV_IND`/`SCAN_RSP` ownership, the response-capable SRAM graph,
+bounded RX dispatch, validated `CONNECT_IND`, and lossless transfer of the
+same RX allocation into the first peripheral-connection event. No missing
+PAC accessor is currently known for that handoff.
+
+After ingress, a real controller still needs an active connection runner and
+Embassy handler, an explicit board-owned local sleep-clock accuracy, SN/NESN
+and retransmission state, establishment/supervision timeout policy, the
+mandatory LL control subset, and final ACL/HCI routing through `bt-hci`.
+These are protocol/controller gaps, not reasons to reverse-engineer or clone
+the vendor's upper software architecture. DTM is much closer: its lower radio,
+scheduler and HCI command paths exist; remaining runtime blockers are the
+general finished-list dispatcher and complete source-127 expiration handling,
+followed by hardware evidence when a board becomes available.
+
+### Execution order
+
+1. Extract connection preparation from `controller_start.rs` without behavior
+   changes.
+2. Build the chip connectable-advertising aggregate and CONNECT_IND handoff.
+3. Split the connection scheduler into first-event, completion and recurring
+   ownership phases while adding the active connection runner.
+4. Split controller command transaction/router/runtime/startup, then the
+   Embassy role handlers.
+5. Isolate scheduler core and the remaining advertising/scanning role modules.
+6. Close source-127 and unowned-finished-list runtime dispatch, then simplify
+   the root export surface and DTM/HCI file hierarchy.

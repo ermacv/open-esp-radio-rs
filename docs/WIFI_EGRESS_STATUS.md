@@ -1,455 +1,165 @@
-# Wi-Fi egress refactor status
+# Wi-Fi network integration status
 
-Status: audited implementation and evidence snapshot, 2026-09-04. This file
-describes what exists now. It is not the target architecture and should be
-updated by replacement, not by appending an experiment diary.
+Status date: 2026-09-04. Code checkpoint: `647bb112` on
+`refactor/wifi-owned-egress`. This document records facts at that checkpoint;
+it is not an experiment diary.
 
 ## Executive status
 
-The project has a safely pushed, host-tested and HIL-tested UDP scheduling
-vertical slice across open-radio, Embassy and the old Xarxa line. It proved
-important identity, queueing, grant, batching and measurement semantics. It is
-not the production cutover candidate.
+The product composition has cut over from the experimental public
+Xarxa/Embassy egress scheduler to owned packet transfer. Core1 transfers a
+general-memory `PacketBuf` owner to Core0. Core0 classifies and queues it,
+selects radio work, reserves a complete SRAM batch, and copies each selected
+frame exactly once into the fixed DMA-visible execution pool.
 
-The decisive audit result is that the Xarxa feature branch and current Xarxa
-`main` are unrelated histories. Current `main` has already replaced the
-borrowed token/socket-ring model with owned `PacketBuf`. That model permits
-the per-key software TXQ to live inside the Wi-Fi driver after packet ownership
-transfer. Porting the existing public demand/grant protocol before testing the
-simpler path would be unnecessary architecture and long-term fork cost.
+The rejected candidate/grant protocol, old pinned network token driver,
+staging-copy modes and Core1 materializer experiment have been deleted from
+the current code and HIL protocol. Git history retains them.
 
-No further TCP/raw provider work, fairness-policy expansion or micro-
-optimization should be added to the old line. The old implementation remains
-an executable semantic oracle while the owned-buffer cutover is built.
+Host tests and cross-compilation pass. No post-cutover hardware performance
+result exists yet, so current throughput and CPU targets are not claimed.
 
-## Repository snapshot
+## Repository boundaries
 
-Production cutover snapshot:
+Current dependencies:
 
-```text
-open-esp-radio-rs-wifi
-  production branch: refactor/wifi-owned-egress
-  pushed HEAD:       508f09c6
-  base:              d66b3101 (origin/main)
-  architecture:      9e85b3f6
-  main test fix:     9235657f
-  pre-code checkpoint: d2e1009b
+- optimized Xarxa owned-packet fork: `122e97146fc0a174ef3310f4526defc37663bed4`;
+- optimized Embassy fork: `244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d`;
+- compatibility `embassy-net-driver`: released crate `0.2.0`.
 
-Open-radio scheduling oracle
-  branch: refactor/wifi-interface-egress-scheduler
-  frozen and pushed: 0e7cbdf9
+The `open-esp-radio-embassy-net` crate currently contains three logically
+separate pieces:
 
-Xarxa scheduling prototype
-  branch: refactor/interface-egress-scheduler
-  HEAD:   3ac0e58e2c37e052ef168fdec8c3cf69c39824a4
-  base:   old line at 1f332ac32cc33d86aefc8e1c1a9749b93234a6de
+- a small copied-frame adapter for the unchanged Embassy driver trait;
+- the optimized owned-`PacketBuf` network boundary;
+- the physical internal-SRAM TX execution pool.
 
-Xarxa current main
-  owned foundation branch: refactor/owned-packet-pools
-  pushed HEAD:             122e97146fc0a174ef3310f4526defc37663bed4
-  merge base with prototype: none
+This is compile-time clean but not the final crate topology. Separating the
+compatibility and owned integrations into distinct crates remains planned so
+Cargo feature unification cannot couple them.
 
-Embassy scheduling prototype
-  branch: refactor/interface-egress-scheduler
-  HEAD:   ab8d91a5ddd2d9a4596a74f4ea89acda66cace1d
-
-Embassy current main
-  owned foundation branch: refactor/xarxa-owned-driver
-  pushed HEAD:             244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d
-  Xarxa pin:                122e9714 owned line
-```
-
-The production branch starts directly at `origin/main`; it does not carry the
-62 public demand/grant experiment commits merely to delete them later. The
-oracle branch remains reconstructable in the remote repository.
-
-The oracle's attempted clean correctness build stopped before flashing on
-three post-LTO stack gates. Comparison with archived run
-`1788272869730-00138fba` isolates the material difference to the old
-Xarxa/Embassy scheduling revision advance, not the `origin/main` merge. The
-radio fault-owner types, compiler, LLVM and stack policy were unchanged. We do
-not raise stack limits or refactor terminal radio owners to accommodate an API
-which is not part of the target architecture.
-
-The first correctness image on the direct-main production branch passes
-placement, source-graph and stack-frame audits. The same three frames return to
-50,432, 17,792 and 8,336 bytes respectively. This is direct evidence that the
-branch separation removed the obsolete scheduling-state cost without changing
-radio ownership or relaxing a gate.
-
-Clean correctness HIL completes the Phase 1 runtime baseline:
-
-- `station-reconnect-ht40`, run `1788522354561-00281173`: ten cold boots and
-  all thirty reconnect cycles passed;
-- `access-point-icmp`, exact firmware replay run
-  `1788522571979-00281656`: all AP start/stop, station return and ICMP checks
-  passed.
-
-Runtime painting reported at least 25,500 bytes free on the 192-KiB Core0 task
-stack. Core1 retained 10,128 bytes in station operation and 8,856 bytes after
-the exercised AP lifecycle, above their configured gates. These are lifecycle
-and memory-safety baselines, not throughput claims.
-
-The HIL wire protocol is currently 79. A historical firmware using an older
-protocol cannot be replayed by the current runner merely because its binary
-was archived; the matching host tool contract must also be reconstructable.
-
-## Current physical Wi-Fi datapath
-
-### RX
-
-The shipping experimental branch uses 96 physical RX descriptors/buffers and
-permits at most 32 retained packet owners above the Core0 radio path. The
-remaining radio capacity is bounded but is not claimed to be 64 descriptors
-armed at every instant.
-
-RX service masks the interrupt, drains bounded work synchronously on Core0,
-publishes a durable continuation if work remains and unmasks after the observed
-completion/recycle frontier is clear. Copy/immediate-release and dynamic
-replacement experiments did not raise throughput and added Core0 work. This
-does not prove retained ownership has no backpressure effect in every workload;
-it establishes that replacement is not the measured performance solution.
-
-Migration to new Xarxa cannot preserve this RX behavior with its current
-`PacketBuf`: the new buffer can only return to one private global pool. A
-pool-aware/adoptable owner is required to let a driver-owned RX DMA buffer
-cross the stack and return to its radio pool without a copy.
-
-### TX
-
-The current direct path owns 67 internal-SRAM slots:
+## Current optimized TX path
 
 ```text
-32 aggregate-scale current capacity
-+ 32 aggregate-scale next/elastic capacity
-+ 2 endpoint response reserves
-+ 1 bounded control reserve
-= 67
+Core1 Xarxa
+    -> constructs one owned general-memory PacketBuf
+    -> OwnedNetworkDevice transfers the owner
+    -> bounded owner queue
+================ core boundary ================
+Core0 DatapathRunner
+    -> software TXQ classifies VIF/peer-generation/TID
+    -> selects one flow/burst
+    -> reserves all requested SRAM slots
+    -> removes selected owners only after reservation succeeds
+    -> one copy per frame into fixed SRAM
+    -> AP or STA encodes and publishes aggregate
+    -> terminal completion returns SRAM credits
 ```
 
-This decomposition is a sizing description, not a proven occupancy theorem.
-The permanent property is a fixed shared pool independent of peer count.
-
-AP and STA now share physical datapath mechanisms while retaining separate
-role/peer/security policy. AP bulk TX is presently best-effort TID 0 and can
-form BA32 aggregates. The generic RX reorder agreement remains BA16; these are
-different directions and resources.
-
-## Old Xarxa/Embassy scheduling prototype
-
-### What is implemented and worth retaining
-
-- Xarxa asks the device to canonicalize a resolved route into an opaque
-  `EgressKey`.
-- Multiple IP destinations mapped by the device to one link domain share one
-  UDP queue key.
-- Global physical exhaustion differs from deferral of one key.
-- Demand identity uses schedule epoch plus activation to reject stale ABA
-  reuse.
-- The interface catalogue aggregates a key across providers.
-- Demand and progress cross to Core0 as coalesced bounded state.
-- Core0 returns current plus standby burst grants.
-- `transmit_granted(serial)` performs final synchronous validation at the
-  physical backing owner.
-- Cooperative packet and state-only budgets prevent an executor turn from
-  being captured indefinitely.
-- Register-before-recheck wake logic exists in the concrete cross-core path.
-
-### Review findings which are already fixed
-
-The following findings from early external reviews do not describe current
-prototype HEAD:
-
-- the missing Embassy feature guard is fixed;
-- UDP queues are keyed by device domain rather than IP destination;
-- scheduling state and packet-index metadata are feature-gated;
-- driver-declared `max_active_keys` is checked against compiled capacity;
-- authoritative catalogue overflow fails closed;
-- the feature-off/on checks exist;
-- a blocked current completion no longer prevents local standby progress.
-
-They remain useful regression subjects, not open blockers.
-
-### Unresolved structural problems
-
-The prototype is authoritative only for catalogued UDP:
-
-```text
-UDP             demand/grant path
-DHCP/DNS/ICMP   bounded special control admission
-TCP/raw         uncatalogued ordinary transmit bypass
-other internal replies/fragments have additional direct paths
-```
-
-Other structural debt includes:
-
-- scheduling is eight Cargo-gated default methods in the base Xarxa/Embassy
-  driver traits;
-- middleware can compile while silently dropping the scheduling capability;
-- `EgressSchedule` mixes lifecycle, physical capacity, runner policy and
-  diagnostic rollout mode;
-- demand and grant-completion publication do not expose durable acceptance or
-  backpressure in the generic API;
-- feature-on UDP state contains an `O(sockets * max_keys)` fixed index;
-- old ring storage needs `IndexedSlots` complexity for out-of-order removal;
-- traffic class is effectively zero in the current production AP path;
-- stack materialization completion is named like grant completion but is not
-  terminal BA/retry completion;
-- radio airtime crosses Xarxa even though Xarxa does not use it;
-- `transmit_control` embeds a hidden policy instead of a typed reserve class;
-- Xarxa and Embassy manually duplicate all protocol types;
-- old shadow-grant telemetry and the new authoritative grant coexist;
-- Xarxa selection is followed by another AP `RoundRobinTxQueues` selector.
-
-These issues are not a to-do list for the old branch. Most disappear when the
-software TXQ moves below the new owned driver boundary.
-
-## Reconciliation with the original plan
-
-The audit changes mechanism, not the problem statement.
-
-| Original direction | Audit decision |
-|---|---|
-| Separate long software backlog from short SRAM/DMA horizon | retained as a hard invariant |
-| Select peer/TID before scarce physical admission | retained inside the Wi-Fi driver |
-| Per-peer/TID queues instead of a global FIFO | retained |
-| Fixed SRAM independent of client count | retained |
-| Core0 owns BA/PS/rate/airtime and terminal completion | retained |
-| Xarxa sockets publish demand and consume radio grants | replaced for the first candidate by owned `PacketBuf` transfer and driver queues |
-| Extend every protocol into an interface provider model | removed from the first candidate; all completed owners enter one driver boundary |
-| Construct selected packets directly in SRAM | moved behind an evidence gate as an optional fast path |
-| PSRAM contains a second Wi-Fi complete-frame staging copy | rejected; the general `PacketBuf` itself is the queued owner |
-| TCP scheduler observes emit-able transmission opportunities | needed only if a future pre-materialization API is justified |
-| Public Embassy scheduled-egress protocol | not needed for the one-copy candidate |
-| Airtime DRR/AQL and terminal reconciliation | retained, but private to the link/radio owner |
-
-This is why the earlier work was not pointless. It established the queue key,
-lifecycle and physical-credit semantics and exposed the cost of per-packet
-plumbing. What changes is the layer in which those semantics live.
-
-## New Xarxa `main` audit
-
-Current `main` makes the fundamental ownership transition:
-
-```rust
-fn receive(&mut self) -> Option<PacketBuf>;
-fn can_transmit(&mut self) -> bool;
-fn transmit(&mut self, packet: PacketBuf) -> Result<(), PacketBuf>;
-```
-
-UDP resolves the route, checks device room, allocates one packet, builds UDP,
-IP and Ethernet headers in place and transfers the completed owner. TCP keeps
-canonical stream/retransmission bytes, checks device room, materializes the
-currently eligible segment into a `PacketBuf`, and commits its state only on
-the accepted path. Raw and internally generated traffic use the same owned
-packet model.
-
-This solves several prototype problems:
-
-- the Wi-Fi driver can enqueue all accepted protocols uniformly;
-- packet ownership can cross a core without copying the handle or payload;
-- no per-protocol demand observer is needed for the first one-copy design;
-- TCP eligibility remains in the TCP implementation rather than being
-  duplicated by a scheduling observer;
-- one driver-side per-key queue topology covers UDP, TCP, raw and control.
-
-### Owned foundation now implemented
-
-The former single-global-pool blocker is resolved on the pushed Xarxa owned
-foundation branch:
-
-- a `PacketBuf` is one pointer and carries its pool origin privately;
-- multiple independently placed static pools share one packet type;
-- final drop, including on another host thread/core, returns exactly one slot
-  to the creating pool;
-- pool storage placement and packet alignment are explicit composition
-  choices;
-- stack-created owners use an explicit general allocator, while driver RX
-  owners can originate in a dedicated internal-SRAM pool;
-- headroom, metadata and payload mutation retain origin.
-
-Xarxa also now exposes `poll_bounded` with independent ingress and socket-TX
-budgets and round-robin continuation. The ordinary synchronous `poll` remains
-an intentional full-drain API. The pushed Embassy owned branch wraps the
-minimal owned driver, applies a configurable cooperative budget, self-wakes
-when that budget—not the driver—stopped progress, and sleeps only on durable
-driver/timer state. It also owns the general pool's unique asynchronous waiter:
-if protocol output finds no `PacketBuf`, a later final drop wakes the runner
-even when the driver queue never became full and therefore has no capacity
-edge to signal. The waiter uses register-then-recheck semantics, and separate
-independently polled stacks require separate general pools.
-
-Host evidence for those branches includes 565 Xarxa tests plus driver and
-doctests, minimal/async UDP/TCP/defmt feature checks, and representative
-Embassy IPv4, IPv6/802.15.4 and STM32 driver checks. Current-Rust Clippy still
-reports unrelated pre-existing lints outside the changed paths; the new owned
-paths themselves pass focused `-D warnings` checks.
-
-The remaining Phase 2/3 target proof is composition, not buffer semantics:
-the HIL image must place the general pool in PSRAM and RX pool in internal
-SRAM, then demonstrate the complete return path and linker/load-image gates.
-
-## Current open-radio cutover implementation
-
-The open-radio adapter now has a sibling owned endpoint compiled directly
-against Embassy `244b4a3b` and Xarxa `122e9714`. It deliberately contains no
-peer scheduler and no compatibility translation of the old public grant API.
-
-Its current owner graph is:
-
-```text
-general Xarxa PacketBuf
-  -> bounded Core1-to-Core0 owner channel
-  -> OwnedNetworkTxFrame on the radio side
-
-radio Ethernet RX
-  -> dedicated RX-pool PacketBuf
-  -> bounded Core0-to-Core1 owner channel
-  -> Xarxa
-  -> final drop to the RX pool
-```
-
-The endpoint attaches a link epoch to queued owners. A Down-to-Up transition
-invalidates old-lifetime packets rather than retargeting them to a new AP/STA
-association. TX publication, link state, RX queue capacity and RX pool
-availability have separate durable wake conditions. The RX pool has one
-explicit waiter and uses register-then-recheck, so an empty pool cannot spin or
-sleep through a final owner return. Host tests cover origin return, RX handoff,
-stale epoch rejection, pool/link wake recovery, the synchronous
-`can_transmit -> transmit` guarantee across concurrent link-down, and actual
-construction of the new Embassy stack with a configured bounded poll budget.
-
-Open-radio `508f09c6` also provides the evolutionary physical bridge. An
-`OwnedDatapathNetwork` combines the general-memory owner ingress with the
-existing fixed SRAM execution pool while retaining separate compile-time
-depths for each. `PinnedNetworkTxFrame` temporarily accepts an owned source,
-and the existing AP/STA encoders can promote it only after selection. Batch
-promotion reserves every required SRAM destination before moving any source;
-shortage leaves the complete source prefix unchanged. A regression test proves
-that two software owners remain valid over a one-slot physical horizon.
-
-This bridge is the migration boundary, not the final TX scheduler. The target
-builders still construct the old pinned endpoint, so no owned HIL performance
-claim exists yet. The next vertical slice must instantiate the owned Xarxa and
-Embassy stack in one target role, place its general and RX pools explicitly,
-then reuse the existing Core0 role-specific classification while ensuring
-there is only one ordinary-data selector. Waiting for a BA-sized queue is
-intentionally not part of the endpoint API; sparse work becomes eligible
-immediately.
-
-The checkpoint passes all 35 `open-esp-radio-embassy-net` tests, all 278
-ESP32-S31 Embassy unit tests and its owned bridge integration test. The full
-source-only audit passes eight locked workspaces, 117 isolated feature
-profiles, 39 production packages, safety/architecture tests, final HIL image
-construction, placement, stack-frame and direct-target audits. The image was
-not flashed; these are composition/build facts, not radio performance data.
-
-## Measured facts retained from the experiment history
-
-Only results which constrain the architecture are summarized here. Exact logs
-and older intermediate implementations remain in Git and HIL artifacts.
-
-### Multi-peer queue geometry
-
-With early physical admission, one peer sustained roughly 124 Mbit/s while two
-interleaved peers with 67 slots fell to roughly 97 Mbit/s. A 98-slot direct
-control restored roughly 121 Mbit/s but consumed another 52,576 bytes of SRAM.
-Scheduling a peer before physical admission restored 120--121 Mbit/s with 67
-slots. This proves the queue-geometry/HOL problem and fixed-SRAM requirement.
-
-### One-copy cost
-
-The corrected persistent one-copy lower-bound added about 9.7 microseconds of
-Core1 task residence for a 1,486-byte frame. In the driver-side scheduled
-copy, one-copy with 67 physical slots restored 120--121 Mbit/s but raised
-Core0 radio residence to about 61%, versus about 39.5% for the fragmented
-direct control. The complete promotion transaction measured approximately
-8.1--8.5 thousand cycles/frame; payload copy was the largest measured phase.
-
-Moving the materializer to Core1 reduced Core0 below 40% but delivered only
-90.62 Mbit/s and raised Core1 network-plus-UDP residence to 72.18%. It moved
-and increased work; it was not an accepted design.
-
-### AXI-GDMA
-
-The custom AXI-GDMA proof copied PSRAM to SRAM correctly. A 32-frame
-scatter/gather copy used fewer active CPU cycles/instructions than CPU copy,
-but took 2.27 times as much wall time. Its measured active saving was about
-417 cycles/frame, only around 5% of the complete promotion cost. GDMA remains
-an overlap candidate, not a proven production improvement.
-
-### Direct PSRAM DMA
-
-A same-image run published validated `0x50xx_xxxx` PSRAM packet addresses with
-cache writeback and delivered no UDP traffic. The internal-SRAM control in the
-same image worked and reached 122.35--122.40 Mbit/s. Current Wi-Fi DMA backing
-therefore remains internal-SRAM-only.
-
-### Current refactor regression and observer cost
-
-An older clean checkpoint reached 104.731 Mbit/s in the current lab with about
-70.9 microseconds Core1 and 40.0 microseconds Core0 task residence per frame.
-After removing duplicate route classification, the current StackSelected path
-recovered to about 100 Mbit/s but remains slower and more expensive.
-
-The latest exact-image identity-observer pair used firmware SHA-256
-`b135fa38e3cafe548676d5a6c0fce65b2eaa6dcae6700a37a249b5f4d6fe2599`:
-
-| Mode | HIL run | Primary throughput | Result |
-|---|---|---:|---|
-| observer off | `1788517419528-0026a31d` | 100.340 / 100.080 Mbit/s | sparse delivered, full BA32, no loss/reorder |
-| observer on | `1788517866195-0026b96a` | 96.637 / 96.242 Mbit/s | sparse delivered, full BA32, no loss/reorder |
-
-The observer alone costs roughly 3.7--4.1% throughput, about 1.5% Core0
-instructions/frame and about 3% Core1 residence/frame. It is diagnostic-only.
-Even with it off, current Core0 instructions/frame remain about 27% above the
-old checkpoint. A full BA32 and zero counted errors do not explain the
-inter-aggregate cadence regression.
-
-These measurements justify preserving the old branch as an oracle. They do
-not justify micro-optimizing it before the ownership-lineage cutover.
-
-## Current claims and non-claims
-
-Established:
-
-- early SRAM admission causes multi-peer HOL/aggregate fragmentation;
-- a fixed shared SRAM horizon is feasible;
-- direct cached-PSRAM Wi-Fi DMA does not work in the tested path;
-- one CPU copy can recover aggregation but is too expensive in measured old
-  implementations;
-- the current per-frame identity observer is materially intrusive;
-- the old grant protocol preserves identity in its tested UDP vertical slice;
-- no current evidence supports scaling SRAM by BA window per peer.
-
-Not established:
-
-- that the new owned-`PacketBuf` one-copy implementation has the same cost as
-  the old staged implementations;
-- that Core0 or Core1 percentages are calibrated total CPU utilization;
-- that the radio environment explains the current regression;
-- that current airtime DRR/AQL is production-correct;
-- that 67 slots are the optimal or permanent count;
-- that two in-flight grants are the correct permanent pipeline depth;
-- that a public Xarxa scheduled-egress API is required;
-- that AP, STA, AP+STA and HE20 currently pass the full required matrix.
-
-## Document audit result
-
-The former documents totalled more than six thousand lines and each mixed
-current contracts, superseded plans and chronological measurements. Several
-simultaneously called themselves canonical. That contradicted the repository
-policy that Git history is the archive.
-
-They are replaced by:
-
-- [`WIFI_FAIRNESS_REQUIREMENTS.md`](WIFI_FAIRNESS_REQUIREMENTS.md): normative
-  behavior;
-- [`WIFI_EGRESS_ARCHITECTURE.md`](WIFI_EGRESS_ARCHITECTURE.md): target design
-  and rationale;
-- this file: current implementation and evidence;
-- [`WIFI_EGRESS_CUTOVER_PLAN.md`](WIFI_EGRESS_CUTOVER_PLAN.md): ordered work and
-  gates.
-
-The HIL architecture and reproducibility documents remain separate because
-they define tooling/evidence systems, not the Wi-Fi egress design.
+Established invariants:
+
+- a failed owned submission returns the exact `PacketBuf`;
+- no partial source prefix is removed when an SRAM batch cannot be reserved;
+- AP and STA aggregate extension reads the same owned source as the first
+  frame; it no longer consults the obsolete pinned queue;
+- association generation is preserved through the radio flow key;
+- general packet backlog and SRAM execution credits are independent;
+- SRAM completion does not wake Core1 because Core1 admission is governed by
+  the general packet pool, while the physical pool is Core0-local.
+
+The current Core0 flow scheduler is bounded and work-conserving. It preserves
+per-flow FIFO order and round-robins non-empty flows. It is not yet an airtime
+DRR/AQL implementation.
+
+## Current RX path
+
+The product uses `OwnedRxPublisher`. Core0 protocol processing publishes an
+owned general-memory packet into the Xarxa RX pool. This is a clear ownership
+boundary but currently includes a copy.
+
+The earlier retained/pinned RX experiments remain historical evidence only.
+Zero-copy or adopted DMA backing is not part of the current optimized Xarxa
+contract. It requires a separate heterogeneous-pool design and measurements.
+
+## Removed prototype
+
+The following are deliberately gone from production sources:
+
+- `EgressCandidate`, `EgressGrant`, `EgressShadowGrant` and `EgressGrantKey`;
+- public `StackSelected`, `Shadow` and `Authoritative` scheduling modes;
+- stack-visible radio grant/airtime state;
+- per-destination UDP scheduling indexes;
+- `PinnedNetworkRunner` and the mixed 4.7k-line `pinned.rs` module;
+- `tx-egress-scheduling`, staging-copy and Core1-materializer features;
+- no-op HIL selectors and scenarios for those removed paths.
+
+This closes the reviewed liveness/capacity problems instead of patching them:
+there is no 16-IP-destination authoritative catalog, no silent catalog
+overflow, and TCP/raw cannot bypass an allegedly authoritative UDP-only
+scheduler because that scheduler no longer exists.
+
+## Verification completed
+
+At checkpoint `647bb112`:
+
+- `cargo check --workspace` passes;
+- `open-esp-radio-embassy-net`: 9 owned unit tests and 3 compatibility tests
+  pass;
+- `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests pass;
+- product integration cross-checks for `riscv32imafc-unknown-none-elf` pass;
+- the base HIL runtime cross-check passes;
+- the HIL hardware/memory architecture feature set cross-check passes;
+- the HIL scenario catalog validation tests pass.
+
+Hardware was intentionally not touched during this cutover.
+
+## Retained evidence, not current claims
+
+Pre-cutover experiments established useful design inputs:
+
+- driver-side per-flow queue geometry can recover multi-peer aggregation;
+- increasing SRAM pool size can hide queue fragmentation but is not a scalable
+  per-peer design;
+- the tested Core1 materializer reduced throughput and increased total CPU;
+- the tested dynamic RX replacement implementation increased Core0 work;
+- SPSC handoff reduced measured per-packet transition cost;
+- Wi-Fi DMA access to PSRAM is not established as a supported production path;
+- the standalone GDMA memory-copy experiment did not establish an end-to-end
+  product benefit.
+
+Numbers attached to older ELFs remain valid only for those recorded artifacts.
+They do not prove the performance of the current owned path.
+
+## Known gaps
+
+1. The post-cutover owned path has not been run on hardware.
+2. Airtime DRR, pending-airtime limits and actual-airtime reconciliation are
+   not implemented.
+3. Multi-client, sparse-peer and AP+STA fairness need HIL evidence on the new
+   path.
+4. TCP and raw traffic share the owned API structurally but lack complete HIL
+   qualification.
+5. The compatibility integration is tested as a library driver but is not yet
+   a separate product crate/composition.
+6. The research integration is not implemented.
+7. Core1 load after cutover is unknown. Moving work away from Core0 is not an
+   accepted optimization without total-CPU evidence.
+8. `DatapathTxConsumer` currently calls the owned source through a trait object;
+   its cost must be measured before deciding whether Track B needs a generic
+   static source type.
+9. HIL module/document cleanup beyond removed TX selectors remains a separate
+   audit item.
+
+## Next decision gates
+
+The immediate gate is correctness and resource qualification of the owned
+one-copy path, not micro-optimization.
+
+Only after clean single-peer and multi-peer measurements may the project decide
+whether to:
+
+- retain CPU promotion or revisit GDMA overlap;
+- add a generic heterogeneous packet-owner API;
+- add a direct-SRAM optimized API;
+- move a research result into the production core;
+- optimize Core1 or fuse the network and radio owners.

@@ -8,12 +8,12 @@
 - [`WIFI_FAIRNESS_REQUIREMENTS.md`](WIFI_FAIRNESS_REQUIREMENTS.md): normative,
   intentionally evolvable behavior and resource requirements for multi-client
   AP, same-channel STA+AP and HE20 station operation.
-- [`WIFI_EGRESS_ARCHITECTURE.md`](WIFI_EGRESS_ARCHITECTURE.md): target packet
-  ownership, driver boundary, queue/fairness topology and design rationale.
+- [`WIFI_EGRESS_ARCHITECTURE.md`](WIFI_EGRESS_ARCHITECTURE.md): the shared
+  radio core and separate compatibility, owned and research integrations.
 - [`WIFI_EGRESS_STATUS.md`](WIFI_EGRESS_STATUS.md): audited current state of
-  open-radio, the two Xarxa lineages, Embassy and the retained HIL evidence.
+  the cutover, verification and remaining evidence gaps.
 - [`WIFI_EGRESS_CUTOVER_PLAN.md`](WIFI_EGRESS_CUTOVER_PLAN.md): ordered
-  ownership-first migration, deletion ledger and acceptance gates.
+  integration, HIL, fairness and research work with acceptance gates.
 - [`../tools/blobray/README.md`](../tools/blobray/README.md):
   Blobray workflow and canonical documentation.
 - [`BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md`](BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md):

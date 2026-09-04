@@ -48,6 +48,7 @@ pub use peripheral_connection::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use peripheral_connection::{
+    BluetoothPeripheralConnectionSchedulerCompleted,
     BluetoothPeripheralConnectionSchedulerCompletionObserved,
     BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep,
     BluetoothPeripheralConnectionSchedulerCompletionStep,
@@ -55,7 +56,6 @@ pub use peripheral_connection::{
     BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
     BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
     BluetoothPeripheralConnectionSchedulerHeadPublished,
-    BluetoothPeripheralConnectionSchedulerPacketStartNormalized,
     BluetoothPeripheralConnectionSchedulerRecycleStep,
     BluetoothPeripheralConnectionSchedulerRecycled, BluetoothPeripheralConnectionSchedulerRunning,
     BluetoothPeripheralConnectionSchedulerRunningDrainStep,
@@ -65,7 +65,7 @@ pub use peripheral_connection::{
 };
 #[cfg(target_arch = "riscv32")]
 pub(crate) use peripheral_connection::{
-    BluetoothPeripheralConnectionSchedulerPacketStartNormalization,
+    BluetoothPeripheralConnectionSchedulerCompletionClassification,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
 };
@@ -79,21 +79,21 @@ use crate::legacy_advertising::{
     BluetoothLegacyAdvertisingRecurringEventCandidate,
     BluetoothLegacyAdvertisingRunningEventCompletionObservation,
 };
+#[cfg(target_arch = "riscv32")]
+use crate::peripheral_connection::{
+    BluetoothPeripheralConnectionCompletedEvent,
+    BluetoothPeripheralConnectionCompletionClassification,
+    BluetoothPeripheralConnectionFirstEventCompletionObservation,
+    BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    BluetoothPeripheralConnectionFirstEventRunning,
+    BluetoothPeripheralConnectionFirstEventRxPublished,
+    BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::peripheral_connection::{
     BluetoothPeripheralConnectionFirstEventCandidate,
     BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
     BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
-};
-#[cfg(target_arch = "riscv32")]
-use crate::peripheral_connection::{
-    BluetoothPeripheralConnectionFirstEventCompletionObservation,
-    BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    BluetoothPeripheralConnectionFirstEventRunning,
-    BluetoothPeripheralConnectionFirstEventRxPublished,
-    BluetoothPeripheralConnectionPacketStartNormalization,
-    BluetoothPeripheralConnectionPacketStartNormalizedEvent,
-    BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::scheduler_timeline::BluetoothSchedulerRecurringReserved;

@@ -411,19 +411,18 @@ impl BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
 }
 
 /// Active connection owner after event-local memory and scheduler reclamation.
-#[must_use = "the recycled connection must classify status before protocol advance"]
+#[must_use = "the recycled connection must classify peer activity before protocol advance"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothPeripheralConnectionSchedulerRecycled {
     event: BluetoothPeripheralConnectionRecycledEvent,
 }
 
-/// Capture-normalization outcome retaining the exact recycled scheduler owner.
-#[must_use = "every branch must be retained or advanced"]
+/// Completion outcome retaining either the unchanged retry owner or closed event.
+#[must_use = "the unchanged retry owner or completed owner must be retained"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) enum BluetoothPeripheralConnectionSchedulerPacketStartNormalization {
-    CaptureAbsent(BluetoothPeripheralConnectionSchedulerRecycled),
+pub(crate) enum BluetoothPeripheralConnectionSchedulerCompletionClassification {
     NormalizationUnavailable(BluetoothPeripheralConnectionSchedulerRecycled),
-    Normalized(BluetoothPeripheralConnectionSchedulerPacketStartNormalized),
+    Completed(BluetoothPeripheralConnectionSchedulerCompleted),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -433,7 +432,7 @@ impl BluetoothPeripheralConnectionSchedulerRecycled {
         self.event.event_counter()
     }
 
-    /// Opaque hardware status awaiting reviewed connection-event classification.
+    /// Opaque hardware status retained without teardown interpretation.
     pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
         self.event.status()
     }
@@ -447,47 +446,50 @@ impl BluetoothPeripheralConnectionSchedulerRecycled {
         self.event.received()
     }
 
-    pub(crate) fn normalize_packet_start(
+    pub(crate) fn classify_completion(
         self,
         normalize: impl FnOnce(
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
         ) -> Option<BluetoothPeripheralConnectionPacketStartTiming>,
-    ) -> BluetoothPeripheralConnectionSchedulerPacketStartNormalization {
-        match self.event.normalize_packet_start(normalize) {
-            BluetoothPeripheralConnectionPacketStartNormalization::CaptureAbsent(event) => {
-                BluetoothPeripheralConnectionSchedulerPacketStartNormalization::CaptureAbsent(
+    ) -> BluetoothPeripheralConnectionSchedulerCompletionClassification {
+        match self.event.classify_completion(normalize) {
+            BluetoothPeripheralConnectionCompletionClassification::NormalizationUnavailable(
+                event,
+            ) => {
+                BluetoothPeripheralConnectionSchedulerCompletionClassification::NormalizationUnavailable(
                     BluetoothPeripheralConnectionSchedulerRecycled { event },
                 )
             }
-            BluetoothPeripheralConnectionPacketStartNormalization::NormalizationUnavailable(
-                event,
-            ) => BluetoothPeripheralConnectionSchedulerPacketStartNormalization::NormalizationUnavailable(
-                BluetoothPeripheralConnectionSchedulerRecycled { event },
-            ),
-            BluetoothPeripheralConnectionPacketStartNormalization::Normalized(event) => {
-                BluetoothPeripheralConnectionSchedulerPacketStartNormalization::Normalized(
-                    BluetoothPeripheralConnectionSchedulerPacketStartNormalized { event },
+            BluetoothPeripheralConnectionCompletionClassification::Completed(event) => {
+                BluetoothPeripheralConnectionSchedulerCompletionClassification::Completed(
+                    BluetoothPeripheralConnectionSchedulerCompleted { event },
                 )
             }
         }
     }
 }
 
-/// Recycled connection whose capture entered scheduler time and PHY calibration.
-///
-/// Hardware status and portable Link Layer continuation remain unclassified.
-#[must_use = "the normalized connection must enter completion classification"]
+/// Closed portable event retaining its active chip allocation and observations.
+#[must_use = "the completed connection must enter recurrence or teardown"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
-    event: BluetoothPeripheralConnectionPacketStartNormalizedEvent,
+pub struct BluetoothPeripheralConnectionSchedulerCompleted {
+    event: BluetoothPeripheralConnectionCompletedEvent,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
-    pub const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
+impl BluetoothPeripheralConnectionSchedulerCompleted {
+    /// Portable completion record with the exactly-once advanced successor.
+    pub const fn link_layer_completion(
+        &self,
+    ) -> &open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventCompleted {
+        self.event.link_layer_completion()
     }
 
+    pub const fn event_counter(&self) -> u16 {
+        self.link_layer_completion().event_counter()
+    }
+
+    /// Opaque hardware completion status. It carries no teardown policy.
     pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
         self.event.status()
     }
@@ -500,7 +502,8 @@ impl BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
         self.event.received()
     }
 
-    pub const fn packet_start(&self) -> &BluetoothPeripheralConnectionPacketStartTiming {
+    /// Normalized packet start when peer activity was captured.
+    pub const fn packet_start(&self) -> Option<&BluetoothPeripheralConnectionPacketStartTiming> {
         self.event.packet_start()
     }
 }

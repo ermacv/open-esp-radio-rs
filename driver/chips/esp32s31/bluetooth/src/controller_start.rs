@@ -37,7 +37,7 @@ use crate::modem_lp_timer_queue::{
 };
 #[cfg(target_arch = "riscv32")]
 use crate::scheduler::{
-    BluetoothPeripheralConnectionSchedulerPacketStartNormalization,
+    BluetoothPeripheralConnectionSchedulerCompletionClassification,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
 };
@@ -1547,13 +1547,12 @@ pub enum BluetoothLePacketStartTimingError {
     SchedulerEpochUnavailable,
 }
 
-/// Result of binding one recycled connection to its PHY-normalized packet start.
-#[must_use = "retain the unchanged recycled owner or normalized connection"]
+/// Result of closing one recycled connection event against capture evidence.
+#[must_use = "retain the unchanged retry owner or completed connection"]
 #[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionPacketStartNormalizationStep {
-    CaptureAbsent(crate::BluetoothPeripheralConnectionSchedulerRecycled),
+pub enum BluetoothPeripheralConnectionCompletionStep {
     SchedulerEpochUnavailable(crate::BluetoothPeripheralConnectionSchedulerRecycled),
-    Normalized(crate::BluetoothPeripheralConnectionSchedulerPacketStartNormalized),
+    Completed(crate::BluetoothPeripheralConnectionSchedulerCompleted),
 }
 
 /// Why an affine post-enable controller-time acquisition did not start.
@@ -4716,34 +4715,31 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .complete_le_1m_packet_start(epoch, packet.captured_time()))
     }
 
-    /// Normalize the dedicated capture retained by one recycled LE 1M connection event.
+    /// Close one recycled LE 1M connection event against its capture evidence.
     ///
-    /// This pure transition neither samples current time nor interprets status,
-    /// advances portable Link Layer state or commits a recurring phase.
-    pub fn normalize_peripheral_connection_packet_start(
+    /// An absent capture closes the event as missed without requiring an epoch.
+    /// An available capture is normalized and closes the event as observed. This
+    /// pure transition neither samples current time nor interprets hardware
+    /// status, and it does not schedule recurrence.
+    pub fn complete_peripheral_connection_event(
         &mut self,
         recycled: crate::BluetoothPeripheralConnectionSchedulerRecycled,
-    ) -> BluetoothPeripheralConnectionPacketStartNormalizationStep {
+    ) -> BluetoothPeripheralConnectionCompletionStep {
         let epoch = *self.scheduler_epoch;
-        match recycled.normalize_packet_start(|captured| {
+        match recycled.classify_completion(|captured| {
             epoch.map(|epoch| {
                 self.ble_phy_timing
                     .complete_le_1m_peripheral_connection_packet_start(epoch, captured)
             })
         }) {
-            BluetoothPeripheralConnectionSchedulerPacketStartNormalization::CaptureAbsent(
+            BluetoothPeripheralConnectionSchedulerCompletionClassification::NormalizationUnavailable(
                 recycled,
-            ) => BluetoothPeripheralConnectionPacketStartNormalizationStep::CaptureAbsent(
-                recycled,
-            ),
-            BluetoothPeripheralConnectionSchedulerPacketStartNormalization::NormalizationUnavailable(
-                recycled,
-            ) => BluetoothPeripheralConnectionPacketStartNormalizationStep::SchedulerEpochUnavailable(
+            ) => BluetoothPeripheralConnectionCompletionStep::SchedulerEpochUnavailable(
                 recycled,
             ),
-            BluetoothPeripheralConnectionSchedulerPacketStartNormalization::Normalized(
-                normalized,
-            ) => BluetoothPeripheralConnectionPacketStartNormalizationStep::Normalized(normalized),
+            BluetoothPeripheralConnectionSchedulerCompletionClassification::Completed(
+                completed,
+            ) => BluetoothPeripheralConnectionCompletionStep::Completed(completed),
         }
     }
 

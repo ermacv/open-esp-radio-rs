@@ -2363,3 +2363,57 @@ claiming terminal fairness cutover. It does not invalidate the core topology.
 Selection by opaque device key before final SRAM backing, bounded burst grants,
 fixed radio working-set memory and Core0-owned physical policy remain the
 architecturally correct direction.
+
+## 2026-09-04 post-review clean HIL gate
+
+The reviewed dependencies and open-radio integration were exercised from
+clean commit `4385769b386ff8433037cc553cf03dd2a8d79514`. Each control reused the
+exact archived application image rather than rebuilding it:
+
+| Evidence | Enabled run | Disabled/control run | Application SHA-256 |
+|---|---|---|---|
+| task residence | `1788510272344-0025446e` | `1788510591095-00254eea` | `f416c3fb507112ed706b1aec6f814542e72560762909e855e23a0d248d2a64f9` |
+| Core0/phase diagnostic | `1788510801034-00255337` | `1788511105009-002556e0` | `8c8c76e0a134a566dcfaf9e0f6ffc7112808788127bf8f8f0cceb982bdadb04c` |
+| low-rate AP liveness | `1788511268865-00255d32` | not applicable | same Core0 diagnostic image |
+
+The three task-residence repetitions produced these means:
+
+| Measurement | Enabled | Disabled | Delta |
+|---|---:|---:|---:|
+| Host TX floor | 115.943 Mbit/s | 116.884 Mbit/s | -0.941 Mbit/s (-0.805%) |
+| Core0 radio-task residence | 32.691% | 31.268% | +1.423 pp |
+| Core1 network + UDP-TX residence | 79.201% | 85.705% | -6.504 pp |
+
+All six saturated repetitions used the same HT40/MCS7 link bucket and reported
+zero duplicate/reordered datagrams; one enabled coarse repetition reported one
+informational host miss. The performance delta satisfies the current one-
+percent throughput gate. The Core0 residence delta narrowly misses the strict
+one-percentage-point gate and therefore remains optimization work, although
+absolute Core0 residence remains below 40%.
+
+Task residence is elapsed time inside task polls and includes interrupt
+preemption. It is not a physical CPU-utilization counter. The more intrusive
+same-image phase diagnostic makes that distinction concrete: enabled egress
+added about 294 measured Core0 cycles/frame and 211 measured Core1 cycles/frame
+relative to disabled. On Core1 this comprises approximately +434 admission,
+-22 emission and -201 publication cycles/frame even though task residence was
+lower. The lower residence therefore must not be reported as a 6.5-point CPU
+saving.
+
+The serial-keyed observer completed 3,253--3,277 grant lifecycles per interval
+with zero incomplete lifecycles, slot collisions or unmatched events. Mean
+grant issue-to-Core1-receive was about 237 us, Core1 receive-to-grant-finish
+about 6.20 ms, progress publication about 7 us, and publication-to-Core0
+receipt about 0.84 ms. Core0 issued a successor about 50 us after accepting a
+receipt. Because two grants overlap, the 6.20 ms grant lifetime is not an
+equal-sized radio idle gap; terminal aggregate/BlockAck serial binding is still
+required before assigning physical idle time to any boundary.
+
+The low-rate AP control completed two lifecycle cycles with 768/768 exact
+associated-peer identities each, BA32, no stale/mismatched terminal ownership,
+no retries/failures in the OpenWrt station counters and complete grant
+lifecycles. It proves low-offer liveness after the queue-key rewrite. It does
+not yet prove latency of an isolated sparse datagram: the current target worker
+writes coarse application bursts, producing 24--25 near-full aggregates per
+cycle. A genuine one/few-packet timestamped sparse workload remains part of
+the foundation gate.

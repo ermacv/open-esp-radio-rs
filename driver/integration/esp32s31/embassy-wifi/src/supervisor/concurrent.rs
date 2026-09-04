@@ -854,13 +854,13 @@ impl ProductionWifiEpochRunner {
             },
             move |status: AccessPointServiceStatus| {
                 let link_state = access_point_network_link_state(status.authorized);
-                if matches!(link_state, open_esp_radio_embassy_net::LinkState::Down) {
+                if matches!(link_state, open_esp_radio_network::LinkState::Down) {
                     access_point_network_link.set_link_state(
                         open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
                         link_state,
                     );
                 }
-                if matches!(link_state, open_esp_radio_embassy_net::LinkState::Up) {
+                if matches!(link_state, open_esp_radio_network::LinkState::Up) {
                     access_point_network_link.set_link_state(
                         open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
                         link_state,

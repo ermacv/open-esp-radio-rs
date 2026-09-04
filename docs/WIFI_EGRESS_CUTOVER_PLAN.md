@@ -53,6 +53,8 @@ This phase is not performance-qualified until Phase 5.
 - [x] Define adapter-neutral network values in a no-std crate with no driver,
   queue, executor or allocator dependency.
 - [x] Create an upstream-clean compatibility adapter crate.
+- [x] Add a separate ESP32-S31 compatibility bridge from the unchanged
+  released driver to the shared selected-burst/SRAM materializer contract.
 - [x] Keep the owned Xarxa adapter in a distinct crate with only the two forked
   dependencies it requires.
 - [x] Move physical SRAM execution types into the radio/ESP32-S31 adapter layer,

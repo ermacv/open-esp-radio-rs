@@ -28,6 +28,9 @@ The network boundaries are now separate crates and dependency graphs:
 - `open-esp-radio-embassy-net-compat` implements only the copied-frame
   released `embassy-net-driver 0.2.0` contract and has no Git or radio/DMA
   dependency;
+- `open-esp-radio-esp32s31-wifi-embassy-compat` is the narrow bridge from that
+  unchanged driver to the shared radio-selected burst and fixed SRAM
+  materializer; it contains no Xarxa or owned-network dependency;
 - `open-esp-radio-embassy-net` implements only owned `PacketBuf` transfer over
   Xarxa `122e97146fc0a174ef3310f4526defc37663bed4` and Embassy
   `244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d`;
@@ -122,7 +125,10 @@ At the current source checkpoint:
 
 - `cargo check --workspace` passes;
 - `open-esp-radio-embassy-net`: all 6 owned unit tests pass;
-- `open-esp-radio-embassy-net-compat`: all 3 compatibility tests pass;
+- `open-esp-radio-embassy-net-compat`: all 6 compatibility device/lifecycle
+  tests pass;
+- `open-esp-radio-esp32s31-wifi-embassy-compat`: all 3 shared-radio bridge
+  tests pass;
 - `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests and 5 physical
   ownership/materialization boundary tests pass;
 - the same radio crate without the optimized network feature passes 226 host

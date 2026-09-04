@@ -3,7 +3,7 @@ use core::task::{Context, Waker};
 use embassy_net_driver::{Driver, RxToken as _, TxToken as _};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_embassy_net_compat::{
-    ETHERNET_HEADER_LEN, FrameLengthError, Resources, RxEnqueueError,
+    ETHERNET_HEADER_LEN, FrameLengthError, LinkState, Resources, RxEnqueueError,
 };
 
 const FRAME_CAPACITY: usize = 64;
@@ -16,6 +16,7 @@ fn context() -> Context<'static> {
 fn rx_owner_moves_into_and_out_of_the_unchanged_embassy_driver() {
     let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 2>::new();
     let (mut device, radio) = resources.split([2, 0, 0, 0, 0, 1]);
+    radio.set_link_state(LinkState::Up);
     let mut source = [0_u8; ETHERNET_HEADER_LEN + 8];
     source[0] = 0xa1;
     source[6] = 0xb2;
@@ -36,6 +37,7 @@ fn rx_owner_moves_into_and_out_of_the_unchanged_embassy_driver() {
 fn unchanged_embassy_tx_token_reserves_bounded_capacity() {
     let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 1>::new();
     let (mut device, radio) = resources.split([2, 0, 0, 0, 0, 1]);
+    radio.set_link_state(LinkState::Up);
 
     device
         .transmit(&mut context())
@@ -57,9 +59,56 @@ fn unchanged_embassy_rx_rejects_invalid_and_full_submissions() {
         radio.try_send_rx(&[0; ETHERNET_HEADER_LEN - 1]),
         Err(RxEnqueueError::InvalidLength(FrameLengthError::TooShort))
     );
+    assert_eq!(
+        radio.try_send_rx(&[0; ETHERNET_HEADER_LEN]),
+        Err(RxEnqueueError::LinkDown)
+    );
+    radio.set_link_state(LinkState::Up);
     radio.try_send_rx(&[0; ETHERNET_HEADER_LEN]).unwrap();
     assert_eq!(
         radio.try_send_rx(&[0; ETHERNET_HEADER_LEN]),
         Err(RxEnqueueError::QueueFull)
     );
+}
+
+#[test]
+fn link_epoch_drops_stale_tx_instead_of_retargeting_it() {
+    let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 1>::new();
+    let (mut device, radio) = resources.split([2, 0, 0, 0, 0, 1]);
+    radio.set_link_state(LinkState::Up);
+
+    device
+        .transmit(&mut context())
+        .unwrap()
+        .consume(ETHERNET_HEADER_LEN, |frame| frame[0] = 0x6a);
+    radio.set_link_state(LinkState::Down);
+    radio.set_link_state(LinkState::Up);
+
+    assert!(radio.try_receive_tx().is_none());
+    assert!(device.transmit(&mut context()).is_some());
+}
+
+#[test]
+fn link_epoch_drops_stale_rx_before_the_network_stack_observes_it() {
+    let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 1>::new();
+    let (mut device, radio) = resources.split([2, 0, 0, 0, 0, 1]);
+    radio.set_link_state(LinkState::Up);
+    radio.try_send_rx(&[0x73; ETHERNET_HEADER_LEN]).unwrap();
+    radio.set_link_state(LinkState::Down);
+    radio.set_link_state(LinkState::Up);
+
+    assert!(device.receive(&mut context()).is_none());
+    radio.try_send_rx(&[0x74; ETHERNET_HEADER_LEN]).unwrap();
+    let (rx, _) = device.receive(&mut context()).unwrap();
+    rx.consume(|frame| assert_eq!(frame, &[0x74; ETHERNET_HEADER_LEN]));
+}
+
+#[test]
+#[should_panic(expected = "compatibility endpoint resources may only be split once")]
+fn endpoint_storage_cannot_be_resurrected_as_a_second_owner_pair() {
+    let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 1>::new();
+    {
+        let (_device, _radio) = resources.split([2, 0, 0, 0, 0, 1]);
+    }
+    let _ = resources.split([2, 0, 0, 0, 0, 2]);
 }

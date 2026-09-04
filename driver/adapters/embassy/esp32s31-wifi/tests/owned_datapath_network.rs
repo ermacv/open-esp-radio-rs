@@ -55,7 +55,7 @@ fn physical_materializer_accepts_a_non_xarxa_software_owner() {
     };
 
     let physical = materializer
-        .try_promote_owned(frame)
+        .try_materialize(frame)
         .unwrap_or_else(|_| panic!("one physical credit is available"));
     assert_eq!(physical.as_slice(), &[0x7a; 14]);
 }

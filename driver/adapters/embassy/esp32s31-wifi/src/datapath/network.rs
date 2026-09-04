@@ -10,7 +10,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::{
     OwnedLinkController, OwnedNetworkRunner, OwnedNetworkTxFrame, OwnedRxPublisher,
 };
-use open_esp_radio_ieee80211::data::EthernetFrameParts;
+pub use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use open_esp_radio_network::{LinkState, NetworkInterfaceId, RxEnqueueError};
 
 #[cfg(feature = "owned-network")]

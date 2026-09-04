@@ -32,6 +32,7 @@ open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
 open-esp-radio-wifi-embassy = { path = "../../../adapters/embassy/wifi" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
+open-esp-radio-network = { path = "../../../common/network" }
 open-esp-radio-wifi-ap = { path = "../../../wifi/ap" }
 open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
 open-esp-radio-wifi-sta = { path = "../../../wifi/sta" }

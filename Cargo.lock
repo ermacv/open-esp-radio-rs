@@ -2525,6 +2525,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-wifi-embassy-compat"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-embassy-net-compat",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-network",
+ "open-esp-radio-wifi-embassy",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-wifi-esp-hal"
 version = "0.1.0"
 dependencies = [

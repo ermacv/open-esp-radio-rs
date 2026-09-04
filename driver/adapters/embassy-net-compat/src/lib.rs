@@ -18,11 +18,11 @@
 //! in separate crates and cannot enter this dependency graph through features.
 
 use core::{
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
     task::{Context, Poll},
 };
 
-pub use embassy_net_driver::{Driver, TxToken};
+pub use embassy_net_driver::{Driver, RxToken, TxToken};
 pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
 pub use embassy_sync::signal::Signal;
 pub use open_esp_radio_network::{
@@ -148,20 +148,36 @@ impl<const CAPACITY: usize> EthernetFrame<CAPACITY> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct LinkSnapshot {
+    epoch: u32,
+    up: bool,
+}
+
 pub(crate) struct SharedLinkState<M: RawMutex> {
     // Bit zero is the link state. The upper 31 bits are a wrapping egress
     // lifecycle epoch incremented on every Down -> Up transition. Publishing
     // both in one atomic word prevents the stack from observing a new link
     // with the previous scheduling epoch.
     state: AtomicU32,
-    waker: GenericAtomicWaker<M>,
+    network_waker: GenericAtomicWaker<M>,
+    radio_waker: GenericAtomicWaker<M>,
 }
 
 impl<M: RawMutex> SharedLinkState<M> {
     pub(crate) const fn new() -> Self {
         Self {
             state: AtomicU32::new(0),
-            waker: GenericAtomicWaker::new(M::INIT),
+            network_waker: GenericAtomicWaker::new(M::INIT),
+            radio_waker: GenericAtomicWaker::new(M::INIT),
+        }
+    }
+
+    fn snapshot(&self) -> LinkSnapshot {
+        let state = self.state.load(Ordering::Acquire);
+        LinkSnapshot {
+            epoch: state >> 1,
+            up: state & 1 != 0,
         }
     }
 
@@ -184,7 +200,8 @@ impl<M: RawMutex> SharedLinkState<M> {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    self.waker.wake();
+                    self.network_waker.wake();
+                    self.radio_waker.wake();
                     return;
                 }
                 Err(observed) => current = observed,
@@ -195,13 +212,22 @@ impl<M: RawMutex> SharedLinkState<M> {
     pub(crate) fn get(&self, cx: &mut Context<'_>) -> DriverLinkState {
         // Register first, then load: a concurrent change either wakes this
         // waker or is observed by the following acquire load.
-        self.waker.register(cx.waker());
+        self.network_waker.register(cx.waker());
         if self.state.load(Ordering::Acquire) & 1 != 0 {
             DriverLinkState::Up
         } else {
             DriverLinkState::Down
         }
     }
+
+    fn register_radio_waker(&self, waker: &core::task::Waker) {
+        self.radio_waker.register(waker);
+    }
+}
+
+struct QueuedFrame<const CAPACITY: usize> {
+    epoch: u32,
+    frame: EthernetFrame<CAPACITY>,
 }
 
 /// Static storage for one `embassy-net` device and its radio-side runner.
@@ -209,9 +235,11 @@ impl<M: RawMutex> SharedLinkState<M> {
 /// Two queues are allocated inline. Memory use is therefore deterministic:
 /// `2 * QUEUE_DEPTH * FRAME_CAPACITY` bytes plus small queue metadata.
 pub struct Resources<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> {
-    rx: Channel<M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
-    tx: Channel<M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx: Channel<M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx: Channel<M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_published: Signal<M, ()>,
     link: SharedLinkState<M>,
+    split: AtomicBool,
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
@@ -222,7 +250,9 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         Self {
             rx: Channel::new(),
             tx: Channel::new(),
+            tx_published: Signal::new(),
             link: SharedLinkState::new(),
+            split: AtomicBool::new(false),
         }
     }
 
@@ -238,10 +268,20 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         Device<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>,
         RadioRunner<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>,
     ) {
+        assert!(
+            FRAME_CAPACITY >= ETHERNET_HEADER_LEN,
+            "compatibility frame capacity must hold an Ethernet header"
+        );
+        assert!(QUEUE_DEPTH != 0, "compatibility queues must not be empty");
+        assert!(
+            !self.split.swap(true, Ordering::AcqRel),
+            "compatibility endpoint resources may only be split once"
+        );
         (
             Device {
                 rx: self.rx.receiver(),
                 tx: self.tx.sender(),
+                tx_published: &self.tx_published,
                 link: &self.link,
                 station_address,
                 tx_reservation: (),
@@ -250,6 +290,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
             RadioRunner {
                 rx: self.rx.sender(),
                 tx: self.tx.receiver(),
+                tx_published: &self.tx_published,
                 link: &self.link,
             },
         )
@@ -266,8 +307,9 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Default
 
 /// The `embassy-net` side of the ownership boundary.
 pub struct Device<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> {
-    rx: Receiver<'resources, M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
-    tx: Sender<'resources, M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
     link: &'resources SharedLinkState<M>,
     station_address: [u8; 6],
     // Borrowed by every TX token. The GAT lifetime prevents a second token
@@ -283,42 +325,209 @@ pub struct RadioRunner<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
-    rx: Sender<'resources, M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
-    tx: Receiver<'resources, M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
     link: &'resources SharedLinkState<M>,
+}
+
+/// Copyable link-only authority retained by a finite radio role.
+pub struct RadioLinkController<'resources, M: RawMutex> {
+    link: &'resources SharedLinkState<M>,
+}
+
+impl<M: RawMutex> Clone for RadioLinkController<'_, M> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex> Copy for RadioLinkController<'_, M> {}
+
+impl<M: RawMutex> RadioLinkController<'_, M> {
+    pub fn set_link_state(&self, state: LinkState) {
+        self.link.set(state);
+    }
+}
+
+/// Copyable RX-only compatibility capability for the physical datapath.
+pub struct RadioRxPublisher<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    rx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    link: &'resources SharedLinkState<M>,
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Clone
+    for RadioRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Copy
+    for RadioRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    RadioRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    pub fn queue_len(&self) -> usize {
+        self.rx.len()
+    }
+
+    pub fn poll_ready(&self, context: &mut Context<'_>) -> Poll<()> {
+        self.link.register_radio_waker(context.waker());
+        if !self.link.snapshot().up {
+            return Poll::Pending;
+        }
+        self.rx.poll_ready_to_send(context)
+    }
+
+    pub fn try_send(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
+        let owned = EthernetFrame::copy_from_slice(frame).map_err(RxEnqueueError::InvalidLength)?;
+        self.try_publish(owned)
+    }
+
+    pub fn try_send_parts(
+        &self,
+        destination: [u8; 6],
+        source: [u8; 6],
+        ether_type: u16,
+        payload: &[u8],
+    ) -> Result<(), RxEnqueueError> {
+        let owned = EthernetFrame::copy_from_parts(destination, source, ether_type, payload)
+            .map_err(RxEnqueueError::InvalidLength)?;
+        self.try_publish(owned)
+    }
+
+    fn try_publish(&self, frame: EthernetFrame<FRAME_CAPACITY>) -> Result<(), RxEnqueueError> {
+        let snapshot = self.link.snapshot();
+        if !snapshot.up {
+            return Err(RxEnqueueError::LinkDown);
+        }
+        self.rx
+            .try_send(QueuedFrame {
+                epoch: snapshot.epoch,
+                frame,
+            })
+            .map_err(|error| match error {
+                TrySendError::Full(_) => RxEnqueueError::QueueFull,
+            })
+    }
+}
+
+/// Copyable consumer of complete upstream-compatible TX frames.
+pub struct RadioTxConsumer<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    tx: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
+    link: &'resources SharedLinkState<M>,
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Clone
+    for RadioTxConsumer<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Copy
+    for RadioTxConsumer<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    RadioTxConsumer<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    pub fn queue_len(&self) -> usize {
+        self.tx.len()
+    }
+
+    pub fn try_receive(&self) -> Option<EthernetFrame<FRAME_CAPACITY>> {
+        loop {
+            let queued = self.tx.try_receive().ok()?;
+            let current = self.link.snapshot();
+            if current.up && current.epoch == queued.epoch {
+                return Some(queued.frame);
+            }
+        }
+    }
+
+    pub async fn receive(&self) -> EthernetFrame<FRAME_CAPACITY> {
+        loop {
+            if let Some(frame) = self.try_receive() {
+                return frame;
+            }
+            self.tx.ready_to_receive().await;
+        }
+    }
+
+    pub async fn wait_for_publication(self) {
+        if self.tx.is_empty() {
+            self.tx_published.wait().await;
+        }
+    }
+
+    pub async fn wait_for_queue_len_at_least(self, minimum: usize) {
+        while self.tx.len() < minimum {
+            self.tx_published.wait().await;
+        }
+    }
 }
 
 impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
     RadioRunner<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
+    pub const fn link_controller(&self) -> RadioLinkController<'resources, M> {
+        RadioLinkController { link: self.link }
+    }
+
+    pub const fn rx_publisher(
+        &self,
+    ) -> RadioRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
+        RadioRxPublisher {
+            rx: self.rx,
+            link: self.link,
+        }
+    }
+
+    pub const fn tx_consumer(&self) -> RadioTxConsumer<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
+        RadioTxConsumer {
+            tx: self.tx,
+            tx_published: self.tx_published,
+            link: self.link,
+        }
+    }
+
     /// Updates the link state reported to `embassy-net`.
     pub fn set_link_state(&self, state: LinkState) {
-        self.link.set(state);
+        self.link_controller().set_link_state(state);
     }
 
     /// Copies a decapsulated Ethernet frame into the bounded RX queue.
     pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
-        let owned = EthernetFrame::copy_from_slice(frame).map_err(RxEnqueueError::InvalidLength)?;
-        self.rx.try_send(owned).map_err(|error| match error {
-            TrySendError::Full(_) => RxEnqueueError::QueueFull,
-        })
-    }
-
-    /// Waits for capacity and copies a decapsulated Ethernet frame into RX.
-    pub async fn send_rx(&self, frame: &[u8]) -> Result<(), FrameLengthError> {
-        let owned = EthernetFrame::copy_from_slice(frame)?;
-        self.rx.send(owned).await;
-        Ok(())
+        self.rx_publisher().try_send(frame)
     }
 
     /// Takes the next Ethernet frame that the stack wants transmitted.
     pub fn try_receive_tx(&self) -> Option<EthernetFrame<FRAME_CAPACITY>> {
-        self.tx.try_receive().ok()
+        self.tx_consumer().try_receive()
     }
 
     /// Waits for the next Ethernet frame that the stack wants transmitted.
     pub async fn receive_tx(&self) -> EthernetFrame<FRAME_CAPACITY> {
-        self.tx.receive().await
+        self.tx_consumer().receive().await
     }
 
     /// Number of decapsulated RX frames awaiting `embassy-net`.
@@ -328,7 +537,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
 
     /// Number of Ethernet TX frames awaiting the radio task.
     pub fn tx_queue_len(&self) -> usize {
-        self.tx.len()
+        self.tx_consumer().queue_len()
     }
 }
 
@@ -354,7 +563,9 @@ pub struct TransmitToken<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
-    tx: Sender<'resources, M, EthernetFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
+    epoch: u32,
     _reservation: &'device mut (),
 }
 
@@ -376,9 +587,13 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> embassy
         // Device::transmit polls capacity before constructing this token.
         // The token's mutable borrow prevents another token from being issued,
         // and this private Sender is the queue's only producer.
-        if let Err(TrySendError::Full(_)) = self.tx.try_send(frame) {
+        if let Err(TrySendError::Full(_)) = self.tx.try_send(QueuedFrame {
+            epoch: self.epoch,
+            frame,
+        }) {
             unreachable!("reserved open-radio TX queue slot was lost");
         }
+        self.tx_published.signal(());
         result
     }
 }
@@ -399,17 +614,30 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         if !self.ingress_fairness.admit(cx, QUEUE_DEPTH) {
             return None;
         }
+        let link = self.link.snapshot();
+        if !link.up {
+            let _ = self.link.get(cx);
+            self.ingress_fairness.record_natural_stop(QUEUE_DEPTH);
+            return None;
+        }
         // A receive token must be accompanied by a guaranteed TX token.
         if self.tx.poll_ready_to_send(cx).is_pending() {
             self.ingress_fairness.record_natural_stop(QUEUE_DEPTH);
             return None;
         }
 
-        let frame = match self.rx.poll_receive(cx) {
-            Poll::Ready(frame) => frame,
-            Poll::Pending => {
-                self.ingress_fairness.record_natural_stop(QUEUE_DEPTH);
-                return None;
+        let frame = loop {
+            match self.rx.poll_receive(cx) {
+                Poll::Ready(queued) => {
+                    let current = self.link.snapshot();
+                    if current.up && current.epoch == queued.epoch {
+                        break queued.frame;
+                    }
+                }
+                Poll::Pending => {
+                    self.ingress_fairness.record_natural_stop(QUEUE_DEPTH);
+                    return None;
+                }
             }
         };
         self.ingress_fairness.record_received();
@@ -418,17 +646,26 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
             ReceiveToken { frame },
             TransmitToken {
                 tx: self.tx,
+                tx_published: self.tx_published,
+                epoch: link.epoch,
                 _reservation: &mut self.tx_reservation,
             },
         ))
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
+        let link = self.link.snapshot();
+        if !link.up {
+            let _ = self.link.get(cx);
+            return None;
+        }
         self.tx
             .poll_ready_to_send(cx)
             .is_ready()
             .then_some(TransmitToken {
                 tx: self.tx,
+                tx_published: self.tx_published,
+                epoch: link.epoch,
                 _reservation: &mut self.tx_reservation,
             })
     }

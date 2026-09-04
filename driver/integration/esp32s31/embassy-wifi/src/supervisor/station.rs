@@ -21,7 +21,6 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Timer;
-use open_esp_radio_embassy_net::OwnedRxPublisher;
 use open_esp_radio_esp32s31_hal::radio_arena::Esp32s31RadioOwnerArena;
 use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
@@ -33,7 +32,6 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     composition::resources::{
         ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH as CONTROL_QUEUE_DEPTH,
         ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
-        ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH as NETWORK_RX_QUEUE_DEPTH,
         ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH as NETWORK_TX_QUEUE_DEPTH,
         ESP32S31_DEFAULT_NETWORK_TX_TRAILER as NETWORK_TX_TRAILER,
         ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
@@ -130,9 +128,10 @@ pub(super) type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
 type ControlPublisher =
     ConnectedControlPublisher<'static, CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
+type NetworkRxPublisher = <NetworkRunner as DatapathNetwork>::RxPublisher;
 type EmbassyConnectedRxSink = EmbassyNetConnectedRxSink<
     'static,
-    OwnedRxPublisher<'static, CriticalSectionRawMutex, NETWORK_RX_QUEUE_DEPTH>,
+    NetworkRxPublisher,
     ControlPublisher,
 >;
 #[cfg(feature = "diagnostics")]
@@ -398,7 +397,7 @@ type ConnectedDatapathRunner = DatapathRunner<
     CriticalSectionRawMutex,
     NetworkRunner,
     ConnectedDriverServices,
-    OwnedRxPublisher<'static, CriticalSectionRawMutex, NETWORK_RX_QUEUE_DEPTH>,
+    NetworkRxPublisher,
 >;
 
 struct ConnectedDatapathTaskReturn {

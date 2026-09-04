@@ -275,7 +275,7 @@ impl<
         promoted
     }
 
-    pub fn try_promote_owned<F: SoftwareTxFrame>(
+    pub fn try_materialize<F: SoftwareTxFrame>(
         &self,
         frame: F,
     ) -> Result<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>, F>
@@ -292,10 +292,9 @@ impl<
     }
 
     /// Reserve SRAM first, then remove one software owner.
-    #[cfg(feature = "owned-network")]
-    pub fn try_promote_owned_from(
+    pub fn try_materialize_from<F: SoftwareTxFrame>(
         &self,
-        next: impl FnOnce() -> Option<OwnedNetworkTxFrame>,
+        next: impl FnOnce() -> Option<F>,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
         let index = self.physical.free_claim.try_receive().ok()?;
         let Some(frame) = next() else {
@@ -306,7 +305,7 @@ impl<
     }
 
     /// Reserve all occupied destinations before moving any source owner.
-    pub fn try_promote_owned_batch<F: SoftwareTxFrame, const BATCH: usize>(
+    pub fn try_materialize_batch<F: SoftwareTxFrame, const BATCH: usize>(
         &self,
         sources: &mut [Option<F>; BATCH],
         destinations: &mut [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
@@ -499,14 +498,14 @@ impl<
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         OwnedNetworkTxFrame,
     > {
-        self.physical.try_promote_owned(frame)
+        self.physical.try_materialize(frame)
     }
 
     pub fn try_receive_direct(
         &self,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
         self.physical
-            .try_promote_owned_from(|| self.source.try_receive())
+            .try_materialize_from(|| self.source.try_receive())
     }
 
     pub fn promotion_capacity(&self) -> usize {
@@ -519,7 +518,7 @@ impl<
         destinations: &mut [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
                  BATCH],
     ) -> bool {
-        self.physical.try_promote_owned_batch(sources, destinations)
+        self.physical.try_materialize_batch(sources, destinations)
     }
 
     pub fn try_promote_pair(

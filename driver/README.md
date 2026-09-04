@@ -74,6 +74,9 @@ module for the former vendor-derived `wdev` naming.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
 - `adapters/embassy-net-compat`: copied-frame adapter for the unchanged
   released Embassy driver interface; it has no fork or radio dependency.
+- `adapters/embassy/esp32s31-wifi-compat`: narrow bridge from that unchanged
+  driver to the shared ESP32-S31 selected-burst and fixed-SRAM materializer;
+  it has no Xarxa or owned-network dependency.
 - `adapters/embassy-net`: owned-packet adapter for the optimized Xarxa/Embassy
   integration; it has no physical SRAM, DMA or Wi-Fi policy.
 - `integration/esp32s31/bluetooth`: one-time production placement and claim of

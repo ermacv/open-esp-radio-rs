@@ -10,6 +10,7 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 cargo check --manifest-path driver/adapters/embassy-net-compat/Cargo.toml --all-targets
+cargo check -p open-esp-radio-esp32s31-wifi-embassy-compat --all-targets
 cargo check --manifest-path driver/adapters/embassy-net/Cargo.toml --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy --no-default-features --all-targets
@@ -78,6 +79,22 @@ radio_core_dependencies="$(
 if rg -q '^(open-esp-radio-embassy-net|owned-embassy-net-driver|xarxa(-driver)?) ' \
     <<<"${radio_core_dependencies}"; then
     echo "radio core acquired an optimized Xarxa/Embassy network dependency" >&2
+    exit 1
+fi
+
+compatibility_bridge_dependencies="$(
+    cargo tree \
+        -p open-esp-radio-esp32s31-wifi-embassy-compat \
+        --edges normal \
+        --prefix none
+)"
+if rg -q '^(open-esp-radio-embassy-net |owned-embassy-net-driver|xarxa(-driver)?) ' \
+    <<<"${compatibility_bridge_dependencies}"; then
+    echo "compatibility radio bridge acquired an optimized network dependency" >&2
+    exit 1
+fi
+if ! rg -q '^embassy-net-driver v0\.2\.0$' <<<"${compatibility_bridge_dependencies}"; then
+    echo "compatibility radio bridge does not resolve the released Embassy driver" >&2
     exit 1
 fi
 

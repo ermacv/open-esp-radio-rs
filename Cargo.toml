@@ -12,6 +12,7 @@ members = [
     "driver/adapters/embassy/esp32s31-ieee802154",
     "driver/adapters/embassy/esp32s31-platform",
     "driver/adapters/embassy/esp32s31-wifi",
+    "driver/adapters/embassy/esp32s31-wifi-compat",
     "driver/adapters/esp-hal/esp32s31-radio-platform",
     "driver/adapters/esp-hal/esp32s31-ieee802154",
     "driver/adapters/esp-hal/esp32s31-wifi",

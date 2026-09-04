@@ -137,6 +137,14 @@ SRAM construction are unavailable.
 The compatibility adapter is a maintained product option with its own resource
 and performance envelope. It is not the baseline for the optimized hot path.
 
+The released-driver endpoint and the ESP32-S31 radio bridge are deliberately
+separate crates. The first knows only the official Embassy driver API and owns
+bounded complete Ethernet frames. The second narrows its radio-side
+capabilities into the same `DatapathNetwork` and `SelectedBurstMaterializer`
+contracts used by the optimized integration. Therefore STA, AP and concurrent
+role policy is shared, while the extra compatibility copy and queue storage
+remain visible in only the compatibility composition.
+
 Acceptance requires building against pinned official releases, deterministic
 bounded backpressure, UDP/TCP/raw/control correctness and the same radio-policy
 semantics as other integrations.

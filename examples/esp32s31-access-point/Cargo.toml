@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 edge-dhcp = { version = "0.8.0", default-features = false }
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "7bc4dd9d016782b104c502a31aae06531c676387", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "04dbb95a80145a92f959a3a39a8eb348fd919356", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
 embassy-time = "0.5.1"
 static_cell = "2.1.1"
 

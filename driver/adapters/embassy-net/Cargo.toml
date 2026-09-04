@@ -13,7 +13,7 @@ default = []
 diagnostics = []
 # Intrusive per-datagram Core1 cycle/instruction accounting. Diagnostic HIL
 # images enable this explicitly; production adapters do not.
-tx-phase-telemetry = ["dep:riscv", "tx-egress-diagnostic-switch"]
+tx-phase-telemetry = ["dep:embassy-time", "dep:riscv", "tx-egress-diagnostic-switch"]
 # Startup-only same-ELF switch used to measure egress-control overhead without
 # compiling the intrusive per-frame/per-burst counter set.
 tx-egress-diagnostic-switch = []
@@ -30,8 +30,9 @@ tx-core1-materializer-probe = ["tx-staging-copy-probe"]
 tx-egress-scheduling = ["embassy-net-driver/tx-egress-metadata"]
 
 [dependencies]
-embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "7bc4dd9d016782b104c502a31aae06531c676387" }
+embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "04dbb95a80145a92f959a3a39a8eb348fd919356" }
 embassy-sync = "0.8.0"
+embassy-time = { version = "0.5.1", optional = true }
 open-esp-radio-dma = { path = "../../common/dma" }
 pin-project-lite = "0.2.17"
 
@@ -40,7 +41,7 @@ riscv = { version = "0.15", optional = true }
 
 [dev-dependencies]
 embassy-executor = { version = "0.10.0", features = ["executor-thread", "platform-std"] }
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "7bc4dd9d016782b104c502a31aae06531c676387", features = ["icmp", "iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "std", "tx-egress-metadata", "udp"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "04dbb95a80145a92f959a3a39a8eb348fd919356", features = ["icmp", "iface-egress-key-count-16", "iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "std", "tx-egress-metadata", "udp"] }
 embassy-time = { version = "0.5.0", features = ["std"] }
 
 [lints]

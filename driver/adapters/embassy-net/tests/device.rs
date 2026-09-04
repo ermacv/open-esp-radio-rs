@@ -322,6 +322,7 @@ fn shared_rx_wrapper_delegates_the_inner_egress_schedule() {
         EgressSchedule::new(
             core::num::NonZeroU8::new(32).unwrap(),
             core::num::NonZeroU8::new(4).unwrap(),
+            core::num::NonZeroU16::new(16).unwrap(),
             2,
             EgressGrantMode::StackSelected,
         )
@@ -802,6 +803,144 @@ fn affine_current_and_standby_grants_materialize_and_close_exactly() {
         }]
     );
     assert_eq!(control.snapshot().network_grants, 2);
+    assert_eq!(control.snapshot().grant_progress_publications, 2);
+    assert_eq!(control.snapshot().radio_grant_updates, 2);
+}
+
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+#[test]
+fn terminal_current_does_not_block_standby_admission_when_progress_transport_is_full() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let control = Box::leak(Box::new(DefaultEgressControlPlane::<NoopRawMutex>::new()));
+    let (network_control, radio_control) = control.split();
+    let network_state = Box::leak(Box::new(DefaultEgressNetworkState::new()));
+    let network_control = Box::leak(Box::new(DefaultEgressNetworkScheduler::new(
+        network_control,
+        network_state,
+    )));
+    let (provider, consumer) = tx_resources.split(pool);
+    let interface = NetworkInterfaceId::new(0);
+    let (device, radio) = resources.split(
+        provider,
+        NetworkEndpointConfig::single_radio_peer(interface, [2, 0, 0, 0, 0, 1]),
+    );
+    let mut device = device.with_egress_control(network_control);
+    radio.set_link_state(LinkState::Up);
+    let schedule = device.egress_schedule().unwrap();
+    let key = device.egress_key(EgressRoute {
+        destination: HardwareAddress::Ethernet([2, 0, 0, 0, 0, 2]),
+        traffic_class: 0,
+    });
+    let id = EgressDemandId::new(schedule.epoch(), core::num::NonZeroU32::new(1).unwrap());
+    let demand = EgressDemand::new(
+        id,
+        key,
+        EgressDemandLevel::new(core::num::NonZeroU16::new(1).unwrap(), false),
+    );
+    let mut cx = context();
+    device.update_egress_demand(
+        &mut cx,
+        EgressDemandUpdate::Reset {
+            schedule_epoch: schedule.epoch(),
+        },
+    );
+    device.update_egress_demand(&mut cx, EgressDemandUpdate::Active(demand));
+
+    let mut radio_control = DefaultEgressRadioScheduler::new(radio_control);
+    assert!(radio_control.service_shadow());
+    let current = EgressBurstGrant::new(
+        core::num::NonZeroU32::new(7).unwrap(),
+        demand,
+        core::num::NonZeroU8::new(1).unwrap(),
+        core::num::NonZeroU32::new(1_000).unwrap(),
+    );
+    let standby = EgressBurstGrant::new(
+        core::num::NonZeroU32::new(8).unwrap(),
+        demand,
+        core::num::NonZeroU8::new(1).unwrap(),
+        core::num::NonZeroU32::new(1_000).unwrap(),
+    );
+    radio_control.try_issue_grant(current).unwrap();
+    radio_control.try_issue_grant(standby).unwrap();
+    assert_eq!(
+        device.poll_egress_grant(&mut cx).unwrap().serial(),
+        current.serial()
+    );
+    assert_eq!(
+        device.poll_egress_grant(&mut cx).unwrap().serial(),
+        standby.serial()
+    );
+
+    let token = match device.transmit_granted(&mut cx, current.serial()) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("the current grant must own its exact packet"),
+    };
+    token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5a));
+    drop(
+        consumer
+            .for_interface(interface)
+            .try_receive_direct()
+            .unwrap(),
+    );
+
+    // Fill the ordered Core1-to-Core0 stream with valid demand transitions.
+    // The current completion must remain locally retained when it cannot be
+    // published, without invalidating the already-issued standby quantum.
+    for ready in 2..=17 {
+        device.update_egress_demand(
+            &mut cx,
+            EgressDemandUpdate::Active(EgressDemand::new(
+                id,
+                key,
+                EgressDemandLevel::new(core::num::NonZeroU16::new(ready).unwrap(), false),
+            )),
+        );
+    }
+    device.finish_egress_grant(
+        &mut cx,
+        EgressGrantCompletion::new(current.serial(), 1, None),
+    );
+    assert_eq!(control.snapshot().grant_progress_full, 1);
+
+    let token = match device.transmit_granted(&mut cx, standby.serial()) {
+        EgressAdmission::Granted(token) => token,
+        _ => panic!("a terminal current grant must not block its affine standby"),
+    };
+    token.consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x5b));
+    device.finish_egress_grant(
+        &mut cx,
+        EgressGrantCompletion::new(standby.serial(), 1, None),
+    );
+
+    // Free transport capacity, retry from the permanent device owner, and
+    // prove that completion order remains current then standby.
+    let mut progress = std::vec::Vec::new();
+    assert!(radio_control.service_shadow_control_observed(|_| {}, |value| progress.push(value)));
+    assert!(device.egress_schedule().is_some());
+    for _ in 0..4 {
+        radio_control.service_shadow_control_observed(|_| {}, |value| progress.push(value));
+    }
+    assert_eq!(
+        progress,
+        std::vec![
+            EgressGrantProgress::Finished {
+                serial: current.serial(),
+                used_frames: 1,
+                remaining: None,
+            },
+            EgressGrantProgress::Finished {
+                serial: standby.serial(),
+                used_frames: 1,
+                remaining: None,
+            },
+        ]
+    );
     assert_eq!(control.snapshot().grant_progress_publications, 2);
     assert_eq!(control.snapshot().radio_grant_updates, 2);
 }

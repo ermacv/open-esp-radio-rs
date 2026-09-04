@@ -8,7 +8,8 @@ use embassy_time::Instant;
 use open_esp_radio_embassy_net::{TX_CORE1_MATERIALIZER_COUNTERS, TxCore1MaterializerSnapshot};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_embassy_net::{
-    EgressControlSnapshot, TX_PERFORMANCE, TxPerformanceSnapshot,
+    EGRESS_GRANT_TIMELINE, EgressControlSnapshot, EgressGrantTimelinePhaseSnapshot,
+    EgressGrantTimelineSnapshot, TX_PERFORMANCE, TxPerformanceSnapshot,
 };
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
@@ -1072,6 +1073,7 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
     earlier: TxPerformanceSnapshot,
     earlier_control: (EgressControlSnapshot, EgressControlSnapshot),
     earlier_policy: EgressPolicyShadowSnapshot,
+    earlier_timeline: EgressGrantTimelineSnapshot,
 ) -> WifiEgressPolicyEvidence {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
@@ -1130,6 +1132,41 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
         .await;
         yield_now().await;
     }
+    let timeline = EGRESS_GRANT_TIMELINE
+        .snapshot()
+        .wrapping_delta_since(earlier_timeline);
+    runtime_log_reliably(format_args!(
+        "ONTXTL issued={} completed={} incomplete={} collisions={} unmatched={}",
+        timeline.grants_issued,
+        timeline.grants_completed,
+        timeline.incomplete_completions,
+        timeline.slot_collisions,
+        timeline.unmatched_events,
+    ))
+    .await;
+    yield_now().await;
+    log_egress_timeline_phase("issue_receive", timeline.issue_to_receive).await;
+    log_egress_timeline_phase(
+        "receive_network_finish",
+        timeline.receive_to_network_finish,
+    )
+    .await;
+    log_egress_timeline_phase(
+        "network_finish_progress_publish",
+        timeline.network_finish_to_progress_publish,
+    )
+    .await;
+    log_egress_timeline_phase(
+        "progress_publish_radio_receive",
+        timeline.progress_publish_to_radio_receive,
+    )
+    .await;
+    log_egress_timeline_phase("issue_radio_receive", timeline.issue_to_radio_receive).await;
+    log_egress_timeline_phase(
+        "radio_receive_successor_issue",
+        timeline.radio_receive_to_successor_issue,
+    )
+    .await;
     let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
     runtime_log_reliably(format_args!(
         "ONTXQ runs={} run31={} run32={} other={} shadow_checks={} shadow_matches={} shadow_no_window={} shadow_key_mismatch={} shadow_credit_exhausted={} shadow_unclassified={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",
@@ -1198,6 +1235,19 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
         station: hil_egress_vif_evidence(policy.vifs[0]),
         access_point: hil_egress_vif_evidence(policy.vifs[1]),
     }
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+async fn log_egress_timeline_phase(
+    phase: &str,
+    evidence: EgressGrantTimelinePhaseSnapshot,
+) {
+    runtime_log_reliably(format_args!(
+        "ONTXTLP phase={} samples={} total_us={} lifetime_max_us={}",
+        phase, evidence.samples, evidence.total_micros, evidence.lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
 }
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]

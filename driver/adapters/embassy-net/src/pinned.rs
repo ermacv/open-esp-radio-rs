@@ -1,7 +1,7 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
 #[cfg(feature = "tx-egress-scheduling")]
-use core::num::{NonZeroU8, NonZeroU32};
+use core::num::{NonZeroU8, NonZeroU16, NonZeroU32};
 use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
@@ -1597,6 +1597,25 @@ impl PinnedEgressGrantState {
             && self.grant.demand().key() == key
             && self.used_frames < self.grant.frame_credits().get()
     }
+
+    fn authorizes_serial(&self, serial: NonZeroU32, schedule_epoch: u32) -> bool {
+        self.completion.is_none()
+            && self.grant.serial() == serial
+            && self.grant.demand().id().schedule_epoch() == schedule_epoch
+            && self.used_frames < self.grant.frame_credits().get()
+    }
+}
+
+/// Local position of an affine grant in the two-quantum network horizon.
+///
+/// `Standby` is spendable only after `Current` has reached its terminal
+/// state. Keeping the positions explicit prevents transport backpressure on
+/// the ordered completion stream from becoming packet-admission backpressure.
+#[cfg(feature = "tx-egress-scheduling")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PinnedEgressGrantSlot {
+    Current,
+    Standby,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1701,6 +1720,8 @@ impl<
                 remaining: completion.remaining(),
             };
             if control.try_publish_grant_progress(progress).is_ok() {
+                #[cfg(feature = "tx-phase-telemetry")]
+                crate::EGRESS_GRANT_TIMELINE.record_progress_published(completion.serial());
                 self.egress_grant = self.egress_standby_grant.take();
             } else {
                 break;
@@ -3000,19 +3021,33 @@ impl<
         #[cfg(feature = "tx-phase-telemetry")]
         let started = TxPerformanceSample::read();
         let epoch = self.refresh_scheduling_epoch();
-        let Some(grant) = self.egress_grant.as_ref() else {
+        let current_terminal = self
+            .egress_grant
+            .as_ref()
+            .is_some_and(|state| state.completion.is_some());
+        let selected = self
+            .egress_grant
+            .as_ref()
+            .filter(|state| state.authorizes_serial(grant_serial, epoch))
+            .map(|state| (PinnedEgressGrantSlot::Current, state.grant.demand().key()))
+            .or_else(|| {
+                if current_terminal {
+                    self.egress_standby_grant
+                        .as_ref()
+                        .filter(|state| state.authorizes_serial(grant_serial, epoch))
+                        .map(|state| (PinnedEgressGrantSlot::Standby, state.grant.demand().key()))
+                } else {
+                    None
+                }
+            });
+        let Some((grant_slot, egress)) = selected else {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
             return EgressAdmission::KeyDeferred;
         };
-        let egress = grant.grant.demand().key();
-        let grant_current = grant.completion.is_none()
-            && grant.grant.serial() == grant_serial
-            && grant.grant.demand().id().schedule_epoch() == epoch
-            && grant.used_frames < grant.grant.frame_credits().get()
-            && (self.endpoint.egress_topology != EgressQueueTopology::AssociatedPeer
-                || self.endpoint.key_is_current(egress, epoch));
-        if !grant_current {
+        if self.endpoint.egress_topology == EgressQueueTopology::AssociatedPeer
+            && !self.endpoint.key_is_current(egress, epoch)
+        {
             #[cfg(feature = "tx-phase-telemetry")]
             TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), false);
             return EgressAdmission::KeyDeferred;
@@ -3036,10 +3071,12 @@ impl<
             .expect("granted application admission reserves one TX credit");
         #[cfg(feature = "tx-phase-telemetry")]
         self.tx_application_reserved.fetch_sub(1, Ordering::Relaxed);
-        let grant = self
-            .egress_grant
-            .as_mut()
-            .expect("validated authoritative admission retains its affine grant");
+        let grant = match grant_slot {
+            PinnedEgressGrantSlot::Current => self.egress_grant.as_mut(),
+            PinnedEgressGrantSlot::Standby => self.egress_standby_grant.as_mut(),
+        }
+        .expect("validated authoritative admission retains its affine grant slot");
+        debug_assert!(grant.authorizes_serial(grant_serial, epoch));
         grant.used_frames = grant
             .used_frames
             .checked_add(1)
@@ -3082,6 +3119,7 @@ impl<
             Some(EgressSchedule::new(
                 NonZeroU8::new(32).unwrap(),
                 NonZeroU8::new(crate::keyed_egress_dispatch_quantum()).unwrap(),
+                NonZeroU16::new(16).unwrap(),
                 epoch,
                 if self.egress_demand_active && self.egress_control.is_some() {
                     EgressGrantMode::Authoritative
@@ -3120,6 +3158,8 @@ impl<
             return None;
         }
         let grant = self.egress_control.as_deref_mut()?.try_receive_grant(cx)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        crate::EGRESS_GRANT_TIMELINE.record_network_received(grant.serial());
         if self.egress_grant.is_none() {
             self.egress_grant = Some(PinnedEgressGrantState::new(grant));
         } else {
@@ -3147,6 +3187,8 @@ impl<
                 && state.used_frames == completion.used_frames()
                 && completion.used_frames() <= state.grant.frame_credits().get()
             {
+                #[cfg(feature = "tx-phase-telemetry")]
+                crate::EGRESS_GRANT_TIMELINE.record_network_finished(completion.serial());
                 state.completion = Some(completion);
                 break;
             }

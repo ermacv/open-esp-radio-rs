@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "7bc4dd9d016782b104c502a31aae06531c676387", features = ["dhcpv4", "medium-ethernet"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "04dbb95a80145a92f959a3a39a8eb348fd919356", features = ["dhcpv4", "medium-ethernet"] }
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "rt", "unstable"] }

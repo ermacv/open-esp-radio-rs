@@ -319,6 +319,8 @@ impl DatapathEgressAirtimePolicy {
         };
         self.grants_issued = self.grants_issued.saturating_add(1);
         #[cfg(feature = "tx-phase-telemetry")]
+        open_esp_radio_embassy_net::EGRESS_GRANT_TIMELINE.record_issued(grant.serial());
+        #[cfg(feature = "tx-phase-telemetry")]
         crate::diagnostics::egress::EGRESS_POLICY_SHADOW_COUNTERS.grant_issued(
             grant.demand().vif(),
             grant.opportunity().frame_limit().get(),
@@ -428,6 +430,8 @@ impl DatapathEgressAirtimePolicy {
             self.reject_grant_progress();
             return;
         }
+        #[cfg(feature = "tx-phase-telemetry")]
+        open_esp_radio_embassy_net::EGRESS_GRANT_TIMELINE.record_radio_received(serial);
         self.grants_finished = self.grants_finished.saturating_add(1);
         if used_frames == 0 {
             self.grants_unused = self.grants_unused.saturating_add(1);

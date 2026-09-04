@@ -52,6 +52,8 @@ mod egress_grant;
 #[cfg(feature = "tx-egress-scheduling")]
 mod egress_key;
 mod egress_peer;
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+mod egress_timeline;
 mod pinned;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
@@ -82,6 +84,11 @@ pub use egress_grant::{EgressShadowGrant, EgressShadowGrantError, EgressShadowGr
 pub use egress_key::{AssociatedEgressIdentity, DecodedEgressKey, EgressGrantKey};
 pub use egress_peer::{
     EgressPeerDirectory, EgressPeerDirectoryError, EgressPeerIdentity, EgressPeerResolver,
+};
+#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
+pub use egress_timeline::{
+    EGRESS_GRANT_TIMELINE, EgressGrantTimelineCounters, EgressGrantTimelinePhaseSnapshot,
+    EgressGrantTimelineSnapshot,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use pinned::PinnedTxOwnershipSnapshot;

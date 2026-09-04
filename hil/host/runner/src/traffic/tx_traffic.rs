@@ -437,6 +437,7 @@ pub(crate) fn run(
                 task_polls: task_polls_from_log(&log),
                 core0_coarse: Core0CoarseEvidence::from_log(&log),
                 tx_phases: TxPhaseEvidence::from_log(&log),
+                egress_grant_timeline: EgressGrantTimelineEvidence::from_log(&log),
                 ap_egress_identity: ApEgressIdentityEvidence::from_log(&log),
                 ap_modeled_airtime: ApModeledAirtimeEvidence::from_log(&log),
                 independent_air: independent_air.as_ref(),
@@ -825,6 +826,7 @@ struct TxPerformanceReport<'a> {
     task_polls: TaskPollSet,
     core0_coarse: Option<Core0CoarseEvidence>,
     tx_phases: Option<TxPhaseEvidence>,
+    egress_grant_timeline: Option<EgressGrantTimelineEvidence>,
     ap_egress_identity: Option<ApEgressIdentityEvidence>,
     ap_modeled_airtime: Option<ApModeledAirtimeEvidence>,
     independent_air: Option<&'a LocalAirMonitorEvidence>,
@@ -1119,6 +1121,121 @@ impl TxPhaseEvidence {
     }
 }
 
+const EGRESS_GRANT_TIMELINE_WALL_PHASES: [&str; 6] = [
+    "issue_receive",
+    "receive_network_finish",
+    "network_finish_progress_publish",
+    "progress_publish_radio_receive",
+    "issue_radio_receive",
+    "radio_receive_successor_issue",
+];
+
+/// Diagnostic-only, serial-correlated timing parsed from one measured target
+/// interval. It is archived beside the raw UART log rather than enlarging the
+/// target's ordinary session-result value or qualification wire ABI.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+struct EgressGrantTimelineEvidence {
+    grants_issued: u64,
+    grants_completed: u64,
+    incomplete_completions: u64,
+    slot_collisions: u64,
+    unmatched_events: u64,
+    wall_phases: [EgressGrantTimelinePhaseEvidence; EGRESS_GRANT_TIMELINE_WALL_PHASES.len()],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+struct EgressGrantTimelinePhaseEvidence {
+    phase: &'static str,
+    unit: &'static str,
+    samples: u64,
+    total: u64,
+    lifetime_max: u64,
+}
+
+impl EgressGrantTimelineEvidence {
+    fn from_log(log: &str) -> Option<Self> {
+        let summary = log
+            .lines()
+            .find(|line| line.starts_with("ONTXTL ") || line.contains(" ONTXTL "))?;
+        let wall_phases = parse_egress_timeline_phases(
+            log,
+            "ONTXTLP ",
+            "micros",
+            "total_us",
+            "lifetime_max_us",
+            EGRESS_GRANT_TIMELINE_WALL_PHASES,
+        )?;
+        Some(Self {
+            grants_issued: numeric_field(summary, "issued")?,
+            grants_completed: numeric_field(summary, "completed")?,
+            incomplete_completions: numeric_field(summary, "incomplete")?,
+            slot_collisions: numeric_field(summary, "collisions")?,
+            unmatched_events: numeric_field(summary, "unmatched")?,
+            wall_phases,
+        })
+    }
+
+    fn markdown(self) -> String {
+        let phase_rows = self
+            .wall_phases
+            .iter()
+            .map(|phase| {
+                let average = phase.total as f64 / phase.samples.max(1) as f64;
+                format!(
+                    "| `{}` | {} | {} | {:.3} | {} |\n",
+                    phase.phase, phase.unit, phase.samples, average, phase.lifetime_max,
+                )
+            })
+            .collect::<String>();
+        format!(
+            "## Serial-keyed egress grant timeline\n\n\
+             This diagnostic observer joins Core0 and Core1 events by the existing affine grant serial. It does not carry ownership or participate in scheduling. `radio_receive` currently means Core0 accepted the software progress receipt; physical aggregate publication and terminal BlockAck are not yet serial-bound.\n\n\
+             - Grants issued / complete / incomplete: `{}` / `{}` / `{}`\n\
+             - Slot collisions / unmatched events: `{}` / `{}`\n\n\
+             | Phase | Unit | Samples | Mean | Lifetime max |\n\
+             |---|---|---:|---:|---:|\n\
+             {phase_rows}\n",
+            self.grants_issued,
+            self.grants_completed,
+            self.incomplete_completions,
+            self.slot_collisions,
+            self.unmatched_events,
+        )
+    }
+}
+
+fn parse_egress_timeline_phases<const N: usize>(
+    log: &str,
+    prefix: &str,
+    unit: &'static str,
+    total_key: &str,
+    maximum_key: &str,
+    names: [&'static str; N],
+) -> Option<[EgressGrantTimelinePhaseEvidence; N]> {
+    let needle = format!(" {prefix}");
+    let phases: [Option<EgressGrantTimelinePhaseEvidence>; N] = core::array::from_fn(|index| {
+        let phase = names[index];
+        let line = log.lines().find(|line| {
+            (line.starts_with(prefix) || line.contains(&needle))
+                && text_field(line, "phase") == Some(phase)
+        });
+        line.and_then(|line| {
+            Some(EgressGrantTimelinePhaseEvidence {
+                phase,
+                unit,
+                samples: numeric_field(line, "samples")?,
+                total: numeric_field(line, total_key)?,
+                lifetime_max: numeric_field(line, maximum_key)?,
+            })
+        })
+    });
+    phases
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
+}
+
 fn numeric_field(line: &str, key: &str) -> Option<u64> {
     line.split_ascii_whitespace().find_map(|token| {
         let (candidate, value) = token.split_once('=')?;
@@ -1147,6 +1264,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         task_polls,
         core0_coarse,
         tx_phases,
+        egress_grant_timeline,
         ap_egress_identity,
         ap_modeled_airtime,
         independent_air,
@@ -1179,6 +1297,15 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
     let tx_phase_report = tx_phases
         .map(|evidence| evidence.markdown(structured.transport.tx_units, core0_coarse))
         .unwrap_or_default();
+    let egress_grant_timeline_report = egress_grant_timeline
+        .map(EgressGrantTimelineEvidence::markdown)
+        .unwrap_or_default();
+    if let Some(evidence) = egress_grant_timeline {
+        fs::write(
+            output.join("egress-grant-timeline.json"),
+            serde_json::to_vec_pretty(&evidence)?,
+        )?;
+    }
     let ap_egress_identity_report = ap_egress_identity
         .map(ApEgressIdentityEvidence::markdown)
         .unwrap_or_default();
@@ -1207,6 +1334,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
              {task_poll_report}\
              {core0_report}\
              {tx_phase_report}\
+             {egress_grant_timeline_report}\
              {ap_egress_identity_report}\
              {ap_modeled_airtime_report}\
              {independent_air_report}\
@@ -1541,6 +1669,33 @@ mod tests {
         assert!(markdown.contains("Core0 residual | - | 6.00"));
         assert!(markdown.contains("12 attempts / 10 successes / 2 failures"));
         assert!(markdown.contains("Core1 driver publication | 10 | 20.00"));
+    }
+
+    #[test]
+    fn parses_complete_serial_keyed_egress_timeline() {
+        let evidence = EgressGrantTimelineEvidence::from_log(
+            "ONTXTL issued=4 completed=3 incomplete=1 collisions=0 unmatched=0\n\
+             ONTXTLP phase=issue_receive samples=4 total_us=40 lifetime_max_us=12\n\
+             ONTXTLP phase=receive_network_finish samples=3 total_us=60 lifetime_max_us=25\n\
+             ONTXTLP phase=network_finish_progress_publish samples=4 total_us=8 lifetime_max_us=3\n\
+             ONTXTLP phase=progress_publish_radio_receive samples=4 total_us=16 lifetime_max_us=5\n\
+             ONTXTLP phase=issue_radio_receive samples=4 total_us=160 lifetime_max_us=45\n\
+             ONTXTLP phase=radio_receive_successor_issue samples=3 total_us=9 lifetime_max_us=4",
+        )
+        .unwrap();
+        assert_eq!(evidence.grants_issued, 4);
+        assert_eq!(evidence.grants_completed, 3);
+        assert_eq!(evidence.incomplete_completions, 1);
+        assert_eq!(evidence.wall_phases[1].phase, "receive_network_finish");
+        assert_eq!(evidence.wall_phases[1].total, 60);
+        assert!(
+            evidence
+                .markdown()
+                .contains("| `issue_receive` | micros | 4 | 10.000 | 12 |")
+        );
+        assert!(evidence.markdown().contains(
+            "physical aggregate publication and terminal BlockAck are not yet serial-bound"
+        ));
     }
 
     #[test]

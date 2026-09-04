@@ -2182,8 +2182,8 @@ pub struct WifiEgressVifEvidence {
     pub grants_unused: u32,
 }
 
-/// Typed, interval-scoped evidence from the non-authoritative Wi-Fi egress
-/// policy. Queue bytes and scheduler ownership never cross this boundary.
+/// Typed, interval-scoped evidence from the Wi-Fi physical-egress policy.
+/// Queue bytes and scheduler ownership never cross this boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiEgressPolicyEvidence {
     pub grants_issued: u32,

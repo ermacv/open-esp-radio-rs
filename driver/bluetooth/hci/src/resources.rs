@@ -165,6 +165,13 @@ where
         response
     }
 
+    pub(crate) fn dispatch_bootstrap_command_while_radio_active(
+        &mut self,
+        command: OwnedBootstrapCommand,
+    ) -> BootstrapCommandCompleteEvent {
+        self.bootstrap.dispatch_owned_while_radio_active(command)
+    }
+
     pub(crate) fn dispatch_legacy_advertising_configuration(
         &mut self,
         command: LeLegacyAdvertisingConfigurationCommand,
@@ -282,10 +289,12 @@ pub struct LeControllerHciEndpoints<
     >,
 }
 
-/// Allocation-free transport and bootstrap state for exactly one HCI epoch.
+/// Allocation-free transport, bootstrap, and Link Layer configuration for one HCI epoch.
 ///
 /// The aggregate replaces a vendor packet mempool, global HCI environment and
 /// callback-broker node with bounded packet queues and typed bootstrap state.
+/// Its reset-scoped advertising owner retains parameters, advertising data,
+/// and scan-response data until Enable captures one role-specific snapshot.
 /// It is neither `Copy` nor `Clone`; splitting requires a unique mutable borrow
 /// and yields the only Host and combined command endpoints for that epoch.
 #[must_use = "HCI runtime resources must remain owned by their Controller epoch"]

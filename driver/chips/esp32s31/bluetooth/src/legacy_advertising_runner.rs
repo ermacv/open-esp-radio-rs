@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_bluetooth_hci::{
-    LeControllerDeferredLegacyAdvertisingStart, LeControllerResponsePending,
+    LeControllerDeferredLegacyNonconnectableAdvertisingStart, LeControllerResponsePending,
 };
 
 use crate::controller_start::BluetoothLegacyAdvertisingControllerInitialPreparationFailure;
@@ -30,12 +30,12 @@ use crate::{
 
 #[must_use = "retain the accepted Enable until hardware starts or idle ownership is recovered"]
 pub struct BluetoothLegacyAdvertisingDeferredStart<'runtime> {
-    command: LeControllerDeferredLegacyAdvertisingStart<'runtime, ()>,
+    command: LeControllerDeferredLegacyNonconnectableAdvertisingStart<'runtime, ()>,
 }
 
 impl<'runtime> BluetoothLegacyAdvertisingDeferredStart<'runtime> {
     pub(crate) const fn new(
-        command: LeControllerDeferredLegacyAdvertisingStart<'runtime, ()>,
+        command: LeControllerDeferredLegacyNonconnectableAdvertisingStart<'runtime, ()>,
     ) -> Self {
         Self { command }
     }
@@ -248,7 +248,7 @@ where
     )]
     pub(crate) fn begin(
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        command: LeControllerDeferredLegacyAdvertisingStart<'runtime, ()>,
+        command: LeControllerDeferredLegacyNonconnectableAdvertisingStart<'runtime, ()>,
     ) -> Result<Self, BluetoothLegacyAdvertisingFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>>
     {
         let command = BluetoothLegacyAdvertisingDeferredStart::new(command);

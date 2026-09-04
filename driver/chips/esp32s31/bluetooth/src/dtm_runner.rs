@@ -398,7 +398,7 @@ where
     /// A validated RX/TX command entered the sole first-event runner.
     Start(BluetoothDtmFirstRunner<'runtime, S, SCHEDULER_CAPACITY>),
     /// A validated non-connectable Enable entered the advertising runner.
-    StartLegacyAdvertising(
+    StartLegacyNonconnectableAdvertising(
         crate::BluetoothLegacyAdvertisingFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
     ),
     /// A validated passive scanner Enable entered the HCI-composed first runner.

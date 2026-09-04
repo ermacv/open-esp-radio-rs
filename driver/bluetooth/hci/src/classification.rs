@@ -166,7 +166,10 @@ mod tests {
         cmd::{
             Cmd, Opcode, OpcodeGroup,
             controller_baseband::{Reset, SetEventMask},
-            le::{LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr},
+            le::{
+                LeSetAdvData, LeSetAdvEnable, LeSetAdvParams, LeSetRandomAddr,
+                LeSetScanResponseData,
+            },
         },
         param::{BdAddr, Error as HciError, EventMask, Status},
     };
@@ -321,6 +324,17 @@ mod tests {
             )
         ));
 
+        let scan_response = classify_le_controller_command(HciCommandPacket::for_test(
+            LeSetScanResponseData::OPCODE,
+            &[0; 32],
+        ));
+        assert!(matches!(
+            scan_response,
+            LeControllerCommandClassification::LegacyAdvertisingConfiguration(
+                LeLegacyAdvertisingConfigurationCommand::SetScanResponseData(_)
+            )
+        ));
+
         let enable = classify_le_controller_command(HciCommandPacket::for_test(
             LeSetAdvEnable::OPCODE,
             &[1],
@@ -333,19 +347,20 @@ mod tests {
 
     #[test]
     fn malformed_claimed_advertising_configuration_has_exact_status() {
-        let classified = classify_le_controller_command(HciCommandPacket::for_test(
-            LeSetAdvData::OPCODE,
-            &[32; 32],
-        ));
-        let LeControllerCommandClassification::MalformedLegacyAdvertising(response) = classified
-        else {
-            panic!("invalid Set Advertising Data escaped its claimed family");
-        };
-        assert_eq!(response.opcode(), LeSetAdvData::OPCODE);
-        assert_eq!(
-            response.status(),
-            HciError::INVALID_HCI_PARAMETERS.to_status()
-        );
+        for opcode in [LeSetAdvData::OPCODE, LeSetScanResponseData::OPCODE] {
+            let classified =
+                classify_le_controller_command(HciCommandPacket::for_test(opcode, &[32; 32]));
+            let LeControllerCommandClassification::MalformedLegacyAdvertising(response) =
+                classified
+            else {
+                panic!("invalid advertising data escaped its claimed family");
+            };
+            assert_eq!(response.opcode(), opcode);
+            assert_eq!(
+                response.status(),
+                HciError::INVALID_HCI_PARAMETERS.to_status()
+            );
+        }
     }
 
     #[test]

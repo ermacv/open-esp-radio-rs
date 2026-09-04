@@ -1189,7 +1189,7 @@ where
                                         }
                                     }
                                 }
-                                BluetoothControllerIdleCommandRoute::StartLegacyAdvertising(runner) => {
+                                BluetoothControllerIdleCommandRoute::StartLegacyNonconnectableAdvertising(runner) => {
                                     if let Some(boundary) = self.store_legacy_advertising_drive(
                                         EmbassyBluetoothControllerCommandPhase::Idle,
                                         drive_legacy_advertising_first_ready(runner),

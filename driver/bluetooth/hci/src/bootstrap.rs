@@ -567,6 +567,22 @@ impl LeControllerBootstrap {
         }
     }
 
+    /// Dispatch one non-Reset bootstrap command while a radio role is active.
+    ///
+    /// The random address cannot change while advertising or scanning is
+    /// enabled. Rejecting it here leaves the epoch's previously accepted
+    /// address untouched. Active-session routers retain Reset separately until
+    /// hardware quiescence and must not pass Reset through this helper.
+    pub(crate) fn dispatch_owned_while_radio_active(
+        &mut self,
+        command: OwnedBootstrapCommand,
+    ) -> BootstrapCommandCompleteEvent {
+        if matches!(command, OwnedBootstrapCommand::LeSetRandomAddress(_)) {
+            return command_error(command.opcode(), HciError::CMD_DISALLOWED);
+        }
+        self.dispatch_owned(command)
+    }
+
     fn reset_epoch(&mut self) {
         self.phase = BootstrapPhase::Configuring;
         self.event_mask = EventMask::new();
@@ -849,6 +865,36 @@ mod tests {
         let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadBdAddr);
         assert_eq!(response.status(), Status::SUCCESS);
         assert_eq!(&response.as_bytes()[6..], &[6, 5, 4, 3, 2, 1]);
+    }
+
+    #[test]
+    fn active_radio_rejects_random_address_without_replacing_epoch_state() {
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
+            27,
+            1,
+        )
+        .unwrap();
+        let mut bootstrap = LeControllerBootstrap::new(config);
+        let retained = BdAddr::new([0xc6, 5, 4, 3, 2, 1]);
+        let rejected = BdAddr::new([0xc7, 6, 5, 4, 3, 2]);
+        assert_eq!(
+            bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::Reset)
+                .status(),
+            Status::SUCCESS
+        );
+        assert_eq!(
+            bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::LeSetRandomAddress(retained))
+                .status(),
+            Status::SUCCESS
+        );
+
+        let response = bootstrap
+            .dispatch_owned_while_radio_active(OwnedBootstrapCommand::LeSetRandomAddress(rejected));
+        assert_eq!(response.status(), HciError::CMD_DISALLOWED.to_status());
+        assert_eq!(bootstrap.requested_random_address(), Some(retained));
     }
 
     #[test]

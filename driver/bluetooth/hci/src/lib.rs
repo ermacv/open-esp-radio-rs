@@ -19,11 +19,11 @@
 //! builds only the exact no-test success or active-start busy responses; it
 //! does not dispatch commands or claim radio work.
 //! The legacy advertising codec separately decodes the standard Set
-//! Parameters, Set Data and Set Enable commands into owned semantic values for
-//! the currently supported non-connectable role. Set Parameters and Set Data
-//! enter the common classifier and update one reset-scoped configuration owner
-//! under exact response order. Set Enable remains unclaimed until the outer
-//! Link Layer router can retain it through hardware start/stop.
+//! Parameters, Set Data, Set Scan Response Data and Set Enable commands into
+//! owned semantic values for distinct nonconnectable and connectable roles.
+//! Configuration commands update one reset-scoped owner under exact response
+//! order. Set Enable is refined into a role-specific deferred start, preventing
+//! response-capable input from entering a nonconnectable chip runner.
 //! Legacy passive scanning follows the same boundary: standard Set Scan
 //! Parameters and Set Scan Enable commands become owned timing and duplicate
 //! policy, while affine start/disable continuations delay success until a chip
@@ -91,11 +91,13 @@ pub use dtm_order::{
     LeControllerActiveLegacyScanningCommandRoute, LeControllerClassifiedCommand,
     LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
     LeControllerDeferredDtmCommand, LeControllerDeferredLegacyAdvertisingDisable,
-    LeControllerDeferredLegacyAdvertisingStart, LeControllerDeferredLegacyScanningDisable,
-    LeControllerDeferredLegacyScanningStart, LeControllerDeferredReceiverStart,
-    LeControllerDeferredTestEnd, LeControllerDeferredTransmitterStart,
-    LeControllerEndpointMismatch, LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier,
-    LeControllerResetCompletion, LeControllerResponsePending, LeControllerResponsePublication,
+    LeControllerDeferredLegacyConnectableAdvertisingStart,
+    LeControllerDeferredLegacyNonconnectableAdvertisingStart,
+    LeControllerDeferredLegacyScanningDisable, LeControllerDeferredLegacyScanningStart,
+    LeControllerDeferredReceiverStart, LeControllerDeferredTestEnd,
+    LeControllerDeferredTransmitterStart, LeControllerEndpointMismatch,
+    LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
+    LeControllerResponsePending, LeControllerResponsePublication,
 };
 pub(crate) use legacy_advertising::LeLegacyAdvertisingIdleEnableDisposition;
 pub use legacy_advertising::{
@@ -104,9 +106,10 @@ pub use legacy_advertising::{
     LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingCommandKind,
     LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingData,
     LeLegacyAdvertisingDecodeError, LeLegacyAdvertisingEnableCommand,
-    LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingIntervalRange,
-    LeLegacyAdvertisingOwnAddressKind, LeLegacyAdvertisingPrimaryChannels,
-    LeLegacyNonconnectableAdvertisingParameters,
+    LeLegacyAdvertisingIntervalRange, LeLegacyAdvertisingOwnAddressKind,
+    LeLegacyAdvertisingParameters, LeLegacyAdvertisingPrimaryChannels, LeLegacyAdvertisingRole,
+    LeLegacyConnectableAdvertisingEnableRequest, LeLegacyNonconnectableAdvertisingEnableRequest,
+    LeLegacyScanResponseData,
 };
 pub use legacy_scanning::{
     LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,

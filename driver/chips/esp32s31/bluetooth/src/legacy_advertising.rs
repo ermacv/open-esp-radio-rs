@@ -62,19 +62,23 @@ pub enum BluetoothLegacyAdvertisingSetError {
 /// copied into a self-contained LL owner so the async actor is not
 /// self-referential and does not borrow the HCI configuration store.
 pub fn prepare_legacy_advertising_set(
-    request: open_esp_radio_bluetooth_hci::LeLegacyAdvertisingEnableRequest,
+    request: open_esp_radio_bluetooth_hci::LeLegacyNonconnectableAdvertisingEnableRequest,
 ) -> Result<LegacyNonconnectableAdvertisingSet<'static>, BluetoothLegacyAdvertisingSetError> {
     let parameters = request.parameters();
-    let address_kind = match request.advertiser().kind() {
-        open_esp_radio_bluetooth_hci::LeLegacyAdvertisingOwnAddressKind::Public => {
+    let advertiser = request.advertiser();
+    let address_kind = match advertiser {
+        open_esp_radio_bluetooth_hci::LeLegacyAdvertisingAddress::Public(_) => {
             LeDeviceAddressKind::Public
         }
-        open_esp_radio_bluetooth_hci::LeLegacyAdvertisingOwnAddressKind::Random => {
+        open_esp_radio_bluetooth_hci::LeLegacyAdvertisingAddress::Random(_) => {
             LeDeviceAddressKind::Random
         }
     };
+    let wire_address = advertiser.wire_address();
+    let mut wire_bytes = [0; 6];
+    wire_bytes.copy_from_slice(wire_address.raw());
     let advertisement = LegacyNonconnectableAdvertisement::new(
-        LeDeviceAddress::from_wire_bytes(request.advertiser().wire_bytes(), address_kind),
+        LeDeviceAddress::from_wire_bytes(wire_bytes, address_kind),
         LegacyAdvertisingData::new_owned(request.data().as_bytes())
             .map_err(BluetoothLegacyAdvertisingSetError::Data)?,
     );

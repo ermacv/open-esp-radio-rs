@@ -205,14 +205,10 @@ impl<
 #[cfg(test)]
 mod tests {
     use core::sync::atomic::{AtomicU64, Ordering};
-    use core::task::{Context, Waker};
-
-    use open_esp_radio_embassy_net::{
-        Driver as _, NetworkEndpointConfig, NetworkInterfaceId, NoopRawMutex,
-        PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool, PinnedTxResources,
-    };
+    use open_esp_radio_embassy_net::{NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources};
     use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
+    use xarxa_driver::{PacketPool, PacketPoolStorage};
 
     use super::*;
 
@@ -244,22 +240,19 @@ mod tests {
     #[test]
     fn sink_has_rx_only_capability_and_reports_bounded_backpressure() {
         const FRAME_CAPACITY: usize = 64;
-        const HEADROOM: usize = 32;
-        const TRAILER: usize = 8;
         const QUEUE_DEPTH: usize = 1;
-        type Resources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
-        type Pool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+        type Resources = OwnedEndpointResources<NoopRawMutex, QUEUE_DEPTH, QUEUE_DEPTH>;
 
         let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
-        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-        let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-        let (provider, consumer) = tx_resources.split(pool);
-        let endpoint = NetworkEndpointConfig::single_radio_peer(
+        let rx_storage =
+            std::boxed::Box::leak(std::boxed::Box::new(PacketPoolStorage::<QUEUE_DEPTH>::new()));
+        let rx_pool = std::boxed::Box::leak(std::boxed::Box::new(PacketPool::new(rx_storage)));
+        let (mut device, runner) = resources.split(
             NetworkInterfaceId::new(0),
             [2, 3, 4, 5, 6, 7],
+            rx_pool.allocator(),
         );
-        let (mut device, rx) = resources.split(provider, endpoint);
-        let runner = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
+        runner.link_controller().set_link_up(true);
         let pipeline_observer = PipelineObserver::default();
         let mut sink = EmbassyNetConnectedRxSink::new(runner.rx_publisher(), Observer::default())
             .with_pipeline_observer(&pipeline_observer);
@@ -302,9 +295,8 @@ mod tests {
             ]
         );
         assert_eq!(sink.observer().0, 2);
-        let mut context = Context::from_waker(Waker::noop());
-        assert!(device.receive(&mut context).is_some());
-        assert!(device.receive(&mut context).is_none());
+        assert!(device.receive().is_some());
+        assert!(device.receive().is_none());
 
         let eapol = ConnectedRxEvent::Ethernet {
             frame: EthernetFrameParts {
@@ -319,6 +311,6 @@ mod tests {
         };
         sink.publish(eapol);
         assert_eq!(sink.observer().0, 3);
-        assert!(device.receive(&mut context).is_none());
+        assert!(device.receive().is_none());
     }
 }

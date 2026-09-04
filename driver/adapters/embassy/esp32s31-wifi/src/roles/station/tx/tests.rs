@@ -406,7 +406,7 @@ fn make_network_config<const F: usize, const H: usize, const T: usize, const Q: 
         T,
         Q,
     >::new()));
-    let (_unused_provider, physical) = tx_resources.split(pool);
+    let physical = tx_resources.split(pool);
     let packet_storage = std::boxed::Box::leak(std::boxed::Box::new(PacketPoolStorage::<Q>::new()));
     let packet_pool = std::boxed::Box::leak(std::boxed::Box::new(PacketPool::new(packet_storage)));
     let rx_storage = std::boxed::Box::leak(std::boxed::Box::new(PacketPoolStorage::<1>::new()));

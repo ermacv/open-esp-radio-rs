@@ -71,13 +71,7 @@ impl Scenario {
         }
         if matches!(
             self.tx_buffer,
-            WifiTxBufferPolicy::DirectDmaFifoDiagnostic
-                | WifiTxBufferPolicy::DirectDmaWakeStormControlDiagnostic
-                | WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
-                | WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
-                | WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
-                | WifiTxBufferPolicy::PsramStagingCopyDiagnostic
-                | WifiTxBufferPolicy::Core1MaterializationDiagnostic
+            WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
                 | WifiTxBufferPolicy::PsramDirectDmaDiagnostic
         ) && (!matches!(
             self.image,

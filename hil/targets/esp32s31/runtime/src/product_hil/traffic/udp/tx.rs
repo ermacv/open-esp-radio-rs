@@ -363,10 +363,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let core1_tx_performance_start = TX_PERFORMANCE.snapshot();
-        #[cfg(feature = "tx-architecture-probes")]
-        let tx_core1_materializer_start =
-            open_esp_radio_embassy_net::TX_CORE1_MATERIALIZER_COUNTERS.snapshot();
+        let tx_promotion_start = TX_PERFORMANCE.snapshot();
         // TX owns A-MPDU evidence because its post-measurement drain proves
         // that the last publication reached a terminal BlockAck outcome.
         // The RX sibling can finish on the host terminal datagram while a
@@ -520,19 +517,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        crate::product_hil::traffic::log_open_radio_core1_tx_phases(core1_tx_performance_start)
-            .await;
+        crate::product_hil::traffic::log_open_radio_tx_promotion(tx_promotion_start).await;
         #[cfg(any(
             feature = "core0-rx-cycle-telemetry",
             feature = "core0-rx-coarse-telemetry"
         ))]
         crate::product_hil::traffic::reporting::log_open_radio_l1_cache_interval(cache_interval)
             .await;
-        #[cfg(feature = "tx-architecture-probes")]
-        crate::product_hil::traffic::reporting::log_open_radio_tx_core1_materializer(
-            tx_core1_materializer_start,
-        )
-        .await;
         let aggregate_evidence = aggregate
             .filter(|aggregate| aggregate.rate_selections != 0)
             .map(aggregate_tx_evidence);

@@ -730,7 +730,7 @@ mod tests {
 
         let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
         let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
-        let (_network_provider, physical) = physical_resources.split(physical_pool);
+        let physical = physical_resources.split(physical_pool);
         let physical = physical.for_interface(NetworkInterfaceId::new(0));
 
         device.transmit(frame(general, 0x31)).unwrap();
@@ -785,7 +785,7 @@ mod tests {
 
         let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
         let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
-        let (_network_provider, physical) = physical_resources.split(physical_pool);
+        let physical = physical_resources.split(physical_pool);
         let physical = physical.for_interface(NetworkInterfaceId::new(0));
         let mut burst = [
             Some(radio.try_receive_tx().unwrap()),
@@ -826,7 +826,7 @@ mod tests {
 
         let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
         let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
-        let (_network_provider, physical) = physical_resources.split(physical_pool);
+        let physical = physical_resources.split(physical_pool);
         let consumer = crate::DatapathTxConsumer::new(
             &radio,
             physical.for_interface(NetworkInterfaceId::new(0)),

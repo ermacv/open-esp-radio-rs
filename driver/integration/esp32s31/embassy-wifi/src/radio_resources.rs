@@ -347,7 +347,7 @@ pub(super) fn initialize_network(
     };
     #[cfg(not(feature = "tx-psram-dma-probe"))]
     let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
-    let (_tx_provider, tx_consumer) = network_tx_resources.split(tx_pool);
+    let tx_consumer = network_tx_resources.split(tx_pool);
     let station_interface =
         open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =

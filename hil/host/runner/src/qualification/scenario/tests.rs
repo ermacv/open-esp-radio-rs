@@ -393,75 +393,6 @@ fn l1_cache_counter_control_is_a_same_image_core0_control() {
 }
 
 #[test]
-fn ap_egress_control_l1_probe_is_a_same_image_runtime_control() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
-    let catalog = Catalog::load(&root).unwrap();
-    let enabled = catalog
-        .get("diagnostic-ap-single-client-tx-egress-control-l1-cache-core0")
-        .unwrap();
-    let disabled = catalog
-        .get("diagnostic-ap-single-client-tx-egress-control-disabled-l1-cache-core0")
-        .unwrap();
-
-    assert_eq!(enabled.image, ImageClass::DiagnosticCore0RxCoarse);
-    assert_eq!(enabled.image, disabled.image);
-    assert!(enabled.l1_cache_counters);
-    assert_eq!(enabled.l1_cache_counters, disabled.l1_cache_counters);
-    assert_eq!(enabled.workload, disabled.workload);
-    assert_eq!(enabled.link, disabled.link);
-    assert_eq!(enabled.criteria, disabled.criteria);
-    assert_eq!(enabled.evidence, disabled.evidence);
-    assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
-    assert_eq!(
-        disabled.tx_buffer,
-        WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
-    );
-}
-
-#[test]
-fn ap_egress_control_task_poll_probe_omits_intrusive_control_counters() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
-    let catalog = Catalog::load(&root).unwrap();
-    let enabled = catalog
-        .get("access-point-single-client-ceiling-tx-task-poll")
-        .unwrap();
-    let disabled = catalog
-        .get("diagnostic-ap-single-client-tx-egress-control-disabled-task-poll")
-        .unwrap();
-
-    assert_eq!(enabled.image, ImageClass::DiagnosticTaskPoll);
-    assert_eq!(enabled.image, disabled.image);
-    assert_eq!(enabled.workload, disabled.workload);
-    assert_eq!(enabled.link, disabled.link);
-    assert_eq!(enabled.criteria, disabled.criteria);
-    assert_eq!(enabled.evidence, disabled.evidence);
-    assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
-    assert_eq!(
-        disabled.tx_buffer,
-        WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
-    );
-
-    let enabled = catalog
-        .get("access-point-single-client-ceiling-tx-task-residence")
-        .unwrap();
-    let disabled = catalog
-        .get("diagnostic-ap-single-client-tx-egress-control-disabled-task-residence")
-        .unwrap();
-
-    assert_eq!(enabled.image, ImageClass::DiagnosticTaskResidence);
-    assert_eq!(enabled.image, disabled.image);
-    assert_eq!(enabled.workload, disabled.workload);
-    assert_eq!(enabled.link, disabled.link);
-    assert_eq!(enabled.criteria, disabled.criteria);
-    assert_eq!(enabled.evidence, disabled.evidence);
-    assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
-    assert_eq!(
-        disabled.tx_buffer,
-        WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
-    );
-}
-
-#[test]
 fn checksum_control_changes_only_the_runtime_checksum_policy() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
@@ -650,32 +581,7 @@ fn ap_rx_core0_control_uses_the_production_dispatch_and_continuation_policy() {
 }
 
 #[test]
-fn ap_staged_promotion_phase_probe_uses_the_coarse_core0_image() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
-    let catalog = Catalog::load(&root).unwrap();
-    let scenario = catalog
-        .get("diagnostic-ap-two-client-udp-tx-promotion-phases")
-        .unwrap();
-
-    assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
-    assert_eq!(
-        scenario.tx_buffer,
-        WifiTxBufferPolicy::PsramStagingCopyDiagnostic
-    );
-    assert!(matches!(
-        scenario.workload,
-        Workload::AccessPoint {
-            traffic: AccessPointTraffic::UdpMultiClient {
-                direction: Direction::Tx,
-                ..
-            },
-            ..
-        }
-    ));
-}
-
-#[test]
-fn ap_egress_burst_probe_keeps_direct_dma_in_the_task_residence_image() {
+fn ap_owned_burst_probe_keeps_the_production_storage_path() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
     let scenario = catalog
@@ -685,7 +591,7 @@ fn ap_egress_burst_probe_keeps_direct_dma_in_the_task_residence_image() {
     assert_eq!(scenario.image, ImageClass::DiagnosticTaskResidence);
     assert_eq!(
         scenario.tx_buffer,
-        WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
+        WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
     );
     assert!(matches!(
         scenario.workload,

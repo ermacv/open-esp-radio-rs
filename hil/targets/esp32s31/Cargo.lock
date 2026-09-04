@@ -471,11 +471,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "embassy-net-driver"
-version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272#3b91c62054669719af1cfc97110ae6ddb5498272"
-
-[[package]]
 name = "embassy-sync"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1299,8 +1294,8 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
  "pin-project-lite",

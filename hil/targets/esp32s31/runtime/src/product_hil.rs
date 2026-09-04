@@ -1770,24 +1770,13 @@ pub async fn run(
     configure_multi_flow_burst_datagrams(
         if matches!(
             tx_buffer,
-            open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
+            open_esp_radio_hil_protocol::WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
         ) {
             32
         } else {
             1
         },
     );
-    #[cfg(feature = "tx-architecture-probes")]
-    open_esp_radio_embassy_net::configure_tx_staging_copy_probe(matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::PsramStagingCopyDiagnostic
-            | open_esp_radio_hil_protocol::WifiTxBufferPolicy::Core1MaterializationDiagnostic
-    ));
-    #[cfg(feature = "tx-architecture-probes")]
-    open_esp_radio_embassy_net::configure_tx_core1_materializer_probe(matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::Core1MaterializationDiagnostic
-    ));
     #[cfg(feature = "tx-psram-dma-probe")]
     open_esp_radio_esp32s31_embassy_wifi::configure_direct_psram_tx_dma_probe(matches!(
         tx_buffer,

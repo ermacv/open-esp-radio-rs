@@ -43,7 +43,7 @@ fn owned_backlog_and_physical_dma_credits_remain_independent() {
 
     let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
     let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
-    let (_unused_direct_provider, physical) = physical_resources.split(physical_pool);
+    let physical = physical_resources.split(physical_pool);
     let network = OwnedDatapathNetwork::new(owned, physical);
     network.set_link_state(interface, LinkState::Up);
 
@@ -106,7 +106,7 @@ fn dual_owned_endpoints_keep_logical_backlogs_separate_from_one_dma_horizon() {
     );
     let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
     let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
-    let (_unused_direct_provider, physical) = physical_resources.split(physical_pool);
+    let physical = physical_resources.split(physical_pool);
     let network = DualOwnedDatapathNetwork::new(station_radio, access_point_radio, physical);
 
     network.set_link_state(station_interface, LinkState::Up);

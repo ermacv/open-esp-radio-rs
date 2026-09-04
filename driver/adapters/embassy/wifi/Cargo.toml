@@ -9,7 +9,6 @@ description = "Chip-independent Embassy ownership adapters for open ESP Wi-Fi"
 
 [features]
 default = []
-tx-egress-scheduling = ["open-esp-radio-embassy-net/tx-egress-scheduling"]
 
 [dependencies]
 embassy-sync = "0.8.0"

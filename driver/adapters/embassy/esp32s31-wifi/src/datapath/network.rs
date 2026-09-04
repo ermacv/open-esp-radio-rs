@@ -5,8 +5,7 @@ use core::future::Future;
 use embassy_futures::select::select;
 use open_esp_radio_embassy_net::{
     DatapathTxConsumer, LinkState, NetworkInterfaceId, OwnedLinkController, OwnedNetworkRunner,
-    OwnedNetworkTxFrame, OwnedRxPublisher, PinnedRxPublisher, PinnedTxConsumer, RawMutex,
-    RxEnqueueError,
+    OwnedNetworkTxFrame, OwnedRxPublisher, PinnedTxConsumer, RawMutex, RxEnqueueError,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
@@ -63,26 +62,6 @@ pub trait DatapathNetworkRxSet {
 
     fn poll_any_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()> {
         self.poll_primary_ready(context)
-    }
-}
-
-impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> DatapathNetworkRxSet
-    for PinnedRxPublisher<'_, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
-{
-    fn primary_mut(&mut self) -> &mut dyn DatapathNetworkRx {
-        self
-    }
-
-    fn get_mut(&mut self, _interface: NetworkInterfaceId) -> Option<&mut dyn DatapathNetworkRx> {
-        None
-    }
-
-    fn pair_mut(
-        &mut self,
-        _first: NetworkInterfaceId,
-        _second: NetworkInterfaceId,
-    ) -> Option<(&mut dyn DatapathNetworkRx, &mut dyn DatapathNetworkRx)> {
-        None
     }
 }
 
@@ -197,59 +176,6 @@ impl<A: DatapathNetworkRx, B: DatapathNetworkRx> DatapathNetworkRxSet
         } else {
             self.second.poll_ready(context)
         }
-    }
-}
-
-impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> DatapathNetworkRx
-    for PinnedRxPublisher<'_, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
-{
-    fn queue_len(&self) -> usize {
-        PinnedRxPublisher::queue_len(self)
-    }
-
-    fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
-        PinnedRxPublisher::try_send(self, frame)
-    }
-
-    fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError> {
-        PinnedRxPublisher::try_send_parts(
-            self,
-            frame.destination,
-            frame.source,
-            frame.ether_type,
-            frame.payload,
-        )
-    }
-
-    fn poll_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()> {
-        let future = PinnedRxPublisher::wait_ready(self);
-        let mut future = core::pin::pin!(future);
-        Future::poll(future.as_mut(), context)
-    }
-
-    #[cfg(feature = "diagnostics")]
-    fn try_send_observed(
-        &mut self,
-        frame: &[u8],
-        before_publish: &mut dyn FnMut(),
-    ) -> Result<(), RxEnqueueError> {
-        PinnedRxPublisher::try_send_observed(self, frame, before_publish)
-    }
-
-    #[cfg(feature = "diagnostics")]
-    fn try_send_parts_observed(
-        &mut self,
-        frame: EthernetFrameParts<'_>,
-        before_publish: &mut dyn FnMut(),
-    ) -> Result<(), RxEnqueueError> {
-        PinnedRxPublisher::try_send_parts_observed(
-            self,
-            frame.destination,
-            frame.source,
-            frame.ether_type,
-            frame.payload,
-            before_publish,
-        )
     }
 }
 

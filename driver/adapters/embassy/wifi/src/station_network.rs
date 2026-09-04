@@ -6,11 +6,6 @@
 //! DHCP versus static addressing and the concrete stack task remain caller
 //! policy.
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
-#[cfg(feature = "tx-egress-scheduling")]
-use open_esp_radio_embassy_net::EgressControlledNetwork;
-use open_esp_radio_embassy_net::{DualPinnedNetworkRunner, LinkState, PinnedNetworkRunner};
-
 /// Network ownership before the first association or after a finite connected
 /// epoch has returned its runner.
 pub enum StationNetworkResources<D, R, S> {
@@ -101,61 +96,6 @@ impl<N: StationNetworkLink + ?Sized> StationNetworkLink for &N {
 impl<N: StationNetworkLink + ?Sized> StationNetworkLink for &mut N {
     fn publish_link_up(&self) {
         N::publish_link_up(*self);
-    }
-}
-
-#[cfg(feature = "tx-egress-scheduling")]
-impl<N: StationNetworkLink, R> StationNetworkLink for EgressControlledNetwork<N, R> {
-    fn publish_link_up(&self) {
-        self.inner().publish_link_up();
-    }
-}
-
-impl<
-    'resources,
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-> StationNetworkLink
-    for PinnedNetworkRunner<
-        'resources,
-        M,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-    >
-{
-    fn publish_link_up(&self) {
-        self.set_link_state(LinkState::Up);
-    }
-}
-
-impl<
-    'resources,
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-> StationNetworkLink
-    for DualPinnedNetworkRunner<
-        'resources,
-        M,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-    >
-{
-    fn publish_link_up(&self) {
-        self.set_link_state(self.first_interface(), LinkState::Up);
     }
 }
 

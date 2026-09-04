@@ -756,37 +756,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "defmt"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2953bfe4f93bbd20cc71198842756f77d161884c99ebbabc41d80231ded88d1"
-dependencies = [
- "bitflags 1.3.2",
- "defmt-macros",
-]
-
-[[package]]
-name = "defmt-macros"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bad9c72e7ca2137e0dc3813245a0d282fd6daad32fd800af018306a9169b5fe8"
-dependencies = [
- "defmt-parser",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "defmt-parser"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10d60334b3b2e7c9d91ef8150abfb6fa4c1c39ebbcf4a81c2e346aad939fee3e"
-dependencies = [
- "thiserror 2.0.19",
-]
-
-[[package]]
 name = "delegate"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -948,24 +917,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "embedded-nal-async",
  "heapless 0.9.3",
- "xarxa 0.1.0",
-]
-
-[[package]]
-name = "embassy-net"
-version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272#3b91c62054669719af1cfc97110ae6ddb5498272"
-dependencies = [
- "document-features",
- "embassy-futures",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272)",
- "embassy-sync 0.8.0",
- "embassy-time",
- "embedded-io-async 0.7.0",
- "embedded-nal-async",
- "heapless 0.9.3",
- "managed",
- "xarxa 0.13.1",
+ "xarxa",
 ]
 
 [[package]]
@@ -979,13 +931,8 @@ name = "embassy-net-driver"
 version = "0.2.0"
 source = "git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d#244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d"
 dependencies = [
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+ "xarxa-driver",
 ]
-
-[[package]]
-name = "embassy-net-driver"
-version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272#3b91c62054669719af1cfc97110ae6ddb5498272"
 
 [[package]]
 name = "embassy-sync"
@@ -2086,12 +2033,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "managed"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
-
-[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2310,17 +2251,14 @@ name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "embassy-executor",
- "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
- "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272)",
+ "embassy-net",
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=3b91c62054669719af1cfc97110ae6ddb5498272)",
  "embassy-sync 0.8.0",
- "embassy-time",
  "open-esp-radio-dma",
  "pin-project-lite",
  "riscv 0.15.0",
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+ "xarxa-driver",
 ]
 
 [[package]]
@@ -2575,7 +2513,7 @@ dependencies = [
  "open-esp-radio-wpa2",
  "riscv 0.15.0",
  "static_cell",
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+ "xarxa-driver",
 ]
 
 [[package]]
@@ -4561,21 +4499,7 @@ dependencies = [
  "document-features",
  "heapless 0.9.3",
  "libc",
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
-]
-
-[[package]]
-name = "xarxa"
-version = "0.13.1"
-source = "git+https://github.com/ermacv/xarxa.git?rev=56840265711547e3ad8e24d602fc7a6e89258642#56840265711547e3ad8e24d602fc7a6e89258642"
-dependencies = [
- "bitflags 1.3.2",
- "byteorder",
- "cfg-if",
- "defmt",
- "heapless 0.9.3",
- "managed",
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=56840265711547e3ad8e24d602fc7a6e89258642)",
+ "xarxa-driver",
 ]
 
 [[package]]
@@ -4587,11 +4511,6 @@ dependencies = [
  "document-features",
  "portable-atomic",
 ]
-
-[[package]]
-name = "xarxa-driver"
-version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=56840265711547e3ad8e24d602fc7a6e89258642#56840265711547e3ad8e24d602fc7a6e89258642"
 
 [[package]]
 name = "xml-rs"

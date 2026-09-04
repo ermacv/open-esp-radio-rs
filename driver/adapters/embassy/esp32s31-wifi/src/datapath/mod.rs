@@ -17,7 +17,7 @@ use embassy_futures::{
 };
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::{
-    DatapathTxConsumer, LinkState, NetworkInterfaceId, OwnedNetworkTxFrame, PinnedRxPublisher,
+    DatapathTxConsumer, LinkState, NetworkInterfaceId, OwnedNetworkTxFrame, OwnedRxPublisher,
     RawMutex,
 };
 pub use open_esp_radio_esp32s31_wifi::datapath::{
@@ -622,7 +622,7 @@ pub struct DatapathRunner<
     const TRAILER: usize,
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
-    R = PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+    R = OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>,
 > {
     resources: core::marker::PhantomData<&'resources ()>,
     irq: &'irq EmbassyMacIrqRuntime<M>,

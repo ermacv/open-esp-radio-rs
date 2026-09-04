@@ -13,17 +13,12 @@
 //! descriptor and vendor-object pointers never escape into the network stack,
 //! and both directions apply explicit bounded backpressure.
 //!
-//! [`PinnedEndpointResources`] and [`PinnedTxResources`] provide the
-//! high-throughput alternative. On RX, the
-//! protocol adapter copies directly into a permanently located final slot and
-//! passes only its index to the network stack. On TX, the network stack writes
-//! directly into a separate permanently located slot with caller-selected
-//! headroom and trailer space. The radio receives a lease to that same TX
-//! slot, so an IEEE 802.11 encoder can replace the prefix without copying
-//! payload.
+//! The unchanged-Embassy adapter below is deliberately simple. The optimized
+//! owned-packet adapter lives in [`owned`], while [`sram_tx`] begins only at
+//! the radio's fixed SRAM execution pool. Wi-Fi scheduling is private to the
+//! radio implementation; it is not mirrored through the generic network
+//! driver API.
 
-#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-use core::sync::atomic::AtomicBool;
 use core::{
     sync::atomic::{AtomicU32, Ordering},
     task::{Context, Poll},
@@ -39,65 +34,20 @@ use embassy_sync::{
     waitqueue::GenericAtomicWaker,
 };
 
-#[cfg(feature = "tx-egress-scheduling")]
-mod egress_control;
-#[cfg(feature = "tx-phase-telemetry")]
-mod egress_grant;
-#[cfg(feature = "tx-egress-scheduling")]
-mod egress_key;
-mod egress_peer;
 mod owned;
-mod pinned;
+mod sram_tx;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
-#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-pub use egress_control::EgressControlSnapshot;
-#[cfg(all(
-    feature = "tx-egress-scheduling",
-    feature = "tx-egress-diagnostic-switch"
-))]
-pub use egress_control::configure_egress_control_for_diagnostics;
-#[cfg(feature = "tx-egress-scheduling")]
-pub use egress_control::{
-    DEFAULT_EGRESS_CONTROL_DEPTH, DEFAULT_EGRESS_NETWORK_SERVICE_BUDGET,
-    DEFAULT_EGRESS_RADIO_SERVICE_BUDGET, DefaultEgressControlPlane, DefaultEgressControlledNetwork,
-    DefaultEgressNetworkPort, DefaultEgressNetworkScheduler, DefaultEgressNetworkState,
-    DefaultEgressRadioOwner, DefaultEgressRadioPort, DefaultEgressRadioScheduler,
-    DefaultEgressRadioWake, EgressCandidate, EgressCandidateFull, EgressControlPlane,
-    EgressControlledNetwork, EgressGrant, EgressGrantFull, EgressNetworkPort,
-    EgressNetworkScheduler, EgressNetworkState, EgressRadioOwner, EgressRadioPort,
-    EgressRadioScheduler, EgressRadioWake,
-};
-#[cfg(feature = "tx-phase-telemetry")]
-pub use egress_grant::{EgressShadowGrant, EgressShadowGrantError, EgressShadowGrantSnapshot};
-#[cfg(feature = "tx-egress-scheduling")]
-pub use egress_key::EgressGrantKey;
-pub use egress_peer::{
-    EgressPeerDirectory, EgressPeerDirectoryError, EgressPeerIdentity, EgressPeerResolver,
-};
 pub use owned::{
     OwnedEndpointResources, OwnedLinkController, OwnedNetworkDevice, OwnedNetworkRunner,
     OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxFrameSource,
 };
 #[cfg(feature = "tx-phase-telemetry")]
-pub use pinned::PinnedTxOwnershipSnapshot;
-#[cfg(feature = "tx-staging-copy-probe")]
-pub use pinned::configure_tx_staging_copy_probe;
-pub use pinned::{
-    DatapathTxConsumer, DualPinnedNetworkRunner, EgressQueueTopology, NetworkEndpointConfig,
-    NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkLinkController, PinnedNetworkRunner,
-    PinnedNetworkTxFrame, PinnedReceiveToken, PinnedRxPublisher, PinnedTransmitToken,
-    PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider,
-    PinnedTxResources, SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher,
-    SharedPinnedRxQueue, SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice,
-    SplitPinnedRxRunner,
-};
-#[cfg(feature = "tx-core1-materializer-probe")]
-pub use pinned::{
-    PINNED_TX_MATERIALIZATION_BATCH_CAPACITY, PinnedTxCore1MaterializationPoll,
-    TX_CORE1_MATERIALIZER_COUNTERS, TxCore1MaterializerCounters, TxCore1MaterializerSnapshot,
-    configure_tx_core1_materializer_probe,
+pub use sram_tx::PinnedTxOwnershipSnapshot;
+pub use sram_tx::{
+    DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool,
+    PinnedTxResources,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use tx_performance::{
@@ -107,52 +57,20 @@ pub use tx_performance::{
 /// Ethernet header length, excluding an FCS.
 pub const ETHERNET_HEADER_LEN: usize = 14;
 
-#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-static KEYED_EGRESS_SCHEDULING_ENABLED: AtomicBool = AtomicBool::new(true);
-#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-static KEYED_EGRESS_MULTI_DISPATCH_ENABLED: AtomicBool = AtomicBool::new(true);
-
-/// Select ordinary FIFO egress only for a same-image TX scheduler diagnostic.
+/// Opaque identity of one logical network endpoint sharing a physical radio.
 ///
-/// Production builds do not expose this switch and always use keyed egress
-/// scheduling while the link is up.
-#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-pub fn configure_keyed_egress_schedule_for_diagnostics(enabled: bool) {
-    KEYED_EGRESS_SCHEDULING_ENABLED.store(enabled, Ordering::Release);
-}
+/// The network adapter preserves this value but never assigns Wi-Fi meaning
+/// to it. The radio composition owns the mapping to STA, AP, or another VIF.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NetworkInterfaceId(u8);
 
-/// Select one-packet socket dispatch only for a same-image Xarxa batching
-/// control. Production emits a bounded four-packet quantum per socket pass.
-#[cfg(all(feature = "tx-egress-scheduling", feature = "tx-phase-telemetry"))]
-pub fn configure_keyed_egress_multi_dispatch_for_diagnostics(enabled: bool) {
-    KEYED_EGRESS_MULTI_DISPATCH_ENABLED.store(enabled, Ordering::Release);
-}
+impl NetworkInterfaceId {
+    pub const fn new(value: u8) -> Self {
+        Self(value)
+    }
 
-#[cfg(feature = "tx-egress-scheduling")]
-pub(crate) fn keyed_egress_scheduling_enabled() -> bool {
-    #[cfg(feature = "tx-phase-telemetry")]
-    {
-        KEYED_EGRESS_SCHEDULING_ENABLED.load(Ordering::Acquire)
-    }
-    #[cfg(not(feature = "tx-phase-telemetry"))]
-    {
-        true
-    }
-}
-
-#[cfg(feature = "tx-egress-scheduling")]
-pub(crate) fn keyed_egress_dispatch_quantum() -> u8 {
-    #[cfg(feature = "tx-phase-telemetry")]
-    {
-        if KEYED_EGRESS_MULTI_DISPATCH_ENABLED.load(Ordering::Acquire) {
-            4
-        } else {
-            1
-        }
-    }
-    #[cfg(not(feature = "tx-phase-telemetry"))]
-    {
-        4
+    pub const fn value(self) -> u8 {
+        self.0
     }
 }
 
@@ -344,16 +262,6 @@ impl<M: RawMutex> SharedLinkState<M> {
         } else {
             LinkState::Down
         }
-    }
-
-    #[cfg(feature = "tx-egress-scheduling")]
-    pub(crate) fn is_up(&self) -> bool {
-        self.state.load(Ordering::Acquire) & 1 != 0
-    }
-
-    #[cfg(feature = "tx-egress-scheduling")]
-    pub(crate) fn egress_epoch(&self) -> u32 {
-        self.state.load(Ordering::Acquire) >> 1
     }
 }
 

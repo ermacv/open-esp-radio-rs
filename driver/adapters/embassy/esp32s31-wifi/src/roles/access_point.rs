@@ -19,8 +19,6 @@ use open_esp_radio_embassy_net::{
     DatapathTxConsumer, FrameLengthError, LinkState, OwnedNetworkTxFrame, PinnedTxFrame,
     RxEnqueueError,
 };
-#[cfg(feature = "tx-phase-telemetry")]
-use open_esp_radio_embassy_net::{EgressGrantKey, EgressShadowGrant};
 
 use open_esp_radio_esp32s31_wifi::{
     ampdu_tx::HtAmpduTxRolePolicy,
@@ -83,19 +81,6 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_wifi_embassy::await_stack_boundary;
 use open_esp_radio_wifi_softmac::MacRxEvidence;
 use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
-
-#[cfg(feature = "tx-phase-telemetry")]
-static AP_EGRESS_SHADOW_GRANT: EgressShadowGrant = EgressShadowGrant::new();
-
-/// Returns the diagnostic shadow of the sole physical AP egress window.
-///
-/// The shadow is deliberately static so telemetry does not become part of the
-/// large AP service future's affine owner graph. It observes one physical AP
-/// radio and never authorizes or defers production admission.
-#[cfg(feature = "tx-phase-telemetry")]
-pub fn access_point_egress_shadow_grant() -> &'static EgressShadowGrant {
-    &AP_EGRESS_SHADOW_GRANT
-}
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::datapath::irq::Esp32s31MacInterruptEpochDrain;

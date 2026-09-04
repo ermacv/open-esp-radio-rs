@@ -13,24 +13,10 @@ default = []
 diagnostics = []
 # Intrusive per-datagram Core1 cycle/instruction accounting. Diagnostic HIL
 # images enable this explicitly; production adapters do not.
-tx-phase-telemetry = ["dep:riscv", "tx-egress-diagnostic-switch"]
-# Startup-only same-ELF switch used to measure egress-control overhead without
-# compiling the intrusive per-frame/per-burst counter set.
-tx-egress-diagnostic-switch = []
-# Same-image HIL discriminator for the proposed contended-TX ownership
-# boundary. Production images do not compile this branch.
-tx-staging-copy-probe = []
-# Same-image experiment which moves one already selected PSRAM-to-SRAM burst
-# to the network core while retaining the driver-side software-TXQ topology.
-tx-core1-materializer-probe = ["tx-staging-copy-probe"]
-# Select a bounded stack-side destination queue before the final direct-DMA
-# token is requested. Product Wi-Fi compositions enable this unconditionally;
-# it remains a feature here because the extended Embassy driver API is
-# feature-gated in the maintained fork.
-tx-egress-scheduling = ["embassy-net-driver/tx-egress-metadata"]
+tx-phase-telemetry = ["dep:riscv"]
 
 [dependencies]
-embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272" }
+embassy-net-driver = "0.2.0"
 owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d" }
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
@@ -42,9 +28,6 @@ riscv = { version = "0.15", optional = true }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
-embassy-executor = { version = "0.10.0", features = ["executor-thread", "platform-std"] }
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272", features = ["icmp", "iface-neighbor-cache-count-16", "medium-ethernet", "proto-ipv4", "std", "tx-egress-metadata", "udp"] }
-embassy-time = { version = "0.5.0", features = ["std"] }
 owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d", features = ["medium-ethernet", "proto-ipv4", "std", "udp"] }
 
 [lints]

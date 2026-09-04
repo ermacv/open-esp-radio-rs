@@ -56,15 +56,6 @@ core0-rx-coarse-telemetry = [
     "open-esp-radio-esp32s31-wifi-embassy/core0-rx-coarse-telemetry",
     "open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry",
 ]
-tx-staging-copy-probe = [
-    "open-esp-radio-embassy-net/tx-staging-copy-probe",
-    "open-esp-radio-esp32s31-wifi-embassy/tx-staging-copy-probe",
-]
-tx-core1-materializer-probe = [
-    "tx-staging-copy-probe",
-    "open-esp-radio-embassy-net/tx-core1-materializer-probe",
-    "open-esp-radio-esp32s31-wifi-embassy/tx-core1-materializer-probe",
-]
 tx-psram-dma-probe = [
     "dep:open-esp-radio-esp32s31-platform-pac",
     "open-esp-radio-esp32s31-wifi-dma/tx-psram-dma-probe",

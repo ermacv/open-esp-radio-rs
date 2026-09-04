@@ -13,7 +13,9 @@ use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::GenericAtomicWaker;
-use owned_embassy_net_driver::{Capabilities, Driver, HardwareAddress, LinkState};
+use owned_embassy_net_driver::{
+    Capabilities, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
+};
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPoolWaiter};
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, NetworkInterfaceId, RxEnqueueError};
@@ -170,6 +172,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
                 tx: resources.tx.sender(),
                 tx_published: &resources.tx_published,
                 link: &resources.link,
+                checksum: ChecksumCapabilities::default(),
             },
             OwnedNetworkRunner {
                 interface,
@@ -204,6 +207,7 @@ pub struct OwnedNetworkDevice<
     tx: Sender<'resources, M, QueuedPacket, TX_QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     link: &'resources OwnedLinkState<M>,
+    checksum: ChecksumCapabilities,
 }
 
 impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
@@ -222,6 +226,12 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
     /// Whether this interface currently belongs to an active role lifetime.
     pub fn link_is_up(&self) -> bool {
         self.link.snapshot().up
+    }
+
+    /// Override checksum work advertised to Xarxa before stack construction.
+    pub fn with_checksum_capabilities(mut self, checksum: ChecksumCapabilities) -> Self {
+        self.checksum = checksum;
+        self
     }
 
     /// Claim the next received packet from the current role lifetime.
@@ -268,7 +278,9 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> Driv
     for OwnedNetworkDevice<'_, M, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
+        let mut capabilities = Capabilities::default();
+        capabilities.checksum = self.checksum;
+        capabilities
     }
 
     fn hardware_address(&self) -> HardwareAddress {

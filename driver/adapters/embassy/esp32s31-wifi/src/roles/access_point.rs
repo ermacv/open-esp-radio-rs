@@ -67,11 +67,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
-#[cfg(any(feature = "diagnostics", test))]
-use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use open_esp_radio_ieee80211::data::{
-    DataInterfaceRole, IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN,
-    plan_data_decapsulation,
+    DataInterfaceRole, EthernetFrameParts, IEEE80211_LEGACY_DATA_HEADER_LEN,
+    IEEE80211_QOS_DATA_HEADER_LEN, plan_data_decapsulation,
 };
 use open_esp_radio_ieee80211::{
     ap::{

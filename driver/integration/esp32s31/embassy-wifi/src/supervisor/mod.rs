@@ -157,7 +157,7 @@ use crate::supervisor::station::{
     connected_config, initialize_connected_datapath_mailbox,
     initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
     initialize_ethernet_frame, initialize_sta_ap_station_rx_batch, initialize_station_network,
-    mac_interrupt_epoch, publish_access_point_shared_network_rx, run_connected,
+    mac_interrupt_epoch, run_connected,
 };
 use crate::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization, Esp32s31Wifi,

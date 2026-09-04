@@ -32,9 +32,6 @@ open-radio-hil = [
     "dep:open-esp-radio-wifi-embassy",
     "dep:postcard",
     "dep:serde",
-    "embassy-net/tx-egress-metadata",
-    "open-esp-radio-embassy-net/tx-egress-diagnostic-switch",
-    "open-esp-radio-embassy-net/tx-egress-scheduling",
 ]
 driver-observation = [
     "open-esp-radio-esp32s31-embassy-wifi/diagnostics",
@@ -93,7 +90,6 @@ core0-rx-cycle-telemetry = [
 core0-rx-coarse-telemetry = [
     "connected-datapath-poll-telemetry",
     "open-esp-radio-esp32s31-embassy-wifi/core0-rx-coarse-telemetry",
-    "open-esp-radio-esp32s31-embassy-wifi/network-scheduler-telemetry",
 ]
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.

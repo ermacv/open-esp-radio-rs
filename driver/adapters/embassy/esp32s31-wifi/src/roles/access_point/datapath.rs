@@ -58,7 +58,6 @@ pub(super) struct Esp32s31AccessPointDatapathServices<
     O,
     S,
     L,
-    Q,
     B: 'ampdu,
     N,
     const COUNT: usize,
@@ -89,7 +88,6 @@ pub(super) struct Esp32s31AccessPointDatapathServices<
     pub(super) status_observer: O,
     pub(super) security_material: S,
     pub(super) set_link_state: L,
-    pub(super) publish_shared_rx: Q,
     #[cfg(any(feature = "diagnostics", test))]
     pub(super) aggregate_tx_observer: Option<&'run dyn AggregateTxObserver>,
     #[cfg(feature = "diagnostics")]
@@ -117,7 +115,6 @@ impl<
     O,
     S,
     L,
-    Q,
     B,
     N,
     const COUNT: usize,
@@ -142,7 +139,6 @@ impl<
         O,
         S,
         L,
-        Q,
         B,
         N,
         COUNT,
@@ -158,7 +154,6 @@ where
     T: WifiTxTimer,
     O: FnMut(AccessPointServiceStatus),
     L: FnMut(LinkState),
-    Q: FnMut(u8),
     B: StableDmaBacking,
 {
     fn tx_pending(&self) -> bool {
@@ -353,7 +348,6 @@ impl<
     O,
     S,
     L,
-    Q,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -380,7 +374,6 @@ impl<
         O,
         S,
         L,
-        Q,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
         PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
         COUNT,
@@ -405,7 +398,6 @@ where
     O: FnMut(AccessPointServiceStatus),
     S: FnMut() -> ([u8; 32], u64),
     L: FnMut(LinkState),
-    Q: FnMut(u8),
 {
     type Error = Esp32s31AccessPointDatapathError;
     type Exit = Infallible;
@@ -472,7 +464,6 @@ where
                         turn.remaining_protocol_frames(),
                         &mut self.security_material,
                         Instant::now().as_micros(),
-                        &mut self.publish_shared_rx,
                         #[cfg(feature = "diagnostics")]
                         self.delivery_observer,
                     )
@@ -603,7 +594,6 @@ where
                         turn.remaining_protocol_frames(),
                         &mut self.security_material,
                         Instant::now().as_micros(),
-                        &mut self.publish_shared_rx,
                         #[cfg(feature = "diagnostics")]
                         self.delivery_observer,
                     )

@@ -21,7 +21,7 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Timer;
-use open_esp_radio_embassy_net::SharedPinnedRxQueue;
+use open_esp_radio_embassy_net::OwnedRxPublisher;
 use open_esp_radio_esp32s31_hal::radio_arena::Esp32s31RadioOwnerArena;
 use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
@@ -42,6 +42,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
     datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch},
+    datapath::network::DatapathNetwork,
     datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer},
     datapath::rx::frontier::{
         EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier, Esp32s31RxFrontierError,
@@ -51,7 +52,6 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
     },
     datapath::rx::staging::Esp32s31StagedRxQueue,
-    datapath::network::DatapathNetwork,
     datapath::{DatapathRunner, DatapathRunnerExit, DatapathServices},
     roles::station::connected::{
         ConnectedControlPublisher, ConnectedControlResources,
@@ -132,12 +132,8 @@ type ControlPublisher =
     ConnectedControlPublisher<'static, CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
 type EmbassyConnectedRxSink = EmbassyNetConnectedRxSink<
     'static,
-    CriticalSectionRawMutex,
+    OwnedRxPublisher<'static, CriticalSectionRawMutex, NETWORK_RX_QUEUE_DEPTH>,
     ControlPublisher,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_RX_QUEUE_DEPTH,
-    RX_STAGE_CAPACITY,
-    RX_STAGE_SLOT_COUNT,
 >;
 #[cfg(feature = "diagnostics")]
 type ConnectedRxSink = ObservedConnectedRxSink<EmbassyConnectedRxSink>;
@@ -410,6 +406,7 @@ type ConnectedDatapathRunner = DatapathRunner<
     NETWORK_TX_TRAILER,
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
+    OwnedRxPublisher<'static, CriticalSectionRawMutex, NETWORK_RX_QUEUE_DEPTH>,
 >;
 
 struct ConnectedDatapathTaskReturn {
@@ -695,31 +692,6 @@ pub(super) static STA_AP_STAGED_RX_QUEUE:
         RX_STAGE_CAPACITY,
         RX_STAGE_SLOT_COUNT,
     > = open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::Esp32s31StaApStagedRxQueue::new();
-static STATION_SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<
-    CriticalSectionRawMutex,
-    RX_STAGE_SLOT_COUNT,
-> = SharedPinnedRxQueue::new();
-static ACCESS_POINT_SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<
-    CriticalSectionRawMutex,
-    RX_STAGE_SLOT_COUNT,
-> = SharedPinnedRxQueue::new();
-
-#[inline(always)]
-pub(super) fn publish_access_point_shared_network_rx(index: u8) {
-    ACCESS_POINT_SHARED_NETWORK_RX_QUEUE
-        .publisher()
-        .publish(index);
-}
-
-#[inline(always)]
-pub(super) fn publish_station_shared_network_rx(index: u8) {
-    STATION_SHARED_NETWORK_RX_QUEUE.publisher().publish(index);
-}
-
-#[inline(never)]
-fn notify_shared_network_rx_release() {
-    IRQ_RUNTIME.notify_rx_capacity();
-}
 pub(super) static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
 pub(super) static RX_REORDER_STORAGE: RxReorderFrameStorage<
@@ -1917,11 +1889,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
     );
     let (control_publisher, control_receiver) = control_resources.split();
-    let rx_sink = EmbassyNetConnectedRxSink::new_with_shared_rx(
-        network_rx,
-        STATION_SHARED_NETWORK_RX_QUEUE.publisher(),
-        control_publisher,
-    );
+    let rx_sink = EmbassyNetConnectedRxSink::new(network_rx, control_publisher);
     #[cfg(feature = "diagnostics")]
     let rx_sink = {
         let hooks =
@@ -2409,21 +2377,7 @@ pub(crate) fn initialize_station_network(
     crate::radio_resources::Esp32s31WifiDevices,
     WifiNetworkResources,
 ) {
-    let (_station_publisher, station_consumer) = STATION_SHARED_NETWORK_RX_QUEUE.split_external(
-        RX_STAGE_POOL.external_handoff_pool(),
-        notify_shared_network_rx_release,
-    );
-    let (_access_point_publisher, access_point_consumer) = ACCESS_POINT_SHARED_NETWORK_RX_QUEUE
-        .split_external(
-            RX_STAGE_POOL.external_handoff_pool(),
-            notify_shared_network_rx_release,
-        );
-    crate::radio_resources::initialize_network(
-        station_address,
-        access_point_address,
-        station_consumer,
-        access_point_consumer,
-    )
+    crate::radio_resources::initialize_network(station_address, access_point_address)
 }
 
 /// Construct the reusable interrupt epoch retained by the station backend.

@@ -762,6 +762,35 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const NETWORK_TX_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
+> open_esp_radio_wifi_embassy::station_network::StationNetworkLink
+    for DualOwnedDatapathNetwork<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        NETWORK_TX_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
+{
+    fn publish_link_up(&self) {
+        self.set_link_state(
+            crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+            LinkState::Up,
+        );
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex + 'resources,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const NETWORK_TX_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
 > DatapathNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
     for DualOwnedDatapathNetwork<
         'resources,

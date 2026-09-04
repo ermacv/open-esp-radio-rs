@@ -3,7 +3,7 @@
 #![recursion_limit = "256"]
 
 use embassy_executor::Spawner;
-use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
+use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StaticConfigV4};
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -20,6 +20,7 @@ use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_
 use open_esp_radio_esp32s31_access_point::{dhcp, services};
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiStackResources;
 use static_cell::StaticCell;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -28,8 +29,7 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 // Network socket state is application-owned and static so it never inflates
 // the executor task frame.
-static NETWORK_RESOURCES: static_cell::ConstStaticCell<StackResources<8>> =
-    static_cell::ConstStaticCell::new(StackResources::new());
+static NETWORK_RESOURCES: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
 
 const AP_SSID: &str = match option_env!("ESP32S31_AP_SSID") {
     Some(value) => value,
@@ -132,7 +132,7 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiNetworkRunner::new(
             access_point_device,
             network_config,
-            NETWORK_RESOURCES.take(),
+            NETWORK_RESOURCES.init(Esp32s31WifiStackResources::new()),
             u64::from_le_bytes([
                 access_point_address[0],
                 access_point_address[1],

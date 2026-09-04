@@ -5,7 +5,7 @@
 use core::num::NonZeroU16;
 
 use embassy_executor::Spawner;
-use embassy_net::{Config, StackResources};
+use embassy_net::Config;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -15,6 +15,7 @@ use esp_hal::{
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
+use open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiStackResources;
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
 
@@ -32,8 +33,7 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 // Socket/IP state belongs to the application, not to the radio driver. Static
 // placement avoids moving the stack arena through the executor task frame.
-static NETWORK_RESOURCES: static_cell::ConstStaticCell<StackResources<4>> =
-    static_cell::ConstStaticCell::new(StackResources::new());
+static NETWORK_RESOURCES: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
 
 const STA_SSID: &str = match option_env!("ESP32S31_WIFI_SSID") {
     Some(value) => value,
@@ -133,22 +133,21 @@ async fn station_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng
         access_point_status: _,
     } = wifi.into_parts();
     let network = async move {
-        let (stack, runner) =
-            open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiNetworkRunner::new(
-                station_device,
-                Config::dhcpv4(Default::default()),
-                NETWORK_RESOURCES.take(),
-                u64::from_le_bytes([
-                    station_address[0],
-                    station_address[1],
-                    station_address[2],
-                    station_address[3],
-                    station_address[4],
-                    station_address[5],
-                    0xa5,
-                    0x31,
-                ]),
-            );
+        let (stack, runner) = open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiNetworkRunner::new(
+            station_device,
+            Config::dhcpv4(Default::default()),
+            NETWORK_RESOURCES.init(Esp32s31WifiStackResources::new()),
+            u64::from_le_bytes([
+                station_address[0],
+                station_address[1],
+                station_address[2],
+                station_address[3],
+                station_address[4],
+                station_address[5],
+                0xa5,
+                0x31,
+            ]),
+        );
         let _stack = stack;
         runner.run().await;
     };

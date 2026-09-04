@@ -6,21 +6,6 @@
 ))]
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 
-#[cfg(any(
-    feature = "ieee802154-event-status-probe",
-    feature = "ieee802154-ed-event-probe"
-))]
-use open_esp_radio_esp32s31_hal::{
-    Ieee802154ObservedEventState as HalIeee802154ObservedEventState, Ieee802154Owned,
-    Ieee802154ValidationEventEnableState as HalIeee802154ValidationEventEnableState,
-};
-#[cfg(feature = "ieee802154-event-status-probe")]
-use open_esp_radio_esp32s31_hal::{
-    Ieee802154EventStatusProbeConfig,
-    Ieee802154EventStatusProbeEvidence as HalIeee802154EventStatusProbeEvidence,
-    Ieee802154EventStatusProbeIsolation,
-    Ieee802154EventStatusProbeStop as HalIeee802154EventStatusProbeStop,
-};
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use open_esp_radio_esp32s31_hal::{
     Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154Channel, Ieee802154EdEventProbeConfig,
@@ -34,25 +19,40 @@ use open_esp_radio_esp32s31_hal::{
     Ieee802154RxAbortReasonObservation as HalIeee802154RxAbortReasonObservation,
     Ieee802154ValidationEdDurationState as HalIeee802154ValidationEdDurationState,
 };
-
+#[cfg(feature = "ieee802154-event-status-probe")]
+use open_esp_radio_esp32s31_hal::{
+    Ieee802154EventStatusProbeConfig,
+    Ieee802154EventStatusProbeEvidence as HalIeee802154EventStatusProbeEvidence,
+    Ieee802154EventStatusProbeIsolation,
+    Ieee802154EventStatusProbeStop as HalIeee802154EventStatusProbeStop,
+};
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use open_esp_radio_hil_protocol::{
-    Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState,
+use open_esp_radio_esp32s31_hal::{
+    Ieee802154ObservedEventState as HalIeee802154ObservedEventState, Ieee802154Owned,
+    Ieee802154ValidationEventEnableState as HalIeee802154ValidationEventEnableState,
 };
-#[cfg(feature = "ieee802154-event-status-probe")]
-use open_esp_radio_hil_protocol::{
-    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
-    Ieee802154EventStatusProbeStop,
-};
+
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use open_esp_radio_hil_protocol::{
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
     Ieee802154PolledEdMaskState, Ieee802154PolledEdOutcome, Ieee802154PolledEdStage,
     Ieee802154RxAbortObservation, Ieee802154RxAbortReason, Ieee802154ValidationEdDurationState,
     Ieee802154ValidationRxAbortEnableState,
+};
+#[cfg(feature = "ieee802154-event-status-probe")]
+use open_esp_radio_hil_protocol::{
+    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
+    Ieee802154EventStatusProbeStop,
+};
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+use open_esp_radio_hil_protocol::{
+    Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState,
 };
 
 #[cfg(any(

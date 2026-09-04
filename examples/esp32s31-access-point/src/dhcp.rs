@@ -4,10 +4,7 @@ use edge_dhcp::{
     Options, Packet,
     server::{Server, ServerOptions},
 };
-use embassy_net::{
-    Stack,
-    udp::{PacketMetadata, UdpSocket},
-};
+use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::Instant;
 use static_cell::StaticCell;
 
@@ -21,10 +18,6 @@ const DATAGRAM_CAPACITY: usize = 768;
 type DhcpServer = Server<fn() -> u64, 15>;
 
 static SERVER: StaticCell<DhcpServer> = StaticCell::new();
-static RX_METADATA: StaticCell<[PacketMetadata; 4]> = StaticCell::new();
-static TX_METADATA: StaticCell<[PacketMetadata; 4]> = StaticCell::new();
-static SOCKET_RX: StaticCell<[u8; DATAGRAM_CAPACITY * 2]> = StaticCell::new();
-static SOCKET_TX: StaticCell<[u8; DATAGRAM_CAPACITY * 2]> = StaticCell::new();
 // DHCP packets are deliberately static: keeping two maximum-sized messages
 // out of the async state machine prevents a large executor stack frame.
 static REQUEST: StaticCell<[u8; DATAGRAM_CAPACITY]> = StaticCell::new();
@@ -41,13 +34,7 @@ pub async fn run(stack: Stack<'static>) -> ! {
     let server = SERVER.init(server);
     let mut gateway = [Ipv4Addr::UNSPECIFIED];
     let options = ServerOptions::new(SERVER_ADDRESS, Some(&mut gateway));
-    let mut socket = UdpSocket::new(
-        stack,
-        RX_METADATA.init_with(|| [PacketMetadata::EMPTY; 4]),
-        SOCKET_RX.init_with(|| [0; DATAGRAM_CAPACITY * 2]),
-        TX_METADATA.init_with(|| [PacketMetadata::EMPTY; 4]),
-        SOCKET_TX.init_with(|| [0; DATAGRAM_CAPACITY * 2]),
-    );
+    let mut socket = UdpSocket::new(stack);
     socket
         .bind(DHCP_SERVER_PORT)
         .expect("DHCP port must be free");

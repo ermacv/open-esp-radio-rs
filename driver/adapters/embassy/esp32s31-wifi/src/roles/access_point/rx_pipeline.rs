@@ -20,7 +20,6 @@ use crate::{
     datapath::rx::hardware::RxDmaObservationDelay,
     datapath::rx::staging::{
         Esp32s31StagedRxFrame, Esp32s31StagedRxQueue, Esp32s31StagedRxReceiver,
-        StagedEthernetPublication,
     },
     datapath::{DatapathRxProgress, DatapathRxWorkCounters},
 };
@@ -28,10 +27,6 @@ use crate::{
 #[doc(hidden)]
 pub trait AccessPointStagedRxFrame {
     fn segment(&self) -> RxSegment<'_>;
-
-    fn publish_ethernet_in_place(self, ethernet: StagedEthernetPublication) -> Result<u8, Self>
-    where
-        Self: Sized;
 }
 
 impl<const CAPACITY: usize, const SLOTS: usize> AccessPointStagedRxFrame
@@ -39,19 +34,6 @@ impl<const CAPACITY: usize, const SLOTS: usize> AccessPointStagedRxFrame
 {
     fn segment(&self) -> RxSegment<'_> {
         Esp32s31StagedRxFrame::segment(self)
-    }
-
-    #[inline(always)]
-    fn publish_ethernet_in_place(self, ethernet: StagedEthernetPublication) -> Result<u8, Self> {
-        Esp32s31StagedRxFrame::publish_ethernet_in_place(
-            self,
-            ethernet.destination,
-            ethernet.source,
-            ethernet.ether_type,
-            ethernet.payload_offset,
-            ethernet.payload_length,
-        )
-        .map_err(|(frame, _)| frame)
     }
 }
 

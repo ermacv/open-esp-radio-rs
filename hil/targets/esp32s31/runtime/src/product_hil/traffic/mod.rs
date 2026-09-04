@@ -7,8 +7,6 @@ mod bidirectional;
 ))]
 mod cache_performance;
 mod evidence;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub(in crate::product_hil) mod network_scheduler;
 mod reporting;
 mod runtime;
 mod tcp;
@@ -78,27 +76,25 @@ pub(super) use bidirectional::{
     run_open_radio_bidirectional_session_coordinator,
 };
 pub(super) use evidence::{UdpSequenceEvidence, iperf2_udp_sequence};
-pub(super) use reporting::{
-    aggregate_tx_evidence, log_open_radio_ampdu_interval, log_open_radio_rx_pipeline_interval,
-    log_open_radio_task_poll_interval, observe_open_radio_task_polls,
-};
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub(super) use reporting::{
-    log_open_radio_core0_rx_coarse, log_open_radio_core1_tx_phases,
-};
-#[cfg(feature = "core0-rx-cycle-telemetry")]
-pub(super) use reporting::{
-    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
-};
 #[cfg(any(
     feature = "core0-rx-coarse-telemetry",
     feature = "core0-rx-cycle-telemetry"
 ))]
 pub(super) use reporting::observe_open_radio_core0_task_polls;
+pub(super) use reporting::{
+    aggregate_tx_evidence, log_open_radio_ampdu_interval, log_open_radio_rx_pipeline_interval,
+    log_open_radio_task_poll_interval, observe_open_radio_task_polls,
+};
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub(super) use reporting::{log_open_radio_core0_rx_coarse, log_open_radio_core1_tx_phases};
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+pub(super) use reporting::{
+    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
+};
 pub(in crate::product_hil) use runtime::{start_connected_traffic, start_traffic_dispatcher};
 pub(super) use tcp::{TcpBenchmarkConfig, run_open_radio_tcp_benchmark};
 pub(super) use udp::{
-    UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpSocketBuffers,
-    UdpTxBenchmarkConfig, UdpTxSessionSource, configure_multi_flow_burst_datagrams,
-    multi_flow_burst_datagrams, run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark,
+    UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpTxBenchmarkConfig,
+    UdpTxSessionSource, configure_multi_flow_burst_datagrams, multi_flow_burst_datagrams,
+    run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark,
 };

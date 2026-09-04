@@ -230,6 +230,7 @@ pub async fn run_esp32s31_connected_station_epoch<
     CM,
     N,
     B,
+    RX,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -247,11 +248,12 @@ pub async fn run_esp32s31_connected_station_epoch<
         TRAILER,
         RX_QUEUE_DEPTH,
         TX_QUEUE_DEPTH,
+        RX,
     >,
     control: &mut Esp32s31StationCommandReceiver<'_, CM>,
 ) -> Esp32s31ConnectedStationExit<B::Error>
 where
-    RM: NetworkRawMutex,
+    RM: NetworkRawMutex + 'resources,
     CM: RawMutex,
     N: crate::datapath::network::DatapathNetwork<
             'resources,
@@ -262,6 +264,7 @@ where
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
+    RX: crate::datapath::network::DatapathNetworkRxSet,
     B: DatapathServices<
             'resources,
             RM,

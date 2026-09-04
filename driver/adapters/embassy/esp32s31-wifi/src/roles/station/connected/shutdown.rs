@@ -43,6 +43,7 @@ impl<
     M,
     N,
     B,
+    RX,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -60,9 +61,10 @@ impl<
         TRAILER,
         RX_QUEUE_DEPTH,
         TX_QUEUE_DEPTH,
+        RX,
     >
 where
-    M: NetworkRawMutex,
+    M: NetworkRawMutex + 'resources,
     N: crate::datapath::network::DatapathNetwork<
             'resources,
             M,
@@ -73,6 +75,7 @@ where
             TX_QUEUE_DEPTH,
         >,
     B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    RX: crate::datapath::network::DatapathNetworkRxSet,
 {
     type Network = N;
     type Services = B;

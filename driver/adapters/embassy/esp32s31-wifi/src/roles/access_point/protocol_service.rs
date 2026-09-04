@@ -120,20 +120,21 @@ const fn admitted_ap_data_power_state(frame_control: u16) -> ApPeerPowerState {
 /// AP ordinary-TX capability. Active and parked AP roles enter this same leaf.
 /// `Ok(None)` is non-mutating for the staging owner and reorder state.
 #[inline(never)]
-fn try_service_ap_staged_rx_direct<'storage, F, Q, const DMA_BUFFER_SIZE: usize>(
+fn try_service_ap_staged_rx_direct<'storage, F, const DMA_BUFFER_SIZE: usize>(
     engine: &mut Esp32s31ApEngine<'_>,
     data_rx: &mut Esp32s31ApRxDispatcher,
     rx_reorder: &mut Esp32s31AccessPointRxReorder<'storage, DMA_BUFFER_SIZE>,
     pending_buffered_releases: &mut PendingApBufferedReleases,
+    rx_frame: &mut [u8],
+    rx_batch_used: &mut usize,
+    rx_batch_offset: &mut usize,
     staged_frame: &mut Option<F>,
     now_micros: u64,
-    publish_shared_rx: &mut Q,
     #[cfg(any(feature = "diagnostics", test))] observation: &mut Esp32s31AccessPointControlObservation,
     #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
 ) -> Result<Option<AccessPointRxProtocolClass>, Esp32s31AccessPointControlError>
 where
     F: AccessPointStagedRxFrame,
-    Q: FnMut(u8),
 {
     let segment = staged_frame
         .as_ref()
@@ -261,13 +262,24 @@ where
         if let Some(observer) = delivery_observer {
             observer.admitted(RxNetworkDeliveryEvent::decoded(ethernet_frame, Some(raw)));
         }
-        let current = staged_frame
-            .take()
-            .expect("direct AP publication owns the current staging frame");
-        let index = current
-            .publish_ethernet_in_place(ethernet)
+        let frame = EthernetFrameParts {
+            destination: ethernet.destination,
+            source: ethernet.source,
+            ether_type: ethernet.ether_type,
+            payload: &segment.buffer
+                [ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length],
+        };
+        let mut writer = crate::datapath::rx::ethernet::PackedEthernetWriter::new(rx_frame);
+        writer
+            .push(frame)
             .map_err(|_| Esp32s31AccessPointControlError::ReceiveBatchCapacity)?;
-        publish_shared_rx(index);
+        *rx_batch_used = writer.used();
+        *rx_batch_offset = 0;
+        drop(
+            staged_frame
+                .take()
+                .expect("direct AP publication owns the current staging frame"),
+        );
         #[cfg(any(feature = "diagnostics", test))]
         {
             observation.ethernet_frames_staged =
@@ -306,26 +318,26 @@ where
 /// ordinary-TX capability. The immediate in-order case stays on the small
 /// leaf above; gaps, duplicates and releases enter the same role-local BA
 /// state from active and parked AP owners.
-fn try_service_ap_staged_rx_data<'storage, F, Q, const DMA_BUFFER_SIZE: usize>(
+fn try_service_ap_staged_rx_data<'storage, F, const DMA_BUFFER_SIZE: usize>(
     engine: &mut Esp32s31ApEngine<'_>,
     state: &mut Esp32s31AccessPointProtocolState<'storage, DMA_BUFFER_SIZE>,
     staged_frame: &mut Option<F>,
     now_micros: u64,
-    publish_shared_rx: &mut Q,
     #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
 ) -> Result<Option<AccessPointRxProtocolClass>, Esp32s31AccessPointControlError>
 where
     F: AccessPointStagedRxFrame,
-    Q: FnMut(u8),
 {
     if let Some(class) = try_service_ap_staged_rx_direct(
         engine,
         state.data_rx,
         state.rx_reorder,
         &mut state.pending_buffered_releases,
+        state.rx_frame,
+        &mut state.rx_batch_used,
+        &mut state.rx_batch_offset,
         staged_frame,
         now_micros,
-        publish_shared_rx,
         #[cfg(any(feature = "diagnostics", test))]
         &mut state.observer.observation,
         #[cfg(feature = "diagnostics")]
@@ -571,10 +583,7 @@ where
         });
         return Err(Esp32s31AccessPointControlError::ReceiveBatchCapacity);
     }
-    if batch_used != 0 {
-        state.rx_batch_used = batch_used;
-        state.rx_batch_offset = 0;
-    }
+    let mut batch_used = batch_used;
     if let Some(ethernet) = in_place_publication {
         #[cfg(any(feature = "diagnostics", test))]
         let raw = segment.buffer;
@@ -594,13 +603,27 @@ where
         if let Some(observer) = delivery_observer {
             observer.admitted(RxNetworkDeliveryEvent::decoded(ethernet_frame, Some(raw)));
         }
-        let current = staged_frame
-            .take()
-            .expect("in-place AP publication owns the current staging frame");
-        let index = current
-            .publish_ethernet_in_place(ethernet)
+        let frame = EthernetFrameParts {
+            destination: ethernet.destination,
+            source: ethernet.source,
+            ether_type: ethernet.ether_type,
+            payload: &segment.buffer
+                [ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length],
+        };
+        let mut writer = crate::datapath::rx::ethernet::PackedEthernetWriter::resume(
+            state.rx_frame,
+            batch_used,
+        )
+        .map_err(|_| Esp32s31AccessPointControlError::ReceiveBatchCapacity)?;
+        writer
+            .push(frame)
             .map_err(|_| Esp32s31AccessPointControlError::ReceiveBatchCapacity)?;
-        publish_shared_rx(index);
+        batch_used = writer.used();
+        drop(
+            staged_frame
+                .take()
+                .expect("in-place AP publication owns the current staging frame"),
+        );
         observe_access_point!(state, observation, {
             observation.ethernet_frames_staged =
                 observation.ethernet_frames_staged.saturating_add(1);
@@ -616,6 +639,10 @@ where
                 _ => {}
             }
         });
+    }
+    if batch_used != 0 {
+        state.rx_batch_used = batch_used;
+        state.rx_batch_offset = 0;
     }
     observe_access_point!(state, observation, {
         if !produced_data {
@@ -652,11 +679,10 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     /// owner remains parked. Any frame outside that exact leaf is returned
     /// unchanged so the caller can acquire TX and enter the complete AP role
     /// graph.
-    pub fn service_routed_rx_while_parked<F, Q>(
+    pub fn service_routed_rx_while_parked<F>(
         &mut self,
         frame: F,
         now_micros: u64,
-        publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<
             &dyn RxNetworkDeliveryObserver,
         >,
@@ -666,7 +692,6 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     >
     where
         F: AccessPointStagedRxFrame,
-        Q: FnMut(u8),
     {
         if self.rx_batch_pending()
             || self.state.rx_reorder.work_due(now_micros)
@@ -683,7 +708,6 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
             state,
             &mut frame,
             now_micros,
-            publish_shared_rx,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )?;
@@ -949,13 +973,12 @@ where
     /// is the protocol boundary used by same-channel STA+AP composition. If
     /// ordering or an active hardware TX prevents safe processing, the exact
     /// staging lease is returned instead of copied or dropped.
-    pub fn service_routed_rx<H, F, Q, S>(
+    pub fn service_routed_rx<H, F, S>(
         &mut self,
         hardware: &mut H,
         frame: F,
         security_material: &mut S,
         now_micros: u64,
-        publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<
         crate::roles::concurrent::Esp32s31RoutedRxDisposition<F>,
@@ -964,7 +987,6 @@ where
     where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         F: AccessPointStagedRxFrame,
-        Q: FnMut(u8),
         S: FnMut() -> ([u8; 32], u64),
     {
         let tx_pending = self.mac.tx_pending();
@@ -992,7 +1014,6 @@ where
             frame,
             security_material,
             now_micros,
-            publish_shared_rx,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )?;
@@ -1074,12 +1095,11 @@ where
     /// value-only mailbox actions. It cannot borrow MMIO or publish a frame;
     /// management and EAPOL owners are returned unchanged for the first idle
     /// transaction boundary.
-    pub fn service_routed_rx_during_tx<H, F, Q, S>(
+    pub fn service_routed_rx_during_tx<H, F, S>(
         &mut self,
         frame: F,
         security_material: &mut S,
         now_micros: u64,
-        publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<
         crate::roles::concurrent::Esp32s31RoutedRxDisposition<F>,
@@ -1088,7 +1108,6 @@ where
     where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         F: AccessPointStagedRxFrame,
-        Q: FnMut(u8),
         S: FnMut() -> ([u8; 32], u64),
     {
         if self.rx_batch_pending()
@@ -1118,12 +1137,11 @@ where
         self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
         #[cfg(feature = "diagnostics")]
         let protocol_started = Instant::now().as_micros();
-        let protocol_class = self.service_staged_rx::<H, _, _, _>(
+        let protocol_class = self.service_staged_rx::<H, _, _>(
             None,
             frame,
             security_material,
             now_micros,
-            publish_shared_rx,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )?;
@@ -1227,18 +1245,16 @@ where
 
     /// Consume the complete TX-independent AP data path through the same
     /// role-local state used by a parked AP role.
-    fn try_service_staged_rx_data<F, Q>(
+    fn try_service_staged_rx_data<F>(
         &mut self,
         staged_frame: &mut Option<F>,
         now_micros: u64,
-        publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<
             &dyn RxNetworkDeliveryObserver,
         >,
     ) -> Result<Option<AccessPointRxProtocolClass>, Esp32s31AccessPointControlError>
     where
         F: AccessPointStagedRxFrame,
-        Q: FnMut(u8),
     {
         let mac = &mut self.mac;
         let state = &mut self.state;
@@ -1247,7 +1263,6 @@ where
             state,
             staged_frame,
             now_micros,
-            publish_shared_rx,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )
@@ -1265,26 +1280,23 @@ where
         unsafe(link_section = ".hot.text.open_radio_ap_rx")
     )]
     #[inline(never)]
-    fn service_staged_rx<H, F, Q, S>(
+    fn service_staged_rx<H, F, S>(
         &mut self,
         mut hardware: Option<&mut H>,
         staged_frame: F,
         security_material: &mut S,
         now_micros: u64,
-        publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<AccessPointRxProtocolClass, Esp32s31AccessPointControlError>
     where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         F: AccessPointStagedRxFrame,
-        Q: FnMut(u8),
         S: FnMut() -> ([u8; 32], u64),
     {
         let mut staged_frame = Some(staged_frame);
         if let Some(protocol_class) = self.try_service_staged_rx_data(
             &mut staged_frame,
             now_micros,
-            publish_shared_rx,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )? {

@@ -87,6 +87,7 @@ impl<
     CM,
     N,
     B,
+    RX,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -104,9 +105,10 @@ impl<
         TRAILER,
         RX_QUEUE_DEPTH,
         TX_QUEUE_DEPTH,
+        RX,
     >
 where
-    RM: open_esp_radio_embassy_net::RawMutex,
+    RM: open_esp_radio_embassy_net::RawMutex + 'resources,
     CM: RawMutex,
     N: crate::datapath::network::DatapathNetwork<
             'resources,
@@ -126,6 +128,7 @@ where
             TX_QUEUE_DEPTH,
             Exit = open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason,
         > + Esp32s31ConnectedStationIngress,
+    RX: crate::datapath::network::DatapathNetworkRxSet,
 {
     type Error = B::Error;
 

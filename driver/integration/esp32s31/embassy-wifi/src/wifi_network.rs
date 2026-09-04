@@ -4,7 +4,7 @@ use crate::Esp32s31WifiDevice;
 
 /// Eternal `embassy-net` execution obligation for one Wi-Fi device.
 pub struct Esp32s31WifiNetworkRunner<'resources> {
-    inner: embassy_net::Runner<'resources, Esp32s31WifiDevice>,
+    inner: embassy_net::Runner<'resources>,
 }
 
 impl Esp32s31WifiNetworkRunner<'_> {
@@ -12,18 +12,7 @@ impl Esp32s31WifiNetworkRunner<'_> {
         // The IP runner and socket owners share one executor. Bound each
         // ingress/egress turn so a continuously replenished device queue
         // cannot starve UDP/TCP consumers in one unbounded poll.
-        self.inner.run_work_conserving().await
-    }
-
-    /// Run the production scheduler while reporting one aggregate record per
-    /// bounded stack poll. The observer is diagnostic-only; it cannot alter
-    /// the scheduler decision or packet ownership.
-    #[cfg(feature = "network-scheduler-telemetry")]
-    pub async fn run_observed(
-        mut self,
-        observer: fn(embassy_net::CooperativePollReport),
-    ) -> ! {
-        self.inner.run_work_conserving_observed(observer).await
+        self.inner.run().await
     }
 }
 
@@ -32,13 +21,22 @@ impl<'resources> Esp32s31WifiNetworkRunner<'resources> {
     ///
     /// IP policy and socket capacity remain application choices. The same
     /// stack owner is used by station and access-point epochs.
-    pub fn new<const SOCKETS: usize>(
+    pub fn new(
         device: Esp32s31WifiDevice,
         config: embassy_net::Config,
-        resources: &'resources mut embassy_net::StackResources<SOCKETS>,
+        resources: &'resources mut embassy_net::StackResources<
+            crate::radio_resources::Esp32s31WifiNetworkDevice,
+        >,
         random_seed: u64,
     ) -> (embassy_net::Stack<'resources>, Self) {
-        let (stack, inner) = embassy_net::new(device, config, resources, random_seed);
+        let (stack, mut inner) = embassy_net::new(
+            device.inner,
+            config,
+            resources,
+            random_seed,
+            device.packet_allocator,
+        );
+        inner.set_poll_budget(embassy_net::PollBudget::new(32, 32));
         (stack, Self { inner })
     }
 }

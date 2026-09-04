@@ -90,6 +90,7 @@ impl BluetoothLeReceivedPdu {
 pub struct BluetoothLeReceivedBatch<const CAPACITY: usize = 2> {
     packets: [Option<BluetoothLeReceivedPdu>; CAPACITY],
     len: usize,
+    discarded: usize,
 }
 
 impl<const CAPACITY: usize> BluetoothLeReceivedBatch<CAPACITY> {
@@ -97,6 +98,7 @@ impl<const CAPACITY: usize> BluetoothLeReceivedBatch<CAPACITY> {
         Self {
             packets: [None; CAPACITY],
             len: 0,
+            discarded: 0,
         }
     }
 
@@ -109,6 +111,14 @@ impl<const CAPACITY: usize> BluetoothLeReceivedBatch<CAPACITY> {
         self.len += 1;
     }
 
+    fn push_discarded(&mut self) {
+        assert!(
+            self.len + self.discarded < CAPACITY,
+            "the receive graph bounds its completed observations"
+        );
+        self.discarded += 1;
+    }
+
     /// Number of completed packets copied from this event.
     pub const fn len(&self) -> usize {
         self.len
@@ -117,6 +127,14 @@ impl<const CAPACITY: usize> BluetoothLeReceivedBatch<CAPACITY> {
     /// Whether this event completed without a received packet.
     pub const fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    /// Number of completed hardware observations rejected before PDU dispatch.
+    ///
+    /// These observations carry no PDU and therefore cannot reach a protocol
+    /// parser. Their private controller result image is not exposed.
+    pub const fn discarded_count(&self) -> usize {
+        self.discarded
     }
 
     /// Borrow one packet in hardware list order.
@@ -133,6 +151,15 @@ impl<const CAPACITY: usize> BluetoothLeReceivedBatch<CAPACITY> {
 pub(crate) enum BluetoothLeRxPacketError {
     ProducerSentinelRetained,
     EpochSentinelRetained,
+}
+
+/// Semantic outcome of the private controller receive-result gate.
+///
+/// Only `Dispatchable` carries a copied PDU. The raw controller status and its
+/// positional descriptor encoding remain owned by this private codec.
+enum BluetoothLeRxPacketDisposition {
+    Dispatchable,
+    Discarded,
 }
 
 /// Malformed completed LE receive storage.
@@ -260,6 +287,7 @@ impl BluetoothLeRxPacketStorage {
     const RESULT_REARM_SENTINEL: u32 = 0x00ff_ffff;
     const EPOCH_REARM_SENTINEL: u32 = 0x0000_ffff;
     const CAPACITY_IMAGE: u32 = 0x0001_0100;
+    const UPPER_DISPATCH_BLOCKING_FLAGS: u32 = 0x0000_0601;
 
     pub(crate) const fn new() -> Self {
         Self {
@@ -282,11 +310,18 @@ impl BluetoothLeRxPacketStorage {
             .set(self.words[Self::EPOCH_WORD].get() | Self::EPOCH_REARM_SENTINEL);
     }
 
-    pub(crate) fn received_pdu(&self) -> Result<BluetoothLeReceivedPdu, BluetoothLeRxPacketError> {
+    fn disposition(&self) -> Result<BluetoothLeRxPacketDisposition, BluetoothLeRxPacketError> {
         let result = self.words[Self::RESULT_WORD].get();
         if result & Self::RESULT_REARM_SENTINEL == Self::RESULT_REARM_SENTINEL {
             return Err(BluetoothLeRxPacketError::ProducerSentinelRetained);
         }
+        if result & Self::UPPER_DISPATCH_BLOCKING_FLAGS != 0 {
+            return Ok(BluetoothLeRxPacketDisposition::Discarded);
+        }
+        Ok(BluetoothLeRxPacketDisposition::Dispatchable)
+    }
+
+    fn copy_dispatchable_pdu(&self) -> Result<BluetoothLeReceivedPdu, BluetoothLeRxPacketError> {
         let epoch = self.words[Self::EPOCH_WORD].get();
         if epoch & Self::EPOCH_REARM_SENTINEL == Self::EPOCH_REARM_SENTINEL {
             return Err(BluetoothLeRxPacketError::EpochSentinelRetained);
@@ -326,6 +361,11 @@ impl BluetoothLeRxPacketStorage {
             self.write_byte(BLUETOOTH_LE_RX_PACKET_PREFIX_BYTES - 2 + offset, byte);
         }
         self.write_byte(BLUETOOTH_LE_RX_PACKET_PREFIX_BYTES - 15, rssi_dbm as u8);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn emulate_hardware_discard(&self) {
+        self.words[Self::RESULT_WORD].set(Self::UPPER_DISPATCH_BLOCKING_FLAGS);
     }
 
     #[cfg(test)]
@@ -371,7 +411,12 @@ pub(crate) fn extract_completed_rx_batch<const CAPACITY: usize>(
         if incomplete_observed {
             return Err(BluetoothLeRxError::CompletionChainGap);
         }
-        batch.push(node.packet.received_pdu()?);
+        match node.packet.disposition()? {
+            BluetoothLeRxPacketDisposition::Dispatchable => {
+                batch.push(node.packet.copy_dispatchable_pdu()?)
+            }
+            BluetoothLeRxPacketDisposition::Discarded => batch.push_discarded(),
+        }
     }
     Ok(batch)
 }

@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::Result;
 
 const HIL_RUN_SCHEMA: u16 = 2;
+const HIL_SCENARIO_SCHEMA: u16 = 4;
 
 #[derive(Clone, Debug)]
 pub(crate) struct RepositoryState {
@@ -70,7 +71,7 @@ impl ScenarioCatalog {
             }
             let document: ScenarioDocument =
                 toml_edit::de::from_str(&fs::read_to_string(entry.path())?)?;
-            if document.schema != 3
+            if document.schema != HIL_SCENARIO_SCHEMA
                 || document.id
                     != entry
                         .path()
@@ -707,6 +708,79 @@ fn git_output(root: &Path, arguments: &[&str]) -> Result<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn current_scenario_catalog_drives_requirement_repetition_bounds() {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-qualification-scenario-catalog-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let catalog_directory = root.join("scenarios");
+        fs::create_dir_all(&catalog_directory).unwrap();
+        fs::write(
+            catalog_directory.join("ble-direct-test.toml"),
+            r#"schema = 4
+id = "ble-direct-test"
+description = "Exercise the current HIL scenario document shape"
+repetitions = 3
+image = "boot-smoke"
+isolation = "reset"
+
+[workload]
+kind = "boot-smoke"
+
+[criteria]
+"#,
+        )
+        .unwrap();
+
+        let catalog = ScenarioCatalog::load(&root, Path::new("scenarios")).unwrap();
+        catalog
+            .validate_requirement(&HilRequirement {
+                scenario: "ble-direct-test".to_owned(),
+                minimum_repetitions: 3,
+            })
+            .unwrap();
+        let error = catalog
+            .validate_requirement(&HilRequirement {
+                scenario: "ble-direct-test".to_owned(),
+                minimum_repetitions: 4,
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("declares 3"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scenario_catalog_rejects_non_current_schema() {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-qualification-scenario-schema-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let catalog_directory = root.join("scenarios");
+        fs::create_dir_all(&catalog_directory).unwrap();
+        fs::write(
+            catalog_directory.join("future-scenario.toml"),
+            "schema = 5\nid = \"future-scenario\"\nrepetitions = 1\n",
+        )
+        .unwrap();
+
+        let error = ScenarioCatalog::load(&root, Path::new("scenarios")).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("invalid HIL scenario catalog entry")
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
 
     fn seal(run: &Path) {
         let mut names = vec!["manifest.json", "suite.json"];

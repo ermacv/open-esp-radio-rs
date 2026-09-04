@@ -1,0 +1,36 @@
+schema = 4
+id = "diagnostic-ap-saturated-plus-sparse-tx-fifo-core0"
+description = "Same-image AP saturated-plus-sparse TX control with Xarxa keyed egress scheduling disabled"
+repetitions = 1
+image = "diagnostic-core0-rx-coarse"
+isolation = "reset"
+data_plane = "split-radio-network"
+tx_buffer = "direct-dma-fifo-diagnostic"
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "fairness", "sparse", "core0", "egress-control", "fifo"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 150
+client = "laptop"
+
+[workload.traffic]
+kind = "udp-multi-client"
+direction = "tx"
+duration_seconds = 22
+tx_rate_bps_per_flow = 130000000
+secondary_tx_rate_bps = 4710
+secondary_tx_pacing_group_datagrams = 2
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = true
+minimum_tx_bps = 1
+minimum_bps_per_flow = 1
+minimum_secondary_tx_datagrams = 8
+maximum_secondary_tx_interarrival_ms = 5500
+minimum_concurrent_ap_clients = 2

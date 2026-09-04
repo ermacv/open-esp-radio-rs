@@ -242,7 +242,7 @@ impl ObservedRxStatistics {
 
 #[cfg(test)]
 mod rx_statistics_tests {
-    use super::ObservedRxStatistics;
+    use super::{ObservedRxStatistics, egress_control_diagnostics_enabled};
 
     #[test]
     fn hardware_rx_deltas_use_each_counter_domain() {
@@ -267,6 +267,31 @@ mod rx_statistics_tests {
         assert_eq!(delta.rx_hang, 3);
         assert_eq!(delta.rx_tx_hang, 3);
     }
+
+    #[test]
+    fn fifo_control_disables_the_grant_gate_with_the_schedule() {
+        use open_esp_radio_hil_protocol::WifiTxBufferPolicy;
+
+        assert!(!egress_control_diagnostics_enabled(
+            WifiTxBufferPolicy::DirectDmaFifoDiagnostic
+        ));
+        assert!(!egress_control_diagnostics_enabled(
+            WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+        ));
+        assert!(egress_control_diagnostics_enabled(
+            WifiTxBufferPolicy::DirectDma
+        ));
+    }
+}
+
+const fn egress_control_diagnostics_enabled(
+    tx_buffer: open_esp_radio_hil_protocol::WifiTxBufferPolicy,
+) -> bool {
+    !matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaFifoDiagnostic
+            | open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+    )
 }
 
 #[cfg(feature = "driver-observation")]
@@ -1796,15 +1821,14 @@ pub async fn run(
             open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
         ),
     );
-    open_esp_radio_embassy_net::configure_egress_control_for_diagnostics(!matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
-    ));
+    let egress_control_diagnostics_enabled = egress_control_diagnostics_enabled(tx_buffer);
+    open_esp_radio_embassy_net::configure_egress_control_for_diagnostics(
+        egress_control_diagnostics_enabled,
+    );
     #[cfg(feature = "core0-rx-coarse-telemetry")]
-    open_esp_radio_esp32s31_embassy_wifi::configure_ap_terminal_identity_diagnostics(!matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
-    ));
+    open_esp_radio_esp32s31_embassy_wifi::configure_ap_terminal_identity_diagnostics(
+        egress_control_diagnostics_enabled,
+    );
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     embassy_net::configure_blocked_egress_socket_wake_suppression(!matches!(
         tx_buffer,

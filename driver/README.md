@@ -253,9 +253,18 @@ rate policy and lifecycle remain separate.
 Permanent STA and AP network endpoints share one finite physical TX credit
 pool. Each endpoint retains one ingress response credit. Ordinary egress uses
 the remaining pool elastically: an inactive peer imposes no quota, while every
-returned credit wakes one active endpoint which is actually waiting. Per-VIF
-FIFOs preserve publication order and the physical datapath scheduler owns
-cross-VIF frame fairness.
+returned credit wakes one active endpoint which is actually waiting.
+
+The current egress-scheduling feature branch also contains an experimental
+Xarxa/Embassy demand/grant vertical slice and a second AP software selector.
+They are not the final ownership model. The audited cutover moves completed
+owned packets into driver-owned per-VIF/peer-generation/TID software queues,
+keeps the physical SRAM pool fixed and leaves Core0 as the sole radio-policy
+and terminal-airtime owner. See the
+[Wi-Fi egress architecture](../docs/WIFI_EGRESS_ARCHITECTURE.md) and
+[cutover plan](../docs/WIFI_EGRESS_CUTOVER_PLAN.md). Until that cutover is
+complete, neither the old demand/grant path nor the current FIFO wording is a
+production fairness claim.
 
 ## Extension rules
 

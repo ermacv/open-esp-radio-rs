@@ -14,6 +14,9 @@
 - [`WIFI_EGRESS_REFACTOR_CHECKPOINT.md`](WIFI_EGRESS_REFACTOR_CHECKPOINT.md):
   canonical current-state audit, measured shadow-control cost, target
   ownership model and gated Xarxa/Core0 refactor plan.
+- [`WIFI_DRIVER_REFACTOR_AUDIT_2026-09-04.md`](WIFI_DRIVER_REFACTOR_AUDIT_2026-09-04.md):
+  pre-continuation audit which reconciles the original fairness plan, external
+  reviews, current three-repository implementation and latest HIL regression.
 - [`../tools/blobray/README.md`](../tools/blobray/README.md):
   Blobray workflow and canonical documentation.
 - [`../qualification/`](../qualification/README.md): machine-readable claims

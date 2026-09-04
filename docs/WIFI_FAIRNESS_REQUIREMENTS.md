@@ -4,6 +4,16 @@ Status: working requirements and measured architecture baseline
 Initial revision: 2026-08-30
 Current revision: 2026-08-31, resolved-link pre-DMA production selector
 
+> **Current-state note (2026-09-04):** the behavioural scope and fairness
+> definitions in this document remain the original requirements. The
+> implementation-status prose below preserves the evidence available at that
+> revision and is not the current cutover plan. Device-key UDP queues, the
+> grant vertical slice, review fixes and the newly localized asymmetric AP
+> regression are audited in
+> [`WIFI_DRIVER_REFACTOR_AUDIT_2026-09-04.md`](WIFI_DRIVER_REFACTOR_AUDIT_2026-09-04.md).
+> That audit and [`WIFI_EGRESS_REFACTOR_CHECKPOINT.md`](WIFI_EGRESS_REFACTOR_CHECKPOINT.md)
+> supersede older implementation-direction wording here.
+
 This document is the starting contract for Wi-Fi fairness work. It is
 intentionally evolvable: measurements and hardware limits may change the
 policy, scenarios or numerical gates. Changes must preserve the reason for the

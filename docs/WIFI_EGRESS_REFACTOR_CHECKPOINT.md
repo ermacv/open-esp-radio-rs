@@ -4,6 +4,13 @@ Status: canonical architecture checkpoint, 2026-09-04. This document defines
 the current implementation boundary and the next refactor stages. Older design
 notes remain useful as experimental history, but do not override this status.
 
+> **Latest execution audit:**
+> [`WIFI_DRIVER_REFACTOR_AUDIT_2026-09-04.md`](WIFI_DRIVER_REFACTOR_AUDIT_2026-09-04.md)
+> records the post-review asymmetric AP regression and now controls the next
+> action. The ownership topology in this checkpoint remains accepted, but its
+> earlier provider-first execution order is paused until the three-arm
+> authoritative/keyed/FIFO same-image gate localizes that regression.
+
 ## Verdict
 
 The architecture direction is accepted, but the cutover is not complete.

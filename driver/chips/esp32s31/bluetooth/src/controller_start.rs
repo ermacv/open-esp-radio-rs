@@ -53,7 +53,8 @@ use crate::{
     BluetoothPrimaryPublishedInterruptStep,
 };
 
-/// Powered Controller after IRQ-output preparation and runtime-timer start.
+/// Powered Controller after address readiness, IRQ-output preparation and
+/// runtime-timer start.
 ///
 /// This state retains the complete BLE PHY epoch, the prepared-but-unrouted
 /// interrupt partition and the uniquely started low-power timer. It does not
@@ -4732,9 +4733,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     /// Prepare Controller IRQ output and then start the runtime timer once.
     ///
     /// The consuming BLE-PHY state proves that controller HAL, scheduler,
-    /// low-power hardware, common PHY, BTBB and BLE PHY initialization
-    /// all belong to this epoch. CPU routes remain inaccessible, so the lower
-    /// unsafe interrupt prerequisite is discharged here and never exported.
+    /// low-power hardware, common PHY, BTBB, BLE PHY initialization and public
+    /// Controller-address publication all belong to this epoch. CPU routes
+    /// remain inaccessible, so the lower unsafe interrupt prerequisite is
+    /// discharged here and never exported.
     #[allow(
         unsafe_code,
         reason = "the complete Controller typestate proves the HAL interrupt prerequisites"

@@ -12,14 +12,14 @@ use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListsCleared;
 use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerSramAddress, BluetoothDirectionFindingDisabledBaselineOwner,
-    BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
-    BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerRunEventPublished,
-    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalIdle,
-    BluetoothSchedulerSoftwareListRemovalJoin,
+    BluetoothControllerPublicAddress, BluetoothControllerSramAddress,
+    BluetoothDirectionFindingDisabledBaselineOwner, BluetoothInterruptOutputPreparedOwner,
+    BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
+    BluetoothPhyRegisterInitInputs, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
+    BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalJoin,
 };
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
@@ -593,6 +593,21 @@ impl BluetoothTaskResources {
         unsafe {
             self.registers.enable_ble_base_stack_hardware(inputs);
         }
+    }
+
+    /// Publish this cold epoch's public Controller identity after BLE PHY init.
+    ///
+    /// The caller retains the sole powered task owner and invokes this before
+    /// controller IRQ output, runtime-timer start or any radio consumer becomes
+    /// reachable. The HAL fixes the public slot and owns Controller byte order.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn program_public_device_address(
+        &mut self,
+        address: BluetoothControllerPublicAddress,
+    ) {
+        self.registers
+            .borrow_bluetooth_controller()
+            .program_public_device_address(address);
     }
 
     /// Publish the controller-global disabled-CTE descriptor baseline.

@@ -819,8 +819,11 @@ pub async fn start_esp32s31_bluetooth<
         passive_scan_runtime,
         peripheral_connection_runtime,
     ) = memory.into_parts();
-    let ble_phy_initialized =
-        baseband_initialized.initialize_ble_phy_engine(ble_phy_memory, direction_finding_memory);
+    let ble_phy_initialized = baseband_initialized.initialize_ble_phy_engine(
+        ble_phy_memory,
+        direction_finding_memory,
+        public_address,
+    );
     let ble_phy = ble_phy_initialized.report();
     let ready = ble_phy_initialized
         .prepare_controller_output_and_start_runtime_timer()

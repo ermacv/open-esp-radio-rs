@@ -1,6 +1,6 @@
 //! Private SRAM layout and word codec for one peripheral connection graph.
 
-use core::{marker::PhantomPinned, num::NonZeroU32, pin::Pin};
+use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 use pin_project::pin_project;
@@ -11,6 +11,7 @@ use super::{
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
     BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
+    BluetoothPeripheralConnectionCapturedAnchorAvailability,
     BluetoothPeripheralConnectionCapturedAnchorTime, BluetoothPeripheralConnectionDataChannel,
     BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionEventSpan,
     BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,
@@ -50,7 +51,7 @@ const LINK_STATE_INTERVAL_TICKS: usize = 0x18 / 4;
 const LINK_STATE_PACKET_HISTORY: usize = 0x1c / 4;
 const LINK_STATE_PACKET_CONTROL: usize = 0x20 / 4;
 const LINK_STATE_PACKET_SEQUENCE: usize = 0x30 / 4;
-const LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR: usize = 0x34 / 4;
+const LINK_STATE_EVENT_SPAN: usize = 0x34 / 4;
 const LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION: usize = 0x50 / 4;
 const LINK_STATE_DIRECTION_FINDING_POLICY: usize = 0x54 / 4;
 const LINK_STATE_EVENT_PRIORITY: usize = 0x60 / 4;
@@ -77,6 +78,7 @@ const SCHEDULER_ITEM_CONTEXT_STATE: usize = 1;
 const SCHEDULER_ITEM_RATE_AND_POWER: usize = 0x14 / 4;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY: usize = 0x18 / 4;
 const SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION: usize = 0x2c / 4;
+const SCHEDULER_ITEM_CAPTURED_ANCHOR: usize = 0x34 / 4;
 const SCHEDULER_ITEM_STATUS: usize = 0x38 / 4;
 const SCHEDULER_ITEM_START: usize = 0x44 / 4;
 const SCHEDULER_ITEM_END: usize = 0x48 / 4;
@@ -88,6 +90,7 @@ const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
 const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK: u32 = 0x0000_7fff;
 const SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE: u32 = 0x000f_0000;
+const SCHEDULER_ITEM_CAPTURE_AVAILABLE: u32 = 1 << 11;
 
 const TX_SENTINEL_STATE: usize = 0x0c / 4;
 const TX_SENTINEL_CLASS: usize = 0x10 / 4;
@@ -199,27 +202,12 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         self.words[LINK_STATE_ROUNDED_POWER]
             .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
         self.words[LINK_STATE_INTERVAL_TICKS].set(interval.ticks());
-        self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR].set(event_span.ticks());
-    }
-
-    fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
-        BluetoothPeripheralConnectionCapturedAnchorTime::from_controller_sram_word(
-            self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR].get(),
-        )
+        self.words[LINK_STATE_EVENT_SPAN].set(event_span.ticks());
     }
 
     #[cfg(test)]
-    fn model_controller_complete_event(
-        &self,
-        prepared_span: BluetoothPeripheralConnectionEventSpan,
-        captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
-    ) -> bool {
-        if self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR].get() != prepared_span.ticks() {
-            return false;
-        }
-        self.words[LINK_STATE_EVENT_SPAN_OR_CAPTURED_ANCHOR]
-            .set(captured_anchor.wrapping_controller_ticks());
-        true
+    fn retains_event_span(&self, prepared_span: BluetoothPeripheralConnectionEventSpan) -> bool {
+        self.words[LINK_STATE_EVENT_SPAN].get() == prepared_span.ticks()
     }
 
     fn install_direction_finding_workspace(
@@ -269,6 +257,18 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
 #[repr(C, align(4))]
 struct BluetoothPeripheralConnectionSchedulerItemStorage {
     words: [VolatileCell<u32>; SCHEDULER_ITEM_WORDS],
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct BluetoothPeripheralConnectionSchedulerCompletionObservation {
+    status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    capture_available: bool,
+}
+
+impl BluetoothPeripheralConnectionSchedulerCompletionObservation {
+    pub(super) const fn status(self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
+        self.status
+    }
 }
 
 impl BluetoothPeripheralConnectionSchedulerItemStorage {
@@ -327,17 +327,36 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
         self.words[SCHEDULER_ITEM_STATUS].set(0);
     }
 
-    fn completion_status(
+    fn completion_observation(
         &self,
-    ) -> Option<BluetoothPeripheralConnectionSchedulerItemCompletionStatus> {
+    ) -> Option<BluetoothPeripheralConnectionSchedulerCompletionObservation> {
         match self.words[SCHEDULER_ITEM_STATUS].get() {
             u32::MAX => None,
-            0 => Some(BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero),
             status => Some(
-                BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero(
-                    NonZeroU32::new(status).expect("a nonzero branch retains a nonzero value"),
-                ),
+                BluetoothPeripheralConnectionSchedulerCompletionObservation {
+                    status: if status == 0 {
+                        BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero
+                    } else {
+                        BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero
+                    },
+                    capture_available: status & SCHEDULER_ITEM_CAPTURE_AVAILABLE != 0,
+                },
             ),
+        }
+    }
+
+    fn captured_anchor_availability(
+        &self,
+        completion: BluetoothPeripheralConnectionSchedulerCompletionObservation,
+    ) -> BluetoothPeripheralConnectionCapturedAnchorAvailability {
+        if completion.capture_available {
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(
+                BluetoothPeripheralConnectionCapturedAnchorTime::from_controller_sram_word(
+                    self.words[SCHEDULER_ITEM_CAPTURED_ANCHOR].get(),
+                ),
+            )
+        } else {
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent
         }
     }
 
@@ -372,8 +391,35 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
     }
 
     #[cfg(test)]
-    fn model_controller_status(&self, status: u32) {
+    fn model_controller_completion(
+        &self,
+        status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+        capture: BluetoothPeripheralConnectionCapturedAnchorAvailability,
+    ) -> bool {
+        let status = match (status, capture) {
+            (
+                BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero,
+                BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+            ) => 0,
+            (
+                BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+                BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+            ) => 1,
+            (
+                BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+                BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(captured),
+            ) => {
+                self.words[SCHEDULER_ITEM_CAPTURED_ANCHOR]
+                    .set(captured.wrapping_controller_ticks());
+                SCHEDULER_ITEM_CAPTURE_AVAILABLE
+            }
+            (
+                BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero,
+                BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(_),
+            ) => return false,
+        };
         self.words[SCHEDULER_ITEM_STATUS].set(status);
+        true
     }
 }
 
@@ -650,33 +696,33 @@ impl BluetoothPeripheralConnectionMemoryGraphStorage {
             .install_scheduler_head(binding.scheduler_items[selected_index]);
     }
 
-    pub(super) fn scheduler_completion_status(
+    pub(super) fn scheduler_completion_observation(
         &self,
-    ) -> Option<BluetoothPeripheralConnectionSchedulerItemCompletionStatus> {
+    ) -> Option<BluetoothPeripheralConnectionSchedulerCompletionObservation> {
         self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
-            .completion_status()
+            .completion_observation()
     }
 
-    pub(super) fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
-        self.link_state.captured_anchor_time()
+    pub(super) fn captured_anchor_availability(
+        &self,
+        completion: BluetoothPeripheralConnectionSchedulerCompletionObservation,
+    ) -> BluetoothPeripheralConnectionCapturedAnchorAvailability {
+        self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
+            .captured_anchor_availability(completion)
     }
 
     #[cfg(test)]
     pub(super) fn model_controller_complete_event(
         &self,
         prepared_span: BluetoothPeripheralConnectionEventSpan,
-        captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
-        status: u32,
+        status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+        capture: BluetoothPeripheralConnectionCapturedAnchorAvailability,
     ) -> bool {
-        if !self
-            .link_state
-            .model_controller_complete_event(prepared_span, captured_anchor)
-        {
+        if !self.link_state.retains_event_span(prepared_span) {
             return false;
         }
         self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
-            .model_controller_status(status);
-        true
+            .model_controller_completion(status, capture)
     }
 
     pub(super) fn event_resources_are_recycled(
@@ -691,12 +737,6 @@ impl BluetoothPeripheralConnectionMemoryGraphStorage {
                 binding.scheduler_context,
                 binding.link_state,
             )
-    }
-
-    #[cfg(test)]
-    pub(super) fn model_controller_status(&self, status: u32) {
-        self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
-            .model_controller_status(status);
     }
 }
 

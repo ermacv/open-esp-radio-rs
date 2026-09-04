@@ -114,6 +114,34 @@ Dependencies may point downward only. In particular, scheduler core must not
 know HCI commands, memory codecs must not know controller roles, and the
 Embassy actor must not interpret registers or SRAM descriptor fields.
 
+The Cargo dependency graph is acyclic, but source ownership still forms one
+conceptual cycle. `BluetoothControllerInterruptOwnersPublished` and its task
+service retain the DTM, advertising, scanning and connection runtimes, while
+the corresponding role runners depend back on controller-start task and
+preparation types. Interrupt publication therefore still knows every upper
+radio role. The next hard boundary is a hardware-only published runtime,
+followed by a separate consuming join of role resources. This is more
+important than moving additional large files because it removes the cycle
+which currently prevents a dependency-enforced hardware crate.
+
+`controller_start/scheduler_service.rs` had the same issue one level lower: a
+single wildcard dependency on its parent hid common, connection, advertising,
+scanning and DTM operations in one implementation block. Connection service
+operations now live in an explicit-dependency child because recurring
+connection work is the next functional edge. DTM service operations have also
+been isolated; advertising and scanning remain to be extracted from the
+common parent.
+
+The Embassy command actor must remain one task with one affine owner slot, one
+HCI command-ready token and one finished-list dispatcher. Its role handlers
+may move to child modules, but creating multiple actors would replace a source
+organization problem with runtime arbitration and cancellation races.
+
+The obsolete Embassy IRQ facade has been removed: production integration uses
+`BluetoothControllerPublishedInterruptService` directly, while the old
+publisher/receiver split was referenced only by its own unit tests. Its direct
+HAL dependency was removed with it, without an alias or compatibility path.
+
 The long-term crate boundary should make that direction explicit:
 
     S31 contracts: controller SRAM address/time/list value domains
@@ -247,14 +275,17 @@ moved to `InFlight` at RUN and intentionally remains unadvanced after recycle:
 the separate connection-destroy/status policy must be closed before one LL
 completion can be committed.
 
-The connection link-state also contains one hardware-reused timing location.
-Before `RUN`, the memory codec now requires a semantic connection-event span;
-after fenced completion the same private storage is returned as an opaque
-captured-anchor observation. Raw position and encoding remain private to the
-codec. The chip role retains the capture for later PHY/time normalization; it
-is not substituted with an RX-packet timestamp and is not published to the
-portable LL as controller ticks. Recurrence must use the normalized actual
-phase rather than the planned first window or a fresh `now()` sample.
+Vendor cross-revision review found two distinct timing words at the same
+offset in different SRAM objects. Link state `+0x34` remains the event-span
+input. The completed scheduler item has its own `+0x34` captured-anchor output,
+and its status word controls whether that capture is available. The private
+codec now produces an explicit `CaptureAbsent`/`CaptureAvailable` branch and
+only the latter may enter epoch/PHY normalization. Raw position and
+encoding remain private to the codec. Neither branch alone means connection
+teardown; both completed scheduler events may proceed to recurrence, while
+establishment, supervision and control policy belong to the portable LL and
+controller layers. When a capture exists, recurrence must use its normalized
+actual phase rather than the planned first window or a fresh `now()` sample.
 
 The connection-memory file is also the first codec split: raw SRAM storage,
 offsets, masks, address binding and word transforms live in the private

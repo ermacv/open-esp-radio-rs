@@ -172,6 +172,7 @@ pub use peripheral_connection_memory::{
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_BYTES,
     BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT,
     BLUETOOTH_PERIPHERAL_CONNECTION_TX_SENTINEL_BYTES,
+    BluetoothPeripheralConnectionCapturedAnchorAvailability,
     BluetoothPeripheralConnectionCapturedAnchorTime, BluetoothPeripheralConnectionDataChannel,
     BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionEventSpan,
     BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,

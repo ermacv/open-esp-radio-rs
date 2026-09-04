@@ -10,7 +10,7 @@
 
 #![forbid(unsafe_code)]
 
-use core::{num::NonZeroU32, pin::Pin};
+use core::pin::Pin;
 
 use crate::{
     direction_finding_workspace::BluetoothDirectionFindingWorkspaceLink,
@@ -34,6 +34,7 @@ pub use codec::BluetoothPeripheralConnectionMemoryGraphStorage;
 use codec::{
     BluetoothPeripheralConnectionFirstEventCodecInput,
     BluetoothPeripheralConnectionMemoryGraphBinding,
+    BluetoothPeripheralConnectionSchedulerCompletionObservation,
 };
 
 /// Bytes retained by one connection link-state allocation.
@@ -163,6 +164,13 @@ impl BluetoothPeripheralConnectionCapturedAnchorTime {
     pub const fn wrapping_controller_ticks(self) -> u32 {
         self.0
     }
+}
+
+/// Whether a completed connection scheduler item published a receive-time capture.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothPeripheralConnectionCapturedAnchorAvailability {
+    Absent,
+    Available(BluetoothPeripheralConnectionCapturedAnchorTime),
 }
 
 /// Non-empty raw Controller window for one connection scheduler item.
@@ -884,14 +892,14 @@ impl BluetoothPeripheralConnectionMemoryGraphRunning {
                 observed,
             };
         }
-        let Some(status) = self
+        let Some(completion) = self
             .prepared
             .prepared
             .prepared
             .storage
             .as_ref()
             .get_ref()
-            .scheduler_completion_status()
+            .scheduler_completion_observation()
         else {
             return BluetoothPeripheralConnectionMemoryGraphCompletionObservation::StillInFlight(
                 self,
@@ -900,20 +908,20 @@ impl BluetoothPeripheralConnectionMemoryGraphRunning {
         BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
             BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
                 running: self,
-                status,
+                completion,
             },
         )
     }
 }
 
-/// Opaque interpretation of one non-sentinel connection scheduler status.
+/// Opaque category of one non-sentinel connection scheduler status.
 ///
-/// The numeric nonzero value is retained for diagnostics. No Link Layer
-/// meaning is assigned until the corresponding controller branch is reviewed.
+/// The raw controller word remains private to the memory codec. Zero versus
+/// nonzero is diagnostic only and does not classify Link Layer completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
     Zero,
-    NonZero(NonZeroU32),
+    NonZero,
 }
 
 /// One bounded observation of a running connection graph.
@@ -931,7 +939,7 @@ pub enum BluetoothPeripheralConnectionMemoryGraphCompletionObservation {
 #[must_use = "the completed connection graph must pass scheduler unlink before CPU access"]
 pub struct BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
     running: BluetoothPeripheralConnectionMemoryGraphRunning,
-    status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    completion: BluetoothPeripheralConnectionSchedulerCompletionObservation,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
@@ -940,7 +948,7 @@ impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
     }
 
     pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
-        self.status
+        self.completion.status()
     }
 
     /// Bind the exact post-unlink removal proof before reading or resetting SRAM.
@@ -972,7 +980,7 @@ impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
                 error,
             });
         }
-        let captured_anchor = self
+        let capture = self
             .running
             .prepared
             .prepared
@@ -980,11 +988,11 @@ impl BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
             .storage
             .as_ref()
             .get_ref()
-            .captured_anchor_time();
+            .captured_anchor_availability(self.completion);
         Ok(BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
             completed: self,
             removal,
-            captured_anchor,
+            capture,
         })
     }
 }
@@ -1024,13 +1032,15 @@ impl BluetoothPeripheralConnectionMemoryGraphRecycleFailure {
 pub struct BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
     completed: BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
     removal: BluetoothSchedulerSoftwareListRemovalReady,
-    captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
+    capture: BluetoothPeripheralConnectionCapturedAnchorAvailability,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
-    /// Hardware-produced receive-time capture for this completed event.
-    pub const fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
-        self.captured_anchor
+    /// Whether this completed item published a hardware receive-time capture.
+    pub const fn captured_anchor_availability(
+        &self,
+    ) -> BluetoothPeripheralConnectionCapturedAnchorAvailability {
+        self.capture
     }
 
     /// Recover both unchanged owners before extraction starts.
@@ -1124,10 +1134,12 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
         let BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
             completed,
             removal: _,
-            captured_anchor,
+            capture,
         } = self.prepared;
-        let BluetoothPeripheralConnectionMemoryGraphCompletionObserved { running, status } =
-            completed;
+        let BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
+            running,
+            completion,
+        } = completed;
         let BluetoothPeripheralConnectionMemoryGraphRunning {
             prepared,
             _rx_publication: _,
@@ -1159,8 +1171,8 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
         BluetoothPeripheralConnectionMemoryGraphRecycled {
             graph,
             batch: self.batch,
-            status,
-            captured_anchor,
+            status: completion.status(),
+            capture,
         }
     }
 }
@@ -1210,12 +1222,14 @@ pub struct BluetoothPeripheralConnectionMemoryGraphRecycled {
     graph: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
     batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
     status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
-    captured_anchor: BluetoothPeripheralConnectionCapturedAnchorTime,
+    capture: BluetoothPeripheralConnectionCapturedAnchorAvailability,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphRecycled {
-    pub const fn captured_anchor_time(&self) -> BluetoothPeripheralConnectionCapturedAnchorTime {
-        self.captured_anchor
+    pub const fn captured_anchor_availability(
+        &self,
+    ) -> BluetoothPeripheralConnectionCapturedAnchorAvailability {
+        self.capture
     }
 
     pub fn into_parts(
@@ -1224,9 +1238,9 @@ impl BluetoothPeripheralConnectionMemoryGraphRecycled {
         BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
         BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
         BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
-        BluetoothPeripheralConnectionCapturedAnchorTime,
+        BluetoothPeripheralConnectionCapturedAnchorAvailability,
     ) {
-        (self.graph, self.batch, self.status, self.captured_anchor)
+        (self.graph, self.batch, self.status, self.capture)
     }
 }
 
@@ -1288,8 +1302,6 @@ impl BluetoothPeripheralConnectionMemoryGraphStorage {
 
 #[cfg(test)]
 mod tests {
-    use core::num::NonZeroU32;
-
     use open_esp_radio_esp32s31_hal::{
         BluetoothRxMemoryListPublished, BluetoothSchedulerFinishedListObservation,
         BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
@@ -1298,6 +1310,7 @@ mod tests {
     };
 
     use super::{
+        BluetoothPeripheralConnectionCapturedAnchorAvailability,
         BluetoothPeripheralConnectionCapturedAnchorTime, BluetoothPeripheralConnectionDataChannel,
         BluetoothPeripheralConnectionDefaultTxPowerDbm, BluetoothPeripheralConnectionEventSpan,
         BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,
@@ -1326,11 +1339,9 @@ mod tests {
 
     fn completed_graph(
         graph_base: u32,
-        status: u32,
-    ) -> (
-        BluetoothPeripheralConnectionMemoryGraphCompletionObserved,
-        BluetoothPeripheralConnectionCapturedAnchorTime,
-    ) {
+        status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+        capture: BluetoothPeripheralConnectionCapturedAnchorAvailability,
+    ) -> BluetoothPeripheralConnectionMemoryGraphCompletionObserved {
         let owner = BluetoothPeripheralConnectionMemoryGraphStorage::pin_static_model(
             storage(),
             BluetoothPeripheralConnectionMemoryGraphModelAddress::new(graph_base)
@@ -1379,10 +1390,6 @@ mod tests {
             .install_direction_finding_workspace(workspace.binding().link())
             .prepare_scheduler_admission();
         let scheduler_item_address = prepared.scheduler_head();
-        let captured_anchor =
-            BluetoothPeripheralConnectionCapturedAnchorTime::from_controller_sram_word(
-                graph_base.wrapping_add(0x1234),
-            );
         assert!(
             prepared
                 .prepared
@@ -1390,7 +1397,7 @@ mod tests {
                 .storage
                 .as_ref()
                 .get_ref()
-                .model_controller_complete_event(event_span, captured_anchor, status)
+                .model_controller_complete_event(event_span, status, capture)
         );
         let running = BluetoothPeripheralConnectionMemoryGraphRunning {
             prepared,
@@ -1406,13 +1413,12 @@ mod tests {
         else {
             panic!("the semantic observation contains list zero")
         };
-        let completed = match running.observe_completion(observed) {
+        match running.observe_completion(observed) {
             BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
                 completed,
             ) => completed,
             _ => panic!("the non-sentinel status completes the model event"),
-        };
-        (completed, captured_anchor)
+        }
     }
 
     fn removal_ready(
@@ -1484,28 +1490,34 @@ mod tests {
 
     #[test]
     fn scheduler_status_separates_in_flight_from_opaque_completion() {
-        let storage = BluetoothPeripheralConnectionMemoryGraphStorage::new();
-
-        storage.model_controller_status(u32::MAX);
-        assert_eq!(storage.scheduler_completion_status(), None);
-
-        storage.model_controller_status(0);
+        let zero = completed_graph(
+            0x2f00_3000,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+        );
         assert_eq!(
-            storage.scheduler_completion_status(),
-            Some(BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero)
+            zero.status(),
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero
         );
 
-        let opaque = NonZeroU32::new(7).expect("the fixture status is nonzero");
-        storage.model_controller_status(opaque.get());
+        let nonzero = completed_graph(
+            0x2f00_4000,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+        );
         assert_eq!(
-            storage.scheduler_completion_status(),
-            Some(BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero(opaque))
+            nonzero.status(),
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero
         );
     }
 
     #[test]
     fn recycle_rejects_a_foreign_item_without_mutating_the_connection() {
-        let (completed, _) = completed_graph(0x2f00_5000, 7);
+        let completed = completed_graph(
+            0x2f00_5000,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+        );
         let address = completed.scheduler_item_address();
         let foreign =
             open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(address.address() + 4)
@@ -1525,15 +1537,19 @@ mod tests {
         assert_eq!(completed.scheduler_item_address(), address);
         assert_eq!(
             completed.status(),
-            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero(
-                NonZeroU32::new(7).expect("seven is nonzero")
-            )
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero
         );
     }
 
     #[test]
-    fn recycle_returns_the_capture_without_resetting_the_active_owner() {
-        let (completed, captured_anchor) = completed_graph(0x2f00_9000, 0);
+    fn recycle_returns_an_available_capture_without_resetting_the_active_owner() {
+        let captured_anchor =
+            BluetoothPeripheralConnectionCapturedAnchorTime::from_controller_sram_word(0x1234);
+        let completed = completed_graph(
+            0x2f00_9000,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(captured_anchor),
+        );
         let address = completed.scheduler_item_address();
         let prepared = completed
             .prepare_recycle_after_software_list_removal(removal_ready(
@@ -1541,15 +1557,58 @@ mod tests {
                 address,
             ))
             .unwrap_or_else(|_| panic!("the exact removal proof authorizes reclamation"));
-        assert_eq!(prepared.captured_anchor_time(), captured_anchor);
+        assert_eq!(
+            prepared.captured_anchor_availability(),
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(captured_anchor)
+        );
         let extracted = prepared
             .extract_received()
             .unwrap_or_else(|_| panic!("an event without a received packet is valid"));
         assert!(extracted.batch().is_empty());
 
         let recycled = extracted.commit();
-        assert_eq!(recycled.captured_anchor_time(), captured_anchor);
-        let (active, batch, status, returned_anchor) = recycled.into_parts();
+        assert_eq!(
+            recycled.captured_anchor_availability(),
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(captured_anchor)
+        );
+        let (active, batch, status, returned_capture) = recycled.into_parts();
+
+        assert!(active.event_resources_are_recycled());
+        assert!(batch.is_empty());
+        assert_eq!(
+            status,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::NonZero
+        );
+        assert_eq!(
+            returned_capture,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(captured_anchor)
+        );
+    }
+
+    #[test]
+    fn recycle_preserves_an_event_without_a_capture() {
+        let completed = completed_graph(
+            0x2f00_d000,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+        );
+        let address = completed.scheduler_item_address();
+        let prepared = completed
+            .prepare_recycle_after_software_list_removal(removal_ready(
+                BluetoothSchedulerHardwareListIndex::ZERO,
+                address,
+            ))
+            .unwrap_or_else(|_| panic!("the exact removal proof authorizes reclamation"));
+        assert_eq!(
+            prepared.captured_anchor_availability(),
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent
+        );
+
+        let recycled = prepared
+            .extract_received()
+            .unwrap_or_else(|_| panic!("an event without a received packet is valid"))
+            .commit();
+        let (active, batch, status, capture) = recycled.into_parts();
 
         assert!(active.event_resources_are_recycled());
         assert!(batch.is_empty());
@@ -1557,6 +1616,9 @@ mod tests {
             status,
             BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero
         );
-        assert_eq!(returned_anchor, captured_anchor);
+        assert_eq!(
+            capture,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent
+        );
     }
 }

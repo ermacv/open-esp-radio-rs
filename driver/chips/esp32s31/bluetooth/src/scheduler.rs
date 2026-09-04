@@ -65,6 +65,7 @@ pub use peripheral_connection::{
 };
 #[cfg(target_arch = "riscv32")]
 pub(crate) use peripheral_connection::{
+    BluetoothPeripheralConnectionSchedulerPacketStartNormalization,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
 };
@@ -90,6 +91,7 @@ use crate::peripheral_connection::{
     BluetoothPeripheralConnectionFirstEventCompletionObserved,
     BluetoothPeripheralConnectionFirstEventRunning,
     BluetoothPeripheralConnectionFirstEventRxPublished,
+    BluetoothPeripheralConnectionPacketStartNormalization,
     BluetoothPeripheralConnectionPacketStartNormalizedEvent,
     BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
 };

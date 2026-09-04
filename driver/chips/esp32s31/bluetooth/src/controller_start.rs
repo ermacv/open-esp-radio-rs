@@ -37,6 +37,7 @@ use crate::modem_lp_timer_queue::{
 };
 #[cfg(target_arch = "riscv32")]
 use crate::scheduler::{
+    BluetoothPeripheralConnectionSchedulerPacketStartNormalization,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
 };
@@ -1550,6 +1551,7 @@ pub enum BluetoothLePacketStartTimingError {
 #[must_use = "retain the unchanged recycled owner or normalized connection"]
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothPeripheralConnectionPacketStartNormalizationStep {
+    CaptureAbsent(crate::BluetoothPeripheralConnectionSchedulerRecycled),
     SchedulerEpochUnavailable(crate::BluetoothPeripheralConnectionSchedulerRecycled),
     Normalized(crate::BluetoothPeripheralConnectionSchedulerPacketStartNormalized),
 }
@@ -4722,17 +4724,27 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         recycled: crate::BluetoothPeripheralConnectionSchedulerRecycled,
     ) -> BluetoothPeripheralConnectionPacketStartNormalizationStep {
-        let Some(epoch) = *self.scheduler_epoch else {
-            return BluetoothPeripheralConnectionPacketStartNormalizationStep::SchedulerEpochUnavailable(
-                recycled,
-            );
-        };
-        BluetoothPeripheralConnectionPacketStartNormalizationStep::Normalized(
-            recycled.normalize_packet_start(|captured| {
+        let epoch = *self.scheduler_epoch;
+        match recycled.normalize_packet_start(|captured| {
+            epoch.map(|epoch| {
                 self.ble_phy_timing
                     .complete_le_1m_peripheral_connection_packet_start(epoch, captured)
-            }),
-        )
+            })
+        }) {
+            BluetoothPeripheralConnectionSchedulerPacketStartNormalization::CaptureAbsent(
+                recycled,
+            ) => BluetoothPeripheralConnectionPacketStartNormalizationStep::CaptureAbsent(
+                recycled,
+            ),
+            BluetoothPeripheralConnectionSchedulerPacketStartNormalization::NormalizationUnavailable(
+                recycled,
+            ) => BluetoothPeripheralConnectionPacketStartNormalizationStep::SchedulerEpochUnavailable(
+                recycled,
+            ),
+            BluetoothPeripheralConnectionSchedulerPacketStartNormalization::Normalized(
+                normalized,
+            ) => BluetoothPeripheralConnectionPacketStartNormalizationStep::Normalized(normalized),
+        }
     }
 
     /// Move this exact task service into its initialized scheduler epoch.

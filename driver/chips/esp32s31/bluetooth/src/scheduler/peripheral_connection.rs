@@ -417,6 +417,15 @@ pub struct BluetoothPeripheralConnectionSchedulerRecycled {
     event: BluetoothPeripheralConnectionRecycledEvent,
 }
 
+/// Capture-normalization outcome retaining the exact recycled scheduler owner.
+#[must_use = "every branch must be retained or advanced"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothPeripheralConnectionSchedulerPacketStartNormalization {
+    CaptureAbsent(BluetoothPeripheralConnectionSchedulerRecycled),
+    NormalizationUnavailable(BluetoothPeripheralConnectionSchedulerRecycled),
+    Normalized(BluetoothPeripheralConnectionSchedulerPacketStartNormalized),
+}
+
 #[cfg(target_arch = "riscv32")]
 impl BluetoothPeripheralConnectionSchedulerRecycled {
     /// Link Layer counter retained without advancement after lower reclamation.
@@ -442,10 +451,24 @@ impl BluetoothPeripheralConnectionSchedulerRecycled {
         self,
         normalize: impl FnOnce(
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
-        ) -> BluetoothPeripheralConnectionPacketStartTiming,
-    ) -> BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
-        BluetoothPeripheralConnectionSchedulerPacketStartNormalized {
-            event: self.event.normalize_packet_start(normalize),
+        ) -> Option<BluetoothPeripheralConnectionPacketStartTiming>,
+    ) -> BluetoothPeripheralConnectionSchedulerPacketStartNormalization {
+        match self.event.normalize_packet_start(normalize) {
+            BluetoothPeripheralConnectionPacketStartNormalization::CaptureAbsent(event) => {
+                BluetoothPeripheralConnectionSchedulerPacketStartNormalization::CaptureAbsent(
+                    BluetoothPeripheralConnectionSchedulerRecycled { event },
+                )
+            }
+            BluetoothPeripheralConnectionPacketStartNormalization::NormalizationUnavailable(
+                event,
+            ) => BluetoothPeripheralConnectionSchedulerPacketStartNormalization::NormalizationUnavailable(
+                BluetoothPeripheralConnectionSchedulerRecycled { event },
+            ),
+            BluetoothPeripheralConnectionPacketStartNormalization::Normalized(event) => {
+                BluetoothPeripheralConnectionSchedulerPacketStartNormalization::Normalized(
+                    BluetoothPeripheralConnectionSchedulerPacketStartNormalized { event },
+                )
+            }
         }
     }
 }

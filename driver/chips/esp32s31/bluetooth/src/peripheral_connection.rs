@@ -29,8 +29,10 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothDirectionFindingWorkspaceLink, BluetoothPeripheralConnectionDataChannel,
-    BluetoothPeripheralConnectionEventSpan, BluetoothPeripheralConnectionIntervalTicks,
+    BluetoothDirectionFindingWorkspaceLink,
+    BluetoothPeripheralConnectionCapturedAnchorAvailability,
+    BluetoothPeripheralConnectionDataChannel, BluetoothPeripheralConnectionEventSpan,
+    BluetoothPeripheralConnectionIntervalTicks,
     BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
     BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
@@ -1226,13 +1228,13 @@ impl BluetoothPeripheralConnectionCompletionRxExtracted {
     }
 
     pub(crate) fn commit(self) -> BluetoothPeripheralConnectionRecycledEvent {
-        let (graph, batch, status, captured_anchor) = self.graph.commit().into_parts();
+        let (graph, batch, status, capture) = self.graph.commit().into_parts();
         BluetoothPeripheralConnectionRecycledEvent {
             graph,
             event: self.event,
             batch,
             status,
-            captured_anchor,
+            capture,
             first_window: self.first_window,
             requested_window: self.requested_window,
             resolved_window: self.resolved_window,
@@ -1252,7 +1254,7 @@ pub(crate) struct BluetoothPeripheralConnectionRecycledEvent {
     event: LePeripheralConnectionEventInFlight,
     batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
     status: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
-    captured_anchor: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
+    capture: BluetoothPeripheralConnectionCapturedAnchorAvailability,
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
@@ -1266,6 +1268,41 @@ pub(crate) struct BluetoothPeripheralConnectionRecycledEvent {
 pub(crate) struct BluetoothPeripheralConnectionPacketStartNormalizedEvent {
     recycled: BluetoothPeripheralConnectionRecycledEvent,
     packet_start: BluetoothPeripheralConnectionPacketStartTiming,
+}
+
+/// Result of attempting to normalize the capture of one recycled connection event.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "every branch retains the exact recycled connection owner"]
+pub(crate) enum BluetoothPeripheralConnectionPacketStartNormalization {
+    CaptureAbsent(BluetoothPeripheralConnectionRecycledEvent),
+    NormalizationUnavailable(BluetoothPeripheralConnectionRecycledEvent),
+    Normalized(BluetoothPeripheralConnectionPacketStartNormalizedEvent),
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+enum BluetoothPeripheralConnectionCaptureNormalization<T> {
+    Absent,
+    Unavailable,
+    Normalized(T),
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+fn normalize_peripheral_connection_capture<T>(
+    capture: BluetoothPeripheralConnectionCapturedAnchorAvailability,
+    normalize: impl FnOnce(
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
+    ) -> Option<T>,
+) -> BluetoothPeripheralConnectionCaptureNormalization<T> {
+    let BluetoothPeripheralConnectionCapturedAnchorAvailability::Available(captured) = capture
+    else {
+        return BluetoothPeripheralConnectionCaptureNormalization::Absent;
+    };
+    match normalize(captured) {
+        Some(normalized) => {
+            BluetoothPeripheralConnectionCaptureNormalization::Normalized(normalized)
+        }
+        None => BluetoothPeripheralConnectionCaptureNormalization::Unavailable,
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -1290,12 +1327,25 @@ impl BluetoothPeripheralConnectionRecycledEvent {
         self,
         normalize: impl FnOnce(
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionCapturedAnchorTime,
-        ) -> BluetoothPeripheralConnectionPacketStartTiming,
-    ) -> BluetoothPeripheralConnectionPacketStartNormalizedEvent {
-        let packet_start = normalize(self.captured_anchor);
-        BluetoothPeripheralConnectionPacketStartNormalizedEvent {
-            recycled: self,
-            packet_start,
+        ) -> Option<BluetoothPeripheralConnectionPacketStartTiming>,
+    ) -> BluetoothPeripheralConnectionPacketStartNormalization {
+        match normalize_peripheral_connection_capture(self.capture, normalize) {
+            BluetoothPeripheralConnectionCaptureNormalization::Absent => {
+                return BluetoothPeripheralConnectionPacketStartNormalization::CaptureAbsent(self);
+            }
+            BluetoothPeripheralConnectionCaptureNormalization::Unavailable => {
+                return BluetoothPeripheralConnectionPacketStartNormalization::NormalizationUnavailable(
+                    self,
+                );
+            }
+            BluetoothPeripheralConnectionCaptureNormalization::Normalized(packet_start) => {
+                BluetoothPeripheralConnectionPacketStartNormalization::Normalized(
+                    BluetoothPeripheralConnectionPacketStartNormalizedEvent {
+                        recycled: self,
+                        packet_start,
+                    },
+                )
+            }
         }
     }
 }
@@ -1368,6 +1418,8 @@ impl BluetoothPeripheralConnectionIdentityPrepared {
 
 #[cfg(test)]
 mod tests {
+    use core::cell::Cell;
+
     use open_esp_radio_bluetooth_ll::connection::{
         LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LEGACY_CONNECT_IND_PAYLOAD_BYTES,
         LEGACY_CONNECT_IND_PDU_BYTES, LeLegacyConnectionRequest, LePeripheralConnection,
@@ -1383,13 +1435,34 @@ mod tests {
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{
-        BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionRuntimeBeginError,
-        BluetoothPeripheralConnectionRuntimeConfig, BluetoothPeripheralConnectionRuntimeResources,
+        BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionCaptureNormalization,
+        BluetoothPeripheralConnectionCapturedAnchorAvailability,
+        BluetoothPeripheralConnectionRuntimeBeginError, BluetoothPeripheralConnectionRuntimeConfig,
+        BluetoothPeripheralConnectionRuntimeResources, normalize_peripheral_connection_capture,
     };
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
         BluetoothSchedulerRawWindow, BluetoothSchedulerSoftwareConfig,
     };
+
+    #[test]
+    fn absent_connection_capture_does_not_invoke_normalization() {
+        let called = Cell::new(false);
+
+        let result = normalize_peripheral_connection_capture(
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+            |_| {
+                called.set(true);
+                Some(())
+            },
+        );
+
+        assert!(matches!(
+            result,
+            BluetoothPeripheralConnectionCaptureNormalization::Absent
+        ));
+        assert!(!called.get());
+    }
 
     fn runtime(graph_base: u32) -> BluetoothPeripheralConnectionRuntimeResources {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(

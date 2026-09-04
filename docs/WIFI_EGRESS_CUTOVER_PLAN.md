@@ -50,14 +50,14 @@ This phase is not performance-qualified until Phase 5.
 
 ### 4A. Separate crates
 
-- [ ] Create an upstream-clean compatibility adapter crate.
-- [ ] Keep the owned Xarxa adapter in a distinct crate with only the two forked
+- [x] Create an upstream-clean compatibility adapter crate.
+- [x] Keep the owned Xarxa adapter in a distinct crate with only the two forked
   dependencies it requires.
-- [ ] Move physical SRAM execution types into the radio/ESP32-S31 adapter layer,
+- [x] Move physical SRAM execution types into the radio/ESP32-S31 adapter layer,
   not the generic Embassy compatibility crate.
-- [ ] Ensure Cargo feature unification cannot pull owned/research code into the
+- [x] Ensure Cargo feature unification cannot pull owned/research code into the
   compatibility binary.
-- [ ] Add compile checks for each adapter independently.
+- [x] Add compile and dependency checks for each adapter independently.
 
 ### 4B. Shared radio-native ingress
 

@@ -1294,12 +1294,8 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
  "embassy-sync 0.8.0",
- "open-esp-radio-dma",
- "pin-project-lite",
- "riscv 0.15.0",
  "xarxa-driver",
 ]
 

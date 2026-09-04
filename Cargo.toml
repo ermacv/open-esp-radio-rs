@@ -4,6 +4,7 @@ members = [
     "driver/common/dma",
     "driver/radio",
     "driver/adapters/embassy-net",
+    "driver/adapters/embassy-net-compat",
     "driver/adapters/embassy/wifi",
     "driver/adapters/embassy/esp32s31-bluetooth",
     "driver/adapters/embassy/esp32s31-coex",

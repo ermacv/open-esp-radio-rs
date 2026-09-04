@@ -13,13 +13,12 @@ use core::future::{Future, pending};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
-use open_esp_radio_embassy_net::{
-    DatapathTxConsumer, NetworkInterfaceId, OwnedNetworkTxFrame, RawMutex,
-};
+use open_esp_radio_embassy_net::{NetworkInterfaceId, OwnedNetworkTxFrame, RawMutex};
 
 use super::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
-    DatapathRxWorkCounters, DatapathServices, DatapathStopProgress, WifiTxProgress, WifiTxWake,
+    DatapathRxWorkCounters, DatapathServices, DatapathStopProgress, DatapathTxConsumer,
+    WifiTxProgress, WifiTxWake,
     network::{DatapathNetworkRx, DatapathNetworkRxSet},
 };
 

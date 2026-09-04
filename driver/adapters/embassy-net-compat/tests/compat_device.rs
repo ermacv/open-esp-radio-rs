@@ -2,7 +2,7 @@ use core::task::{Context, Waker};
 
 use embassy_net_driver::{Driver, RxToken as _, TxToken as _};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use open_esp_radio_embassy_net::{
+use open_esp_radio_embassy_net_compat::{
     ETHERNET_HEADER_LEN, FrameLengthError, Resources, RxEnqueueError,
 };
 

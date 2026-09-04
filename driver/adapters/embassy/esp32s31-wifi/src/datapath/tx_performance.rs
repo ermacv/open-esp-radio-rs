@@ -1,4 +1,4 @@
-//! Diagnostic-only accounting for general-memory to SRAM TX promotion.
+//! Diagnostic-only accounting for ESP32-S31 general-memory to SRAM TX promotion.
 //!
 //! These counters observe the physical admission boundary owned by Core0.
 //! They are absent from production builds because every successful promotion

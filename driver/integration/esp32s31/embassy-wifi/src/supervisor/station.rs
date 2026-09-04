@@ -2368,18 +2368,6 @@ pub(crate) async fn run_connected<'state, 'security>(
     })
 }
 
-/// Split the persistent Embassy network device from the radio-side queue
-/// endpoint before the station lifecycle starts.
-pub(crate) fn initialize_station_network(
-    station_address: [u8; 6],
-    access_point_address: [u8; 6],
-) -> (
-    crate::radio_resources::Esp32s31WifiDevices,
-    WifiNetworkResources,
-) {
-    crate::radio_resources::initialize_network(station_address, access_point_address)
-}
-
 /// Construct the reusable interrupt epoch retained by the station backend.
 pub(crate) fn mac_interrupt_epoch(setup: MacInterruptSetup) -> MacInterruptEpoch {
     Esp32s31MacInterruptEpoch::new(

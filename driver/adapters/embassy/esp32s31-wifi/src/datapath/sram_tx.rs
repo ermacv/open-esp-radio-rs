@@ -20,8 +20,8 @@ use open_esp_radio_dma::{
 };
 
 #[cfg(feature = "tx-phase-telemetry")]
-use crate::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
-use crate::{NetworkInterfaceId, OwnedNetworkTxFrame, OwnedTxFrameSource};
+use super::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
+use open_esp_radio_embassy_net::{NetworkInterfaceId, OwnedNetworkTxFrame, OwnedTxFrameSource};
 
 /// Snapshot of the physical TX execution pool.
 #[cfg(feature = "tx-phase-telemetry")]

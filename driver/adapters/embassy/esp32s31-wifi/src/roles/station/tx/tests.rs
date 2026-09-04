@@ -5,9 +5,9 @@ use core::{
     task::{Context, Waker},
 };
 
+use crate::datapath::{DatapathTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources};
 use open_esp_radio_embassy_net::{
-    DatapathTxConsumer, NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources,
-    OwnedNetworkDevice, PinnedTxFrame, PinnedTxPool, PinnedTxResources,
+    NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources, OwnedNetworkDevice,
 };
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,

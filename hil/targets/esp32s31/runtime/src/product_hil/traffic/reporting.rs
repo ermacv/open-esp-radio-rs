@@ -5,7 +5,7 @@ use core::future::Future;
 use embassy_futures::yield_now;
 use embassy_time::Instant;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_embassy_net::{TX_PERFORMANCE, TxPerformanceSnapshot};
+use open_esp_radio_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,

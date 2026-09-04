@@ -222,14 +222,16 @@ mod tests {
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_DESCRIPTOR_COUNT, 96);
         assert_eq!(ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH, 67);
         assert_eq!(ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH, 128);
-        assert!(
-            ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY
-                > ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH
-        );
-        assert!(
-            ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY
-                > ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH
-        );
+        const {
+            assert!(
+                ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY
+                    > ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH
+            );
+            assert!(
+                ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY
+                    > ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH
+            );
+        }
         assert_eq!(
             ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH
                 - ESP32S31_PERMANENT_NETWORK_ENDPOINTS

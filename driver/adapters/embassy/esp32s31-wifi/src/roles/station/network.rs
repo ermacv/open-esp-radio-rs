@@ -1,8 +1,3 @@
-#![expect(
-    clippy::manual_async_fn,
-    reason = "network publication keeps the adapter trait's explicit borrowed Future contract"
-)]
-
 //! Bounded connected-RX publication into the Embassy network adapter.
 
 use core::{

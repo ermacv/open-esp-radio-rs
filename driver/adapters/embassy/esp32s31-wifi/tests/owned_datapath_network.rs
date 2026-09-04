@@ -1,10 +1,9 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use open_esp_radio_embassy_net::{
-    LinkState, NetworkInterfaceId, OwnedEndpointResources, PinnedTxPool, PinnedTxResources,
-};
+use open_esp_radio_embassy_net::{LinkState, NetworkInterfaceId, OwnedEndpointResources};
 use open_esp_radio_esp32s31_wifi_embassy::datapath::network::{
     DatapathNetwork, DualOwnedDatapathNetwork, OwnedDatapathNetwork,
 };
+use open_esp_radio_esp32s31_wifi_embassy::datapath::{PinnedTxPool, PinnedTxResources};
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
 fn allocator<const N: usize>() -> PacketBufAllocator {
@@ -78,6 +77,96 @@ fn owned_backlog_and_physical_dma_credits_remain_independent() {
 }
 
 #[test]
+fn datapath_reserves_sram_before_removing_a_software_owner() {
+    const FRAME_CAPACITY: usize = 64;
+    const HEADROOM: usize = 16;
+    const TRAILER: usize = 8;
+    const RX_QUEUE_DEPTH: usize = 1;
+    const NETWORK_TX_DEPTH: usize = 2;
+    const TX_QUEUE_DEPTH: usize = 1;
+    type PhysicalPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    type PhysicalResources =
+        PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+
+    let general = allocator::<NETWORK_TX_DEPTH>();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<
+        NoopRawMutex,
+        RX_QUEUE_DEPTH,
+        NETWORK_TX_DEPTH,
+    >::new()));
+    let interface = NetworkInterfaceId::new(0);
+    let (mut device, owned) =
+        endpoint.split(interface, [2, 0, 0, 0, 0, 1], allocator::<RX_QUEUE_DEPTH>());
+    let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
+    let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
+    let network = OwnedDatapathNetwork::new(owned, physical_resources.split(physical_pool));
+    network.set_link_state(interface, LinkState::Up);
+
+    device.transmit(packet(general, 0x51)).unwrap();
+    device.transmit(packet(general, 0x52)).unwrap();
+    let consumer = network.tx_consumer(interface);
+    let first = consumer
+        .try_receive_direct()
+        .expect("one free SRAM slot promotes the first owner");
+    assert_eq!(consumer.queue_len(), 1);
+
+    assert!(consumer.try_receive_direct().is_none());
+    assert_eq!(
+        consumer.queue_len(),
+        1,
+        "physical exhaustion must retain the next general-memory owner"
+    );
+
+    drop(first);
+    let second = consumer
+        .try_receive_direct()
+        .expect("terminal return makes the retained owner promotable");
+    assert_eq!(second.as_slice(), &[0x52; 14]);
+}
+
+#[test]
+fn physical_batch_admission_never_moves_a_partial_prefix() {
+    const FRAME_CAPACITY: usize = 64;
+    const HEADROOM: usize = 16;
+    const TRAILER: usize = 8;
+    const RX_QUEUE_DEPTH: usize = 1;
+    const NETWORK_TX_DEPTH: usize = 2;
+    const TX_QUEUE_DEPTH: usize = 1;
+    type PhysicalPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    type PhysicalResources =
+        PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+
+    let general = allocator::<NETWORK_TX_DEPTH>();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<
+        NoopRawMutex,
+        RX_QUEUE_DEPTH,
+        NETWORK_TX_DEPTH,
+    >::new()));
+    let interface = NetworkInterfaceId::new(0);
+    let (mut device, owned) =
+        endpoint.split(interface, [2, 0, 0, 0, 0, 1], allocator::<RX_QUEUE_DEPTH>());
+    let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
+    let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
+    let network = OwnedDatapathNetwork::new(owned, physical_resources.split(physical_pool));
+    network.set_link_state(interface, LinkState::Up);
+
+    device.transmit(packet(general, 0x61)).unwrap();
+    device.transmit(packet(general, 0x62)).unwrap();
+    let consumer = network.tx_consumer(interface);
+    let mut sources = [
+        Some(network.try_receive_tx(interface).expect("first owner")),
+        Some(network.try_receive_tx(interface).expect("second owner")),
+    ];
+    let mut destinations = [None, None];
+
+    assert!(!consumer.try_promote_batch(&mut sources, &mut destinations));
+    assert!(destinations.iter().all(Option::is_none));
+    assert_eq!(sources[0].as_ref().unwrap().as_slice(), &[0x61; 14]);
+    assert_eq!(sources[1].as_ref().unwrap().as_slice(), &[0x62; 14]);
+    assert!(general.try_alloc().is_none());
+}
+
+#[test]
 fn dual_owned_endpoints_keep_logical_backlogs_separate_from_one_dma_horizon() {
     const FRAME_CAPACITY: usize = 64;
     const HEADROOM: usize = 16;
@@ -128,7 +217,6 @@ fn dual_owned_endpoints_keep_logical_backlogs_separate_from_one_dma_horizon() {
 
     assert_eq!(network.tx_queue_len(station_interface), 1);
     assert_eq!(network.tx_queue_len(access_point_interface), 2);
-    assert_eq!(network.physical_tx_queue_len(), 3);
 
     let station = network
         .try_receive_tx(station_interface)

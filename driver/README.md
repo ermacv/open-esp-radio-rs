@@ -72,6 +72,10 @@ module for the former vendor-derived `wdev` naming.
   source-reviewed S31 MAC.
 - `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
+- `adapters/embassy-net-compat`: copied-frame adapter for the unchanged
+  released Embassy driver interface; it has no fork or radio dependency.
+- `adapters/embassy-net`: owned-packet adapter for the optimized Xarxa/Embassy
+  integration; it has no physical SRAM, DMA or Wi-Fi policy.
 - `integration/esp32s31/bluetooth`: one-time production placement and claim of
   the statically bound ESP32-S31 controller-memory graph.
 - `integration/esp32s31/embassy-wifi`: production composition and the only

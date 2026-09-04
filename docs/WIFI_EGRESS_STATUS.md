@@ -1,8 +1,8 @@
 # Wi-Fi network integration status
 
-Status date: 2026-09-04. Code checkpoint: `647bb112` on
-`refactor/wifi-owned-egress`. This document records facts at that checkpoint;
-it is not an experiment diary.
+Status date: 2026-09-04. Active branch: `refactor/wifi-owned-egress`. This
+document records facts after the integration-boundary cutover; it is not an
+experiment diary.
 
 ## Executive status
 
@@ -21,22 +21,19 @@ result exists yet, so current throughput and CPU targets are not claimed.
 
 ## Repository boundaries
 
-Current dependencies:
+The network boundaries are now separate crates and dependency graphs:
 
-- optimized Xarxa owned-packet fork: `122e97146fc0a174ef3310f4526defc37663bed4`;
-- optimized Embassy fork: `244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d`;
-- compatibility `embassy-net-driver`: released crate `0.2.0`.
+- `open-esp-radio-embassy-net-compat` implements only the copied-frame
+  released `embassy-net-driver 0.2.0` contract and has no Git or radio/DMA
+  dependency;
+- `open-esp-radio-embassy-net` implements only owned `PacketBuf` transfer over
+  Xarxa `122e97146fc0a174ef3310f4526defc37663bed4` and Embassy
+  `244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d`;
+- `open-esp-radio-esp32s31-wifi-embassy` alone owns the fixed internal-SRAM
+  promotion pool and its physical telemetry.
 
-The `open-esp-radio-embassy-net` crate currently contains three logically
-separate pieces:
-
-- a small copied-frame adapter for the unchanged Embassy driver trait;
-- the optimized owned-`PacketBuf` network boundary;
-- the physical internal-SRAM TX execution pool.
-
-This is compile-time clean but not the final crate topology. Separating the
-compatibility and owned integrations into distinct crates remains planned so
-Cargo feature unification cannot couple them.
+`tools/check-network-adapter-boundaries.sh` compiles each boundary independently
+and rejects dependency leakage back into the compatibility or owned crates.
 
 ## Current optimized TX path
 
@@ -100,16 +97,19 @@ scheduler because that scheduler no longer exists.
 
 ## Verification completed
 
-At checkpoint `647bb112`:
+At the current source checkpoint:
 
 - `cargo check --workspace` passes;
-- `open-esp-radio-embassy-net`: 9 owned unit tests and 3 compatibility tests
-  pass;
-- `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests pass;
+- `open-esp-radio-embassy-net`: all 6 owned unit tests pass;
+- `open-esp-radio-embassy-net-compat`: all 3 compatibility tests pass;
+- `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests and 4 physical
+  boundary tests pass;
 - product integration cross-checks for `riscv32imafc-unknown-none-elf` pass;
 - the base HIL runtime cross-check passes;
 - the HIL hardware/memory architecture feature set cross-check passes;
-- the HIL scenario catalog validation tests pass.
+- the HIL scenario catalog validation tests pass;
+- `tools/audit-source-only.sh` passes, including the final 4 MiB HIL image,
+  placement, stack-frame and forbidden-ROM audits.
 
 Hardware was intentionally not touched during this cutover.
 
@@ -139,8 +139,8 @@ They do not prove the performance of the current owned path.
    path.
 4. TCP and raw traffic share the owned API structurally but lack complete HIL
    qualification.
-5. The compatibility integration is tested as a library driver but is not yet
-   a separate product crate/composition.
+5. The compatibility integration is an independent library crate but is not
+   yet a product composition.
 6. The research integration is not implemented.
 7. Core1 load after cutover is unknown. Moving work away from Core0 is not an
    accepted optimization without total-CPU evidence.
@@ -149,6 +149,10 @@ They do not prove the performance of the current owned path.
    static source type.
 9. HIL module/document cleanup beyond removed TX selectors remains a separate
    audit item.
+10. The one-time `embassy_net::new` path still materializes Xarxa's complete
+    stack value before writing it into static resources. Its 18 KiB HIL
+    composition frame is explicitly bounded today; an in-place constructor is
+    the correct future fork API if initialization stack use must be reduced.
 
 ## Next decision gates
 

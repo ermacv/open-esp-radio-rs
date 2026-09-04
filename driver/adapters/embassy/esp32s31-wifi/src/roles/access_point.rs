@@ -16,10 +16,10 @@ use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_embassy_net::{
-    DatapathTxConsumer, FrameLengthError, LinkState, OwnedNetworkTxFrame, PinnedTxFrame,
-    RxEnqueueError,
+    FrameLengthError, LinkState, OwnedNetworkTxFrame, RxEnqueueError,
 };
 
+use crate::datapath::{DatapathTxConsumer, PinnedTxFrame};
 use open_esp_radio_esp32s31_wifi::{
     ampdu_tx::HtAmpduTxRolePolicy,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},

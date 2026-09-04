@@ -4,10 +4,12 @@ use core::future::Future;
 
 use embassy_futures::select::select;
 use open_esp_radio_embassy_net::{
-    DatapathTxConsumer, LinkState, NetworkInterfaceId, OwnedLinkController, OwnedNetworkRunner,
-    OwnedNetworkTxFrame, OwnedRxPublisher, PinnedTxConsumer, RawMutex, RxEnqueueError,
+    LinkState, NetworkInterfaceId, OwnedLinkController, OwnedNetworkRunner, OwnedNetworkTxFrame,
+    OwnedRxPublisher, RawMutex, RxEnqueueError,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+
+use super::{DatapathTxConsumer, PinnedTxConsumer};
 
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.

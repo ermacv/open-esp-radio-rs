@@ -86,7 +86,7 @@ pub(super) use reporting::{
     log_open_radio_task_poll_interval, observe_open_radio_task_polls,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-pub(super) use reporting::{log_open_radio_core0_rx_coarse, log_open_radio_core1_tx_phases};
+pub(super) use reporting::{log_open_radio_core0_rx_coarse, log_open_radio_tx_promotion};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 pub(super) use reporting::{
     log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,

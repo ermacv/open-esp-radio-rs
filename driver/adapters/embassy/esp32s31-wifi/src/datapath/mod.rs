@@ -17,8 +17,7 @@ use embassy_futures::{
 };
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::{
-    DatapathTxConsumer, LinkState, NetworkInterfaceId, OwnedNetworkTxFrame, OwnedRxPublisher,
-    RawMutex,
+    LinkState, NetworkInterfaceId, OwnedNetworkTxFrame, OwnedRxPublisher, RawMutex,
 };
 pub use open_esp_radio_esp32s31_wifi::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
@@ -31,7 +30,21 @@ pub mod network;
 pub mod rx;
 pub mod services;
 pub(crate) mod software_tx_queue;
+mod sram_tx;
 pub mod tx;
+#[cfg(feature = "tx-phase-telemetry")]
+mod tx_performance;
+
+#[cfg(feature = "tx-phase-telemetry")]
+pub use sram_tx::PinnedTxOwnershipSnapshot;
+pub use sram_tx::{
+    DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool,
+    PinnedTxResources,
+};
+#[cfg(feature = "tx-phase-telemetry")]
+pub use tx_performance::{
+    TX_PERFORMANCE, TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot,
+};
 
 /// Maximum latency added while collecting one already-detected network burst.
 // This is a burst-only deadline: the first frame after an observed quiet

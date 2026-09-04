@@ -7,11 +7,10 @@
 //! statically dispatched service-decoration hook for qualification faults.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_embassy_net::PinnedTxFrame;
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
 use crate::{
-    datapath::{DatapathRunner, DatapathServices},
+    datapath::{DatapathRunner, DatapathServices, PinnedTxFrame},
     roles::station::connected::port::{
         Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaControlResources,
         Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPort, Esp32s31ConnectedStaReport,

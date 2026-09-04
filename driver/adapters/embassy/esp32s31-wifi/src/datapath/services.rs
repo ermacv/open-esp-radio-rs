@@ -10,14 +10,14 @@ use core::{
     future::{Future, pending, ready},
 };
 
-use open_esp_radio_embassy_net::{DatapathTxConsumer, OwnedNetworkTxFrame, RawMutex};
+use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, RawMutex};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 
 use crate::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
-    DatapathRxWorkCounters, DatapathServices, WifiTxProgress, WifiTxWake,
+    DatapathRxWorkCounters, DatapathServices, DatapathTxConsumer, WifiTxProgress, WifiTxWake,
     network::DatapathNetworkRxSet,
 };
 

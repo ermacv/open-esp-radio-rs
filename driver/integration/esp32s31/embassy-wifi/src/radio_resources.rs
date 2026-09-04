@@ -10,8 +10,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use embassy_net::{PacketBufAllocator, PacketPool, PacketPoolStorage};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use open_esp_radio_embassy_net::{
-    OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame, PinnedTxFrame, PinnedTxPool,
-    PinnedTxResources,
+    OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
 use open_esp_radio_esp32s31_wifi_embassy::{
@@ -25,6 +24,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_NETWORK_TX_TRAILER as NETWORK_TX_TRAILER,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
+    datapath::{PinnedTxFrame, PinnedTxPool, PinnedTxResources},
     datapath::network::DualOwnedDatapathNetwork,
     datapath::tx::resources::AggregateTxResources,
 };
@@ -317,7 +317,7 @@ static TX_AMPDU_STANDBY_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FR
 static TX_AMPDU_STANDBY_RETENTION: ConstStaticCell<RadioAmpduRetention> =
     ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 
-pub(super) fn initialize_network(
+pub(crate) fn initialize_network(
     station_address: [u8; 6],
     access_point_address: [u8; 6],
 ) -> (Esp32s31WifiDevices, WifiNetworkResources) {

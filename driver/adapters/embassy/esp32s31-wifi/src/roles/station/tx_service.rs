@@ -7,13 +7,15 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::{DatapathTxConsumer, OwnedNetworkTxFrame, RawMutex};
+use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
 };
 
-use crate::datapath::{WifiTxProgress, WifiTxWake, services::DatapathNetworkTxService};
+use crate::datapath::{
+    DatapathTxConsumer, WifiTxProgress, WifiTxWake, services::DatapathNetworkTxService,
+};
 
 impl<
     'resources,

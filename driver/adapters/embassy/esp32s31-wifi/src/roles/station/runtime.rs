@@ -11,9 +11,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::{
-    DatapathTxConsumer, OwnedNetworkTxFrame, PinnedTxFrame, RawMutex,
-};
+use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::WifiTxWake,
@@ -36,6 +34,7 @@ use crate::{
         },
         services::{DatapathNetworkTxService, SingleRoleServices},
     },
+    datapath::{DatapathTxConsumer, PinnedTxFrame},
     roles::station::connected::port::{Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaReport},
     roles::station::tx::{AggregateTxError, Esp32s31ConnectedTx, Esp32s31ConnectedTxParked},
     roles::{

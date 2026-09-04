@@ -41,7 +41,6 @@ default = []
 # diagnostic counters or invoke observation clocks.
 diagnostics = [
     "dep:log",
-    "open-esp-radio-embassy-net/diagnostics",
     "open-esp-radio-esp32s31-wifi-ap/diagnostics",
 ]
 # Low-overhead phase timing for the Core0 RX producer. This is deliberately
@@ -61,7 +60,6 @@ core0-rx-coarse-telemetry = ["dep:riscv"]
 # Core1 packet emission is measured at the paired embassy-net boundary.
 tx-phase-telemetry = [
     "core0-rx-coarse-telemetry",
-    "open-esp-radio-embassy-net/tx-phase-telemetry",
 ]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]

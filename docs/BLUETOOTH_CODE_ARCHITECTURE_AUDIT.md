@@ -1,6 +1,6 @@
 # Bluetooth Code Architecture Audit
 
-Date: 2026-09-02
+Date: 2026-09-04
 
 ## Outcome
 
@@ -325,3 +325,65 @@ completion/destroy classification, exactly one accepted LL event advance, then
 provisional skipped-event recurrence and controller-runner integration. The
 split is worthwhile before that work because recurrence would otherwise add
 another copy of the largest duplicated pipeline.
+
+## 2026-09-04 follow-up
+
+The first-event suffix is no longer the functional frontier described above.
+The S31 path now fences completion, retires and unlinks the hardware head,
+extracts RX data, restores event-local SRAM, classifies capture-backed peer
+activity, and advances the portable LL event exactly once. First and recurring
+memory events also converge after private-item detach on one publication,
+RUN, completion and recycle lifecycle. Recurring LL advancement remains
+provisional until the lower transaction can accept it.
+
+The current largest production integration roots are:
+
+| File | Lines | Current concern |
+|---|---:|---|
+| `controller_start.rs` | 5,319 | Boot, command transaction, time service and four role preparation machines |
+| Embassy `controller_command_task.rs` | 4,163 | One required actor, but all role states and drive logic in one module |
+| `scheduler.rs` | 4,049 | Common epoch plus advertising and scanning role implementations |
+| `peripheral_connection.rs` | about 1,830 | Runtime, first event and completion in one role module |
+| portable LL `connection.rs` | 1,344 | Request codec, channel selection and event lifecycle |
+
+The Cargo graph remains acyclic, but two source-level cycles are still visible:
+
+1. `runtime_resources.rs` owns a scheduler epoch type while `scheduler.rs`
+   implements role operations on the powered runtime type.
+2. `controller_start.rs` starts role runners, while those runners depend back
+   on controller-start task/service types. Controller-wide idle command routing
+   is also misplaced in `dtm_runner.rs`, which makes the cycle look DTM-specific.
+
+These cycles are development debt, not a DTM blocker. The useful near-term
+cuts are deliberately small:
+
+1. move connection completion/recycle types to
+   `peripheral_connection/completion.rs`, leaving runtime and first-event
+   lowering in the parent;
+2. move connection preparation states out of `controller_start.rs` into
+   `controller_start/peripheral_connection.rs`;
+3. separate controller command transaction from upper dispatch, so role
+   runners depend only on the lower transaction and startup no longer invokes
+   them;
+4. only then isolate scheduler common epoch/list publication and split the
+   remaining advertising and scanning implementations;
+5. split the Embassy actor by role handler while preserving one actor, one
+   affine owner slot and one finished-list dispatcher.
+
+The primary functional blocker for a real peripheral connection is now before
+the existing connection code: the S31 advertising backend is TX-only and
+restricted to `ADV_NONCONN_IND`. A response-capable `ADV_IND` path must own the
+exact non-scanning RX pool, apply the reviewed hardware-result dispatch gate,
+extract a bounded `CONNECT_IND`, and transfer that same affine pool into the
+connection graph. The raw receive-result predicate is private SRAM-codec
+policy; hardware-discarded observations must never reach the portable parser.
+No new PAC accessor appears necessary for this ingress. The missing evidence is
+the exact response-capable advertising descriptor profile and ownership
+handoff, not generic MMIO access.
+
+After ingress, the connection closure order is: combined LL/timing recurring
+candidate, timeline and sequence admission, recurring SRAM preparation,
+private-item detach and empty-list merge, then one atomic commit of both the LL
+provisional state and the proposed phase. Head publication before that joint
+commit would make rollback impossible; LL commit before merge would let
+channel/counter state diverge from the hardware event.

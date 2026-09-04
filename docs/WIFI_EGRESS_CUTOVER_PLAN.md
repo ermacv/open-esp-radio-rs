@@ -43,24 +43,33 @@ Gate:
 
 ## Phase 1: synchronize the production base
 
-Status: main integration and all host/source gates are complete through
-`57486b85`; clean STA and AP smoke HIL are pending.
+Status: the experimental integration branch is synchronized and all
+host/source gates are complete through `8ec3f2c0`. Its target build exposed a
+stack regression caused by the subsequently enlarged old Xarxa/Embassy
+scheduling prototype. That branch is retained as the oracle rather than made
+the production base.
 
-The open-radio feature branch now contains `origin/main` at `d66b3101`. This
-keeps the subsequent ownership migration off the obsolete radio tree while
-preserving the pushed oracle history.
+The open-radio experimental branch contains `origin/main` at `d66b3101` and
+preserves the pushed oracle history. Production work starts on a new sibling
+branch directly from that `origin/main` commit, then carries only the canonical
+architecture documents and unrelated main test correction. It does not carry
+the 62 public demand/grant experiment commits merely to remove them later.
 
 - Merge `origin/main` into the pushed feature branch without rewriting the
   oracle commits.
 - Resolve only real conflicts; do not carry obsolete compatibility modes into
   main-side code.
 - Run the workspace, formatting, Clippy, source-only and direct target checks.
-- Run one clean STA and AP smoke HIL to distinguish merge regressions from the
-  subsequent Xarxa migration.
+- Build the experimental branch once to classify any pre-existing target
+  regression. Do not raise resource limits or structurally optimize a rejected
+  path to make this diagnostic build pass.
+- Create the production sibling branch directly from current `origin/main`.
+- Run clean STA and AP smoke HIL there before the Xarxa migration.
 
 Gate:
 
-- clean pushed branch based on current open-radio main;
+- clean pushed oracle branch and clean production sibling based directly on
+  current open-radio main;
 - no lifecycle, placement or role regression;
 - baseline report records exact source/dependency state.
 

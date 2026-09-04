@@ -33,6 +33,7 @@ open-esp-radio-rs-wifi
   integrated origin/main: d66b310167b4a3eae6bee12afea07d2b5f1fd3c5
   merge commit: d4cbc012
   post-merge contract-test fix: 57486b85
+  synchronized documentation: 8ec3f2c0
   main-only commits at audit: 0
 
 Xarxa scheduling prototype
@@ -59,7 +60,40 @@ function-selector help spelling and one constructed obsolete revision schema
 4. Commit `57486b85` updates those tests to the current typed selector and
 authenticated schema-5 occurrence model. Formatting, workspace check/tests,
 workspace Clippy and the complete source-only/direct-target audit pass after
-that fix. STA and AP smoke HIL remain the hardware gate before Phase 2.
+that fix.
+
+The attempted Phase 1 correctness smoke then stopped before flashing. The
+post-LTO stack audit reported three regressions:
+
+```text
+run_station_access_point_active  50,432 -> 53,488 bytes
+supervisor::new                  17,792 -> 18,384 bytes
+ConnectedStaPort::compose         8,336 ->  8,464 bytes
+```
+
+The comparison uses archived correctness ELF run
+`1788272869730-00138fba` and the current clean build. Both use Rust 1.97.1,
+LLVM 22.1.6, the same stack policy and equal-sized
+`ProductionWifiFault`, `ConnectedStationFault` and
+`ProductionStationReclaimFault` types. Reintroducing the Bluetooth dependency
+removed by the main merge produced the same current frame sizes. The merge is
+therefore not the cause.
+
+The material build difference is the old scheduling prototype dependency
+advance:
+
+```text
+Xarxa    56840265 -> 3ac0e58e
+Embassy  3b91c620 -> ab8d91a5
+```
+
+Those revisions add the interface scheduling state whose public architecture
+this audit has now rejected as the production base. Refactoring radio terminal
+owner graphs or raising stack limits solely to accommodate that retired path
+would spend risk on code which Phase 5 removes. The synchronized branch is
+therefore frozen and pushed as the executable oracle. The production cutover
+starts on a new branch directly from `origin/main`; its own clean STA/AP HIL is
+the Phase 1 target baseline.
 
 The HIL wire protocol is currently 79. A historical firmware using an older
 protocol cannot be replayed by the current runner merely because its binary

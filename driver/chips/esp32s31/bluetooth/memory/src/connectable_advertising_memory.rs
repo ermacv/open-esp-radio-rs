@@ -1,9 +1,10 @@
 //! CPU-owned ESP32-S31 memory for one response-capable legacy advertisement.
 //!
 //! This boundary binds the two transmit PDUs and the reusable non-scanning
-//! receive pool into one private graph, then prepares the sole scheduler item
-//! up to an empty-list candidate. It exposes that item's typed identity to the
-//! chip scheduler but owns no list-head/RX publication, MMIO, or RUN operation.
+//! receive pool into one private graph, prepares the sole scheduler item, and
+//! consumes the exact RX-list, scheduler-head, and RUN proof tokens produced by
+//! the chip layers. This crate performs no MMIO and exposes no publication
+//! operation of its own.
 
 #![forbid(unsafe_code)]
 
@@ -11,8 +12,12 @@ mod codec;
 
 use core::{marker::PhantomPinned, pin::Pin};
 
-use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
-use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddressError;
+use open_esp_radio_esp32s31_hal::{
+    BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothMemoryListSelector, BluetoothRxMemoryListPublished,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareRunCommandPublished,
+};
 use pin_project::pin_project;
 
 use crate::{
@@ -23,6 +28,7 @@ use crate::{
         BluetoothLeTxPacketPreparedLength,
     },
     legacy_advertising_event_image::BluetoothLegacyAdvertisingOwnAddress,
+    rx_memory_list::BluetoothRxMemoryListClass,
 };
 
 use self::codec::{
@@ -157,15 +163,16 @@ impl<'a> BluetoothLegacyConnectableAdvertisingMemoryInput<'a> {
     }
 }
 
-/// Complete reviewed scheduler span for one response-capable LE 1M item.
+/// Exact vendor-derived `END - START` span for one response-capable LE 1M item.
 ///
-/// The private codec owns the constituent packet and controller-tail policy;
-/// this type exposes only their combined physical duration.
+/// This is a scheduler-item field value, not proof of the complete RX/response
+/// window or of safe RF overlap. Controller ownership must remain exclusive
+/// until a separately observed terminal completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothLegacyConnectableAdvertisingSchedulerSpan(u32);
 
 impl BluetoothLegacyConnectableAdvertisingSchedulerSpan {
-    /// Combined duration in microseconds before controller-epoch projection.
+    /// Scheduler-item span in microseconds before controller-epoch projection.
     pub const fn as_micros(self) -> u32 {
         self.0
     }
@@ -575,6 +582,13 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
         self.bookkeeping.scheduler_item_address()
     }
 
+    /// Freeze the complete CPU-owned graph before RX-list publication.
+    pub fn prepare_publication(
+        self,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationPrepared {
+        BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationPrepared { prepared: self }
+    }
+
     /// Restore the exact software-list successor without disturbing bookkeeping.
     pub fn cancel(
         self,
@@ -588,6 +602,346 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
             .graph
             .restore_empty_list_link(self.previous_software_link);
         self.bookkeeping
+    }
+}
+
+/// Complete response-capable graph ready for selector-two RX-list publication.
+#[must_use = "the prepared graph must be published, cancelled, or retained"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationPrepared {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationPrepared {
+    /// Stable identity retained across the publication boundary.
+    pub const fn identity(&self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity {
+        self.prepared.bookkeeping.event.prepared.identity()
+    }
+
+    /// Stable receive-pool identity retained across the publication boundary.
+    pub const fn receive_identity(&self) -> BluetoothNonScanningRxMemoryIdentity {
+        self.prepared.bookkeeping.event.prepared.receive_identity()
+    }
+
+    /// Memory-layer mapping for an ordinary non-scanning advertising item.
+    #[doc(hidden)]
+    pub const fn selector(&self) -> BluetoothMemoryListSelector {
+        BluetoothRxMemoryListClass::NonScanning.selector()
+    }
+
+    /// Validated receive header retained by this affine graph.
+    #[doc(hidden)]
+    pub const fn receive_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.bookkeeping.event.prepared.pool.head()
+    }
+
+    /// Exact event item retained for the later scheduler-head publication.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.scheduler_item_address()
+    }
+
+    /// Consume the matching RX-list publication and surrender CPU rollback.
+    #[doc(hidden)]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc mismatch returns both exact affine owners"
+        )
+    )]
+    pub fn into_rx_published(
+        self,
+        publication: BluetoothRxMemoryListPublished,
+    ) -> Result<
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationMismatch,
+    > {
+        let error = if publication.selector() != self.selector() {
+            Some(BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationError::SelectorMismatch)
+        } else if publication.head() != self.receive_head() {
+            Some(BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationError::HeadMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationMismatch {
+                    prepared: self,
+                    publication,
+                    error,
+                },
+            );
+        }
+
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
+            bookkeeping,
+            previous_software_link: _,
+        } = self.prepared;
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerBookkeepingPrepared {
+            event,
+            previous: _,
+        } = bookkeeping;
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepared { prepared } =
+            event;
+        Ok(
+            BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished {
+                prepared,
+                rx_publication: publication,
+            },
+        )
+    }
+
+    /// Recover the exact empty-list candidate before any hardware publication.
+    pub fn cancel(self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphEmptyListLinkPrepared {
+        self.prepared
+    }
+}
+
+/// Why an RX-list publication does not name this response-capable graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationError {
+    /// The publication belongs to another positional RX memory list.
+    SelectorMismatch,
+    /// The publication names another pinned receive pool.
+    HeadMismatch,
+}
+
+/// Failed RX-list proof join retaining the CPU graph and HAL publication.
+#[must_use = "a mismatched publication still owns the graph and HAL token"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationMismatch {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
+    publication: BluetoothRxMemoryListPublished,
+    error: BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationError,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationMismatch {
+    pub const fn error(&self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationError {
+        self.error
+    }
+
+    /// Recover both exact affine owners without changing either identity.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
+        BluetoothRxMemoryListPublished,
+    ) {
+        (self.prepared, self.publication)
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationMismatch {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationMismatch")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Graph whose exact non-scanning RX list is hardware-visible.
+#[must_use = "the RX-published graph must enter the primary scheduler list"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+    rx_publication: BluetoothRxMemoryListPublished,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished {
+    /// Exact scheduler item paired with this receive-list publication.
+    #[doc(hidden)]
+    pub const fn scheduler_head(&self) -> BluetoothControllerSramAddress {
+        self.prepared.binding.scheduler_item_address()
+    }
+
+    /// Borrow the retained non-scanning RX-list publication proof.
+    #[doc(hidden)]
+    pub const fn rx_publication(&self) -> &BluetoothRxMemoryListPublished {
+        &self.rx_publication
+    }
+
+    /// Join the exact list-zero scheduler-head proof.
+    #[doc(hidden)]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "a mismatch retains the complete hardware-owned graph"
+        )
+    )]
+    pub fn into_head_published(
+        self,
+        publication: &BluetoothSchedulerHardwareListHeadPublished,
+    ) -> Result<
+        BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublished,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublicationMismatch,
+    > {
+        let error = if publication.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError::ListMismatch)
+        } else if publication.head().address() != Some(self.scheduler_head()) {
+            Some(BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError::HeadMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublicationMismatch {
+                    published: self,
+                    error,
+                },
+            );
+        }
+        Ok(
+            BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublished {
+                prepared: self.prepared,
+                rx_publication: self.rx_publication,
+            },
+        )
+    }
+}
+
+/// Why a scheduler HEAD or RUN proof cannot join this exact graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError {
+    /// The proof belongs to another hardware scheduler list.
+    ListMismatch,
+    /// The proof retains another scheduler-item head.
+    HeadMismatch,
+}
+
+/// Failed scheduler-head proof join retaining the RX-published graph.
+#[must_use = "a mismatched scheduler-head proof still leaves the graph hardware-owned"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublicationMismatch {
+    published: BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished,
+    error: BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublicationMismatch {
+    pub const fn error(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError {
+        self.error
+    }
+
+    /// Recover the unchanged hardware-owned graph and finite mismatch reason.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError,
+    ) {
+        (self.published, self.error)
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublicationMismatch {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublicationMismatch")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Response-capable graph visible through both RX and scheduler list heads.
+#[must_use = "the head-published graph must reach RUN or remain fail-stop owned"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublished {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+    rx_publication: BluetoothRxMemoryListPublished,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublished {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.prepared.binding.scheduler_item_address()
+    }
+
+    /// Borrow the exact RX publication retained by the graph.
+    #[doc(hidden)]
+    pub const fn rx_publication(&self) -> &BluetoothRxMemoryListPublished {
+        &self.rx_publication
+    }
+
+    /// Consume the complete matching scheduler RUN proof.
+    #[doc(hidden)]
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "a mismatch retains the complete head-published graph"
+        )
+    )]
+    pub fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> Result<
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRunning,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRunMismatch,
+    > {
+        let error = if run.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError::ListMismatch)
+        } else if run.head().address() != Some(self.scheduler_item_address()) {
+            Some(BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError::HeadMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphRunMismatch {
+                    published: self,
+                    error,
+                },
+            );
+        }
+        Ok(BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
+            prepared: self.prepared,
+            _rx_publication: self.rx_publication,
+        })
+    }
+}
+
+/// Failed scheduler RUN proof join retaining the head-published graph.
+#[must_use = "a mismatched RUN proof still leaves the graph hardware-owned"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRunMismatch {
+    published: BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublished,
+    error: BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRunMismatch {
+    pub const fn error(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError {
+        self.error
+    }
+
+    /// Recover the unchanged graph and finite mismatch reason.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphHeadPublished,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphSchedulerProofError,
+    ) {
+        (self.published, self.error)
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphRunMismatch {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyConnectableAdvertisingMemoryGraphRunMismatch")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Hardware-owned response-capable graph admitted through the scheduler RUN transaction.
+#[must_use = "the running graph awaits a separately reviewed completion lifecycle"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+    _rx_publication: BluetoothRxMemoryListPublished,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.prepared.binding.scheduler_item_address()
     }
 }
 
@@ -806,7 +1160,12 @@ mod tests {
         assert_eq!(bookkeeping.scheduler_item_address(), scheduler_item);
         let empty = bookkeeping.prepare_empty_list_link();
         assert_eq!(empty.scheduler_item_address(), scheduler_item);
+        let publication = empty.prepare_publication();
+        assert_eq!(publication.identity(), graph_identity);
+        assert_eq!(publication.receive_identity(), pool_identity);
+        assert_eq!(publication.scheduler_head(), scheduler_item);
 
+        let empty = publication.cancel();
         let bookkeeping = empty.cancel();
         let event = bookkeeping.cancel();
         let prepared = event.cancel();
@@ -820,6 +1179,137 @@ mod tests {
         assert_eq!(owner.identity(), graph_identity);
         assert_eq!(pool.identity(), pool_identity);
         assert!(pool.is_initialized());
+    }
+
+    #[test]
+    fn matching_rx_publication_surrenders_cpu_rollback_and_retains_identities() {
+        let owner = owner(0x2f00_2400);
+        let graph_identity = owner.identity();
+        let pool = pool(0x2f00_6400);
+        let pool_identity = pool.identity();
+        let receive_head = pool.head();
+        let publication = owner
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel37),
+                pool,
+                -2,
+            )
+            .expect("the disjoint response graph is supported")
+            .prepare_event_fields(3_000, 3_200)
+            .expect("the pristine one-item graph accepts event fields")
+            .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link()
+            .prepare_publication();
+        let scheduler_head = publication.scheduler_head();
+        assert_eq!(publication.identity(), graph_identity);
+        assert_eq!(publication.receive_identity(), pool_identity);
+
+        let published = publication
+            .into_rx_published(BluetoothRxMemoryListPublished::from_parts_for_validation(
+                BluetoothRxMemoryListClass::NonScanning.selector(),
+                receive_head,
+            ))
+            .unwrap_or_else(|_| panic!("the exact RX publication must join this graph"));
+        assert_eq!(published.scheduler_head(), scheduler_head);
+        assert_eq!(
+            published.rx_publication().selector(),
+            BluetoothRxMemoryListClass::NonScanning.selector()
+        );
+        assert_eq!(published.rx_publication().head(), receive_head);
+    }
+
+    #[test]
+    fn selector_mismatch_retains_publication_and_all_cpu_rollback_authority() {
+        let owner = owner(0x2f00_2800);
+        let graph_identity = owner.identity();
+        let pool = pool(0x2f00_6800);
+        let pool_identity = pool.identity();
+        let receive_head = pool.head();
+        let publication = owner
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel38),
+                pool,
+                1,
+            )
+            .expect("the disjoint response graph is supported")
+            .prepare_event_fields(4_000, 4_200)
+            .expect("the pristine one-item graph accepts event fields")
+            .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link()
+            .prepare_publication();
+        let mismatched = BluetoothRxMemoryListPublished::from_parts_for_validation(
+            BluetoothRxMemoryListClass::Scanning.selector(),
+            receive_head,
+        );
+
+        let mismatch = match publication.into_rx_published(mismatched) {
+            Ok(_) => panic!("a scanner-list publication must not join this graph"),
+            Err(mismatch) => mismatch,
+        };
+        assert_eq!(
+            mismatch.error(),
+            BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationError::SelectorMismatch
+        );
+        let (publication, mismatched) = mismatch.into_parts();
+        assert_eq!(publication.identity(), graph_identity);
+        assert_eq!(publication.receive_identity(), pool_identity);
+        assert_eq!(mismatched.head(), receive_head);
+        assert_eq!(
+            mismatched.selector(),
+            BluetoothRxMemoryListClass::Scanning.selector()
+        );
+
+        let prepared = publication.cancel().cancel().cancel().cancel();
+        let (owner, pool) = prepared.cancel();
+        assert_eq!(owner.identity(), graph_identity);
+        assert_eq!(pool.identity(), pool_identity);
+        assert!(pool.is_initialized());
+    }
+
+    #[test]
+    fn receive_head_mismatch_retains_both_affine_owners() {
+        let owner = owner(0x2f00_2c00);
+        let graph_identity = owner.identity();
+        let receive_pool = pool(0x2f00_6c00);
+        let pool_identity = receive_pool.identity();
+        let other_pool = pool(0x2f00_7400);
+        let other_head = other_pool.head();
+        let publication = owner
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel39),
+                receive_pool,
+                2,
+            )
+            .expect("the disjoint response graph is supported")
+            .prepare_event_fields(5_000, 5_200)
+            .expect("the pristine one-item graph accepts event fields")
+            .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link()
+            .prepare_publication();
+        let mismatched = BluetoothRxMemoryListPublished::from_parts_for_validation(
+            BluetoothRxMemoryListClass::NonScanning.selector(),
+            other_head,
+        );
+
+        let mismatch = match publication.into_rx_published(mismatched) {
+            Ok(_) => panic!("another receive pool must not join this graph"),
+            Err(mismatch) => mismatch,
+        };
+        assert_eq!(
+            mismatch.error(),
+            BluetoothLegacyConnectableAdvertisingMemoryGraphPublicationError::HeadMismatch
+        );
+        let (publication, mismatched) = mismatch.into_parts();
+        assert_eq!(publication.identity(), graph_identity);
+        assert_eq!(publication.receive_identity(), pool_identity);
+        assert_eq!(mismatched.head(), other_head);
+
+        let prepared = publication.cancel().cancel().cancel().cancel();
+        let (owner, pool) = prepared.cancel();
+        assert_eq!(owner.identity(), graph_identity);
+        assert_eq!(pool.identity(), pool_identity);
+        assert!(pool.is_initialized());
+        assert!(other_pool.is_initialized());
     }
 
     #[test]

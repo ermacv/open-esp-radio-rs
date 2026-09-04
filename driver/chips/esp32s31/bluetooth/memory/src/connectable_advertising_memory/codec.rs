@@ -77,7 +77,7 @@ const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0010_0000;
 const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x0060_0000;
 
 const LE_1M_FIXED_PACKET_MICROS: u32 = 80;
-const RESPONSE_CAPABLE_SCHEDULER_TAIL_RESERVE_MICROS: u32 = 4;
+const VENDOR_RESPONSE_CAPABLE_ITEM_TAIL_MICROS: u32 = 4;
 
 type AdvertisingTxPacketAddress = BluetoothLeTxPacketAddress<LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 
@@ -605,6 +605,6 @@ pub(super) const fn response_capable_scheduler_span(
         (payload_length as u32)
             .wrapping_mul(8)
             .wrapping_add(LE_1M_FIXED_PACKET_MICROS)
-            .wrapping_add(RESPONSE_CAPABLE_SCHEDULER_TAIL_RESERVE_MICROS),
+            .wrapping_add(VENDOR_RESPONSE_CAPABLE_ITEM_TAIL_MICROS),
     )
 }

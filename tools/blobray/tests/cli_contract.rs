@@ -6,6 +6,7 @@ use std::{
     process::{Command, Output},
 };
 
+use open_radio_vendor_contracts::{ArtifactIdentity, EntityDomain, RevisionOccurrenceId};
 use sha2::{Digest, Sha256};
 
 fn blobray() -> Command {
@@ -1070,7 +1071,7 @@ fn focused_investigation_commands_are_part_of_the_typed_cli() {
     let function = run(&["inspect", "function", "--help"]);
     assert!(function.status.success());
     let function = String::from_utf8(function.stdout).unwrap();
-    assert!(function.contains("<SOURCE:SYMBOL>"));
+    assert!(function.contains("<SOURCE:SYMBOL|SOURCE:function:PATH>"));
     assert!(function.contains("Authoritative linked image"));
     assert!(function.contains("Raw archives used as source inventory"));
 
@@ -2859,17 +2860,35 @@ fn revision_diff_is_a_typed_project_workflow() {
         format!("{:x}", hash.finalize())
     };
     let revision = |name: &str, function: &str| {
+        let artifact_sha256 = "a".repeat(64);
+        let artifact = ArtifactIdentity::new("vendor", &artifact_sha256).unwrap();
+        let locator = format!("symbol:{function}/address:0x0");
+        let occurrence = RevisionOccurrenceId::derive(
+            EntityDomain::Function,
+            std::slice::from_ref(&artifact),
+            &locator,
+        )
+        .unwrap();
         serde_json::json!({
-            "schema_version": 4,
+            "schema_version": 5,
             "command": "revision snapshot",
             "name": name,
             "project": "revision-diff",
             "artifact_scope": "vendor-inputs",
-            "artifacts": [],
-            "applicability": {},
+            "artifacts": [{
+                "role": "source-artifact:vendor",
+                "source": "vendor",
+                "sha256": artifact_sha256
+            }],
+            "applicability": {"artifacts": [artifact]},
             "functions": [{
                 "id": function,
+                "raw_identity": function,
                 "source": "vendor",
+                "artifact_sha256": "a".repeat(64),
+                "locator": locator,
+                "occurrence": occurrence,
+                "semantic": null,
                 "member": null,
                 "symbol": function,
                 "profiles": ["all"],

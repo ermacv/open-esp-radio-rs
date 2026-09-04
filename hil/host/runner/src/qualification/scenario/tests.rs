@@ -397,7 +397,7 @@ fn ap_egress_identity_observer_probe_changes_only_the_runtime_observer() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
     let enabled = catalog
-        .get("diagnostic-ap-saturated-plus-sparse-tx-core0")
+        .get("diagnostic-ap-saturated-plus-sparse-tx-egress-identity-observation-enabled-core0")
         .unwrap();
     let disabled = catalog
         .get("diagnostic-ap-saturated-plus-sparse-tx-egress-identity-observation-disabled-core0")
@@ -411,6 +411,7 @@ fn ap_egress_identity_observer_probe_changes_only_the_runtime_observer() {
     assert_eq!(enabled.rx_admission, disabled.rx_admission);
     assert_eq!(enabled.workload, disabled.workload);
     assert_eq!(enabled.link, disabled.link);
+    assert_eq!(enabled.criteria, disabled.criteria);
     assert_eq!(enabled.evidence, disabled.evidence);
     assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
     assert_eq!(

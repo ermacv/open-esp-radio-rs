@@ -24,7 +24,8 @@ are compiled only into named evidence images.
 
 ## Phase 0: architecture checkpoint
 
-Status: complete when this document set is committed and pushed.
+Status: complete at `2549d37e`; the document set is committed, audited and
+pushed.
 
 - Replace the overlapping append-only design journals with requirements,
   architecture, current status and this plan.
@@ -42,9 +43,12 @@ Gate:
 
 ## Phase 1: synchronize the production base
 
-The open-radio feature branch is behind `origin/main`. Integrate current main
-before building the new ownership path so the migration does not accumulate on
-an obsolete radio tree.
+Status: main integration and all host/source gates are complete through
+`57486b85`; clean STA and AP smoke HIL are pending.
+
+The open-radio feature branch now contains `origin/main` at `d66b3101`. This
+keeps the subsequent ownership migration off the obsolete radio tree while
+preserving the pushed oracle history.
 
 - Merge `origin/main` into the pushed feature branch without rewriting the
   oracle commits.

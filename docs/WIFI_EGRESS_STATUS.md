@@ -24,15 +24,16 @@ an executable semantic oracle while the owned-buffer cutover is built.
 
 ## Repository snapshot
 
-After refreshing remote refs:
+After the architecture checkpoint and Phase 1 host integration:
 
 ```text
 open-esp-radio-rs-wifi
   branch: refactor/wifi-interface-egress-scheduler
-  HEAD:   ba22b8cdd61d9abc45758c9898af5bc712960ecc
-  origin/main: d66b3101
-  divergence: 58 feature commits / 61 main commits
-  merge base: 8905f4e80f19ceaa49b37a2ca511691f3d46702d
+  architecture checkpoint: 2549d37ee8fe71c6397401127d82bd3e8611935a
+  integrated origin/main: d66b310167b4a3eae6bee12afea07d2b5f1fd3c5
+  merge commit: d4cbc012
+  post-merge contract-test fix: 57486b85
+  main-only commits at audit: 0
 
 Xarxa scheduling prototype
   branch: refactor/interface-egress-scheduler
@@ -52,9 +53,13 @@ Embassy current main
   Xarxa pin: old 1f332ac token-based line
 ```
 
-The open-radio feature branch is pushed. Immediately before this architecture
-checkpoint, its only uncommitted work was documentation; this document set
-replaces that superseded draft.
+The merge was conflict-free. Workspace tests exposed two stale Blobray CLI
+fixtures already present in the integrated main tree: one expected the former
+function-selector help spelling and one constructed obsolete revision schema
+4. Commit `57486b85` updates those tests to the current typed selector and
+authenticated schema-5 occurrence model. Formatting, workspace check/tests,
+workspace Clippy and the complete source-only/direct-target audit pass after
+that fix. STA and AP smoke HIL remain the hardware gate before Phase 2.
 
 The HIL wire protocol is currently 79. A historical firmware using an older
 protocol cannot be replayed by the current runner merely because its binary

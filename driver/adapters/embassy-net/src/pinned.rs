@@ -2943,8 +2943,13 @@ impl<
 
     #[cfg(feature = "tx-egress-scheduling")]
     fn egress_key(&mut self, route: EgressRoute) -> EgressKey {
+        #[cfg(feature = "tx-phase-telemetry")]
+        let started = TxPerformanceSample::read();
         let epoch = self.refresh_scheduling_epoch();
-        self.endpoint.classify(epoch, route)
+        let key = self.endpoint.classify(epoch, route);
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_classification(started, TxPerformanceSample::read());
+        key
     }
 
     #[cfg(feature = "tx-egress-scheduling")]

@@ -1077,7 +1077,10 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
 ) -> WifiEgressPolicyEvidence {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
-        "ONTX admission_attempts={} admission_successes={} admission_cycles={} admission_instret={} consume_calls={} consume_bytes={} consume_cycles={} consume_instret={} emit_cycles={} emit_instret={} publication_cycles={} publication_instret={}",
+        "ONTX classification_calls={} classification_cycles={} classification_instret={} admission_attempts={} admission_successes={} admission_cycles={} admission_instret={} consume_calls={} consume_bytes={} consume_cycles={} consume_instret={} emit_cycles={} emit_instret={} publication_cycles={} publication_instret={}",
+        performance.classification_calls,
+        performance.classification_cycles,
+        performance.classification_instructions,
         performance.admission_attempts,
         performance.admission_successes,
         performance.admission_cycles,

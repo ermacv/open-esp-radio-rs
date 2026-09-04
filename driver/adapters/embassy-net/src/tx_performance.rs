@@ -43,6 +43,9 @@ impl TxPerformanceSample {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct TxPerformanceSnapshot {
+    pub classification_calls: u32,
+    pub classification_cycles: u32,
+    pub classification_instructions: u32,
     pub admission_attempts: u32,
     pub admission_successes: u32,
     pub admission_cycles: u32,
@@ -94,6 +97,15 @@ pub struct TxPerformanceSnapshot {
 impl TxPerformanceSnapshot {
     pub fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
+            classification_calls: self
+                .classification_calls
+                .wrapping_sub(earlier.classification_calls),
+            classification_cycles: self
+                .classification_cycles
+                .wrapping_sub(earlier.classification_cycles),
+            classification_instructions: self
+                .classification_instructions
+                .wrapping_sub(earlier.classification_instructions),
             admission_attempts: self
                 .admission_attempts
                 .wrapping_sub(earlier.admission_attempts),
@@ -246,6 +258,9 @@ impl TxPerformanceSnapshot {
 }
 
 pub struct TxPerformanceCounters {
+    classification_calls: AtomicU32,
+    classification_cycles: AtomicU32,
+    classification_instructions: AtomicU32,
     admission_attempts: AtomicU32,
     admission_successes: AtomicU32,
     admission_cycles: AtomicU32,
@@ -297,6 +312,9 @@ pub struct TxPerformanceCounters {
 impl TxPerformanceCounters {
     pub const fn new() -> Self {
         Self {
+            classification_calls: AtomicU32::new(0),
+            classification_cycles: AtomicU32::new(0),
+            classification_instructions: AtomicU32::new(0),
             admission_attempts: AtomicU32::new(0),
             admission_successes: AtomicU32::new(0),
             admission_cycles: AtomicU32::new(0),
@@ -344,6 +362,20 @@ impl TxPerformanceCounters {
             promotion_radio_claim_cycles: AtomicU32::new(0),
             promotion_radio_claim_instructions: AtomicU32::new(0),
         }
+    }
+
+    #[inline(always)]
+    pub(crate) fn record_classification(
+        &self,
+        started: TxPerformanceSample,
+        ended: TxPerformanceSample,
+    ) {
+        let delta = ended.wrapping_delta_since(started);
+        self.classification_calls.fetch_add(1, Ordering::Relaxed);
+        self.classification_cycles
+            .fetch_add(delta.cycles, Ordering::Relaxed);
+        self.classification_instructions
+            .fetch_add(delta.instructions, Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -531,6 +563,9 @@ impl TxPerformanceCounters {
 
     pub fn snapshot(&self) -> TxPerformanceSnapshot {
         TxPerformanceSnapshot {
+            classification_calls: self.classification_calls.load(Ordering::Relaxed),
+            classification_cycles: self.classification_cycles.load(Ordering::Relaxed),
+            classification_instructions: self.classification_instructions.load(Ordering::Relaxed),
             admission_attempts: self.admission_attempts.load(Ordering::Relaxed),
             admission_successes: self.admission_successes.load(Ordering::Relaxed),
             admission_cycles: self.admission_cycles.load(Ordering::Relaxed),
@@ -645,6 +680,9 @@ mod tests {
     #[test]
     fn interval_and_publication_use_wrapping_deltas() {
         let earlier = TxPerformanceSnapshot {
+            classification_calls: u32::MAX,
+            classification_cycles: 60,
+            classification_instructions: 20,
             consume_calls: u32::MAX,
             consume_cycles: 80,
             consume_instructions: 40,
@@ -653,6 +691,9 @@ mod tests {
             ..TxPerformanceSnapshot::default()
         };
         let current = TxPerformanceSnapshot {
+            classification_calls: 2,
+            classification_cycles: 95,
+            classification_instructions: 42,
             consume_calls: 2,
             consume_cycles: 150,
             consume_instructions: 90,
@@ -661,6 +702,9 @@ mod tests {
             ..TxPerformanceSnapshot::default()
         };
         let delta = current.wrapping_delta_since(earlier);
+        assert_eq!(delta.classification_calls, 3);
+        assert_eq!(delta.classification_cycles, 35);
+        assert_eq!(delta.classification_instructions, 22);
         assert_eq!(delta.consume_calls, 3);
         assert_eq!(delta.publication_cycles(), 30);
         assert_eq!(delta.publication_instructions(), 25);
@@ -679,6 +723,17 @@ mod tests {
                 instructions: 8,
             }
         );
+    }
+
+    #[test]
+    fn classification_accounting_records_the_measured_boundary() {
+        let counters = TxPerformanceCounters::new();
+        counters.record_classification(sample(100, 200), sample(117, 209));
+
+        let snapshot = counters.snapshot();
+        assert_eq!(snapshot.classification_calls, 1);
+        assert_eq!(snapshot.classification_cycles, 17);
+        assert_eq!(snapshot.classification_instructions, 9);
     }
 
     #[test]

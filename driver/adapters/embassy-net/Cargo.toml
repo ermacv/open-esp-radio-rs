@@ -13,7 +13,12 @@ default = []
 diagnostics = []
 # Intrusive per-datagram Core1 cycle/instruction accounting. Diagnostic HIL
 # images enable this explicitly; production adapters do not.
-tx-phase-telemetry = ["dep:embassy-time", "dep:riscv", "tx-egress-diagnostic-switch"]
+tx-phase-telemetry = [
+    "dep:embassy-time",
+    "dep:riscv",
+    "tx-egress-diagnostic-switch",
+    "tx-egress-scheduling",
+]
 # Startup-only same-ELF switch used to measure egress-control overhead without
 # compiling the intrusive per-frame/per-burst counter set.
 tx-egress-diagnostic-switch = []

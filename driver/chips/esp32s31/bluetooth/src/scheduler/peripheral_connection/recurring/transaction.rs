@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use core::ops::ControlFlow;
+
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_bluetooth_ll::connection::LeDataChannelIndex;
 use open_esp_radio_bluetooth_ll::connection::{
@@ -96,10 +98,6 @@ struct BluetoothPeripheralConnectionRecurringProtocolFailure {
     error: BluetoothPeripheralConnectionRecurringCandidateError,
 }
 
-#[allow(
-    clippy::result_large_err,
-    reason = "the no-alloc failure retains the exact portable completion owner"
-)]
 fn prepare_recurring_protocol_proposal(
     completed: LePeripheralConnectionEventCompleted,
     original_phase: BluetoothPeripheralConnectionRecurringPhase,
@@ -108,9 +106,9 @@ fn prepare_recurring_protocol_proposal(
     epoch: BluetoothControllerSchedulerEpoch,
     scheduler_config: BluetoothSchedulerSoftwareConfig,
     timing_policy: BluetoothPeripheralConnectionRecurringTimingPolicy,
-) -> Result<
-    BluetoothPeripheralConnectionRecurringProtocolCandidate,
+) -> ControlFlow<
     BluetoothPeripheralConnectionRecurringProtocolFailure,
+    BluetoothPeripheralConnectionRecurringProtocolCandidate,
 > {
     // A missed first event leaves the connection in `Created`, so the peer's
     // actual anchor is still unknown inside the initial WinSize interval. The
@@ -123,7 +121,7 @@ fn prepare_recurring_protocol_proposal(
             LePeripheralConnectionState::Created
         )
     {
-        return Err(BluetoothPeripheralConnectionRecurringProtocolFailure {
+        return ControlFlow::Break(BluetoothPeripheralConnectionRecurringProtocolFailure {
             completed,
             original_phase,
             delta,
@@ -144,7 +142,7 @@ fn prepare_recurring_protocol_proposal(
     ) {
         Ok(plan) => plan,
         Err(error) => {
-            return Err(BluetoothPeripheralConnectionRecurringProtocolFailure {
+            return ControlFlow::Break(BluetoothPeripheralConnectionRecurringProtocolFailure {
                 completed: provisional.cancel(),
                 original_phase,
                 delta,
@@ -157,7 +155,7 @@ fn prepare_recurring_protocol_proposal(
     let window_widening_micros = plan.window_widening_micros();
     let (planned_delta, proposed_phase, proposed_anchor, window, event_span, receive_wait) =
         plan.into_parts();
-    Ok(BluetoothPeripheralConnectionRecurringProtocolCandidate {
+    ControlFlow::Continue(BluetoothPeripheralConnectionRecurringProtocolCandidate {
         provisional,
         original_phase,
         proposal: BluetoothPeripheralConnectionRecurringProtocolProposal {
@@ -223,9 +221,9 @@ pub(super) fn prepare_recurring_event_candidate(
     epoch: BluetoothControllerSchedulerEpoch,
     scheduler_config: BluetoothSchedulerSoftwareConfig,
     timing_policy: BluetoothPeripheralConnectionRecurringTimingPolicy,
-) -> Result<
-    BluetoothPeripheralConnectionRecurringEventCandidate,
+) -> ControlFlow<
     BluetoothPeripheralConnectionRecurringCandidateFailure,
+    BluetoothPeripheralConnectionRecurringEventCandidate,
 > {
     // Form one unpublished candidate without changing active memory or
     // committing either portable state or connection phase.
@@ -244,12 +242,14 @@ pub(super) fn prepare_recurring_event_candidate(
         scheduler_config,
         timing_policy,
     ) {
-        Ok(protocol) => Ok(BluetoothPeripheralConnectionRecurringEventCandidate {
-            graph,
-            remainder,
-            protocol,
-        }),
-        Err(failure) => {
+        ControlFlow::Continue(protocol) => {
+            ControlFlow::Continue(BluetoothPeripheralConnectionRecurringEventCandidate {
+                graph,
+                remainder,
+                protocol,
+            })
+        }
+        ControlFlow::Break(failure) => {
             debug_assert_eq!(failure.original_phase, phase);
             let event = BluetoothPeripheralConnectionCompletedEvent::from_recurring_parts(
                 BluetoothPeripheralConnectionCompletedEventRecurringParts {
@@ -258,7 +258,7 @@ pub(super) fn prepare_recurring_event_candidate(
                     remainder,
                 },
             );
-            Err(BluetoothPeripheralConnectionRecurringCandidateFailure {
+            ControlFlow::Break(BluetoothPeripheralConnectionRecurringCandidateFailure {
                 completed: BluetoothPeripheralConnectionSchedulerCompleted { event },
                 delta: failure.delta,
                 error: failure.error,
@@ -451,6 +451,8 @@ pub(super) struct BluetoothPeripheralConnectionRecurringEventSchedulerHandoff {
 
 #[cfg(test)]
 mod tests {
+    use core::ops::ControlFlow;
+
     use open_esp_radio_bluetooth_ll::connection::{
         LEGACY_CONNECT_IND_PAYLOAD_BYTES, LEGACY_CONNECT_IND_PDU_BYTES, LeDataChannelMap,
         LeLegacyConnectionRequest, LePeripheralConnection, LePeripheralConnectionEventCompleted,
@@ -537,7 +539,7 @@ mod tests {
         let original_phase = phase(10_000);
         let delta = LePeripheralConnectionEventDelta::new(1).unwrap();
         let expected_completed = missed_first_event(request);
-        let failure = prepare_recurring_protocol_proposal(
+        let ControlFlow::Break(failure) = prepare_recurring_protocol_proposal(
             missed_first_event(request),
             original_phase,
             None,
@@ -545,8 +547,9 @@ mod tests {
             epoch(0),
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             software_policy(),
-        )
-        .expect_err("the first peer-selected anchor has not been observed");
+        ) else {
+            panic!("the first peer-selected anchor has not been observed");
+        };
 
         assert_eq!(failure.completed, expected_completed);
         assert_eq!(failure.original_phase, original_phase);
@@ -564,7 +567,7 @@ mod tests {
         let actual = BluetoothPeripheralConnectionPacketStartTiming::from_scheduler_micros(10_007);
         let delta = LePeripheralConnectionEventDelta::new(3).unwrap();
         let expected_completed = completed_event(request);
-        let candidate = prepare_recurring_protocol_proposal(
+        let ControlFlow::Continue(candidate) = prepare_recurring_protocol_proposal(
             completed_event(request),
             original_phase,
             Some(&actual),
@@ -572,8 +575,9 @@ mod tests {
             epoch(0),
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             software_policy(),
-        )
-        .expect("known timing authority forms a provisional proposal");
+        ) else {
+            panic!("known timing authority forms a provisional proposal");
+        };
 
         assert_eq!(candidate.event_counter(), delta.get());
         assert_eq!(candidate.proposal.delta, delta);
@@ -596,7 +600,7 @@ mod tests {
         let original_phase = phase(10_000);
         let delta = LePeripheralConnectionEventDelta::new(5).unwrap();
         let expected_completed = completed_event(request);
-        let failure = prepare_recurring_protocol_proposal(
+        let ControlFlow::Break(failure) = prepare_recurring_protocol_proposal(
             completed_event(request),
             original_phase,
             None,
@@ -607,8 +611,9 @@ mod tests {
                 None,
                 BluetoothPeripheralConnectionWindowWideningMode::SoftwareZeroAccumulatedUncertainty,
             ),
-        )
-        .expect_err("missing local SCA must reject the proposal");
+        ) else {
+            panic!("missing local SCA must reject the proposal");
+        };
 
         assert_eq!(failure.completed, expected_completed);
         assert_eq!(failure.original_phase, original_phase);
@@ -626,7 +631,7 @@ mod tests {
         let request = request(24, 4);
         let original_phase = phase(20_000);
         let rejected_delta = LePeripheralConnectionEventDelta::new(4).unwrap();
-        let rejected = prepare_recurring_protocol_proposal(
+        let ControlFlow::Continue(rejected) = prepare_recurring_protocol_proposal(
             completed_event(request),
             original_phase,
             None,
@@ -634,8 +639,9 @@ mod tests {
             epoch(0),
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             software_policy(),
-        )
-        .expect("the first scheduler candidate is representable");
+        ) else {
+            panic!("the first scheduler candidate is representable");
+        };
         assert_eq!(rejected.event_counter(), 4);
         assert_eq!(rejected.proposal.delta, rejected_delta);
 
@@ -644,7 +650,7 @@ mod tests {
         assert_eq!(restored_phase, original_phase);
         assert_eq!(restored_delta, rejected_delta);
         let retry_delta = LePeripheralConnectionEventDelta::new(1).unwrap();
-        let retry = prepare_recurring_protocol_proposal(
+        let ControlFlow::Continue(retry) = prepare_recurring_protocol_proposal(
             restored,
             restored_phase,
             None,
@@ -652,8 +658,9 @@ mod tests {
             epoch(0),
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             software_policy(),
-        )
-        .expect("the restored owner accepts a different retry");
+        ) else {
+            panic!("the restored owner accepts a different retry");
+        };
 
         assert_eq!(retry.event_counter(), 1);
         assert_eq!(retry.proposal.delta, retry_delta);

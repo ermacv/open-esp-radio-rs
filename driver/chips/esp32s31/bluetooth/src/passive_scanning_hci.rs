@@ -139,7 +139,11 @@ where
                         failure.into_parts().0.into_task_service()
                     }
                     BluetoothPassiveScanFirstRunnerFailure::Recovered { task, .. } => task,
-                    failure @ BluetoothPassiveScanFirstRunnerFailure::Retryable(_) => {
+                    failure @ (BluetoothPassiveScanFirstRunnerFailure::PreparationFailStop {
+                        ..
+                    }
+                    | BluetoothPassiveScanFirstRunnerFailure::PublicationFailStop(_)
+                    | BluetoothPassiveScanFirstRunnerFailure::Retryable(_)) => {
                         return Err(Self::Lower { command, failure });
                     }
                 };

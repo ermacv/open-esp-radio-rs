@@ -1,6 +1,22 @@
 //! Fact-bounded scheduler initialization after the controller HAL component.
 
+#[cfg(any(target_arch = "riscv32", test))]
+mod connectable_advertising;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use connectable_advertising::{
+    BluetoothLegacyConnectableAdvertisingAdmissionObservation,
+    BluetoothLegacyConnectableAdvertisingEmptySchedulerCancelFailure,
+    BluetoothLegacyConnectableAdvertisingEmptySchedulerMergeFailure,
+    BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared,
+    BluetoothLegacyConnectableAdvertisingEventPreparationError,
+    BluetoothLegacyConnectableAdvertisingEventPreparationFailure,
+    BluetoothLegacyConnectableAdvertisingEventPrepared,
+    BluetoothLegacyConnectableAdvertisingPreSequence,
+    BluetoothLegacyConnectableAdvertisingSequenceObservation,
+};
 mod dtm;
+#[cfg(target_arch = "riscv32")]
+mod single_item;
 pub use dtm::{
     BluetoothDtmControllerEventPreparationError, BluetoothDtmEmptySchedulerMergePrepared,
     BluetoothDtmInitialSchedulerItemPhase, BluetoothDtmRecurringSchedulerItemPhase,
@@ -31,11 +47,15 @@ pub(crate) use dtm::{
     BluetoothDtmSchedulerSoftwareListRemovalRecheck, BluetoothDtmTransmitterFirstPreSequence,
     BluetoothDtmTransmitterFirstStaged, BluetoothDtmTransmitterRecurringPreSequence,
 };
+#[cfg(target_arch = "riscv32")]
+pub(crate) use single_item::*;
 
 #[cfg(any(target_arch = "riscv32", test))]
 mod peripheral_connection;
 #[cfg(target_arch = "riscv32")]
 pub(crate) use peripheral_connection::BluetoothPeripheralConnectionFirstPreSequence;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use peripheral_connection::BluetoothPeripheralConnectionSchedulerCompletionClassification;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use peripheral_connection::{
     BluetoothPeripheralConnectionAdmissionObservation,
@@ -58,37 +78,23 @@ pub use peripheral_connection::{
     BluetoothPeripheralConnectionRecurringPreSequence,
 };
 #[cfg(target_arch = "riscv32")]
-pub use peripheral_connection::{
-    BluetoothPeripheralConnectionSchedulerCompleted,
-    BluetoothPeripheralConnectionSchedulerCompletionObserved,
-    BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep,
-    BluetoothPeripheralConnectionSchedulerCompletionStep,
-    BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
-    BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
-    BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
-    BluetoothPeripheralConnectionSchedulerHeadPublished,
-    BluetoothPeripheralConnectionSchedulerRecycleStep,
-    BluetoothPeripheralConnectionSchedulerRecycled, BluetoothPeripheralConnectionSchedulerRunning,
-    BluetoothPeripheralConnectionSchedulerRunningDrainStep,
-    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
-    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep,
-    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+pub(crate) use peripheral_connection::{
+    BluetoothPeripheralConnectionRecurringSchedulerPublicationFailStop,
+    BluetoothPeripheralConnectionRecurringSchedulerValidationFailure,
 };
 #[cfg(target_arch = "riscv32")]
-pub(crate) use peripheral_connection::{
-    BluetoothPeripheralConnectionSchedulerCompletionClassification,
-    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
-    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
+pub use peripheral_connection::{
+    BluetoothPeripheralConnectionSchedulerCompleted,
+    BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
+    BluetoothPeripheralConnectionSchedulerHeadPublished,
+    BluetoothPeripheralConnectionSchedulerRecycled,
 };
 
 use crate::BluetoothSchedulerSoftwareConfig;
 #[cfg(target_arch = "riscv32")]
-use crate::BluetoothSchedulerWakeBatch;
-#[cfg(target_arch = "riscv32")]
 use crate::legacy_advertising::{
     BluetoothLegacyAdvertisingCompletionObservedEvent,
     BluetoothLegacyAdvertisingRecurringEventCandidate,
-    BluetoothLegacyAdvertisingRunningEventCompletionObservation,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::scheduler_timeline::BluetoothSchedulerRecurringReserved;
@@ -113,9 +119,10 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLeReceivedBatch, BluetoothLeRxError, BluetoothPassiveScanMemoryGraphCommandPublished,
-    BluetoothPassiveScanMemoryGraphCompletionObservation,
-    BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphRecycleError,
-    BluetoothPassiveScanMemoryGraphRecycled, BluetoothPassiveScanMemoryGraphRunning,
+    BluetoothPassiveScanMemoryGraphCompletionObserved,
+    BluetoothPassiveScanMemoryGraphPublicationError,
+    BluetoothPassiveScanMemoryGraphPublicationMismatch,
+    BluetoothPassiveScanMemoryGraphRecycleError, BluetoothPassiveScanMemoryGraphRecycled,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
@@ -131,14 +138,23 @@ use open_esp_radio_esp32s31_hal::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHead,
-    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListHeadRetirementObservation,
-    BluetoothSchedulerHardwareRunCommandPublished,
-    BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerSoftwareListRemovalReady,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
+
+#[cfg(any(target_arch = "riscv32", test))]
+fn retain_matching_single_item_identity<Identity: Copy + Eq, Owner>(
+    expected: Identity,
+    observed: Identity,
+    owner: Owner,
+) -> Result<Owner, (Identity, Owner)> {
+    if observed == expected {
+        Ok(owner)
+    } else {
+        Err((expected, owner))
+    }
+}
 
 /// Fresh initial-admission sample sealed by the controller-time worker.
 ///
@@ -216,7 +232,7 @@ pub struct BluetoothLegacyAdvertisingEventPrepared<'a> {
 impl BluetoothLegacyAdvertisingEventPrepared<'_> {
     pub const fn identity(
         &self,
-    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingEventIdentity {
+    ) -> open_esp_radio_bluetooth_ll::advertising_lifecycle::LegacyAdvertisingEventIdentity {
         self.image.identity()
     }
 
@@ -437,24 +453,60 @@ impl BluetoothPassiveScanEmptySchedulerMergePrepared {
     }
 }
 
-/// Lossless rejection before any scanner or scheduler MMIO publication.
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the unchanged CPU-owned scanner merge can be retried or cancelled"]
+enum BluetoothPassiveScanSchedulerHeadPublicationFailureOwner {
+    PrePublication(BluetoothPassiveScanEmptySchedulerMergePrepared),
+    RxPublication {
+        _mismatch: BluetoothPassiveScanMemoryGraphPublicationMismatch,
+        _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+        _head: BluetoothSchedulerHardwareListHead,
+    },
+}
+
+/// Lossless scanner-head publication failure.
+///
+/// A scheduler-head validation error is retryable because it occurs before
+/// MMIO. An RX publication mismatch follows the first MMIO write and is sealed
+/// fail-stop while retaining the graph, HAL publication, reservation and
+/// validated scheduler head.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "inspect whether the exact retained owner is retryable or fail-stop"]
 pub struct BluetoothPassiveScanSchedulerHeadPublicationFailure {
-    error: BluetoothSchedulerHeadPublicationError,
-    merged: BluetoothPassiveScanEmptySchedulerMergePrepared,
+    head_error: Option<BluetoothSchedulerHeadPublicationError>,
+    rx_publication_error: Option<BluetoothPassiveScanMemoryGraphPublicationError>,
+    owner: BluetoothPassiveScanSchedulerHeadPublicationFailureOwner,
 }
 
 #[cfg(target_arch = "riscv32")]
 impl BluetoothPassiveScanSchedulerHeadPublicationFailure {
     /// Exact reason the common scheduler head could not be prepared.
-    pub const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
-        self.error
+    pub const fn head_error(&self) -> Option<BluetoothSchedulerHeadPublicationError> {
+        self.head_error
     }
 
-    /// Recover the unchanged scanner merge. No MMIO was performed.
-    pub fn into_merged(self) -> BluetoothPassiveScanEmptySchedulerMergePrepared {
-        self.merged
+    /// Return the typed RX publication mismatch after the first MMIO write.
+    pub const fn rx_publication_error(
+        &self,
+    ) -> Option<BluetoothPassiveScanMemoryGraphPublicationError> {
+        self.rx_publication_error
+    }
+
+    /// Recover the unchanged merge only for a pre-MMIO validation failure.
+    pub fn into_retryable_merged(
+        self,
+    ) -> Result<BluetoothPassiveScanEmptySchedulerMergePrepared, Self> {
+        match self {
+            Self {
+                owner:
+                    BluetoothPassiveScanSchedulerHeadPublicationFailureOwner::PrePublication(merged),
+                ..
+            } => Ok(merged),
+            failure @ Self {
+                owner:
+                    BluetoothPassiveScanSchedulerHeadPublicationFailureOwner::RxPublication { .. },
+                ..
+            } => Err(failure),
+        }
     }
 }
 
@@ -495,129 +547,10 @@ impl BluetoothPassiveScanSchedulerHeadPublished {
     }
 }
 
-/// Passive scanner graph admitted through the complete common RUN suffix.
-///
-/// The graph remains hardware-owned. Completion, RX extraction and recycling
-/// require later typed transitions and are deliberately not exposed here.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the running scanner graph must advance through owned completion"]
-pub struct BluetoothPassiveScanSchedulerRunning {
-    graph: BluetoothPassiveScanMemoryGraphRunning,
-    run: BluetoothSchedulerHardwareRunCommandPublished,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPassiveScanSchedulerRunning {
-    pub(crate) fn new(
-        graph: BluetoothPassiveScanMemoryGraphCommandPublished,
-        run: BluetoothSchedulerHardwareRunCommandPublished,
-        reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-    ) -> Self {
-        let graph = graph.into_running(&run);
-        Self {
-            graph,
-            run,
-            reservation,
-        }
-    }
-
-    /// Exact scanner item retained while hardware owns the graph.
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_item_address()
-    }
-
-    /// Hardware list admitted by the complete run transaction.
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.run.index()
-    }
-}
-
-/// Scanner graph after one non-sentinel scheduler completion observation.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the completed scanner graph must advance through unlink and recycle"]
-pub struct BluetoothPassiveScanSchedulerCompletionObserved {
-    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
-    run: BluetoothSchedulerHardwareRunCommandPublished,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPassiveScanSchedulerCompletionObserved {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.run.index()
-    }
-
-    pub const fn status(&self) -> BluetoothPassiveScanSchedulerItemCompletionStatus {
-        self.graph.status()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the empty scanner head must advance through software unlink"]
-pub struct BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
-    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
-    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.head.index()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the unlinked scanner graph must pass the removal gate"]
-pub struct BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
-    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.head.index()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the removal-ready scanner graph must be extracted and recycled"]
-pub struct BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
-    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
-    removal: BluetoothSchedulerSoftwareListRemovalReady,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.removal.index()
-    }
-}
-
 /// CPU-owned scanner graph and copied receive results.
 #[cfg(target_arch = "riscv32")]
 #[must_use = "return the graph and received packets to the scanner role owner"]
-pub struct BluetoothPassiveScanSchedulerRecycled {
+pub(crate) struct BluetoothPassiveScanSchedulerRecycled {
     graph: BluetoothPassiveScanMemoryGraphRecycled,
 }
 
@@ -635,118 +568,47 @@ impl BluetoothPassiveScanSchedulerRecycled {
 }
 
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the scanner graph and every captured list remain owned"]
-pub enum BluetoothPassiveScanSchedulerCompletionStep {
-    DrainAlreadyActive(BluetoothPassiveScanSchedulerRunning),
-    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerRunning),
-    NoFinishedList(BluetoothPassiveScanSchedulerRunning),
-    UnrelatedList {
-        drain: BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    StillInFlight(BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>),
-    CompletionObserved(
-        BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerCompletionObserved>,
-    ),
+pub(crate) struct BluetoothPassiveScanSchedulerRecycleReady {
+    graph: BluetoothPassiveScanMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the scanner graph and captured drain remain owned"]
-pub enum BluetoothPassiveScanSchedulerRunningDrainStep {
-    SchedulerIdentityMismatch(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerRunning>,
-    ),
-    DrainLost(BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerRunning>),
-    UnrelatedList {
-        drain: BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    StillInFlight(BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>),
-    CompletionObserved(
-        BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerCompletionObserved>,
-    ),
-}
+impl BluetoothPassiveScanSchedulerRecycleReady {
+    const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.graph.scheduler_item_address()
+    }
 
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the completed scanner graph and captured drain remain owned"]
-pub enum BluetoothPassiveScanSchedulerCompletionObservedDrainStep {
-    SchedulerIdentityMismatch(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerCompletionObserved>,
-    ),
-    DrainLost(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerCompletionObserved>,
-    ),
-    UnrelatedList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothPassiveScanSchedulerCompletionObserved,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    RepeatedScannerList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothPassiveScanSchedulerCompletionObserved,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the completed scanner graph must retain its head retirement state"]
-pub enum BluetoothPassiveScanSchedulerHardwareHeadRetirementStep {
-    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerCompletionObserved),
-    FinishedListDrainStillActive(BluetoothPassiveScanSchedulerCompletionObserved),
-    ExpectedHeadStillPublished {
-        completed: BluetoothPassiveScanSchedulerCompletionObserved,
-        observed: BluetoothSchedulerHardwareListHead,
-    },
-    UnexpectedHeadChanged {
-        completed: BluetoothPassiveScanSchedulerCompletionObserved,
-        observed: BluetoothSchedulerHardwareListHead,
-    },
-    EmptyObserved(BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the scanner unlink owner must be retained"]
-pub enum BluetoothPassiveScanSchedulerSoftwareListUnlinkStep {
-    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
-    Unlinked(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the scanner unlinked or removal-ready owner must be retained"]
-pub enum BluetoothPassiveScanSchedulerSoftwareListRemovalJoin {
-    SchedulerIdentityMismatch {
-        unlinked: BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    },
-    Pending(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
-    Ready(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the scanner unlinked or removal-ready owner must be retained"]
-pub enum BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck {
-    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
-    StorageUnavailable(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
-    Pending(BluetoothPassiveScanSchedulerSoftwareListUnlinked),
-    Ready(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+    const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.removal.index()
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
 #[must_use = "failure retains the scanner graph; success returns CPU ownership"]
-pub enum BluetoothPassiveScanSchedulerRecycleStep {
-    SchedulerIdentityMismatch(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
-    FinishedListDrainStillActive(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+#[expect(
+    clippy::large_enum_variant,
+    reason = "no-alloc role-tail outcomes retain the exact scanner graph on every branch"
+)]
+pub(crate) enum BluetoothPassiveScanSchedulerRecycleStep {
+    SchedulerIdentityMismatch {
+        _ready: BluetoothPassiveScanSchedulerRecycleReady,
+    },
+    FinishedListDrainStillActive {
+        _ready: BluetoothPassiveScanSchedulerRecycleReady,
+    },
     MemoryIdentityMismatch {
-        ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
-        error: BluetoothPassiveScanMemoryGraphRecycleError,
+        _ready: BluetoothPassiveScanSchedulerRecycleReady,
+        _error: BluetoothPassiveScanMemoryGraphRecycleError,
     },
     ReceiveInvalid {
-        ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
-        error: BluetoothLeRxError,
+        _ready: BluetoothPassiveScanSchedulerRecycleReady,
+        _error: BluetoothLeRxError,
     },
-    ReservationIdentityMismatch(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+    ReservationIdentityMismatch {
+        _ready: BluetoothPassiveScanSchedulerRecycleReady,
+    },
     Recycled(BluetoothPassiveScanSchedulerRecycled),
 }
 
@@ -799,120 +661,14 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerHeadPublished<'a> {
     }
 }
 
-/// Advertising graph admitted through head, interrupt, event and RUN publication.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the running advertising graph must advance through owned completion"]
-pub struct BluetoothLegacyAdvertisingSchedulerRunning<'a> {
-    item: crate::legacy_advertising::BluetoothLegacyAdvertisingRunningEvent<'a>,
-    run: BluetoothSchedulerHardwareRunCommandPublished,
-    _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-/// Advertising graph with one non-sentinel scheduler completion observation.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the completed advertising graph must advance through unlink and recycle"]
-pub struct BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a> {
-    item: BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
-    run: BluetoothSchedulerHardwareRunCommandPublished,
-    _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothLegacyAdvertisingSchedulerCompletionObserved<'_> {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.run.index()
-    }
-
-    pub const fn statuses(
-        &self,
-    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingEventCompletionStatuses
-    {
-        self.item.statuses()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the empty-head advertising graph must advance through removal"]
-pub struct BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a> {
-    item: BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
-    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'_> {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.head.index()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the unlinked advertising graph must pass the removal gate"]
-pub struct BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a> {
-    item: BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
-    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'_> {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.head.index()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the removal-ready advertising graph must be recycled"]
-pub struct BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a> {
-    item: BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
-    removal: BluetoothSchedulerSoftwareListRemovalReady,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'_> {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.removal.index()
-    }
-}
-
 #[cfg(target_arch = "riscv32")]
 #[must_use = "the completed event must advance the LL owner exactly once"]
-pub struct BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
+pub(crate) struct BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
     item: crate::legacy_advertising::BluetoothLegacyAdvertisingRecycledEvent<'a>,
 }
 
 #[cfg(target_arch = "riscv32")]
 impl<'a> BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
-    pub const fn identity(
-        &self,
-    ) -> open_esp_radio_bluetooth_ll::advertiser::LegacyAdvertisingEventIdentity {
-        self.item.identity()
-    }
-
-    pub const fn statuses(
-        &self,
-    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingEventCompletionStatuses
-    {
-        self.item.statuses()
-    }
-
     /// Advance the exact LL event while retaining S31 diagnostic statuses.
     pub fn complete_event(
         self,
@@ -922,87 +678,40 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
 }
 
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the advertising completion owner must be retained"]
-pub enum BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep<'a> {
-    SchedulerIdentityMismatch(BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>),
-    FinishedListDrainStillActive(BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>),
-    ExpectedHeadStillPublished {
-        completed: BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        observed: BluetoothSchedulerHardwareListHead,
-    },
-    UnexpectedHeadChanged {
-        completed: BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        observed: BluetoothSchedulerHardwareListHead,
-    },
-    EmptyObserved(BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>),
+pub(crate) struct BluetoothLegacyAdvertisingSchedulerRecycleReady<'a> {
+    item: BluetoothLegacyAdvertisingCompletionObservedEvent<'a>,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the advertising unlink owner must be retained"]
-pub enum BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep<'a> {
-    SchedulerIdentityMismatch(BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>),
-    Unlinked(BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
-}
+impl BluetoothLegacyAdvertisingSchedulerRecycleReady<'_> {
+    const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
 
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the unlinked or ready advertising owner must be retained"]
-pub enum BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin<'a> {
-    SchedulerIdentityMismatch {
-        unlinked: BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    },
-    Pending(BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
-    Ready(BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>),
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the unlinked or ready advertising owner must be retained"]
-pub enum BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck<'a> {
-    SchedulerIdentityMismatch(BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
-    StorageUnavailable(BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
-    Pending(BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
-    Ready(BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>),
+    const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.removal.index()
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
 #[must_use = "failure retains the advertising graph; success retains CPU ownership"]
-pub enum BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
-    SchedulerIdentityMismatch(BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>),
-    FinishedListDrainStillActive(
-        BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
-    ),
-    MemoryIdentityMismatch {
-        ready: BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
-        error: open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphRecycleError,
+pub(crate) enum BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
+    SchedulerIdentityMismatch {
+        _ready: BluetoothLegacyAdvertisingSchedulerRecycleReady<'a>,
     },
-    ReservationIdentityMismatch(
-        BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
-    ),
+    FinishedListDrainStillActive {
+        _ready: BluetoothLegacyAdvertisingSchedulerRecycleReady<'a>,
+    },
+    MemoryIdentityMismatch {
+        _ready: BluetoothLegacyAdvertisingSchedulerRecycleReady<'a>,
+        _error: open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingMemoryGraphRecycleError,
+    },
+    ReservationIdentityMismatch {
+        _ready: BluetoothLegacyAdvertisingSchedulerRecycleReady<'a>,
+    },
     Recycled(BluetoothLegacyAdvertisingSchedulerRecycled<'a>),
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<'a> BluetoothLegacyAdvertisingSchedulerRunning<'a> {
-    pub(crate) fn new(
-        item: crate::legacy_advertising::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
-        run: BluetoothSchedulerHardwareRunCommandPublished,
-        reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-    ) -> Self {
-        let item = item.into_running(&run);
-        Self {
-            item,
-            run,
-            _reservation: reservation,
-        }
-    }
-
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.run.index()
-    }
 }
 
 /// Finite reason a first advertising event returned to pre-admission state.
@@ -1138,12 +847,15 @@ impl BluetoothSchedulerExclusiveListEpoch {
         self.state == BluetoothSchedulerExclusiveListState::FirstItemRunning { address }
     }
 
-    fn retain_completion_observed_first_item(&mut self, address: BluetoothControllerSramAddress) {
-        assert!(
-            self.retains_running_first_item(address),
-            "only the running first item can enter completion-observed"
-        );
+    fn retain_completion_observed_first_item(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
+        if !self.retains_running_first_item(address) {
+            return false;
+        }
         self.state = BluetoothSchedulerExclusiveListState::FirstItemCompletionObserved { address };
+        true
     }
 
     fn retains_completion_observed_first_item(
@@ -1153,13 +865,16 @@ impl BluetoothSchedulerExclusiveListEpoch {
         self.state == BluetoothSchedulerExclusiveListState::FirstItemCompletionObserved { address }
     }
 
-    fn retain_hardware_head_empty_first_item(&mut self, address: BluetoothControllerSramAddress) {
-        assert!(
-            self.retains_completion_observed_first_item(address),
-            "only the completion-observed first item can retire its hardware head"
-        );
+    fn retain_hardware_head_empty_first_item(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
+        if !self.retains_completion_observed_first_item(address) {
+            return false;
+        }
         self.state =
             BluetoothSchedulerExclusiveListState::FirstItemHardwareHeadEmptyObserved { address };
+        true
     }
 
     fn retains_hardware_head_empty_first_item(
@@ -1191,13 +906,13 @@ impl BluetoothSchedulerExclusiveListEpoch {
     fn retain_software_list_removal_ready_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
-    ) {
-        assert!(
-            self.retains_unlinked_first_item(address),
-            "only the already-unlinked first item can pass the removal return gate"
-        );
+    ) -> bool {
+        if !self.retains_unlinked_first_item(address) {
+            return false;
+        }
         self.state =
             BluetoothSchedulerExclusiveListState::FirstItemSoftwareListRemovalReady { address };
+        true
     }
 
     fn retains_software_list_removal_ready_first_item(
@@ -1311,83 +1026,6 @@ impl<Owner> BluetoothSchedulerFinishedListDrainState<Owner> {
             Self::Drained(owner)
         }
     }
-}
-
-/// One bounded Controller-owned advertising completion attempt.
-#[must_use = "the advertising graph and every observed list must be retained"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothLegacyAdvertisingSchedulerCompletionStep<'a> {
-    DrainAlreadyActive(BluetoothLegacyAdvertisingSchedulerRunning<'a>),
-    SchedulerIdentityMismatch(BluetoothLegacyAdvertisingSchedulerRunning<'a>),
-    NoFinishedList(BluetoothLegacyAdvertisingSchedulerRunning<'a>),
-    UnrelatedList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothLegacyAdvertisingSchedulerRunning<'a>,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    StillInFlight(
-        BluetoothSchedulerFinishedListDrainState<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
-    ),
-    CompletionObserved(
-        BluetoothSchedulerFinishedListDrainState<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-    ),
-}
-
-/// One bounded continuation while an advertising graph remains running.
-#[must_use = "the advertising graph and every observed list must be retained"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothLegacyAdvertisingSchedulerRunningDrainStep<'a> {
-    SchedulerIdentityMismatch(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
-    ),
-    DrainLost(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
-    ),
-    UnrelatedList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothLegacyAdvertisingSchedulerRunning<'a>,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    StillInFlight(
-        BluetoothSchedulerFinishedListDrainState<BluetoothLegacyAdvertisingSchedulerRunning<'a>>,
-    ),
-    CompletionObserved(
-        BluetoothSchedulerFinishedListDrainState<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-    ),
-}
-
-/// One bounded continuation after advertising completion was observed.
-#[must_use = "the advertising completion and every observed list must be retained"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'a> {
-    SchedulerIdentityMismatch(
-        BluetoothSchedulerFinishedListDrainPending<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-    ),
-    DrainLost(
-        BluetoothSchedulerFinishedListDrainPending<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-    ),
-    UnrelatedList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    RepeatedAdvertisingList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
 }
 
 /// Hardware and source-owned software state after scheduler initialization.
@@ -1975,10 +1613,10 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Publish the complete lower passive-scanner transaction.
     ///
-    /// The common list identity and scheduler-head encoding are checked while
-    /// every scanner resource is still CPU-owned. The infallible suffix then
-    /// publishes the RX list, restricted scanner command and scheduler head in
-    /// the reviewed hardware order.
+    /// The common list identity and scheduler-head encoding are checked before
+    /// MMIO. An RX publication mismatch seals every owner after that first
+    /// write; only a matching RX proof continues to the restricted scanner
+    /// command and scheduler head in the reviewed hardware order.
     #[cfg(target_arch = "riscv32")]
     #[allow(
         unsafe_code,
@@ -1996,12 +1634,33 @@ impl<const SCHEDULER_CAPACITY: usize>
         let head = match self.validate_first_scheduler_item_head(address) {
             Ok(head) => head,
             Err(error) => {
-                return Err(BluetoothPassiveScanSchedulerHeadPublicationFailure { error, merged });
+                return Err(BluetoothPassiveScanSchedulerHeadPublicationFailure {
+                    head_error: Some(error),
+                    rx_publication_error: None,
+                    owner: BluetoothPassiveScanSchedulerHeadPublicationFailureOwner::PrePublication(
+                        merged,
+                    ),
+                });
             }
         };
         let BluetoothPassiveScanEmptySchedulerMergePrepared { graph, reservation } = merged;
         let graph = graph.prepare_publication();
-        let graph = unsafe { self.task.publish_passive_scan_rx_memory(graph) };
+        let graph = match unsafe { self.task.publish_passive_scan_rx_memory(graph) } {
+            Ok(graph) => graph,
+            Err(mismatch) => {
+                let error = mismatch.error();
+                return Err(BluetoothPassiveScanSchedulerHeadPublicationFailure {
+                    head_error: None,
+                    rx_publication_error: Some(error),
+                    owner:
+                        BluetoothPassiveScanSchedulerHeadPublicationFailureOwner::RxPublication {
+                            _mismatch: mismatch,
+                            _reservation: reservation,
+                            _head: head,
+                        },
+                });
+            }
+        };
         let graph = unsafe { self.task.publish_passive_scan_command(graph) };
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
         Ok(BluetoothPassiveScanSchedulerHeadPublished {
@@ -2027,7 +1686,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     }
 
     #[cfg(target_arch = "riscv32")]
-    fn validate_first_scheduler_item_head(
+    pub(crate) fn validate_first_scheduler_item_head(
         &self,
         address: BluetoothControllerSramAddress,
     ) -> Result<BluetoothSchedulerHardwareListHead, BluetoothSchedulerHeadPublicationError> {
@@ -2042,7 +1701,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         unsafe_code,
         reason = "validation retained the exact source-owned list identity and typed hardware-head encoding"
     )]
-    fn publish_validated_first_scheduler_item_head(
+    pub(crate) fn publish_validated_first_scheduler_item_head(
         &mut self,
         address: BluetoothControllerSramAddress,
         index: BluetoothSchedulerHardwareListIndex,
@@ -2053,439 +1712,36 @@ impl<const SCHEDULER_CAPACITY: usize>
         publication
     }
 
-    /// Perform one fresh fenced completion-list transfer for advertising.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_legacy_advertising_completion<'a>(
-        &mut self,
-        running: BluetoothLegacyAdvertisingSchedulerRunning<'a>,
-        wake: BluetoothSchedulerWakeBatch,
-    ) -> BluetoothLegacyAdvertisingSchedulerCompletionStep<'a> {
-        let address = running.scheduler_item_address();
-        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-        {
-            return BluetoothLegacyAdvertisingSchedulerCompletionStep::SchedulerIdentityMismatch(
-                running,
-            );
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothLegacyAdvertisingSchedulerCompletionStep::DrainAlreadyActive(running);
-        }
-
-        if self
-            .task
-            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake)
-            .is_err()
-        {
-            return BluetoothLegacyAdvertisingSchedulerCompletionStep::DrainAlreadyActive(running);
-        }
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
-            self.runtime.scheduler_finished_lists_mut().step()
-        else {
-            return BluetoothLegacyAdvertisingSchedulerCompletionStep::NoFinishedList(running);
-        };
-
-        let BluetoothLegacyAdvertisingSchedulerRunning {
-            item,
-            run,
-            _reservation,
-        } = running;
-        match item.observe_completion(observed) {
-            BluetoothLegacyAdvertisingRunningEventCompletionObservation::ListMismatch {
-                item,
-                observed,
-            } => BluetoothLegacyAdvertisingSchedulerCompletionStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothLegacyAdvertisingSchedulerRunning {
-                        item,
-                        run,
-                        _reservation,
-                    },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothLegacyAdvertisingRunningEventCompletionObservation::StillInFlight(item) => {
-                BluetoothLegacyAdvertisingSchedulerCompletionStep::StillInFlight(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothLegacyAdvertisingSchedulerRunning {
-                            item,
-                            run,
-                            _reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-            BluetoothLegacyAdvertisingRunningEventCompletionObservation::CompletionObserved(
-                item,
-            ) => {
-                self._scheduler_list
-                    .retain_completion_observed_first_item(address);
-                BluetoothLegacyAdvertisingSchedulerCompletionStep::CompletionObserved(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothLegacyAdvertisingSchedulerCompletionObserved {
-                            item,
-                            run,
-                            _reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-        }
-    }
-
-    /// Continue the same captured drain while advertising remains running.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_legacy_advertising_running_finished_list_drain<'a>(
-        &mut self,
-        pending: BluetoothSchedulerFinishedListDrainPending<
-            BluetoothLegacyAdvertisingSchedulerRunning<'a>,
-        >,
-    ) -> BluetoothLegacyAdvertisingSchedulerRunningDrainStep<'a> {
-        let address = pending.owner().scheduler_item_address();
-        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-        {
-            return BluetoothLegacyAdvertisingSchedulerRunningDrainStep::SchedulerIdentityMismatch(
-                pending,
-            );
-        }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothLegacyAdvertisingSchedulerRunningDrainStep::DrainLost(pending);
-        }
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
-            self.runtime.scheduler_finished_lists_mut().step()
-        else {
-            return BluetoothLegacyAdvertisingSchedulerRunningDrainStep::DrainLost(pending);
-        };
-
-        let BluetoothLegacyAdvertisingSchedulerRunning {
-            item,
-            run,
-            _reservation,
-        } = pending.into_owner();
-        match item.observe_completion(observed) {
-            BluetoothLegacyAdvertisingRunningEventCompletionObservation::ListMismatch {
-                item,
-                observed,
-            } => BluetoothLegacyAdvertisingSchedulerRunningDrainStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothLegacyAdvertisingSchedulerRunning {
-                        item,
-                        run,
-                        _reservation,
-                    },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothLegacyAdvertisingRunningEventCompletionObservation::StillInFlight(item) => {
-                BluetoothLegacyAdvertisingSchedulerRunningDrainStep::StillInFlight(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothLegacyAdvertisingSchedulerRunning {
-                            item,
-                            run,
-                            _reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-            BluetoothLegacyAdvertisingRunningEventCompletionObservation::CompletionObserved(
-                item,
-            ) => {
-                self._scheduler_list
-                    .retain_completion_observed_first_item(address);
-                BluetoothLegacyAdvertisingSchedulerRunningDrainStep::CompletionObserved(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothLegacyAdvertisingSchedulerCompletionObserved {
-                            item,
-                            run,
-                            _reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-        }
-    }
-
-    /// Continue the same captured drain after advertising completion.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_legacy_advertising_completed_finished_list_drain<'a>(
-        &mut self,
-        pending: BluetoothSchedulerFinishedListDrainPending<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-        >,
-    ) -> BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'a> {
-        let address = pending.owner().scheduler_item_address();
-        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_completion_observed_first_item(address)
-        {
-            return BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
-                pending,
-            );
-        }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::DrainLost(
-                pending,
-            );
-        }
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
-            self.runtime.scheduler_finished_lists_mut().step()
-        else {
-            return BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::DrainLost(
-                pending,
-            );
-        };
-        let completed = pending.into_owner();
-        if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
-            BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::RepeatedAdvertisingList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
-                observed,
-            }
-        } else {
-            BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
-                observed,
-            }
-        }
-    }
-
-    /// Observe retirement of the exact advertising hardware-list head.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_legacy_advertising_hardware_head_retirement<'a>(
-        &mut self,
-        completed: BluetoothLegacyAdvertisingSchedulerCompletionObserved<'a>,
-    ) -> BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep<'a> {
-        let address = completed.scheduler_item_address();
-        if completed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_completion_observed_first_item(address)
-        {
-            return BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(completed);
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed);
-        }
-        let BluetoothLegacyAdvertisingSchedulerCompletionObserved {
-            item,
-            run,
-            _reservation,
-        } = completed;
-        match self
-            .task
-            .observe_scheduler_hardware_list_head_retirement(run)
-        {
-            BluetoothSchedulerHardwareListHeadRetirementObservation::ExpectedHeadStillPublished {
-                run,
-                observed,
-            } => BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished {
-                completed: BluetoothLegacyAdvertisingSchedulerCompletionObserved {
-                    item,
-                    run,
-                    _reservation,
-                },
-                observed,
-            },
-            BluetoothSchedulerHardwareListHeadRetirementObservation::UnexpectedHeadChanged {
-                run,
-                observed,
-            } => BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged {
-                completed: BluetoothLegacyAdvertisingSchedulerCompletionObserved {
-                    item,
-                    run,
-                    _reservation,
-                },
-                observed,
-            },
-            BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(head) => {
-                assert_eq!(
-                    head.completed_head().address(),
-                    Some(address),
-                    "the retired head must retain the completed advertising identity"
-                );
-                self._scheduler_list
-                    .retain_hardware_head_empty_first_item(address);
-                BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::EmptyObserved(
-                    BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved {
-                        item,
-                        head,
-                        reservation: _reservation,
-                    },
-                )
-            }
-        }
-    }
-
-    /// Remove the sole advertising item from the source-owned software list.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn unlink_legacy_advertising_software_list<'a>(
-        &mut self,
-        observed: BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>,
-    ) -> BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep<'a> {
-        let address = observed.scheduler_item_address();
-        if observed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self
-                ._scheduler_list
-                .unlink_software_list_first_item(address)
-        {
-            return BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(observed);
-        }
-        let BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved {
-            item,
-            head,
-            reservation,
-        } = observed;
-        BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep::Unlinked(
-            BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked {
-                item,
-                head,
-                reservation,
-            },
-        )
-    }
-
-    /// Join a freshly serviced scheduler event to an unlinked advertising item.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn join_legacy_advertising_software_list_removal<'a>(
-        &mut self,
-        unlinked: BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    ) -> BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin<'a> {
-        let address = unlinked.scheduler_item_address();
-        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
-        {
-            return BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
-                unlinked,
-                event,
-            };
-        }
-        let idle = match event.into_software_list_removal_gate() {
-            BluetoothSchedulerSoftwareListRemovalInterruptStep::Pending => {
-                return BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::Pending(
-                    unlinked,
-                );
-            }
-            BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
-        };
-        let BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked {
-            item,
-            head,
-            reservation,
-        } = unlinked;
-        match self.task.finish_scheduler_software_list_removal(idle, head) {
-            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
-                BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::Pending(
-                    BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked {
-                        item,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
-                    .retain_software_list_removal_ready_first_item(address);
-                BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin::Ready(
-                    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady {
-                        item,
-                        removal,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
-    /// Recheck an already-unlinked advertising item without a new IRQ edge.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_legacy_advertising_software_list_removal<'a>(
-        &mut self,
-        storage: &impl crate::BluetoothSchedulerRunInterruptStorage,
-        unlinked: BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-    ) -> BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck<'a> {
-        let address = unlinked.scheduler_item_address();
-        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
-        {
-            return BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked);
-        }
-        let BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked {
-            item,
-            head,
-            reservation,
-        } = unlinked;
-        let join = match self
-            .task
-            .recheck_scheduler_software_list_removal(storage, head)
-        {
-            Ok(join) => join,
-            Err(head) => {
-                return BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
-                    BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked {
-                        item,
-                        head,
-                        reservation,
-                    },
-                );
-            }
-        };
-        match join {
-            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
-                BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::Pending(
-                    BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked {
-                        item,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
-                    .retain_software_list_removal_ready_first_item(address);
-                BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck::Ready(
-                    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady {
-                        item,
-                        removal,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
     /// Release the advertising memory, timeline and source-list owners together.
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn recycle_legacy_advertising_completed<'a>(
         &mut self,
-        ready: BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
+        ready: BluetoothSingleItemSchedulerSoftwareListRemovalReady<
+            crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole<'a>,
+        >,
     ) -> BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
+        let (item, removal, reservation) = ready.into_parts();
+        let ready = BluetoothLegacyAdvertisingSchedulerRecycleReady {
+            item,
+            removal,
+            reservation,
+        };
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
                 ._scheduler_list
                 .retains_software_list_removal_ready_first_item(address)
         {
-            return BluetoothLegacyAdvertisingSchedulerRecycleStep::SchedulerIdentityMismatch(
-                ready,
-            );
+            return BluetoothLegacyAdvertisingSchedulerRecycleStep::SchedulerIdentityMismatch {
+                _ready: ready,
+            };
         }
         if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothLegacyAdvertisingSchedulerRecycleStep::FinishedListDrainStillActive(
-                ready,
-            );
+            return BluetoothLegacyAdvertisingSchedulerRecycleStep::FinishedListDrainStillActive {
+                _ready: ready,
+            };
         }
-        let BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady {
+        let BluetoothLegacyAdvertisingSchedulerRecycleReady {
             item,
             removal,
             reservation,
@@ -2496,12 +1752,12 @@ impl<const SCHEDULER_CAPACITY: usize>
                 let error = failure.error();
                 let (item, removal) = failure.into_parts();
                 return BluetoothLegacyAdvertisingSchedulerRecycleStep::MemoryIdentityMismatch {
-                    ready: BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady {
+                    _ready: BluetoothLegacyAdvertisingSchedulerRecycleReady {
                         item,
                         removal,
                         reservation,
                     },
-                    error,
+                    _error: error,
                 };
             }
         };
@@ -2514,13 +1770,13 @@ impl<const SCHEDULER_CAPACITY: usize>
             Err(failure) => {
                 let reservation = failure.into_reservation();
                 let (item, removal) = prepared.into_parts();
-                return BluetoothLegacyAdvertisingSchedulerRecycleStep::ReservationIdentityMismatch(
-                    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady {
+                return BluetoothLegacyAdvertisingSchedulerRecycleStep::ReservationIdentityMismatch {
+                    _ready: BluetoothLegacyAdvertisingSchedulerRecycleReady {
                         item,
                         removal,
                         reservation,
                     },
-                );
+                };
             }
         };
         let item = prepared.commit();
@@ -2531,422 +1787,36 @@ impl<const SCHEDULER_CAPACITY: usize>
         )
     }
 
-    /// Perform one fresh, fenced scanner completion-list transfer.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_passive_scan_completion(
-        &mut self,
-        running: BluetoothPassiveScanSchedulerRunning,
-        wake: BluetoothSchedulerWakeBatch,
-    ) -> BluetoothPassiveScanSchedulerCompletionStep {
-        let address = running.scheduler_item_address();
-        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-        {
-            return BluetoothPassiveScanSchedulerCompletionStep::SchedulerIdentityMismatch(running);
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPassiveScanSchedulerCompletionStep::DrainAlreadyActive(running);
-        }
-        if self
-            .task
-            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake)
-            .is_err()
-        {
-            return BluetoothPassiveScanSchedulerCompletionStep::DrainAlreadyActive(running);
-        }
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
-            self.runtime.scheduler_finished_lists_mut().step()
-        else {
-            return BluetoothPassiveScanSchedulerCompletionStep::NoFinishedList(running);
-        };
-        let BluetoothPassiveScanSchedulerRunning {
-            graph,
-            run,
-            reservation,
-        } = running;
-        match graph.observe_completion(observed) {
-            BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
-                running,
-                observed,
-            } => BluetoothPassiveScanSchedulerCompletionStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothPassiveScanSchedulerRunning {
-                        graph: running,
-                        run,
-                        reservation,
-                    },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(graph) => {
-                BluetoothPassiveScanSchedulerCompletionStep::StillInFlight(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerRunning {
-                            graph,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-            BluetoothPassiveScanMemoryGraphCompletionObservation::CompletionObserved(graph) => {
-                self._scheduler_list
-                    .retain_completion_observed_first_item(address);
-                BluetoothPassiveScanSchedulerCompletionStep::CompletionObserved(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerCompletionObserved {
-                            graph,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-        }
-    }
-
-    /// Continue the same captured drain while the scanner remains running.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_passive_scan_running_finished_list_drain(
-        &mut self,
-        pending: BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerRunning>,
-    ) -> BluetoothPassiveScanSchedulerRunningDrainStep {
-        let address = pending.owner().scheduler_item_address();
-        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-        {
-            return BluetoothPassiveScanSchedulerRunningDrainStep::SchedulerIdentityMismatch(
-                pending,
-            );
-        }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPassiveScanSchedulerRunningDrainStep::DrainLost(pending);
-        }
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
-            self.runtime.scheduler_finished_lists_mut().step()
-        else {
-            return BluetoothPassiveScanSchedulerRunningDrainStep::DrainLost(pending);
-        };
-        let BluetoothPassiveScanSchedulerRunning {
-            graph,
-            run,
-            reservation,
-        } = pending.into_owner();
-        match graph.observe_completion(observed) {
-            BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
-                running,
-                observed,
-            } => BluetoothPassiveScanSchedulerRunningDrainStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothPassiveScanSchedulerRunning {
-                        graph: running,
-                        run,
-                        reservation,
-                    },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(graph) => {
-                BluetoothPassiveScanSchedulerRunningDrainStep::StillInFlight(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerRunning {
-                            graph,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-            BluetoothPassiveScanMemoryGraphCompletionObservation::CompletionObserved(graph) => {
-                self._scheduler_list
-                    .retain_completion_observed_first_item(address);
-                BluetoothPassiveScanSchedulerRunningDrainStep::CompletionObserved(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPassiveScanSchedulerCompletionObserved {
-                            graph,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-        }
-    }
-
-    /// Continue a captured drain after scanner completion was observed.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_passive_scan_completed_finished_list_drain(
-        &mut self,
-        pending: BluetoothSchedulerFinishedListDrainPending<
-            BluetoothPassiveScanSchedulerCompletionObserved,
-        >,
-    ) -> BluetoothPassiveScanSchedulerCompletionObservedDrainStep {
-        let address = pending.owner().scheduler_item_address();
-        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_completion_observed_first_item(address)
-        {
-            return BluetoothPassiveScanSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
-                pending,
-            );
-        }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPassiveScanSchedulerCompletionObservedDrainStep::DrainLost(pending);
-        }
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } =
-            self.runtime.scheduler_finished_lists_mut().step()
-        else {
-            return BluetoothPassiveScanSchedulerCompletionObservedDrainStep::DrainLost(pending);
-        };
-        let completed = pending.into_owner();
-        if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
-            BluetoothPassiveScanSchedulerCompletionObservedDrainStep::RepeatedScannerList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
-                observed,
-            }
-        } else {
-            BluetoothPassiveScanSchedulerCompletionObservedDrainStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
-                observed,
-            }
-        }
-    }
-
-    /// Observe retirement of the exact scanner hardware-list head.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_passive_scan_hardware_head_retirement(
-        &mut self,
-        completed: BluetoothPassiveScanSchedulerCompletionObserved,
-    ) -> BluetoothPassiveScanSchedulerHardwareHeadRetirementStep {
-        let address = completed.scheduler_item_address();
-        if completed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_completion_observed_first_item(address)
-        {
-            return BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(completed);
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed);
-        }
-        let BluetoothPassiveScanSchedulerCompletionObserved {
-            graph,
-            run,
-            reservation,
-        } = completed;
-        match self
-            .task
-            .observe_scheduler_hardware_list_head_retirement(run)
-        {
-            BluetoothSchedulerHardwareListHeadRetirementObservation::ExpectedHeadStillPublished {
-                run,
-                observed,
-            } => BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished {
-                completed: BluetoothPassiveScanSchedulerCompletionObserved {
-                    graph,
-                    run,
-                    reservation,
-                },
-                observed,
-            },
-            BluetoothSchedulerHardwareListHeadRetirementObservation::UnexpectedHeadChanged {
-                run,
-                observed,
-            } => BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged {
-                completed: BluetoothPassiveScanSchedulerCompletionObserved {
-                    graph,
-                    run,
-                    reservation,
-                },
-                observed,
-            },
-            BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(head) => {
-                assert_eq!(
-                    head.completed_head().address(),
-                    Some(address),
-                    "the retired head must retain the completed scanner identity"
-                );
-                self._scheduler_list
-                    .retain_hardware_head_empty_first_item(address);
-                BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::EmptyObserved(
-                    BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
-                        graph,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
-    /// Remove the sole scanner item from the source-owned software list.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn unlink_passive_scan_software_list(
-        &mut self,
-        observed: BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved,
-    ) -> BluetoothPassiveScanSchedulerSoftwareListUnlinkStep {
-        let address = observed.scheduler_item_address();
-        if observed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self
-                ._scheduler_list
-                .unlink_software_list_first_item(address)
-        {
-            return BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
-                observed,
-            );
-        }
-        let BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved {
-            graph,
-            head,
-            reservation,
-        } = observed;
-        BluetoothPassiveScanSchedulerSoftwareListUnlinkStep::Unlinked(
-            BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-                graph,
-                head,
-                reservation,
-            },
-        )
-    }
-
-    /// Join a fresh primary event to the unlinked scanner item.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn join_passive_scan_software_list_removal(
-        &mut self,
-        unlinked: BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    ) -> BluetoothPassiveScanSchedulerSoftwareListRemovalJoin {
-        let address = unlinked.scheduler_item_address();
-        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
-        {
-            return BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
-                unlinked,
-                event,
-            };
-        }
-        let idle = match event.into_software_list_removal_gate() {
-            BluetoothSchedulerSoftwareListRemovalInterruptStep::Pending => {
-                return BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Pending(unlinked);
-            }
-            BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
-        };
-        let BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-            graph,
-            head,
-            reservation,
-        } = unlinked;
-        match self.task.finish_scheduler_software_list_removal(idle, head) {
-            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
-                BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Pending(
-                    BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-                        graph,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
-                    .retain_software_list_removal_ready_first_item(address);
-                BluetoothPassiveScanSchedulerSoftwareListRemovalJoin::Ready(
-                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
-                        graph,
-                        removal,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
-    /// Recheck an unlinked scanner item without requiring another IRQ edge.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_passive_scan_software_list_removal(
-        &mut self,
-        storage: &impl crate::BluetoothSchedulerRunInterruptStorage,
-        unlinked: BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-    ) -> BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck {
-        let address = unlinked.scheduler_item_address();
-        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
-        {
-            return BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(
-                unlinked,
-            );
-        }
-        let BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-            graph,
-            head,
-            reservation,
-        } = unlinked;
-        let join = match self
-            .task
-            .recheck_scheduler_software_list_removal(storage, head)
-        {
-            Ok(join) => join,
-            Err(head) => {
-                return BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
-                    BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-                        graph,
-                        head,
-                        reservation,
-                    },
-                );
-            }
-        };
-        match join {
-            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
-                BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Pending(
-                    BluetoothPassiveScanSchedulerSoftwareListUnlinked {
-                        graph,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
-                    .retain_software_list_removal_ready_first_item(address);
-                BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck::Ready(
-                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
-                        graph,
-                        removal,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
     /// Extract RX packets and release the scanner memory and common-list owners.
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn recycle_passive_scan_completed(
         &mut self,
-        ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
+        ready: BluetoothSingleItemSchedulerSoftwareListRemovalReady<
+            crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
+        >,
     ) -> BluetoothPassiveScanSchedulerRecycleStep {
+        let (graph, removal, reservation) = ready.into_parts();
+        let ready = BluetoothPassiveScanSchedulerRecycleReady {
+            graph,
+            removal,
+            reservation,
+        };
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
                 ._scheduler_list
                 .retains_software_list_removal_ready_first_item(address)
         {
-            return BluetoothPassiveScanSchedulerRecycleStep::SchedulerIdentityMismatch(ready);
+            return BluetoothPassiveScanSchedulerRecycleStep::SchedulerIdentityMismatch {
+                _ready: ready,
+            };
         }
         if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPassiveScanSchedulerRecycleStep::FinishedListDrainStillActive(ready);
+            return BluetoothPassiveScanSchedulerRecycleStep::FinishedListDrainStillActive {
+                _ready: ready,
+            };
         }
-        let BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+        let BluetoothPassiveScanSchedulerRecycleReady {
             graph,
             removal,
             reservation,
@@ -2957,12 +1827,12 @@ impl<const SCHEDULER_CAPACITY: usize>
                 let error = failure.error();
                 let (graph, removal) = failure.into_parts();
                 return BluetoothPassiveScanSchedulerRecycleStep::MemoryIdentityMismatch {
-                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                    _ready: BluetoothPassiveScanSchedulerRecycleReady {
                         graph,
                         removal,
                         reservation,
                     },
-                    error,
+                    _error: error,
                 };
             }
         };
@@ -2972,12 +1842,12 @@ impl<const SCHEDULER_CAPACITY: usize>
                 let error = failure.error();
                 let (graph, removal) = failure.into_prepared().into_parts();
                 return BluetoothPassiveScanSchedulerRecycleStep::ReceiveInvalid {
-                    ready: BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                    _ready: BluetoothPassiveScanSchedulerRecycleReady {
                         graph,
                         removal,
                         reservation,
                     },
-                    error,
+                    _error: error,
                 };
             }
         };
@@ -2990,13 +1860,13 @@ impl<const SCHEDULER_CAPACITY: usize>
             Err(failure) => {
                 let reservation = failure.into_reservation();
                 let (graph, removal) = extracted.into_prepared().into_parts();
-                return BluetoothPassiveScanSchedulerRecycleStep::ReservationIdentityMismatch(
-                    BluetoothPassiveScanSchedulerSoftwareListRemovalReady {
+                return BluetoothPassiveScanSchedulerRecycleStep::ReservationIdentityMismatch {
+                    _ready: BluetoothPassiveScanSchedulerRecycleReady {
                         graph,
                         removal,
                         reservation,
                     },
-                );
+                };
             }
         };
         let graph = extracted.commit();
@@ -3005,6 +1875,103 @@ impl<const SCHEDULER_CAPACITY: usize>
         BluetoothPassiveScanSchedulerRecycleStep::Recycled(BluetoothPassiveScanSchedulerRecycled {
             graph,
         })
+    }
+
+    /// Reclaim one response-capable advertising graph and classify its copied RX batch.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recycle_legacy_connectable_advertising_completed(
+        &mut self,
+        ready: BluetoothSingleItemSchedulerSoftwareListRemovalReady<
+            crate::legacy_connectable_advertising_completion::BluetoothLegacyConnectableAdvertisingCompletionRole,
+        >,
+    ) -> crate::legacy_connectable_advertising_completion::BluetoothLegacyConnectableAdvertisingRecycleStep
+    {
+        use crate::legacy_connectable_advertising_completion::{
+            BluetoothLegacyConnectableAdvertisingRecycleReady,
+            BluetoothLegacyConnectableAdvertisingRecycleStep,
+        };
+
+        let (item, removal, reservation) = ready.into_parts();
+        let ready =
+            BluetoothLegacyConnectableAdvertisingRecycleReady::new(item, removal, reservation);
+        let address = ready.scheduler_item_address();
+        if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_software_list_removal_ready_first_item(address)
+        {
+            return BluetoothLegacyConnectableAdvertisingRecycleStep::SchedulerIdentityMismatch {
+                _ready: ready,
+            };
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothLegacyConnectableAdvertisingRecycleStep::FinishedListDrainStillActive {
+                _ready: ready,
+            };
+        }
+
+        let (item, removal, reservation) = ready.into_parts();
+        let (memory, remainder) = item.into_parts();
+        let prepared = match memory.prepare_recycle_after_software_list_removal(removal) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let error = failure.error();
+                let (memory, removal) = failure.into_parts();
+                return BluetoothLegacyConnectableAdvertisingRecycleStep::MemoryIdentityMismatch {
+                    _ready: BluetoothLegacyConnectableAdvertisingRecycleReady::new(
+                        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
+                            memory, remainder,
+                        ),
+                        removal,
+                        reservation,
+                    ),
+                    _error: error,
+                };
+            }
+        };
+        let extracted = match prepared.extract_received() {
+            Ok(extracted) => extracted,
+            Err(failure) => {
+                let error = failure.error();
+                let (memory, removal) = failure.into_prepared().into_parts();
+                return BluetoothLegacyConnectableAdvertisingRecycleStep::ReceiveInvalid {
+                    _ready: BluetoothLegacyConnectableAdvertisingRecycleReady::new(
+                        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
+                            memory, remainder,
+                        ),
+                        removal,
+                        reservation,
+                    ),
+                    _error: error,
+                };
+            }
+        };
+        let release = match self
+            .runtime
+            .scheduler_timeline_mut()
+            .prepare_release(reservation)
+        {
+            Ok(release) => release,
+            Err(failure) => {
+                let reservation = failure.into_reservation();
+                let (memory, removal) = extracted.into_prepared().into_parts();
+                return BluetoothLegacyConnectableAdvertisingRecycleStep::ReservationIdentityMismatch {
+                    _ready: BluetoothLegacyConnectableAdvertisingRecycleReady::new(
+                        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
+                            memory, remainder,
+                        ),
+                        removal,
+                        reservation,
+                    ),
+                };
+            }
+        };
+        let recycled = extracted.commit();
+        release.commit();
+        self._scheduler_list.commit_recycled_first_item();
+        BluetoothLegacyConnectableAdvertisingRecycleStep::Classified(
+            remainder.classify_recycled(recycled),
+        )
     }
 }
 
@@ -3318,6 +2285,27 @@ mod tests {
         };
         assert!(Rc::ptr_eq(pending.owner(), &pending_identity));
         assert!(Rc::ptr_eq(&pending.into_owner(), &pending_identity));
+    }
+
+    #[derive(Clone, Copy, Eq, PartialEq)]
+    enum ModelSingleItemIdentity {
+        Expected,
+        Foreign,
+    }
+
+    #[test]
+    fn single_item_identity_mismatch_returns_the_exact_owner() {
+        let owner = Rc::new(());
+        let identity = Rc::clone(&owner);
+        let Err((expected, returned)) = super::retain_matching_single_item_identity(
+            ModelSingleItemIdentity::Expected,
+            ModelSingleItemIdentity::Foreign,
+            owner,
+        ) else {
+            panic!("a foreign role item must fail closed");
+        };
+        assert!(matches!(expected, ModelSingleItemIdentity::Expected));
+        assert!(Rc::ptr_eq(&returned, &identity));
     }
 
     #[test]
@@ -3886,27 +2874,38 @@ mod tests {
                 );
         let scale = scheduler.controller_time_scale();
         let config = scheduler.scheduler_config();
-        let reset = crate::BluetoothLegacyAdvertisingPrepared::prepare(
+        let prepared = crate::BluetoothLegacyAdvertisingPrepared::prepare(
             legacy_advertiser_enabled(),
             legacy_advertising_memory(),
         )
-        .expect("the bounded portable packet fits")
-        .reset_link_state(crate::BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(0))
-        .expect("the portable packet selects the restricted reset");
-        let candidate = reset
-            .form_first_event_candidate(
-                crate::BluetoothLegacyAdvertisingTimingObservation {
-                    current: BluetoothSchedulerInstant::from_image(10_000),
-                    radio_ready: BluetoothSchedulerInstant::from_image(11_999),
-                    epoch: BluetoothControllerSchedulerEpoch::new(
-                        BluetoothControllerTimeSample::for_validation(100),
-                        1_000,
-                        scale,
-                    ),
-                },
-                config,
-            )
-            .expect("the first event projects into the retained epoch");
+        .expect("the bounded portable packet fits");
+        let reset = match prepared
+            .reset_link_state(crate::BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(0))
+        {
+            crate::BluetoothLegacyAdvertisingLinkStateResetOutcome::Reset(reset) => reset,
+            crate::BluetoothLegacyAdvertisingLinkStateResetOutcome::Rejected { .. } => {
+                panic!("the portable packet selects the restricted reset")
+            }
+        };
+        let candidate = match reset.form_first_event_candidate(
+            crate::BluetoothLegacyAdvertisingTimingObservation {
+                current: BluetoothSchedulerInstant::from_image(10_000),
+                radio_ready: BluetoothSchedulerInstant::from_image(11_999),
+                epoch: BluetoothControllerSchedulerEpoch::new(
+                    BluetoothControllerTimeSample::for_validation(100),
+                    1_000,
+                    scale,
+                ),
+            },
+            config,
+        ) {
+            crate::BluetoothLegacyAdvertisingFirstEventCandidateOutcome::Candidate(candidate) => {
+                candidate
+            }
+            crate::BluetoothLegacyAdvertisingFirstEventCandidateOutcome::TimingRejected(_) => {
+                panic!("the first event projects into the retained epoch")
+            }
+        };
         let identity = candidate.identity();
         let raw_start = candidate.raw_window().start();
 
@@ -3924,24 +2923,35 @@ mod tests {
         let (enabled, memory) = task
             .cancel_legacy_advertising_first_pre_sequence(admitted)
             .into_parts();
-        let reset = crate::BluetoothLegacyAdvertisingPrepared::prepare(enabled, memory)
-            .expect("the cancelled portable packet remains bounded")
+        let prepared = crate::BluetoothLegacyAdvertisingPrepared::prepare(enabled, memory)
+            .expect("the cancelled portable packet remains bounded");
+        let reset = match prepared
             .reset_link_state(crate::BluetoothLegacyAdvertisingDefaultTxPowerDbm::new(0))
-            .expect("the cancelled packet retains the restricted reset");
-        let candidate = reset
-            .form_first_event_candidate(
-                crate::BluetoothLegacyAdvertisingTimingObservation {
-                    current: BluetoothSchedulerInstant::from_image(10_000),
-                    radio_ready: BluetoothSchedulerInstant::from_image(11_999),
-                    epoch: BluetoothControllerSchedulerEpoch::new(
-                        BluetoothControllerTimeSample::for_validation(100),
-                        1_000,
-                        scale,
-                    ),
-                },
-                config,
-            )
-            .expect("the restored first event projects into the same epoch");
+        {
+            crate::BluetoothLegacyAdvertisingLinkStateResetOutcome::Reset(reset) => reset,
+            crate::BluetoothLegacyAdvertisingLinkStateResetOutcome::Rejected { .. } => {
+                panic!("the cancelled packet retains the restricted reset")
+            }
+        };
+        let candidate = match reset.form_first_event_candidate(
+            crate::BluetoothLegacyAdvertisingTimingObservation {
+                current: BluetoothSchedulerInstant::from_image(10_000),
+                radio_ready: BluetoothSchedulerInstant::from_image(11_999),
+                epoch: BluetoothControllerSchedulerEpoch::new(
+                    BluetoothControllerTimeSample::for_validation(100),
+                    1_000,
+                    scale,
+                ),
+            },
+            config,
+        ) {
+            crate::BluetoothLegacyAdvertisingFirstEventCandidateOutcome::Candidate(candidate) => {
+                candidate
+            }
+            crate::BluetoothLegacyAdvertisingFirstEventCandidateOutcome::TimingRejected(_) => {
+                panic!("the restored first event projects into the same epoch")
+            }
+        };
         let raw_start = candidate.raw_window().start();
         let admitted = task
             .admit_legacy_advertising_first_event(

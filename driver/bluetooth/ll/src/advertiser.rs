@@ -11,57 +11,22 @@ use crate::advertising::{
     LegacyNonconnectableAdvertisingEvent, LegacyNonconnectableAdvertisingSet,
     LegacyPreparedAdvertisingEvent, PrimaryAdvertisingChannelMap, ScheduledLegacyAdvertisingEvent,
 };
-
-/// Monotonic identity of one enable epoch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LegacyAdvertisingGeneration(u32);
-
-impl LegacyAdvertisingGeneration {
-    /// Numeric identity for diagnostics and lower-layer affinity checks.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Monotonic event sequence within one enable epoch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LegacyAdvertisingEventSequence(u32);
-
-impl LegacyAdvertisingEventSequence {
-    /// Numeric event sequence for diagnostics and deadline affinity checks.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Exact protocol identity expected from one backend event completion.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LegacyAdvertisingEventIdentity {
-    generation: LegacyAdvertisingGeneration,
-    event: LegacyAdvertisingEventSequence,
-}
-
-impl LegacyAdvertisingEventIdentity {
-    pub const fn generation(self) -> LegacyAdvertisingGeneration {
-        self.generation
-    }
-
-    pub const fn event(self) -> LegacyAdvertisingEventSequence {
-        self.event
-    }
-}
+use crate::advertising_lifecycle::{
+    LegacyAdvertisingEventIdentity, LegacyAdvertisingEventSequence, LegacyAdvertisingGeneration,
+    LegacyAdvertisingGenerationAllocator,
+};
 
 /// Disabled portable advertiser retaining the next unique enable generation.
 #[derive(Debug, Eq, PartialEq)]
 pub struct LegacyAdvertiserStandby {
-    next_generation: Option<u32>,
+    generations: LegacyAdvertisingGenerationAllocator,
 }
 
 impl LegacyAdvertiserStandby {
     /// Construct a fresh advertiser lifecycle.
     pub const fn new() -> Self {
         Self {
-            next_generation: Some(1),
+            generations: LegacyAdvertisingGenerationAllocator::new(),
         }
     }
 
@@ -99,16 +64,22 @@ impl<'a> LegacyAdvertiserConfigured<'a> {
 
     /// Begin a fresh enable epoch and its first advertising event.
     pub fn enable(self) -> Result<LegacyAdvertiserEnabled<'a>, LegacyAdvertiserEnableError<'a>> {
-        let Some(generation) = self.standby.next_generation else {
-            return Err(LegacyAdvertiserEnableError { configured: self });
+        let LegacyAdvertiserConfigured { standby, set } = self;
+        let (generations, identity) = match standby.generations.begin_enable() {
+            Ok(allocated) => allocated,
+            Err(generations) => {
+                return Err(LegacyAdvertiserEnableError {
+                    configured: LegacyAdvertiserConfigured {
+                        standby: LegacyAdvertiserStandby { generations },
+                        set,
+                    },
+                });
+            }
         };
-        let set = self.set;
         Ok(LegacyAdvertiserEnabled {
-            standby: LegacyAdvertiserStandby {
-                next_generation: generation.checked_add(1),
-            },
-            generation: LegacyAdvertisingGeneration(generation),
-            event_sequence: LegacyAdvertisingEventSequence(0),
+            standby: LegacyAdvertiserStandby { generations },
+            generation: identity.generation(),
+            event_sequence: identity.event(),
             event: set.begin_event(),
         })
     }
@@ -154,10 +125,7 @@ impl<'a> LegacyAdvertiserEnabled<'a> {
     /// Prepare one complete primary-channel event while retaining its continuation.
     pub fn prepare_event(self) -> LegacyAdvertiserEventPrepared<'a> {
         let prepared = self.event.prepare();
-        let identity = LegacyAdvertisingEventIdentity {
-            generation: self.generation,
-            event: self.event_sequence,
-        };
+        let identity = LegacyAdvertisingEventIdentity::new(self.generation, self.event_sequence);
         LegacyAdvertiserEventPrepared {
             standby: self.standby,
             identity,
@@ -202,8 +170,8 @@ impl<'a> LegacyAdvertiserEventPrepared<'a> {
     pub fn cancel(self) -> LegacyAdvertiserEnabled<'a> {
         LegacyAdvertiserEnabled {
             standby: self.standby,
-            generation: self.identity.generation,
-            event_sequence: self.identity.event,
+            generation: self.identity.generation(),
+            event_sequence: self.identity.event(),
             event: self.prepared.cancel(),
         }
     }
@@ -263,8 +231,8 @@ impl<'a> LegacyAdvertiserEventInFlight<'a> {
         } = self.prepared;
         LegacyAdvertiserEventComplete {
             standby,
-            generation: identity.generation,
-            event_sequence: identity.event,
+            generation: identity.generation(),
+            event_sequence: identity.event(),
             complete: prepared.into_event_completed(),
         }
     }
@@ -309,13 +277,14 @@ impl<'a> LegacyAdvertiserEventComplete<'a> {
         self,
         delay: AdvertisingDelay,
     ) -> Result<LegacyAdvertiserScheduled<'a>, LegacyAdvertisingEventSequenceExhausted<'a>> {
-        let Some(next_event) = self.event_sequence.0.checked_add(1) else {
+        let identity = LegacyAdvertisingEventIdentity::new(self.generation, self.event_sequence);
+        let Some(next_identity) = identity.next_event() else {
             return Err(LegacyAdvertisingEventSequenceExhausted { complete: self });
         };
         Ok(LegacyAdvertiserScheduled {
             standby: self.standby,
-            generation: self.generation,
-            event_sequence: LegacyAdvertisingEventSequence(next_event),
+            generation: next_identity.generation(),
+            event_sequence: next_identity.event(),
             scheduled: self.complete.schedule_next(delay),
         })
     }
@@ -476,10 +445,7 @@ mod tests {
             .prepare_event()
             .into_submitted();
         let expected = in_flight.identity();
-        let stale = LegacyAdvertisingEventIdentity {
-            event: LegacyAdvertisingEventSequence(1),
-            ..expected
-        };
+        let stale = LegacyAdvertisingEventIdentity::from_parts(expected.generation().get(), 1);
         let LegacyAdvertiserEventCompletion::Mismatch { error, in_flight } =
             in_flight.complete(stale)
         else {
@@ -532,10 +498,7 @@ mod tests {
             .into_submitted()
             .request_disable();
         let expected = stopping.identity();
-        let stale = LegacyAdvertisingEventIdentity {
-            generation: LegacyAdvertisingGeneration(2),
-            ..expected
-        };
+        let stale = LegacyAdvertisingEventIdentity::from_parts(2, expected.event().get());
         let LegacyAdvertiserStopCompletion::Mismatch { error, stopping } = stopping.complete(stale)
         else {
             panic!("cross-generation completion must retain stopping");
@@ -552,7 +515,7 @@ mod tests {
     #[test]
     fn generation_and_event_sequence_exhaustion_retain_their_owners() {
         let standby = LegacyAdvertiserStandby {
-            next_generation: Some(u32::MAX),
+            generations: LegacyAdvertisingGenerationAllocator::from_next_generation(Some(u32::MAX)),
         };
         let enabled = standby
             .configure(set(&[], PrimaryAdvertisingChannelMap::all()))
@@ -576,7 +539,7 @@ mod tests {
         else {
             panic!("the complete hardware event must close the portable event");
         };
-        complete.event_sequence = LegacyAdvertisingEventSequence(u32::MAX);
+        complete.event_sequence = LegacyAdvertisingEventIdentity::from_parts(1, u32::MAX).event();
         let exhausted = complete
             .schedule_next(AdvertisingDelay::from_micros(0).unwrap())
             .unwrap_err();

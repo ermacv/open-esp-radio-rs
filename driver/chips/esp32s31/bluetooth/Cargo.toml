@@ -26,6 +26,7 @@ open-esp-radio-esp32s31-phy = { path = "../phy" }
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-futures = "0.1.2"
+open-esp-radio-esp32s31-hal = { path = "../hal", features = ["validation-probes"] }
 open-esp-radio-esp32s31-pac = { path = "../pac", features = ["validation-probes"] }
 
 [lints]

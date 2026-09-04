@@ -77,6 +77,8 @@ pub use connectable_advertising_memory::{
     BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled,
     BluetoothLegacyConnectableAdvertisingMemoryGraphRunMismatch,
     BluetoothLegacyConnectableAdvertisingMemoryGraphRunning,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchBlocked,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchPrepared,
     BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtracted,
     BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtractionFailure,
     BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished,
@@ -86,8 +88,8 @@ pub use connectable_advertising_memory::{
     BluetoothLegacyConnectableAdvertisingMemoryInput,
     BluetoothLegacyConnectableAdvertisingOwnAddress,
     BluetoothLegacyConnectableAdvertisingPduFitError,
+    BluetoothLegacyConnectableAdvertisingPostAnchorDuration,
     BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    BluetoothLegacyConnectableAdvertisingSchedulerSpan,
     BluetoothLegacyConnectableScanResponsePacketInput,
 };
 

@@ -244,6 +244,27 @@ impl BluetoothNonScanningRxMemoryCpuOwned {
         self.reinitialize();
     }
 
+    #[cfg(test)]
+    pub(crate) fn model_controller_receive(
+        &self,
+        index: usize,
+        pdu: &[u8],
+        rssi_dbm: i8,
+        captured_time: u32,
+    ) {
+        let node = &self.storage.as_ref().get_ref().nodes[index];
+        node.packet
+            .emulate_hardware_receive(pdu, rssi_dbm, captured_time);
+        node.header.emulate_hardware_completion();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn model_controller_discard(&self, index: usize) {
+        let node = &self.storage.as_ref().get_ref().nodes[index];
+        node.packet.emulate_hardware_discard();
+        node.header.emulate_hardware_completion();
+    }
+
     fn reinitialize(&mut self) {
         let bindings = self.binding.nodes;
         let storage = self.storage.as_mut().project();

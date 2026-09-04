@@ -28,6 +28,11 @@ concurrently polled, so command responses can make progress. The example uses
 `Controller::alloc_buf` for the read side and does not encode raw HCI opcodes or
 implement a local HCI codec.
 
+Every command prints a `submitted` marker before it crosses HCI and a
+`running` or `complete` marker after the typed response. A two-second command
+timeout turns a lost Controller response into a bounded failure, so a board run
+can distinguish command-intake, event-start and Test End liveness failures.
+
 This is a board smoke sequence, not recorded HIL evidence. Meaningful RF
 validation still requires a suitable peer or tester, controlled RF conditions
 and the repository's HIL evidence process.

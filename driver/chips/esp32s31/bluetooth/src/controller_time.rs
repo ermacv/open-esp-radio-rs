@@ -1116,6 +1116,54 @@ mod tests {
     }
 
     #[test]
+    fn orphan_waiting_blocks_reuse_until_the_abandoned_request_is_drained() {
+        let mut hardware = ModelHardware::new([
+            BluetoothControllerTimeLatchStep::Waiting,
+            BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(
+                0x1111_1111,
+            )),
+            BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(
+                0x2222_2222,
+            )),
+        ]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
+
+        let abandoned = worker.request(&mut hardware).expect("request is published");
+        worker
+            .cancel_owned(abandoned)
+            .expect("the exact request can be abandoned");
+        assert_eq!(
+            worker.drain_orphan(&mut hardware),
+            Ok(BluetoothControllerTimeEventStep::Waiting)
+        );
+        assert!(worker.needs_recheck());
+        assert!(!worker.is_reunitable());
+
+        let operations_before_retry = hardware.operations.clone();
+        assert_eq!(
+            worker.request(&mut hardware),
+            Err(BluetoothControllerTimeRequestError::Busy)
+        );
+        assert_eq!(hardware.operations, operations_before_retry);
+
+        assert_eq!(
+            worker.drain_orphan(&mut hardware),
+            Ok(BluetoothControllerTimeEventStep::OrphanDrained)
+        );
+        assert!(worker.is_reunitable());
+        assert!(!worker.needs_recheck());
+
+        let fresh = worker
+            .request(&mut hardware)
+            .expect("the drained worker accepts a fresh request");
+        assert!(matches!(
+            worker.recheck_owned(fresh, &mut hardware),
+            Ok(BluetoothControllerTimeEventStep::Sample { request, sample })
+                if request == fresh && sample.raw_ticks() == 0x2222_2222
+        ));
+    }
+
+    #[test]
     fn mismatched_cancellation_faults_without_touching_newer_hardware() {
         let mut hardware = ModelHardware::new([
             BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(1)),

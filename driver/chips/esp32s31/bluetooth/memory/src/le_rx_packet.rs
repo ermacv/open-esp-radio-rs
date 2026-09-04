@@ -56,6 +56,26 @@ pub struct BluetoothLeReceivedPdu {
 }
 
 impl BluetoothLeReceivedPdu {
+    /// Construct one semantic host-model packet without emulating SRAM fields.
+    #[cfg(not(target_arch = "riscv32"))]
+    #[doc(hidden)]
+    pub fn from_parts_for_validation(pdu: &[u8], rssi_dbm: i8, captured_time: u32) -> Option<Self> {
+        if pdu.len() < 2
+            || pdu.len() > BLUETOOTH_LE_RX_PAYLOAD_CAPACITY + 2
+            || usize::from(pdu[1]) + 2 != pdu.len()
+        {
+            return None;
+        }
+        let mut bytes = [0; BLUETOOTH_LE_RX_PAYLOAD_CAPACITY + 2];
+        bytes[..pdu.len()].copy_from_slice(pdu);
+        Some(Self {
+            bytes,
+            length: pdu.len() as u16,
+            rssi_dbm,
+            captured_time: BluetoothLePacketCapturedTime::from_controller_sram_word(captured_time),
+        })
+    }
+
     /// Complete two-byte Link Layer header and declared payload.
     pub const fn as_bytes(&self) -> &[u8] {
         self.bytes.split_at(self.length as usize).0

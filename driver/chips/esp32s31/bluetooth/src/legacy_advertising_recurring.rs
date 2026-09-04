@@ -1252,23 +1252,25 @@ where
             .task
             .restore_legacy_advertising_cancelled_disabled(self.cancelled)
         {
-            Ok(()) => match self.order {
-                BluetoothLegacyAdvertisingStopOrder::Disable(deferred) => {
-                    BluetoothLegacyAdvertisingRecurringStopRestoreStep::DisableResponse(
-                        BluetoothLegacyAdvertisingDisableResponsePending::from_cancelled(
-                            self.task, deferred,
-                        ),
-                    )
+            crate::BluetoothLegacyAdvertisingCancelledRestoreOutcome::Restored => {
+                match self.order {
+                    BluetoothLegacyAdvertisingStopOrder::Disable(deferred) => {
+                        BluetoothLegacyAdvertisingRecurringStopRestoreStep::DisableResponse(
+                            BluetoothLegacyAdvertisingDisableResponsePending::from_cancelled(
+                                self.task, deferred,
+                            ),
+                        )
+                    }
+                    BluetoothLegacyAdvertisingStopOrder::Reset(barrier) => {
+                        BluetoothLegacyAdvertisingRecurringStopRestoreStep::ResetCompletion(
+                            BluetoothLegacyAdvertisingResetCompletionReady::from_cancelled(
+                                self.task, barrier,
+                            ),
+                        )
+                    }
                 }
-                BluetoothLegacyAdvertisingStopOrder::Reset(barrier) => {
-                    BluetoothLegacyAdvertisingRecurringStopRestoreStep::ResetCompletion(
-                        BluetoothLegacyAdvertisingResetCompletionReady::from_cancelled(
-                            self.task, barrier,
-                        ),
-                    )
-                }
-            },
-            Err(cancelled) => {
+            }
+            crate::BluetoothLegacyAdvertisingCancelledRestoreOutcome::Rejected(cancelled) => {
                 self.cancelled = cancelled;
                 BluetoothLegacyAdvertisingRecurringStopRestoreStep::Rejected(self)
             }

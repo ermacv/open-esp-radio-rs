@@ -401,6 +401,10 @@ where
     StartLegacyNonconnectableAdvertising(
         crate::BluetoothLegacyAdvertisingFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
     ),
+    /// A validated connectable Enable entered the response-capable runner.
+    StartLegacyConnectableAdvertising(
+        crate::BluetoothLegacyConnectableAdvertisingFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
     /// A validated passive scanner Enable entered the HCI-composed first runner.
     StartPassiveScanning(
         crate::BluetoothPassiveScanHciFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
@@ -410,6 +414,14 @@ where
     /// Advertising current acquisition failed without losing HCI order.
     LegacyAdvertisingStartFailed(
         crate::BluetoothLegacyAdvertisingFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    /// Connectable advertising failed before the bounded runner was created.
+    LegacyConnectableAdvertisingStartFailed(
+        crate::BluetoothLegacyConnectableAdvertisingFirstRunnerFailure<
+            'runtime,
+            S,
+            SCHEDULER_CAPACITY,
+        >,
     ),
     /// Passive scanner start failed without losing HCI order or lower ownership.
     PassiveScanStartFailed(

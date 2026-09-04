@@ -25,6 +25,14 @@ mod dtm_stopping;
 mod legacy_advertising_active;
 #[cfg(target_arch = "riscv32")]
 mod legacy_advertising_first;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_active;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_first;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_recurring;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_peripheral_first;
 mod modem_timer_task;
 #[cfg(target_arch = "riscv32")]
 mod passive_scanning_active;
@@ -57,6 +65,60 @@ pub use legacy_advertising_first::{
     drive_legacy_advertising_first_ready,
 };
 #[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_active::{
+    EmbassyBluetoothLegacyConnectableAdvertisingReadyContinuations,
+    drive_legacy_connectable_advertising_active_ready,
+    drive_legacy_connectable_advertising_initial_pending_ready_with,
+    drive_legacy_connectable_advertising_pending_ready_with,
+    drive_legacy_connectable_advertising_stopping_ready,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_first::{
+    EmbassyBluetoothLegacyConnectableAdvertisingFirstControllerTimeWait,
+    EmbassyBluetoothLegacyConnectableAdvertisingFirstDrive,
+    EmbassyBluetoothLegacyConnectableAdvertisingFirstResume,
+    drive_legacy_connectable_advertising_first_ready,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_recurring::{
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringCancellationReady,
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringCancellationWait,
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringControllerTimeReady,
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringControllerTimeWait,
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringDriveHandler,
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringForwardOrder,
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringStopHandler,
+    begin_legacy_connectable_advertising_recurring_command_ready_with,
+    begin_legacy_connectable_advertising_recurring_response_pending_with,
+    cancel_legacy_connectable_advertising_recurring_candidate_with,
+    cancel_legacy_connectable_advertising_recurring_graph_prepared_with,
+    cancel_legacy_connectable_advertising_recurring_merged_with,
+    cancel_legacy_connectable_advertising_recurring_prepared_with,
+    cancel_legacy_connectable_advertising_recurring_scheduled_with,
+    cancel_legacy_connectable_advertising_recurring_sequence_pending_with,
+    cancel_legacy_connectable_advertising_recurring_sequence_ready_with,
+    drive_legacy_connectable_advertising_recurring_candidate_with,
+    drive_legacy_connectable_advertising_recurring_graph_prepared_with,
+    drive_legacy_connectable_advertising_recurring_merged_with,
+    drive_legacy_connectable_advertising_recurring_prepared_with,
+    finish_legacy_connectable_advertising_no_connection_stopping_with,
+    retain_legacy_connectable_advertising_recurring_controller_time,
+    retain_legacy_connectable_advertising_recurring_retry_for_hci,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_peripheral_first::{
+    EmbassyBluetoothLegacyConnectablePeripheralFirstControllerTimeReady,
+    EmbassyBluetoothLegacyConnectablePeripheralFirstControllerTimeWait,
+    EmbassyBluetoothLegacyConnectablePeripheralFirstDrive,
+    EmbassyBluetoothLegacyConnectablePeripheralFirstDriveStep,
+    EmbassyBluetoothLegacyConnectablePeripheralFirstResponsePublication,
+    EmbassyBluetoothLegacyConnectablePeripheralFirstRetry,
+    EmbassyBluetoothLegacyConnectablePeripheralFirstStoppingStep,
+    begin_legacy_connectable_peripheral_first_command_ready,
+    begin_legacy_connectable_peripheral_first_response_pending,
+    begin_legacy_connectable_peripheral_first_stopping,
+};
+#[cfg(target_arch = "riscv32")]
 pub use passive_scanning_active::{
     EmbassyBluetoothPassiveScanActiveDrive, EmbassyBluetoothPassiveScanRecurringDrive,
     drive_passive_scan_active_ready, drive_passive_scan_recurring_ready,
@@ -77,6 +139,7 @@ pub use dtm_session_task::{EmbassyBluetoothDtmSessionBoundary, EmbassyBluetoothD
 #[cfg(target_arch = "riscv32")]
 pub use controller_command_task::{
     EmbassyBluetoothControllerCommandBoundary, EmbassyBluetoothControllerCommandTask,
+    EmbassyBluetoothLegacyConnectableAdvertisingRecurringFailStop,
 };
 pub use controller_command_task::{
     EmbassyBluetoothControllerCommandPhase, EmbassyBluetoothControllerIdleCompletion,

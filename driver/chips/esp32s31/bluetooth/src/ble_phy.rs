@@ -41,42 +41,6 @@ impl BluetoothDirectionFindingWorkspaceHardwareOwned {
     }
 }
 
-/// Source-owned normal BLE PHY policy for the reviewed ESP32-S31 baseline.
-///
-/// The caller cannot override values recovered from the target's private and
-/// public Controller configuration. Parameterized variants remain confined to
-/// validation probes so production never acquires a vendor-object ABI.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg(any(target_arch = "riscv32", test))]
-struct BluetoothBlePhyInitializationProfile {
-    private_timing_source_byte: u8,
-    set_branch_control_0470_bit_18: bool,
-    runtime_configuration_low_byte: u8,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl BluetoothBlePhyInitializationProfile {
-    const NORMAL: Self = Self {
-        private_timing_source_byte: 61,
-        set_branch_control_0470_bit_18: false,
-        runtime_configuration_low_byte: 0x9c,
-    };
-
-    const fn register_inputs(
-        self,
-        storage: &open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyEngineCpuOwned,
-    ) -> BluetoothPhyRegisterInitInputs {
-        let binding = storage.binding();
-        BluetoothPhyRegisterInitInputs::new(
-            self.private_timing_source_byte,
-            binding.environment_address(),
-            binding.resolving_list_address(),
-            self.set_branch_control_0470_bit_18,
-            self.runtime_configuration_low_byte,
-        )
-    }
-}
-
 /// Observation that the source-owned normal BLE PHY transaction completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothBlePhyInitializationReport;
@@ -340,7 +304,11 @@ fn apply_register_init(
     storage: &open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyEngineCpuOwned,
     initialize: impl FnOnce(BluetoothPhyRegisterInitInputs),
 ) -> BluetoothBlePhyInitializationReport {
-    initialize(BluetoothBlePhyInitializationProfile::NORMAL.register_inputs(storage));
+    let binding = storage.binding();
+    initialize(BluetoothPhyRegisterInitInputs::normal_controller_profile(
+        binding.environment_address(),
+        binding.resolving_list_address(),
+    ));
     BluetoothBlePhyInitializationReport
 }
 
@@ -368,15 +336,16 @@ mod tests {
     }
 
     #[test]
-    fn register_transition_consumes_one_complete_input_set() {
+    fn normal_register_profile_is_applied_once_without_releasing_storage() {
         let owner = model_storage();
+        let calibration = owner.le_1m_packet_start_calibration();
         let mut calls = 0;
 
         let report = apply_register_init(&owner, |_| calls += 1);
 
         assert_eq!(calls, 1);
         assert_eq!(report, BluetoothBlePhyInitializationReport);
-        assert!(owner.binding().range().0 < owner.binding().range().1);
+        assert_eq!(owner.le_1m_packet_start_calibration(), calibration);
     }
 
     #[test]

@@ -20,7 +20,7 @@ use crate::{
     BluetoothDtmControllerEventPreparationError, BluetoothDtmControllerPreparationOutcome,
     BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmEmptySchedulerMergePrepared,
-    BluetoothDtmPostUnlinkArmStep, BluetoothDtmPostUnlinkAwaiting, BluetoothDtmReceiverEvent,
+    BluetoothDtmPostUnlinkArmStep, BluetoothDtmReceiverEvent,
     BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole, BluetoothDtmRxCompletionOutcome,
     BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
     BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerHardwareHeadEmptyObserved,
@@ -28,10 +28,10 @@ use crate::{
     BluetoothDtmSchedulerRecycleStep, BluetoothDtmSchedulerRunning,
     BluetoothDtmSchedulerRunningDrainStep, BluetoothDtmSchedulerRxSuccessRecycleStep,
     BluetoothDtmSchedulerSoftwareListRemovalReady, BluetoothDtmSoftwareListRemovalPublishedStep,
-    BluetoothDtmTransmitterEvent, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
-    BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
-    BluetoothSchedulerWakeBatch,
+    BluetoothDtmTransmitterEvent, BluetoothPostUnlinkAwaiting,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListDrainPending,
+    BluetoothSchedulerFinishedListDrainState, BluetoothSchedulerHeadPublicationError,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeBatch,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
@@ -67,7 +67,8 @@ enum BluetoothDtmRoleCompletionPhase<'runtime, S, const CAPACITY: usize, Role> {
     },
     PostUnlinkAwaiting {
         task: Task<'runtime, S, CAPACITY>,
-        awaiting: BluetoothDtmPostUnlinkAwaiting<Role>,
+        awaiting:
+            BluetoothPostUnlinkAwaiting<crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>>,
     },
     RemovalReady {
         task: Task<'runtime, S, CAPACITY>,

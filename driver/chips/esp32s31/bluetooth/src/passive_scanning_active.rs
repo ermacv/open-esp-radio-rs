@@ -11,22 +11,22 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLeReceivedBatch, BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 
+use crate::controller_start::BluetoothSingleItemSchedulerCompletionFaultOwner;
+use crate::scheduler::BluetoothPassiveScanSchedulerRecycleStep;
+use crate::single_item_completion::{
+    BluetoothSingleItemCompletion, BluetoothSingleItemCompletionFault,
+    BluetoothSingleItemCompletionFaultCause, BluetoothSingleItemCompletionStep,
+    BluetoothSingleItemCompletionWaitKind,
+};
 use crate::{
     BluetoothControllerPublishedTaskService, BluetoothDtmPostUnlinkWakeCell,
-    BluetoothPassiveScanFirstRunning, BluetoothPassiveScanPostUnlinkArmStep,
-    BluetoothPassiveScanPostUnlinkAwaiting, BluetoothPassiveScanSchedulerCompletionObserved,
-    BluetoothPassiveScanSchedulerCompletionObservedDrainStep,
-    BluetoothPassiveScanSchedulerCompletionStep,
-    BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved,
-    BluetoothPassiveScanSchedulerHardwareHeadRetirementStep,
-    BluetoothPassiveScanSchedulerRecycleStep, BluetoothPassiveScanSchedulerRunning,
-    BluetoothPassiveScanSchedulerRunningDrainStep,
-    BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
-    BluetoothPassiveScanSoftwareListRemovalPublishedStep,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListDrainPending,
-    BluetoothSchedulerFinishedListDrainState, BluetoothSchedulerRunInterruptStorage,
-    BluetoothSchedulerWakeCell,
+    BluetoothPassiveScanFirstRunning, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
 };
+
+type RemovalReady = crate::scheduler::BluetoothSingleItemSchedulerSoftwareListRemovalReady<
+    BluetoothPassiveScanCompletionRole,
+>;
 
 struct BluetoothPassiveScanActiveAxes<'runtime, S, const CAPACITY: usize> {
     task: BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>,
@@ -35,19 +35,53 @@ struct BluetoothPassiveScanActiveAxes<'runtime, S, const CAPACITY: usize> {
 }
 
 enum BluetoothPassiveScanActivePhase {
-    RunningAwaitingWake(BluetoothPassiveScanSchedulerRunning),
-    RunningReady {
-        running: BluetoothPassiveScanSchedulerRunning,
-        wake: crate::BluetoothSchedulerWakeBatch,
-    },
-    RunningDrain(BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerRunning>),
-    CompletionDrain(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothPassiveScanSchedulerCompletionObserved>,
-    ),
-    CompletionObserved(BluetoothPassiveScanSchedulerCompletionObserved),
-    HardwareHeadEmpty(BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
-    PostUnlinkAwaiting(BluetoothPassiveScanPostUnlinkAwaiting),
-    RemovalReady(BluetoothPassiveScanSchedulerSoftwareListRemovalReady),
+    Completion(BluetoothSingleItemCompletion<BluetoothPassiveScanCompletionRole>),
+    RemovalReady(RemovalReady),
+}
+
+pub(crate) struct BluetoothPassiveScanCompletionRole;
+
+impl crate::scheduler::BluetoothSingleItemSchedulerRole for BluetoothPassiveScanCompletionRole {
+    type RunningItem =
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphRunning;
+    type CompletionObservedItem =
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObserved;
+    type Retained = crate::scheduler_timeline::BluetoothSchedulerWindowReservation<
+        crate::scheduler_timeline::BluetoothSchedulerSequenceReady,
+    >;
+
+    fn running_item_address(
+        item: &Self::RunningItem,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress {
+        item.scheduler_item_address()
+    }
+
+    fn observe_completion(
+        item: Self::RunningItem,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> crate::scheduler::BluetoothSingleItemRoleCompletionObservation<Self> {
+        match item.observe_completion(observed) {
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
+                running,
+                observed,
+            } => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
+                running,
+                observed,
+            },
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(running) => {
+                crate::scheduler::BluetoothSingleItemRoleCompletionObservation::StillInFlight(running)
+            }
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObservation::CompletionObserved(completed) => {
+                crate::scheduler::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(completed)
+            }
+        }
+    }
+
+    fn completed_item_address(
+        item: &Self::CompletionObservedItem,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress {
+        item.scheduler_item_address()
+    }
 }
 
 /// One running scanner window and every owner needed to reclaim it.
@@ -182,12 +216,11 @@ pub enum BluetoothPassiveScanActiveFaultCause {
     reason = "the opaque fault owner intentionally retains every lower affine token"
 )]
 enum BluetoothPassiveScanActiveFaultOwner {
-    Completion(BluetoothPassiveScanSchedulerCompletionStep),
-    RunningDrain(BluetoothPassiveScanSchedulerRunningDrainStep),
-    CompletionDrain(BluetoothPassiveScanSchedulerCompletionObservedDrainStep),
-    HardwareHeadRetirement(BluetoothPassiveScanSchedulerHardwareHeadRetirementStep),
-    PostUnlinkArm(BluetoothPassiveScanPostUnlinkArmStep),
-    PostUnlinkPublished(BluetoothPassiveScanSoftwareListRemovalPublishedStep),
+    Completion(
+        BluetoothSingleItemCompletionFault<
+            BluetoothSingleItemSchedulerCompletionFaultOwner<BluetoothPassiveScanCompletionRole>,
+        >,
+    ),
     Recycle(BluetoothPassiveScanSchedulerRecycleStep),
     RuntimeRestore(crate::passive_scanning::BluetoothPassiveScanRuntimeRestoreFailure),
 }
@@ -226,330 +259,83 @@ where
                 window,
                 phase,
             },
-            phase: BluetoothPassiveScanActivePhase::RunningAwaitingWake(running),
+            phase: BluetoothPassiveScanActivePhase::Completion(BluetoothSingleItemCompletion::new(
+                running,
+            )),
         }
     }
 
     pub fn radio_wait(&self) -> Option<BluetoothPassiveScanActiveWait<'_>> {
-        match self.phase {
-            BluetoothPassiveScanActivePhase::RunningAwaitingWake(_) => Some(
+        let BluetoothPassiveScanActivePhase::Completion(completion) = &self.phase else {
+            return None;
+        };
+        match completion.wait_kind() {
+            Some(BluetoothSingleItemCompletionWaitKind::Scheduler) => Some(
                 BluetoothPassiveScanActiveWait::Scheduler(self.axes.task.scheduler_wake()),
             ),
-            BluetoothPassiveScanActivePhase::PostUnlinkAwaiting(_) => Some(
+            Some(BluetoothSingleItemCompletionWaitKind::PostUnlink) => Some(
                 BluetoothPassiveScanActiveWait::PostUnlink(self.axes.task.post_unlink_wake()),
             ),
-            _ => None,
+            None => None,
         }
     }
 
     /// Advance one wake, completion, drain, unlink, mailbox or recycle edge.
-    pub fn step_radio(mut self) -> BluetoothPassiveScanActiveStep<'runtime, S, CAPACITY> {
-        let scheduler_wake = if matches!(
-            &self.phase,
-            BluetoothPassiveScanActivePhase::RunningAwaitingWake(_)
-        ) {
-            let Some(wake) = self.axes.task.scheduler_wake().take() else {
-                return BluetoothPassiveScanActiveStep::Waiting(self);
-            };
-            Some(wake)
-        } else {
-            None
-        };
-        match self.phase {
-            BluetoothPassiveScanActivePhase::RunningAwaitingWake(running) => {
-                self.phase = BluetoothPassiveScanActivePhase::RunningReady {
-                    running,
-                    wake: scheduler_wake
-                        .expect("the running scanner phase consumed one scheduler wake"),
-                };
-                BluetoothPassiveScanActiveStep::Continue(self)
-            }
-            BluetoothPassiveScanActivePhase::RunningReady { running, wake } => {
-                match self.axes.task.observe_passive_scan_completion(running, wake) {
-                    BluetoothPassiveScanSchedulerCompletionStep::NoFinishedList(running) => {
-                        self.phase =
-                            BluetoothPassiveScanActivePhase::RunningAwaitingWake(running);
-                        BluetoothPassiveScanActiveStep::Waiting(self)
+    pub fn step_radio(self) -> BluetoothPassiveScanActiveStep<'runtime, S, CAPACITY> {
+        let Self { mut axes, phase } = self;
+        match phase {
+            BluetoothPassiveScanActivePhase::Completion(completion) => {
+                let step = completion.step(&mut axes.task);
+                match step {
+                    BluetoothSingleItemCompletionStep::Continue(completion) => {
+                        BluetoothPassiveScanActiveStep::Continue(Self {
+                            axes,
+                            phase: BluetoothPassiveScanActivePhase::Completion(completion),
+                        })
                     }
-                    BluetoothPassiveScanSchedulerCompletionStep::UnrelatedList {
-                        drain,
+                    BluetoothSingleItemCompletionStep::Waiting(completion) => {
+                        BluetoothPassiveScanActiveStep::Waiting(Self {
+                            axes,
+                            phase: BluetoothPassiveScanActivePhase::Completion(completion),
+                        })
+                    }
+                    BluetoothSingleItemCompletionStep::UnrelatedList {
+                        completion,
                         observed,
-                    } => {
-                        self.phase = running_phase(drain);
-                        BluetoothPassiveScanActiveStep::UnrelatedList {
-                            session: self,
-                            observed,
-                        }
+                    } => BluetoothPassiveScanActiveStep::UnrelatedList {
+                        session: Self {
+                            axes,
+                            phase: BluetoothPassiveScanActivePhase::Completion(completion),
+                        },
+                        observed,
+                    },
+                    BluetoothSingleItemCompletionStep::RemovalReady(ready) => {
+                        BluetoothPassiveScanActiveStep::Continue(Self {
+                            axes,
+                            phase: BluetoothPassiveScanActivePhase::RemovalReady(ready),
+                        })
                     }
-                    BluetoothPassiveScanSchedulerCompletionStep::StillInFlight(drain) => {
-                        self.phase = running_phase(drain);
-                        waiting_or_continue(self)
-                    }
-                    BluetoothPassiveScanSchedulerCompletionStep::CompletionObserved(drain) => {
-                        self.phase = completed_phase(drain);
-                        BluetoothPassiveScanActiveStep::Continue(self)
-                    }
-                    step @ BluetoothPassiveScanSchedulerCompletionStep::DrainAlreadyActive(_) => {
+                    BluetoothSingleItemCompletionStep::Fault(fault) => {
+                        let cause = passive_scan_fault_cause(fault.cause);
                         active_fault(
-                            self.axes,
-                            BluetoothPassiveScanActiveFaultCause::FinishedListDrainAlreadyActive,
-                            BluetoothPassiveScanActiveFaultOwner::Completion(step),
+                            axes,
+                            cause,
+                            BluetoothPassiveScanActiveFaultOwner::Completion(fault),
                         )
                     }
-                    step @ BluetoothPassiveScanSchedulerCompletionStep::SchedulerIdentityMismatch(
-                        _,
-                    ) => active_fault(
-                        self.axes,
-                        BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothPassiveScanActiveFaultOwner::Completion(step),
-                    ),
                 }
             }
-            BluetoothPassiveScanActivePhase::RunningDrain(pending) => match self
-                .axes
-                .task
-                .continue_passive_scan_running_finished_list_drain(pending)
-            {
-                BluetoothPassiveScanSchedulerRunningDrainStep::UnrelatedList {
-                    drain,
-                    observed,
-                } => {
-                    self.phase = running_phase(drain);
-                    BluetoothPassiveScanActiveStep::UnrelatedList {
-                        session: self,
-                        observed,
-                    }
-                }
-                BluetoothPassiveScanSchedulerRunningDrainStep::StillInFlight(drain) => {
-                    self.phase = running_phase(drain);
-                    waiting_or_continue(self)
-                }
-                BluetoothPassiveScanSchedulerRunningDrainStep::CompletionObserved(drain) => {
-                    self.phase = completed_phase(drain);
-                    BluetoothPassiveScanActiveStep::Continue(self)
-                }
-                step @ BluetoothPassiveScanSchedulerRunningDrainStep::SchedulerIdentityMismatch(
-                    _,
-                ) => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::RunningDrain(step),
-                ),
-                step @ BluetoothPassiveScanSchedulerRunningDrainStep::DrainLost(_) => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::FinishedListDrainLost,
-                    BluetoothPassiveScanActiveFaultOwner::RunningDrain(step),
-                ),
-            },
-            BluetoothPassiveScanActivePhase::CompletionDrain(pending) => match self
-                .axes
-                .task
-                .continue_passive_scan_completed_finished_list_drain(pending)
-            {
-                BluetoothPassiveScanSchedulerCompletionObservedDrainStep::UnrelatedList {
-                    drain,
-                    observed,
-                } => {
-                    self.phase = completed_phase(drain);
-                    BluetoothPassiveScanActiveStep::UnrelatedList {
-                        session: self,
-                        observed,
-                    }
-                }
-                step @ BluetoothPassiveScanSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
-                    _,
-                ) => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::CompletionDrain(step),
-                ),
-                step @ BluetoothPassiveScanSchedulerCompletionObservedDrainStep::DrainLost(_) => {
-                    active_fault(
-                        self.axes,
-                        BluetoothPassiveScanActiveFaultCause::FinishedListDrainLost,
-                        BluetoothPassiveScanActiveFaultOwner::CompletionDrain(step),
-                    )
-                }
-                step @ BluetoothPassiveScanSchedulerCompletionObservedDrainStep::RepeatedScannerList {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::RepeatedScannerList,
-                    BluetoothPassiveScanActiveFaultOwner::CompletionDrain(step),
-                ),
-            },
-            BluetoothPassiveScanActivePhase::CompletionObserved(completed) => match self
-                .axes
-                .task
-                .observe_passive_scan_hardware_head_retirement(completed)
-            {
-                BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::EmptyObserved(
-                    observed,
-                ) => {
-                    self.phase = BluetoothPassiveScanActivePhase::HardwareHeadEmpty(observed);
-                    BluetoothPassiveScanActiveStep::Continue(self)
-                }
-                step @ BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(
-                    _,
-                ) => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::HardwareHeadRetirement(step),
-                ),
-                step @ BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(
-                    _,
-                ) => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::FinishedListDrainStillActive,
-                    BluetoothPassiveScanActiveFaultOwner::HardwareHeadRetirement(step),
-                ),
-                step @ BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::ExpectedHardwareHeadStillPublished,
-                    BluetoothPassiveScanActiveFaultOwner::HardwareHeadRetirement(step),
-                ),
-                step @ BluetoothPassiveScanSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::UnexpectedHardwareHeadChanged,
-                    BluetoothPassiveScanActiveFaultOwner::HardwareHeadRetirement(step),
-                ),
-            },
-            BluetoothPassiveScanActivePhase::HardwareHeadEmpty(observed) => match self
-                .axes
-                .task
-                .unlink_and_arm_passive_scan_software_list_removal(observed)
-            {
-                BluetoothPassiveScanPostUnlinkArmStep::Armed(awaiting) => {
-                    self.phase = BluetoothPassiveScanActivePhase::PostUnlinkAwaiting(awaiting);
-                    BluetoothPassiveScanActiveStep::Continue(self)
-                }
-                step @ BluetoothPassiveScanPostUnlinkArmStep::MailboxBusy(_) => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxBusy,
-                    BluetoothPassiveScanActiveFaultOwner::PostUnlinkArm(step),
-                ),
-                step @ BluetoothPassiveScanPostUnlinkArmStep::MailboxIdentityExhausted(_) => {
-                    active_fault(
-                        self.axes,
-                        BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxIdentityExhausted,
-                        BluetoothPassiveScanActiveFaultOwner::PostUnlinkArm(step),
-                    )
-                }
-                step @ BluetoothPassiveScanPostUnlinkArmStep::GenerationExhausted(_) => {
-                    active_fault(
-                        self.axes,
-                        BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxGenerationExhausted,
-                        BluetoothPassiveScanActiveFaultOwner::PostUnlinkArm(step),
-                    )
-                }
-                step @ BluetoothPassiveScanPostUnlinkArmStep::SchedulerIdentityMismatch(_) => {
-                    active_fault(
-                        self.axes,
-                        BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothPassiveScanActiveFaultOwner::PostUnlinkArm(step),
-                    )
-                }
-                step @ BluetoothPassiveScanPostUnlinkArmStep::MailboxCommitMismatch(_) => {
-                    active_fault(
-                        self.axes,
-                        BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxCommitMismatch,
-                        BluetoothPassiveScanActiveFaultOwner::PostUnlinkArm(step),
-                    )
-                }
-            },
-            BluetoothPassiveScanActivePhase::PostUnlinkAwaiting(awaiting) => match self
-                .axes
-                .task
-                .consume_published_passive_scan_software_list_removal(awaiting)
-            {
-                BluetoothPassiveScanSoftwareListRemovalPublishedStep::NoSchedulerWork {
-                    awaiting,
-                    ..
-                }
-                | BluetoothPassiveScanSoftwareListRemovalPublishedStep::PublishedPending {
-                    awaiting,
-                } => {
-                    self.phase = BluetoothPassiveScanActivePhase::PostUnlinkAwaiting(awaiting);
-                    BluetoothPassiveScanActiveStep::Continue(self)
-                }
-                BluetoothPassiveScanSoftwareListRemovalPublishedStep::DirectPending {
-                    awaiting,
-                } => {
-                    self.phase = BluetoothPassiveScanActivePhase::PostUnlinkAwaiting(awaiting);
-                    BluetoothPassiveScanActiveStep::Waiting(self)
-                }
-                BluetoothPassiveScanSoftwareListRemovalPublishedStep::Ready { ready } => {
-                    self.phase = BluetoothPassiveScanActivePhase::RemovalReady(ready);
-                    BluetoothPassiveScanActiveStep::Continue(self)
-                }
-                step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(
-                    _,
-                ) => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxAffinityMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::PostUnlinkPublished(step),
-                ),
-                step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::Fault { .. } => {
-                    active_fault(
-                        self.axes,
-                        BluetoothPassiveScanActiveFaultCause::PrimaryInterruptFault,
-                        BluetoothPassiveScanActiveFaultOwner::PostUnlinkPublished(step),
-                    )
-                }
-                step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::PostUnlinkNoSchedulerWorkRearmMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::PostUnlinkPublished(step),
-                ),
-                step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::PendingRearmMismatch {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::PostUnlinkPendingRearmMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::PostUnlinkPublished(step),
-                ),
-                step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckUnavailable {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::PostUnlinkRecheckUnavailable,
-                    BluetoothPassiveScanActiveFaultOwner::PostUnlinkPublished(step),
-                ),
-                step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::RecheckRearmMismatch {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::PostUnlinkRecheckRearmMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::PostUnlinkPublished(step),
-                ),
-                step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch {
-                    ..
-                }
-                | step @ BluetoothPassiveScanSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch {
-                    ..
-                } => active_fault(
-                    self.axes,
-                    BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch,
-                    BluetoothPassiveScanActiveFaultOwner::PostUnlinkPublished(step),
-                ),
-            },
             BluetoothPassiveScanActivePhase::RemovalReady(ready) => {
-                match self.axes.task.recycle_passive_scan_completed(ready) {
+                match axes.task.recycle_passive_scan_completed(ready) {
                     BluetoothPassiveScanSchedulerRecycleStep::Recycled(recycled) => {
-                        match self.axes.task.restore_passive_scan_recycled(recycled) {
+                        match axes.task.restore_passive_scan_recycled(recycled) {
                             Ok((received, status)) => {
-                                let channel = self.axes.window.channel();
+                                let channel = axes.window.channel();
                                 BluetoothPassiveScanActiveStep::CpuOwned(
                                     BluetoothPassiveScanEventCpuOwned {
-                                        task: self.axes.task,
-                                        scanner: self.axes.window.complete(),
-                                        phase: self.axes.phase,
+                                        task: axes.task,
+                                        scanner: axes.window.complete(),
+                                        phase: axes.phase,
                                         channel,
                                         received,
                                         status,
@@ -557,49 +343,107 @@ where
                                 )
                             }
                             Err(failure) => active_fault(
-                                self.axes,
+                                axes,
                                 BluetoothPassiveScanActiveFaultCause::RuntimeGraphMismatch,
                                 BluetoothPassiveScanActiveFaultOwner::RuntimeRestore(failure),
                             ),
                         }
                     }
-                    step @ BluetoothPassiveScanSchedulerRecycleStep::SchedulerIdentityMismatch(
-                        _,
-                    ) => active_fault(
-                        self.axes,
+                    step @ BluetoothPassiveScanSchedulerRecycleStep::SchedulerIdentityMismatch {
+                        ..
+                    } => active_fault(
+                        axes,
                         BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch,
                         BluetoothPassiveScanActiveFaultOwner::Recycle(step),
                     ),
-                    step @ BluetoothPassiveScanSchedulerRecycleStep::FinishedListDrainStillActive(
-                        _,
-                    ) => active_fault(
-                        self.axes,
+                    step @ BluetoothPassiveScanSchedulerRecycleStep::FinishedListDrainStillActive {
+                        ..
+                    } => active_fault(
+                        axes,
                         BluetoothPassiveScanActiveFaultCause::FinishedListDrainStillActive,
                         BluetoothPassiveScanActiveFaultOwner::Recycle(step),
                     ),
                     step @ BluetoothPassiveScanSchedulerRecycleStep::MemoryIdentityMismatch {
                         ..
                     } => active_fault(
-                        self.axes,
+                        axes,
                         BluetoothPassiveScanActiveFaultCause::MemoryIdentityMismatch,
                         BluetoothPassiveScanActiveFaultOwner::Recycle(step),
                     ),
                     step @ BluetoothPassiveScanSchedulerRecycleStep::ReceiveInvalid { .. } => {
                         active_fault(
-                            self.axes,
+                            axes,
                             BluetoothPassiveScanActiveFaultCause::ReceiveInvalid,
                             BluetoothPassiveScanActiveFaultOwner::Recycle(step),
                         )
                     }
-                    step @ BluetoothPassiveScanSchedulerRecycleStep::ReservationIdentityMismatch(
-                        _,
-                    ) => active_fault(
-                        self.axes,
+                    step @ BluetoothPassiveScanSchedulerRecycleStep::ReservationIdentityMismatch {
+                        ..
+                    } => active_fault(
+                        axes,
                         BluetoothPassiveScanActiveFaultCause::ReservationIdentityMismatch,
                         BluetoothPassiveScanActiveFaultOwner::Recycle(step),
                     ),
                 }
             }
+        }
+    }
+}
+
+fn passive_scan_fault_cause(
+    cause: BluetoothSingleItemCompletionFaultCause,
+) -> BluetoothPassiveScanActiveFaultCause {
+    match cause {
+        BluetoothSingleItemCompletionFaultCause::FinishedListDrainAlreadyActive => {
+            BluetoothPassiveScanActiveFaultCause::FinishedListDrainAlreadyActive
+        }
+        BluetoothSingleItemCompletionFaultCause::SchedulerIdentityMismatch => {
+            BluetoothPassiveScanActiveFaultCause::SchedulerIdentityMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::FinishedListDrainLost => {
+            BluetoothPassiveScanActiveFaultCause::FinishedListDrainLost
+        }
+        BluetoothSingleItemCompletionFaultCause::RepeatedRoleList => {
+            BluetoothPassiveScanActiveFaultCause::RepeatedScannerList
+        }
+        BluetoothSingleItemCompletionFaultCause::FinishedListDrainStillActive => {
+            BluetoothPassiveScanActiveFaultCause::FinishedListDrainStillActive
+        }
+        BluetoothSingleItemCompletionFaultCause::ExpectedHardwareHeadStillPublished => {
+            BluetoothPassiveScanActiveFaultCause::ExpectedHardwareHeadStillPublished
+        }
+        BluetoothSingleItemCompletionFaultCause::UnexpectedHardwareHeadChanged => {
+            BluetoothPassiveScanActiveFaultCause::UnexpectedHardwareHeadChanged
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxBusy => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxBusy
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxIdentityExhausted => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxIdentityExhausted
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxGenerationExhausted => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxGenerationExhausted
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxCommitMismatch => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxCommitMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxAffinityMismatch => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkMailboxAffinityMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PrimaryInterruptFault => {
+            BluetoothPassiveScanActiveFaultCause::PrimaryInterruptFault
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkNoSchedulerWorkRearmMismatch => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkNoSchedulerWorkRearmMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkPendingRearmMismatch => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkPendingRearmMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkRecheckUnavailable => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkRecheckUnavailable
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkRecheckRearmMismatch => {
+            BluetoothPassiveScanActiveFaultCause::PostUnlinkRecheckRearmMismatch
         }
     }
 }
@@ -617,48 +461,4 @@ where
         _axes: axes,
         _owner: owner,
     })
-}
-
-fn waiting_or_continue<'runtime, S, const CAPACITY: usize>(
-    session: BluetoothPassiveScanActiveSession<'runtime, S, CAPACITY>,
-) -> BluetoothPassiveScanActiveStep<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    if matches!(
-        session.phase,
-        BluetoothPassiveScanActivePhase::RunningAwaitingWake(_)
-    ) {
-        BluetoothPassiveScanActiveStep::Waiting(session)
-    } else {
-        BluetoothPassiveScanActiveStep::Continue(session)
-    }
-}
-
-fn running_phase(
-    drain: BluetoothSchedulerFinishedListDrainState<BluetoothPassiveScanSchedulerRunning>,
-) -> BluetoothPassiveScanActivePhase {
-    match drain {
-        BluetoothSchedulerFinishedListDrainState::Drained(running) => {
-            BluetoothPassiveScanActivePhase::RunningAwaitingWake(running)
-        }
-        BluetoothSchedulerFinishedListDrainState::Pending(pending) => {
-            BluetoothPassiveScanActivePhase::RunningDrain(pending)
-        }
-    }
-}
-
-fn completed_phase(
-    drain: BluetoothSchedulerFinishedListDrainState<
-        BluetoothPassiveScanSchedulerCompletionObserved,
-    >,
-) -> BluetoothPassiveScanActivePhase {
-    match drain {
-        BluetoothSchedulerFinishedListDrainState::Drained(completed) => {
-            BluetoothPassiveScanActivePhase::CompletionObserved(completed)
-        }
-        BluetoothSchedulerFinishedListDrainState::Pending(pending) => {
-            BluetoothPassiveScanActivePhase::CompletionDrain(pending)
-        }
-    }
 }

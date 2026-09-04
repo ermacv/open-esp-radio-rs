@@ -11,6 +11,9 @@
 use super::{BluetoothControllerSramAddress, BluetoothTaskRegisters, device_fence};
 
 const ENVIRONMENT_LAST_OFFSET: u32 = 0x40;
+const NORMAL_PROFILE_PRIVATE_TIMING_SOURCE_BYTE: u8 = 61;
+const NORMAL_PROFILE_SET_BRANCH_CONTROL_0470_BIT_18: bool = false;
+const NORMAL_PROFILE_RUNTIME_CONFIGURATION_LOW_BYTE: u8 = 0x9c;
 
 trait BleBaseStackOnTaskEnableHardwareTransaction {
     fn enable_access_address_low_correlation(&mut self);
@@ -104,11 +107,35 @@ pub struct BluetoothPhyRegisterInitInputs {
 }
 
 impl BluetoothPhyRegisterInitInputs {
-    /// Capture the complete external values consumed by the finite MMIO body.
+    /// Bind the source-owned normal Controller profile to its two live SRAM
+    /// objects.
     ///
-    /// Both values are typed address images, but this value does not prove
-    /// their allocation, contents, lifetime, or exclusive ownership.
-    pub const fn new(
+    /// The returned value contains the complete positional policy recovered for
+    /// ordinary production use. Callers supply only typed addresses; the PAC
+    /// retains all register-facing profile choices. This value does not itself
+    /// prove allocation, contents, lifetime, or exclusive ownership of either
+    /// object.
+    pub const fn normal_controller_profile(
+        environment: BluetoothPhyEnvironmentAddress,
+        resolving_list: BluetoothControllerSramAddress,
+    ) -> Self {
+        Self {
+            private_timing_source_byte: NORMAL_PROFILE_PRIVATE_TIMING_SOURCE_BYTE,
+            environment,
+            resolving_list,
+            set_branch_control_0470_bit_18: NORMAL_PROFILE_SET_BRANCH_CONTROL_0470_BIT_18,
+            runtime_configuration_low_byte: NORMAL_PROFILE_RUNTIME_CONFIGURATION_LOW_BYTE,
+        }
+    }
+
+    /// Capture arbitrary positional inputs for an isolated vendor-comparison
+    /// image.
+    ///
+    /// Shipping callers cannot select these register-facing values. The sole
+    /// crate-local consumer is the validation bridge that compares the bounded
+    /// PAC transaction against externally seeded vendor state.
+    #[cfg(feature = "validation-probes")]
+    pub(crate) const fn validation_profile(
         private_timing_source_byte: u8,
         environment: BluetoothPhyEnvironmentAddress,
         resolving_list: BluetoothControllerSramAddress,

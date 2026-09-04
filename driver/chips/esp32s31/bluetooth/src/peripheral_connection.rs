@@ -21,8 +21,9 @@ use open_esp_radio_bluetooth_ll::connection::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothDirectionFindingWorkspaceLink, BluetoothPeripheralConnectionDataChannel,
-    BluetoothPeripheralConnectionEventSpan, BluetoothPeripheralConnectionIntervalTicks,
+    BluetoothDirectionFindingWorkspaceLink, BluetoothLeReceivedPdu,
+    BluetoothPeripheralConnectionDataChannel, BluetoothPeripheralConnectionEventSpan,
+    BluetoothPeripheralConnectionIntervalTicks,
     BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared,
     BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared,
     BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
@@ -274,6 +275,163 @@ pub struct BluetoothPeripheralConnectionRuntimeAllocation {
     receive_pool: BluetoothNonScanningRxMemoryCpuOwned,
 }
 
+/// Accepted `CONNECT_IND` and the exact peripheral allocation loaned to advertising.
+///
+/// The copied receive PDU is retained because its captured hardware time is the
+/// causal input to the first connection window. This owner has not normalized
+/// that time, published a connection scheduler item, or reported a connection.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "normalize the retained packet time and prepare the first connection event"]
+pub(crate) struct BluetoothPeripheralConnectionAcceptedRequest {
+    allocation: BluetoothPeripheralConnectionRuntimeAllocation,
+    connection: LePeripheralConnection,
+    packet: BluetoothLeReceivedPdu,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionAcceptedRequest {
+    pub(crate) fn new(
+        allocation: BluetoothPeripheralConnectionRuntimeAllocation,
+        connection: LePeripheralConnection,
+        packet: BluetoothLeReceivedPdu,
+    ) -> Self {
+        Self {
+            allocation,
+            connection,
+            packet,
+        }
+    }
+
+    /// Exact copied packet whose captured time caused this connection request.
+    pub(crate) const fn packet(&self) -> &BluetoothLeReceivedPdu {
+        &self.packet
+    }
+
+    /// Join the normalized causal packet start to the existing first-event path.
+    ///
+    /// The copied packet remains a separate semantic owner so every
+    /// pre-publication rejection can reconstruct this exact accepted request.
+    pub(crate) fn into_first_event_parts(
+        self,
+        packet_start: BluetoothLe1MPacketStartTiming,
+    ) -> (
+        BluetoothPeripheralConnectionFirstEventPrepared,
+        BluetoothLeReceivedPdu,
+    ) {
+        (
+            self.allocation
+                .prepare_first_event(self.connection, packet_start),
+            self.packet,
+        )
+    }
+}
+
+/// Why an accepted request could not be retired into its originating idle runtime.
+#[cfg(any(target_arch = "riscv32", test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BluetoothPeripheralConnectionAcceptedResetCancellationError {
+    RuntimeBusy,
+    GraphIdentityMismatch,
+    ReceiveIdentityMismatch,
+}
+
+/// Successful explicit Reset cancellation after the allocation was restored.
+///
+/// The portable connection has been retired. The copied causal packet remains
+/// available only as diagnostic evidence; it carries no peripheral ownership.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "retain the causal packet as Reset-cancellation evidence"]
+pub(crate) struct BluetoothPeripheralConnectionAcceptedResetCancelled {
+    packet: BluetoothLeReceivedPdu,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionAcceptedResetCancelled {
+    pub(crate) fn into_packet(self) -> BluetoothLeReceivedPdu {
+        self.packet
+    }
+}
+
+/// Rejected explicit Reset cancellation retaining the complete accepted owner.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the accepted connection and allocation remain affine on rejection"]
+pub(crate) struct BluetoothPeripheralConnectionAcceptedResetCancellationFailure {
+    error: BluetoothPeripheralConnectionAcceptedResetCancellationError,
+    accepted: BluetoothPeripheralConnectionAcceptedRequest,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothPeripheralConnectionAcceptedResetCancellationFailure {
+    pub(crate) const fn error(
+        &self,
+    ) -> BluetoothPeripheralConnectionAcceptedResetCancellationError {
+        self.error
+    }
+
+    pub(crate) fn into_accepted(self) -> BluetoothPeripheralConnectionAcceptedRequest {
+        self.accepted
+    }
+}
+
+/// Connection graph retained while its exact non-scanning RX pool is loaned.
+///
+/// Connectable advertising and an established peripheral connection share one
+/// RX rotation graph. This owner keeps the connection graph affine while that
+/// pool is used by the advertising event, and remembers which exact pool may
+/// later restore the original runtime allocation.
+#[must_use = "the reserved connection graph must be rejoined with its exact receive pool"]
+pub(crate) struct BluetoothPeripheralConnectionRuntimeGraphReserved {
+    graph: BluetoothPeripheralConnectionMemoryGraphCpuOwned,
+    receive_identity: BluetoothNonScanningRxMemoryIdentity,
+}
+
+/// Failed graph rejoin retaining both unchanged affine owners.
+#[must_use = "the reserved graph and supplied receive pool remain owned"]
+pub(crate) struct BluetoothPeripheralConnectionRuntimeGraphRejoinFailure {
+    _reserved: BluetoothPeripheralConnectionRuntimeGraphReserved,
+    _receive_pool: BluetoothNonScanningRxMemoryCpuOwned,
+}
+
+impl BluetoothPeripheralConnectionRuntimeGraphRejoinFailure {
+    #[cfg(test)]
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionRuntimeGraphReserved,
+        BluetoothNonScanningRxMemoryCpuOwned,
+    ) {
+        (self._reserved, self._receive_pool)
+    }
+}
+
+impl BluetoothPeripheralConnectionRuntimeGraphReserved {
+    /// Restore the original allocation only with the pool split from it.
+    ///
+    /// A foreign pool is returned together with this reservation, so neither
+    /// affine owner is lost and both original pairs can still be reconstructed.
+    pub(crate) fn rejoin_receive_pool(
+        self,
+        receive_pool: BluetoothNonScanningRxMemoryCpuOwned,
+    ) -> Result<
+        BluetoothPeripheralConnectionRuntimeAllocation,
+        BluetoothPeripheralConnectionRuntimeGraphRejoinFailure,
+    > {
+        if receive_pool.identity() != self.receive_identity {
+            return Err(BluetoothPeripheralConnectionRuntimeGraphRejoinFailure {
+                _reserved: self,
+                _receive_pool: receive_pool,
+            });
+        }
+
+        Ok(
+            BluetoothPeripheralConnectionRuntimeAllocation::from_claimed_parts(
+                self.graph,
+                receive_pool,
+            ),
+        )
+    }
+}
+
 impl BluetoothPeripheralConnectionRuntimeAllocation {
     fn from_claimed_parts(
         graph: BluetoothPeripheralConnectionMemoryGraphCpuOwned,
@@ -300,6 +458,26 @@ impl BluetoothPeripheralConnectionRuntimeAllocation {
             && self.graph.has_empty_receive_queue()
             && self.graph.has_empty_transmit_queue()
             && self.receive_pool.is_initialized()
+    }
+
+    /// Reserve the idle connection graph and lend out its exact RX pool.
+    ///
+    /// This is an ownership-only transition: both returned owners remain
+    /// CPU-owned and no descriptor, scheduler list, or MMIO state is changed.
+    pub(crate) fn reserve_graph(
+        self,
+    ) -> (
+        BluetoothPeripheralConnectionRuntimeGraphReserved,
+        BluetoothNonScanningRxMemoryCpuOwned,
+    ) {
+        let receive_identity = self.receive_pool.identity();
+        (
+            BluetoothPeripheralConnectionRuntimeGraphReserved {
+                graph: self.graph,
+                receive_identity,
+            },
+            self.receive_pool,
+        )
     }
 
     /// Join one portable event with the two reviewed S31 identity fields.
@@ -436,7 +614,6 @@ impl BluetoothPeripheralConnectionRuntimeResources {
     }
 
     /// Check out the exact graph and RX pool for one event epoch.
-    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn begin_event(
         &mut self,
     ) -> Result<
@@ -462,6 +639,48 @@ impl BluetoothPeripheralConnectionRuntimeResources {
         }
         self.idle = Some(allocation);
         Ok(())
+    }
+
+    /// Retire one accepted connection only for an explicit pre-publication Reset.
+    ///
+    /// All rejection checks happen before either the runtime slot or portable
+    /// connection changes. Success restores the exact allocation, retires the
+    /// portable connection, and returns only the copied causal packet as
+    /// diagnostic evidence.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel_accepted_for_reset(
+        &mut self,
+        accepted: BluetoothPeripheralConnectionAcceptedRequest,
+    ) -> Result<
+        BluetoothPeripheralConnectionAcceptedResetCancelled,
+        BluetoothPeripheralConnectionAcceptedResetCancellationFailure,
+    > {
+        let (graph_identity, receive_identity) = accepted.allocation.identities();
+        let error = if self.idle.is_some() {
+            Some(BluetoothPeripheralConnectionAcceptedResetCancellationError::RuntimeBusy)
+        } else if graph_identity != self.graph_identity {
+            Some(BluetoothPeripheralConnectionAcceptedResetCancellationError::GraphIdentityMismatch)
+        } else if receive_identity != self.receive_identity {
+            Some(
+                BluetoothPeripheralConnectionAcceptedResetCancellationError::ReceiveIdentityMismatch,
+            )
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(
+                BluetoothPeripheralConnectionAcceptedResetCancellationFailure { error, accepted },
+            );
+        }
+
+        let BluetoothPeripheralConnectionAcceptedRequest {
+            allocation,
+            connection,
+            packet,
+        } = accepted;
+        self.idle = Some(allocation);
+        core::mem::drop(connection);
+        Ok(BluetoothPeripheralConnectionAcceptedResetCancelled { packet })
     }
 }
 
@@ -980,6 +1199,10 @@ impl BluetoothPeripheralConnectionFirstEventRxPublished {
         self.graph.scheduler_head()
     }
 
+    pub(crate) const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
     pub(crate) fn into_running(
         self,
         run: &open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareRunCommandPublished,
@@ -1013,10 +1236,6 @@ impl BluetoothPeripheralConnectionFirstEventRunning {
         &self,
     ) -> open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress {
         self.graph.scheduler_item_address()
-    }
-
-    pub(crate) const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
     }
 
     pub(crate) fn observe_completion(
@@ -1220,6 +1439,76 @@ mod tests {
     }
 
     #[test]
+    fn reserved_graph_and_exact_pool_restore_the_original_runtime() {
+        let mut runtime = runtime(0x2f00_d000);
+        let (reserved, receive_pool) = runtime
+            .begin_event()
+            .expect("the allocation starts idle")
+            .reserve_graph();
+
+        assert!(!runtime.allocation_is_idle());
+
+        let allocation = match reserved.rejoin_receive_pool(receive_pool) {
+            Ok(allocation) => allocation,
+            Err(_) => panic!("the exact receive pool must restore its allocation"),
+        };
+        assert!(allocation.is_pristine());
+        runtime
+            .restore_idle(allocation)
+            .unwrap_or_else(|_| panic!("the runtime accepts its reconstructed allocation"));
+        assert!(runtime.allocation_is_idle());
+    }
+
+    #[test]
+    fn foreign_pool_rejection_preserves_both_original_pairs() {
+        let mut first = runtime(0x2f00_d000);
+        let mut second = runtime(0x2f01_0000);
+        let (first_reserved, first_pool) = first
+            .begin_event()
+            .expect("the first allocation starts idle")
+            .reserve_graph();
+        let (second_reserved, second_pool) = second
+            .begin_event()
+            .expect("the second allocation starts idle")
+            .reserve_graph();
+
+        assert!(!first.allocation_is_idle());
+        assert!(!second.allocation_is_idle());
+
+        let first_failure = match first_reserved.rejoin_receive_pool(second_pool) {
+            Ok(_) => panic!("a foreign receive pool cannot restore the first allocation"),
+            Err(failure) => failure,
+        };
+        let (first_reserved, second_pool) = first_failure.into_parts();
+
+        let second_failure = match second_reserved.rejoin_receive_pool(first_pool) {
+            Ok(_) => panic!("a foreign receive pool cannot restore the second allocation"),
+            Err(failure) => failure,
+        };
+        let (second_reserved, first_pool) = second_failure.into_parts();
+
+        let first_allocation = match first_reserved.rejoin_receive_pool(first_pool) {
+            Ok(allocation) => allocation,
+            Err(_) => panic!("the exact first receive pool must restore its allocation"),
+        };
+        let second_allocation = match second_reserved.rejoin_receive_pool(second_pool) {
+            Ok(allocation) => allocation,
+            Err(_) => panic!("the exact second receive pool must restore its allocation"),
+        };
+
+        assert!(first_allocation.is_pristine());
+        assert!(second_allocation.is_pristine());
+        first
+            .restore_idle(first_allocation)
+            .unwrap_or_else(|_| panic!("the first runtime accepts its reconstructed allocation"));
+        second
+            .restore_idle(second_allocation)
+            .unwrap_or_else(|_| panic!("the second runtime accepts its reconstructed allocation"));
+        assert!(first.allocation_is_idle());
+        assert!(second.allocation_is_idle());
+    }
+
+    #[test]
     fn first_event_uses_the_received_packet_start_for_its_absolute_window() {
         let mut runtime = runtime(0x2f00_3000);
         let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
@@ -1312,6 +1601,48 @@ mod tests {
         runtime
             .restore_idle(allocation)
             .unwrap_or_else(|_| panic!("the exact allocation returns to its runtime"));
+        assert!(runtime.allocation_is_idle());
+        assert_eq!(connection.event_counter(), 0);
+    }
+
+    #[test]
+    fn prepublication_retry_keeps_the_causal_packet_window_and_exact_allocation() {
+        let mut runtime = runtime(0x2f00_5800);
+        let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
+        let packet_start = u32::MAX - 4_000;
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let epoch = BluetoothControllerSchedulerEpoch::new(
+            BluetoothControllerTimeSample::for_validation(700),
+            u32::MAX - 8_000,
+            scale,
+        );
+        let config = BluetoothSchedulerSoftwareConfig::reviewed_standalone();
+
+        let first = runtime
+            .begin_event()
+            .expect("the sole allocation starts idle")
+            .prepare_first_event(
+                LePeripheralConnection::from_request(request),
+                BluetoothLe1MPacketStartTiming::from_scheduler_micros(packet_start),
+            )
+            .project_scheduler_window(epoch, config)
+            .unwrap_or_else(|_| panic!("the accepted packet projects a first-event window"));
+        let first_window = first.requested_window();
+        let (allocation, connection) = first.cancel();
+
+        let retry = allocation
+            .prepare_first_event(
+                connection,
+                BluetoothLe1MPacketStartTiming::from_scheduler_micros(packet_start),
+            )
+            .project_scheduler_window(epoch, config)
+            .unwrap_or_else(|_| panic!("retrying the same packet keeps a valid window"));
+
+        assert_eq!(retry.requested_window(), first_window);
+        let (allocation, connection) = retry.cancel();
+        runtime
+            .restore_idle(allocation)
+            .unwrap_or_else(|_| panic!("the retry returns the exact checked-out allocation"));
         assert!(runtime.allocation_is_idle());
         assert_eq!(connection.event_counter(), 0);
     }

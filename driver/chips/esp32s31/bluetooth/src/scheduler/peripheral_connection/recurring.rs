@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+use core::ops::ControlFlow;
+
 mod transaction;
 
 pub use transaction::{
@@ -48,19 +50,15 @@ use open_esp_radio_esp32s31_hal::{
 impl BluetoothPeripheralConnectionSchedulerCompleted {
     /// Form the provisional combined owner from the phase retained by this
     /// exact completed event.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc failure restores the completed event and phase"
-    )]
     pub(crate) fn prepare_recurring_event_candidate(
         self,
         delta: LePeripheralConnectionEventDelta,
         epoch: BluetoothControllerSchedulerEpoch,
         scheduler_config: BluetoothSchedulerSoftwareConfig,
         timing_policy: BluetoothPeripheralConnectionRecurringTimingPolicy,
-    ) -> Result<
-        BluetoothPeripheralConnectionRecurringEventCandidate,
+    ) -> ControlFlow<
         BluetoothPeripheralConnectionRecurringCandidateFailure,
+        BluetoothPeripheralConnectionRecurringEventCandidate,
     > {
         prepare_recurring_event_candidate(self, delta, epoch, scheduler_config, timing_policy)
     }
@@ -186,7 +184,7 @@ impl BluetoothPeripheralConnectionRecurringSchedulerTransaction {
 
 /// Private committed LL/phase owner retained across RX publication.
 #[must_use = "rejoin the committed event with its exact RX-published graph"]
-struct BluetoothPeripheralConnectionRecurringSchedulerCommittedRemainder {
+pub(super) struct BluetoothPeripheralConnectionRecurringSchedulerCommittedRemainder {
     event: LePeripheralConnectionEventPrepared,
     remainder: BluetoothPeripheralConnectionCompletedEventRecurringRemainder,
     phase: crate::peripheral_connection::BluetoothPeripheralConnectionRecurringPhase,
@@ -335,6 +333,25 @@ pub(crate) struct BluetoothPeripheralConnectionRecurringSchedulerCommitted {
     interrupts: BluetoothSchedulerRunInterruptsPrepared,
 }
 
+/// Sealed recurring owner after RX-list MMIO could not rejoin its graph proof.
+#[must_use = "retain every committed recurring publication owner"]
+pub(crate) struct BluetoothPeripheralConnectionRecurringSchedulerPublicationFailStop {
+    mismatch: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionMemoryGraphPublicationMismatch,
+    _remainder: BluetoothPeripheralConnectionRecurringSchedulerCommittedRemainder,
+    _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+    _head: BluetoothSchedulerHardwareListHead,
+    _interrupts: BluetoothSchedulerRunInterruptsPrepared,
+}
+
+impl BluetoothPeripheralConnectionRecurringSchedulerPublicationFailStop {
+    pub(crate) const fn error(
+        &self,
+    ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionMemoryGraphPublicationError
+    {
+        self.mismatch.error()
+    }
+}
+
 impl BluetoothPeripheralConnectionRecurringSchedulerCommitted {
     const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.event.scheduler_head()
@@ -356,16 +373,12 @@ impl<const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
 {
     /// Reserve one exact recurring connection window without displacement.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc rejection retains the complete recurring candidate"
-    )]
     pub(crate) fn admit_peripheral_connection_recurring_event(
         &mut self,
         candidate: BluetoothPeripheralConnectionRecurringEventCandidate,
-    ) -> Result<
-        BluetoothPeripheralConnectionRecurringPreSequence,
+    ) -> ControlFlow<
         BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+        BluetoothPeripheralConnectionRecurringPreSequence,
     > {
         let raw_window = candidate.raw_window();
         let timing_policy =
@@ -375,11 +388,13 @@ impl<const SCHEDULER_CAPACITY: usize>
             .scheduler_timeline_mut()
             .reserve_recurring_window(raw_window.start(), raw_window.end(), timing_policy)
         {
-            Ok(reservation) => Ok(BluetoothPeripheralConnectionRecurringPreSequence {
-                candidate,
-                reservation,
-            }),
-            Err(error) => Err(
+            Ok(reservation) => {
+                ControlFlow::Continue(BluetoothPeripheralConnectionRecurringPreSequence {
+                    candidate,
+                    reservation,
+                })
+            }
+            Err(error) => ControlFlow::Break(
                 BluetoothPeripheralConnectionRecurringEventPreparationFailure {
                     candidate,
                     error: BluetoothPeripheralConnectionRecurringEventPreparationError::Timeline(
@@ -391,37 +406,35 @@ impl<const SCHEDULER_CAPACITY: usize>
     }
 
     /// Authorize the recurring deadline and encode its infallible event fields.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc rejection retains the complete recurring candidate"
-    )]
     pub(crate) fn prepare_peripheral_connection_recurring_event(
         &mut self,
         admitted: BluetoothPeripheralConnectionRecurringPreSequence,
         sequence: BluetoothPeripheralConnectionSequenceObservation,
-    ) -> Result<
-        BluetoothPeripheralConnectionRecurringEventPrepared,
+    ) -> ControlFlow<
         BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+        BluetoothPeripheralConnectionRecurringEventPrepared,
     > {
         let BluetoothPeripheralConnectionRecurringPreSequence {
             candidate,
             reservation,
         } = admitted;
-        let reservation =
-            match reservation.authorize_sequence(sequence.sample) {
-                Ok(reservation) => reservation,
-                Err(failure) => {
-                    let error = failure.error();
-                    self.release_scheduler_reservation(failure.into_reservation());
-                    return Err(BluetoothPeripheralConnectionRecurringEventPreparationFailure {
-                    candidate,
-                    error: BluetoothPeripheralConnectionRecurringEventPreparationError::Sequence(
-                        error,
-                    ),
-                });
-                }
-            };
-        Ok(BluetoothPeripheralConnectionRecurringEventPrepared {
+        let reservation = match reservation.authorize_sequence(sequence.sample) {
+            Ok(reservation) => reservation,
+            Err(failure) => {
+                let error = failure.error();
+                self.release_scheduler_reservation(failure.into_reservation());
+                return ControlFlow::Break(
+                    BluetoothPeripheralConnectionRecurringEventPreparationFailure {
+                        candidate,
+                        error:
+                            BluetoothPeripheralConnectionRecurringEventPreparationError::Sequence(
+                                error,
+                            ),
+                    },
+                );
+            }
+        };
+        ControlFlow::Continue(BluetoothPeripheralConnectionRecurringEventPrepared {
             event: candidate.prepare_event_fields(),
             reservation,
         })
@@ -454,16 +467,12 @@ impl<const SCHEDULER_CAPACITY: usize>
         event.cancel()
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc rejection retains the complete recurring event"
-    )]
     pub(crate) fn prepare_peripheral_connection_recurring_empty_list_merge(
         &mut self,
         prepared: BluetoothPeripheralConnectionRecurringEventPrepared,
-    ) -> Result<
-        BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    ) -> ControlFlow<
         BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+        BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
     > {
         let BluetoothPeripheralConnectionRecurringEventPrepared { event, reservation } = prepared;
         let (graph, transaction) = event.into_scheduler_parts();
@@ -475,7 +484,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         };
         let address = event.scheduler_head();
         if let Err(error) = self._scheduler_list.prepare_first_item(address) {
-            return Err(
+            return ControlFlow::Break(
                 BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure {
                     error,
                     prepared: BluetoothPeripheralConnectionRecurringEventPrepared {
@@ -485,7 +494,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 },
             );
         }
-        Ok(
+        ControlFlow::Continue(
             BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared {
                 event,
                 reservation,
@@ -493,82 +502,97 @@ impl<const SCHEDULER_CAPACITY: usize>
         )
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "an identity rejection retains the complete recurring merge"
-    )]
     pub(crate) fn cancel_peripheral_connection_recurring_empty_list_merge(
         &mut self,
         merged: BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
-    ) -> Result<
-        BluetoothPeripheralConnectionRecurringEventPrepared,
+    ) -> ControlFlow<
         BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        BluetoothPeripheralConnectionRecurringEventPrepared,
     > {
         if !self
             ._scheduler_list
             .cancel_first_item(merged.scheduler_item_address())
         {
-            return Err(merged);
+            return ControlFlow::Break(merged);
         }
         let BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared {
             event,
             reservation,
         } = merged;
-        Ok(BluetoothPeripheralConnectionRecurringEventPrepared {
+        ControlFlow::Continue(BluetoothPeripheralConnectionRecurringEventPrepared {
             event: event.restore_event_fields(),
             reservation,
         })
     }
 
     /// Seal the exact common-list identity and encodable hardware head.
-    #[allow(
-        clippy::result_large_err,
-        reason = "validation failure retains the complete recurring merge"
-    )]
     pub(crate) fn validate_peripheral_connection_recurring_scheduler(
         &self,
         merged: BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
-    ) -> Result<
-        BluetoothPeripheralConnectionRecurringSchedulerValidated,
+    ) -> ControlFlow<
         BluetoothPeripheralConnectionRecurringSchedulerValidationFailure,
+        BluetoothPeripheralConnectionRecurringSchedulerValidated,
     > {
         let address = merged.scheduler_item_address();
         match self.validate_first_scheduler_item_head(address) {
             Ok(head) => {
-                Ok(BluetoothPeripheralConnectionRecurringSchedulerValidated { merged, head })
+                ControlFlow::Continue(BluetoothPeripheralConnectionRecurringSchedulerValidated {
+                    merged,
+                    head,
+                })
             }
-            Err(error) => Err(
+            Err(error) => ControlFlow::Break(
                 BluetoothPeripheralConnectionRecurringSchedulerValidationFailure { error, merged },
             ),
         }
     }
 
-    /// Publish the already committed event through the infallible RX/head suffix.
+    /// Publish the already committed event through the RX/head suffix.
+    ///
+    /// A proof mismatch after RX-list MMIO seals the committed LL successor,
+    /// its HAL publication and every remaining scheduler owner in one
+    /// fail-stop value. It cannot be recovered as a retryable merge.
     #[allow(
         unsafe_code,
-        reason = "sealed list/head validation and the committed graph retain every PAC prerequisite"
+        reason = "the HAL publication consumes the unique task-side peripheral memory owner"
     )]
     pub(crate) fn publish_peripheral_connection_recurring_scheduler_head(
         &mut self,
         committed: BluetoothPeripheralConnectionRecurringSchedulerCommitted,
-    ) -> (
-        super::BluetoothPeripheralConnectionSchedulerHeadPublished,
-        BluetoothSchedulerRunInterruptsPrepared,
-    ) {
+    ) -> ControlFlow<
+        BluetoothPeripheralConnectionRecurringSchedulerPublicationFailStop,
+        (
+            super::BluetoothPeripheralConnectionSchedulerHeadPublished,
+            BluetoothSchedulerRunInterruptsPrepared,
+        ),
+    > {
         let address = committed.scheduler_item_address();
         let index = BluetoothSchedulerHardwareListIndex::ZERO;
         let (event, reservation, head, interrupts) = committed.into_parts();
         let (graph, remainder) = event.into_parts();
-        let graph = unsafe { self.task.publish_peripheral_connection_rx_memory(graph) };
+        let graph = match unsafe { self.task.publish_peripheral_connection_rx_memory(graph) } {
+            Ok(graph) => graph,
+            Err(mismatch) => {
+                return ControlFlow::Break(
+                    BluetoothPeripheralConnectionRecurringSchedulerPublicationFailStop {
+                        mismatch,
+                        _remainder: remainder,
+                        _reservation: reservation,
+                        _head: head,
+                        _interrupts: interrupts,
+                    },
+                );
+            }
+        };
         let event = remainder.join_rx_publication(graph);
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
-        (
+        ControlFlow::Continue((
             super::BluetoothPeripheralConnectionSchedulerHeadPublished {
                 event,
                 publication,
                 reservation,
             },
             interrupts,
-        )
+        ))
     }
 }

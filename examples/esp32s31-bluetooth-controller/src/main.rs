@@ -10,7 +10,7 @@ use bt_hci::{
     },
     controller::Controller,
 };
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Timer, with_timeout};
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -49,6 +49,7 @@ const LE_MODULATION_INDEX_STANDARD: u8 = 0;
 const LE_PAYLOAD_PRBS9: u8 = 0;
 const LE_TX_PAYLOAD_LENGTH: u8 = 37;
 const LE_TEST_DWELL: Duration = Duration::from_secs(1);
+const HCI_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
 type BluetoothStorage = Esp32s31BluetoothSystemStorage<
     EspHalBluetoothPlatform<'static>,
@@ -124,44 +125,63 @@ async fn bluetooth_controller_task(
     esp_println::println!("open-radio: Bluetooth Controller ready");
 
     let commands = async {
-        if Reset::new().exec(&hci).await.is_err() {
-            panic!("typed HCI Reset failed");
+        esp_println::println!("open-radio: HCI Reset submitted");
+        match with_timeout(HCI_COMMAND_TIMEOUT, Reset::new().exec(&hci)).await {
+            Ok(Ok(_)) => esp_println::println!("open-radio: HCI Reset complete"),
+            Ok(Err(_)) => panic!("typed HCI Reset failed"),
+            Err(_) => panic!("typed HCI Reset timed out"),
         }
 
-        if LeReceiverTestV2::new(LE_TEST_CHANNEL, LE_PHY_1M, LE_MODULATION_INDEX_STANDARD)
-            .exec(&hci)
-            .await
-            .is_err()
+        esp_println::println!("open-radio: LE Receiver Test v2 submitted");
+        match with_timeout(
+            HCI_COMMAND_TIMEOUT,
+            LeReceiverTestV2::new(LE_TEST_CHANNEL, LE_PHY_1M, LE_MODULATION_INDEX_STANDARD)
+                .exec(&hci),
+        )
+        .await
         {
-            panic!("typed HCI LE Receiver Test v2 failed");
+            Ok(Ok(_)) => esp_println::println!("open-radio: LE Receiver Test v2 running"),
+            Ok(Err(_)) => panic!("typed HCI LE Receiver Test v2 failed"),
+            Err(_) => panic!("typed HCI LE Receiver Test v2 timed out"),
         }
         Timer::after(LE_TEST_DWELL).await;
-        let received_packets = match LeTestEnd::new().exec(&hci).await {
-            Ok(received_packets) => received_packets,
-            Err(_) => panic!("typed HCI LE Test End after receiver test failed"),
-        };
+        esp_println::println!("open-radio: LE Receiver Test End submitted");
+        let received_packets =
+            match with_timeout(HCI_COMMAND_TIMEOUT, LeTestEnd::new().exec(&hci)).await {
+                Ok(Ok(received_packets)) => received_packets,
+                Ok(Err(_)) => panic!("typed HCI LE Test End after receiver test failed"),
+                Err(_) => panic!("typed HCI LE Test End after receiver test timed out"),
+            };
         esp_println::println!(
             "open-radio: LE Receiver Test v2 received_packets={}",
             received_packets
         );
 
-        if LeTransmitterTestV2::new(
-            LE_TEST_CHANNEL,
-            LE_TX_PAYLOAD_LENGTH,
-            LE_PAYLOAD_PRBS9,
-            LE_PHY_1M,
+        esp_println::println!("open-radio: LE Transmitter Test v2 submitted");
+        match with_timeout(
+            HCI_COMMAND_TIMEOUT,
+            LeTransmitterTestV2::new(
+                LE_TEST_CHANNEL,
+                LE_TX_PAYLOAD_LENGTH,
+                LE_PAYLOAD_PRBS9,
+                LE_PHY_1M,
+            )
+            .exec(&hci),
         )
-        .exec(&hci)
         .await
-        .is_err()
         {
-            panic!("typed HCI LE Transmitter Test v2 failed");
+            Ok(Ok(_)) => esp_println::println!("open-radio: LE Transmitter Test v2 running"),
+            Ok(Err(_)) => panic!("typed HCI LE Transmitter Test v2 failed"),
+            Err(_) => panic!("typed HCI LE Transmitter Test v2 timed out"),
         }
         Timer::after(LE_TEST_DWELL).await;
-        let transmitter_packet_count = match LeTestEnd::new().exec(&hci).await {
-            Ok(packet_count) => packet_count,
-            Err(_) => panic!("typed HCI LE Test End after transmitter test failed"),
-        };
+        esp_println::println!("open-radio: LE Transmitter Test End submitted");
+        let transmitter_packet_count =
+            match with_timeout(HCI_COMMAND_TIMEOUT, LeTestEnd::new().exec(&hci)).await {
+                Ok(Ok(packet_count)) => packet_count,
+                Ok(Err(_)) => panic!("typed HCI LE Test End after transmitter test failed"),
+                Err(_) => panic!("typed HCI LE Test End after transmitter test timed out"),
+            };
         if transmitter_packet_count != 0 {
             panic!("LE Transmitter Test must end with packet count zero");
         }

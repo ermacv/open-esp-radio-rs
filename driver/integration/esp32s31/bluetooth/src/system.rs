@@ -249,6 +249,19 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         | EmbassyBluetoothControllerCommandBoundary::FirstPreparationCleanupFault { .. }
         | EmbassyBluetoothControllerCommandBoundary::FirstPreparationRestoreRejected(_)
         | EmbassyBluetoothControllerCommandBoundary::FirstPreparationFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingRecurringFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingRecurringSequencePendingCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingRecurringGraphPreparedCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingRecurringCandidateCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingRecurringPreparedCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingRecurringMergedCommandEndpointMismatch(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingActiveFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingPendingFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingStoppingFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::PeripheralConnectionFirstFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::PeripheralConnectionResetFailStop(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::IdleCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::ActiveCommandEndpointMismatch(_)
         | EmbassyBluetoothControllerCommandBoundary::PendingRadioFault(_)
@@ -258,6 +271,8 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
             CommandBoundaryClass::Terminal
         }
         EmbassyBluetoothControllerCommandBoundary::LegacyAdvertisingActive(_)
+        | EmbassyBluetoothControllerCommandBoundary::LegacyConnectableAdvertisingActive
+        | EmbassyBluetoothControllerCommandBoundary::PeripheralConnectionActive
         | EmbassyBluetoothControllerCommandBoundary::PassiveScanningActive
         | EmbassyBluetoothControllerCommandBoundary::PassiveScanMalformedPdu(_)
         | EmbassyBluetoothControllerCommandBoundary::PassiveScanReportEncodingFault(_) => {

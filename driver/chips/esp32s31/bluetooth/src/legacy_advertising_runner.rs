@@ -11,7 +11,10 @@ use open_esp_radio_bluetooth_hci::{
     LeControllerDeferredLegacyNonconnectableAdvertisingStart, LeControllerResponsePending,
 };
 
-use crate::controller_start::BluetoothLegacyAdvertisingControllerInitialPreparationFailure;
+use crate::controller_start::{
+    BluetoothLegacyAdvertisingControllerInitialPreparationFailure,
+    BluetoothLegacyAdvertisingControllerPreparationFailStop,
+};
 use crate::{
     BluetoothAlwaysAwakePostEnableTimeBeginFailure, BluetoothAlwaysAwakePostEnableTimeFailure,
     BluetoothAlwaysAwakePostEnableTimePending, BluetoothAlwaysAwakePostEnableTimeStep,
@@ -23,9 +26,8 @@ use crate::{
     BluetoothLegacyAdvertisingControllerPreparationPending,
     BluetoothLegacyAdvertisingControllerPreparationStep,
     BluetoothLegacyAdvertisingEmptySchedulerMergePrepared,
-    BluetoothLegacyAdvertisingSchedulerHeadPublished, BluetoothLegacyAdvertisingSchedulerRunning,
-    BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
-    prepare_legacy_advertising_set,
+    BluetoothLegacyAdvertisingSchedulerHeadPublished, BluetoothSchedulerHeadPublicationError,
+    BluetoothSchedulerRunInterruptStorage, prepare_legacy_advertising_set,
 };
 
 #[must_use = "retain the accepted Enable until hardware starts or idle ownership is recovered"]
@@ -65,10 +67,6 @@ where
     phase: BluetoothLegacyAdvertisingFirstRunnerPhase<'runtime, S, SCHEDULER_CAPACITY>,
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "no-alloc phases retain the complete affine Controller owner"
-)]
 enum BluetoothLegacyAdvertisingFirstRunnerPhase<'runtime, S, const SCHEDULER_CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
@@ -122,7 +120,9 @@ where
 {
     command: BluetoothLegacyAdvertisingDeferredStart<'runtime>,
     task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+    running: crate::scheduler::BluetoothSingleItemSchedulerRunning<
+        crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole<'static>,
+    >,
 }
 
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
@@ -200,6 +200,14 @@ where
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothLegacyAdvertisingControllerPreparationError,
     },
+    PreparationFailStop {
+        command: BluetoothLegacyAdvertisingDeferredStart<'runtime>,
+        failure: BluetoothLegacyAdvertisingControllerPreparationFailStop<
+            'runtime,
+            S,
+            SCHEDULER_CAPACITY,
+        >,
+    },
     Retryable(BluetoothLegacyAdvertisingFirstRunnerRetry<'runtime, S, SCHEDULER_CAPACITY>),
 }
 
@@ -223,7 +231,9 @@ where
                 (command, failure.into_parts().0.into_task_service())
             }
             Self::Recovered { command, task, .. } => (command, task),
-            retryable @ Self::Retryable(_) => return Err(retryable),
+            retained @ (Self::PreparationFailStop { .. } | Self::Retryable(_)) => {
+                return Err(retained);
+            }
         };
         Ok(crate::BluetoothControllerIdleResponsePending::new(
             command.into_hardware_failure_response(task),
@@ -367,10 +377,15 @@ where
                         error,
                     ),
                     Err(
-                        BluetoothLegacyAdvertisingControllerInitialPreparationFailure::Terminal(
-                            terminal,
+                        BluetoothLegacyAdvertisingControllerInitialPreparationFailure::FailStop(
+                            failure,
                         ),
-                    ) => Self::finish_preparation(command, terminal),
+                    ) => BluetoothLegacyAdvertisingFirstRunnerStep::Failed(
+                        BluetoothLegacyAdvertisingFirstRunnerFailure::PreparationFailStop {
+                            command,
+                            failure,
+                        },
+                    ),
                 }
             }
             BluetoothLegacyAdvertisingFirstRunnerPhase::Preparation { command, pending } => {
@@ -387,6 +402,14 @@ where
                     }
                     BluetoothLegacyAdvertisingControllerPreparationStep::Terminal(terminal) => {
                         Self::finish_preparation(command, terminal)
+                    }
+                    BluetoothLegacyAdvertisingControllerPreparationStep::FailStop(failure) => {
+                        BluetoothLegacyAdvertisingFirstRunnerStep::Failed(
+                            BluetoothLegacyAdvertisingFirstRunnerFailure::PreparationFailStop {
+                                command,
+                                failure,
+                            },
+                        )
                     }
                 }
             }

@@ -1,63 +1,23 @@
-//! ESP32-S31 Bluetooth controller hardware boundary.
+//! ESP32-S31 Bluetooth hardware backend and executor-neutral radio sessions.
 //!
-//! This crate is intentionally below operational HCI and the Bluetooth Link
-//! Layer. It binds portable bootstrap resources only to preserve one powered
-//! ownership epoch. The implemented slices establish lossless physical
-//! ownership, the route-owned
-//! clock/reset prerequisite, the complete 50-operation BTDM HAL-init body and
-//! the following complete scheduler-init component. The latter retains its
-//! source-owned software policy and replaces vendor broker/event containers
-//! with one pristine static Rust runtime epoch. The following HCI software
-//! initialization binds that powered epoch to one bounded portable transport
-//! and bootstrap dispatcher. The following modem low-power, common-PHY,
-//! finite BT-baseband, BLE-PHY, controller-output and runtime-timer transitions
-//! are now one connected affine enable chain; the terminal state retains the
-//! complete static BLE environment graph and advances both disjoint interrupt
-//! owners into their final movable pre-route states. It still does not claim
-//! operational Link-Layer work. The
-//! three Controller interrupt sources, level/residency policies, baseline masks,
-//! snapshot modes, positional dynamic scheduler classifier, coalesced wake
-//! state, affine ISR scheduler-register staging and one live finite
-//! scheduler-lock/modify PAC/HAL publication with a durable event worker are
-//! also represented. The terminal pre-route Controller can additionally
-//! consume one identity-checked DTM graph through descriptor/head visibility,
-//! stable-owner dynamic interrupt preparation, the synchronous BTMAC event
-//! and RUN as one affine chain. A sampled sixteen-list finished mask can be
-//! drained one bit per bounded event step. The terminal Controller can also
-//! perform one fresh transfer and immediately join list zero to its exact
-//! running DTM epoch; a non-sentinel status advances to a completion-observed
-//! completion observation. A second affine operation performs the mandatory
-//! fresh post-picker head read and advances only after list zero is empty.
-//! The exact item can then leave the source-owned software list once. A sealed
-//! lower consumer accepts only an opaque pairing of that graph with an already
-//! published later primary event; no public constructor exists until the
-//! session runtime can prove the post-unlink cutoff. Busy or command-pending
-//! events retain ownership without polling, while ready permits TX and
-//! RX-non-success recycle to release the exact timeline reservation before
-//! returning the CPU graph. A specialized RX-success path
-//! validates the bounded returned-header pair, accounts its graph-bound typed
-//! result, performs the corresponding append/re-arm rotation, releases the
-//! timeline and source list, and returns one non-copyable receiver session.
-//! Controller-SRAM allocation geometry and result parsing live in the separate
-//! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
-//! one bounded DTM RX transaction now owns the completed-header visibility and
-//! exact `observe -> account -> append/re-arm` sequence.
-//! The initialized scheduler now joins its software task endpoint to the exact
-//! task-side HAL owner, so one lock/modify event step can reach the restricted
-//! PAC without exporting register authority. The remaining components are not
-//! connected across the missing live primary-ISR/executor composition,
-//! feature-specific NRT classification and live-route
-//! prerequisites. Recurring event preparation retains exact active role
-//! ownership, and bounded first-event, active, recurring and terminal-neutral
-//! quiescence runners preserve it. A target-only sole Embassy actor composes
-//! idle command intake, first-event cleanup, active progression, Test End and
-//! Reset, but production final-split/spawn and live route/waker composition
-//! remain absent. Stable two-owner ISR publication is connected, but no
-//! current finite state claims that the complete controller lifecycle, HCI
-//! transport, task or live interrupt epoch has completed.
-//! The public lifecycle begins with one [`BluetoothStopped`] aggregate; the
-//! platform lease and neutral radio root cannot be split across clock enable,
-//! rollback, or clean reversible shutdown.
+//! PAC/HAL owns MMIO, and the separate memory crate owns controller-SRAM
+//! layouts and CPU/hardware ownership. This crate joins those contracts to
+//! portable LL policy, controller time, scheduler admission and publication.
+//! Its HCI composition preserves command order while radio events progress;
+//! the Embassy adapter owns executor waits and task storage.
+//!
+//! DTM, advertising and scanning have event lifecycles. Peripheral connection
+//! has a causal first-event path, completion/recycle and lower recurrence
+//! operations, but the active connection loop and reliable ACL dataplane are
+//! not yet integrated. Initialization and scheduler RUN are not RF evidence.
+//!
+//! Shared single-item completion and timed preparation engines implement the
+//! common hardware protocol; RX/recycle and packet policy remain role-specific.
+//! The public lifecycle begins with one [`BluetoothStopped`] aggregate retaining
+//! the platform lease and neutral radio root. Complete powered teardown and
+//! long-running PHY maintenance remain separate requirements.
+//!
+//! See `FEATURES.md` for the implementation frontier and ordered closure plan.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -71,6 +31,7 @@ mod ble_phy;
 mod clock;
 #[cfg(target_arch = "riscv32")]
 mod common_phy_state;
+mod connectable_advertising;
 #[cfg(any(target_arch = "riscv32", test))]
 mod controller_hal;
 mod controller_start;
@@ -116,11 +77,31 @@ mod legacy_advertising;
 #[cfg(target_arch = "riscv32")]
 mod legacy_advertising_active;
 #[cfg(target_arch = "riscv32")]
+mod legacy_advertising_completion;
+#[cfg(target_arch = "riscv32")]
 mod legacy_advertising_recurring;
 #[cfg(target_arch = "riscv32")]
 mod legacy_advertising_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod legacy_advertising_timing;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_active;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_completion;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_hci;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_recurring;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_recurring_hci;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_recurring_hci_state;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_advertising_runner;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_peripheral_first_hci;
+#[cfg(target_arch = "riscv32")]
+mod legacy_connectable_peripheral_start_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod low_power;
 mod modem_lp_timer_queue;
@@ -136,6 +117,8 @@ mod passive_scanning_runner;
 mod passive_scanning_timing;
 mod peripheral_connection;
 #[cfg(target_arch = "riscv32")]
+mod peripheral_connection_completion;
+#[cfg(target_arch = "riscv32")]
 mod phy;
 mod primary_interrupt;
 mod resources;
@@ -149,6 +132,8 @@ mod scheduler_lock_modify;
 mod scheduler_time;
 #[cfg(any(target_arch = "riscv32", test))]
 mod scheduler_timeline;
+#[cfg(any(test, target_arch = "riscv32"))]
+mod single_item_completion;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub mod validation;
@@ -169,16 +154,13 @@ pub use common_phy_state::{
     BluetoothControllerPhyInitialized, BluetoothControllerPhyRegistered,
     BluetoothPhyInitializationReport,
 };
+pub use connectable_advertising::BluetoothLegacyConnectableAdvertisingRuntimeResources;
 #[cfg(target_arch = "riscv32")]
 pub use controller_hal::BluetoothControllerHalInitialized;
 #[cfg(target_arch = "riscv32")]
 pub use controller_start::peripheral_connection::{
     BluetoothPeripheralConnectionCompletionStep,
     BluetoothPeripheralConnectionControllerPreparationError,
-    BluetoothPeripheralConnectionControllerPreparationOutcome,
-    BluetoothPeripheralConnectionControllerPreparationPending,
-    BluetoothPeripheralConnectionControllerPreparationStep,
-    BluetoothPeripheralConnectionControllerPreparationTerminal,
     BluetoothPeripheralConnectionRecurringCandidateStep,
     BluetoothPeripheralConnectionRecurringRetry,
     BluetoothPeripheralConnectionRecurringSequenceCompletion,
@@ -210,26 +192,26 @@ pub use controller_start::{
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmPostUnlinkArmStep,
     BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedStep,
     BluetoothInterruptOwnerStorage, BluetoothLePacketStartTimingError,
+    BluetoothLegacyAdvertisingControllerCancellationPending,
+    BluetoothLegacyAdvertisingControllerCancellationStep,
     BluetoothLegacyAdvertisingControllerPreparationError,
+    BluetoothLegacyAdvertisingControllerPreparationFailStop,
+    BluetoothLegacyAdvertisingControllerPreparationFailStopCause,
     BluetoothLegacyAdvertisingControllerPreparationOutcome,
     BluetoothLegacyAdvertisingControllerPreparationPending,
     BluetoothLegacyAdvertisingControllerPreparationStep,
     BluetoothLegacyAdvertisingControllerPreparationTerminal,
-    BluetoothLegacyAdvertisingPostUnlinkArmStep, BluetoothLegacyAdvertisingSchedulerStartFailure,
-    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep,
-    BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
-    BluetoothPassiveScanControllerPreparationError,
+    BluetoothLegacyAdvertisingSchedulerStartFailure, BluetoothModemLpTimerInterruptDispatchStorage,
+    BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothPassiveScanControllerCancellationPending,
+    BluetoothPassiveScanControllerCancellationStep, BluetoothPassiveScanControllerPreparationError,
+    BluetoothPassiveScanControllerPreparationFailStop,
+    BluetoothPassiveScanControllerPreparationFailStopCause,
     BluetoothPassiveScanControllerPreparationOutcome,
     BluetoothPassiveScanControllerPreparationPending,
     BluetoothPassiveScanControllerPreparationStep,
-    BluetoothPassiveScanControllerPreparationTerminal, BluetoothPassiveScanPostUnlinkArmStep,
-    BluetoothPassiveScanSchedulerStartFailure,
-    BluetoothPassiveScanSoftwareListRemovalPublishedStep,
-    BluetoothPeripheralConnectionPostUnlinkArmStep,
-    BluetoothPeripheralConnectionRecurringSchedulerStartFailure,
-    BluetoothPeripheralConnectionSchedulerStartFailure,
-    BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep,
-    BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
+    BluetoothPassiveScanControllerPreparationTerminal, BluetoothPassiveScanSchedulerStartFailure,
+    BluetoothPeripheralConnectionSchedulerStartFailure, BluetoothSchedulerRunInterruptStorage,
+    BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use controller_time::{
@@ -284,13 +266,7 @@ pub use dtm_payload::{
     BluetoothDtmPayloadPreparationError, BluetoothDtmPreparedPayload,
 };
 #[cfg(target_arch = "riscv32")]
-pub use dtm_post_unlink::{
-    BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep,
-    BluetoothLegacyAdvertisingPostUnlinkAwaiting, BluetoothLegacyAdvertisingPostUnlinkCancelStep,
-    BluetoothPassiveScanPostUnlinkAwaiting, BluetoothPassiveScanPostUnlinkCancelStep,
-    BluetoothPeripheralConnectionPostUnlinkAwaiting,
-    BluetoothPeripheralConnectionPostUnlinkCancelStep,
-};
+pub use dtm_post_unlink::BluetoothPostUnlinkAwaiting;
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
     BluetoothPrimaryOrdinaryPublication, BluetoothPrimarySerializedServiceStep,
@@ -366,9 +342,11 @@ pub use interrupt_classifier::{
 pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
 };
+#[cfg(target_arch = "riscv32")]
+pub(crate) use legacy_advertising::BluetoothLegacyAdvertisingCancelledRestoreOutcome;
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingCancelled, BluetoothLegacyAdvertisingDefaultTxPowerDbm,
-    BluetoothLegacyAdvertisingLinkStateReset, BluetoothLegacyAdvertisingLinkStateResetError,
+    BluetoothLegacyAdvertisingLinkStateReset, BluetoothLegacyAdvertisingLinkStateResetOutcome,
     BluetoothLegacyAdvertisingPreparationError, BluetoothLegacyAdvertisingPreparationErrorKind,
     BluetoothLegacyAdvertisingPrepared, BluetoothLegacyAdvertisingRuntimeBeginError,
     BluetoothLegacyAdvertisingRuntimeResources, BluetoothLegacyAdvertisingSetError,
@@ -385,7 +363,7 @@ pub use legacy_advertising::{
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising::{
     BluetoothLegacyAdvertisingFirstEventCandidate,
-    BluetoothLegacyAdvertisingFirstEventTimingFailure,
+    BluetoothLegacyAdvertisingFirstEventCandidateOutcome,
 };
 #[cfg(target_arch = "riscv32")]
 pub use legacy_advertising_active::{
@@ -437,10 +415,143 @@ pub use legacy_advertising_runner::{
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingEventPhase;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingEventWindow;
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use legacy_advertising_timing::BluetoothLegacyAdvertisingRecurringTimingObservation;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use legacy_advertising_timing::BluetoothLegacyAdvertisingTimingObservation;
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_active::{
+    BluetoothLegacyConnectableAdvertisingActiveFailStop,
+    BluetoothLegacyConnectableAdvertisingActiveFailStopCause,
+    BluetoothLegacyConnectableAdvertisingActiveSession,
+    BluetoothLegacyConnectableAdvertisingActiveWait,
+    BluetoothLegacyConnectableAdvertisingAwaitingPeripheralStart,
+    BluetoothLegacyConnectableAdvertisingAwaitingRecurrence,
+    BluetoothLegacyConnectableAdvertisingRadioContinuations,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_hci::{
+    BluetoothLegacyConnectableAdvertisingActivePendingFailStop,
+    BluetoothLegacyConnectableAdvertisingActiveResponsePending,
+    BluetoothLegacyConnectableAdvertisingActiveResponsePublication,
+    BluetoothLegacyConnectableAdvertisingCommandIntake,
+    BluetoothLegacyConnectableAdvertisingCommandMismatch,
+    BluetoothLegacyConnectableAdvertisingCommandRoute,
+    BluetoothLegacyConnectableAdvertisingConnectionAcceptedReady,
+    BluetoothLegacyConnectableAdvertisingConnectionAcceptedResponsePending,
+    BluetoothLegacyConnectableAdvertisingConnectionAcceptedResponsePublication,
+    BluetoothLegacyConnectableAdvertisingConnectionAcceptedStopping,
+    BluetoothLegacyConnectableAdvertisingHciActiveFailStop,
+    BluetoothLegacyConnectableAdvertisingHciActiveSession,
+    BluetoothLegacyConnectableAdvertisingHciActiveStep,
+    BluetoothLegacyConnectableAdvertisingNoConnectionReady,
+    BluetoothLegacyConnectableAdvertisingNoConnectionResponsePending,
+    BluetoothLegacyConnectableAdvertisingNoConnectionResponsePublication,
+    BluetoothLegacyConnectableAdvertisingNoConnectionStopping,
+    BluetoothLegacyConnectableAdvertisingStopKind, BluetoothLegacyConnectableAdvertisingStopOrder,
+    BluetoothLegacyConnectableAdvertisingStopping,
+    BluetoothLegacyConnectableAdvertisingStoppingFailStop,
+    BluetoothLegacyConnectableAdvertisingStoppingStep,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_recurring::{
+    BluetoothLegacyConnectableAdvertisingRecurrenceCancellationPending,
+    BluetoothLegacyConnectableAdvertisingRecurrenceCancelled,
+    BluetoothLegacyConnectableAdvertisingRecurrenceCandidate,
+    BluetoothLegacyConnectableAdvertisingRecurrenceGraphPrepared,
+    BluetoothLegacyConnectableAdvertisingRecurrenceMerged,
+    BluetoothLegacyConnectableAdvertisingRecurrencePrepared,
+    BluetoothLegacyConnectableAdvertisingRecurrenceScheduled,
+    BluetoothLegacyConnectableAdvertisingRecurrenceSequencePending,
+    BluetoothLegacyConnectableAdvertisingRecurrenceSequenceReady,
+    BluetoothLegacyConnectableAdvertisingRecurringFailStop,
+    BluetoothLegacyConnectableAdvertisingRecurringFailStopCause,
+    BluetoothLegacyConnectableAdvertisingRecurringRetry,
+    BluetoothLegacyConnectableAdvertisingRecurringRetryCause,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_recurring_hci::{
+    BluetoothLegacyConnectableAdvertisingRecurringCommandHandler,
+    BluetoothLegacyConnectableAdvertisingRecurringCommandMismatch,
+    BluetoothLegacyConnectableAdvertisingRecurringCommandReady,
+    BluetoothLegacyConnectableAdvertisingRecurringForwardOrder,
+    BluetoothLegacyConnectableAdvertisingRecurringHci,
+    BluetoothLegacyConnectableAdvertisingRecurringHciCancellationPending,
+    BluetoothLegacyConnectableAdvertisingRecurringHciFailStop,
+    BluetoothLegacyConnectableAdvertisingRecurringHciRetry,
+    BluetoothLegacyConnectableAdvertisingRecurringResponsePending,
+    BluetoothLegacyConnectableAdvertisingRecurringStopping,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_advertising_runner::{
+    BluetoothLegacyConnectableAdvertisingAtomicStartFailStopCause,
+    BluetoothLegacyConnectableAdvertisingConfigurationError,
+    BluetoothLegacyConnectableAdvertisingFirstRunner,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerFailStop,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerFailStopCause,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerFailure,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerRecovered,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerRecoveredError,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerRetry,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerRetryCause,
+    BluetoothLegacyConnectableAdvertisingFirstRunnerStep,
+    BluetoothLegacyConnectableAdvertisingFirstRunning,
+    BluetoothLegacyConnectableAdvertisingPreparationFailStopCause,
+    BluetoothLegacyConnectableAdvertisingResponsePending,
+    BluetoothLegacyConnectableAdvertisingResponsePublication,
+    BluetoothLegacyConnectableAdvertisingRollbackFailStopCause,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_peripheral_first_hci::{
+    BluetoothLegacyConnectablePeripheralFirstHciAxis,
+    BluetoothLegacyConnectablePeripheralFirstHciFailStop,
+    BluetoothLegacyConnectablePeripheralFirstHciProgress,
+    BluetoothLegacyConnectablePeripheralFirstHciRecovered,
+    BluetoothLegacyConnectablePeripheralFirstHciResetEvidence,
+    BluetoothLegacyConnectablePeripheralFirstHciResetFailStop,
+    BluetoothLegacyConnectablePeripheralFirstHciResetFailStopCause,
+    BluetoothLegacyConnectablePeripheralFirstHciResetOutcome,
+    BluetoothLegacyConnectablePeripheralFirstHciResetReady,
+    BluetoothLegacyConnectablePeripheralFirstHciResponsePublication,
+    BluetoothLegacyConnectablePeripheralFirstHciResponseWait,
+    BluetoothLegacyConnectablePeripheralFirstHciRetry,
+    BluetoothLegacyConnectablePeripheralFirstHciRunner,
+    BluetoothLegacyConnectablePeripheralFirstHciRunning,
+    BluetoothLegacyConnectablePeripheralFirstHciRunningOrder,
+    BluetoothLegacyConnectablePeripheralFirstHciStep,
+    BluetoothLegacyConnectablePeripheralFirstHciStoppingStep,
+};
+#[cfg(target_arch = "riscv32")]
+pub use legacy_connectable_peripheral_start_runner::{
+    BluetoothLegacyConnectablePeripheralFirstBeginStep,
+    BluetoothLegacyConnectablePeripheralFirstCompleted,
+    BluetoothLegacyConnectablePeripheralFirstCompletionFailStop,
+    BluetoothLegacyConnectablePeripheralFirstCompletionFailStopCause,
+    BluetoothLegacyConnectablePeripheralFirstCurrentFailStop,
+    BluetoothLegacyConnectablePeripheralFirstFailStop,
+    BluetoothLegacyConnectablePeripheralFirstFailStopCause,
+    BluetoothLegacyConnectablePeripheralFirstHeadPublished,
+    BluetoothLegacyConnectablePeripheralFirstNormalizationUnavailable,
+    BluetoothLegacyConnectablePeripheralFirstPreparationFailStop,
+    BluetoothLegacyConnectablePeripheralFirstPreparationPending,
+    BluetoothLegacyConnectablePeripheralFirstPreparationStep,
+    BluetoothLegacyConnectablePeripheralFirstPrepared,
+    BluetoothLegacyConnectablePeripheralFirstPublicationFailStop,
+    BluetoothLegacyConnectablePeripheralFirstPublicationStep,
+    BluetoothLegacyConnectablePeripheralFirstRecovered,
+    BluetoothLegacyConnectablePeripheralFirstRecycleFailStop,
+    BluetoothLegacyConnectablePeripheralFirstRecycleFailStopCause,
+    BluetoothLegacyConnectablePeripheralFirstRetry,
+    BluetoothLegacyConnectablePeripheralFirstRetryCause,
+    BluetoothLegacyConnectablePeripheralFirstRetryStep,
+    BluetoothLegacyConnectablePeripheralFirstRunStep,
+    BluetoothLegacyConnectablePeripheralFirstRunner,
+    BluetoothLegacyConnectablePeripheralFirstRunnerStep,
+    BluetoothLegacyConnectablePeripheralFirstRunning,
+    BluetoothLegacyConnectablePeripheralFirstRunningContinuations,
+    BluetoothLegacyConnectablePeripheralFirstRunningEvidence,
+    BluetoothLegacyConnectablePeripheralFirstRunningWait,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use low_power::{
     BluetoothControllerLowPowerHardwareInitializationFailure,
@@ -505,8 +616,9 @@ pub use passive_scanning_hci::{
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_runner::{
     BluetoothPassiveScanFirstRunner, BluetoothPassiveScanFirstRunnerFailure,
-    BluetoothPassiveScanFirstRunnerRetry, BluetoothPassiveScanFirstRunnerRetryCause,
-    BluetoothPassiveScanFirstRunnerStep, BluetoothPassiveScanFirstRunning,
+    BluetoothPassiveScanFirstRunnerPublicationFailStop, BluetoothPassiveScanFirstRunnerRetry,
+    BluetoothPassiveScanFirstRunnerRetryCause, BluetoothPassiveScanFirstRunnerStep,
+    BluetoothPassiveScanFirstRunning,
 };
 #[cfg(target_arch = "riscv32")]
 pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
@@ -562,27 +674,10 @@ pub use scheduler::{
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerRecycleStep,
     BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
     BluetoothDtmSchedulerSoftwareListUnlinked,
-    BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved,
-    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep,
     BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure,
     BluetoothLegacyAdvertisingSchedulerHeadPublished,
-    BluetoothLegacyAdvertisingSchedulerRecycleStep, BluetoothLegacyAdvertisingSchedulerRecycled,
-    BluetoothLegacyAdvertisingSchedulerRunning,
-    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalJoin,
-    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady,
-    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalRecheck,
-    BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinkStep,
-    BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked,
-    BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved,
-    BluetoothPassiveScanSchedulerHardwareHeadRetirementStep,
     BluetoothPassiveScanSchedulerHeadPublicationFailure,
-    BluetoothPassiveScanSchedulerHeadPublished, BluetoothPassiveScanSchedulerRecycleStep,
-    BluetoothPassiveScanSchedulerRecycled, BluetoothPassiveScanSchedulerRunning,
-    BluetoothPassiveScanSchedulerSoftwareListRemovalJoin,
-    BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
-    BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck,
-    BluetoothPassiveScanSchedulerSoftwareListUnlinkStep,
-    BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    BluetoothPassiveScanSchedulerHeadPublished,
     BluetoothPeripheralConnectionRecurringCandidateError,
     BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
     BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
@@ -592,15 +687,9 @@ pub use scheduler::{
     BluetoothPeripheralConnectionRecurringEventPrepared,
     BluetoothPeripheralConnectionRecurringPreSequence,
     BluetoothPeripheralConnectionSchedulerCompleted,
-    BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
-    BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,
     BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
     BluetoothPeripheralConnectionSchedulerHeadPublished,
-    BluetoothPeripheralConnectionSchedulerRecycleStep,
-    BluetoothPeripheralConnectionSchedulerRecycled, BluetoothPeripheralConnectionSchedulerRunning,
-    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
-    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep,
-    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
+    BluetoothPeripheralConnectionSchedulerRecycled,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{
@@ -608,19 +697,8 @@ pub use scheduler::{
     BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerRunningDrainStep,
     BluetoothLegacyAdvertisingRecurringEventPreparationError,
     BluetoothLegacyAdvertisingRecurringEventPreparationFailure,
-    BluetoothLegacyAdvertisingRecurringPreSequence,
-    BluetoothLegacyAdvertisingSchedulerCompletionObserved,
-    BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep,
-    BluetoothLegacyAdvertisingSchedulerCompletionStep,
-    BluetoothLegacyAdvertisingSchedulerRunningDrainStep,
-    BluetoothPassiveScanSchedulerCompletionObserved,
-    BluetoothPassiveScanSchedulerCompletionObservedDrainStep,
-    BluetoothPassiveScanSchedulerCompletionStep, BluetoothPassiveScanSchedulerRunningDrainStep,
-    BluetoothPeripheralConnectionSchedulerCompletionObserved,
-    BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep,
-    BluetoothPeripheralConnectionSchedulerCompletionStep,
-    BluetoothPeripheralConnectionSchedulerRunningDrainStep,
-    BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
+    BluetoothLegacyAdvertisingRecurringPreSequence, BluetoothSchedulerFinishedListDrainPending,
+    BluetoothSchedulerFinishedListDrainState,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{

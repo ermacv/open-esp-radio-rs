@@ -323,6 +323,20 @@ to be zero. There is not yet a typed chip source for a later nonzero
 accumulation or for the automatic-widening mode, so either state must fail
 closed rather than entering timing as an unreviewed integer or raw mode flag.
 
+### Unresolved anchor-location evidence discrepancy
+
+The historical interpretation below conflicts with the current implementation.
+`peripheral_connection_memory/codec.rs` writes `LINK_STATE_EVENT_SPAN` in the
+link-state object, but reads `SCHEDULER_ITEM_CAPTURED_ANCHOR` in the scheduler
+item after observing its capture-available status. Both offsets happen to be
+`+0x34`; the base objects are different. The current implementation does not
+model them as one input/output word. Recheck the base-pointer provenance in the
+pinned first-event, reschedule and recycle functions before using the historical
+interpretation as proof of anchor normalization. No hardware qualification
+claim follows from either this note or the current codec alone.
+
+Historical interpretation pending that review:
+
 The link-state timing word at the reviewed `+0x34` position is a hardware
 input/output location, not an ordinary persistent field. Current
 `r_sym_ble_DCD5eVhcHQ9ueSpewKn1` and named `ble_lll_conn_slave_new` write the
@@ -337,7 +351,7 @@ Controller microseconds and removes two PHY-mode calibration terms to recover
 an on-air packet-start reference. The CPU does not write the location between
 publication and this read.
 
-The memory API now models that reuse as three ownership phases: required
+The previous interpretation modeled that reuse as three ownership phases: required
 semantic event-span input while CPU-owned, hardware-owned storage after RUN,
 and an opaque captured-anchor observation after fenced removal. The raw word
 and its positional reuse remain private to the codec. The capture is not the

@@ -165,16 +165,18 @@ impl<'a> BluetoothLegacyConnectableAdvertisingMemoryInput<'a> {
     }
 }
 
-/// Exact vendor-derived `END - START` span for one response-capable LE 1M item.
+/// Vendor-derived duration after the nominal advertising anchor.
 ///
-/// This is a scheduler-item field value, not proof of the complete RX/response
-/// window or of safe RF overlap. Controller ownership must remain exclusive
-/// until a separately observed terminal completion.
+/// The duration contains the ADV_IND LE 1M airtime and the opaque four-
+/// microsecond response-capable item tail. It excludes the scheduler
+/// preparation lead, so it is not the complete `END - START` reservation and
+/// does not claim that the RF response window has ended. Controller ownership
+/// must remain exclusive until a separately observed terminal completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothLegacyConnectableAdvertisingSchedulerSpan(u32);
+pub struct BluetoothLegacyConnectableAdvertisingPostAnchorDuration(u32);
 
-impl BluetoothLegacyConnectableAdvertisingSchedulerSpan {
-    /// Scheduler-item span in microseconds before controller-epoch projection.
+impl BluetoothLegacyConnectableAdvertisingPostAnchorDuration {
+    /// Post-anchor duration in microseconds before controller-epoch projection.
     pub const fn as_micros(self) -> u32 {
         self.0
     }
@@ -319,8 +321,8 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned {
             .project()
             .graph
             .prepare_pdus(input.adv_ind.0, input.scan_response.0);
-        let scheduler_span =
-            codec::response_capable_scheduler_span(input.adv_ind.0.payload_bytes());
+        let post_anchor_duration =
+            codec::response_capable_post_anchor_duration(input.adv_ind.0.payload_bytes());
         self.storage.as_ref().get_ref().graph.prepare_profile(
             &self.binding,
             pool.head(),
@@ -336,7 +338,7 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned {
             adv_ind_length,
             scan_response_length,
             primary_channel: input.primary_channel,
-            scheduler_span,
+            post_anchor_duration,
         })
     }
 }
@@ -350,7 +352,7 @@ pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
     adv_ind_length: AdvertisingTxPacketLength,
     scan_response_length: AdvertisingTxPacketLength,
     primary_channel: BluetoothLegacyAdvertisingPrimaryChannel,
-    scheduler_span: BluetoothLegacyConnectableAdvertisingSchedulerSpan,
+    post_anchor_duration: BluetoothLegacyConnectableAdvertisingPostAnchorDuration,
 }
 
 impl BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
@@ -366,8 +368,10 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
         self.primary_channel
     }
 
-    pub const fn scheduler_span(&self) -> BluetoothLegacyConnectableAdvertisingSchedulerSpan {
-        self.scheduler_span
+    pub const fn post_anchor_duration(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingPostAnchorDuration {
+        self.post_anchor_duration
     }
 
     pub fn adv_ind_pdu(&self) -> &[u8] {
@@ -942,6 +946,16 @@ pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
 }
 
 impl BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
+    /// Stable graph identity retained while hardware owns the event.
+    pub const fn identity(&self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity {
+        self.prepared.identity()
+    }
+
+    /// Stable receive-pool identity retained while hardware owns the event.
+    pub const fn receive_identity(&self) -> BluetoothNonScanningRxMemoryIdentity {
+        self.prepared.receive_identity()
+    }
+
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.prepared.binding.scheduler_item_address()
     }
@@ -986,6 +1000,18 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
             .get_ref()
             .graph
             .model_controller_completion(status);
+    }
+
+    #[cfg(test)]
+    fn model_controller_receive(&self, index: usize, pdu: &[u8], rssi_dbm: i8, captured_time: u32) {
+        self.prepared
+            .pool
+            .model_controller_receive(index, pdu, rssi_dbm, captured_time);
+    }
+
+    #[cfg(test)]
+    fn model_controller_discard(&self, index: usize) {
+        self.prepared.pool.model_controller_discard(index);
     }
 }
 
@@ -1230,7 +1256,7 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtracted {
             adv_ind_length: _,
             scan_response_length: _,
             primary_channel: _,
-            scheduler_span: _,
+            post_anchor_duration: _,
         } = prepared;
         let mut owner =
             BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned { storage, binding };
@@ -1255,6 +1281,43 @@ pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
 }
 
 impl BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
+    /// Stable identity of the reclaimed advertising graph.
+    pub const fn identity(&self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity {
+        self.owner.identity()
+    }
+
+    /// Stable identity of the rearmed non-scanning receive pool.
+    pub const fn receive_identity(&self) -> BluetoothNonScanningRxMemoryIdentity {
+        self.pool.identity()
+    }
+
+    /// Admit the copied batch to role-specific Link Layer dispatch.
+    ///
+    /// A completed observation rejected by the private controller-result gate
+    /// has no PDU bytes. It might have been a connection request, so the memory
+    /// boundary must not silently reinterpret it as an event with no connection.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the complete reclaimed affine graph"
+    )]
+    pub fn prepare_rx_dispatch(
+        self,
+    ) -> Result<
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchPrepared,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchBlocked,
+    > {
+        let discarded = self.batch.discarded_count();
+        if discarded != 0 {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchBlocked {
+                    recycled: self,
+                    discarded,
+                },
+            );
+        }
+        Ok(BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchPrepared { recycled: self })
+    }
+
     pub fn into_parts(
         self,
     ) -> (
@@ -1264,6 +1327,67 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
         BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
     ) {
         (self.owner, self.pool, self.batch, self.status)
+    }
+}
+
+/// Reclaimed memory whose every completed receive observation has PDU bytes.
+///
+/// This type does not parse Bluetooth wire semantics. It only proves that the
+/// role layer can inspect every completed observation before choosing an event
+/// outcome.
+#[must_use = "dispatch every copied PDU before returning the two memory owners"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchPrepared {
+    recycled: BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchPrepared {
+    pub const fn batch(&self) -> BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
+        self.recycled.batch
+    }
+
+    pub const fn status(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus {
+        self.recycled.status
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
+        BluetoothNonScanningRxMemoryCpuOwned,
+        BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+        BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    ) {
+        self.recycled.into_parts()
+    }
+}
+
+/// Indeterminate receive result retaining the complete reclaimed memory owner.
+#[must_use = "a missing PDU cannot be classified as no connection"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchBlocked {
+    recycled: BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled,
+    discarded: usize,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchBlocked {
+    /// Number of completed observations for which no PDU was dispatchable.
+    pub const fn discarded_count(&self) -> usize {
+        self.discarded
+    }
+
+    /// Recover the unchanged reclaimed graph for sealed fail-stop ownership.
+    pub fn into_recycled(self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
+        self.recycled
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchBlocked {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyConnectableAdvertisingMemoryGraphRxDispatchBlocked")
+            .field("discarded", &self.discarded)
+            .finish_non_exhaustive()
     }
 }
 
@@ -1519,6 +1643,7 @@ mod tests {
         assert_eq!(prepared.receive_identity(), pool_identity);
         assert_eq!(prepared.adv_ind_pdu(), &ADV_IND_PDU);
         assert_eq!(prepared.scan_response_pdu(), &SCAN_RESPONSE_PDU);
+        assert_eq!(prepared.post_anchor_duration().as_micros(), 156);
         assert_eq!(
             prepared.primary_channel(),
             BluetoothLegacyAdvertisingPrimaryChannel::Channel37
@@ -1682,6 +1807,83 @@ mod tests {
             status,
             BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero
         );
+    }
+
+    #[test]
+    fn copied_receive_batch_is_admitted_to_role_dispatch_after_reclamation() {
+        let (running, graph_identity, pool_identity) = running(0x2f00_3500, 0x2f00_7500);
+        let scheduler_item = running.scheduler_item_address();
+        let received = [0x03, 6, 1, 2, 3, 4, 5, 6];
+        running.model_controller_receive(0, &received, -31, 12_345);
+        running.model_controller_completion(
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        );
+        let completed = match running.observe_completion(finished_list(0)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the modeled event must complete"),
+        };
+        let recycled = completed
+            .prepare_recycle_after_software_list_removal(removal_ready(
+                BluetoothSchedulerHardwareListIndex::ZERO,
+                scheduler_item,
+            ))
+            .unwrap_or_else(|_| panic!("the exact removal proof must authorize reclamation"))
+            .extract_received()
+            .unwrap_or_else(|_| panic!("the completed receive node must be extractable"))
+            .commit();
+
+        let dispatch = recycled
+            .prepare_rx_dispatch()
+            .unwrap_or_else(|_| panic!("every completed observation retains its PDU"));
+        assert_eq!(dispatch.batch().len(), 1);
+        assert_eq!(
+            dispatch.batch().packet(0).map(|packet| packet.as_bytes()),
+            Some(received.as_slice())
+        );
+        let (owner, pool, _, status) = dispatch.into_parts();
+        assert_eq!(owner.identity(), graph_identity);
+        assert_eq!(pool.identity(), pool_identity);
+        assert!(pool.is_initialized());
+        assert_eq!(
+            status,
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero
+        );
+    }
+
+    #[test]
+    fn discarded_receive_observation_cannot_become_no_connection() {
+        let (running, graph_identity, pool_identity) = running(0x2f00_3600, 0x2f00_7600);
+        let scheduler_item = running.scheduler_item_address();
+        running.model_controller_discard(0);
+        running.model_controller_completion(
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
+        );
+        let completed = match running.observe_completion(finished_list(0)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the modeled event must complete"),
+        };
+        let recycled = completed
+            .prepare_recycle_after_software_list_removal(removal_ready(
+                BluetoothSchedulerHardwareListIndex::ZERO,
+                scheduler_item,
+            ))
+            .unwrap_or_else(|_| panic!("the exact removal proof must authorize reclamation"))
+            .extract_received()
+            .unwrap_or_else(|_| panic!("a hardware discard is a bounded receive observation"))
+            .commit();
+
+        let blocked = match recycled.prepare_rx_dispatch() {
+            Ok(_) => panic!("missing PDU bytes must not reach role dispatch"),
+            Err(blocked) => blocked,
+        };
+        assert_eq!(blocked.discarded_count(), 1);
+        let recycled = blocked.into_recycled();
+        assert_eq!(recycled.identity(), graph_identity);
+        assert_eq!(recycled.receive_identity(), pool_identity);
     }
 
     #[test]

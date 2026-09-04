@@ -177,7 +177,7 @@ impl BluetoothPassiveScanRuntimeResources {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn restore_recycled(
         &mut self,
-        recycled: crate::BluetoothPassiveScanSchedulerRecycled,
+        recycled: crate::scheduler::BluetoothPassiveScanSchedulerRecycled,
     ) -> Result<
         (
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedBatch,

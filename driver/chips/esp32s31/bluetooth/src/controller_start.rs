@@ -1,9 +1,23 @@
 //! Controller-output and runtime-timer activation after BLE PHY initialization.
 
 #[cfg(target_arch = "riscv32")]
+pub(crate) mod connectable_advertising;
+#[cfg(target_arch = "riscv32")]
 pub(crate) mod peripheral_connection;
 #[cfg(target_arch = "riscv32")]
 mod scheduler_service;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use scheduler_service::single_item::BluetoothSingleItemSchedulerCompletionFaultOwner;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod timed_preparation;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use scheduler_service::connectable_advertising::{
+    BluetoothLegacyConnectableAdvertisingSchedulerFailStop,
+    BluetoothLegacyConnectableAdvertisingSchedulerFailStopCause,
+    BluetoothLegacyConnectableAdvertisingSchedulerStartRetry,
+    BluetoothLegacyConnectableAdvertisingSchedulerStartRetryError,
+    BluetoothLegacyConnectableAdvertisingSchedulerStartStep,
+};
 
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -26,21 +40,13 @@ use crate::controller_time::{
 };
 #[cfg(target_arch = "riscv32")]
 use crate::dtm_post_unlink::{
-    BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkMailbox, BluetoothDtmPostUnlinkRearm,
-    BluetoothDtmPostUnlinkTake, BluetoothLegacyAdvertisingPostUnlinkRearm,
-    BluetoothLegacyAdvertisingPostUnlinkTake, BluetoothPassiveScanPostUnlinkRearm,
-    BluetoothPassiveScanPostUnlinkTake, BluetoothPeripheralConnectionPostUnlinkRearm,
-    BluetoothPeripheralConnectionPostUnlinkTake,
+    BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkMailbox, BluetoothPostUnlinkRearm,
+    BluetoothPostUnlinkTake,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::modem_lp_timer_queue::{
     BluetoothModemLpTimerExpirationState, BluetoothModemLpTimerSoftwareState,
     BluetoothModemLpTimerSoftwareStateStep,
-};
-#[cfg(target_arch = "riscv32")]
-use crate::scheduler::{
-    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
-    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
@@ -246,20 +252,6 @@ pub struct BluetoothPeripheralConnectionSchedulerStartFailure<E> {
     head: crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
 }
 
-/// Recurring connection rejection before the atomic LL/phase commit.
-#[must_use = "the exact recurring merge remains cancellable and retryable"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionRecurringSchedulerStartFailure<E> {
-    Validation {
-        error: crate::BluetoothSchedulerHeadPublicationError,
-        merged: crate::scheduler::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
-    },
-    Interrupts {
-        error: E,
-        merged: crate::scheduler::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
-    },
-}
-
 #[cfg(target_arch = "riscv32")]
 impl<E> BluetoothPeripheralConnectionSchedulerStartFailure<E> {
     /// Inspect the stable interrupt-storage rejection.
@@ -325,7 +317,9 @@ impl<Role, E> BluetoothDtmSchedulerStartFailure<Role, E> {
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
     /// The supplied owner belongs to another mailbox identity or generation.
-    MailboxAffinityMismatch(crate::BluetoothDtmPostUnlinkAwaiting<Role>),
+    MailboxAffinityMismatch(
+        crate::BluetoothPostUnlinkAwaiting<crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>>,
+    ),
     /// The primary epoch reported a baseline or unclassified fault.
     Fault {
         /// Already-unlinked graph retained for fail-stop handling.
@@ -336,24 +330,32 @@ pub enum BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
     /// The acknowledged epoch contained no reviewed scheduler work.
     NoSchedulerWork {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
-        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
+        awaiting: crate::BluetoothPostUnlinkAwaiting<
+            crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        >,
         /// Exact acknowledged empty primary epoch.
         epoch: crate::BluetoothPrimaryNoSchedulerWork,
     },
     /// An interrupt-derived scheduler observation was not ready.
     PublishedPending {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
-        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
+        awaiting: crate::BluetoothPostUnlinkAwaiting<
+            crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        >,
     },
     /// A direct task-side scheduler observation was not ready.
     DirectPending {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
-        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
+        awaiting: crate::BluetoothPostUnlinkAwaiting<
+            crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        >,
     },
     /// The stable interrupt-register owner was unavailable for direct recheck.
     RecheckUnavailable {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
-        awaiting: crate::BluetoothDtmPostUnlinkAwaiting<Role>,
+        awaiting: crate::BluetoothPostUnlinkAwaiting<
+            crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        >,
     },
     /// An internal mailbox invariant rejected re-arm after an empty primary epoch.
     NoSchedulerWorkRearmMismatch {
@@ -396,183 +398,9 @@ pub enum BluetoothDtmPostUnlinkArmStep<Role> {
     GenerationExhausted(crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>),
     SchedulerIdentityMismatch(crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>),
     MailboxCommitMismatch(crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
-    Armed(crate::BluetoothDtmPostUnlinkAwaiting<Role>),
-}
-
-/// Result of atomically unlinking advertising and arming the return mailbox.
-#[must_use = "retain the empty-head graph or armed advertising owner"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothLegacyAdvertisingPostUnlinkArmStep<'a> {
-    MailboxBusy(crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>),
-    MailboxIdentityExhausted(
-        crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>,
+    Armed(
+        crate::BluetoothPostUnlinkAwaiting<crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>>,
     ),
-    GenerationExhausted(crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>),
-    SchedulerIdentityMismatch(
-        crate::BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'a>,
-    ),
-    MailboxCommitMismatch(crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>),
-    Armed(crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
-}
-
-/// Controller result of consuming one advertising post-unlink event pair.
-#[must_use = "every outcome retains the advertising graph"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep<'a> {
-    MailboxAffinityMismatch(crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>),
-    Fault {
-        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-        fault: crate::BluetoothPrimaryControllerFault,
-    },
-    NoSchedulerWork {
-        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
-        epoch: crate::BluetoothPrimaryNoSchedulerWork,
-    },
-    PublishedPending {
-        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
-    },
-    DirectPending {
-        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
-    },
-    RecheckUnavailable {
-        awaiting: crate::BluetoothLegacyAdvertisingPostUnlinkAwaiting<'a>,
-    },
-    NoSchedulerWorkRearmMismatch {
-        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-        epoch: crate::BluetoothPrimaryNoSchedulerWork,
-    },
-    PendingRearmMismatch {
-        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-    },
-    RecheckRearmMismatch {
-        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-    },
-    SchedulerIdentityMismatch {
-        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    },
-    DirectSchedulerIdentityMismatch {
-        unlinked: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListUnlinked<'a>,
-    },
-    Ready {
-        ready: crate::BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'a>,
-    },
-}
-
-/// Result of atomically unlinking a scanner item and arming the return mailbox.
-#[must_use = "retain the empty-head scanner graph or armed owner"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPassiveScanPostUnlinkArmStep {
-    MailboxBusy(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
-    MailboxIdentityExhausted(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
-    GenerationExhausted(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
-    SchedulerIdentityMismatch(crate::BluetoothPassiveScanSchedulerHardwareHeadEmptyObserved),
-    MailboxCommitMismatch(crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked),
-    Armed(crate::BluetoothPassiveScanPostUnlinkAwaiting),
-}
-
-/// Controller result of consuming one scanner post-unlink event pair.
-#[must_use = "every outcome retains the scanner graph"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPassiveScanSoftwareListRemovalPublishedStep {
-    MailboxAffinityMismatch(crate::BluetoothPassiveScanPostUnlinkAwaiting),
-    Fault {
-        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-        fault: crate::BluetoothPrimaryControllerFault,
-    },
-    NoSchedulerWork {
-        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
-        epoch: crate::BluetoothPrimaryNoSchedulerWork,
-    },
-    PublishedPending {
-        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
-    },
-    DirectPending {
-        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
-    },
-    RecheckUnavailable {
-        awaiting: crate::BluetoothPassiveScanPostUnlinkAwaiting,
-    },
-    NoSchedulerWorkRearmMismatch {
-        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-        epoch: crate::BluetoothPrimaryNoSchedulerWork,
-    },
-    PendingRearmMismatch {
-        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-    },
-    RecheckRearmMismatch {
-        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-    },
-    SchedulerIdentityMismatch {
-        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    },
-    DirectSchedulerIdentityMismatch {
-        unlinked: crate::BluetoothPassiveScanSchedulerSoftwareListUnlinked,
-    },
-    Ready {
-        ready: crate::BluetoothPassiveScanSchedulerSoftwareListRemovalReady,
-    },
-}
-
-/// Result of atomically unlinking a connection item and arming its return mailbox.
-#[must_use = "retain the empty-head connection graph or armed owner"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionPostUnlinkArmStep {
-    MailboxBusy(crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
-    MailboxIdentityExhausted(
-        crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
-    ),
-    GenerationExhausted(crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
-    SchedulerIdentityMismatch(
-        crate::BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
-    ),
-    MailboxCommitMismatch(crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
-    Armed(crate::BluetoothPeripheralConnectionPostUnlinkAwaiting),
-}
-
-/// Controller result of consuming one connection post-unlink event pair.
-#[must_use = "every outcome retains the connection graph"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep {
-    MailboxAffinityMismatch(crate::BluetoothPeripheralConnectionPostUnlinkAwaiting),
-    Fault {
-        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-        fault: crate::BluetoothPrimaryControllerFault,
-    },
-    NoSchedulerWork {
-        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
-        epoch: crate::BluetoothPrimaryNoSchedulerWork,
-    },
-    PublishedPending {
-        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
-    },
-    DirectPending {
-        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
-    },
-    RecheckUnavailable {
-        awaiting: crate::BluetoothPeripheralConnectionPostUnlinkAwaiting,
-    },
-    NoSchedulerWorkRearmMismatch {
-        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-        epoch: crate::BluetoothPrimaryNoSchedulerWork,
-    },
-    PendingRearmMismatch {
-        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-    },
-    RecheckRearmMismatch {
-        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-    },
-    SchedulerIdentityMismatch {
-        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    },
-    DirectSchedulerIdentityMismatch {
-        unlinked: crate::BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-    },
-    Ready {
-        ready: crate::BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
-    },
 }
 
 /// Stable state retained inside the disjoint source-127 task endpoint.
@@ -847,6 +675,8 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
     peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
+    legacy_connectable_advertising_resources:
+        crate::BluetoothLegacyConnectableAdvertisingRuntimeResources,
 }
 
 /// Hardware/task endpoints prepared after stable interrupt-owner publication.
@@ -1486,11 +1316,23 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             }
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartLegacyConnectableAdvertising(
                 deferred,
-            ) => crate::BluetoothControllerIdleCommandRoute::ResponsePending(
-                BluetoothControllerIdleResponsePending::new(
-                    deferred.into_hardware_failure_response(),
-                ),
-            ),
+            ) => {
+                let (task, deferred) = deferred.into_parts();
+                match crate::BluetoothLegacyConnectableAdvertisingFirstRunner::begin(
+                    task, deferred,
+                ) {
+                    Ok(runner) => {
+                        crate::BluetoothControllerIdleCommandRoute::StartLegacyConnectableAdvertising(
+                            runner,
+                        )
+                    }
+                    Err(failure) => {
+                        crate::BluetoothControllerIdleCommandRoute::LegacyConnectableAdvertisingStartFailed(
+                            failure,
+                        )
+                    }
+                }
+            }
             open_esp_radio_bluetooth_hci::LeControllerIdleClassifiedCommandRoute::StartLegacyScanning(
                 deferred,
             ) => {
@@ -1555,6 +1397,8 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     passive_scan_resources: &'runtime mut crate::BluetoothPassiveScanRuntimeResources,
     peripheral_connection_resources:
         &'runtime mut crate::BluetoothPeripheralConnectionRuntimeResources,
+    legacy_connectable_advertising_resources:
+        &'runtime mut crate::BluetoothLegacyConnectableAdvertisingRuntimeResources,
     direction_finding_workspace:
         open_esp_radio_esp32s31_bluetooth_memory::BluetoothDirectionFindingWorkspaceLink,
     ble_phy_timing: crate::ble_phy::BluetoothBlePhyTimingAuthority,
@@ -1976,12 +1820,104 @@ pub enum BluetoothControllerSchedulerCurrentStep<'runtime, S, const SCHEDULER_CA
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothLegacyAdvertisingControllerPreparationError {
     Set(crate::BluetoothLegacyAdvertisingSetError),
-    ControllerTime(crate::BluetoothControllerTimeAcquisitionError),
     Runtime(crate::BluetoothLegacyAdvertisingRuntimeBeginError),
     LinkState(open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingPduError),
     TimingWindow,
     Event(crate::BluetoothLegacyAdvertisingFirstEventPreparationError),
     EmptyList(crate::BluetoothSchedulerEmptyListMergeError),
+    Cancelled,
+}
+
+/// Permanent nonconnectable-advertising preparation fault.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingControllerPreparationFailStopCause {
+    ControllerTime {
+        error: crate::BluetoothControllerTimeAcquisitionError,
+        rollback_failed: bool,
+    },
+    RuntimeRestore,
+    PhaseOwnership,
+}
+
+#[cfg(target_arch = "riscv32")]
+enum BluetoothLegacyAdvertisingControllerPreparationFailStopState<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Initial {
+        _current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
+        _cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
+    },
+    Active {
+        _controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        _cancelled: Option<crate::BluetoothLegacyAdvertisingCancelled<'static>>,
+    },
+}
+
+/// Complete owner sealed after controller-time or runtime ownership diverged.
+#[must_use = "retain the permanently faulted Controller and advertising graph"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothLegacyAdvertisingControllerPreparationFailStop<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    cause: BluetoothLegacyAdvertisingControllerPreparationFailStopCause,
+    _state: BluetoothLegacyAdvertisingControllerPreparationFailStopState<
+        'runtime,
+        S,
+        SCHEDULER_CAPACITY,
+    >,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothLegacyAdvertisingControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>
+{
+    pub const fn cause(&self) -> BluetoothLegacyAdvertisingControllerPreparationFailStopCause {
+        self.cause
+    }
+
+    fn active(
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        cause: BluetoothLegacyAdvertisingControllerPreparationFailStopCause,
+        cancelled: Option<crate::BluetoothLegacyAdvertisingCancelled<'static>>,
+    ) -> Self {
+        Self {
+            cause,
+            _state: BluetoothLegacyAdvertisingControllerPreparationFailStopState::Active {
+                _controller: controller,
+                _cancelled: cancelled,
+            },
+        }
+    }
+
+    fn from_timed(
+        failure: timed_preparation::BluetoothTimedPreparationFailStop<
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+            crate::BluetoothLegacyAdvertisingCancelled<'static>,
+        >,
+    ) -> Self {
+        let timed_cause = failure.cause();
+        let (controller, cancelled) = failure.into_parts();
+        let cause = match timed_cause {
+            timed_preparation::BluetoothTimedPreparationFailStopCause::ControllerTime(error) => {
+                BluetoothLegacyAdvertisingControllerPreparationFailStopCause::ControllerTime {
+                    error,
+                    rollback_failed: cancelled.is_some(),
+                }
+            }
+            timed_preparation::BluetoothTimedPreparationFailStopCause::Rollback => {
+                BluetoothLegacyAdvertisingControllerPreparationFailStopCause::RuntimeRestore
+            }
+            timed_preparation::BluetoothTimedPreparationFailStopCause::PhaseOwnership => {
+                BluetoothLegacyAdvertisingControllerPreparationFailStopCause::PhaseOwnership
+            }
+        };
+        Self::active(controller, cause, cancelled)
+    }
 }
 
 /// Lossless failure while rebuilding one completed advertising event.
@@ -2036,17 +1972,6 @@ enum BluetoothLegacyAdvertisingControllerPreparationPhase {
     Sequence(crate::BluetoothLegacyAdvertisingFirstPreSequence<'static>),
 }
 
-#[cfg(target_arch = "riscv32")]
-struct BluetoothLegacyAdvertisingControllerPreparationTimeOwner<
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    phase: Option<BluetoothLegacyAdvertisingControllerPreparationPhase>,
-    cancelled: Option<BluetoothLegacyAdvertisingControllerPreparationOutcome>,
-}
-
 /// One exact post-enable timing, admission or sequence-time request.
 #[must_use = "recheck or explicitly cancel the exact advertising time request"]
 #[cfg(target_arch = "riscv32")]
@@ -2055,8 +1980,10 @@ pub struct BluetoothLegacyAdvertisingControllerPreparationPending<
     S,
     const SCHEDULER_CAPACITY: usize,
 > {
-    core: BluetoothControllerTimePendingCore<
-        BluetoothLegacyAdvertisingControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>,
+    timed: timed_preparation::BluetoothTimedPreparationPending<
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothLegacyAdvertisingControllerPreparationPhase,
+        crate::BluetoothLegacyAdvertisingCancelled<'static>,
     >,
 }
 
@@ -2100,6 +2027,9 @@ pub enum BluetoothLegacyAdvertisingControllerPreparationStep<
     Terminal(
         BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     ),
+    FailStop(
+        BluetoothLegacyAdvertisingControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -2112,8 +2042,39 @@ pub(crate) enum BluetoothLegacyAdvertisingControllerInitialPreparationFailure<
         current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothLegacyAdvertisingControllerPreparationError,
     },
-    Terminal(
+    FailStop(
+        BluetoothLegacyAdvertisingControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+}
+
+/// Cancelled advertising preparation awaiting the exact orphan completion.
+#[must_use = "drain the abandoned controller-time request before Controller reuse"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothLegacyAdvertisingControllerCancellationPending<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    timed: timed_preparation::BluetoothTimedPreparationCancellationPending<
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    >,
+}
+
+#[must_use = "retain Waiting, recovered Terminal, or sealed FailStop"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothLegacyAdvertisingControllerCancellationStep<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Waiting(
+        BluetoothLegacyAdvertisingControllerCancellationPending<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    Recovered(
         BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
+    FailStop(
+        BluetoothLegacyAdvertisingControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
     ),
 }
 
@@ -2121,11 +2082,98 @@ pub(crate) enum BluetoothLegacyAdvertisingControllerInitialPreparationFailure<
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothPassiveScanControllerPreparationError {
-    ControllerTime(crate::BluetoothControllerTimeAcquisitionError),
     Runtime(crate::BluetoothPassiveScanRuntimeBeginError),
     TimingWindow,
     Event(crate::BluetoothPassiveScanFirstEventPreparationError),
     EmptyList(crate::BluetoothSchedulerEmptyListMergeError),
+    Cancelled,
+}
+
+/// Permanent passive-scan preparation fault.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPassiveScanControllerPreparationFailStopCause {
+    ControllerTime {
+        error: crate::BluetoothControllerTimeAcquisitionError,
+        rollback_failed: bool,
+    },
+    RuntimeRestore,
+    PhaseOwnership,
+}
+
+#[cfg(target_arch = "riscv32")]
+enum BluetoothPassiveScanControllerPreparationFailStopState<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Active {
+        _controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        _graph: Option<
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+        >,
+    },
+}
+
+#[must_use = "retain the permanently faulted Controller and scanner graph"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPassiveScanControllerPreparationFailStop<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    cause: BluetoothPassiveScanControllerPreparationFailStopCause,
+    _state: BluetoothPassiveScanControllerPreparationFailStopState<'runtime, S, SCHEDULER_CAPACITY>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothPassiveScanControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>
+{
+    pub const fn cause(&self) -> BluetoothPassiveScanControllerPreparationFailStopCause {
+        self.cause
+    }
+
+    fn active(
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        cause: BluetoothPassiveScanControllerPreparationFailStopCause,
+        graph: Option<
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+        >,
+    ) -> Self {
+        Self {
+            cause,
+            _state: BluetoothPassiveScanControllerPreparationFailStopState::Active {
+                _controller: controller,
+                _graph: graph,
+            },
+        }
+    }
+
+    fn from_timed(
+        failure: timed_preparation::BluetoothTimedPreparationFailStop<
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+        >,
+    ) -> Self {
+        let timed_cause = failure.cause();
+        let (controller, graph) = failure.into_parts();
+        let cause = match timed_cause {
+            timed_preparation::BluetoothTimedPreparationFailStopCause::ControllerTime(error) => {
+                BluetoothPassiveScanControllerPreparationFailStopCause::ControllerTime {
+                    error,
+                    rollback_failed: graph.is_some(),
+                }
+            }
+            timed_preparation::BluetoothTimedPreparationFailStopCause::Rollback => {
+                BluetoothPassiveScanControllerPreparationFailStopCause::RuntimeRestore
+            }
+            timed_preparation::BluetoothTimedPreparationFailStopCause::PhaseOwnership => {
+                BluetoothPassiveScanControllerPreparationFailStopCause::PhaseOwnership
+            }
+        };
+        Self::active(controller, cause, graph)
+    }
 }
 
 /// Terminal result of one source-ordered first passive scanner preparation.
@@ -2158,17 +2206,6 @@ enum BluetoothPassiveScanControllerPreparationPhase {
     },
 }
 
-#[cfg(target_arch = "riscv32")]
-struct BluetoothPassiveScanControllerPreparationTimeOwner<
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    phase: Option<BluetoothPassiveScanControllerPreparationPhase>,
-    cancelled: Option<BluetoothPassiveScanControllerPreparationOutcome>,
-}
-
 /// One exact post-enable timing, admission or sequence-time request.
 #[must_use = "recheck or explicitly cancel the exact scanner time request"]
 #[cfg(target_arch = "riscv32")]
@@ -2177,8 +2214,10 @@ pub struct BluetoothPassiveScanControllerPreparationPending<
     S,
     const SCHEDULER_CAPACITY: usize,
 > {
-    core: BluetoothControllerTimePendingCore<
-        BluetoothPassiveScanControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>,
+    timed: timed_preparation::BluetoothTimedPreparationPending<
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothPassiveScanControllerPreparationPhase,
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
     >,
 }
 
@@ -2215,6 +2254,7 @@ pub enum BluetoothPassiveScanControllerPreparationStep<'runtime, S, const SCHEDU
 {
     Pending(BluetoothPassiveScanControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>),
     Terminal(BluetoothPassiveScanControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>),
+    FailStop(BluetoothPassiveScanControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>),
 }
 
 /// Lossless rejection before or during a first scanner preparation.
@@ -2229,7 +2269,31 @@ pub(crate) enum BluetoothPassiveScanControllerInitialPreparationFailure<
         current: BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothPassiveScanControllerPreparationError,
     },
-    Terminal(BluetoothPassiveScanControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>),
+    FailStop(BluetoothPassiveScanControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>),
+}
+
+#[must_use = "drain the abandoned scanner-time request before Controller reuse"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPassiveScanControllerCancellationPending<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    timed: timed_preparation::BluetoothTimedPreparationCancellationPending<
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    >,
+}
+
+#[must_use = "retain Waiting, recovered Terminal, or sealed FailStop"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPassiveScanControllerCancellationStep<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Waiting(BluetoothPassiveScanControllerCancellationPending<'runtime, S, SCHEDULER_CAPACITY>),
+    Recovered(BluetoothPassiveScanControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>),
+    FailStop(BluetoothPassiveScanControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>),
 }
 
 /// Terminal result of one source-ordered DTM preparation transaction.
@@ -2471,35 +2535,61 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         )
     }
 
+    fn fail_stop(
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        cause: BluetoothLegacyAdvertisingControllerPreparationFailStopCause,
+        cancelled: Option<crate::BluetoothLegacyAdvertisingCancelled<'static>>,
+    ) -> BluetoothLegacyAdvertisingControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        BluetoothLegacyAdvertisingControllerPreparationStep::FailStop(
+            BluetoothLegacyAdvertisingControllerPreparationFailStop::active(
+                controller, cause, cancelled,
+            ),
+        )
+    }
+
+    fn rollback_after_idle(
+        mut controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
+        error: BluetoothLegacyAdvertisingControllerPreparationError,
+    ) -> BluetoothLegacyAdvertisingControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        match controller.restore_legacy_advertising_cancelled(cancelled) {
+            timed_preparation::BluetoothTimedPreparationRollbackOutcome::Restored => {
+                Self::terminal(
+                    controller,
+                    BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(error),
+                )
+            }
+            timed_preparation::BluetoothTimedPreparationRollbackOutcome::FailStop(cancelled) => {
+                Self::fail_stop(
+                    controller,
+                    BluetoothLegacyAdvertisingControllerPreparationFailStopCause::RuntimeRestore,
+                    Some(cancelled),
+                )
+            }
+        }
+    }
+
     /// Perform one bounded observation of the exact advertising time request.
     pub fn recheck(
         self,
     ) -> BluetoothLegacyAdvertisingControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
-        let (mut owner, sample) = match self.core.recheck() {
-            Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
-                return BluetoothLegacyAdvertisingControllerPreparationStep::Pending(Self { core });
+        let (mut controller, phase, sample) = match self.timed.recheck() {
+            timed_preparation::BluetoothTimedPreparationStep::Waiting(timed) => {
+                return BluetoothLegacyAdvertisingControllerPreparationStep::Pending(Self {
+                    timed,
+                });
             }
-            Ok(BluetoothControllerTimePendingCoreStep::Ready { owner, sample }) => (owner, sample),
-            Err(failure) => {
-                let (mut owner, error) = failure.into_parts();
-                let phase = owner
-                    .phase
-                    .take()
-                    .expect("failed advertising time recheck retains its exact phase");
-                let outcome = owner
-                    .controller
-                    .cancel_legacy_advertising_preparation_phase(
-                        phase,
-                        controller_time_event_error(error),
-                    );
-                return Self::terminal(owner.controller, outcome);
+            timed_preparation::BluetoothTimedPreparationStep::Ready {
+                controller,
+                phase,
+                sample,
+            } => (controller, phase, sample),
+            timed_preparation::BluetoothTimedPreparationStep::FailStop(failure) => {
+                return BluetoothLegacyAdvertisingControllerPreparationStep::FailStop(
+                    BluetoothLegacyAdvertisingControllerPreparationFailStop::from_timed(failure),
+                );
             }
         };
-        let phase = owner
-            .phase
-            .take()
-            .expect("completed advertising time request retains its exact phase");
-        let mut controller = owner.controller;
         match phase {
             BluetoothLegacyAdvertisingControllerPreparationPhase::AlwaysAwakeTiming {
                 reset,
@@ -2519,15 +2609,16 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 let candidate = match reset
                     .form_first_event_candidate(timing, controller.runtime.scheduler_config())
                 {
-                    Ok(candidate) => candidate,
-                    Err(failure) => {
-                        controller
-                            .restore_legacy_advertising_cancelled(failure.into_reset().cancel());
-                        return Self::terminal(
+                    crate::BluetoothLegacyAdvertisingFirstEventCandidateOutcome::Candidate(
+                        candidate,
+                    ) => candidate,
+                    crate::BluetoothLegacyAdvertisingFirstEventCandidateOutcome::TimingRejected(
+                        reset,
+                    ) => {
+                        return Self::rollback_after_idle(
                             controller,
-                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
-                                BluetoothLegacyAdvertisingControllerPreparationError::TimingWindow,
-                            ),
+                            reset.cancel(),
+                            BluetoothLegacyAdvertisingControllerPreparationError::TimingWindow,
                         );
                     }
                 };
@@ -2537,8 +2628,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(pending) => {
                         BluetoothLegacyAdvertisingControllerPreparationStep::Pending(pending)
                     }
-                    Err(terminal) => {
-                        BluetoothLegacyAdvertisingControllerPreparationStep::Terminal(terminal)
+                    Err(fail_stop) => {
+                        BluetoothLegacyAdvertisingControllerPreparationStep::FailStop(fail_stop)
                     }
                 }
             }
@@ -2550,14 +2641,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(admitted) => admitted,
                     Err(failure) => {
                         let error = failure.error();
-                        controller.restore_legacy_advertising_cancelled(
-                            failure.into_candidate().cancel(),
-                        );
-                        return Self::terminal(
+                        return Self::rollback_after_idle(
                             controller,
-                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
-                                BluetoothLegacyAdvertisingControllerPreparationError::Event(error),
-                            ),
+                            failure.into_candidate().cancel(),
+                            BluetoothLegacyAdvertisingControllerPreparationError::Event(error),
                         );
                     }
                 };
@@ -2567,8 +2654,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(pending) => {
                         BluetoothLegacyAdvertisingControllerPreparationStep::Pending(pending)
                     }
-                    Err(terminal) => {
-                        BluetoothLegacyAdvertisingControllerPreparationStep::Terminal(terminal)
+                    Err(fail_stop) => {
+                        BluetoothLegacyAdvertisingControllerPreparationStep::FailStop(fail_stop)
                     }
                 }
             }
@@ -2580,14 +2667,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(prepared) => prepared,
                     Err(failure) => {
                         let error = failure.error();
-                        controller.restore_legacy_advertising_cancelled(
-                            failure.into_candidate().cancel(),
-                        );
-                        return Self::terminal(
+                        return Self::rollback_after_idle(
                             controller,
-                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
-                                BluetoothLegacyAdvertisingControllerPreparationError::Event(error),
-                            ),
+                            failure.into_candidate().cancel(),
+                            BluetoothLegacyAdvertisingControllerPreparationError::Event(error),
                         );
                     }
                 };
@@ -2604,14 +2687,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                         let cancelled = controller
                             .runtime
                             .cancel_legacy_advertising_first_event(failure.into_prepared());
-                        controller.restore_legacy_advertising_cancelled(cancelled);
-                        Self::terminal(
+                        Self::rollback_after_idle(
                             controller,
-                            BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
-                                BluetoothLegacyAdvertisingControllerPreparationError::EmptyList(
-                                    error,
-                                ),
-                            ),
+                            cancelled,
+                            BluetoothLegacyAdvertisingControllerPreparationError::EmptyList(error),
                         )
                     }
                 }
@@ -2622,66 +2701,62 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Cancel the exact unpublished phase and restore the advertising runtime.
     pub fn cancel(
         self,
-    ) -> BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
-    {
-        let mut owner = match self.core.cancel() {
-            Ok(owner) => owner,
-            Err(failure) => failure.into_parts().0,
-        };
-        let outcome = owner
-            .cancelled
-            .take()
-            .expect("explicit advertising time cancellation records its restored outcome");
-        BluetoothLegacyAdvertisingControllerPreparationTerminal {
-            controller: BluetoothControllerSchedulerEpochRetained {
-                controller: owner.controller,
-            },
-            outcome,
-        }
+    ) -> Result<
+        BluetoothLegacyAdvertisingControllerCancellationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothLegacyAdvertisingControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
+    > {
+        self.timed
+            .cancel()
+            .map(|timed| BluetoothLegacyAdvertisingControllerCancellationPending { timed })
+            .map_err(BluetoothLegacyAdvertisingControllerPreparationFailStop::from_timed)
     }
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
-    for BluetoothLegacyAdvertisingControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    timed_preparation::BluetoothTimedPreparationController
+    for BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
-    fn recheck_owned_controller_time(
+    fn request_timed_preparation_sample(
         &mut self,
-        request: BluetoothControllerTimeRequest,
-    ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
-        BluetoothControllerTimePendingOwner::recheck_owned_controller_time(
-            &mut self.controller,
-            request,
-        )
+    ) -> Result<BluetoothControllerTimeRequest, crate::BluetoothControllerTimeAcquisitionError>
+    {
+        self.runtime
+            .request_controller_time()
+            .map_err(controller_time_begin_error)
     }
+}
 
-    fn cancel_owned_controller_time(
-        &mut self,
-        request: BluetoothControllerTimeRequest,
-    ) -> Result<(), BluetoothControllerTimeEventError> {
-        let result = BluetoothControllerTimePendingOwner::cancel_owned_controller_time(
-            &mut self.controller,
-            request,
-        );
-        let error = match result {
-            Ok(()) => crate::BluetoothControllerTimeAcquisitionError::Cancelled,
-            Err(error) => controller_time_event_error(error),
-        };
-        let phase = self
-            .phase
-            .take()
-            .expect("private advertising time owner retains one exact preparation phase");
-        self.cancelled = Some(
-            self.controller
-                .cancel_legacy_advertising_preparation_phase(phase, error),
-        );
-        result
-    }
-
-    fn drain_orphan_controller_time(
-        &mut self,
-    ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
-        BluetoothControllerTimePendingOwner::drain_orphan_controller_time(&mut self.controller)
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothLegacyAdvertisingControllerCancellationPending<'runtime, S, SCHEDULER_CAPACITY>
+{
+    pub fn recheck(
+        self,
+    ) -> BluetoothLegacyAdvertisingControllerCancellationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        match self
+            .timed
+            .recheck::<crate::BluetoothLegacyAdvertisingCancelled<'static>>()
+        {
+            timed_preparation::BluetoothTimedPreparationCancellationStep::Waiting(timed) => {
+                BluetoothLegacyAdvertisingControllerCancellationStep::Waiting(Self { timed })
+            }
+            timed_preparation::BluetoothTimedPreparationCancellationStep::Recovered(controller) => {
+                BluetoothLegacyAdvertisingControllerCancellationStep::Recovered(
+                    BluetoothLegacyAdvertisingControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome: BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
+                            BluetoothLegacyAdvertisingControllerPreparationError::Cancelled,
+                        ),
+                    },
+                )
+            }
+            timed_preparation::BluetoothTimedPreparationCancellationStep::FailStop(failure) => {
+                BluetoothLegacyAdvertisingControllerCancellationStep::FailStop(
+                    BluetoothLegacyAdvertisingControllerPreparationFailStop::from_timed(failure),
+                )
+            }
+        }
     }
 }
 
@@ -2701,33 +2776,59 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         )
     }
 
+    fn fail_stop(
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        cause: BluetoothPassiveScanControllerPreparationFailStopCause,
+        graph: Option<
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+        >,
+    ) -> BluetoothPassiveScanControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        BluetoothPassiveScanControllerPreparationStep::FailStop(
+            BluetoothPassiveScanControllerPreparationFailStop::active(controller, cause, graph),
+        )
+    }
+
+    fn rollback_after_idle(
+        mut controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        graph: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+        error: BluetoothPassiveScanControllerPreparationError,
+    ) -> BluetoothPassiveScanControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        match controller.restore_passive_scan_graph(graph) {
+            timed_preparation::BluetoothTimedPreparationRollbackOutcome::Restored => {
+                Self::terminal(
+                    controller,
+                    BluetoothPassiveScanControllerPreparationOutcome::Rejected(error),
+                )
+            }
+            timed_preparation::BluetoothTimedPreparationRollbackOutcome::FailStop(graph) => {
+                Self::fail_stop(
+                    controller,
+                    BluetoothPassiveScanControllerPreparationFailStopCause::RuntimeRestore,
+                    Some(graph),
+                )
+            }
+        }
+    }
+
     /// Perform one bounded observation of the exact scanner time request.
     pub fn recheck(
         self,
     ) -> BluetoothPassiveScanControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
-        let (mut owner, sample) = match self.core.recheck() {
-            Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
-                return BluetoothPassiveScanControllerPreparationStep::Pending(Self { core });
+        let (mut controller, phase, sample) = match self.timed.recheck() {
+            timed_preparation::BluetoothTimedPreparationStep::Waiting(timed) => {
+                return BluetoothPassiveScanControllerPreparationStep::Pending(Self { timed });
             }
-            Ok(BluetoothControllerTimePendingCoreStep::Ready { owner, sample }) => (owner, sample),
-            Err(failure) => {
-                let (mut owner, error) = failure.into_parts();
-                let phase = owner
-                    .phase
-                    .take()
-                    .expect("failed scanner time recheck retains its exact phase");
-                let outcome = owner.controller.cancel_passive_scan_preparation_phase(
-                    phase,
-                    controller_time_event_error(error),
+            timed_preparation::BluetoothTimedPreparationStep::Ready {
+                controller,
+                phase,
+                sample,
+            } => (controller, phase, sample),
+            timed_preparation::BluetoothTimedPreparationStep::FailStop(failure) => {
+                return BluetoothPassiveScanControllerPreparationStep::FailStop(
+                    BluetoothPassiveScanControllerPreparationFailStop::from_timed(failure),
                 );
-                return Self::terminal(owner.controller, outcome);
             }
         };
-        let phase = owner
-            .phase
-            .take()
-            .expect("completed scanner time request retains its exact phase");
-        let mut controller = owner.controller;
         match phase {
             BluetoothPassiveScanControllerPreparationPhase::AlwaysAwakeTiming {
                 graph,
@@ -2767,12 +2868,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 let (candidate, phase) = match candidate {
                     Ok(candidate) => candidate,
                     Err(failure) => {
-                        controller.restore_passive_scan_graph(failure.into_graph());
-                        return Self::terminal(
+                        return Self::rollback_after_idle(
                             controller,
-                            BluetoothPassiveScanControllerPreparationOutcome::Rejected(
-                                BluetoothPassiveScanControllerPreparationError::TimingWindow,
-                            ),
+                            failure.into_graph(),
+                            BluetoothPassiveScanControllerPreparationError::TimingWindow,
                         );
                     }
                 };
@@ -2780,8 +2879,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     BluetoothPassiveScanControllerPreparationPhase::Admission { candidate, phase },
                 ) {
                     Ok(pending) => BluetoothPassiveScanControllerPreparationStep::Pending(pending),
-                    Err(terminal) => {
-                        BluetoothPassiveScanControllerPreparationStep::Terminal(terminal)
+                    Err(fail_stop) => {
+                        BluetoothPassiveScanControllerPreparationStep::FailStop(fail_stop)
                     }
                 }
             }
@@ -2793,12 +2892,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(admitted) => admitted,
                     Err(failure) => {
                         let error = failure.error();
-                        controller.restore_passive_scan_graph(failure.into_candidate().cancel());
-                        return Self::terminal(
+                        return Self::rollback_after_idle(
                             controller,
-                            BluetoothPassiveScanControllerPreparationOutcome::Rejected(
-                                BluetoothPassiveScanControllerPreparationError::Event(error),
-                            ),
+                            failure.into_candidate().cancel(),
+                            BluetoothPassiveScanControllerPreparationError::Event(error),
                         );
                     }
                 };
@@ -2806,8 +2903,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     BluetoothPassiveScanControllerPreparationPhase::Sequence { admitted, phase },
                 ) {
                     Ok(pending) => BluetoothPassiveScanControllerPreparationStep::Pending(pending),
-                    Err(terminal) => {
-                        BluetoothPassiveScanControllerPreparationStep::Terminal(terminal)
+                    Err(fail_stop) => {
+                        BluetoothPassiveScanControllerPreparationStep::FailStop(fail_stop)
                     }
                 }
             }
@@ -2819,12 +2916,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     Ok(prepared) => prepared,
                     Err(failure) => {
                         let error = failure.error();
-                        controller.restore_passive_scan_graph(failure.into_candidate().cancel());
-                        return Self::terminal(
+                        return Self::rollback_after_idle(
                             controller,
-                            BluetoothPassiveScanControllerPreparationOutcome::Rejected(
-                                BluetoothPassiveScanControllerPreparationError::Event(error),
-                            ),
+                            failure.into_candidate().cancel(),
+                            BluetoothPassiveScanControllerPreparationError::Event(error),
                         );
                     }
                 };
@@ -2844,12 +2939,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                         let graph = controller
                             .runtime
                             .cancel_passive_scan_first_event(failure.into_prepared());
-                        controller.restore_passive_scan_graph(graph);
-                        Self::terminal(
+                        Self::rollback_after_idle(
                             controller,
-                            BluetoothPassiveScanControllerPreparationOutcome::Rejected(
-                                BluetoothPassiveScanControllerPreparationError::EmptyList(error),
-                            ),
+                            graph,
+                            BluetoothPassiveScanControllerPreparationError::EmptyList(error),
                         )
                     }
                 }
@@ -2860,65 +2953,47 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Cancel the unpublished phase and return the graph to its sole runtime.
     pub fn cancel(
         self,
-    ) -> BluetoothPassiveScanControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY> {
-        let mut owner = match self.core.cancel() {
-            Ok(owner) => owner,
-            Err(failure) => failure.into_parts().0,
-        };
-        let outcome = owner
-            .cancelled
-            .take()
-            .expect("explicit scanner time cancellation records its restored outcome");
-        BluetoothPassiveScanControllerPreparationTerminal {
-            controller: BluetoothControllerSchedulerEpochRetained {
-                controller: owner.controller,
-            },
-            outcome,
-        }
+    ) -> Result<
+        BluetoothPassiveScanControllerCancellationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothPassiveScanControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
+    > {
+        self.timed
+            .cancel()
+            .map(|timed| BluetoothPassiveScanControllerCancellationPending { timed })
+            .map_err(BluetoothPassiveScanControllerPreparationFailStop::from_timed)
     }
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
-    for BluetoothPassiveScanControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothPassiveScanControllerCancellationPending<'runtime, S, SCHEDULER_CAPACITY>
 {
-    fn recheck_owned_controller_time(
-        &mut self,
-        request: BluetoothControllerTimeRequest,
-    ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
-        BluetoothControllerTimePendingOwner::recheck_owned_controller_time(
-            &mut self.controller,
-            request,
-        )
-    }
-
-    fn cancel_owned_controller_time(
-        &mut self,
-        request: BluetoothControllerTimeRequest,
-    ) -> Result<(), BluetoothControllerTimeEventError> {
-        let result = BluetoothControllerTimePendingOwner::cancel_owned_controller_time(
-            &mut self.controller,
-            request,
-        );
-        let error = match result {
-            Ok(()) => crate::BluetoothControllerTimeAcquisitionError::Cancelled,
-            Err(error) => controller_time_event_error(error),
-        };
-        let phase = self
-            .phase
-            .take()
-            .expect("private scanner time owner retains one exact preparation phase");
-        self.cancelled = Some(
-            self.controller
-                .cancel_passive_scan_preparation_phase(phase, error),
-        );
-        result
-    }
-
-    fn drain_orphan_controller_time(
-        &mut self,
-    ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
-        BluetoothControllerTimePendingOwner::drain_orphan_controller_time(&mut self.controller)
+    pub fn recheck(
+        self,
+    ) -> BluetoothPassiveScanControllerCancellationStep<'runtime, S, SCHEDULER_CAPACITY> {
+        match self
+            .timed
+            .recheck::<open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned>()
+        {
+            timed_preparation::BluetoothTimedPreparationCancellationStep::Waiting(timed) => {
+                BluetoothPassiveScanControllerCancellationStep::Waiting(Self { timed })
+            }
+            timed_preparation::BluetoothTimedPreparationCancellationStep::Recovered(controller) => {
+                BluetoothPassiveScanControllerCancellationStep::Recovered(
+                    BluetoothPassiveScanControllerPreparationTerminal {
+                        controller: BluetoothControllerSchedulerEpochRetained { controller },
+                        outcome: BluetoothPassiveScanControllerPreparationOutcome::Rejected(
+                            BluetoothPassiveScanControllerPreparationError::Cancelled,
+                        ),
+                    },
+                )
+            }
+            timed_preparation::BluetoothTimedPreparationCancellationStep::FailStop(failure) => {
+                BluetoothPassiveScanControllerCancellationStep::FailStop(
+                    BluetoothPassiveScanControllerPreparationFailStop::from_timed(failure),
+                )
+            }
+        }
     }
 }
 
@@ -3335,21 +3410,28 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     fn restore_legacy_advertising_cancelled(
         &mut self,
         cancelled: crate::BluetoothLegacyAdvertisingCancelled<'static>,
-    ) {
-        if self
+    ) -> timed_preparation::BluetoothTimedPreparationRollbackOutcome<
+        crate::BluetoothLegacyAdvertisingCancelled<'static>,
+    > {
+        match self
             .legacy_advertising_resources
             .restore_cancelled(cancelled)
-            .is_err()
         {
-            panic!("an advertising phase returned owners to a different runtime");
+            crate::BluetoothLegacyAdvertisingCancelledRestoreOutcome::Restored => {
+                timed_preparation::BluetoothTimedPreparationRollbackOutcome::Restored
+            }
+            crate::BluetoothLegacyAdvertisingCancelledRestoreOutcome::Rejected(cancelled) => {
+                timed_preparation::BluetoothTimedPreparationRollbackOutcome::FailStop(cancelled)
+            }
         }
     }
 
     fn cancel_legacy_advertising_preparation_phase(
         &mut self,
         phase: BluetoothLegacyAdvertisingControllerPreparationPhase,
-        error: crate::BluetoothControllerTimeAcquisitionError,
-    ) -> BluetoothLegacyAdvertisingControllerPreparationOutcome {
+    ) -> timed_preparation::BluetoothTimedPreparationRollbackOutcome<
+        crate::BluetoothLegacyAdvertisingCancelled<'static>,
+    > {
         let cancelled = match phase {
             BluetoothLegacyAdvertisingControllerPreparationPhase::AlwaysAwakeTiming {
                 reset,
@@ -3362,10 +3444,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 .runtime
                 .cancel_legacy_advertising_first_pre_sequence(admitted),
         };
-        self.restore_legacy_advertising_cancelled(cancelled);
-        BluetoothLegacyAdvertisingControllerPreparationOutcome::Rejected(
-            BluetoothLegacyAdvertisingControllerPreparationError::ControllerTime(error),
-        )
+        self.restore_legacy_advertising_cancelled(cancelled)
     }
 
     #[expect(
@@ -3373,51 +3452,41 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         reason = "the no-alloc begin rejection retains the restored task and typed outcome"
     )]
     fn begin_legacy_advertising_preparation_time(
-        mut self,
+        self,
         phase: BluetoothLegacyAdvertisingControllerPreparationPhase,
     ) -> Result<
         BluetoothLegacyAdvertisingControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothLegacyAdvertisingControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothLegacyAdvertisingControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let request = match self.runtime.request_controller_time() {
-            Ok(request) => request,
-            Err(error) => {
-                let outcome = self.cancel_legacy_advertising_preparation_phase(
-                    phase,
-                    controller_time_begin_error(error),
-                );
-                return Err(BluetoothLegacyAdvertisingControllerPreparationTerminal {
-                    controller: BluetoothControllerSchedulerEpochRetained { controller: self },
-                    outcome,
-                });
-            }
-        };
-        Ok(BluetoothLegacyAdvertisingControllerPreparationPending {
-            core: BluetoothControllerTimePendingCore::new(
-                BluetoothLegacyAdvertisingControllerPreparationTimeOwner {
-                    controller: self,
-                    phase: Some(phase),
-                    cancelled: None,
-                },
-                request,
-            ),
-        })
+        timed_preparation::BluetoothTimedPreparationPending::begin(
+            self,
+            phase,
+            BluetoothControllerPublishedTaskService::cancel_legacy_advertising_preparation_phase,
+        )
+        .map(|timed| BluetoothLegacyAdvertisingControllerPreparationPending { timed })
+        .map_err(BluetoothLegacyAdvertisingControllerPreparationFailStop::from_timed)
     }
 
     fn restore_passive_scan_graph(
         &mut self,
         graph: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
-    ) {
-        if self.passive_scan_resources.restore_idle(graph).is_err() {
-            panic!("a scanner phase returned a graph to a different runtime");
+    ) -> timed_preparation::BluetoothTimedPreparationRollbackOutcome<
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+    > {
+        match self.passive_scan_resources.restore_idle(graph) {
+            Ok(()) => timed_preparation::BluetoothTimedPreparationRollbackOutcome::Restored,
+            Err(graph) => {
+                timed_preparation::BluetoothTimedPreparationRollbackOutcome::FailStop(graph)
+            }
         }
     }
 
     fn cancel_passive_scan_preparation_phase(
         &mut self,
         phase: BluetoothPassiveScanControllerPreparationPhase,
-        error: crate::BluetoothControllerTimeAcquisitionError,
-    ) -> BluetoothPassiveScanControllerPreparationOutcome {
+    ) -> timed_preparation::BluetoothTimedPreparationRollbackOutcome<
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCpuOwned,
+    > {
         let graph = match phase {
             BluetoothPassiveScanControllerPreparationPhase::AlwaysAwakeTiming { graph, .. } => {
                 graph
@@ -3429,10 +3498,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 .runtime
                 .cancel_passive_scan_first_pre_sequence(admitted),
         };
-        self.restore_passive_scan_graph(graph);
-        BluetoothPassiveScanControllerPreparationOutcome::Rejected(
-            BluetoothPassiveScanControllerPreparationError::ControllerTime(error),
-        )
+        self.restore_passive_scan_graph(graph)
     }
 
     #[expect(
@@ -3440,35 +3506,19 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         reason = "the no-alloc rejection retains the Controller and restored scanner graph"
     )]
     fn begin_passive_scan_preparation_time(
-        mut self,
+        self,
         phase: BluetoothPassiveScanControllerPreparationPhase,
     ) -> Result<
         BluetoothPassiveScanControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothPassiveScanControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothPassiveScanControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let request = match self.runtime.request_controller_time() {
-            Ok(request) => request,
-            Err(error) => {
-                let outcome = self.cancel_passive_scan_preparation_phase(
-                    phase,
-                    controller_time_begin_error(error),
-                );
-                return Err(BluetoothPassiveScanControllerPreparationTerminal {
-                    controller: BluetoothControllerSchedulerEpochRetained { controller: self },
-                    outcome,
-                });
-            }
-        };
-        Ok(BluetoothPassiveScanControllerPreparationPending {
-            core: BluetoothControllerTimePendingCore::new(
-                BluetoothPassiveScanControllerPreparationTimeOwner {
-                    controller: self,
-                    phase: Some(phase),
-                    cancelled: None,
-                },
-                request,
-            ),
-        })
+        timed_preparation::BluetoothTimedPreparationPending::begin(
+            self,
+            phase,
+            BluetoothControllerPublishedTaskService::cancel_passive_scan_preparation_phase,
+        )
+        .map(|timed| BluetoothPassiveScanControllerPreparationPending { timed })
+        .map_err(BluetoothPassiveScanControllerPreparationFailStop::from_timed)
     }
 
     /// Return the exact cancelled or stopped session graph to this Controller.
@@ -3923,12 +3973,30 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         };
         let (prepared, default_tx_power) = event.into_parts();
         let reset = match prepared.reset_link_state(default_tx_power) {
-            Ok(reset) => reset,
-            Err(failure) => {
-                let error = failure.error();
-                current
+            crate::BluetoothLegacyAdvertisingLinkStateResetOutcome::Reset(reset) => reset,
+            crate::BluetoothLegacyAdvertisingLinkStateResetOutcome::Rejected {
+                prepared,
+                error,
+            } => {
+                let cancelled = prepared.cancel();
+                if let timed_preparation::BluetoothTimedPreparationRollbackOutcome::FailStop(
+                    cancelled,
+                ) = current
                     .controller
-                    .restore_legacy_advertising_cancelled(failure.into_prepared().cancel());
+                    .restore_legacy_advertising_cancelled(cancelled)
+                {
+                    return Err(
+                        BluetoothLegacyAdvertisingControllerInitialPreparationFailure::FailStop(
+                            BluetoothLegacyAdvertisingControllerPreparationFailStop {
+                                cause: BluetoothLegacyAdvertisingControllerPreparationFailStopCause::RuntimeRestore,
+                                _state: BluetoothLegacyAdvertisingControllerPreparationFailStopState::Initial {
+                                    _current: current,
+                                    _cancelled: cancelled,
+                                },
+                            },
+                        ),
+                    );
+                }
                 return Err(
                     BluetoothLegacyAdvertisingControllerInitialPreparationFailure::Rejected {
                         current,
@@ -3947,7 +4015,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     now,
                 },
             )
-            .map_err(BluetoothLegacyAdvertisingControllerInitialPreparationFailure::Terminal)
+            .map_err(BluetoothLegacyAdvertisingControllerInitialPreparationFailure::FailStop)
     }
 
     /// Begin the source-ordered first passive scanner transaction.
@@ -3987,7 +4055,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     now,
                 },
             )
-            .map_err(BluetoothPassiveScanControllerInitialPreparationFailure::Terminal)
+            .map_err(BluetoothPassiveScanControllerInitialPreparationFailure::FailStop)
     }
 
     /// Begin source-ordered initial transmitter preparation.
@@ -4149,6 +4217,8 @@ pub struct BluetoothControllerInterruptOwnerPublicationFailure<
     legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
     passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
     peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
+    legacy_connectable_advertising_resources:
+        crate::BluetoothLegacyConnectableAdvertisingRuntimeResources,
     error: S::Error,
 }
 
@@ -4205,6 +4275,7 @@ where
             legacy_advertising_resources,
             passive_scan_resources,
             peripheral_connection_resources,
+            legacy_connectable_advertising_resources,
             ..
         } = self;
         let direction_finding_workspace = initialized.direction_finding_workspace_link();
@@ -4229,6 +4300,7 @@ where
             legacy_advertising_resources,
             passive_scan_resources,
             peripheral_connection_resources,
+            legacy_connectable_advertising_resources,
             direction_finding_workspace,
             ble_phy_timing,
             scheduler_epoch,
@@ -4598,6 +4670,7 @@ where
         crate::BluetoothLegacyAdvertisingRuntimeResources,
         crate::BluetoothPassiveScanRuntimeResources,
         crate::BluetoothPeripheralConnectionRuntimeResources,
+        crate::BluetoothLegacyConnectableAdvertisingRuntimeResources,
         S::Error,
     ) {
         (
@@ -4607,6 +4680,7 @@ where
             self.legacy_advertising_resources,
             self.passive_scan_resources,
             self.peripheral_connection_resources,
+            self.legacy_connectable_advertising_resources,
             self.error,
         )
     }
@@ -4652,6 +4726,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         legacy_advertising_resources: crate::BluetoothLegacyAdvertisingRuntimeResources,
         passive_scan_resources: crate::BluetoothPassiveScanRuntimeResources,
         peripheral_connection_resources: crate::BluetoothPeripheralConnectionRuntimeResources,
+        legacy_connectable_advertising_resources:
+            crate::BluetoothLegacyConnectableAdvertisingRuntimeResources,
     ) -> Result<
         BluetoothControllerInterruptOwnersPublished<
             P,
@@ -4686,6 +4762,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 legacy_advertising_resources,
                 passive_scan_resources,
                 peripheral_connection_resources,
+                legacy_connectable_advertising_resources,
             }),
             Err((error, storage, interrupts, timer)) => {
                 Err(BluetoothControllerInterruptOwnerPublicationFailure {
@@ -4700,6 +4777,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                     legacy_advertising_resources,
                     passive_scan_resources,
                     peripheral_connection_resources,
+                    legacy_connectable_advertising_resources,
                     error,
                 })
             }

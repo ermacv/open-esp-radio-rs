@@ -83,16 +83,6 @@ impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
         self.graph.scheduler_item_address()
     }
 
-    pub(crate) const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
-    }
-
-    pub(crate) const fn status(
-        &self,
-    ) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
-        self.graph.status()
-    }
-
     #[expect(
         clippy::result_large_err,
         reason = "the no-alloc failure retains the completed event and removal proof"

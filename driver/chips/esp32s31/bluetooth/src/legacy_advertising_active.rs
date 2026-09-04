@@ -12,28 +12,29 @@ use open_esp_radio_bluetooth_hci::{
 };
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingEventCompletionStatuses;
 
+use crate::controller_start::BluetoothSingleItemSchedulerCompletionFaultOwner;
+use crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole;
+use crate::scheduler::BluetoothLegacyAdvertisingSchedulerRecycleStep;
+use crate::single_item_completion::{
+    BluetoothSingleItemCompletion, BluetoothSingleItemCompletionFault,
+    BluetoothSingleItemCompletionFaultCause, BluetoothSingleItemCompletionStep,
+    BluetoothSingleItemCompletionWaitKind,
+};
 use crate::{
     BluetoothControllerIdleCommandTask, BluetoothControllerIdleResponsePending,
     BluetoothControllerIdleResponsePublication, BluetoothControllerPublishedTaskService,
     BluetoothDtmPostUnlinkWakeCell, BluetoothLegacyAdvertisingEventCompleted,
-    BluetoothLegacyAdvertisingPostUnlinkArmStep, BluetoothLegacyAdvertisingPostUnlinkAwaiting,
-    BluetoothLegacyAdvertisingSchedulerCompletionObserved,
-    BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep,
-    BluetoothLegacyAdvertisingSchedulerCompletionStep,
-    BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved,
-    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep,
-    BluetoothLegacyAdvertisingSchedulerRecycleStep, BluetoothLegacyAdvertisingSchedulerRunning,
-    BluetoothLegacyAdvertisingSchedulerRunningDrainStep,
-    BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady,
-    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListDrainPending,
-    BluetoothSchedulerFinishedListDrainState, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
     BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>;
 type Order<'runtime> = open_esp_radio_bluetooth_hci::LeControllerCommandReady<'runtime, ()>;
+type CompletionRole = BluetoothLegacyAdvertisingCompletionRole<'static>;
+type SchedulerRunning = crate::scheduler::BluetoothSingleItemSchedulerRunning<CompletionRole>;
+type RemovalReady =
+    crate::scheduler::BluetoothSingleItemSchedulerSoftwareListRemovalReady<CompletionRole>;
 
 enum BluetoothLegacyAdvertisingOrder<'runtime> {
     Ready(Order<'runtime>),
@@ -50,7 +51,7 @@ pub struct BluetoothLegacyAdvertisingResponsePendingSession<
     S: BluetoothSchedulerRunInterruptStorage,
 {
     pending: BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>,
-    running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+    running: SchedulerRunning,
 }
 
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
@@ -60,7 +61,7 @@ where
 {
     pub(crate) const fn new(
         pending: BluetoothControllerIdleResponsePending<'runtime, S, SCHEDULER_CAPACITY>,
-        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+        running: SchedulerRunning,
     ) -> Self {
         Self { pending, running }
     }
@@ -149,25 +150,8 @@ struct BluetoothLegacyAdvertisingActiveAxes<'runtime, S, const CAPACITY: usize> 
 }
 
 enum BluetoothLegacyAdvertisingActivePhase {
-    RunningAwaitingWake(BluetoothLegacyAdvertisingSchedulerRunning<'static>),
-    RunningReady {
-        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
-        wake: BluetoothSchedulerWakeBatch,
-    },
-    RunningDrain(
-        BluetoothSchedulerFinishedListDrainPending<
-            BluetoothLegacyAdvertisingSchedulerRunning<'static>,
-        >,
-    ),
-    CompletionDrain(
-        BluetoothSchedulerFinishedListDrainPending<
-            BluetoothLegacyAdvertisingSchedulerCompletionObserved<'static>,
-        >,
-    ),
-    CompletionObserved(BluetoothLegacyAdvertisingSchedulerCompletionObserved<'static>),
-    HardwareHeadEmpty(BluetoothLegacyAdvertisingSchedulerHardwareHeadEmptyObserved<'static>),
-    PostUnlinkAwaiting(BluetoothLegacyAdvertisingPostUnlinkAwaiting<'static>),
-    RemovalReady(BluetoothLegacyAdvertisingSchedulerSoftwareListRemovalReady<'static>),
+    Completion(BluetoothSingleItemCompletion<CompletionRole>),
+    RemovalReady(RemovalReady),
 }
 
 /// Exact HCI order and active advertising graph after Success publication.
@@ -1319,12 +1303,11 @@ pub enum BluetoothLegacyAdvertisingActiveFaultCause {
     reason = "the opaque fault owner intentionally retains every lower affine token"
 )]
 enum BluetoothLegacyAdvertisingActiveFaultOwner {
-    Completion(BluetoothLegacyAdvertisingSchedulerCompletionStep<'static>),
-    RunningDrain(BluetoothLegacyAdvertisingSchedulerRunningDrainStep<'static>),
-    CompletionDrain(BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep<'static>),
-    HardwareHeadRetirement(BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep<'static>),
-    PostUnlinkArm(BluetoothLegacyAdvertisingPostUnlinkArmStep<'static>),
-    PostUnlinkPublished(BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep<'static>),
+    Completion(
+        BluetoothSingleItemCompletionFault<
+            BluetoothSingleItemSchedulerCompletionFaultOwner<CompletionRole>,
+        >,
+    ),
     Recycle(BluetoothLegacyAdvertisingSchedulerRecycleStep<'static>),
 }
 
@@ -1355,7 +1338,7 @@ where
 {
     fn from_running(
         task: BluetoothControllerIdleCommandTask<'runtime, S, CAPACITY>,
-        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+        running: SchedulerRunning,
     ) -> Self {
         let scheduler_item_address = running.scheduler_item_address();
         let hardware_list_index = running.hardware_list_index();
@@ -1367,14 +1350,16 @@ where
                 scheduler_item_address,
                 hardware_list_index,
             },
-            phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
+            phase: BluetoothLegacyAdvertisingActivePhase::Completion(
+                BluetoothSingleItemCompletion::new(running),
+            ),
         }
     }
 
     pub(crate) fn from_recurring_running(
         task: Task<'runtime, S, CAPACITY>,
         order: Order<'runtime>,
-        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+        running: SchedulerRunning,
     ) -> Self {
         Self {
             axes: BluetoothLegacyAdvertisingActiveAxes {
@@ -1383,14 +1368,16 @@ where
                 task,
                 order: BluetoothLegacyAdvertisingOrder::Ready(order),
             },
-            phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
+            phase: BluetoothLegacyAdvertisingActivePhase::Completion(
+                BluetoothSingleItemCompletion::new(running),
+            ),
         }
     }
 
     pub(crate) fn from_recurring_response_pending(
         task: Task<'runtime, S, CAPACITY>,
         response: LeControllerResponsePending<'runtime, ()>,
-        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+        running: SchedulerRunning,
     ) -> BluetoothLegacyAdvertisingActiveResponsePending<'runtime, S, CAPACITY> {
         let active = Self {
             axes: BluetoothLegacyAdvertisingActiveAxes {
@@ -1399,7 +1386,9 @@ where
                 task,
                 order: BluetoothLegacyAdvertisingOrder::Detached,
             },
-            phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
+            phase: BluetoothLegacyAdvertisingActivePhase::Completion(
+                BluetoothSingleItemCompletion::new(running),
+            ),
         };
         BluetoothLegacyAdvertisingActiveResponsePending {
             transaction: response.map_owner(|()| active),
@@ -1409,7 +1398,7 @@ where
     pub(crate) fn from_recurring_stopping(
         task: Task<'runtime, S, CAPACITY>,
         order: BluetoothLegacyAdvertisingStopOrder<'runtime>,
-        running: BluetoothLegacyAdvertisingSchedulerRunning<'static>,
+        running: SchedulerRunning,
     ) -> BluetoothLegacyAdvertisingStopping<'runtime, S, CAPACITY> {
         let active = Self {
             axes: BluetoothLegacyAdvertisingActiveAxes {
@@ -1418,7 +1407,9 @@ where
                 task,
                 order: BluetoothLegacyAdvertisingOrder::Detached,
             },
-            phase: BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running),
+            phase: BluetoothLegacyAdvertisingActivePhase::Completion(
+                BluetoothSingleItemCompletion::new(running),
+            ),
         };
         BluetoothLegacyAdvertisingStopping { active, order }
     }
@@ -1604,387 +1595,95 @@ where
     }
 
     pub fn radio_wait(&self) -> Option<BluetoothLegacyAdvertisingActiveWait<'_>> {
-        match self.phase {
-            BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(_) => Some(
+        let BluetoothLegacyAdvertisingActivePhase::Completion(completion) = &self.phase else {
+            return None;
+        };
+        match completion.wait_kind() {
+            Some(BluetoothSingleItemCompletionWaitKind::Scheduler) => Some(
                 BluetoothLegacyAdvertisingActiveWait::Scheduler(self.axes.task.scheduler_wake()),
             ),
-            BluetoothLegacyAdvertisingActivePhase::PostUnlinkAwaiting(_) => Some(
+            Some(BluetoothSingleItemCompletionWaitKind::PostUnlink) => Some(
                 BluetoothLegacyAdvertisingActiveWait::PostUnlink(self.axes.task.post_unlink_wake()),
             ),
-            _ => None,
+            None => None,
         }
     }
 
     /// Advance one wake, completion, drain, unlink, mailbox or recycle edge.
-    pub fn step_radio(mut self) -> BluetoothLegacyAdvertisingActiveStep<'runtime, S, CAPACITY> {
-        let scheduler_wake = if matches!(
-            &self.phase,
-            BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(_)
-        ) {
-            let Some(wake) = self.axes.task.scheduler_wake().take() else {
-                return BluetoothLegacyAdvertisingActiveStep::Waiting(self);
-            };
-            Some(wake)
-        } else {
-            None
-        };
-        match self.phase {
-            BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running) => {
-                let wake = scheduler_wake
-                    .expect("the running-awaiting-wake phase consumed one scheduler wake");
-                self.phase = BluetoothLegacyAdvertisingActivePhase::RunningReady { running, wake };
-                BluetoothLegacyAdvertisingActiveStep::Continue(self)
-            }
-            BluetoothLegacyAdvertisingActivePhase::RunningReady { running, wake } => {
-                let step = self
-                    .axes
-                    .task
-                    .observe_legacy_advertising_completion(running, wake);
+    pub fn step_radio(self) -> BluetoothLegacyAdvertisingActiveStep<'runtime, S, CAPACITY> {
+        let Self { mut axes, phase } = self;
+        match phase {
+            BluetoothLegacyAdvertisingActivePhase::Completion(completion) => {
+                let step = completion.step(&mut axes.task);
                 match step {
-                    BluetoothLegacyAdvertisingSchedulerCompletionStep::NoFinishedList(running) => {
-                        self.phase =
-                            BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running);
-                        BluetoothLegacyAdvertisingActiveStep::Waiting(self)
+                    BluetoothSingleItemCompletionStep::Continue(completion) => {
+                        BluetoothLegacyAdvertisingActiveStep::Continue(Self {
+                            axes,
+                            phase: BluetoothLegacyAdvertisingActivePhase::Completion(completion),
+                        })
                     }
-                    BluetoothLegacyAdvertisingSchedulerCompletionStep::UnrelatedList {
-                        drain,
+                    BluetoothSingleItemCompletionStep::Waiting(completion) => {
+                        BluetoothLegacyAdvertisingActiveStep::Waiting(Self {
+                            axes,
+                            phase: BluetoothLegacyAdvertisingActivePhase::Completion(completion),
+                        })
+                    }
+                    BluetoothSingleItemCompletionStep::UnrelatedList {
+                        completion,
                         observed,
-                    } => {
-                        self.phase = running_phase(drain);
-                        BluetoothLegacyAdvertisingActiveStep::UnrelatedList {
-                            session: self,
-                            observed,
-                        }
-                    }
-                    BluetoothLegacyAdvertisingSchedulerCompletionStep::StillInFlight(drain) => {
-                        self.phase = running_phase(drain);
-                        waiting_or_continue(self)
-                    }
-                    BluetoothLegacyAdvertisingSchedulerCompletionStep::CompletionObserved(
-                        drain,
-                    ) => {
-                        self.phase = completed_phase(drain);
-                        BluetoothLegacyAdvertisingActiveStep::Continue(self)
-                    }
-                    BluetoothLegacyAdvertisingSchedulerCompletionStep::DrainAlreadyActive(
-                        running,
-                    ) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainAlreadyActive,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::Completion(
-                            BluetoothLegacyAdvertisingSchedulerCompletionStep::DrainAlreadyActive(
-                                running,
-                            ),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSchedulerCompletionStep::SchedulerIdentityMismatch(
-                        running,
-                    ) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::Completion(
-                            BluetoothLegacyAdvertisingSchedulerCompletionStep::SchedulerIdentityMismatch(
-                                running,
-                            ),
-                        ),
-                    ),
-                }
-            }
-            BluetoothLegacyAdvertisingActivePhase::RunningDrain(pending) => {
-                let step = self
-                    .axes
-                    .task
-                    .continue_legacy_advertising_running_finished_list_drain(pending);
-                match step {
-                    BluetoothLegacyAdvertisingSchedulerRunningDrainStep::UnrelatedList {
-                        drain,
+                    } => BluetoothLegacyAdvertisingActiveStep::UnrelatedList {
+                        session: Self {
+                            axes,
+                            phase: BluetoothLegacyAdvertisingActivePhase::Completion(completion),
+                        },
                         observed,
-                    } => {
-                        self.phase = running_phase(drain);
-                        BluetoothLegacyAdvertisingActiveStep::UnrelatedList {
-                            session: self,
-                            observed,
-                        }
+                    },
+                    BluetoothSingleItemCompletionStep::RemovalReady(ready) => {
+                        BluetoothLegacyAdvertisingActiveStep::Continue(Self {
+                            axes,
+                            phase: BluetoothLegacyAdvertisingActivePhase::RemovalReady(ready),
+                        })
                     }
-                    BluetoothLegacyAdvertisingSchedulerRunningDrainStep::StillInFlight(drain) => {
-                        self.phase = running_phase(drain);
-                        waiting_or_continue(self)
-                    }
-                    BluetoothLegacyAdvertisingSchedulerRunningDrainStep::CompletionObserved(
-                        drain,
-                    ) => {
-                        self.phase = completed_phase(drain);
-                        BluetoothLegacyAdvertisingActiveStep::Continue(self)
-                    }
-                    BluetoothLegacyAdvertisingSchedulerRunningDrainStep::SchedulerIdentityMismatch(
-                        pending,
-                    ) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::RunningDrain(
-                            BluetoothLegacyAdvertisingSchedulerRunningDrainStep::SchedulerIdentityMismatch(
-                                pending,
-                            ),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSchedulerRunningDrainStep::DrainLost(pending) => {
+                    BluetoothSingleItemCompletionStep::Fault(fault) => {
+                        let cause = legacy_advertising_fault_cause(fault.cause);
                         active_fault(
-                            self.axes,
-                            BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainLost,
-                            BluetoothLegacyAdvertisingActiveFaultOwner::RunningDrain(
-                                BluetoothLegacyAdvertisingSchedulerRunningDrainStep::DrainLost(
-                                    pending,
-                                ),
-                            ),
+                            axes,
+                            cause,
+                            BluetoothLegacyAdvertisingActiveFaultOwner::Completion(fault),
                         )
                     }
                 }
             }
-            BluetoothLegacyAdvertisingActivePhase::CompletionDrain(pending) => {
-                let step = self
-                    .axes
-                    .task
-                    .continue_legacy_advertising_completed_finished_list_drain(pending);
-                match step {
-                    BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::UnrelatedList {
-                        drain,
-                        observed,
-                    } => {
-                        self.phase = completed_phase(drain);
-                        BluetoothLegacyAdvertisingActiveStep::UnrelatedList {
-                            session: self,
-                            observed,
-                        }
-                    }
-                    BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(pending) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::CompletionDrain(
-                            BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(pending),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::DrainLost(pending) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainLost,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::CompletionDrain(
-                            BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::DrainLost(pending),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::RepeatedAdvertisingList { drain, observed } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::RepeatedAdvertisingList,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::CompletionDrain(
-                            BluetoothLegacyAdvertisingSchedulerCompletionObservedDrainStep::RepeatedAdvertisingList { drain, observed },
-                        ),
-                    ),
-                }
-            }
-            BluetoothLegacyAdvertisingActivePhase::CompletionObserved(completed) => {
-                let step = self
-                    .axes
-                    .task
-                    .observe_legacy_advertising_hardware_head_retirement(completed);
-                match step {
-                    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::EmptyObserved(
-                        observed,
-                    ) => {
-                        self.phase =
-                            BluetoothLegacyAdvertisingActivePhase::HardwareHeadEmpty(observed);
-                        BluetoothLegacyAdvertisingActiveStep::Continue(self)
-                    }
-                    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(completed) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::HardwareHeadRetirement(
-                            BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(completed),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainStillActive,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::HardwareHeadRetirement(
-                            BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished { completed, observed } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::ExpectedHardwareHeadStillPublished,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::HardwareHeadRetirement(
-                            BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished { completed, observed },
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged { completed, observed } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::UnexpectedHardwareHeadChanged,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::HardwareHeadRetirement(
-                            BluetoothLegacyAdvertisingSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged { completed, observed },
-                        ),
-                    ),
-                }
-            }
-            BluetoothLegacyAdvertisingActivePhase::HardwareHeadEmpty(observed) => {
-                let step = self
-                    .axes
-                    .task
-                    .unlink_and_arm_legacy_advertising_software_list_removal(observed);
-                match step {
-                    BluetoothLegacyAdvertisingPostUnlinkArmStep::Armed(awaiting) => {
-                        self.phase =
-                            BluetoothLegacyAdvertisingActivePhase::PostUnlinkAwaiting(awaiting);
-                        BluetoothLegacyAdvertisingActiveStep::Continue(self)
-                    }
-                    BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxBusy(observed) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxBusy,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkArm(
-                            BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxBusy(observed),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxIdentityExhausted(observed) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxIdentityExhausted,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkArm(
-                            BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxIdentityExhausted(observed),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingPostUnlinkArmStep::GenerationExhausted(observed) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxGenerationExhausted,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkArm(
-                            BluetoothLegacyAdvertisingPostUnlinkArmStep::GenerationExhausted(observed),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingPostUnlinkArmStep::SchedulerIdentityMismatch(observed) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkArm(
-                            BluetoothLegacyAdvertisingPostUnlinkArmStep::SchedulerIdentityMismatch(observed),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxCommitMismatch(unlinked) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxCommitMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkArm(
-                            BluetoothLegacyAdvertisingPostUnlinkArmStep::MailboxCommitMismatch(unlinked),
-                        ),
-                    ),
-                }
-            }
-            BluetoothLegacyAdvertisingActivePhase::PostUnlinkAwaiting(awaiting) => {
-                let step = self
-                    .axes
-                    .task
-                    .consume_published_legacy_advertising_software_list_removal(awaiting);
-                match step {
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::NoSchedulerWork { awaiting, .. }
-                    | BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::PublishedPending { awaiting } => {
-                        self.phase = BluetoothLegacyAdvertisingActivePhase::PostUnlinkAwaiting(awaiting);
-                        BluetoothLegacyAdvertisingActiveStep::Continue(self)
-                    }
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::DirectPending { awaiting } => {
-                        self.phase = BluetoothLegacyAdvertisingActivePhase::PostUnlinkAwaiting(awaiting);
-                        BluetoothLegacyAdvertisingActiveStep::Waiting(self)
-                    }
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Ready { ready } => {
-                        self.phase = BluetoothLegacyAdvertisingActivePhase::RemovalReady(ready);
-                        BluetoothLegacyAdvertisingActiveStep::Continue(self)
-                    }
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(awaiting) => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxAffinityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::MailboxAffinityMismatch(awaiting),
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Fault { unlinked, fault } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PrimaryInterruptFault,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::Fault { unlinked, fault },
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch { unlinked, epoch } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkNoSchedulerWorkRearmMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::NoSchedulerWorkRearmMismatch { unlinked, epoch },
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::PendingRearmMismatch { unlinked } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkPendingRearmMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::PendingRearmMismatch { unlinked },
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkRecheckUnavailable,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckUnavailable { awaiting },
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkRecheckRearmMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::RecheckRearmMismatch { unlinked },
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch { unlinked, event } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch { unlinked, event },
-                        ),
-                    ),
-                    BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch { unlinked } => active_fault(
-                        self.axes,
-                        BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::PostUnlinkPublished(
-                            BluetoothLegacyAdvertisingSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch { unlinked },
-                        ),
-                    ),
-                }
-            }
             BluetoothLegacyAdvertisingActivePhase::RemovalReady(ready) => {
-                let step = self.axes.task.recycle_legacy_advertising_completed(ready);
+                let step = axes.task.recycle_legacy_advertising_completed(ready);
                 match step {
                     BluetoothLegacyAdvertisingSchedulerRecycleStep::Recycled(recycled) => {
                         BluetoothLegacyAdvertisingActiveStep::CpuOwned(
                             BluetoothLegacyAdvertisingEventCpuOwned {
-                                axes: self.axes,
+                                axes,
                                 completed: recycled.complete_event(),
                             },
                         )
                     }
-                    BluetoothLegacyAdvertisingSchedulerRecycleStep::SchedulerIdentityMismatch(ready) => active_fault(
-                        self.axes,
+                    step @ BluetoothLegacyAdvertisingSchedulerRecycleStep::SchedulerIdentityMismatch { .. } => active_fault(
+                        axes,
                         BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(
-                            BluetoothLegacyAdvertisingSchedulerRecycleStep::SchedulerIdentityMismatch(ready),
-                        ),
+                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(step),
                     ),
-                    BluetoothLegacyAdvertisingSchedulerRecycleStep::FinishedListDrainStillActive(ready) => active_fault(
-                        self.axes,
+                    step @ BluetoothLegacyAdvertisingSchedulerRecycleStep::FinishedListDrainStillActive { .. } => active_fault(
+                        axes,
                         BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainStillActive,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(
-                            BluetoothLegacyAdvertisingSchedulerRecycleStep::FinishedListDrainStillActive(ready),
-                        ),
+                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(step),
                     ),
-                    BluetoothLegacyAdvertisingSchedulerRecycleStep::MemoryIdentityMismatch { ready, error } => active_fault(
-                        self.axes,
+                    step @ BluetoothLegacyAdvertisingSchedulerRecycleStep::MemoryIdentityMismatch { .. } => active_fault(
+                        axes,
                         BluetoothLegacyAdvertisingActiveFaultCause::MemoryIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(
-                            BluetoothLegacyAdvertisingSchedulerRecycleStep::MemoryIdentityMismatch { ready, error },
-                        ),
+                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(step),
                     ),
-                    BluetoothLegacyAdvertisingSchedulerRecycleStep::ReservationIdentityMismatch(ready) => active_fault(
-                        self.axes,
+                    step @ BluetoothLegacyAdvertisingSchedulerRecycleStep::ReservationIdentityMismatch { .. } => active_fault(
+                        axes,
                         BluetoothLegacyAdvertisingActiveFaultCause::ReservationIdentityMismatch,
-                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(
-                            BluetoothLegacyAdvertisingSchedulerRecycleStep::ReservationIdentityMismatch(ready),
-                        ),
+                        BluetoothLegacyAdvertisingActiveFaultOwner::Recycle(step),
                     ),
                 }
             }
@@ -2007,48 +1706,60 @@ where
     })
 }
 
-fn waiting_or_continue<'runtime, S, const CAPACITY: usize>(
-    session: BluetoothLegacyAdvertisingActiveSession<'runtime, S, CAPACITY>,
-) -> BluetoothLegacyAdvertisingActiveStep<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    if matches!(
-        session.phase,
-        BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(_)
-    ) {
-        BluetoothLegacyAdvertisingActiveStep::Waiting(session)
-    } else {
-        BluetoothLegacyAdvertisingActiveStep::Continue(session)
-    }
-}
-
-fn running_phase(
-    drain: BluetoothSchedulerFinishedListDrainState<
-        BluetoothLegacyAdvertisingSchedulerRunning<'static>,
-    >,
-) -> BluetoothLegacyAdvertisingActivePhase {
-    match drain {
-        BluetoothSchedulerFinishedListDrainState::Drained(running) => {
-            BluetoothLegacyAdvertisingActivePhase::RunningAwaitingWake(running)
+fn legacy_advertising_fault_cause(
+    cause: BluetoothSingleItemCompletionFaultCause,
+) -> BluetoothLegacyAdvertisingActiveFaultCause {
+    match cause {
+        BluetoothSingleItemCompletionFaultCause::FinishedListDrainAlreadyActive => {
+            BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainAlreadyActive
         }
-        BluetoothSchedulerFinishedListDrainState::Pending(pending) => {
-            BluetoothLegacyAdvertisingActivePhase::RunningDrain(pending)
+        BluetoothSingleItemCompletionFaultCause::SchedulerIdentityMismatch => {
+            BluetoothLegacyAdvertisingActiveFaultCause::SchedulerIdentityMismatch
         }
-    }
-}
-
-fn completed_phase(
-    drain: BluetoothSchedulerFinishedListDrainState<
-        BluetoothLegacyAdvertisingSchedulerCompletionObserved<'static>,
-    >,
-) -> BluetoothLegacyAdvertisingActivePhase {
-    match drain {
-        BluetoothSchedulerFinishedListDrainState::Drained(completed) => {
-            BluetoothLegacyAdvertisingActivePhase::CompletionObserved(completed)
+        BluetoothSingleItemCompletionFaultCause::FinishedListDrainLost => {
+            BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainLost
         }
-        BluetoothSchedulerFinishedListDrainState::Pending(pending) => {
-            BluetoothLegacyAdvertisingActivePhase::CompletionDrain(pending)
+        BluetoothSingleItemCompletionFaultCause::RepeatedRoleList => {
+            BluetoothLegacyAdvertisingActiveFaultCause::RepeatedAdvertisingList
+        }
+        BluetoothSingleItemCompletionFaultCause::FinishedListDrainStillActive => {
+            BluetoothLegacyAdvertisingActiveFaultCause::FinishedListDrainStillActive
+        }
+        BluetoothSingleItemCompletionFaultCause::ExpectedHardwareHeadStillPublished => {
+            BluetoothLegacyAdvertisingActiveFaultCause::ExpectedHardwareHeadStillPublished
+        }
+        BluetoothSingleItemCompletionFaultCause::UnexpectedHardwareHeadChanged => {
+            BluetoothLegacyAdvertisingActiveFaultCause::UnexpectedHardwareHeadChanged
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxBusy => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxBusy
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxIdentityExhausted => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxIdentityExhausted
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxGenerationExhausted => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxGenerationExhausted
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxCommitMismatch => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxCommitMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkMailboxAffinityMismatch => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkMailboxAffinityMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PrimaryInterruptFault => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PrimaryInterruptFault
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkNoSchedulerWorkRearmMismatch => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkNoSchedulerWorkRearmMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkPendingRearmMismatch => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkPendingRearmMismatch
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkRecheckUnavailable => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkRecheckUnavailable
+        }
+        BluetoothSingleItemCompletionFaultCause::PostUnlinkRecheckRearmMismatch => {
+            BluetoothLegacyAdvertisingActiveFaultCause::PostUnlinkRecheckRearmMismatch
         }
     }
 }

@@ -27,8 +27,9 @@ use super::{
     BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError,
     BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity,
     BluetoothLegacyConnectableAdvertisingMemoryGraphStorage,
+    BluetoothLegacyConnectableAdvertisingPostAnchorDuration,
     BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
-    BluetoothLegacyConnectableAdvertisingSchedulerSpan, LEGACY_ADVERTISING_TX_PACKET_BYTES,
+    LEGACY_ADVERTISING_TX_PACKET_BYTES,
 };
 
 const LINK_STATE_BYTES: usize = 0x84;
@@ -634,10 +635,10 @@ impl BluetoothLegacyConnectableAdvertisingGraphBinding {
     }
 }
 
-pub(super) const fn response_capable_scheduler_span(
+pub(super) const fn response_capable_post_anchor_duration(
     payload_length: u8,
-) -> BluetoothLegacyConnectableAdvertisingSchedulerSpan {
-    BluetoothLegacyConnectableAdvertisingSchedulerSpan(
+) -> BluetoothLegacyConnectableAdvertisingPostAnchorDuration {
+    BluetoothLegacyConnectableAdvertisingPostAnchorDuration(
         (payload_length as u32)
             .wrapping_mul(8)
             .wrapping_add(LE_1M_FIXED_PACKET_MICROS)

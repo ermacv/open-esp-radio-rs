@@ -10,7 +10,10 @@ use open_esp_radio_bluetooth_ll::scanning::{
     LegacyPassiveScanWindowInFlight, LegacyPassiveScannerEnabled,
 };
 
-use crate::controller_start::BluetoothPassiveScanControllerInitialPreparationFailure;
+use crate::controller_start::{
+    BluetoothPassiveScanControllerInitialPreparationFailure,
+    BluetoothPassiveScanControllerPreparationFailStop,
+};
 use crate::{
     BluetoothAlwaysAwakePostEnableTimeBeginFailure, BluetoothAlwaysAwakePostEnableTimeFailure,
     BluetoothAlwaysAwakePostEnableTimePending, BluetoothAlwaysAwakePostEnableTimeStep,
@@ -22,8 +25,7 @@ use crate::{
     BluetoothPassiveScanControllerPreparationPending,
     BluetoothPassiveScanControllerPreparationStep, BluetoothPassiveScanEmptySchedulerMergePrepared,
     BluetoothPassiveScanEventPhase, BluetoothPassiveScanSchedulerHeadPublished,
-    BluetoothPassiveScanSchedulerRunning, BluetoothSchedulerHeadPublicationError,
-    BluetoothSchedulerRunInterruptStorage,
+    BluetoothSchedulerHeadPublicationError, BluetoothSchedulerRunInterruptStorage,
 };
 
 /// Portable in-flight window plus the optional prior S31 recurrence phase.
@@ -124,7 +126,9 @@ where
     window: LegacyPassiveScanWindowInFlight,
     phase: BluetoothPassiveScanEventPhase,
     task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    running: BluetoothPassiveScanSchedulerRunning,
+    running: crate::scheduler::BluetoothSingleItemSchedulerRunning<
+        crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
+    >,
 }
 
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
@@ -132,13 +136,15 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    pub fn into_parts(
+    pub(crate) fn into_parts(
         self,
     ) -> (
         BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         LegacyPassiveScanWindowInFlight,
         BluetoothPassiveScanEventPhase,
-        BluetoothPassiveScanSchedulerRunning,
+        crate::scheduler::BluetoothSingleItemSchedulerRunning<
+            crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
+        >,
     ) {
         (self.task, self.window, self.phase, self.running)
     }
@@ -158,6 +164,54 @@ where
 {
     cause: BluetoothPassiveScanFirstRunnerRetryCause<S::Error>,
     runner: BluetoothPassiveScanFirstRunner<'runtime, S, SCHEDULER_CAPACITY>,
+}
+
+/// Scanner owner sealed after an RX-list publication could not join its graph.
+///
+/// The task service is retained with the proof-mismatch owner because the
+/// first MMIO write already completed. No operation can relabel this state as
+/// retryable or restore an idle Controller.
+#[must_use = "retain the permanently faulted Controller and scanner owners"]
+pub struct BluetoothPassiveScanFirstRunnerPublicationFailStop<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    _window: LegacyPassiveScanWindowInFlight,
+    _phase: BluetoothPassiveScanEventPhase,
+    _task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    ownership: BluetoothPassiveScanFirstRunnerPublicationFailStopOwnership,
+}
+
+enum BluetoothPassiveScanFirstRunnerPublicationFailStopOwnership {
+    RxPublication(crate::BluetoothPassiveScanSchedulerHeadPublicationFailure),
+    RetryabilityInvariant {
+        _merged: BluetoothPassiveScanEmptySchedulerMergePrepared,
+    },
+}
+
+impl<S, const SCHEDULER_CAPACITY: usize>
+    BluetoothPassiveScanFirstRunnerPublicationFailStop<'_, S, SCHEDULER_CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Exact RX proof mismatch observed after the irreversible publication.
+    pub const fn error(
+        &self,
+    ) -> Option<
+        open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphPublicationError,
+    > {
+        match &self.ownership {
+            BluetoothPassiveScanFirstRunnerPublicationFailStopOwnership::RxPublication(failure) => {
+                failure.rx_publication_error()
+            }
+            BluetoothPassiveScanFirstRunnerPublicationFailStopOwnership::RetryabilityInvariant {
+                ..
+            } => None,
+        }
+    }
 }
 
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
@@ -202,6 +256,13 @@ where
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothPassiveScanControllerPreparationError,
     },
+    PreparationFailStop {
+        request: BluetoothPassiveScanWindowRequest,
+        failure: BluetoothPassiveScanControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
+    },
+    PublicationFailStop(
+        BluetoothPassiveScanFirstRunnerPublicationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
+    ),
     Retryable(BluetoothPassiveScanFirstRunnerRetry<'runtime, S, SCHEDULER_CAPACITY>),
 }
 
@@ -243,6 +304,10 @@ where
         )
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the exact scanner and Controller owner"
+    )]
     fn begin_request(
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         request: BluetoothPassiveScanWindowRequest,
@@ -331,9 +396,14 @@ where
                         current.into_retained_epoch().into_task_service(),
                         error,
                     ),
-                    Err(BluetoothPassiveScanControllerInitialPreparationFailure::Terminal(
-                        terminal,
-                    )) => Self::finish_preparation(request, terminal),
+                    Err(BluetoothPassiveScanControllerInitialPreparationFailure::FailStop(
+                        failure,
+                    )) => BluetoothPassiveScanFirstRunnerStep::Failed(
+                        BluetoothPassiveScanFirstRunnerFailure::PreparationFailStop {
+                            request,
+                            failure,
+                        },
+                    ),
                 }
             }
             BluetoothPassiveScanFirstRunnerPhase::Preparation { request, pending } => {
@@ -345,6 +415,14 @@ where
                     }
                     BluetoothPassiveScanControllerPreparationStep::Terminal(terminal) => {
                         Self::finish_preparation(request, terminal)
+                    }
+                    BluetoothPassiveScanControllerPreparationStep::FailStop(failure) => {
+                        BluetoothPassiveScanFirstRunnerStep::Failed(
+                            BluetoothPassiveScanFirstRunnerFailure::PreparationFailStop {
+                                request,
+                                failure,
+                            },
+                        )
                     }
                 }
             }
@@ -363,23 +441,50 @@ where
                     },
                 )),
                 Err(failure) => {
-                    let cause =
-                        BluetoothPassiveScanFirstRunnerRetryCause::HeadPublication(failure.error());
-                    BluetoothPassiveScanFirstRunnerStep::Failed(
-                        BluetoothPassiveScanFirstRunnerFailure::Retryable(
-                            BluetoothPassiveScanFirstRunnerRetry {
-                                cause,
-                                runner: Self::from_phase(
-                                    BluetoothPassiveScanFirstRunnerPhase::Prepared {
-                                        window,
-                                        phase,
-                                        task,
-                                        merged: failure.into_merged(),
+                    let head_error = failure.head_error();
+                    match failure.into_retryable_merged() {
+                        Ok(merged) => match head_error {
+                            Some(error) => BluetoothPassiveScanFirstRunnerStep::Failed(
+                                BluetoothPassiveScanFirstRunnerFailure::Retryable(
+                                    BluetoothPassiveScanFirstRunnerRetry {
+                                        cause: BluetoothPassiveScanFirstRunnerRetryCause::HeadPublication(
+                                            error,
+                                        ),
+                                        runner: Self::from_phase(
+                                            BluetoothPassiveScanFirstRunnerPhase::Prepared {
+                                                window,
+                                                phase,
+                                                task,
+                                                merged,
+                                            },
+                                        ),
                                     },
                                 ),
-                            },
+                            ),
+                            None => BluetoothPassiveScanFirstRunnerStep::Failed(
+                                BluetoothPassiveScanFirstRunnerFailure::PublicationFailStop(
+                                    BluetoothPassiveScanFirstRunnerPublicationFailStop {
+                                        _window: window,
+                                        _phase: phase,
+                                        _task: task,
+                                        ownership: BluetoothPassiveScanFirstRunnerPublicationFailStopOwnership::RetryabilityInvariant {
+                                            _merged: merged,
+                                        },
+                                    },
+                                ),
+                            ),
+                        },
+                        Err(failure) => BluetoothPassiveScanFirstRunnerStep::Failed(
+                            BluetoothPassiveScanFirstRunnerFailure::PublicationFailStop(
+                                BluetoothPassiveScanFirstRunnerPublicationFailStop {
+                                    _window: window,
+                                    _phase: phase,
+                                    _task: task,
+                                    ownership: BluetoothPassiveScanFirstRunnerPublicationFailStopOwnership::RxPublication(failure),
+                                },
+                            ),
                         ),
-                    )
+                    }
                 }
             },
             BluetoothPassiveScanFirstRunnerPhase::Head {

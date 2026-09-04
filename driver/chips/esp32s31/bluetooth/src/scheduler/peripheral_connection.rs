@@ -5,6 +5,9 @@
 //! publication primitives.
 
 #[cfg(target_arch = "riscv32")]
+use core::ops::ControlFlow;
+
+#[cfg(target_arch = "riscv32")]
 mod recurring;
 #[cfg(all(test, not(target_arch = "riscv32")))]
 #[path = "peripheral_connection/recurring/transaction.rs"]
@@ -20,24 +23,22 @@ pub use recurring::{
     BluetoothPeripheralConnectionRecurringEventPrepared,
     BluetoothPeripheralConnectionRecurringPreSequence,
 };
+#[cfg(target_arch = "riscv32")]
+pub(crate) use recurring::{
+    BluetoothPeripheralConnectionRecurringSchedulerPublicationFailStop,
+    BluetoothPeripheralConnectionRecurringSchedulerValidationFailure,
+};
 
 use super::BluetoothSchedulerEmptyListMergeError;
 #[cfg(target_arch = "riscv32")]
-use super::{
-    BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
-    BluetoothSchedulerHeadPublicationError,
-};
+use super::BluetoothSchedulerHeadPublicationError;
 
 use crate::BluetoothControllerPoweredTaskRuntime;
-#[cfg(target_arch = "riscv32")]
-use crate::BluetoothSchedulerWakeBatch;
 #[cfg(target_arch = "riscv32")]
 use crate::peripheral_connection::{
     BluetoothPeripheralConnectionCompletedEvent,
     BluetoothPeripheralConnectionCompletionClassification,
-    BluetoothPeripheralConnectionFirstEventCompletionObservation,
-    BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    BluetoothPeripheralConnectionFirstEventRunning,
+    BluetoothPeripheralConnectionFirstEventPublicationRemainder,
     BluetoothPeripheralConnectionFirstEventRxPublished,
     BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
 };
@@ -47,6 +48,14 @@ use crate::peripheral_connection::{
     BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
     BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
 };
+#[cfg(target_arch = "riscv32")]
+use crate::peripheral_connection_completion::{
+    BluetoothPeripheralConnectionCompletionRole, BluetoothPeripheralConnectionRecycleFailure,
+    BluetoothPeripheralConnectionRecycleFailureCause, BluetoothPeripheralConnectionRecycleOutcome,
+    BluetoothPeripheralConnectionRecycleReady,
+};
+#[cfg(target_arch = "riscv32")]
+use crate::scheduler::BluetoothSingleItemSchedulerSoftwareListRemovalReady;
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
     BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerWindowReservation,
@@ -59,7 +68,8 @@ use crate::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothLeRxError, BluetoothPeripheralConnectionMemoryGraphRecycleError,
+    BluetoothPeripheralConnectionMemoryGraphPublicationError,
+    BluetoothPeripheralConnectionMemoryGraphPublicationMismatch,
     BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
 };
 use open_esp_radio_esp32s31_hal::{
@@ -67,12 +77,7 @@ use open_esp_radio_esp32s31_hal::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHead,
-    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListHeadRetirementObservation,
-    BluetoothSchedulerHardwareRunCommandPublished,
-    BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
-    BluetoothSchedulerSoftwareListRemovalReady,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
 };
 
 /// Fresh initial-admission sample sealed by the controller-time worker.
@@ -182,24 +187,74 @@ impl BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
     }
 }
 
-/// Lossless rejection before any connection or scheduler MMIO publication.
+/// Lossless connection-head publication failure.
+///
+/// A head-validation rejection remains retryable because it precedes MMIO. An
+/// RX proof mismatch follows an irreversible RX-list publication and therefore
+/// seals every remaining affine owner without exposing a rollback operation.
 #[cfg(target_arch = "riscv32")]
-#[must_use = "the unchanged CPU-owned connection merge can be retried or cancelled"]
+#[must_use = "retry only a pre-publication rejection; retain an RX mismatch fail-stop"]
 pub struct BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
-    error: BluetoothSchedulerHeadPublicationError,
-    merged: BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    ownership: BluetoothPeripheralConnectionSchedulerHeadPublicationFailureOwnership,
+}
+
+#[cfg(target_arch = "riscv32")]
+#[allow(
+    clippy::enum_variant_names,
+    clippy::large_enum_variant,
+    reason = "each no-alloc variant retains a distinct complete affine publication phase"
+)]
+enum BluetoothPeripheralConnectionSchedulerHeadPublicationFailureOwnership {
+    PrePublication {
+        error: BluetoothSchedulerHeadPublicationError,
+        merged: BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+    },
+    FirstRxPublication {
+        mismatch: BluetoothPeripheralConnectionMemoryGraphPublicationMismatch,
+        _remainder: BluetoothPeripheralConnectionFirstEventPublicationRemainder,
+        _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
+        _head: BluetoothSchedulerHardwareListHead,
+    },
 }
 
 #[cfg(target_arch = "riscv32")]
 impl BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
-    /// Exact reason the common scheduler head could not be prepared.
-    pub const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
-        self.error
+    /// Exact post-MMIO proof mismatch, when this failure is permanently sealed.
+    pub const fn rx_publication_error(
+        &self,
+    ) -> Option<BluetoothPeripheralConnectionMemoryGraphPublicationError> {
+        match &self.ownership {
+            BluetoothPeripheralConnectionSchedulerHeadPublicationFailureOwnership::PrePublication {
+                ..
+            } => None,
+            BluetoothPeripheralConnectionSchedulerHeadPublicationFailureOwnership::FirstRxPublication {
+                mismatch,
+                ..
+            } => Some(mismatch.error()),
+        }
     }
 
-    /// Recover the unchanged merge. No MMIO was performed.
-    pub fn into_merged(self) -> BluetoothPeripheralConnectionEmptySchedulerMergePrepared {
-        self.merged
+    /// Recover the unchanged merge only when no MMIO publication occurred.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the fail-stop error retains every post-publication affine owner"
+    )]
+    pub fn into_retryable_parts(
+        self,
+    ) -> Result<
+        (
+            BluetoothSchedulerHeadPublicationError,
+            BluetoothPeripheralConnectionEmptySchedulerMergePrepared,
+        ),
+        BluetoothPeripheralConnectionSchedulerHeadPublicationFailure,
+    > {
+        match self.ownership {
+            BluetoothPeripheralConnectionSchedulerHeadPublicationFailureOwnership::PrePublication {
+                error,
+                merged,
+            } => Ok((error, merged)),
+            ownership => Err(Self { ownership }),
+        }
     }
 }
 
@@ -224,6 +279,11 @@ impl BluetoothPeripheralConnectionSchedulerHeadPublished {
         self.publication.index()
     }
 
+    /// Link Layer counter retained by the event before RUN publication.
+    pub const fn event_counter(&self) -> u16 {
+        self.event.event_counter()
+    }
+
     pub(crate) fn into_parts(
         self,
     ) -> (
@@ -232,250 +292,6 @@ impl BluetoothPeripheralConnectionSchedulerHeadPublished {
         BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
     ) {
         (self.event, self.publication, self.reservation)
-    }
-}
-
-/// First peripheral connection event admitted through the common RUN suffix.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the running connection event must advance through owned completion"]
-pub struct BluetoothPeripheralConnectionSchedulerRunning {
-    event: BluetoothPeripheralConnectionFirstEventRunning,
-    run: BluetoothSchedulerHardwareRunCommandPublished,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPeripheralConnectionSchedulerRunning {
-    pub(crate) fn new(
-        event: BluetoothPeripheralConnectionFirstEventRxPublished,
-        run: BluetoothSchedulerHardwareRunCommandPublished,
-        reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-    ) -> Self {
-        Self {
-            event: event.into_running(&run),
-            run,
-            reservation,
-        }
-    }
-
-    /// Exact hardware-owned scheduler item.
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.event.scheduler_item_address()
-    }
-
-    /// Hardware list containing the running connection item.
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.run.index()
-    }
-
-    /// Link Layer event counter, not advanced before completion.
-    pub const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
-    }
-
-    /// Common-timeline reservation retained until completion or teardown.
-    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
-        self.reservation.window()
-    }
-}
-
-/// First peripheral connection event after a fenced non-sentinel status read.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the completed connection graph must advance through unlink and recycle"]
-pub struct BluetoothPeripheralConnectionSchedulerCompletionObserved {
-    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    run: BluetoothSchedulerHardwareRunCommandPublished,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPeripheralConnectionSchedulerCompletionObserved {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.event.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.run.index()
-    }
-
-    pub const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
-    }
-
-    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
-        self.event.status()
-    }
-
-    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
-        self.reservation.window()
-    }
-}
-
-/// One bounded Controller-owned connection completion attempt.
-#[must_use = "the connection graph and every observed list must be retained"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionSchedulerCompletionStep {
-    DrainAlreadyActive(BluetoothPeripheralConnectionSchedulerRunning),
-    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerRunning),
-    NoFinishedList(BluetoothPeripheralConnectionSchedulerRunning),
-    UnrelatedList {
-        drain:
-            BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    StillInFlight(
-        BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
-    ),
-    CompletionObserved(
-        BluetoothSchedulerFinishedListDrainState<
-            BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        >,
-    ),
-}
-
-/// One bounded continuation of a captured finished-list set while the
-/// connection item is still running.
-#[must_use = "the connection graph and every observed list must be retained"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionSchedulerRunningDrainStep {
-    SchedulerIdentityMismatch(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothPeripheralConnectionSchedulerRunning>,
-    ),
-    DrainLost(
-        BluetoothSchedulerFinishedListDrainPending<BluetoothPeripheralConnectionSchedulerRunning>,
-    ),
-    UnrelatedList {
-        drain:
-            BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    StillInFlight(
-        BluetoothSchedulerFinishedListDrainState<BluetoothPeripheralConnectionSchedulerRunning>,
-    ),
-    CompletionObserved(
-        BluetoothSchedulerFinishedListDrainState<
-            BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        >,
-    ),
-}
-
-/// One bounded continuation after list zero already completed the connection item.
-#[must_use = "the completed connection graph and every observed list must be retained"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep {
-    SchedulerIdentityMismatch(
-        BluetoothSchedulerFinishedListDrainPending<
-            BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        >,
-    ),
-    DrainLost(
-        BluetoothSchedulerFinishedListDrainPending<
-            BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        >,
-    ),
-    UnrelatedList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-    RepeatedConnectionList {
-        drain: BluetoothSchedulerFinishedListDrainState<
-            BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        >,
-        observed: BluetoothSchedulerFinishedHardwareListObserved,
-    },
-}
-
-/// Completed connection graph after its exact hardware-list head became empty.
-#[must_use = "the empty-head connection graph must advance through software-list removal"]
-#[cfg(target_arch = "riscv32")]
-pub struct BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved {
-    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.event.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.head.index()
-    }
-
-    pub const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
-    }
-
-    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
-        self.event.status()
-    }
-
-    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
-        self.reservation.window()
-    }
-}
-
-/// Completed connection item removed from the source-owned software list.
-#[must_use = "the unlinked connection graph must pass the finite removal gate"]
-#[cfg(target_arch = "riscv32")]
-pub struct BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.event.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.head.index()
-    }
-
-    pub const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
-    }
-
-    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
-        self.event.status()
-    }
-}
-
-/// Connection graph after the post-unlink return predicate became ready.
-#[must_use = "the removal-ready connection graph must advance through recycle"]
-#[cfg(target_arch = "riscv32")]
-pub struct BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-    event: BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    removal: BluetoothSchedulerSoftwareListRemovalReady,
-    reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.event.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.removal.index()
-    }
-
-    pub const fn event_counter(&self) -> u16 {
-        self.event.event_counter()
-    }
-
-    pub const fn status(&self) -> BluetoothPeripheralConnectionSchedulerItemCompletionStatus {
-        self.event.status()
-    }
-
-    pub const fn reserved_window(&self) -> crate::BluetoothSchedulerRawWindow {
-        self.reservation.window()
     }
 }
 
@@ -575,73 +391,6 @@ impl BluetoothPeripheralConnectionSchedulerCompleted {
     pub const fn packet_start(&self) -> Option<&BluetoothPeripheralConnectionPacketStartTiming> {
         self.event.packet_start()
     }
-}
-
-/// One atomic attempt to release connection memory, timeline and list owners.
-#[must_use = "every rejected branch retains the exact removal-ready connection"]
-#[cfg(target_arch = "riscv32")]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "no-alloc failure branches retain the exact affine connection owner"
-)]
-pub enum BluetoothPeripheralConnectionSchedulerRecycleStep {
-    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
-    FinishedListDrainStillActive(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
-    MemoryIdentityMismatch {
-        ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
-        error: BluetoothPeripheralConnectionMemoryGraphRecycleError,
-    },
-    ReceiveInvalid {
-        ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
-        error: BluetoothLeRxError,
-    },
-    ReservationIdentityMismatch(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
-    Recycled(BluetoothPeripheralConnectionSchedulerRecycled),
-}
-
-#[must_use = "the unlinked or removal-ready connection graph must remain owned"]
-#[cfg(target_arch = "riscv32")]
-pub(crate) enum BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin {
-    SchedulerIdentityMismatch {
-        unlinked: BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    },
-    Pending(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
-    Ready(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
-}
-
-#[must_use = "the unlinked or removal-ready connection graph must remain owned"]
-#[cfg(target_arch = "riscv32")]
-pub(crate) enum BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck {
-    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
-    StorageUnavailable(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
-    Pending(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
-    Ready(BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady),
-}
-
-/// Result of removing the sole connection item from the source-owned list.
-#[must_use = "identity mismatch retains the empty-head graph"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep {
-    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
-    Unlinked(BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked),
-}
-
-/// One bounded post-completion hardware-head retirement attempt.
-#[must_use = "the connection completion owner must enter fail-stop handling or advance"]
-#[cfg(target_arch = "riscv32")]
-pub enum BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep {
-    SchedulerIdentityMismatch(BluetoothPeripheralConnectionSchedulerCompletionObserved),
-    FinishedListDrainStillActive(BluetoothPeripheralConnectionSchedulerCompletionObserved),
-    ExpectedHeadStillPublished {
-        completed: BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        observed: BluetoothSchedulerHardwareListHead,
-    },
-    UnexpectedHeadChanged {
-        completed: BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        observed: BluetoothSchedulerHardwareListHead,
-    },
-    EmptyObserved(BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved),
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -821,7 +570,9 @@ impl<const SCHEDULER_CAPACITY: usize>
     /// Publish selector-two RX memory and the exact connection scheduler head.
     ///
     /// Common-list identity is validated before the first irreversible MMIO.
-    /// The remaining RX/head suffix is therefore infallible and ordered.
+    /// An RX publication proof mismatch after that boundary is returned as a
+    /// sealed fail-stop retaining every affine owner; only a validated join
+    /// may continue to scheduler-head publication.
     #[cfg(target_arch = "riscv32")]
     #[allow(
         unsafe_code,
@@ -840,15 +591,32 @@ impl<const SCHEDULER_CAPACITY: usize>
         let head = match self.validate_first_scheduler_item_head(address) {
             Ok(head) => head,
             Err(error) => {
-                return Err(
-                    BluetoothPeripheralConnectionSchedulerHeadPublicationFailure { error, merged },
-                );
+                return Err(BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
+                    ownership:
+                        BluetoothPeripheralConnectionSchedulerHeadPublicationFailureOwnership::PrePublication {
+                            error,
+                            merged,
+                        },
+                });
             }
         };
         let BluetoothPeripheralConnectionEmptySchedulerMergePrepared { event, reservation } =
             merged;
         let (graph, remainder) = event.prepare_publication().into_parts();
-        let graph = unsafe { self.task.publish_peripheral_connection_rx_memory(graph) };
+        let graph = match unsafe { self.task.publish_peripheral_connection_rx_memory(graph) } {
+            Ok(graph) => graph,
+            Err(mismatch) => {
+                return Err(BluetoothPeripheralConnectionSchedulerHeadPublicationFailure {
+                    ownership:
+                        BluetoothPeripheralConnectionSchedulerHeadPublicationFailureOwnership::FirstRxPublication {
+                            mismatch,
+                            _remainder: remainder,
+                            _reservation: reservation,
+                            _head: head,
+                        },
+                });
+            }
+        };
         let event = remainder.join_rx_publication(graph);
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
         Ok(BluetoothPeripheralConnectionSchedulerHeadPublished {
@@ -858,457 +626,43 @@ impl<const SCHEDULER_CAPACITY: usize>
         })
     }
 
-    /// Perform one fresh, bounded first-connection completion observation.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_peripheral_connection_completion(
-        &mut self,
-        running: BluetoothPeripheralConnectionSchedulerRunning,
-        wake: BluetoothSchedulerWakeBatch,
-    ) -> BluetoothPeripheralConnectionSchedulerCompletionStep {
-        let address = running.scheduler_item_address();
-        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-        {
-            return BluetoothPeripheralConnectionSchedulerCompletionStep::SchedulerIdentityMismatch(
-                running,
-            );
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPeripheralConnectionSchedulerCompletionStep::DrainAlreadyActive(
-                running,
-            );
-        }
-
-        if self
-            .task
-            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake)
-            .is_err()
-        {
-            return BluetoothPeripheralConnectionSchedulerCompletionStep::DrainAlreadyActive(
-                running,
-            );
-        }
-        let step = self.runtime.scheduler_finished_lists_mut().step();
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
-            return BluetoothPeripheralConnectionSchedulerCompletionStep::NoFinishedList(running);
-        };
-
-        let BluetoothPeripheralConnectionSchedulerRunning {
-            event,
-            run,
-            reservation,
-        } = running;
-        match event.observe_completion(observed) {
-            BluetoothPeripheralConnectionFirstEventCompletionObservation::ListMismatch {
-                running: event,
-                observed,
-            } => BluetoothPeripheralConnectionSchedulerCompletionStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothPeripheralConnectionSchedulerRunning {
-                        event,
-                        run,
-                        reservation,
-                    },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothPeripheralConnectionFirstEventCompletionObservation::StillInFlight(event) => {
-                BluetoothPeripheralConnectionSchedulerCompletionStep::StillInFlight(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPeripheralConnectionSchedulerRunning {
-                            event,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-            BluetoothPeripheralConnectionFirstEventCompletionObservation::CompletionObserved(
-                event,
-            ) => {
-                self._scheduler_list
-                    .retain_completion_observed_first_item(address);
-                BluetoothPeripheralConnectionSchedulerCompletionStep::CompletionObserved(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPeripheralConnectionSchedulerCompletionObserved {
-                            event,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-        }
-    }
-
-    /// Continue the same captured finished-list set while the connection is running.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_peripheral_connection_running_finished_list_drain(
-        &mut self,
-        pending: BluetoothSchedulerFinishedListDrainPending<
-            BluetoothPeripheralConnectionSchedulerRunning,
-        >,
-    ) -> BluetoothPeripheralConnectionSchedulerRunningDrainStep {
-        let address = pending.owner().scheduler_item_address();
-        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-        {
-            return BluetoothPeripheralConnectionSchedulerRunningDrainStep::SchedulerIdentityMismatch(
-                pending,
-            );
-        }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPeripheralConnectionSchedulerRunningDrainStep::DrainLost(pending);
-        }
-        let step = self.runtime.scheduler_finished_lists_mut().step();
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
-            return BluetoothPeripheralConnectionSchedulerRunningDrainStep::DrainLost(pending);
-        };
-        let BluetoothPeripheralConnectionSchedulerRunning {
-            event,
-            run,
-            reservation,
-        } = pending.into_owner();
-        match event.observe_completion(observed) {
-            BluetoothPeripheralConnectionFirstEventCompletionObservation::ListMismatch {
-                running: event,
-                observed,
-            } => BluetoothPeripheralConnectionSchedulerRunningDrainStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothPeripheralConnectionSchedulerRunning {
-                        event,
-                        run,
-                        reservation,
-                    },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothPeripheralConnectionFirstEventCompletionObservation::StillInFlight(event) => {
-                BluetoothPeripheralConnectionSchedulerRunningDrainStep::StillInFlight(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPeripheralConnectionSchedulerRunning {
-                            event,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-            BluetoothPeripheralConnectionFirstEventCompletionObservation::CompletionObserved(
-                event,
-            ) => {
-                self._scheduler_list
-                    .retain_completion_observed_first_item(address);
-                BluetoothPeripheralConnectionSchedulerRunningDrainStep::CompletionObserved(
-                    BluetoothSchedulerFinishedListDrainState::from_worker_step(
-                        BluetoothPeripheralConnectionSchedulerCompletionObserved {
-                            event,
-                            run,
-                            reservation,
-                        },
-                        more,
-                    ),
-                )
-            }
-        }
-    }
-
-    /// Continue one captured set after list zero completed the connection item.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_peripheral_connection_completed_finished_list_drain(
-        &mut self,
-        pending: BluetoothSchedulerFinishedListDrainPending<
-            BluetoothPeripheralConnectionSchedulerCompletionObserved,
-        >,
-    ) -> BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep {
-        let address = pending.owner().scheduler_item_address();
-        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_completion_observed_first_item(address)
-        {
-            return BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
-                pending,
-            );
-        }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::DrainLost(
-                pending,
-            );
-        }
-        let step = self.runtime.scheduler_finished_lists_mut().step();
-        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
-            return BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::DrainLost(
-                pending,
-            );
-        };
-        let completed = pending.into_owner();
-        if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
-            BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::RepeatedConnectionList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
-                observed,
-            }
-        } else {
-            BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep::UnrelatedList {
-                drain: BluetoothSchedulerFinishedListDrainState::from_worker_step(completed, more),
-                observed,
-            }
-        }
-    }
-
-    /// Observe the post-picker hardware-head retirement barrier for a connection.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_peripheral_connection_hardware_head_retirement(
-        &mut self,
-        completed: BluetoothPeripheralConnectionSchedulerCompletionObserved,
-    ) -> BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep {
-        let address = completed.scheduler_item_address();
-        if completed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_completion_observed_first_item(address)
-        {
-            return BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(completed);
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed);
-        }
-
-        let BluetoothPeripheralConnectionSchedulerCompletionObserved {
-            event,
-            run,
-            reservation,
-        } = completed;
-        match self
-            .task
-            .observe_scheduler_hardware_list_head_retirement(run)
-        {
-            BluetoothSchedulerHardwareListHeadRetirementObservation::ExpectedHeadStillPublished {
-                run,
-                observed,
-            } => BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished {
-                completed: BluetoothPeripheralConnectionSchedulerCompletionObserved {
-                    event,
-                    run,
-                    reservation,
-                },
-                observed,
-            },
-            BluetoothSchedulerHardwareListHeadRetirementObservation::UnexpectedHeadChanged {
-                run,
-                observed,
-            } => BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged {
-                completed: BluetoothPeripheralConnectionSchedulerCompletionObserved {
-                    event,
-                    run,
-                    reservation,
-                },
-                observed,
-            },
-            BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(head) => {
-                assert_eq!(
-                    head.completed_head().address(),
-                    Some(address),
-                    "the retired hardware head must retain the exact connection item"
-                );
-                self._scheduler_list
-                    .retain_hardware_head_empty_first_item(address);
-                BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep::EmptyObserved(
-                    BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved {
-                        event,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
-    /// Remove the exact empty-head connection item from the source-owned list.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn unlink_peripheral_connection_software_list(
-        &mut self,
-        observed: BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
-    ) -> BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep {
-        let address = observed.scheduler_item_address();
-        if observed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self
-                ._scheduler_list
-                .unlink_software_list_first_item(address)
-        {
-            return BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(observed);
-        }
-        let BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved {
-            event,
-            head,
-            reservation,
-        } = observed;
-        BluetoothPeripheralConnectionSchedulerSoftwareListUnlinkStep::Unlinked(
-            BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-                event,
-                head,
-                reservation,
-            },
-        )
-    }
-
-    /// Join one serviced primary scheduler event to the already-unlinked connection.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn join_peripheral_connection_software_list_removal(
-        &mut self,
-        unlinked: BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-        event: crate::BluetoothPrimarySchedulerEvent,
-    ) -> BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin {
-        let address = unlinked.scheduler_item_address();
-        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
-        {
-            return BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
-                unlinked,
-                event,
-            };
-        }
-        let idle = match event.into_software_list_removal_gate() {
-            BluetoothSchedulerSoftwareListRemovalInterruptStep::Pending => {
-                return BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin::Pending(
-                    unlinked,
-                );
-            }
-            BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
-        };
-        let BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-            event,
-            head,
-            reservation,
-        } = unlinked;
-        match self.task.finish_scheduler_software_list_removal(idle, head) {
-            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
-                BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin::Pending(
-                    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-                        event,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
-                    .retain_software_list_removal_ready_first_item(address);
-                BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin::Ready(
-                    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-                        event,
-                        removal,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
-    /// Recheck one unlinked connection without requiring another interrupt edge.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_peripheral_connection_software_list_removal(
-        &mut self,
-        storage: &impl crate::BluetoothSchedulerRunInterruptStorage,
-        unlinked: BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked,
-    ) -> BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck {
-        let address = unlinked.scheduler_item_address();
-        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
-        {
-            return BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked);
-        }
-        let BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-            event,
-            head,
-            reservation,
-        } = unlinked;
-        let join = match self
-            .task
-            .recheck_scheduler_software_list_removal(storage, head)
-        {
-            Ok(join) => join,
-            Err(head) => {
-                return BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
-                    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-                        event,
-                        head,
-                        reservation,
-                    },
-                );
-            }
-        };
-        match join {
-            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
-                BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::Pending(
-                    BluetoothPeripheralConnectionSchedulerSoftwareListUnlinked {
-                        event,
-                        head,
-                        reservation,
-                    },
-                )
-            }
-            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
-                    .retain_software_list_removal_ready_first_item(address);
-                BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck::Ready(
-                    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-                        event,
-                        removal,
-                        reservation,
-                    },
-                )
-            }
-        }
-    }
-
     /// Copy RX results and release the connection event's three lower owners.
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn recycle_peripheral_connection_completed(
         &mut self,
-        ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady,
-    ) -> BluetoothPeripheralConnectionSchedulerRecycleStep {
+        ready: BluetoothSingleItemSchedulerSoftwareListRemovalReady<
+            BluetoothPeripheralConnectionCompletionRole,
+        >,
+    ) -> BluetoothPeripheralConnectionRecycleOutcome {
+        let (event, removal, reservation) = ready.into_parts();
+        let ready = BluetoothPeripheralConnectionRecycleReady::new(event, removal, reservation);
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
                 ._scheduler_list
                 .retains_software_list_removal_ready_first_item(address)
         {
-            return BluetoothPeripheralConnectionSchedulerRecycleStep::SchedulerIdentityMismatch(
+            return ControlFlow::Break(BluetoothPeripheralConnectionRecycleFailure::new(
+                BluetoothPeripheralConnectionRecycleFailureCause::SchedulerIdentityMismatch,
                 ready,
-            );
+            ));
         }
         if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return BluetoothPeripheralConnectionSchedulerRecycleStep::FinishedListDrainStillActive(
+            return ControlFlow::Break(BluetoothPeripheralConnectionRecycleFailure::new(
+                BluetoothPeripheralConnectionRecycleFailureCause::FinishedListDrainStillActive,
                 ready,
-            );
+            ));
         }
-        let BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-            event,
-            removal,
-            reservation,
-        } = ready;
+        let (event, removal, reservation) = ready.into_parts();
         let prepared = match event.prepare_recycle(removal) {
             Ok(prepared) => prepared,
             Err(failure) => {
                 let error = failure.error();
                 let (event, removal) = failure.into_parts();
-                return BluetoothPeripheralConnectionSchedulerRecycleStep::MemoryIdentityMismatch {
-                    ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-                        event,
-                        removal,
-                        reservation,
-                    },
-                    error,
-                };
+                return ControlFlow::Break(BluetoothPeripheralConnectionRecycleFailure::new(
+                    BluetoothPeripheralConnectionRecycleFailureCause::MemoryIdentityMismatch(error),
+                    BluetoothPeripheralConnectionRecycleReady::new(event, removal, reservation),
+                ));
             }
         };
         let extracted = match prepared.extract_received() {
@@ -1316,14 +670,10 @@ impl<const SCHEDULER_CAPACITY: usize>
             Err(failure) => {
                 let error = failure.error();
                 let (event, removal) = failure.into_prepared().into_parts();
-                return BluetoothPeripheralConnectionSchedulerRecycleStep::ReceiveInvalid {
-                    ready: BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-                        event,
-                        removal,
-                        reservation,
-                    },
-                    error,
-                };
+                return ControlFlow::Break(BluetoothPeripheralConnectionRecycleFailure::new(
+                    BluetoothPeripheralConnectionRecycleFailureCause::ReceiveInvalid(error),
+                    BluetoothPeripheralConnectionRecycleReady::new(event, removal, reservation),
+                ));
             }
         };
         let release = match self
@@ -1335,20 +685,15 @@ impl<const SCHEDULER_CAPACITY: usize>
             Err(failure) => {
                 let reservation = failure.into_reservation();
                 let (event, removal) = extracted.into_prepared().into_parts();
-                return BluetoothPeripheralConnectionSchedulerRecycleStep::ReservationIdentityMismatch(
-                    BluetoothPeripheralConnectionSchedulerSoftwareListRemovalReady {
-                        event,
-                        removal,
-                        reservation,
-                    },
-                );
+                return ControlFlow::Break(BluetoothPeripheralConnectionRecycleFailure::new(
+                    BluetoothPeripheralConnectionRecycleFailureCause::ReservationIdentityMismatch,
+                    BluetoothPeripheralConnectionRecycleReady::new(event, removal, reservation),
+                ));
             }
         };
         let event = extracted.commit();
         release.commit();
         self._scheduler_list.commit_recycled_first_item();
-        BluetoothPeripheralConnectionSchedulerRecycleStep::Recycled(
-            BluetoothPeripheralConnectionSchedulerRecycled { event },
-        )
+        ControlFlow::Continue(BluetoothPeripheralConnectionSchedulerRecycled { event })
     }
 }

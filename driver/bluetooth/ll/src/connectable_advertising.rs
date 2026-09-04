@@ -12,6 +12,7 @@ use crate::{
         LegacyAdvertisingData, LegacyAdvertisingDataError, LegacyAdvertisingEncodeError,
         PrimaryAdvertisingChannelMap,
     },
+    advertising_lifecycle::{LegacyAdvertisingEventIdentity, LegacyAdvertisingGenerationAllocator},
     connection::{
         LeChannelSelectionAlgorithm, LeLegacyConnectionRequest, LeLegacyConnectionRequestError,
         LePeripheralConnection,
@@ -304,9 +305,99 @@ impl<'a> LegacyConnectableAdvertisingSet<'a> {
     pub const fn interval(self) -> AdvertisingInterval {
         self.interval
     }
+}
 
-    pub const fn begin_event(self) -> LegacyConnectableAdvertisingEvent<'a> {
-        LegacyConnectableAdvertisingEvent { set: self }
+/// Disabled connectable advertiser retaining the next unique Enable generation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct LegacyConnectableAdvertiserStandby {
+    generations: LegacyAdvertisingGenerationAllocator,
+}
+
+impl LegacyConnectableAdvertiserStandby {
+    /// Construct a fresh connectable advertiser lifecycle.
+    pub const fn new() -> Self {
+        Self {
+            generations: LegacyAdvertisingGenerationAllocator::new(),
+        }
+    }
+
+    /// Install one validated connectable advertising configuration.
+    pub const fn configure<'a>(
+        self,
+        set: LegacyConnectableAdvertisingSet<'a>,
+    ) -> LegacyConnectableAdvertiserConfigured<'a> {
+        LegacyConnectableAdvertiserConfigured { standby: self, set }
+    }
+}
+
+impl Default for LegacyConnectableAdvertiserStandby {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Disabled connectable advertiser with a configuration available for Enable.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "enable, reconfigure, or retain the connectable advertiser"]
+pub struct LegacyConnectableAdvertiserConfigured<'a> {
+    standby: LegacyConnectableAdvertiserStandby,
+    set: LegacyConnectableAdvertisingSet<'a>,
+}
+
+impl<'a> LegacyConnectableAdvertiserConfigured<'a> {
+    /// Current reusable configuration retained across Enable epochs.
+    pub const fn set(&self) -> LegacyConnectableAdvertisingSet<'a> {
+        self.set
+    }
+
+    /// Replace the disabled configuration without allocating a generation.
+    pub const fn reconfigure(self, set: LegacyConnectableAdvertisingSet<'a>) -> Self {
+        Self {
+            standby: self.standby,
+            set,
+        }
+    }
+
+    /// Begin a new Enable epoch and its first event.
+    pub fn enable(
+        self,
+    ) -> Result<LegacyConnectableAdvertisingEvent<'a>, LegacyConnectableAdvertiserEnableError<'a>>
+    {
+        let Self { standby, set } = self;
+        let (generations, identity) = match standby.generations.begin_enable() {
+            Ok(allocated) => allocated,
+            Err(generations) => {
+                return Err(LegacyConnectableAdvertiserEnableError {
+                    configured: Self {
+                        standby: LegacyConnectableAdvertiserStandby { generations },
+                        set,
+                    },
+                });
+            }
+        };
+        Ok(LegacyConnectableAdvertisingEvent {
+            standby: LegacyConnectableAdvertiserStandby { generations },
+            identity,
+            set,
+        })
+    }
+
+    /// Remove the configuration without allocating an Enable generation.
+    pub fn into_standby(self) -> LegacyConnectableAdvertiserStandby {
+        self.standby
+    }
+}
+
+/// Generation space was exhausted before connectable advertising Enable.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the configured connectable advertiser remains recoverable"]
+pub struct LegacyConnectableAdvertiserEnableError<'a> {
+    configured: LegacyConnectableAdvertiserConfigured<'a>,
+}
+
+impl<'a> LegacyConnectableAdvertiserEnableError<'a> {
+    pub fn into_configured(self) -> LegacyConnectableAdvertiserConfigured<'a> {
+        self.configured
     }
 }
 
@@ -314,16 +405,26 @@ impl<'a> LegacyConnectableAdvertisingSet<'a> {
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "prepare, cancel, or retain the connectable advertising event"]
 pub struct LegacyConnectableAdvertisingEvent<'a> {
+    standby: LegacyConnectableAdvertiserStandby,
+    identity: LegacyAdvertisingEventIdentity,
     set: LegacyConnectableAdvertisingSet<'a>,
 }
 
 impl<'a> LegacyConnectableAdvertisingEvent<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
+        self.identity
+    }
+
     pub fn prepare(self) -> LegacyPreparedConnectableAdvertisingEvent<'a> {
         LegacyPreparedConnectableAdvertisingEvent { event: self }
     }
 
-    pub fn into_set(self) -> LegacyConnectableAdvertisingSet<'a> {
-        self.set
+    /// Disable before the event was accepted by a backend.
+    pub fn disable(self) -> LegacyConnectableAdvertiserConfigured<'a> {
+        LegacyConnectableAdvertiserConfigured {
+            standby: self.standby,
+            set: self.set,
+        }
     }
 }
 
@@ -335,6 +436,10 @@ pub struct LegacyPreparedConnectableAdvertisingEvent<'a> {
 }
 
 impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
+        self.event.identity
+    }
+
     pub const fn channels(&self) -> PrimaryAdvertisingChannelMap {
         self.event.set.channels
     }
@@ -378,6 +483,11 @@ impl<'a> LegacyPreparedConnectableAdvertisingEvent<'a> {
         self.event
     }
 
+    /// Disable before hardware accepted the prepared event.
+    pub fn disable(self) -> LegacyConnectableAdvertiserConfigured<'a> {
+        self.cancel().disable()
+    }
+
     /// Mark the exact point where a backend accepted this event for execution.
     ///
     /// A chip backend must call this only after publishing its non-forgeable
@@ -397,6 +507,10 @@ pub struct LegacyConnectableAdvertisingEventInFlight<'a> {
 }
 
 impl<'a> LegacyConnectableAdvertisingEventInFlight<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
+        self.prepared.identity()
+    }
+
     /// Validate one received `CONNECT_IND` without losing the event on failure.
     pub fn admit_connection_request(
         self,
@@ -438,7 +552,11 @@ impl<'a> LegacyConnectableAdvertisingEventInFlight<'a> {
 
         LegacyConnectableConnectionRequestAdmission::Accepted(
             LegacyConnectableConnectionRequestAccepted {
-                set: self.prepared.event.set,
+                configured: LegacyConnectableAdvertiserConfigured {
+                    standby: self.prepared.event.standby,
+                    set: self.prepared.event.set,
+                },
+                identity: self.prepared.event.identity,
                 connection: LePeripheralConnection::from_request(request),
             },
         )
@@ -447,6 +565,8 @@ impl<'a> LegacyConnectableAdvertisingEventInFlight<'a> {
     /// Close an event in which no acceptable connection request was received.
     pub fn complete_without_connection(self) -> LegacyConnectableAdvertisingEventComplete<'a> {
         LegacyConnectableAdvertisingEventComplete {
+            standby: self.prepared.event.standby,
+            identity: self.prepared.event.identity,
             set: self.prepared.event.set,
         }
     }
@@ -464,17 +584,28 @@ pub enum LegacyConnectableConnectionRequestAdmission<'a> {
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "retain the connection and persistent advertising configuration"]
 pub struct LegacyConnectableConnectionRequestAccepted<'a> {
-    set: LegacyConnectableAdvertisingSet<'a>,
+    configured: LegacyConnectableAdvertiserConfigured<'a>,
+    identity: LegacyAdvertisingEventIdentity,
     connection: LePeripheralConnection,
 }
 
 impl<'a> LegacyConnectableConnectionRequestAccepted<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
+        self.identity
+    }
+
     pub const fn request(&self) -> LeLegacyConnectionRequest {
         self.connection.request()
     }
 
-    pub fn into_parts(self) -> (LegacyConnectableAdvertisingSet<'a>, LePeripheralConnection) {
-        (self.set, self.connection)
+    pub fn into_parts(
+        self,
+    ) -> (
+        LegacyConnectableAdvertiserConfigured<'a>,
+        LegacyAdvertisingEventIdentity,
+        LePeripheralConnection,
+    ) {
+        (self.configured, self.identity, self.connection)
     }
 }
 
@@ -508,22 +639,55 @@ pub enum LegacyConnectableConnectionRequestRejection {
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "schedule the next event or retain the advertising set"]
 pub struct LegacyConnectableAdvertisingEventComplete<'a> {
+    standby: LegacyConnectableAdvertiserStandby,
+    identity: LegacyAdvertisingEventIdentity,
     set: LegacyConnectableAdvertisingSet<'a>,
 }
 
 impl<'a> LegacyConnectableAdvertisingEventComplete<'a> {
-    pub fn into_set(self) -> LegacyConnectableAdvertisingSet<'a> {
-        self.set
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
+        self.identity
     }
 
-    pub const fn schedule_next(
+    /// Disable between events while no backend owns an event.
+    pub fn disable(self) -> LegacyConnectableAdvertiserConfigured<'a> {
+        LegacyConnectableAdvertiserConfigured {
+            standby: self.standby,
+            set: self.set,
+        }
+    }
+
+    pub fn schedule_next(
         self,
         delay: AdvertisingDelay,
-    ) -> ScheduledLegacyConnectableAdvertisingEvent<'a> {
-        ScheduledLegacyConnectableAdvertisingEvent {
+    ) -> Result<
+        ScheduledLegacyConnectableAdvertisingEvent<'a>,
+        LegacyConnectableAdvertisingEventSequenceExhausted<'a>,
+    > {
+        let Some(identity) = self.identity.next_event() else {
+            return Err(LegacyConnectableAdvertisingEventSequenceExhausted { complete: self });
+        };
+        Ok(ScheduledLegacyConnectableAdvertisingEvent {
             start_offset_micros: self.set.interval.as_micros() + delay.as_micros() as u64,
-            event: self.set.begin_event(),
-        }
+            event: LegacyConnectableAdvertisingEvent {
+                standby: self.standby,
+                identity,
+                set: self.set,
+            },
+        })
+    }
+}
+
+/// Event-sequence space was exhausted without losing the completed owner.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the completed connectable advertiser remains recoverable"]
+pub struct LegacyConnectableAdvertisingEventSequenceExhausted<'a> {
+    complete: LegacyConnectableAdvertisingEventComplete<'a>,
+}
+
+impl<'a> LegacyConnectableAdvertisingEventSequenceExhausted<'a> {
+    pub fn into_complete(self) -> LegacyConnectableAdvertisingEventComplete<'a> {
+        self.complete
     }
 }
 
@@ -536,6 +700,10 @@ pub struct ScheduledLegacyConnectableAdvertisingEvent<'a> {
 }
 
 impl<'a> ScheduledLegacyConnectableAdvertisingEvent<'a> {
+    pub const fn identity(&self) -> LegacyAdvertisingEventIdentity {
+        self.event.identity
+    }
+
     pub const fn start_offset_micros(&self) -> u64 {
         self.start_offset_micros
     }
@@ -544,8 +712,9 @@ impl<'a> ScheduledLegacyConnectableAdvertisingEvent<'a> {
         self.event
     }
 
-    pub fn cancel(self) -> LegacyConnectableAdvertisingSet<'a> {
-        self.event.into_set()
+    /// Disable before the scheduled event was submitted to a backend.
+    pub fn disable(self) -> LegacyConnectableAdvertiserConfigured<'a> {
+        self.event.disable()
     }
 }
 
@@ -572,6 +741,15 @@ mod tests {
             PrimaryAdvertisingChannelMap::all(),
             AdvertisingInterval::new(32).unwrap(),
         )
+    }
+
+    fn first_event(
+        support: LeChannelSelectionAlgorithmTwoSupport,
+    ) -> LegacyConnectableAdvertisingEvent<'static> {
+        LegacyConnectableAdvertiserStandby::new()
+            .configure(advertiser(support))
+            .enable()
+            .unwrap()
     }
 
     fn connection_request(
@@ -612,9 +790,8 @@ mod tests {
 
     #[test]
     fn prepared_event_owns_matching_adv_ind_and_scan_response_pdus() {
-        let prepared = advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported)
-            .begin_event()
-            .prepare();
+        let prepared = first_event(LeChannelSelectionAlgorithmTwoSupport::Supported).prepare();
+        let identity = prepared.identity();
         let adv_ind = prepared.adv_ind_pdu();
         let scan_response = prepared.scan_response_pdu();
 
@@ -628,15 +805,16 @@ mod tests {
         assert_eq!(scan_response.payload_length(), 10);
 
         let event = prepared.cancel();
-        assert_eq!(event.into_set().scan_response().as_bytes(), &[3, 9, 8, 7]);
+        assert_eq!(event.identity(), identity);
+        assert_eq!(event.prepare().scan_response().as_bytes(), &[3, 9, 8, 7]);
     }
 
     #[test]
     fn rejected_response_retains_the_exact_in_flight_event_for_a_later_packet() {
-        let in_flight = advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported)
-            .begin_event()
+        let in_flight = first_event(LeChannelSelectionAlgorithmTwoSupport::Supported)
             .prepare()
             .into_submitted();
+        let identity = in_flight.identity();
         let LegacyConnectableConnectionRequestAdmission::Rejected(rejected) =
             in_flight.admit_connection_request(&connection_request([9; 6], true))
         else {
@@ -646,6 +824,7 @@ mod tests {
             rejected.error(),
             LegacyConnectableConnectionRequestRejection::DifferentAdvertiser
         );
+        assert_eq!(rejected.in_flight.identity(), identity);
 
         let accepted = rejected
             .into_in_flight()
@@ -657,17 +836,22 @@ mod tests {
             accepted.request().advertiser().wire_bytes(),
             ADVERTISER_BYTES
         );
-        let (set, connection) = accepted.into_parts();
-        assert_eq!(set.channels(), PrimaryAdvertisingChannelMap::all());
+        assert_eq!(accepted.identity(), identity);
+        let (configured, accepted_identity, connection) = accepted.into_parts();
+        assert_eq!(accepted_identity, identity);
+        assert_eq!(
+            configured.enable().unwrap().prepare().channels(),
+            PrimaryAdvertisingChannelMap::all()
+        );
         assert_eq!(connection.event_counter(), 0);
     }
 
     #[test]
     fn algorithm_two_rejection_keeps_the_submitted_event_in_flight() {
-        let in_flight = advertiser(LeChannelSelectionAlgorithmTwoSupport::Unsupported)
-            .begin_event()
+        let in_flight = first_event(LeChannelSelectionAlgorithmTwoSupport::Unsupported)
             .prepare()
             .into_submitted();
+        let identity = in_flight.identity();
         let LegacyConnectableConnectionRequestAdmission::Rejected(rejected) =
             in_flight.admit_connection_request(&connection_request(ADVERTISER_BYTES, true))
         else {
@@ -677,28 +861,79 @@ mod tests {
             rejected.error(),
             LegacyConnectableConnectionRequestRejection::UnsupportedChannelSelectionAlgorithmTwo
         );
+        let retained = rejected.into_in_flight();
+        assert_eq!(retained.identity(), identity);
+        let configured = retained.complete_without_connection().disable();
         assert_eq!(
-            rejected
-                .into_in_flight()
-                .complete_without_connection()
-                .into_set()
-                .channels(),
+            configured.enable().unwrap().prepare().channels(),
             PrimaryAdvertisingChannelMap::all()
         );
     }
 
     #[test]
     fn no_request_completion_requires_a_fresh_bounded_delay() {
-        let scheduled = advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported)
-            .begin_event()
+        let first = first_event(LeChannelSelectionAlgorithmTwoSupport::Supported);
+        let first_identity = first.identity();
+        let scheduled = first
             .prepare()
             .into_submitted()
             .complete_without_connection()
-            .schedule_next(AdvertisingDelay::from_micros(7_500).unwrap());
+            .schedule_next(AdvertisingDelay::from_micros(7_500).unwrap())
+            .unwrap();
         assert_eq!(scheduled.start_offset_micros(), 27_500);
         assert_eq!(
-            scheduled.cancel().advertisement().advertiser().wire_bytes(),
+            scheduled.identity().generation(),
+            first_identity.generation()
+        );
+        assert_eq!(scheduled.identity().event().get(), 1);
+        assert_eq!(
+            scheduled
+                .into_event()
+                .prepare()
+                .advertisement()
+                .advertiser()
+                .wire_bytes(),
             ADVERTISER_BYTES
         );
+    }
+
+    #[test]
+    fn disable_and_reenable_mints_a_new_generation_at_event_zero() {
+        let first = first_event(LeChannelSelectionAlgorithmTwoSupport::Supported);
+        let first_identity = first.identity();
+        let second = first.disable().enable().unwrap();
+
+        assert_eq!(second.identity().generation().get(), 2);
+        assert_eq!(second.identity().event().get(), 0);
+        assert_ne!(second.identity().generation(), first_identity.generation());
+    }
+
+    #[test]
+    fn generation_and_event_exhaustion_return_lossless_connectable_owners() {
+        let standby = LegacyConnectableAdvertiserStandby {
+            generations: LegacyAdvertisingGenerationAllocator::from_next_generation(Some(u32::MAX)),
+        };
+        let last_generation = standby
+            .configure(advertiser(LeChannelSelectionAlgorithmTwoSupport::Supported))
+            .enable()
+            .unwrap();
+        assert_eq!(last_generation.identity().generation().get(), u32::MAX);
+        let exhausted = last_generation.disable().enable().unwrap_err();
+        let configured = exhausted.into_configured().reconfigure(advertiser(
+            LeChannelSelectionAlgorithmTwoSupport::Unsupported,
+        ));
+        assert!(configured.enable().is_err());
+
+        let mut last_event = first_event(LeChannelSelectionAlgorithmTwoSupport::Supported);
+        last_event.identity = LegacyAdvertisingEventIdentity::from_parts(1, u32::MAX);
+        let exhausted = last_event
+            .prepare()
+            .into_submitted()
+            .complete_without_connection()
+            .schedule_next(AdvertisingDelay::from_micros(0).unwrap())
+            .unwrap_err();
+        let next_generation = exhausted.into_complete().disable().enable().unwrap();
+        assert_eq!(next_generation.identity().generation().get(), 2);
+        assert_eq!(next_generation.identity().event().get(), 0);
     }
 }

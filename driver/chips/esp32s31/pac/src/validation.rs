@@ -182,7 +182,7 @@ pub unsafe fn initialize_bluetooth_phy_registers(
     let Ok(environment) = BluetoothPhyEnvironmentAddress::new(environment_address) else {
         return false;
     };
-    let inputs = BluetoothPhyRegisterInitInputs::new(
+    let inputs = BluetoothPhyRegisterInitInputs::validation_profile(
         private_timing_source_byte,
         environment,
         resolving_list,

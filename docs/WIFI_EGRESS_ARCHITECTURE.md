@@ -32,7 +32,7 @@ change. Radio scheduling remains private to the Wi-Fi driver.
 
 The scheduling work was built on Xarxa commit `1f332ac`, continued by the
 project branch at `3ac0e58`. The audited owned line began at Xarxa `9d32976`,
-which has no merge base with that branch, and now continues at `f42f16ae`.
+which has no merge base with that branch, and now continues at `122e9714`.
 The two lines are different architectures:
 
 | Old line | Current `main` |

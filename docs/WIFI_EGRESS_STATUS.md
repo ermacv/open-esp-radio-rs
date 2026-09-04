@@ -29,6 +29,7 @@ Production cutover snapshot:
 ```text
 open-esp-radio-rs-wifi
   production branch: refactor/wifi-owned-egress
+  pushed HEAD:       508f09c6
   base:              d66b3101 (origin/main)
   architecture:      9e85b3f6
   main test fix:     9235657f
@@ -45,7 +46,7 @@ Xarxa scheduling prototype
 
 Xarxa current main
   owned foundation branch: refactor/owned-packet-pools
-  pushed HEAD:             f42f16aef73572cc834a6f0298fd275def607bcc
+  pushed HEAD:             122e97146fc0a174ef3310f4526defc37663bed4
   merge base with prototype: none
 
 Embassy scheduling prototype
@@ -54,8 +55,8 @@ Embassy scheduling prototype
 
 Embassy current main
   owned foundation branch: refactor/xarxa-owned-driver
-  pushed HEAD:             b5b4eff4a6b1f90b126f4a9e025614dfc17b6707
-  Xarxa pin:                f42f16ae owned line
+  pushed HEAD:             244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d
+  Xarxa pin:                122e9714 owned line
 ```
 
 The production branch starts directly at `origin/main`; it does not carry the
@@ -291,7 +292,7 @@ SRAM, then demonstrate the complete return path and linker/load-image gates.
 ## Current open-radio cutover implementation
 
 The open-radio adapter now has a sibling owned endpoint compiled directly
-against Embassy `b5b4eff4` and Xarxa `f42f16ae`. It deliberately contains no
+against Embassy `244b4a3b` and Xarxa `122e9714`. It deliberately contains no
 peer scheduler and no compatibility translation of the old public grant API.
 
 Its current owner graph is:
@@ -310,17 +311,38 @@ radio Ethernet RX
 
 The endpoint attaches a link epoch to queued owners. A Down-to-Up transition
 invalidates old-lifetime packets rather than retargeting them to a new AP/STA
-association. Its wake condition is backed by channel/link level state;
-full-to-not-full TX wakes the network runner. Host tests cover origin return,
-RX handoff, stale epoch rejection, the synchronous
+association. TX publication, link state, RX queue capacity and RX pool
+availability have separate durable wake conditions. The RX pool has one
+explicit waiter and uses register-then-recheck, so an empty pool cannot spin or
+sleep through a final owner return. Host tests cover origin return, RX handoff,
+stale epoch rejection, pool/link wake recovery, the synchronous
 `can_transmit -> transmit` guarantee across concurrent link-down, and actual
 construction of the new Embassy stack with a configured bounded poll budget.
 
-This endpoint is the migration boundary, not the final TX scheduler. The next
-vertical slice must claim its owners on Core0, classify them into one private
-VIF/peer-generation/TID topology and promote only the selected burst into the
-existing fixed SRAM slots. Waiting for a BA-sized queue is intentionally not
-part of the endpoint API; sparse work becomes eligible immediately.
+Open-radio `508f09c6` also provides the evolutionary physical bridge. An
+`OwnedDatapathNetwork` combines the general-memory owner ingress with the
+existing fixed SRAM execution pool while retaining separate compile-time
+depths for each. `PinnedNetworkTxFrame` temporarily accepts an owned source,
+and the existing AP/STA encoders can promote it only after selection. Batch
+promotion reserves every required SRAM destination before moving any source;
+shortage leaves the complete source prefix unchanged. A regression test proves
+that two software owners remain valid over a one-slot physical horizon.
+
+This bridge is the migration boundary, not the final TX scheduler. The target
+builders still construct the old pinned endpoint, so no owned HIL performance
+claim exists yet. The next vertical slice must instantiate the owned Xarxa and
+Embassy stack in one target role, place its general and RX pools explicitly,
+then reuse the existing Core0 role-specific classification while ensuring
+there is only one ordinary-data selector. Waiting for a BA-sized queue is
+intentionally not part of the endpoint API; sparse work becomes eligible
+immediately.
+
+The checkpoint passes all 35 `open-esp-radio-embassy-net` tests, all 278
+ESP32-S31 Embassy unit tests and its owned bridge integration test. The full
+source-only audit passes eight locked workspaces, 117 isolated feature
+profiles, 39 production packages, safety/architecture tests, final HIL image
+construction, placement, stack-frame and direct-target audits. The image was
+not flashed; these are composition/build facts, not radio performance data.
 
 ## Measured facts retained from the experiment history
 

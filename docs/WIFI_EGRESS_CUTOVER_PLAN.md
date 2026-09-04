@@ -64,7 +64,7 @@ Gate:
 ## Phase 2: owned Xarxa/Embassy foundation
 
 Status: the host-side implementation is complete and pushed as Xarxa
-`f42f16ae` and Embassy `b5b4eff4`. Origin-aware heterogeneous pools, explicit
+`122e9714` and Embassy `244b4a3b`. Origin-aware heterogeneous pools, explicit
 stack allocators, bounded polling, fair continuation, pool-recovery wake and
 executor self-wake are tested. The remaining gate is target composition:
 PSRAM/general and internal-SRAM/RX placement plus end-to-end return evidence
@@ -129,10 +129,14 @@ Target gates:
 
 ## Phase 3: minimal owned Wi-Fi adapter
 
-Status: in progress. A sibling open-radio endpoint now implements the new
-Embassy owned-driver trait and transfers `PacketBuf` owners through bounded
-queues with link-epoch invalidation. It is not yet wired into the physical
-AP/STA datapath and it does not yet contain the private per-key TXQ.
+Status: in progress at open-radio `508f09c6`. A sibling endpoint implements the
+new Embassy owned-driver trait, transfers `PacketBuf` owners through bounded
+queues with link-epoch invalidation and plugs into the generic
+`DatapathNetwork` contract. Its software-owner queue depth is independent of
+the fixed physical SRAM TX depth. Selected single packets and complete bursts
+promote through the existing physical pool with all-or-none destination
+reservation. The target AP/STA builders still instantiate the old endpoint,
+and the owned path does not yet contain the final private per-key TXQ.
 
 Implement the simplest complete one-copy TX owner graph.
 
@@ -178,6 +182,7 @@ HIL correctness gate:
 
 - STA, AP and AP+STA association/lifecycle smoke;
 - one-peer and two-peer UDP TX;
+- UDP RX and bidirectional traffic in each role;
 - TCP smoke in each network role;
 - saturated plus truly sparse AP peer;
 - no loss, duplicate, unexpected reorder, ownership, DMA or lifecycle errors;

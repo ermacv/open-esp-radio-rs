@@ -190,6 +190,7 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionMemoryGraphPublicationMismatch,
     BluetoothPeripheralConnectionMemoryGraphPublicationPrepared,
     BluetoothPeripheralConnectionMemoryGraphReceivePrepared,
+    BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared,
     BluetoothPeripheralConnectionMemoryGraphRecycleError,
     BluetoothPeripheralConnectionMemoryGraphRecycleFailure,
     BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
@@ -200,6 +201,7 @@ pub use peripheral_connection_memory::{
     BluetoothPeripheralConnectionMemoryGraphRxPublished,
     BluetoothPeripheralConnectionMemoryGraphSchedulerAdmissionPrepared,
     BluetoothPeripheralConnectionMemoryGraphStorage, BluetoothPeripheralConnectionReceiveWait,
+    BluetoothPeripheralConnectionRecurringReceiveWait,
     BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
     BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
 };

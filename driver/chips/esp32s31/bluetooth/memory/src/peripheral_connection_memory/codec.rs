@@ -17,6 +17,7 @@ use super::{
     BluetoothPeripheralConnectionIdentity, BluetoothPeripheralConnectionIntervalTicks,
     BluetoothPeripheralConnectionMemoryGraphBindError,
     BluetoothPeripheralConnectionMemoryGraphIdentity, BluetoothPeripheralConnectionReceiveWait,
+    BluetoothPeripheralConnectionRecurringReceiveWait,
     BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
     BluetoothPeripheralConnectionSchedulerPriority, BluetoothPeripheralConnectionSchedulerWindow,
 };
@@ -90,6 +91,8 @@ const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
 const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK: u32 = 0x0000_7fff;
 const SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE: u32 = 0x000f_0000;
+const SCHEDULER_ITEM_RECEIVE_WAIT_LONG_MODE: u32 = 0x001f_0000;
+const SCHEDULER_ITEM_RECEIVE_WAIT_ZERO_IMAGE: u32 = 1;
 const SCHEDULER_ITEM_CAPTURE_AVAILABLE: u32 = 1 << 11;
 
 const TX_SENTINEL_STATE: usize = 0x0c / 4;
@@ -202,6 +205,15 @@ impl BluetoothPeripheralConnectionLinkStateStorage {
         self.words[LINK_STATE_ROUNDED_POWER]
             .set((current & !LINK_STATE_ROUNDED_POWER_MASK) | (power << 23));
         self.words[LINK_STATE_INTERVAL_TICKS].set(interval.ticks());
+        self.words[LINK_STATE_EVENT_SPAN].set(event_span.ticks());
+    }
+
+    fn prepare_recurring_event_profile(
+        &self,
+        event_span: BluetoothPeripheralConnectionEventSpan,
+        priority: BluetoothPeripheralConnectionSchedulerPriority,
+    ) {
+        self.words[LINK_STATE_EVENT_PRIORITY].set(u32::from(priority.value()));
         self.words[LINK_STATE_EVENT_SPAN].set(event_span.ticks());
     }
 
@@ -390,6 +402,38 @@ impl BluetoothPeripheralConnectionSchedulerItemStorage {
         self.words[SCHEDULER_ITEM_CLASS].set(self.words[SCHEDULER_ITEM_CLASS].get() & 0xffff_ff00);
     }
 
+    fn prepare_reviewed_recurring_event_fields(
+        &self,
+        channel: BluetoothPeripheralConnectionDataChannel,
+        window: BluetoothPeripheralConnectionSchedulerWindow,
+        receive_wait: BluetoothPeripheralConnectionRecurringReceiveWait,
+        priority: BluetoothPeripheralConnectionSchedulerPriority,
+    ) {
+        self.words[SCHEDULER_ITEM_CONTEXT_STATE]
+            .set(self.words[SCHEDULER_ITEM_CONTEXT_STATE].get() | SCHEDULER_ITEM_CONTEXT_READY);
+        let priority = u32::from(priority.value());
+        self.words[SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY].set(
+            (self.words[SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY].get()
+                & !SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK)
+                | (u32::from(channel.frequency_image()) << 8)
+                | priority
+                | (priority << 4),
+        );
+        let total_micros = receive_wait.total_micros();
+        let receive_wait_image = if total_micros == 0 {
+            SCHEDULER_ITEM_RECEIVE_WAIT_ZERO_IMAGE
+        } else if total_micros < u32::from(u16::MAX) {
+            SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE | total_micros
+        } else {
+            SCHEDULER_ITEM_RECEIVE_WAIT_LONG_MODE | (total_micros >> 1)
+        };
+        self.words[SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION].set(receive_wait_image);
+        self.words[SCHEDULER_ITEM_STATUS].set(0);
+        self.words[SCHEDULER_ITEM_START].set(window.start());
+        self.words[SCHEDULER_ITEM_END].set(window.end());
+        self.words[SCHEDULER_ITEM_CLASS].set(self.words[SCHEDULER_ITEM_CLASS].get() & 0xffff_ff00);
+    }
+
     #[cfg(test)]
     fn model_controller_completion(
         &self,
@@ -494,6 +538,14 @@ pub(super) struct BluetoothPeripheralConnectionFirstEventCodecInput {
     pub(super) window: BluetoothPeripheralConnectionSchedulerWindow,
     pub(super) receive_wait: BluetoothPeripheralConnectionReceiveWait,
     pub(super) default_tx_power: BluetoothPeripheralConnectionDefaultTxPowerDbm,
+    pub(super) priority: BluetoothPeripheralConnectionSchedulerPriority,
+}
+
+pub(super) struct BluetoothPeripheralConnectionRecurringEventCodecInput {
+    pub(super) channel: BluetoothPeripheralConnectionDataChannel,
+    pub(super) event_span: BluetoothPeripheralConnectionEventSpan,
+    pub(super) window: BluetoothPeripheralConnectionSchedulerWindow,
+    pub(super) receive_wait: BluetoothPeripheralConnectionRecurringReceiveWait,
     pub(super) priority: BluetoothPeripheralConnectionSchedulerPriority,
 }
 
@@ -654,6 +706,21 @@ impl BluetoothPeripheralConnectionMemoryGraphStorage {
         self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
             .prepare_reviewed_first_event_fields(
                 self.link_state.rounded_power(),
+                input.channel,
+                input.window,
+                input.receive_wait,
+                input.priority,
+            );
+    }
+
+    pub(super) fn prepare_reviewed_recurring_event_fields(
+        &self,
+        input: &BluetoothPeripheralConnectionRecurringEventCodecInput,
+    ) {
+        self.link_state
+            .prepare_recurring_event_profile(input.event_span, input.priority);
+        self.scheduler_items[BLUETOOTH_PERIPHERAL_CONNECTION_SCHEDULER_ITEM_COUNT - 1]
+            .prepare_reviewed_recurring_event_fields(
                 input.channel,
                 input.window,
                 input.receive_wait,

@@ -34,6 +34,7 @@ pub use codec::BluetoothPeripheralConnectionMemoryGraphStorage;
 use codec::{
     BluetoothPeripheralConnectionFirstEventCodecInput,
     BluetoothPeripheralConnectionMemoryGraphBinding,
+    BluetoothPeripheralConnectionRecurringEventCodecInput,
     BluetoothPeripheralConnectionSchedulerCompletionObservation,
 };
 
@@ -131,8 +132,9 @@ impl BluetoothPeripheralConnectionIntervalTicks {
 
 /// Non-empty Controller event span installed before one connection RUN.
 ///
-/// The connection engine replaces this input with a captured receive-time
-/// observation before the completed graph returns to software ownership.
+/// This is a required link-state input for both the first and recurring event.
+/// A completed event publishes its independent captured receive-time
+/// observation in the scheduler item; the two values never share storage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPeripheralConnectionEventSpan(u32);
 
@@ -250,6 +252,40 @@ impl BluetoothPeripheralConnectionReceiveWait {
     }
 }
 
+/// Recurring-event receive wait for the reviewed software window-widening path.
+///
+/// The semantic duration combines the Controller's fixed guard, accumulated
+/// anchor uncertainty, twice the current window widening and the final
+/// Controller boundary guard. The private SRAM codec alone selects the
+/// zero-duration, short or half-resolution long descriptor representation.
+/// Automatic window widening is intentionally not represented by this type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPeripheralConnectionRecurringReceiveWait {
+    total_micros: u32,
+}
+
+impl BluetoothPeripheralConnectionRecurringReceiveWait {
+    /// Form one receive wait whose physical duration is represented exactly.
+    ///
+    /// The long form stores two-microsecond units. Odd long durations are
+    /// rejected instead of silently reproducing the vendor's truncating shift.
+    pub const fn new(total_micros: u32) -> Option<Self> {
+        const SHORT_MAX_MICROS: u32 = u16::MAX as u32 - 1;
+        const LONG_MAX_MICROS: u32 = u16::MAX as u32 * 2;
+
+        if total_micros > LONG_MAX_MICROS
+            || (total_micros > SHORT_MAX_MICROS && total_micros & 1 != 0)
+        {
+            return None;
+        }
+        Some(Self { total_micros })
+    }
+
+    pub const fn total_micros(self) -> u32 {
+        self.total_micros
+    }
+}
+
 /// Physical default transmit-power request for the first connection profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPeripheralConnectionDefaultTxPowerDbm(i8);
@@ -264,17 +300,21 @@ impl BluetoothPeripheralConnectionDefaultTxPowerDbm {
     }
 }
 
-/// Source-owned first-event priority shared by connection state and scheduler item.
+/// Source-owned event priority shared by connection state and scheduler item.
 ///
-/// The retained default Controller options select 13. Conflict handling then
-/// increases the value and saturates at 15; the later recurring-event reset to
-/// 8 is deliberately outside this first-event value.
+/// The first event starts at 13. A normally completed recurring event resets
+/// to 8. Ordinary conflict escalation is capped at 14; the distinct exhausted
+/// retry-budget path may force 15. Those policy transitions remain outside the
+/// private descriptor encoding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPeripheralConnectionSchedulerPriority(u8);
 
 impl BluetoothPeripheralConnectionSchedulerPriority {
     /// Priority selected by the reviewed ESP32-S31 first-event policy.
     pub const FIRST_EVENT: Self = Self(13);
+
+    /// Baseline restored before an ordinary recurring event.
+    pub const RECURRING_BASELINE: Self = Self(8);
 
     pub const fn value(self) -> u8 {
         self.0
@@ -1148,7 +1188,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
             prepared;
         let BluetoothPeripheralConnectionMemoryGraphDirectionFindingPrepared {
             prepared,
-            workspace: _,
+            workspace,
         } = prepared;
         let BluetoothPeripheralConnectionMemoryGraphEventFieldsPrepared {
             storage,
@@ -1166,6 +1206,7 @@ impl BluetoothPeripheralConnectionMemoryGraphRxExtracted {
             storage,
             binding,
             pool,
+            workspace,
         };
         graph.restore_after_event();
         BluetoothPeripheralConnectionMemoryGraphRecycled {
@@ -1187,6 +1228,7 @@ pub struct BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
     storage: Pin<&'static mut BluetoothPeripheralConnectionMemoryGraphStorage>,
     binding: BluetoothPeripheralConnectionMemoryGraphBinding,
     pool: BluetoothNonScanningRxMemoryCpuOwned,
+    workspace: BluetoothDirectionFindingWorkspaceLink,
 }
 
 impl BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
@@ -1198,6 +1240,16 @@ impl BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
         self.pool.identity()
     }
 
+    /// Persistent radio identity retained while event-local fields are rebuilt.
+    pub fn connection_identity(&self) -> BluetoothPeripheralConnectionIdentity {
+        self.storage.as_ref().get_ref().identity()
+    }
+
+    /// Opaque global workspace link retained across recurring events.
+    pub const fn direction_finding_workspace(&self) -> BluetoothDirectionFindingWorkspaceLink {
+        self.workspace
+    }
+
     /// Whether the event-local scheduler item and RX pool are reusable.
     pub fn event_resources_are_recycled(&self) -> bool {
         self.storage
@@ -1207,12 +1259,87 @@ impl BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
             && self.pool.is_initialized()
     }
 
+    /// Prepare the reviewed dynamic fields for one software-widened recurrence.
+    ///
+    /// Connection identity, packet history, sequence state, RX ownership and
+    /// the installed direction-finding workspace remain untouched. This step
+    /// performs no publication and can be cancelled back to this exact owner.
+    pub fn prepare_reviewed_recurring_event_fields(
+        self,
+        channel: BluetoothPeripheralConnectionDataChannel,
+        event_span: BluetoothPeripheralConnectionEventSpan,
+        window: BluetoothPeripheralConnectionSchedulerWindow,
+        receive_wait: BluetoothPeripheralConnectionRecurringReceiveWait,
+        priority: BluetoothPeripheralConnectionSchedulerPriority,
+    ) -> BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared {
+        let input = BluetoothPeripheralConnectionRecurringEventCodecInput {
+            channel,
+            event_span,
+            window,
+            receive_wait,
+            priority,
+        };
+        self.storage
+            .as_ref()
+            .get_ref()
+            .prepare_reviewed_recurring_event_fields(&input);
+        BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared {
+            active: self,
+            channel,
+            event_span,
+            window,
+            receive_wait,
+            priority,
+        }
+    }
+
     fn restore_after_event(&mut self) {
         self.storage
             .as_ref()
             .get_ref()
             .restore_scheduler_admission(&self.binding);
         self.pool.reinitialize_after_event();
+    }
+}
+
+/// CPU-owned live graph carrying one unpublished recurring-event image.
+///
+/// The supported profile is software window widening only. No automatic-WW
+/// selector or raw receive-wait image can cross this boundary.
+#[must_use = "the recurring event fields must be cancelled or advanced before publication"]
+pub struct BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared {
+    active: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
+    channel: BluetoothPeripheralConnectionDataChannel,
+    event_span: BluetoothPeripheralConnectionEventSpan,
+    window: BluetoothPeripheralConnectionSchedulerWindow,
+    receive_wait: BluetoothPeripheralConnectionRecurringReceiveWait,
+    priority: BluetoothPeripheralConnectionSchedulerPriority,
+}
+
+impl BluetoothPeripheralConnectionMemoryGraphRecurringEventFieldsPrepared {
+    pub const fn channel(&self) -> BluetoothPeripheralConnectionDataChannel {
+        self.channel
+    }
+
+    pub const fn event_span(&self) -> BluetoothPeripheralConnectionEventSpan {
+        self.event_span
+    }
+
+    pub const fn window(&self) -> BluetoothPeripheralConnectionSchedulerWindow {
+        self.window
+    }
+
+    pub const fn receive_wait(&self) -> BluetoothPeripheralConnectionRecurringReceiveWait {
+        self.receive_wait
+    }
+
+    pub const fn priority(&self) -> BluetoothPeripheralConnectionSchedulerPriority {
+        self.priority
+    }
+
+    /// Roll back before publication without replacing any persistent owner.
+    pub fn cancel(self) -> BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+        self.active
     }
 }
 
@@ -1321,6 +1448,7 @@ mod tests {
         BluetoothPeripheralConnectionMemoryGraphRecycleError,
         BluetoothPeripheralConnectionMemoryGraphRunning,
         BluetoothPeripheralConnectionMemoryGraphStorage, BluetoothPeripheralConnectionReceiveWait,
+        BluetoothPeripheralConnectionRecurringReceiveWait,
         BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
         BluetoothPeripheralConnectionSchedulerPriority,
         BluetoothPeripheralConnectionSchedulerWindow,
@@ -1433,6 +1561,28 @@ mod tests {
         BluetoothSchedulerSoftwareListRemovalReady::from_head_for_validation(empty)
     }
 
+    fn active_graph(
+        graph_base: u32,
+    ) -> super::BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned {
+        let completed = completed_graph(
+            graph_base,
+            BluetoothPeripheralConnectionSchedulerItemCompletionStatus::Zero,
+            BluetoothPeripheralConnectionCapturedAnchorAvailability::Absent,
+        );
+        let address = completed.scheduler_item_address();
+        completed
+            .prepare_recycle_after_software_list_removal(removal_ready(
+                BluetoothSchedulerHardwareListIndex::ZERO,
+                address,
+            ))
+            .unwrap_or_else(|_| panic!("the exact removal proof authorizes reclamation"))
+            .extract_received()
+            .unwrap_or_else(|_| panic!("an event without a received packet is valid"))
+            .commit()
+            .into_parts()
+            .0
+    }
+
     #[test]
     fn binding_builds_the_recovered_allocation_topology() {
         let base = BluetoothPeripheralConnectionMemoryGraphModelAddress::new(0x2f00_0100)
@@ -1444,6 +1594,77 @@ mod tests {
         assert!(owner.has_recovered_scheduler_pool());
         assert!(owner.has_empty_receive_queue());
         assert!(owner.has_empty_transmit_queue());
+    }
+
+    #[test]
+    fn recurring_receive_wait_rejects_lossy_or_unrepresentable_durations() {
+        assert_eq!(
+            BluetoothPeripheralConnectionRecurringReceiveWait::new(0)
+                .expect("the reviewed zero-duration form is valid")
+                .total_micros(),
+            0
+        );
+        assert_eq!(
+            BluetoothPeripheralConnectionRecurringReceiveWait::new(65_534)
+                .expect("the largest short duration is valid")
+                .total_micros(),
+            65_534
+        );
+        assert_eq!(
+            BluetoothPeripheralConnectionRecurringReceiveWait::new(65_536)
+                .expect("the first exact long duration is valid")
+                .total_micros(),
+            65_536
+        );
+        assert_eq!(
+            BluetoothPeripheralConnectionRecurringReceiveWait::new(131_070)
+                .expect("the largest exact long duration is valid")
+                .total_micros(),
+            131_070
+        );
+        assert!(BluetoothPeripheralConnectionRecurringReceiveWait::new(65_535).is_none());
+        assert!(BluetoothPeripheralConnectionRecurringReceiveWait::new(131_069).is_none());
+        assert!(BluetoothPeripheralConnectionRecurringReceiveWait::new(131_071).is_none());
+    }
+
+    #[test]
+    fn recurring_preparation_is_cancellable_without_replacing_persistent_owners() {
+        let active = active_graph(0x2f01_1000);
+        let graph_identity = active.identity();
+        let receive_identity = active.receive_identity();
+        let connection_identity = active.connection_identity();
+        let workspace = active.direction_finding_workspace();
+        let channel = BluetoothPeripheralConnectionDataChannel::new(19)
+            .expect("data channel nineteen is valid");
+        let event_span = BluetoothPeripheralConnectionEventSpan::new(47_000)
+            .expect("the recurring event span is nonempty");
+        let window = BluetoothPeripheralConnectionSchedulerWindow::new(2_000, 3_500)
+            .expect("the recurring scheduler window is nonempty");
+        let receive_wait = BluetoothPeripheralConnectionRecurringReceiveWait::new(70_000)
+            .expect("the recurring wait is exactly representable");
+
+        let prepared = active.prepare_reviewed_recurring_event_fields(
+            channel,
+            event_span,
+            window,
+            receive_wait,
+            BluetoothPeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
+        );
+        assert_eq!(prepared.channel(), channel);
+        assert_eq!(prepared.event_span(), event_span);
+        assert_eq!(prepared.window(), window);
+        assert_eq!(prepared.receive_wait(), receive_wait);
+        assert_eq!(
+            prepared.priority(),
+            BluetoothPeripheralConnectionSchedulerPriority::RECURRING_BASELINE
+        );
+
+        let active = prepared.cancel();
+        assert_eq!(active.identity(), graph_identity);
+        assert_eq!(active.receive_identity(), receive_identity);
+        assert_eq!(active.connection_identity(), connection_identity);
+        assert_eq!(active.direction_finding_workspace(), workspace);
+        assert!(active.event_resources_are_recycled());
     }
 
     #[test]

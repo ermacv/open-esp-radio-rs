@@ -6,12 +6,12 @@
 
 use core::{cell::RefCell, future::Future, marker::PhantomData};
 
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use open_esp_radio_dma::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
     AffineSpscTrySendError, TaggedStableDmaBacking,
 };
-use open_esp_radio_embassy_net::{NetworkInterfaceId, PinnedRxPublisher, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::MacInterface;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxError, RxIngressConfig, RxSegment, view_normalized_rx_frame,
@@ -24,6 +24,7 @@ use open_esp_radio_esp32s31_wifi_mac::rx_pool::{
     VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
 };
 use open_esp_radio_ieee80211::vif::{StaApRxAddresses, StaApRxRoute, StaApVif, classify_sta_ap_rx};
+use open_esp_radio_network::NetworkInterfaceId;
 
 use crate::datapath::rx::staging::Esp32s31StagedRxFrame;
 use crate::{
@@ -100,31 +101,14 @@ pub fn compose_sta_ap_datapath_services<H, PhysicalTx, Rx, Station, AccessPoint>
 /// The two network publishers are derived here from the permanent network
 /// owner. Callers cannot attach an AP protocol role to the STA endpoint (or
 /// vice versa), and there is no single-interface fallback in this graph.
-pub type Esp32s31StaApDatapathRunner<
-    'resources,
+pub type Esp32s31StaApDatapathRunner<'irq, M, N, Services> = DatapathRunner<
     'irq,
     M,
     N,
     Services,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-> = DatapathRunner<
-    'resources,
-    'irq,
-    M,
-    N,
-    Services,
-    FRAME_CAPACITY,
-    HEADROOM,
-    TRAILER,
-    RX_QUEUE_DEPTH,
-    TX_QUEUE_DEPTH,
     DatapathNetworkRxEndpoints<
-        PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
-        PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+        <N as DatapathNetwork>::RxPublisher,
+        <N as DatapathNetwork>::RxPublisher,
     >,
 >;
 
@@ -134,45 +118,16 @@ pub type Esp32s31StaApDatapathRunner<
 /// This is the production composition boundary. Building a service set alone
 /// does not start RX/TX or expose network endpoints; those become live only
 /// while the production supervisor runs the returned paired owner.
-pub fn compose_sta_ap_datapath_runner<
-    'resources,
-    'irq,
-    M,
-    N,
-    Services,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->(
+pub fn compose_sta_ap_datapath_runner<'irq, M, N, Services>(
     irq: &'irq EmbassyMacIrqRuntime<M>,
     network: N,
     services: Services,
-) -> Esp32s31StaApDatapathRunner<
-    'resources,
-    'irq,
-    M,
-    N,
-    Services,
-    FRAME_CAPACITY,
-    HEADROOM,
-    TRAILER,
-    RX_QUEUE_DEPTH,
-    TX_QUEUE_DEPTH,
->
+) -> Esp32s31StaApDatapathRunner<'irq, M, N, Services>
 where
-    M: RawMutex + 'resources,
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
-    Services: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    M: RawMutex,
+    N: DatapathNetwork,
+    N::RxPublisher: crate::datapath::network::DatapathNetworkRx,
+    Services: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
 {
     let endpoints = DatapathNetworkRxEndpoints::new(
         STA_NETWORK_INTERFACE_ID,
@@ -705,7 +660,7 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_embassy_net::NoopRawMutex;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
     const STA: [u8; 6] = [0x02, 0, 0, 0, 0, 1];

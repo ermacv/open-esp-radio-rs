@@ -6,34 +6,15 @@
 use super::*;
 
 impl<
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
 > ConnectedControlTx
-    for Esp32s31ConnectedTx<
-        '_,
-        '_,
-        '_,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+    for Esp32s31ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 {
     fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
         self.take_last_ordinary_outcome()
@@ -185,34 +166,15 @@ impl<
 }
 
 impl<
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
 > crate::roles::station::esp_now_tx::EspNowConnectedTx
-    for Esp32s31ConnectedTx<
-        '_,
-        '_,
-        '_,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+    for Esp32s31ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 {
     fn start_esp_now_v1_plaintext<
         H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware,
@@ -296,34 +258,15 @@ impl<
 }
 
 impl<
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
 > ConnectedControlTimer
-    for Esp32s31ConnectedTx<
-        '_,
-        '_,
-        '_,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+    for Esp32s31ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 {
     fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
         self.ordinary.wait_until_micros(deadline_micros)
@@ -331,62 +274,51 @@ impl<
 }
 
 impl<
-    'resources,
     'slot,
     'ampdu,
-    M,
+    B,
     H,
     P,
     E,
     T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
+    SoftwareFrame,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
-> DatapathNetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+> DatapathNetworkTxService<H, SoftwareFrame, B>
     for Esp32s31ConnectedTx<
         'slot,
         'ampdu,
-        'resources,
-        M,
+        B,
         P,
         E,
         T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
         SLOTS,
         AMPDU_BUFFER_SIZE,
         ORDINARY_BUFFER_SIZE,
     >
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
     H: HtAmpduHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
+    SoftwareFrame: SoftwareTxFrame,
 {
     type Error = AggregateTxError;
 
-    fn start<'a>(
+    fn start<'a, I>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        SoftwareFrame: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = B> + 'a,
+    {
         async move {
-            let frame = match network.try_promote(frame) {
+            let frame = match network.try_materialize(frame) {
                 Ok(frame) => frame,
                 Err(_) => panic!("station aggregate selected without a free DMA credit"),
             };
@@ -407,7 +339,7 @@ where
         hardware: &'a mut H,
         wake: WifiTxWake,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        Esp32s31ConnectedTx::service(self, hardware, wake)
+        async move { Esp32s31ConnectedTx::service(self, hardware, wake) }
     }
 
     fn has_prepared(&self) -> bool {
@@ -427,34 +359,21 @@ where
         Esp32s31ConnectedTx::mark_prepared_scheduler_phase(self, phase, at_micros);
     }
 
-    fn start_prepared(
+    fn start_prepared<I>(
         &mut self,
         hardware: &mut H,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+        network: &I,
+    ) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = B>,
+    {
         self.start_prepared_network(hardware, network)
     }
 
-    fn cancel_prepared(
-        &mut self,
-        _network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn cancel_prepared<I>(&mut self, _network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = B>,
+    {
         self.cancel_prepared_network()
     }
 
@@ -462,23 +381,18 @@ where
         self.can_prepare_network_tx()
     }
 
-    fn prepare<'a>(
+    fn prepare<'a, I>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        frame: SoftwareFrame,
+        network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        SoftwareFrame: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = B> + 'a,
     {
         async move {
-            let frame = match network.try_promote(frame) {
+            let frame = match network.try_materialize(frame) {
                 Ok(frame) => frame,
                 Err(_) => panic!("station standby selected without a free DMA credit"),
             };

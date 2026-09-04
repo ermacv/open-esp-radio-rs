@@ -15,8 +15,8 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::{future::Future, marker::PhantomData};
 
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Instant;
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{

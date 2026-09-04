@@ -5,9 +5,9 @@ use core::{
     task::{Context, Waker},
 };
 
+use crate::datapath::{DatapathTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources};
 use open_esp_radio_embassy_net::{
-    Driver as _, NetworkEndpointConfig, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources,
-    PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, SplitPinnedDevice, TxToken as _,
+    NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources, OwnedNetworkDevice,
 };
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
@@ -39,8 +39,10 @@ use open_esp_radio_ieee80211::station::{
 };
 use open_esp_radio_ieee80211::wmm::{WmmAccessCategory, parse_wmm_parameter_element};
 use open_esp_radio_wifi_softmac::MacTxPlan;
+use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
 use super::*;
+use crate::datapath::network::{DatapathNetwork, OwnedDatapathNetwork};
 
 #[derive(Default)]
 struct RecordingAggregateTxObserver {
@@ -101,17 +103,63 @@ fn record_block_ack_status(tid: u8, operational: bool) {
     }
 }
 
-type Resources = PinnedEndpointResources<NoopRawMutex, TEST_FRAME_CAPACITY, TEST_QUEUE_DEPTH>;
-type Pool = PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
-type Device = SplitPinnedDevice<
-    'static,
-    NoopRawMutex,
-    TEST_FRAME_CAPACITY,
-    TEST_HEADROOM,
-    TEST_TRAILER,
-    TEST_QUEUE_DEPTH,
-    TEST_QUEUE_DEPTH,
->;
+type OwnedNetwork<const F: usize, const H: usize, const T: usize, const Q: usize> =
+    OwnedDatapathNetwork<'static, NoopRawMutex, F, H, T, Q, Q, Q>;
+
+struct Device<const Q: usize = TEST_QUEUE_DEPTH> {
+    inner: OwnedNetworkDevice<'static, NoopRawMutex, Q, Q>,
+    allocator: PacketBufAllocator,
+}
+
+struct Network<
+    const F: usize = TEST_FRAME_CAPACITY,
+    const H: usize = TEST_HEADROOM,
+    const T: usize = TEST_TRAILER,
+    const Q: usize = TEST_QUEUE_DEPTH,
+> {
+    inner: OwnedNetwork<F, H, T, Q>,
+}
+
+struct TestTxToken<'a, const Q: usize> {
+    device: &'a mut OwnedNetworkDevice<'static, NoopRawMutex, Q, Q>,
+    packet: PacketBuf,
+}
+
+impl<const Q: usize> Device<Q> {
+    fn transmit(&mut self, _context: &mut Context<'_>) -> Option<TestTxToken<'_, Q>> {
+        let packet = self.allocator.try_alloc()?;
+        Some(TestTxToken {
+            device: &mut self.inner,
+            packet,
+        })
+    }
+}
+
+impl<const Q: usize> TestTxToken<'_, Q> {
+    fn consume<R>(mut self, length: usize, emit: impl FnOnce(&mut [u8]) -> R) -> R {
+        assert!(length <= self.packet.capacity());
+        self.packet.set_len(length);
+        let result = emit(&mut self.packet);
+        self.device
+            .transmit(self.packet)
+            .unwrap_or_else(|_| panic!("test owned TX queue has the advertised credit"));
+        result
+    }
+}
+
+impl<const F: usize, const H: usize, const T: usize, const Q: usize> Network<F, H, T, Q> {
+    fn tx_consumer(&self) -> DatapathTxConsumer<'_, 'static, NoopRawMutex, F, H, T, Q> {
+        self.inner.tx_consumer(NetworkInterfaceId::new(0))
+    }
+
+    fn try_receive_tx_direct(&self) -> Option<PinnedTxFrame<'static, NoopRawMutex, F, H, T, Q>> {
+        self.tx_consumer().try_receive_direct()
+    }
+
+    fn tx_queue_len(&self) -> usize {
+        self.inner.tx_queue_len(NetworkInterfaceId::new(0))
+    }
+}
 
 #[derive(Default)]
 struct Hardware {
@@ -123,6 +171,9 @@ struct Hardware {
     last_he_queue: Option<u8>,
     ordinary_completion: Option<MacTxCompletionObservation>,
     aggregate_completion: Option<MacHtAmpduCompletionObservation>,
+    abort_requests: usize,
+    timeout_detaches: usize,
+    timeout_detach_succeeds: bool,
 }
 
 impl CcmpKeyHardware for Hardware {
@@ -183,6 +234,7 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
     }
 
     fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
+        self.abort_requests += 1;
         true
     }
 
@@ -194,7 +246,16 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
         match reason {
-            MacTxDetachReason::Timeout => MacTxDetachOutcome::Failed,
+            MacTxDetachReason::Timeout => {
+                self.timeout_detaches += 1;
+                if self.timeout_detach_succeeds {
+                    MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
+                        expected_descriptor_head,
+                    )))
+                } else {
+                    MacTxDetachOutcome::Failed
+                }
+            }
             MacTxDetachReason::Collision | MacTxDetachReason::Completed => {
                 MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
                     expected_descriptor_head,
@@ -337,27 +398,44 @@ fn make_ordinary<'a, const BUFFER_SIZE: usize>(
     )
 }
 
-fn make_network() -> (
-    Device,
-    open_esp_radio_embassy_net::PinnedNetworkRunner<
-        'static,
+fn make_network() -> (Device, Network) {
+    make_network_config::<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>()
+}
+
+fn make_network_config<const F: usize, const H: usize, const T: usize, const Q: usize>()
+-> (Device<Q>, Network<F, H, T, Q>) {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(OwnedEndpointResources::<
         NoopRawMutex,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
-        TEST_QUEUE_DEPTH,
-    >,
-) {
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
-    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
-    (device, network)
+        Q,
+        Q,
+    >::new()));
+    let pool = PinnedTxPool::<F, H, T, Q>::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+        PinnedTxPool::new(),
+    )));
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::<
+        NoopRawMutex,
+        F,
+        H,
+        T,
+        Q,
+    >::new()));
+    let physical = tx_resources.split(pool);
+    let packet_storage = std::boxed::Box::leak(std::boxed::Box::new(PacketPoolStorage::<Q>::new()));
+    let packet_pool = std::boxed::Box::leak(std::boxed::Box::new(PacketPool::new(packet_storage)));
+    let rx_storage = std::boxed::Box::leak(std::boxed::Box::new(PacketPoolStorage::<1>::new()));
+    let rx_pool = std::boxed::Box::leak(std::boxed::Box::new(PacketPool::new(rx_storage)));
+    let allocator = packet_pool.allocator();
+    let (device, radio) = resources.split(NetworkInterfaceId::new(0), STATION, rx_pool.allocator());
+    radio.link_controller().set_link_up(true);
+    (
+        Device {
+            inner: device,
+            allocator,
+        },
+        Network {
+            inner: OwnedDatapathNetwork::new(radio, physical),
+        },
+    )
 }
 
 #[test]
@@ -367,14 +445,17 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let tx = Esp32s31ConnectedTx::<
-        NoopRawMutex,
+        crate::datapath::PinnedTxFrame<
+            '_,
+            NoopRawMutex,
+            TEST_FRAME_CAPACITY,
+            TEST_HEADROOM,
+            TEST_TRAILER,
+            TEST_QUEUE_DEPTH,
+        >,
         _,
         _,
         _,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
         TEST_SLOTS,
         0,
         TEST_BUFFER_SIZE,
@@ -419,14 +500,17 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut tx = Esp32s31ConnectedTx::<
-        NoopRawMutex,
+        crate::datapath::PinnedTxFrame<
+            '_,
+            NoopRawMutex,
+            TEST_FRAME_CAPACITY,
+            TEST_HEADROOM,
+            TEST_TRAILER,
+            TEST_QUEUE_DEPTH,
+        >,
         _,
         _,
         _,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
         TEST_SLOTS,
         0,
         TEST_BUFFER_SIZE,
@@ -461,12 +545,12 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     );
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete),
     );
 
@@ -477,14 +561,17 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     assert_eq!(aggregate.primary().state(), TxSlotState::Free);
 
     let mut tx = Esp32s31ConnectedTx::<
-        NoopRawMutex,
+        crate::datapath::PinnedTxFrame<
+            '_,
+            NoopRawMutex,
+            TEST_FRAME_CAPACITY,
+            TEST_HEADROOM,
+            TEST_TRAILER,
+            TEST_QUEUE_DEPTH,
+        >,
         _,
         _,
         _,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
         TEST_SLOTS,
         0,
         TEST_BUFFER_SIZE,
@@ -558,12 +645,12 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     );
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -613,19 +700,8 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 12;
     const QUEUE_DEPTH: usize = 3;
-    type LargeResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
-    type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
-
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
-    let pool = LargePool::pin_static(std::boxed::Box::leak(
-        std::boxed::Box::new(LargePool::new()),
-    ));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) =
+        make_network_config::<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>();
     for marker in 1..=2 {
         device
             .transmit(&mut context())
@@ -673,12 +749,12 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     }));
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -735,12 +811,12 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b1));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -757,12 +833,12 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
 
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -826,12 +902,12 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.he_publications, 2);
@@ -850,12 +926,12 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -981,12 +1057,12 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
     );
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -997,19 +1073,8 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 1_632;
     const QUEUE_DEPTH: usize = 4;
-    type LargeResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
-    type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
-
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
-    let pool = LargePool::pin_static(std::boxed::Box::leak(
-        std::boxed::Box::new(LargePool::new()),
-    ));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) =
+        make_network_config::<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>();
     for marker in 1..=4 {
         device
             .transmit(&mut context())
@@ -1061,12 +1126,12 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     }));
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -1115,12 +1180,12 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete),
     );
 }
@@ -1128,21 +1193,8 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
 #[test]
 fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     const PIPELINE_DEPTH: usize = 6;
-    type PipelineResources =
-        PinnedEndpointResources<NoopRawMutex, TEST_FRAME_CAPACITY, PIPELINE_DEPTH>;
-    type PipelinePool =
-        PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, PIPELINE_DEPTH>;
-
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(PipelineResources::new()));
-    let pool = PipelinePool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
-        PipelinePool::new(),
-    )));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) =
+        make_network_config::<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, PIPELINE_DEPTH>();
     for marker in 1..=3 {
         device
             .transmit(&mut context())
@@ -1234,12 +1286,12 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 2);
@@ -1247,12 +1299,12 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert!(tx.has_prepared_network_tx());
@@ -1273,12 +1325,12 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(10, 0b111));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 
@@ -1339,12 +1391,12 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b1));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 
@@ -1376,14 +1428,7 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
 
 #[test]
 fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
-    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) = make_network();
     send_frame(&mut device, 1);
 
     let mut hardware = Hardware::default();
@@ -1429,14 +1474,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
 
 #[test]
 fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
-    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) = make_network();
     send_frame(&mut device, 1);
     send_frame(&mut device, 2);
 
@@ -1488,12 +1526,12 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -1503,6 +1541,103 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
         ))
     );
     assert_eq!(tx.ordinary.peek_qos_sequence(0), next_sequence);
+}
+
+#[test]
+fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach() {
+    use open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT;
+
+    for detach_succeeds in [true, false] {
+        let (mut device, network) = make_network();
+        send_frame(&mut device, 1);
+        send_frame(&mut device, 2);
+        let first = network.try_receive_tx_direct().unwrap();
+        let mut hardware = Hardware {
+            timeout_detach_succeeds: detach_succeeds,
+            ..Hardware::default()
+        };
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+        let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+        let mut retention = RetainedAmpduDmaStorage::new();
+        let mut tx = Esp32s31ConnectedTx::new_for_test(
+            ordinary,
+            AggregateTxResources::single(
+                HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+                &mut retention,
+            ),
+            AggregateTxConfig {
+                rate: TxPhyRate::Ht(TEST_RATE),
+                frame_limit: TEST_SLOTS as u8,
+                attempt_limit: 2,
+                completion_timeout_us: 250_000,
+                he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+            },
+        )
+        .unwrap();
+        tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
+        tx.start_network(&mut hardware, first, &network.tx_consumer())
+            .unwrap();
+        let completion_deadline = tx.next_deadline_micros().unwrap();
+        assert_eq!(
+            tx.service(&mut hardware, WifiTxWake::Deadline),
+            Ok(WifiTxProgress::Pending)
+        );
+        assert_eq!(tx.next_deadline_micros(), Some(completion_deadline));
+        assert_eq!(hardware.abort_requests, 0);
+
+        let timeout = WifiTxWake::Interrupt {
+            events: EVENT_TX_TIMEOUT,
+        };
+        let abort_started = tx.ordinary.now_micros();
+        assert_eq!(
+            tx.service(&mut hardware, timeout),
+            Ok(WifiTxProgress::Pending)
+        );
+        let deadline = tx.next_deadline_micros().unwrap();
+        assert_eq!(deadline, abort_started + AMPDU_ABORT_SETTLE_US);
+        assert_eq!(tx.ordinary.now_micros(), abort_started);
+        assert_eq!(tx.active_network_frame_count(), 2);
+        assert_eq!(network.tx_consumer().promotion_capacity(), 1);
+        tx = match tx.try_into_parts() {
+            Err(owner) => owner,
+            Ok(_) => panic!("settling DMA owner must not be handed off"),
+        };
+        hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
+        embassy_futures::block_on(tx.ordinary.wait_until_micros(deadline - 1));
+        for wake in [
+            timeout,
+            WifiTxWake::Deadline,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE,
+            },
+        ] {
+            assert_eq!(tx.service(&mut hardware, wake), Ok(WifiTxProgress::Pending));
+            assert_eq!(tx.next_deadline_micros(), Some(deadline));
+            assert_eq!(network.tx_consumer().promotion_capacity(), 1);
+        }
+        assert_eq!(hardware.abort_requests, 1);
+        assert_eq!(hardware.timeout_detaches, 0);
+        embassy_futures::block_on(tx.wait_deadline());
+        assert_eq!(tx.ordinary.now_micros(), deadline);
+        let result = tx.service(&mut hardware, WifiTxWake::Deadline);
+        assert_eq!(hardware.timeout_detaches, 1);
+        assert_eq!(hardware.ht_publications, 1);
+        if detach_succeeds {
+            assert_eq!(result, Ok(WifiTxProgress::Complete));
+            assert_eq!(
+                tx.take_last_aggregate_status().unwrap().result,
+                MacAmpduTxResult::HardwareTimeout
+            );
+            assert_eq!(network.tx_consumer().promotion_capacity(), TEST_QUEUE_DEPTH);
+            assert!(tx.try_into_parts().is_ok());
+        } else {
+            assert!(result.is_err());
+            assert_eq!(tx.ampdu.active().state(), TxSlotState::ResetRequired);
+            assert!(tx.try_into_parts().is_err());
+            assert_eq!(network.tx_consumer().promotion_capacity(), 1);
+        }
+    }
 }
 
 #[test]
@@ -1537,19 +1672,21 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 1);
-    // Only the unused third slot can return to the producer while the two
-    // submitted frames remain radio-owned.
+    // General packet owners return at promotion. The two radio-owned frames
+    // consume physical SRAM, while a new software owner can queue
+    // independently in the freed general pool.
     send_frame(&mut device, 3);
-    assert!(device.transmit(&mut context()).is_none());
+    assert_eq!(network.tx_queue_len(), 1);
+    assert_eq!(network.tx_consumer().promotion_capacity(), 1);
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -1606,25 +1743,26 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 2);
-    assert!(device.transmit(&mut context()).is_none());
+    assert_eq!(network.tx_consumer().promotion_capacity(), 0);
+    assert!(device.transmit(&mut context()).is_some());
 
     hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -1646,6 +1784,104 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     for _ in 0..TEST_QUEUE_DEPTH {
         drop(network.try_receive_tx_direct().unwrap());
     }
+}
+
+#[test]
+fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
+    use open_esp_radio_dma::PinnedDmaTxPool;
+    use open_esp_radio_research_datapath::PinnedBatchResources;
+    use open_esp_radio_wifi_datapath::ReservedTxBatch;
+
+    type ResearchPool =
+        PinnedDmaTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
+    let pool = ResearchPool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+        ResearchPool::new(),
+    )));
+    let resources = PinnedBatchResources::<TEST_QUEUE_DEPTH>::new();
+    let allocator = resources.bind(pool);
+    let mut batch = allocator
+        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+        .unwrap();
+    for marker in 1..=TEST_QUEUE_DEPTH as u8 {
+        batch
+            .try_write(17, |frame| {
+                frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+                frame[6..12].copy_from_slice(&STATION);
+                frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+                frame[14..].fill(marker);
+                Ok::<_, core::convert::Infallible>(())
+            })
+            .unwrap();
+    }
+    let first = batch.try_take_physical().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut retention = RetainedAmpduDmaStorage::new();
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
+        ordinary,
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            &mut retention,
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &batch),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(batch.pending_frames(), 0);
+    assert_eq!(allocator.free_credits(), 0);
+    // The batch wrapper does not own frames after the radio takes them.
+    drop(batch);
+    assert_eq!(allocator.free_credits(), 0);
+
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
+    assert_eq!(
+        tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE
+            },
+        ),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 2);
+    assert_eq!(allocator.free_credits(), 0);
+
+    hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
+    assert_eq!(
+        tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE
+            },
+        ),
+        Ok(WifiTxProgress::Complete)
+    );
+    let status = tx.take_last_aggregate_status().unwrap();
+    assert_eq!(status.result, MacAmpduTxResult::Delivered);
+    assert_eq!(status.original_subframes, 3);
+    assert_eq!(status.aggregate_attempts, 2);
+    assert_eq!(allocator.free_credits(), TEST_QUEUE_DEPTH);
+    let _parts = tx
+        .try_into_teardown_parts()
+        .unwrap_or_else(|_| panic!("completed research TX detaches"));
+    assert_eq!(allocator.free_credits(), TEST_QUEUE_DEPTH);
+    assert!(
+        allocator
+            .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+            .is_some()
+    );
 }
 
 #[test]
@@ -1687,12 +1923,12 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b01));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(tx.take_last_aggregate_status(), None);
@@ -1714,12 +1950,12 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
 
     hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(0, 0));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     let aggregate = tx

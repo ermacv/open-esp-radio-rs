@@ -7,11 +7,10 @@
 //! statically dispatched service-decoration hook for qualification faults.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_embassy_net::PinnedTxFrame;
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
 use crate::{
-    datapath::{DatapathRunner, DatapathServices},
+    datapath::{DatapathRunner, DatapathServices, PinnedTxFrame},
     roles::station::connected::port::{
         Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaControlResources,
         Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPort, Esp32s31ConnectedStaReport,
@@ -127,20 +126,7 @@ pub fn assemble_esp32s31_connected_driver<
         F,
     >,
 ) -> Result<
-    Esp32s31ConnectedDriverAssembly<
-        DatapathRunner<
-            'resources,
-            'irq,
-            M,
-            N,
-            B,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
-    >,
+    Esp32s31ConnectedDriverAssembly<DatapathRunner<'irq, M, N, B, N::RxPublisher>>,
     Esp32s31ConnectedDriverAssemblyFailure<
         N,
         Esp32s31ConnectedStaCompositionFailure<
@@ -176,15 +162,7 @@ pub fn assemble_esp32s31_connected_driver<
 >
 where
     M: RawMutex,
-    N: crate::datapath::network::DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    N: crate::datapath::network::DatapathNetwork,
     S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -211,15 +189,17 @@ where
             Esp32s31ConnectedTx<
                 'slot,
                 'resources,
-                'resources,
-                M,
+                crate::datapath::PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    TX_QUEUE_DEPTH,
+                >,
                 P,
                 E,
                 T,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                TX_QUEUE_DEPTH,
                 AGGREGATE_SLOTS,
                 AGGREGATE_BUFFER_SIZE,
                 ORDINARY_BUFFER_SIZE,
@@ -227,7 +207,7 @@ where
             Esp32s31ConnectedControl<'control, M, CONTROL_CAPACITY>,
         >,
     ) -> B,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
 {
     let Esp32s31ConnectedDriverAssemblyResources {
         plan,

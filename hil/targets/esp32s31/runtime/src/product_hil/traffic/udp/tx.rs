@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_embassy_net::TX_PERFORMANCE;
+use open_esp_radio_esp32s31_embassy_wifi::TX_PERFORMANCE;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
 #[cfg(any(
@@ -19,7 +19,6 @@ use open_esp_radio_hil_protocol::{
     Transport as HilTransport, TransportEvidence,
 };
 
-use super::UdpSocketBuffers;
 use crate::{
     console::{publish_event_reliably, runtime_log},
     product_hil::traffic::{
@@ -38,8 +37,7 @@ use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
 
 const MAX_PACING_CATCH_UP_GROUPS: u32 = 4;
 const DEFAULT_MULTI_FLOW_BURST_DATAGRAMS: u8 = 1;
-static MULTI_FLOW_BURST_DATAGRAMS: AtomicU8 =
-    AtomicU8::new(DEFAULT_MULTI_FLOW_BURST_DATAGRAMS);
+static MULTI_FLOW_BURST_DATAGRAMS: AtomicU8 = AtomicU8::new(DEFAULT_MULTI_FLOW_BURST_DATAGRAMS);
 
 pub(in crate::product_hil) fn configure_multi_flow_burst_datagrams(datagrams: u8) {
     assert!(datagrams != 0, "multi-flow burst cannot be empty");
@@ -148,15 +146,16 @@ fn earliest_multi_tx_deadline(
 
 async fn transmit_multi_flow(
     socket: &mut UdpSocket<'_>,
-    socket_payload_bytes: usize,
-    packet: &mut [u8],
     session_config: SessionConfig,
     started: Instant,
     duration: Duration,
     pacing_group_datagrams: u8,
     multi_flow_burst_datagrams: u8,
 ) -> [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY] {
-    assert!(multi_flow_burst_datagrams != 0, "multi-flow burst cannot be empty");
+    assert!(
+        multi_flow_burst_datagrams != 0,
+        "multi-flow burst cannot be empty"
+    );
     let mut states = multi_tx_flow_states(session_config, started, pacing_group_datagrams);
     let mut cursor = 0_usize;
     let mut burst_flow: Option<usize> = None;
@@ -166,10 +165,12 @@ async fn transmit_multi_flow(
             let now = Instant::now();
             let continuing = burst_flow.filter(|index| {
                 burst_remaining != 0
-                    && states[*index]
-                        .is_some_and(|state| state.offered_rate_bps.is_none() || state.next_send <= now)
+                    && states[*index].is_some_and(|state| {
+                        state.offered_rate_bps.is_none() || state.next_send <= now
+                    })
             });
-            let Some(index) = continuing.or_else(|| ready_multi_tx_flow(&states, cursor, now)) else {
+            let Some(index) = continuing.or_else(|| ready_multi_tx_flow(&states, cursor, now))
+            else {
                 if let Some(deadline) = earliest_multi_tx_deadline(&states) {
                     Timer::at(deadline).await;
                 }
@@ -181,26 +182,16 @@ async fn transmit_multi_flow(
             }
             let state = states[index].expect("selected multi-flow TX state remains active");
             let sequence = (state.datagrams as u32).to_be_bytes();
-            let publication = if socket_payload_bytes.is_multiple_of(state.payload_bytes) {
-                socket
-                    .send_to_with(
-                        state.payload_bytes,
-                        (state.server, state.server_port),
-                        |payload| {
-                            payload[..sequence.len()].copy_from_slice(&sequence);
-                            (state.payload_bytes, ())
-                        },
-                    )
-                    .await
-            } else {
-                packet[..sequence.len()].copy_from_slice(&sequence);
-                socket
-                    .send_to(
-                        &packet[..state.payload_bytes],
-                        (state.server, state.server_port),
-                    )
-                    .await
-            };
+            let publication = socket
+                .send_to_with(
+                    state.payload_bytes,
+                    (state.server, state.server_port),
+                    |payload| {
+                        payload[..sequence.len()].copy_from_slice(&sequence);
+                        (state.payload_bytes, ())
+                    },
+                )
+                .await;
 
             let state = states[index]
                 .as_mut()
@@ -259,8 +250,6 @@ async fn transmit_multi_flow(
 /// Device-to-host UDP load through Embassy and the open TX scheduler.
 pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     stack: Stack<'a>,
-    buffers: UdpSocketBuffers<'a>,
-    packet: &'a mut [u8],
     config: UdpTxBenchmarkConfig,
     aggregate_counters: &AggregateTxCounters,
     #[cfg(any(
@@ -290,35 +279,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
          source_port={} queue={} payload_capacity={} tx_mode=ampdu session_protocol=required",
         config.source_port, config.queue_depth, config.payload_capacity,
     ));
-    // A typed session supplies the fixed datagram size before its SessionReady
-    // event. Size the active payload ring to an exact multiple of that value:
-    // xarxa then never needs a metadata-bearing wrap-padding record and its
-    // zero-copy FnOnce callback cannot be consumed by a retryable post-callback
-    // `BufferFull`. This configures only the HIL load generator, not the radio.
+    // Receive the first typed session before exposing the socket owner. Xarxa
+    // now allocates one owned packet per publication, so there is no socket
+    // byte ring whose layout depends on the datagram size.
     let first_session = config.session_source.sessions.receive().await;
-    let first_payload_bytes = usize::from(
-        first_session
-            .config
-            .primary_flow()
-            .expect("validated TX session carries a primary flow")
-            .target_tx
-            .expect("validated TX session carries a target TX flow")
-            .payload_bytes,
-    );
-    let active_tx_bytes = config
-        .queue_depth
-        .checked_mul(first_payload_bytes)
-        .filter(|bytes| *bytes <= buffers.tx.len())
-        .expect("validated TX session fits the static UDP payload arena");
-    let socket_payload = &mut buffers.tx[..active_tx_bytes];
-    let mut socket = UdpSocket::new(
-        stack,
-        buffers.rx_metadata,
-        buffers.rx,
-        buffers.tx_metadata,
-        socket_payload,
-    );
-    let socket_payload_bytes = socket.payload_send_capacity();
+    let mut socket = UdpSocket::new(stack);
     if let Err(error) = socket.bind(config.source_port) {
         runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=udp-tx-bind error={error:?}"
@@ -396,18 +361,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let started = Instant::now();
         let task_poll_start = TASK_POLLS.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let network_scheduler_start =
-            crate::product_hil::traffic::network_scheduler::snapshot();
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
         let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let core1_tx_performance_start = TX_PERFORMANCE.snapshot();
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let egress_control_start =
-            open_esp_radio_esp32s31_embassy_wifi::access_point_egress_control_snapshot();
-        #[cfg(feature = "tx-architecture-probes")]
-        let tx_core1_materializer_start =
-            open_esp_radio_embassy_net::TX_CORE1_MATERIALIZER_COUNTERS.snapshot();
+        let tx_promotion_start = TX_PERFORMANCE.snapshot();
         // TX owns A-MPDU evidence because its post-measurement drain proves
         // that the last publication reached a terminal BlockAck outcome.
         // The RX sibling can finish on the host terminal datagram while a
@@ -421,133 +377,104 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         } else {
             None
         };
-        let (bytes, datagrams, mut send_errors, mut flow_evidence) =
-            if session.config.active_flow_count() == 1 {
-                let mut next_send = started;
-                let mut bytes = 0_u64;
-                let mut datagrams = 0_u64;
-                let mut send_errors = 0_u32;
-                // One session timer bounds a permanently blocked socket admission.
-                // Installing and cancelling a timeout for every datagram added about
-                // 80 us to the 700-us 16-Mbit/s packet interval and made HIL itself
-                // the measured throughput ceiling.
-                let _session_elapsed = with_timeout(duration, async {
-                    loop {
-                        let sequence = (datagrams as u32).to_be_bytes();
-                        let publication = async {
-                            if socket_payload_bytes.is_multiple_of(payload_bytes) {
-                                socket
-                                    .send_to_with(payload_bytes, (server, server_port), |packet| {
-                                        // An exact divisor never requires xarxa's
-                                        // metadata-bearing ring padding, so the FnOnce
-                                        // zero-copy callback cannot be consumed by a
-                                        // retryable post-callback `BufferFull` result.
-                                        packet[..sequence.len()].copy_from_slice(&sequence);
-                                        (payload_bytes, ())
-                                    })
-                                    .await
-                            } else {
-                                // `send_to` copies from a stable source and is therefore
-                                // retryable when a variable-size payload needs ring
-                                // padding. This scratch resides in static PSRAM.
-                                packet[..sequence.len()].copy_from_slice(&sequence);
-                                socket
-                                    .send_to(&packet[..payload_bytes], (server, server_port))
-                                    .await
-                            }
-                        };
-                        match publication.await {
-                            Ok(()) => {
-                                bytes = bytes.saturating_add(payload_bytes as u64);
-                                datagrams = datagrams.saturating_add(1);
-                            }
-                            Err(_) => send_errors = send_errors.saturating_add(1),
+        let (bytes, datagrams, send_errors, flow_evidence) = if session.config.active_flow_count()
+            == 1
+        {
+            let mut next_send = started;
+            let mut bytes = 0_u64;
+            let mut datagrams = 0_u64;
+            let mut send_errors = 0_u32;
+            // One session timer bounds a permanently blocked socket admission.
+            // Installing and cancelling a timeout for every datagram added about
+            // 80 us to the 700-us 16-Mbit/s packet interval and made HIL itself
+            // the measured throughput ceiling.
+            let _session_elapsed = with_timeout(duration, async {
+                loop {
+                    let sequence = (datagrams as u32).to_be_bytes();
+                    let publication =
+                        socket.send_to_with(payload_bytes, (server, server_port), |packet| {
+                            packet[..sequence.len()].copy_from_slice(&sequence);
+                            (payload_bytes, ())
+                        });
+                    match publication.await {
+                        Ok(()) => {
+                            bytes = bytes.saturating_add(payload_bytes as u64);
+                            datagrams = datagrams.saturating_add(1);
                         }
-                        if let Some(rate_bps) = offered_rate_bps
-                            && datagrams.is_multiple_of(u64::from(pacing_group_datagrams))
-                        {
-                            // Enforce one byte-budget deadline per bounded socket-queue
-                            // group. Keep small timer/executor lateness on the absolute
-                            // schedule. A four-group token-bucket horizon prevents a
-                            // genuine pause from becoming an unbounded line-rate burst.
-                            let group_nanos = u64::from(pacing_group_datagrams)
-                                .saturating_mul(u64::try_from(payload_bytes).unwrap_or(u64::MAX))
-                                .saturating_mul(8_000_000_000)
-                                .saturating_add(rate_bps - 1)
-                                / rate_bps;
-                            let group_duration = Duration::from_nanos(group_nanos);
-                            next_send += group_duration;
-                            let now = Instant::now();
-                            if now < next_send {
-                                Timer::at(next_send).await;
-                            } else if now - next_send > group_duration * MAX_PACING_CATCH_UP_GROUPS
-                            {
-                                next_send = now;
-                            }
+                        Err(_) => send_errors = send_errors.saturating_add(1),
+                    }
+                    if let Some(rate_bps) = offered_rate_bps
+                        && datagrams.is_multiple_of(u64::from(pacing_group_datagrams))
+                    {
+                        // Enforce one byte-budget deadline per bounded socket-queue
+                        // group. Keep small timer/executor lateness on the absolute
+                        // schedule. A four-group token-bucket horizon prevents a
+                        // genuine pause from becoming an unbounded line-rate burst.
+                        let group_nanos = u64::from(pacing_group_datagrams)
+                            .saturating_mul(u64::try_from(payload_bytes).unwrap_or(u64::MAX))
+                            .saturating_mul(8_000_000_000)
+                            .saturating_add(rate_bps - 1)
+                            / rate_bps;
+                        let group_duration = Duration::from_nanos(group_nanos);
+                        next_send += group_duration;
+                        let now = Instant::now();
+                        if now < next_send {
+                            Timer::at(next_send).await;
+                        } else if now - next_send > group_duration * MAX_PACING_CATCH_UP_GROUPS {
+                            next_send = now;
                         }
                     }
-                })
-                .await;
-                let elapsed_micros = started.elapsed().as_micros().max(1);
-                let transport = TransportEvidence {
-                    rx_bytes: 0,
-                    tx_bytes: bytes,
-                    rx_units: 0,
-                    tx_units: datagrams,
-                    elapsed_micros,
-                    transport_errors: send_errors,
-                };
-                (
-                    bytes,
-                    datagrams,
-                    send_errors,
-                    [
-                        Some(FlowTransportEvidence::from_session_total(
-                            session_flow.flow_id,
-                            transport,
-                        )),
-                        None,
-                    ],
-                )
-            } else {
-                let flows = transmit_multi_flow(
-                    &mut socket,
-                    socket_payload_bytes,
-                    packet,
-                    session.config,
-                    started,
-                    duration,
-                    pacing_group_datagrams,
-                    config.multi_flow_burst_datagrams,
-                )
-                .await;
-                let aggregate = TransportEvidence::from_flows(flows);
-                (
-                    aggregate.tx_bytes,
-                    aggregate.tx_units,
-                    aggregate.transport_errors,
-                    flows,
-                )
+                }
+            })
+            .await;
+            let elapsed_micros = started.elapsed().as_micros().max(1);
+            let transport = TransportEvidence {
+                rx_bytes: 0,
+                tx_bytes: bytes,
+                rx_units: 0,
+                tx_units: datagrams,
+                elapsed_micros,
+                transport_errors: send_errors,
             };
+            (
+                bytes,
+                datagrams,
+                send_errors,
+                [
+                    Some(FlowTransportEvidence::from_session_total(
+                        session_flow.flow_id,
+                        transport,
+                    )),
+                    None,
+                ],
+            )
+        } else {
+            let flows = transmit_multi_flow(
+                &mut socket,
+                session.config,
+                started,
+                duration,
+                pacing_group_datagrams,
+                config.multi_flow_burst_datagrams,
+            )
+            .await;
+            let aggregate = TransportEvidence::from_flows(flows);
+            (
+                aggregate.tx_bytes,
+                aggregate.tx_units,
+                aggregate.transport_errors,
+                flows,
+            )
+        };
         let elapsed_us = started.elapsed().as_micros().max(1);
         let throughput_kbps = bytes
             .saturating_mul(8)
             .saturating_mul(1_000)
             .checked_div(elapsed_us)
             .unwrap_or(0);
-        // UDP admission is not network-stack drainage. Prove that every
-        // admitted datagram left the socket before reporting its count; a
-        // fixed sleep raced the final 17 AP frames at a full 16-Mbit/s offer.
-        // Timeout remains a failed transport observation rather than turning
-        // a stopped radio into an unbounded HIL task.
-        if with_timeout(config.drain, socket.flush()).await.is_err() {
-            send_errors = send_errors.saturating_add(1);
-            if let Some(primary) = flow_evidence.iter_mut().flatten().next() {
-                primary.transport_errors = primary.transport_errors.saturating_add(1);
-            }
-        }
-        // Socket drainage can leave the final driver publication in flight.
-        // Keep that terminal MAC/BlockAck interval outside measured time.
+        // Owned UDP publication completes only after Xarxa has handed the
+        // complete packet to the driver. Keep the terminal radio/BlockAck
+        // interval outside measured time before sampling hardware evidence.
         Timer::after(config.drain).await;
         let tx_vector = qualification_sample(QualificationRequester::UdpTx)
             .await
@@ -557,11 +484,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             feature = "core0-rx-coarse-telemetry"
         ))]
         let cache_interval = l1_cache.snapshot().wrapping_delta_since(cache_start);
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let network_scheduler =
-            crate::product_hil::traffic::network_scheduler::interval_since(
-                network_scheduler_start,
-            );
         // This live link vector belongs to the associated-STA datapath. AP
         // rate/A-MPDU evidence is owned by its terminal role report instead.
         // A station session that explicitly required BlockAck must never
@@ -593,45 +515,15 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         )
         .await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        {
-            runtime_log(format_args!(
-                "ONSCHED polls={} ingress_calls={} ingress_packets={} egress_passes={} \
-                 egress_tokens={} blocked={} ingress_budget={} egress_budget={} \
-                 start_ingress={} start_egress={} exit_drained={} exit_work={} exit_credit={}",
-                network_scheduler.polls,
-                network_scheduler.ingress_calls,
-                network_scheduler.ingress_packets,
-                network_scheduler.egress_passes,
-                network_scheduler.egress_tx_tokens,
-                network_scheduler.egress_blocked,
-                network_scheduler.ingress_budget_exhausted,
-                network_scheduler.egress_budget_exhausted,
-                network_scheduler.started_with_ingress,
-                network_scheduler.started_with_egress,
-                network_scheduler.exit_drained,
-                network_scheduler.exit_work_budget,
-                network_scheduler.exit_egress_credit,
-            ));
-        }
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
-        crate::product_hil::traffic::log_open_radio_core1_tx_phases(
-            core1_tx_performance_start,
-            egress_control_start,
-        )
-        .await;
+        crate::product_hil::traffic::log_open_radio_tx_promotion(tx_promotion_start).await;
         #[cfg(any(
             feature = "core0-rx-cycle-telemetry",
             feature = "core0-rx-coarse-telemetry"
         ))]
         crate::product_hil::traffic::reporting::log_open_radio_l1_cache_interval(cache_interval)
             .await;
-        #[cfg(feature = "tx-architecture-probes")]
-        crate::product_hil::traffic::reporting::log_open_radio_tx_core1_materializer(
-            tx_core1_materializer_start,
-        )
-        .await;
         let aggregate_evidence = aggregate
             .filter(|aggregate| aggregate.rate_selections != 0)
             .map(aggregate_tx_evidence);

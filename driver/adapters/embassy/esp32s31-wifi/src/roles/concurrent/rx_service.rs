@@ -7,7 +7,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{RxDma, RxError},
     rx_pool::{
@@ -43,7 +43,7 @@ pub trait Esp32s31StaApStationRxRole<
 >
 {
     type Dispatch;
-    type Error;
+    type Error: 'static;
 
     fn publish_pending_rx(
         &mut self,
@@ -74,7 +74,7 @@ pub trait Esp32s31StaApAccessPointRxRole<
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 >
 {
-    type Error;
+    type Error: 'static;
 
     fn publish_pending_rx(
         &mut self,

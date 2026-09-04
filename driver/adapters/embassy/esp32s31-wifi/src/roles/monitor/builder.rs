@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 
 use embassy_futures::select::{Either, select};
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Timer;
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_hal::{MacInterruptEnableState, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::{

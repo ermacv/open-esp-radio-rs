@@ -263,20 +263,18 @@ where
     /// synchronous Core0 transaction. Management/TX publication, deferred
     /// Ethernet output, reorder expiry and active-TX mailbox pressure are
     /// terminal batch boundaries.
-    pub(super) fn service_rx_protocol_bounded<H, Q, S>(
+    pub(super) fn service_rx_protocol_bounded<H, S>(
         &mut self,
         hardware: &mut H,
         tx_domain: AccessPointRxTxDomain,
         maximum_frames: usize,
         security_material: &mut S,
         mut now_micros: u64,
-        publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<DatapathRxProgress, Esp32s31AccessPointControlError>
     where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         C: AccessPointRxProtocolConsumer,
-        Q: FnMut(u8),
         S: FnMut() -> ([u8; 32], u64),
     {
         let maximum_frames = maximum_frames.max(1);
@@ -357,7 +355,6 @@ where
                 staged_frame,
                 security_material,
                 now_micros,
-                publish_shared_rx,
                 #[cfg(feature = "diagnostics")]
                 delivery_observer,
             )?;

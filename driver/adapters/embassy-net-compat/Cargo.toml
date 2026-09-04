@@ -1,0 +1,19 @@
+[package]
+name = "open-esp-radio-embassy-net-compat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bounded copied-frame adapter for the unchanged Embassy network driver API"
+
+[dependencies]
+embassy-net-driver = "0.2.0"
+embassy-sync = "0.8.0"
+open-esp-radio-network = { path = "../../common/network" }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+
+[lints]
+workspace = true

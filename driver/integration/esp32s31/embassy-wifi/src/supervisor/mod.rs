@@ -156,8 +156,8 @@ use crate::supervisor::station::{
     ProductionAccessPointRxConsumer, ProductionAccessPointRxProducer, access_point_rx_pipeline,
     connected_config, initialize_connected_datapath_mailbox,
     initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
-    initialize_ethernet_frame, initialize_sta_ap_station_rx_batch, initialize_station_network,
-    mac_interrupt_epoch, publish_access_point_shared_network_rx, run_connected,
+    initialize_ethernet_frame, initialize_sta_ap_station_rx_batch, mac_interrupt_epoch,
+    run_connected,
 };
 use crate::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization, Esp32s31Wifi,
@@ -874,7 +874,7 @@ pub async fn new(
     let diagnostics_snapshot = initial_connected.diagnostics;
     let initial_connected = initial_connected.resources;
     let (network_devices, station_network) =
-        initialize_station_network(station_address, access_point_mac.bytes());
+        crate::radio_resources::initialize_network(station_address, access_point_mac.bytes());
     let monitor = initialize_monitor_resources(monitor_memory)
         .map_err(|MonitorResourcesError::InUse| Esp32s31NewError::MonitorResources)?;
     let connected_datapath = initialize_connected_datapath_mailbox(

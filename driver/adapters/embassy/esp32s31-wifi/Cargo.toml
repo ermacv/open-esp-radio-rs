@@ -11,8 +11,9 @@ description = "Embassy runtime adapter for the open ESP32-S31 Wi-Fi radio"
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
-open-esp-radio-embassy-net = { path = "../../embassy-net" }
+open-esp-radio-embassy-net = { path = "../../embassy-net", optional = true }
 open-esp-radio-dma = { path = "../../../common/dma" }
+open-esp-radio-network = { path = "../../../common/network" }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
 open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi" }
@@ -22,6 +23,7 @@ open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap" }
 open-esp-radio-esp32s31-wifi-sta = { path = "../../../chips/esp32s31/wifi/sta" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
+open-esp-radio-wifi-datapath = { path = "../../../wifi/datapath" }
 open-esp-radio-wifi-sta = { path = "../../../wifi/sta" }
 open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 open-esp-radio-wifi-embassy = { path = "../wifi" }
@@ -29,18 +31,23 @@ static_cell = "2.1.1"
 log = { version = "0.4", optional = true }
 
 [dev-dependencies]
+open-esp-radio-research-datapath = { path = "../../research" }
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal", features = ["validation-probes"] }
 open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap", features = ["diagnostics"] }
+xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", features = ["async"] }
 
 [features]
-default = []
+default = ["owned-network"]
+# Optimized Xarxa/Embassy owner glue. The radio-native policy and physical
+# materialization boundary compile without this feature for compatibility and
+# research integrations.
+owned-network = ["dep:open-esp-radio-embassy-net"]
 # Value-only driver observers. Ordinary/performance builds do not retain
 # diagnostic counters or invoke observation clocks.
 diagnostics = [
     "dep:log",
-    "open-esp-radio-embassy-net/diagnostics",
     "open-esp-radio-esp32s31-wifi-ap/diagnostics",
 ]
 # Low-overhead phase timing for the Core0 RX producer. This is deliberately
@@ -56,23 +63,19 @@ task-poll-telemetry = [
 # runner/DMA/protocol batches, so the result remains close to the production
 # owner graph while still pairing elapsed cycles with retired instructions.
 core0-rx-coarse-telemetry = ["dep:riscv"]
-# Affine Core0 egress-policy ownership without intrusive performance counters.
-tx-egress-scheduling = ["open-esp-radio-embassy-net/tx-egress-scheduling"]
 # Per-transaction TX phase samples used only by the coarse diagnostic image.
 # Core1 packet emission is measured at the paired embassy-net boundary.
 tx-phase-telemetry = [
     "core0-rx-coarse-telemetry",
-    "tx-egress-scheduling",
-    "open-esp-radio-embassy-net/tx-phase-telemetry",
-]
-tx-staging-copy-probe = ["open-esp-radio-embassy-net/tx-staging-copy-probe"]
-tx-core1-materializer-probe = [
-    "tx-staging-copy-probe",
-    "open-esp-radio-embassy-net/tx-core1-materializer-probe",
+    "open-esp-radio-wifi-datapath/ownership-telemetry",
 ]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }
+
+[[test]]
+name = "owned_datapath_network"
+required-features = ["owned-network"]
 
 [lints]
 workspace = true

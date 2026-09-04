@@ -389,12 +389,12 @@ where
     }
 
     /// Advance an active descriptor from one coalesced IRQ/deadline edge.
-    pub async fn service<H: TxHardware>(
+    pub fn service<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
-        Ok(self.ordinary.service(hardware, wake).await?)
+        Ok(self.ordinary.service(hardware, wake)?)
     }
 
     pub fn take_last_outcome(&mut self) -> Option<OrdinaryTxOutcome> {
@@ -564,7 +564,6 @@ mod tests {
     use core::{
         future::{Future, ready},
         pin::pin,
-        task::{Context, Poll},
     };
 
     use open_esp_radio_esp32s31_hal::types::{
@@ -579,17 +578,6 @@ mod tests {
     };
 
     use super::*;
-
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let mut future = pin!(future);
-        let mut context = Context::from_waker(core::task::Waker::noop());
-        loop {
-            match future.as_mut().poll(&mut context) {
-                Poll::Ready(output) => return output,
-                Poll::Pending => std::thread::yield_now(),
-            }
-        }
-    }
 
     #[derive(Default)]
     struct Hardware {
@@ -891,12 +879,12 @@ mod tests {
             MacInterface::AccessPoint
         );
 
-        let progress = block_on(tx.service(
+        let progress = tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
             },
-        ));
+        );
         assert_eq!(progress, Ok(WifiTxProgress::Complete));
         assert!(tx.take_last_outcome().unwrap().is_success());
         assert!(tx.try_into_resources().is_ok());

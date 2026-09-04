@@ -1,6 +1,6 @@
 //! Station connected HT/HE TX owner for the production Wi-Fi runner.
 //!
-//! The owner retains every pinned `embassy-net` lease referenced by DMA until
+//! The owner retains every physical frame owner referenced by DMA until
 //! completion, queue detach, BlockAck processing and any retained aggregate
 //! retry. It shares the ordinary descriptor, key token, sequence spaces,
 //! contention state, power profile and clock through
@@ -19,9 +19,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use open_esp_radio_embassy_net::{
-    PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
-};
+use crate::datapath::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
 use open_esp_radio_esp32s31_hal::types::MacInterface;
 use open_esp_radio_esp32s31_wifi::ampdu_tx::{
     AmpduTxRoleAdapter, HtAmpduPublicationInputs, HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError,
@@ -29,6 +27,7 @@ use open_esp_radio_esp32s31_wifi::ampdu_tx::{
 };
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 #[cfg(test)]
+#[cfg(all(test, feature = "owned-network"))]
 use open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE;
 use open_esp_radio_esp32s31_wifi_mac::{
     rate_control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
@@ -58,6 +57,7 @@ use open_esp_radio_ieee80211::{
     },
     station_power_save::{StaAssociationId, StaPowerManagement},
 };
+use open_esp_radio_wifi_datapath::PhysicalTxSource;
 use open_esp_radio_wifi_softmac::{
     MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult,
 };
@@ -263,6 +263,7 @@ struct AggregateActive<const SLOTS: usize> {
     config: AmpduTxConfig,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
+    /// Next deadline for the enclosing published/abort-settling phase.
     deadline_micros: u64,
     #[cfg(any(feature = "diagnostics", test))]
     first_publication_micros: Option<u64>,
@@ -284,13 +285,14 @@ enum ConnectedTxActive<const SLOTS: usize> {
     Idle,
     Ordinary,
     Aggregate(AggregateActive<SLOTS>),
+    AbortSettling(AggregateActive<SLOTS>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AggregateFrameAdmission {
     /// The exact frame geometry was checked before the aggregate reservation.
     FreshExact,
-    /// HT admission used `FRAME_CAPACITY`, which is an upper bound for every
+    /// HT admission used `B::MAX_ETHERNET_LENGTH`, which is an upper bound for every
     /// frame obtainable from this typed network queue.
     HtQueueCapacity,
     /// HE delimiter policy depends on the actual encoded length, so the
@@ -338,31 +340,19 @@ impl<T> DerefMut for TeardownResource<T> {
 pub struct Esp32s31ConnectedTx<
     'slot,
     'ampdu,
-    'resources,
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
 > where
-    'resources: 'ampdu,
+    B: 'ampdu,
 {
     ordinary: TeardownResource<Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>>,
     ampdu: TeardownResource<
-        AggregateTxArenaPair<
-            RetainedDmaAmpduTx<
-                'ampdu,
-                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-                SLOTS,
-                AMPDU_BUFFER_SIZE,
-            >,
-        >,
+        AggregateTxArenaPair<RetainedDmaAmpduTx<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>>,
     >,
     cookie: Option<TxCookie>,
     standby_cookie: Option<TxCookie>,
@@ -371,8 +361,7 @@ pub struct Esp32s31ConnectedTx<
     /// One FIFO successor retained when its WMM TID differs from the current
     /// aggregate. It remains a network lease and is published before another
     /// queue entry can overtake it.
-    deferred_network:
-        Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>,
+    deferred_network: Option<B>,
     /// Peer-negotiated BlockAck window per QoS TID; zero means inactive.
     block_ack_windows: [u8; 8],
     /// Generation of each agreement retained by software-prepared A-MPDUs.
@@ -402,5 +391,5 @@ mod publication;
 mod resources;
 use crate::datapath::tx::aggregate::AggregateTxServiceEvent;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "owned-network"))]
 mod tests;

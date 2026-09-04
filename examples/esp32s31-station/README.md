@@ -14,6 +14,17 @@ cd examples/esp32s31-station
 cargo build --release
 ```
 
+The default build uses the optimized owned-packet Xarxa/Embassy fork. The same
+application source can be checked against released Embassy crates and the
+upstream-compatible copied-frame adapter:
+
+```console
+cargo check --release --no-default-features --features compat-network
+```
+
+The two network integrations are compile-time alternatives and cannot be
+combined in one binary.
+
 Network credentials are application build configuration. They are deliberately
 absent from reusable driver crates and HIL configuration:
 
@@ -31,11 +42,13 @@ If no matching AP is present, each complete 13-channel cold scan returns its
 halted RX ring, waits 500 ms and prepares that same owner for the next scan.
 It does not recreate descriptors or panic after the first `NoCandidate` pass.
 
-This direct-to-flash example selects the compact internal-SRAM resource
-profile: 16 staged RX owners, 8 network RX/TX slots and 8 TX A-MPDU members.
-The qualified `high-throughput` profile uses 64/40/32/32 and requires the
-product to place CPU-only owners in initialized PSRAM; the HIL target is the
-reference composition for that linker contract.
+The reusable product integration selects its high-throughput ownership graph
+and explicitly separates general-memory network payloads from the fixed
+DMA-visible SRAM horizon. The HIL target currently owns the reference linker
+and bootstrap contract which initializes PSRAM and maps those sections. This
+standalone example's ordinary ESP-HAL linker configuration does not yet provide
+that complete placement contract, so a successful source `cargo check` is not
+by itself a flashable-image or hardware-qualification claim.
 
 The connected radio is a finite lifecycle epoch rather than a terminal task.
 Peer loss or an application controller request returns the IRQ, staged-RX,

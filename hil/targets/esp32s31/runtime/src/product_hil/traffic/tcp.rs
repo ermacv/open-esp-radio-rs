@@ -3,7 +3,7 @@
 use embassy_futures::join::join;
 use embassy_net::{
     Stack,
-    tcp::{TcpReader, TcpSocket, TcpWriter},
+    tcp::{TcpListener, TcpReader, TcpSocket, TcpWriter},
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
@@ -61,6 +61,10 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     sessions: &'static SessionChannel,
 ) -> ! {
     let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
+    let mut listener = TcpListener::new(stack);
+    listener
+        .listen(config.local_port)
+        .expect("production TCP benchmark port must be free");
     for direction in [
         HilDirection::Rx,
         HilDirection::Tx,
@@ -124,22 +128,21 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             aggregate_counters.snapshot()
         });
         let connection_timeout = duration + Duration::from_secs(5);
-        let connected =
-            match with_timeout(connection_timeout, socket.accept(config.local_port)).await {
-                Ok(Ok(())) => true,
-                Ok(Err(error)) => {
-                    runtime_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=tcp-accept error={error:?}"
-                    ));
-                    false
-                }
-                Err(_) => {
-                    runtime_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=tcp-accept error=Timeout"
-                    ));
-                    false
-                }
-            };
+        let connected = match with_timeout(connection_timeout, listener.accept(&mut socket)).await {
+            Ok(Ok(())) => true,
+            Ok(Err(error)) => {
+                runtime_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=tcp-accept error={error:?}"
+                ));
+                false
+            }
+            Err(_) => {
+                runtime_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=tcp-accept error=Timeout"
+                ));
+                false
+            }
+        };
         socket.set_nagle_enabled(false);
         let started = Instant::now();
         let (mut rx, mut tx) = (StreamResult::default(), StreamResult::default());

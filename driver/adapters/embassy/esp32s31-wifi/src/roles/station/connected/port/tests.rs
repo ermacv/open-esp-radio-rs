@@ -4,7 +4,7 @@
 )]
 
 use super::*;
-use open_esp_radio_embassy_net::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rate_control::{
     HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
     StaRateControlAssociationInput, StaRateControlPhy,

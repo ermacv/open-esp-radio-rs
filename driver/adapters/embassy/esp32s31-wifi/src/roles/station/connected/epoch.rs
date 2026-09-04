@@ -4,7 +4,7 @@
 )]
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex as NetworkRawMutex;
 use open_esp_radio_esp32s31_hal::{ConnectedStaInterruptPrepared, MacInterruptSetup};
 use open_esp_radio_esp32s31_wifi_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
 use open_esp_radio_esp32s31_wifi_sta::{
@@ -223,54 +223,16 @@ pub fn complete_esp32s31_connected_datapath_exit<E, M: RawMutex>(
 /// `DatapathRunner` observes the stop future only at a transaction-safe boundary.
 /// A simultaneous peer disconnect is then coalesced with any still-pending
 /// application command before ownership is handed back to the outer lifecycle.
-pub async fn run_esp32s31_connected_station_epoch<
-    'resources,
-    'irq,
-    RM,
-    CM,
-    N,
-    B,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->(
-    runner: &mut DatapathRunner<
-        'resources,
-        'irq,
-        RM,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-    >,
+pub async fn run_esp32s31_connected_station_epoch<'irq, RM, CM, N, B, RX>(
+    runner: &mut DatapathRunner<'irq, RM, N, B, RX>,
     control: &mut Esp32s31StationCommandReceiver<'_, CM>,
 ) -> Esp32s31ConnectedStationExit<B::Error>
 where
     RM: NetworkRawMutex,
     CM: RawMutex,
-    N: crate::datapath::network::DatapathNetwork<
-            'resources,
-            RM,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
-    B: DatapathServices<
-            'resources,
-            RM,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-            Exit = ConnectedDisconnectReason,
-        >,
+    N: crate::datapath::network::DatapathNetwork,
+    RX: crate::datapath::network::DatapathNetworkRxSet,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame, Exit = ConnectedDisconnectReason>,
 {
     let requested_command = core::cell::Cell::new(None);
     let station_stop = async {

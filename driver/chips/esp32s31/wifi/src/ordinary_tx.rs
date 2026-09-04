@@ -226,8 +226,16 @@ struct ActiveTx {
     packet_priority: u8,
     group_receiver: bool,
     completion_timeout_us: u64,
+    /// Next service boundary: publication expiry or abort-settle expiry.
+    /// The previous phase's deadline is no longer actionable after transition.
     deadline_micros: u64,
+    phase: OrdinaryTxPhase,
     retries: OrdinaryTxRetryReport,
+}
+
+enum OrdinaryTxPhase {
+    Published,
+    AbortSettling,
 }
 
 /// Unique ordinary-MPDU descriptor and retry owner shared by protocol phases.
@@ -425,11 +433,14 @@ where
         self.timer.wait_until(deadline_micros)
     }
 
+    /// The next service deadline, including an in-progress hardware abort.
+    pub fn next_deadline_micros(&self) -> Option<u64> {
+        self.active.as_ref().map(|active| active.deadline_micros)
+    }
+
     pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
         let deadline = self
-            .active
-            .as_ref()
-            .map(|active| active.deadline_micros)
+            .next_deadline_micros()
             .unwrap_or_else(|| self.timer.now_micros());
         self.timer.wait_until(deadline)
     }
@@ -560,6 +571,7 @@ where
             group_receiver,
             completion_timeout_us: plan.exchange.publication_timeout_micros,
             deadline_micros: 0,
+            phase: OrdinaryTxPhase::Published,
             retries: OrdinaryTxRetryReport::default(),
         };
         self.publish_attempt(hardware, &mut active)?;
@@ -589,12 +601,20 @@ where
     }
 
     /// Consume one IRQ/deadline edge and retain or release DMA ownership.
-    pub async fn service<H: TxHardware>(
+    ///
+    /// This call never waits. A timeout starts a retained abort-settle phase
+    /// and returns `Pending`; the caller waits until `next_deadline_micros`
+    /// (or another event) before servicing again. An early wake cannot finish
+    /// abort or release the descriptor.
+    pub fn service<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         let active = self.active.take().ok_or(OrdinaryTxError::Busy)?;
+        if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
+            return self.service_abort_settle(hardware, active);
+        }
         let interrupt_events = match wake {
             WifiTxWake::Interrupt { events } => events,
             WifiTxWake::Deadline => 0,
@@ -622,6 +642,12 @@ where
             return self.reset_required(active, TxResetReason::CompletionInterruptWithoutState);
         }
         if tx_events == EVENT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
+            if matches!(wake, WifiTxWake::Deadline)
+                && self.timer.now_micros() < active.deadline_micros
+            {
+                self.active = Some(active);
+                return Ok(WifiTxProgress::Pending);
+            }
             if !self
                 .slot
                 .as_mut()
@@ -634,11 +660,7 @@ where
                 };
                 return self.reset_required(active, reason);
             }
-            self.timer.after_micros(TX_ABORT_SETTLE_US).await;
-            self.slot
-                .as_mut()
-                .finish_timeout_abort(hardware, active.cookie)?;
-            return self.finish_aborted_attempt(hardware, active, true);
+            return self.start_abort_settle(active);
         }
         if tx_events == EVENT_COLLISION {
             if !self
@@ -665,7 +687,32 @@ where
         hardware: &mut H,
         poll_interval_us: u64,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        let progress = self.poll_once(hardware)?;
+        if progress == WifiTxProgress::Pending {
+            let next_poll = self.timer.now_micros().saturating_add(poll_interval_us);
+            let deadline = match self.active.as_ref() {
+                Some(active) if matches!(active.phase, OrdinaryTxPhase::AbortSettling) => {
+                    active.deadline_micros
+                }
+                _ => self
+                    .next_deadline_micros()
+                    .unwrap_or(next_poll)
+                    .min(next_poll),
+            };
+            self.timer.wait_until(deadline).await;
+        }
+        Ok(progress)
+    }
+
+    /// Synchronous pre-IRQ observation using the same retained abort phase.
+    fn poll_once<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<WifiTxProgress, OrdinaryTxError> {
         let active = self.active.take().ok_or(OrdinaryTxError::Busy)?;
+        if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
+            return self.service_abort_settle(hardware, active);
+        }
         if let Some(completion) = self.slot.as_mut().acknowledge_completion(hardware)? {
             self.slot
                 .as_mut()
@@ -677,18 +724,45 @@ where
             .as_mut()
             .begin_timeout_abort(hardware, active.cookie)?
         {
-            self.timer.after_micros(TX_ABORT_SETTLE_US).await;
-            self.slot
-                .as_mut()
-                .finish_timeout_abort(hardware, active.cookie)?;
-            return self.finish_aborted_attempt(hardware, active, true);
+            return self.start_abort_settle(active);
         }
         if self.timer.now_micros() >= active.deadline_micros {
             return self.reset_required(active, TxResetReason::ExecutorDeadline);
         }
         self.active = Some(active);
-        self.timer.after_micros(poll_interval_us).await;
         Ok(WifiTxProgress::Pending)
+    }
+
+    fn start_abort_settle(
+        &mut self,
+        mut active: ActiveTx,
+    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        // Start the interval after the hardware abort request has completed.
+        let Some(deadline_micros) = self.timer.now_micros().checked_add(TX_ABORT_SETTLE_US) else {
+            self.slot.as_mut().require_reset(active.cookie)?;
+            return Err(OrdinaryTxError::DeadlineOverflow);
+        };
+        active.phase = OrdinaryTxPhase::AbortSettling;
+        active.deadline_micros = deadline_micros;
+        self.active = Some(active);
+        Ok(WifiTxProgress::Pending)
+    }
+
+    fn service_abort_settle<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        active: ActiveTx,
+    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        // Late completion and repeated IRQs cannot bypass the hardware settle
+        // interval. Abort detach, not completion acknowledgement, owns release.
+        if self.timer.now_micros() < active.deadline_micros {
+            self.active = Some(active);
+            return Ok(WifiTxProgress::Pending);
+        }
+        self.slot
+            .as_mut()
+            .finish_timeout_abort(hardware, active.cookie)?;
+        self.finish_aborted_attempt(hardware, active, true)
     }
 
     fn finish_completion<H: TxHardware>(

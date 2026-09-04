@@ -7,6 +7,11 @@
 //! runner. Board firmware owns credentials, IP policy and sockets; it does not
 //! assemble PAC, DMA, ISR or role transactions.
 
+#[cfg(all(feature = "owned-network", feature = "compat-network"))]
+compile_error!("select exactly one network integration: owned-network or compat-network");
+#[cfg(not(any(feature = "owned-network", feature = "compat-network")))]
+compile_error!("select exactly one network integration: owned-network or compat-network");
+
 #[cfg(feature = "diagnostics")]
 macro_rules! diagnostics_event {
     ($($argument:tt)*) => { log::info!($($argument)*) };
@@ -119,6 +124,8 @@ pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_adaptive_recyc
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_recycled_rx_probe_delay_for_diagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::rx::dma::configure_interrupt_driven_recycled_append_for_diagnostics;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(feature = "task-poll-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_ap_rx_cycles::{
     CORE0_AP_RX_CYCLES, Core0ApRxCycleSnapshot,
@@ -147,8 +154,6 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_direct_immediate_rx_dispatch_for_diagnostics;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub use radio_resources::access_point_egress_control_snapshot;
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 #[cfg(feature = "tx-psram-dma-probe")]
 pub use radio_resources::configure_direct_psram_tx_dma_probe;
@@ -156,7 +161,7 @@ pub use radio_resources::configure_direct_psram_tx_dma_probe;
 pub use radio_resources::{
     DirectPsramTxDmaProbeObservation, direct_psram_tx_dma_probe_observation,
 };
-pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
+pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices, Esp32s31WifiStackResources};
 pub use status::{
     Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot, Esp32s31StationLinkState,
     Esp32s31StationStatus, Esp32s31StationStatusSnapshot,

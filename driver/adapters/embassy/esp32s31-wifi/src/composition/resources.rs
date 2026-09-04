@@ -67,6 +67,18 @@ pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
 // token still retains one of those slots until Core 1 consumes it, while copied
 // reorder/reassembly frames use independent queue backing.
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
+// Complete network-owned TX packets wait here before Core0 classifies them by
+// VIF/peer/TID. This software ownership horizon is intentionally independent
+// of the 67-slot DMA-capable execution pool and of the number of associated
+// AP peers. Phase-3 HIL will determine whether 128 is the final admission
+// bound; changing it must never resize the physical SRAM pool.
+pub const ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH: usize = 128;
+// One independently polled Xarxa instance owns one general pool and one
+// driver-RX pool. The general pool covers the software TX horizon plus
+// neighbor/control transients. The RX pool covers the driver queue plus
+// protocol/socket retention without coupling those owners to DMA staging.
+pub const ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY: usize = 160;
+pub const ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY: usize = 96;
 const ESP32S31_PERMANENT_NETWORK_ENDPOINTS: usize = 2;
 const ESP32S31_NETWORK_TX_PIPELINE_CREDITS: usize = 1;
 // One additional credit per permanent network endpoint is reserved for the
@@ -94,6 +106,7 @@ impl Esp32s31DefaultWifiResourceProfile {
     pub const RX_STAGE_SLOT_COUNT: usize = ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT;
     pub const RX_REORDER_WINDOW: usize = ESP32S31_DEFAULT_RX_REORDER_WINDOW;
     pub const NETWORK_RX_QUEUE_DEPTH: usize = ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH;
+    pub const NETWORK_OWNER_TX_QUEUE_DEPTH: usize = ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH;
     pub const NETWORK_TX_QUEUE_DEPTH: usize = ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH;
     pub const TX_AMPDU_FRAME_COUNT: usize = ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT;
 }
@@ -208,6 +221,17 @@ mod tests {
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_STAGE_SLOT_COUNT, 32);
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_DESCRIPTOR_COUNT, 96);
         assert_eq!(ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH, 67);
+        assert_eq!(ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH, 128);
+        const {
+            assert!(
+                ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY
+                    > ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH
+            );
+            assert!(
+                ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY
+                    > ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH
+            );
+        }
         assert_eq!(
             ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH
                 - ESP32S31_PERMANENT_NETWORK_ENDPOINTS

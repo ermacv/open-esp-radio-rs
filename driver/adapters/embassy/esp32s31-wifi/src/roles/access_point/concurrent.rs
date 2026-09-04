@@ -38,11 +38,10 @@ pub enum Esp32s31StaApAccessPointRxError {
 /// Physical RX/DMA, interrupt and final network endpoints remain outside this
 /// value. TX/control state will be added to this same role owner rather than
 /// manufacturing a second AP protocol object for the paired runtime.
-pub struct AccessPointRoleRuntime<Processor, NetworkTx, Security, SharedRx, StatusObserver = ()> {
+pub struct AccessPointRoleRuntime<Processor, NetworkTx, Security, StatusObserver = ()> {
     protocol: Processor,
     network_tx: NetworkTx,
     security_material: Security,
-    publish_shared_rx: SharedRx,
     status_observer: StatusObserver,
     last_status_revision: u32,
     #[cfg(feature = "diagnostics")]
@@ -51,7 +50,7 @@ pub struct AccessPointRoleRuntime<Processor, NetworkTx, Security, SharedRx, Stat
     delivery_observer: Option<&'static dyn RxNetworkDeliveryObserver>,
 }
 
-impl<Processor> AccessPointRoleRuntime<Processor, (), (), ()> {
+impl<Processor> AccessPointRoleRuntime<Processor, (), ()> {
     /// Compose the same AP protocol owner used by concurrent mode for a
     /// standalone epoch. Physical RX, TX scheduling and network publication
     /// remain in [`Esp32s31AccessPointControl`], outside the role-local state.
@@ -60,7 +59,6 @@ impl<Processor> AccessPointRoleRuntime<Processor, (), (), ()> {
             protocol,
             network_tx: (),
             security_material: (),
-            publish_shared_rx: (),
             status_observer: (),
             last_status_revision: 0,
             #[cfg(feature = "diagnostics")]
@@ -167,11 +165,10 @@ pub enum Esp32s31StaApAccessPointFinishReason {
 }
 
 /// Complete AP teardown result before the station reclaims physical TX.
-pub struct Esp32s31StaApAccessPointFinished<Stopped, NetworkTx, Security, SharedRx, PhysicalTx> {
+pub struct Esp32s31StaApAccessPointFinished<Stopped, NetworkTx, Security, PhysicalTx> {
     pub stopped: Stopped,
     pub network_tx: NetworkTx,
     pub security_material: Security,
-    pub publish_shared_rx: SharedRx,
     pub physical_tx: PhysicalTx,
 }
 
@@ -196,7 +193,6 @@ pub fn park_sta_ap_access_point_role<
     T,
     NetworkTx,
     Security,
-    SharedRx,
     StatusObserver,
     B,
     const DMA_BUFFER_SIZE: usize,
@@ -217,7 +213,6 @@ pub fn park_sta_ap_access_point_role<
         >,
         NetworkTx,
         Security,
-        SharedRx,
         StatusObserver,
     >,
     aggregate: Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
@@ -253,7 +248,6 @@ pub fn park_sta_ap_access_point_role<
         >,
         NetworkTx,
         Security,
-        SharedRx,
         StatusObserver,
     >,
     Esp32s31StaApAccessPointParkError<
@@ -270,7 +264,6 @@ pub fn park_sta_ap_access_point_role<
             >,
             NetworkTx,
             Security,
-            SharedRx,
             StatusObserver,
         >,
         Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
@@ -286,7 +279,6 @@ where
         protocol,
         network_tx,
         security_material,
-        publish_shared_rx,
         status_observer,
         last_status_revision,
         #[cfg(feature = "diagnostics")]
@@ -303,7 +295,6 @@ where
                     protocol,
                     network_tx,
                     security_material,
-                    publish_shared_rx,
                     status_observer,
                     last_status_revision,
                     #[cfg(feature = "diagnostics")]
@@ -324,7 +315,6 @@ where
                     protocol: Esp32s31AccessPointProtocolProcessor::resume(ordinary, protocol),
                     network_tx,
                     security_material,
-                    publish_shared_rx,
                     status_observer,
                     last_status_revision,
                     #[cfg(feature = "diagnostics")]
@@ -345,7 +335,6 @@ where
                 protocol: Esp32s31AccessPointProtocolProcessor::resume(ordinary, protocol),
                 network_tx,
                 security_material,
-                publish_shared_rx,
                 status_observer,
                 last_status_revision,
                 #[cfg(feature = "diagnostics")]
@@ -363,7 +352,6 @@ where
         }),
         network_tx,
         security_material,
-        publish_shared_rx,
         status_observer,
         last_status_revision,
         #[cfg(feature = "diagnostics")]
@@ -391,7 +379,6 @@ pub fn finish_sta_ap_access_point_role<
     T,
     NetworkTx,
     Security,
-    SharedRx,
     StatusObserver,
     B,
     H,
@@ -422,7 +409,6 @@ pub fn finish_sta_ap_access_point_role<
         >,
         NetworkTx,
         Security,
-        SharedRx,
         StatusObserver,
     >,
     mut physical_tx: DatapathPairedPhysicalTx<
@@ -440,7 +426,6 @@ pub fn finish_sta_ap_access_point_role<
         Esp32s31AccessPointProtocolFinished<'storage, 'beacon, DMA_BUFFER_SIZE>,
         NetworkTx,
         Security,
-        SharedRx,
         DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
             crate::datapath::tx::resources::AggregateTxResources<
@@ -474,7 +459,6 @@ pub fn finish_sta_ap_access_point_role<
             >,
             NetworkTx,
             Security,
-            SharedRx,
             StatusObserver,
         >,
         DatapathPairedPhysicalTx<
@@ -506,7 +490,6 @@ where
         protocol,
         network_tx,
         security_material,
-        publish_shared_rx,
         status_observer,
         last_status_revision,
         #[cfg(feature = "diagnostics")]
@@ -525,7 +508,6 @@ where
                     protocol,
                     network_tx,
                     security_material,
-                    publish_shared_rx,
                     status_observer,
                     last_status_revision,
                     #[cfg(feature = "diagnostics")]
@@ -552,7 +534,6 @@ where
                     ),
                     network_tx,
                     security_material,
-                    publish_shared_rx,
                     status_observer,
                     last_status_revision,
                     #[cfg(feature = "diagnostics")]
@@ -581,7 +562,6 @@ where
                     ),
                     network_tx,
                     security_material,
-                    publish_shared_rx,
                     status_observer,
                     last_status_revision,
                     #[cfg(feature = "diagnostics")]
@@ -604,7 +584,6 @@ where
         stopped,
         network_tx,
         security_material,
-        publish_shared_rx,
         physical_tx,
     })
 }
@@ -619,7 +598,6 @@ impl<
     T,
     NetworkTx,
     Security,
-    SharedRx,
     StatusObserver,
     B,
     const DMA_BUFFER_SIZE: usize,
@@ -649,7 +627,6 @@ impl<
         >,
         NetworkTx,
         Security,
-        SharedRx,
         StatusObserver,
     >
 where
@@ -810,8 +787,8 @@ impl<
     E,
     T,
     Security,
-    SharedRx,
     StatusObserver,
+    SoftwareFrame,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -822,8 +799,6 @@ impl<
     const AMPDU_BUFFER_SIZE: usize,
 >
     DatapathPairedNetworkTxService<
-        'resources,
-        M,
         H,
         DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -841,10 +816,8 @@ impl<
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
+        SoftwareFrame,
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     >
     for AccessPointRoleRuntime<
         DatapathPairedRoleOwner<
@@ -874,10 +847,9 @@ impl<
         network_tx::Esp32s31AccessPointNetworkTx<
             'ampdu,
             PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            SoftwareFrame,
         >,
         Security,
-        SharedRx,
         StatusObserver,
     >
 where
@@ -890,6 +862,7 @@ where
         + RxBlockAckHardware
         + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     'resources: 'ampdu,
+    SoftwareFrame: SoftwareTxFrame,
 {
     type Error = Esp32s31StaApAccessPointTxError;
 
@@ -897,7 +870,7 @@ where
         self.network_tx.last_started_frame_count()
     }
 
-    fn start<'a>(
+    fn start<'a, I>(
         &'a mut self,
         hardware: &'a mut H,
         physical: &'a mut DatapathPairedPhysicalTx<
@@ -916,16 +889,22 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
+    {
         async move {
             self.activate_tx(physical)
                 .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
@@ -1010,7 +989,6 @@ where
             let progress = self
                 .network_tx
                 .service(&mut active.aggregate, &mut active.processor, hardware, wake)
-                .await
                 .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
             if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
                 self.park_tx(physical)
@@ -1041,7 +1019,7 @@ where
         self.network_tx.prepared_start_ready()
     }
 
-    fn advance_prepared(
+    fn advance_prepared<I>(
         &mut self,
         _hardware: &mut H,
         _physical: &mut DatapathPairedPhysicalTx<
@@ -1060,15 +1038,21 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<(), Self::Error> {
+        network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         let active =
             self.protocol
                 .active_mut()
@@ -1086,7 +1070,7 @@ where
             .mark_prepared_scheduler_phase(phase, at_micros);
     }
 
-    fn start_prepared(
+    fn start_prepared<I>(
         &mut self,
         hardware: &mut H,
         physical: &mut DatapathPairedPhysicalTx<
@@ -1105,15 +1089,21 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+        network: &I,
+    ) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            >,
+    {
         let active =
             self.protocol
                 .active_mut()
@@ -1136,7 +1126,7 @@ where
         Ok(progress)
     }
 
-    fn cancel_prepared(
+    fn cancel_prepared<I>(
         &mut self,
         physical: &mut DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -1154,17 +1144,21 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
+        network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
             >,
-        >,
-    ) -> Result<(), Self::Error> {
+    {
         let active =
             self.protocol
                 .active_mut()
@@ -1203,7 +1197,7 @@ where
         })
     }
 
-    fn prepare<'a>(
+    fn prepare<'a, I>(
         &'a mut self,
         _physical: &'a mut DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
@@ -1221,18 +1215,22 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        frame: SoftwareFrame,
+        network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        I: SelectedBurstMaterializer<
+                SoftwareFrame = SoftwareFrame,
+                PhysicalFrame = PinnedTxFrame<
+                    'resources,
+                    M,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                >,
+            > + 'a,
     {
         async move {
             let active =
@@ -1260,7 +1258,6 @@ impl<
     T,
     NetworkTx,
     Security,
-    SharedRx,
     StatusObserver,
     B,
     const STAGE_CAPACITY: usize,
@@ -1307,7 +1304,6 @@ impl<
         >,
         NetworkTx,
         Security,
-        SharedRx,
         StatusObserver,
     >
 where
@@ -1318,7 +1314,6 @@ where
     B: StableDmaBacking + 'ampdu,
     NetworkTx: network_tx::AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>,
     Security: FnMut() -> ([u8; 32], u64),
-    SharedRx: FnMut(u8),
     StatusObserver: FnMut(AccessPointServiceStatus),
 {
     type Error = Esp32s31StaApAccessPointPairedRxError;
@@ -1458,7 +1453,11 @@ where
                         }
                     }
                 }
-                Err(RxEnqueueError::QueueFull) => {
+                Err(
+                    RxEnqueueError::QueueFull
+                    | RxEnqueueError::PoolExhausted
+                    | RxEnqueueError::LinkDown,
+                ) => {
                     #[cfg(feature = "diagnostics")]
                     self.network_backpressure_since_micros
                         .get_or_insert_with(|| Instant::now().as_micros());
@@ -1529,7 +1528,6 @@ where
                 .service_routed_rx_while_parked(
                     frame,
                     Instant::now().as_micros(),
-                    &mut self.publish_shared_rx,
                     #[cfg(feature = "diagnostics")]
                     self.delivery_observer,
                 )
@@ -1561,7 +1559,6 @@ where
                 frame,
                 &mut self.security_material,
                 Instant::now().as_micros(),
-                &mut self.publish_shared_rx,
                 #[cfg(feature = "diagnostics")]
                 self.delivery_observer,
             )
@@ -1613,11 +1610,10 @@ where
         };
         let result = active
             .processor
-            .service_routed_rx_during_tx::<H, _, _, _>(
+            .service_routed_rx_during_tx::<H, _, _>(
                 frame,
                 &mut self.security_material,
                 Instant::now().as_micros(),
-                &mut self.publish_shared_rx,
                 #[cfg(feature = "diagnostics")]
                 self.delivery_observer,
             )
@@ -1666,7 +1662,6 @@ impl<
     T,
     NetworkTx,
     Security,
-    SharedRx,
     StatusObserver,
     B,
     const DMA_BUFFER_SIZE: usize,
@@ -1708,7 +1703,6 @@ impl<
         >,
         NetworkTx,
         Security,
-        SharedRx,
         StatusObserver,
     >
 where
@@ -1857,21 +1851,19 @@ where
     }
 }
 
-impl<Processor, NetworkTx, Security, SharedRx, StatusObserver>
-    AccessPointRoleRuntime<Processor, NetworkTx, Security, SharedRx, StatusObserver>
+impl<Processor, NetworkTx, Security, StatusObserver>
+    AccessPointRoleRuntime<Processor, NetworkTx, Security, StatusObserver>
 {
     pub const fn new(
         protocol: Processor,
         network_tx: NetworkTx,
         security_material: Security,
-        publish_shared_rx: SharedRx,
         status_observer: StatusObserver,
     ) -> Self {
         Self {
             protocol,
             network_tx,
             security_material,
-            publish_shared_rx,
             status_observer,
             last_status_revision: 0,
             #[cfg(feature = "diagnostics")]
@@ -1889,12 +1881,11 @@ impl<Processor, NetworkTx, Security, SharedRx, StatusObserver>
         &mut self.protocol
     }
 
-    pub fn into_parts(self) -> (Processor, NetworkTx, Security, SharedRx, StatusObserver) {
+    pub fn into_parts(self) -> (Processor, NetworkTx, Security, StatusObserver) {
         (
             self.protocol,
             self.network_tx,
             self.security_material,
-            self.publish_shared_rx,
             self.status_observer,
         )
     }

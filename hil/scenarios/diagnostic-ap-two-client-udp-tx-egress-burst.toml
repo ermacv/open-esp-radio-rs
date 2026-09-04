@@ -5,7 +5,7 @@ repetitions = 1
 image = "diagnostic-task-residence"
 isolation = "reset"
 data_plane = "split-radio-network"
-tx_buffer = "direct-dma-egress-burst-diagnostic"
+tx_buffer = "owned-sram-promotion-burst-diagnostic"
 tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "txq", "egress", "task-residence"]
 
 [link]

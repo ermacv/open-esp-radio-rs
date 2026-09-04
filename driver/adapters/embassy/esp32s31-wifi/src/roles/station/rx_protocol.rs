@@ -9,8 +9,8 @@ use core::future::{Future, pending, ready};
 #[cfg(any(feature = "diagnostics", feature = "core0-rx-coarse-telemetry"))]
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Duration, Instant, Timer};
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::RxPhyInfo,
     rx_ampdu::{

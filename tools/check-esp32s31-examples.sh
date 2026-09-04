@@ -16,3 +16,14 @@ do
         --target "$target_triple" \
         --manifest-path "$repo_root/examples/$example/Cargo.toml"
 done
+
+# The same application source must also compose through the released
+# Embassy/Xarxa-compatible leaf. This profile is intentionally alternative to
+# the default owned-network leaf rather than an additive Cargo feature.
+cargo check \
+    --locked \
+    --release \
+    --target "$target_triple" \
+    --manifest-path "$repo_root/examples/esp32s31-station/Cargo.toml" \
+    --no-default-features \
+    --features compat-network

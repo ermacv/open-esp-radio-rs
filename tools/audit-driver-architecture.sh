@@ -196,23 +196,44 @@ for manifest in "${production_manifests[@]}"; do
         exit 1
     fi
 
-    for mode in no-default-features default-features all-features; do
-        check_arguments=()
-        case "$mode" in
-            no-default-features) check_arguments+=(--no-default-features) ;;
-            default-features) ;;
-            all-features) check_arguments+=(--all-features) ;;
-        esac
-        cargo check \
-            --quiet \
-            --locked \
-            --offline \
-            --manifest-path "$manifest" \
-            --package "$package" \
-            --target "$target_triple" \
-            "${check_arguments[@]}"
-        isolated_profile_count=$((isolated_profile_count + 1))
-    done
+    mapfile -t supported_feature_profiles < <(jq -r \
+        --arg manifest "$manifest_absolute" '
+        .packages[]
+        | select(.manifest_path == $manifest)
+        | .metadata["open-radio"]["supported-feature-profiles"][]?
+    ' "$package_metadata")
+    if ((${#supported_feature_profiles[@]} != 0)); then
+        for profile in "${supported_feature_profiles[@]}"; do
+            cargo check \
+                --quiet \
+                --locked \
+                --offline \
+                --manifest-path "$manifest" \
+                --package "$package" \
+                --target "$target_triple" \
+                --no-default-features \
+                --features "$profile"
+            isolated_profile_count=$((isolated_profile_count + 1))
+        done
+    else
+        for mode in no-default-features default-features all-features; do
+            check_arguments=()
+            case "$mode" in
+                no-default-features) check_arguments+=(--no-default-features) ;;
+                default-features) ;;
+                all-features) check_arguments+=(--all-features) ;;
+            esac
+            cargo check \
+                --quiet \
+                --locked \
+                --offline \
+                --manifest-path "$manifest" \
+                --package "$package" \
+                --target "$target_triple" \
+                "${check_arguments[@]}"
+            isolated_profile_count=$((isolated_profile_count + 1))
+        done
+    fi
 done
 echo "driver architecture compilation: $isolated_profile_count isolated feature profiles"
 

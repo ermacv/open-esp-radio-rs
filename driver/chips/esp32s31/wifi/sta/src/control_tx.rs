@@ -288,10 +288,7 @@ where
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
-        self.ordinary
-            .service(hardware, wake)
-            .await
-            .map_err(Into::into)
+        self.ordinary.service(hardware, wake).map_err(Into::into)
     }
 
     /// Return the role-neutral ordinary descriptor while it is idle.

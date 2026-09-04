@@ -1,4 +1,4 @@
-use open_esp_radio_embassy_net::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxConfig;
 use open_esp_radio_ieee80211::security::WifiSecurityMode;

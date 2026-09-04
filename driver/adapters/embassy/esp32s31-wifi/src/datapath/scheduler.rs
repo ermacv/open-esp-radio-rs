@@ -11,43 +11,10 @@ use crate::diagnostics::core0_rx_cycles::{
     cycle_count,
 };
 
-impl<
-    'resources,
-    'irq,
-    M: RawMutex + 'resources,
-    N,
-    B,
-    R,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    DatapathRunner<
-        'resources,
-        'irq,
-        M,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-        R,
-    >
+impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
 where
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    N: DatapathNetwork,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
     /// Run the production radio event loop until role policy reaches its
@@ -144,7 +111,7 @@ where
                             continue;
                         }
                         DatapathControlProgress::Exit(exit) => {
-                            self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                            self.set_scope_link_state(open_esp_radio_network::LinkState::Down);
                             return Ok(DatapathRunnerExit::Role(exit));
                         }
                         DatapathControlProgress::Idle => {}
@@ -161,7 +128,7 @@ where
                         continue;
                     }
                     DatapathStopProgress::Stopped => {
-                        self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                        self.set_scope_link_state(open_esp_radio_network::LinkState::Down);
                         return Ok(DatapathRunnerExit::Stopped);
                     }
                 }
@@ -174,7 +141,6 @@ where
             // Core0 owner services policy here, after returning to its unique
             // mutable scheduling boundary. Saturated traffic uses the same
             // finite service at the explicit completed-BA boundary below.
-            let _ = self.network.service_egress_control();
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.discard_wakes_completed();
             let network_tx_pending =
@@ -228,7 +194,7 @@ where
                     DatapathControlProgress::Exit(exit) => {
                         self.cancel_prepared_network_tx()?;
                         self.prepared_tx_interface = None;
-                        self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                        self.set_scope_link_state(open_esp_radio_network::LinkState::Down);
                         return Ok(DatapathRunnerExit::Role(exit));
                     }
                     DatapathControlProgress::Idle => {}
@@ -342,7 +308,7 @@ where
                     // target.
                     if self.services.has_prepared_tx() {
                         let interface = self.retained_prepared_tx_interface();
-                        let network_tx = self.tx_consumer_for(interface);
+                        let network_tx = self.network.tx_consumer(interface);
                         self.services.advance_prepared_tx(&network_tx)?;
                         if self.services.can_prepare_tx()
                             && self.services.prepared_tx_start_ready()
@@ -359,6 +325,7 @@ where
                                 Core0PerformanceSample::read(),
                             );
                         }
+                        drop(network_tx);
                         if self.services.prepared_tx_start_ready() {
                             let admitted = self.services.prepared_tx_frame_count().max(1);
                             self.start_prepared_network_tx(
@@ -375,10 +342,11 @@ where
                         continue;
                     };
                     let interface = self.tx_interface_for(&frame);
-                    let network_tx = self.tx_consumer_for(interface);
+                    let network_tx = self.network.tx_consumer(interface);
                     #[cfg(feature = "tx-phase-telemetry")]
                     let tx_phase_started = Core0PerformanceSample::read();
                     let progress = self.services.start_tx(frame, &network_tx).await?;
+                    drop(network_tx);
                     #[cfg(feature = "tx-phase-telemetry")]
                     CORE0_PERFORMANCE.record_tx_phase(
                         Core0TxPhase::Start,
@@ -430,7 +398,6 @@ where
                             // transaction is still a scheduling boundary.
                             // Advance egress control once here, not once per
                             // frame while assembling the successor aggregate.
-                            let _ = self.network.service_egress_control();
                             let network_tx_pending =
                                 self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
                             let control_ready = self.control_ready_latched

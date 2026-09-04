@@ -6,7 +6,6 @@
 //! recover descriptor/sequence resources and clear both association keys.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_embassy_net::PinnedTxFrame;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{
         CcmpKeyHardware, StaCcmpClearReport, StaGroupCcmpKeyMaterial, StaGroupCcmpSlot,
@@ -22,6 +21,7 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources;
 
 use crate::{
+    datapath::PinnedTxFrame,
     datapath::rx::dma::Esp32s31StagedRxProducer,
     datapath::services::SingleRoleServices,
     datapath::tx::resources::AggregateTxResources,
@@ -197,15 +197,17 @@ impl<
     for Esp32s31ConnectedTx<
         'slot,
         'ampdu,
-        'resources,
-        M,
+        crate::datapath::PinnedTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
         P,
         E,
         T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
         SLOTS,
         AMPDU_BUFFER_SIZE,
         ORDINARY_BUFFER_SIZE,

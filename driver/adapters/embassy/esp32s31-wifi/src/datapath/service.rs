@@ -13,43 +13,10 @@ use crate::diagnostics::core0_rx_cycles::Core0RxRunnerCycleProfile;
 ))]
 use crate::diagnostics::core0_rx_performance::Core0PerformanceRunnerProfile as Core0RxRunnerCycleProfile;
 
-impl<
-    'resources,
-    'irq,
-    M: RawMutex + 'resources,
-    N,
-    B,
-    R,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    DatapathRunner<
-        'resources,
-        'irq,
-        M,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-        R,
-    >
+impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
 where
-    N: DatapathNetwork<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
-    B: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    N: DatapathNetwork,
+    B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
@@ -247,7 +214,7 @@ where
         }
 
         let interface = self.retained_prepared_tx_interface();
-        let network = self.tx_consumer_for(interface);
+        let network = self.network.tx_consumer(interface);
         #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         self.services.advance_prepared_tx(&network)?;
@@ -303,10 +270,11 @@ where
         );
         self.account_tx_frames(admitted);
         self.account_pair_tx_frames(interface, admitted);
-        let network_tx = self.tx_consumer_for(interface);
+        let network_tx = self.network.tx_consumer(interface);
         #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         let progress = self.services.start_prepared_tx(&network_tx)?;
+        drop(network_tx);
         #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Publish,
@@ -350,7 +318,7 @@ where
         if self.competing_tx_pending(interface) {
             return Ok(());
         }
-        let network = self.tx_consumer_for(interface);
+        let network = self.network.tx_consumer(interface);
         self.services.advance_prepared_tx(&network)?;
         if self.services.prepared_tx_start_ready() {
             self.prepared_tx_interface = Some(interface);
@@ -544,7 +512,7 @@ where
                 Either4::Fourth(()) => {
                     let interface =
                         active_tx_interface.expect("active TX preparation requires one VIF owner");
-                    let network = self.tx_consumer_for(interface);
+                    let network = self.network.tx_consumer(interface);
                     self.services.advance_prepared_tx(&network)?;
                     if self.services.prepared_tx_start_ready() {
                         self.prepared_tx_interface = Some(interface);

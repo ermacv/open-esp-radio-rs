@@ -8,54 +8,30 @@ use crate::diagnostics::core0_rx_performance::{
 impl<
     'slot,
     'ampdu,
-    'resources,
-    M,
+    B,
     P,
     E,
     T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
->
-    Esp32s31ConnectedTx<
-        'slot,
-        'ampdu,
-        'resources,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+> Esp32s31ConnectedTx<'slot, 'ampdu, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    pub fn start_network<H: HtAmpduHardware>(
+    pub fn start_network<H, I>(
         &mut self,
         hardware: &mut H,
-        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, AggregateTxError> {
+        first: B,
+        network: &I,
+    ) -> Result<WifiTxProgress, AggregateTxError>
+    where
+        H: HtAmpduHardware,
+        I: PhysicalTxSource<Frame = B>,
+    {
         if self.active() || self.has_prepared_network_tx() {
             return Err(AggregateTxError::ActiveTransaction);
         }
@@ -84,7 +60,7 @@ where
                 NetworkSingleMpduReason::BlockAckUnavailable,
             );
         }
-        if ht_requires_pair && network.queue_len() == 0 {
+        if ht_requires_pair && network.pending_frames() == 0 {
             return self.start_network_ordinary(
                 hardware,
                 first,
@@ -157,7 +133,7 @@ where
     fn start_network_ordinary<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        first: B,
         traffic: WifiTxTraffic,
         _reason: NetworkSingleMpduReason,
     ) -> Result<WifiTxProgress, AggregateTxError> {
@@ -186,7 +162,7 @@ where
         let frame_length = ethernet_length
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
-        let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
+        let dma_capacity = B::MIN_STORAGE_CAPACITY;
         let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         let maximum_aggregate_bytes = self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes();
@@ -230,11 +206,7 @@ where
         })
     }
 
-    fn frame_matches_traffic(
-        &self,
-        frame: &PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        traffic: AggregateTraffic,
-    ) -> bool {
+    fn frame_matches_traffic(&self, frame: &B, traffic: AggregateTraffic) -> bool {
         self.frame_has_aggregate_geometry(frame)
             && self
                 .ordinary
@@ -245,39 +217,29 @@ where
                 })
     }
 
-    fn frame_has_aggregate_geometry(
-        &self,
-        frame: &PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    ) -> bool {
+    fn frame_has_aggregate_geometry(&self, frame: &B) -> bool {
         frame.ethernet_length() >= 14
             && frame.ethernet_offset()
                 >= STA_PROTECTED_QOS_ETHERNET_HEADROOM
                     + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::TX_AMPDU_METADATA_SIZE
     }
 
-    fn defer_network_frame(
-        &mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    ) {
+    fn defer_network_frame(&mut self, frame: B) {
         assert!(
             self.deferred_network.replace(frame).is_none(),
             "one immutable FIFO boundary may retain only its immediate successor"
         );
     }
 
-    fn prepare_aggregate(
+    fn prepare_aggregate<I>(
         &mut self,
-        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        first: B,
+        network: &I,
         traffic: AggregateTraffic,
-    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError>
+    where
+        I: PhysicalTxSource<Frame = B>,
+    {
         let first_sequence = self
             .ordinary
             .peek_qos_sequence(traffic.tid())
@@ -299,21 +261,17 @@ where
         result
     }
 
-    fn prepare_reserved(
+    fn prepare_reserved<I>(
         &mut self,
-        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        first: B,
+        network: &I,
         first_sequence: u16,
         cookie: TxCookie,
         traffic: AggregateTraffic,
-    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError>
+    where
+        I: PhysicalTxSource<Frame = B>,
+    {
         self.push_candidate(first, network, AggregateFrameAdmission::FreshExact, traffic)?;
         let frame_limit = self.aggregate_frame_limit(traffic.tid());
 
@@ -324,10 +282,10 @@ where
             if self.ampdu.active().held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
-            if !self.can_push(FRAME_CAPACITY, traffic)? {
+            if !self.can_push(B::MAX_ETHERNET_LENGTH, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
-            let Some(frame) = network.try_receive_direct() else {
+            let Some(frame) = network.try_take_physical() else {
                 break AggregateBuildStop::QueueEmpty;
             };
             if !self.frame_matches_traffic(&frame, traffic) {
@@ -372,19 +330,15 @@ where
         Ok(prepared)
     }
 
-    fn extend_reserved(
+    fn extend_reserved<I>(
         &mut self,
-        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        first: B,
+        network: &I,
         mut prepared: AggregatePrepared<SLOTS>,
-    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError>
+    where
+        I: PhysicalTxSource<Frame = B>,
+    {
         let traffic = prepared.traffic;
         if !self.frame_matches_traffic(&first, traffic) {
             self.defer_network_frame(first);
@@ -405,10 +359,10 @@ where
             if self.ampdu.active().held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
-            if !self.can_push(FRAME_CAPACITY, traffic)? {
+            if !self.can_push(B::MAX_ETHERNET_LENGTH, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
-            let Some(frame) = network.try_receive_direct() else {
+            let Some(frame) = network.try_take_physical() else {
                 break AggregateBuildStop::QueueEmpty;
             };
             if !self.frame_matches_traffic(&frame, traffic) {
@@ -479,17 +433,10 @@ where
     /// Fill the software-owned second arena after the current aggregate has
     /// already been published. No descriptor from this arena becomes visible
     /// to MAC hardware at this edge.
-    fn prepare_standby(
-        &mut self,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) {
+    fn prepare_standby<I>(&mut self, network: &I)
+    where
+        I: PhysicalTxSource<Frame = B>,
+    {
         if !self.can_prepare_network_tx() {
             return;
         }
@@ -498,10 +445,10 @@ where
         } else {
             1
         };
-        if network.queue_len() < minimum_frames {
+        if network.pending_frames() < minimum_frames {
             return;
         }
-        let Some(first) = network.try_receive_direct() else {
+        let Some(first) = network.try_take_physical() else {
             return;
         };
 
@@ -535,7 +482,10 @@ where
                         owner.held_backing_count() < frame_limit
                             && owner.held_backing_count() < SLOTS
                     })
-                    && matches!(self.can_push_standby(FRAME_CAPACITY, traffic), Ok(true))
+                    && matches!(
+                        self.can_push_standby(B::MAX_ETHERNET_LENGTH, traffic),
+                        Ok(true)
+                    )
             }
         }
     }
@@ -553,7 +503,7 @@ where
         let frame_length = ethernet_length
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
-        let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
+        let dma_capacity = B::MIN_STORAGE_CAPACITY;
         let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(ampdu.can_commit_referenced_ht_frame(
@@ -578,18 +528,10 @@ where
         }
     }
 
-    pub(super) fn prepare_network_standby(
-        &mut self,
-        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) {
+    pub(super) fn prepare_network_standby<I>(&mut self, first: B, network: &I)
+    where
+        I: PhysicalTxSource<Frame = B>,
+    {
         if !self.can_prepare_network_tx() {
             drop(first);
             return;
@@ -622,7 +564,7 @@ where
         if !self.block_ack_operational(traffic.tid())
             || (self.standby_prepared.is_none()
                 && matches!(self.config.rate, TxPhyRate::Ht(_))
-                && network.queue_len() == 0)
+                && network.pending_frames() == 0)
             || !matches!(
                 self.first_frame_fits_fresh_aggregate(first.ethernet_length(), traffic),
                 Ok(true)
@@ -685,18 +627,15 @@ where
         }
     }
 
-    pub(super) fn start_prepared_network<H: HtAmpduHardware>(
+    pub(super) fn start_prepared_network<H, I>(
         &mut self,
         hardware: &mut H,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, AggregateTxError> {
+        network: &I,
+    ) -> Result<WifiTxProgress, AggregateTxError>
+    where
+        H: HtAmpduHardware,
+        I: PhysicalTxSource<Frame = B>,
+    {
         if self.active() {
             return Err(AggregateTxError::ActiveTransaction);
         }
@@ -750,7 +689,7 @@ where
         let frame_length = ethernet_length
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
-        let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
+        let dma_capacity = B::MIN_STORAGE_CAPACITY;
         let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
@@ -786,7 +725,7 @@ where
         let frame_length =
             sta_protected_amsdu_pair_frame_length(first_ethernet_length, second_ethernet_length)
                 .map_err(AggregateTxError::Encode)?;
-        let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
+        let dma_capacity = B::MIN_STORAGE_CAPACITY;
         let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
@@ -812,23 +751,19 @@ where
         }
     }
 
-    fn push_candidate(
+    fn push_candidate<I>(
         &mut self,
-        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        first: B,
+        network: &I,
         admission: AggregateFrameAdmission,
         traffic: AggregateTraffic,
-    ) -> Result<(), AggregateTxError> {
+    ) -> Result<(), AggregateTxError>
+    where
+        I: PhysicalTxSource<Frame = B>,
+    {
         if self.block_ack_amsdu(traffic.tid())
-            && self.can_push_amsdu_pair(first.ethernet_length(), FRAME_CAPACITY, traffic)?
-            && let Some(second) = network.try_receive_direct()
+            && self.can_push_amsdu_pair(first.ethernet_length(), B::MAX_ETHERNET_LENGTH, traffic)?
+            && let Some(second) = network.try_take_physical()
         {
             if self.frame_matches_traffic(&second, traffic) {
                 return self.push_amsdu_pair(first, second, traffic);
@@ -840,8 +775,8 @@ where
 
     fn push_amsdu_pair(
         &mut self,
-        mut first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        second: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        mut first: B,
+        second: B,
         traffic: AggregateTraffic,
     ) -> Result<(), AggregateTxError> {
         if self.ampdu.active().held_backing_count() >= SLOTS {
@@ -921,7 +856,7 @@ where
 
     fn push_frame(
         &mut self,
-        mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        mut frame: B,
         admission: AggregateFrameAdmission,
         traffic: AggregateTraffic,
     ) -> Result<(), AggregateTxError> {

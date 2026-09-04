@@ -13,13 +13,12 @@ use core::future::{Future, pending};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
-use open_esp_radio_embassy_net::{
-    NetworkInterfaceId, PinnedNetworkTxFrame, PinnedTxInterfaceConsumer, RawMutex,
-};
+use open_esp_radio_network::NetworkInterfaceId;
 
 use super::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
-    DatapathRxWorkCounters, DatapathServices, DatapathStopProgress, WifiTxProgress, WifiTxWake,
+    DatapathRxWorkCounters, DatapathServices, DatapathStopProgress, SelectedBurstMaterializer,
+    SoftwareTxFrame, WifiTxProgress, WifiTxWake,
     network::{DatapathNetworkRx, DatapathNetworkRxSet},
 };
 
@@ -425,7 +424,7 @@ pub enum DatapathPairedServiceError<RxError, FirstTxError, SecondTxError, Contro
 /// dispatcher. The two publication arguments are already narrowed logical
 /// endpoints; neither role processor can publish through the other one.
 pub trait DatapathPairedRxService<H, PhysicalTx, FirstRole, SecondRole> {
-    type Error;
+    type Error: 'static;
 
     fn service<'a>(
         &'a mut self,
@@ -473,8 +472,8 @@ pub trait DatapathPairedRxService<H, PhysicalTx, FirstRole, SecondRole> {
 /// Every pending TX carries its role explicitly. The outer DATAPATH uses that
 /// identity to narrow completion, deadline and standby ownership.
 pub trait DatapathPairedControlService<H, PhysicalTx, FirstTx, SecondTx> {
-    type Error;
-    type Exit;
+    type Error: 'static;
+    type Exit: 'static;
 
     fn service<'a>(
         &'a mut self,
@@ -509,33 +508,24 @@ pub trait DatapathPairedControlService<H, PhysicalTx, FirstTx, SecondTx> {
 
 /// Unique paired-epoch owner of hardware, common RX, two role TX services and
 /// their typed control arbiter.
-pub trait DatapathPairedNetworkTxService<
-    'resources,
-    M: RawMutex,
-    H,
-    PhysicalTx,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
->
+pub trait DatapathPairedNetworkTxService<H, PhysicalTx, SoftwareFrame, PhysicalFrame>
+where
+    SoftwareFrame: SoftwareTxFrame,
+    PhysicalFrame: crate::datapath::MaterializedTxFrame,
 {
-    type Error;
+    type Error: 'static;
 
-    fn start<'a>(
+    fn start<'a, I>(
         &'a mut self,
         hardware: &'a mut H,
         physical_tx: &'a mut PhysicalTx,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        SoftwareFrame: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a;
 
     fn last_started_frame_count(&self) -> usize {
         1
@@ -569,19 +559,15 @@ pub trait DatapathPairedNetworkTxService<
         self.has_prepared()
     }
 
-    fn advance_prepared(
+    fn advance_prepared<I>(
         &mut self,
         _hardware: &mut H,
         _physical_tx: &mut PhysicalTx,
-        _network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<(), Self::Error> {
+        _network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         Ok(())
     }
 
@@ -589,36 +575,26 @@ pub trait DatapathPairedNetworkTxService<
     fn mark_prepared_scheduler_phase(&mut self, _phase: PreparedTxSchedulerPhase, _at_micros: u64) {
     }
 
-    fn start_prepared(
+    fn start_prepared<I>(
         &mut self,
         _hardware: &mut H,
         _physical_tx: &mut PhysicalTx,
-        _network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+        _network: &I,
+    ) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         Ok(WifiTxProgress::Complete)
     }
 
-    fn cancel_prepared(
+    fn cancel_prepared<I>(
         &mut self,
         _physical_tx: &mut PhysicalTx,
-        _network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
-        >,
-    ) -> Result<(), Self::Error> {
+        _network: &I,
+    ) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         Ok(())
     }
 
@@ -626,21 +602,17 @@ pub trait DatapathPairedNetworkTxService<
         false
     }
 
-    fn prepare<'a>(
+    fn prepare<'a, I>(
         &'a mut self,
         _physical_tx: &'a mut PhysicalTx,
-        _frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        _network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+        _frame: SoftwareFrame,
+        _network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        SoftwareFrame: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a,
     {
         core::future::ready(Ok(()))
     }
@@ -747,44 +719,15 @@ impl<H, PhysicalTx, R, FirstTx, SecondTx, C>
     }
 }
 
-impl<
-    'resources,
-    M,
-    H,
-    PhysicalTx,
-    R,
-    FirstTx,
-    SecondTx,
-    C,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+impl<H, PhysicalTx, R, FirstTx, SecondTx, C, SoftwareFrame, PhysicalFrame>
+    DatapathServices<SoftwareFrame, PhysicalFrame>
     for ConcurrentRoleServices<H, PhysicalTx, R, FirstTx, SecondTx, C>
 where
-    M: RawMutex,
+    SoftwareFrame: SoftwareTxFrame,
+    PhysicalFrame: crate::datapath::MaterializedTxFrame,
     R: DatapathPairedRxService<H, PhysicalTx, FirstTx, SecondTx>,
-    FirstTx: DatapathPairedNetworkTxService<
-            'resources,
-            M,
-            H,
-            PhysicalTx,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    SecondTx: DatapathPairedNetworkTxService<
-            'resources,
-            M,
-            H,
-            PhysicalTx,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
+    FirstTx: DatapathPairedNetworkTxService<H, PhysicalTx, SoftwareFrame, PhysicalFrame>,
+    SecondTx: DatapathPairedNetworkTxService<H, PhysicalTx, SoftwareFrame, PhysicalFrame>,
     C: DatapathPairedControlService<H, PhysicalTx, FirstTx, SecondTx>,
 {
     type Error = DatapathPairedServiceError<R::Error, FirstTx::Error, SecondTx::Error, C::Error>;
@@ -887,11 +830,7 @@ where
     fn service_control<'a>(
         &'a mut self,
         context: DatapathControlContext,
-    ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a
-    where
-        'resources: 'a,
-        M: 'a,
-    {
+    ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a {
         async move {
             let retained_tx = self.prepared.or_else(|| {
                 unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
@@ -959,11 +898,7 @@ where
         )
     }
 
-    fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a
-    where
-        'resources: 'a,
-        M: 'a,
-    {
+    fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a {
         self.control.wait_ready(
             &mut self.physical_tx,
             &mut self.first_tx,
@@ -971,21 +906,19 @@ where
         )
     }
 
-    fn start_tx<'a>(
+    fn start_tx<'a, I>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
+    where
+        SoftwareFrame: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a,
+    {
         async move {
             let role = self.role_for(network.interface());
-            assert_eq!(*frame.tag(), network.interface());
+            assert_eq!(frame.interface(), network.interface());
             let progress = match role {
                 DatapathPairRole::First => self
                     .first_tx
@@ -1096,17 +1029,10 @@ where
         }
     }
 
-    fn advance_prepared_tx(
-        &mut self,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn advance_prepared_tx<I>(&mut self, network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         let role = self
             .prepared
             .or_else(|| {
@@ -1147,17 +1073,10 @@ where
         }
     }
 
-    fn start_prepared_tx(
-        &mut self,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> Result<WifiTxProgress, Self::Error> {
+    fn start_prepared_tx<I>(&mut self, network: &I) -> Result<WifiTxProgress, Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         let role = self
             .prepared
             .or_else(|| {
@@ -1182,19 +1101,10 @@ where
         Ok(progress)
     }
 
-    fn cancel_prepared_tx(
-        &mut self,
-        network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
-        >,
-    ) -> Result<(), Self::Error> {
+    fn cancel_prepared_tx<I>(&mut self, network: &I) -> Result<(), Self::Error>
+    where
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>,
+    {
         let prepared = self.prepared.take().or_else(|| {
             unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
         });
@@ -1222,21 +1132,19 @@ where
         }
     }
 
-    fn prepare_tx<'a>(
+    fn prepare_tx<'a, I>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        frame: SoftwareFrame,
+        network: &'a I,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        SoftwareFrame: 'a,
+        I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
+            + 'a,
+    {
         async move {
             let role = self.role_for(network.interface());
-            assert_eq!(*frame.tag(), network.interface());
+            assert_eq!(frame.interface(), network.interface());
             if let Some(retained) = self.prepared {
                 assert_eq!(retained, role, "prepared aggregate cannot cross VIFs");
             }

@@ -4,12 +4,8 @@ use core::future::Future;
 
 use embassy_futures::yield_now;
 use embassy_time::Instant;
-#[cfg(feature = "tx-architecture-probes")]
-use open_esp_radio_embassy_net::{TX_CORE1_MATERIALIZER_COUNTERS, TxCore1MaterializerSnapshot};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_embassy_net::{
-    EgressControlSnapshot, TX_PERFORMANCE, TxPerformanceSnapshot,
-};
+use open_esp_radio_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
@@ -1036,52 +1032,14 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     yield_now().await;
 }
 
-/// Emit Core1 packet-emission and driver-publication phase costs for TX.
+/// Emit Core0 general-memory to internal-SRAM promotion costs for TX.
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
-    earlier: TxPerformanceSnapshot,
-    earlier_control: EgressControlSnapshot,
-) {
+pub(in crate::product_hil) async fn log_open_radio_tx_promotion(earlier: TxPerformanceSnapshot) {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
-    runtime_log_reliably(format_args!(
-        "ONTX admission_attempts={} admission_successes={} admission_cycles={} admission_instret={} consume_calls={} consume_bytes={} consume_cycles={} consume_instret={} emit_cycles={} emit_instret={} publication_cycles={} publication_instret={}",
-        performance.admission_attempts,
-        performance.admission_successes,
-        performance.admission_cycles,
-        performance.admission_instructions,
-        performance.consume_calls,
-        performance.consume_bytes,
-        performance.consume_cycles,
-        performance.consume_instructions,
-        performance.emit_cycles,
-        performance.emit_instructions,
-        performance.publication_cycles(),
-        performance.publication_instructions(),
-    ))
-    .await;
-    yield_now().await;
-    log_open_radio_egress_control_interval(earlier_control).await;
     let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
     runtime_log_reliably(format_args!(
-        "ONTXQ runs={} run31={} run32={} other={} shadow_checks={} shadow_matches={} shadow_no_window={} shadow_key_mismatch={} shadow_credit_exhausted={} shadow_unclassified={} returns={} return_wakes={} free0={} free1={} free2p={} ready_le31={} ready32={} ready_ge33={} ba_peers={} ba_min={} ba_max={}",
-        performance.egress_runs,
-        performance.egress_run_31,
-        performance.egress_run_32,
-        performance.egress_run_other,
-        performance.shadow_grant_checks,
-        performance.shadow_grant_matches,
-        performance.shadow_grant_no_window,
-        performance.shadow_grant_key_mismatch,
-        performance.shadow_grant_credit_exhausted,
-        performance.shadow_grant_unclassified,
+        "ONTXQ returns={} ba_peers={} ba_min={} ba_max={}",
         performance.radio_returns,
-        performance.radio_return_wakes,
-        performance.publication_free_zero,
-        performance.publication_free_one,
-        performance.publication_free_two_plus,
-        performance.publication_ready_le31,
-        performance.publication_ready_32,
-        performance.publication_ready_ge33,
         ba_peers,
         ba_min,
         ba_max,
@@ -1115,54 +1073,6 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
         performance.promotion_radio_claim_instructions,
         performance.promotion_unattributed_cycles(),
         performance.promotion_unattributed_instructions(),
-    ))
-    .await;
-    yield_now().await;
-}
-
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub(in crate::product_hil) async fn log_open_radio_egress_control_interval(
-    earlier: EgressControlSnapshot,
-) {
-    let control = open_esp_radio_esp32s31_embassy_wifi::access_point_egress_control_snapshot()
-        .wrapping_delta_since(earlier);
-    runtime_log_reliably(format_args!(
-        "ONTXC candidates={} candidate_full={} radio_candidates={} grants={} grant_full={} received={} accepted={} rejected={} credits_spent={} admissions_without_grant={} radio_wakes={} radio_service_calls={} radio_service_progressed={} radio_service_cycles={} radio_service_instret={}",
-        control.candidate_publications,
-        control.candidate_full,
-        control.radio_candidates,
-        control.grant_publications,
-        control.grant_full,
-        control.grants_received,
-        control.grants_accepted,
-        control.grants_rejected,
-        control.grant_credits_spent,
-        control.admissions_without_grant,
-        control.radio_wakes,
-        control.radio_service_calls,
-        control.radio_service_progressed,
-        control.radio_service_cycles,
-        control.radio_service_instructions,
-    ))
-    .await;
-    yield_now().await;
-}
-
-/// Emit ownership counts for the selected-batch Core1 materializer.
-#[cfg(feature = "tx-architecture-probes")]
-pub(in crate::product_hil) async fn log_open_radio_tx_core1_materializer(
-    earlier: TxCore1MaterializerSnapshot,
-) {
-    let materializer = TX_CORE1_MATERIALIZER_COUNTERS
-        .snapshot()
-        .wrapping_delta_since(earlier);
-    runtime_log_reliably(format_args!(
-        "ONTXM submitted={} completed={} frames={} no_credit={} cancelled={}",
-        materializer.submitted_batches,
-        materializer.completed_batches,
-        materializer.materialized_frames,
-        materializer.no_credit,
-        materializer.cancelled_batches,
     ))
     .await;
     yield_now().await;

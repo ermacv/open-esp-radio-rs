@@ -85,6 +85,8 @@ impl HtAmpduHardware for CompletionHardware {
 
 struct DetachingCompletionHardware {
     completion: Option<MacHtAmpduCompletionObservation>,
+    abort_requested: bool,
+    detach_failed: bool,
 }
 
 impl DetachingCompletionHardware {
@@ -94,6 +96,8 @@ impl DetachingCompletionHardware {
 
     fn with_bitmap(bitmap: u64) -> Self {
         Self {
+            abort_requested: false,
+            detach_failed: false,
             completion: Some(MacHtAmpduCompletionObservation::new_model(
                 MacTxCompletionObservation::new_model(0, 0),
                 0,
@@ -128,7 +132,8 @@ impl TxHardware for DetachingCompletionHardware {
     }
 
     fn begin_tx_timeout_abort(&mut self, _: u8) -> bool {
-        false
+        self.abort_requested = true;
+        true
     }
 
     fn with_tx_queue_detached<R>(
@@ -138,6 +143,9 @@ impl TxHardware for DetachingCompletionHardware {
         _: MacTxDetachReason,
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
+        if self.detach_failed {
+            return MacTxDetachOutcome::Failed;
+        }
         MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(descriptor_head)))
     }
 }
@@ -315,6 +323,66 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_without_drop_panic() {
 
     assert_eq!(storage.state(), TxSlotState::ResetRequired);
     assert_eq!(pool.claimed_slots(), 1);
+}
+
+#[test]
+fn retained_abort_releases_backing_only_after_successful_detach() {
+    for detach_failed in [false, true] {
+        let mut storage = core::pin::pin!(HtAmpduTxStorage::<2, 0>::new());
+        let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+        let (index, ()) = pool
+            .claim_network(0)
+            .publish(TX_AMPDU_METADATA_SIZE + 32, |_| {});
+        let mut retention = RetainedAmpduDmaStorage::new();
+        let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut(), &mut retention).unwrap();
+        let cookie = owner.begin().unwrap();
+        let rate = HtRate::new(
+            crate::tx::HtMcs::Mcs0,
+            crate::tx::HtGuardInterval::Long800Ns,
+            crate::tx::HtChannelWidth::Mhz20,
+        );
+        owner
+            .commit_ht(
+                cookie,
+                pool.claim_radio(index),
+                ht_frame_request(0, 32, 8, 0, rate),
+            )
+            .unwrap();
+        let aggregate = owner.prepared_aggregate(cookie).unwrap();
+        let mut hardware = DetachingCompletionHardware::successful();
+        hardware.detach_failed = detach_failed;
+        owner
+            .submit(
+                &mut hardware,
+                cookie,
+                LegacyTxQueue::BestEffort,
+                HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes).unwrap(),
+            )
+            .unwrap();
+
+        assert!(owner.begin_timeout_abort(&mut hardware, cookie).unwrap());
+        assert!(hardware.abort_requested);
+        assert_eq!(owner.held_backing_count(), 1);
+        assert_eq!(pool.claimed_slots(), 1);
+        // The caller retains the owner while waiting for the settle deadline.
+        let result = owner.finish_timeout_abort(&mut hardware, cookie);
+        if detach_failed {
+            assert_eq!(result, Err(HtAmpduTxError::DetachFailed));
+            drop(owner);
+            assert_eq!(storage.state(), TxSlotState::ResetRequired);
+            assert_eq!(pool.claimed_slots(), 1);
+        } else {
+            result.unwrap();
+            assert_eq!(owner.held_backing_count(), 0);
+            assert_eq!(pool.claimed_slots(), 0);
+            assert_eq!(
+                owner.finish_timeout_abort(&mut hardware, cookie),
+                Err(HtAmpduTxError::Stale)
+            );
+            drop(owner);
+            assert_eq!(storage.state(), TxSlotState::Free);
+        }
+    }
 }
 
 #[test]

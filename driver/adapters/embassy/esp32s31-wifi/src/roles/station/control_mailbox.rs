@@ -8,8 +8,8 @@
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_futures::select::select6;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
-use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
@@ -503,7 +503,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
 
 #[cfg(test)]
 mod tests {
-    use open_esp_radio_embassy_net::NoopRawMutex;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::BlockAckAction;
     use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
         ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,

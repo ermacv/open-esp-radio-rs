@@ -110,6 +110,7 @@ pub enum Esp32s31ApAmpduError {
     TooFewFrames,
     Geometry,
     HardwareDidNotDetach,
+    DeadlineOverflow,
     ConflictingInterruptEvents(u32),
     CompletionInterruptWithoutState,
     Hardware(HtAmpduTxError),

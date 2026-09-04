@@ -3,42 +3,24 @@ use super::*;
 impl<
     'slot,
     'ampdu,
-    'resources,
-    M,
+    B,
     P,
     E,
     T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
->
-    Esp32s31ConnectedTx<
-        'slot,
-        'ampdu,
-        'resources,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+> Esp32s31ConnectedTx<'slot, 'ampdu, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    pub async fn service<H: HtAmpduHardware>(
+    /// Service one captured event synchronously. Pending timeout-abort keeps
+    /// the aggregate owners in this state machine, never in a suspended future.
+    /// The executor or fused owner uses `next_deadline_micros` to wait.
+    pub fn service<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
@@ -55,7 +37,7 @@ where
         match active {
             ConnectedTxActive::Idle => Err(AggregateTxError::InactiveTransaction),
             ConnectedTxActive::Ordinary => {
-                let progress = self.ordinary.service(hardware, wake).await?;
+                let progress = self.ordinary.service(hardware, wake)?;
                 if progress == WifiTxProgress::Pending {
                     self.active = ConnectedTxActive::Ordinary;
                 } else {
@@ -79,13 +61,45 @@ where
                 }
                 Ok(progress)
             }
-            ConnectedTxActive::Aggregate(active) => {
-                self.service_aggregate(hardware, wake, active).await
-            }
+            ConnectedTxActive::AbortSettling(active) => self.service_abort_settle(hardware, active),
+            ConnectedTxActive::Aggregate(active) => self.service_aggregate(hardware, wake, active),
         }
     }
 
-    async fn service_aggregate<H: HtAmpduHardware>(
+    fn service_abort_settle<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        active: AggregateActive<SLOTS>,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        if self.ordinary.now_micros() < active.deadline_micros {
+            self.active = ConnectedTxActive::AbortSettling(active);
+            return Ok(WifiTxProgress::Pending);
+        }
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        self.ampdu
+            .active_mut()
+            .finish_timeout_abort(hardware, cookie)?;
+        self.release_frames();
+        self.cookie = None;
+        self.ordinary
+            .reset_terminal_exchange(active.traffic.queue());
+        self.last_aggregate_status = Some(MacAmpduTxStatus {
+            result: MacAmpduTxResult::HardwareTimeout,
+            original_subframes: u16::from(active.original_subframes),
+            aggregate_attempts: active.retry.aggregate_attempts(),
+            aggregate_rate: active.config.rate(),
+            block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
+            ordinary_retry: None,
+        });
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::HardwareTimeout);
+            Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
+        }
+        Ok(WifiTxProgress::Complete)
+    }
+
+    fn service_aggregate<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
@@ -237,6 +251,12 @@ where
             service_event,
             AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
         ) {
+            if service_event == AggregateTxServiceEvent::ExecutorDeadline
+                && self.ordinary.now_micros() < active.deadline_micros
+            {
+                self.active = ConnectedTxActive::Aggregate(active);
+                return Ok(WifiTxProgress::Pending);
+            }
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
             if !self
                 .ampdu
@@ -251,28 +271,17 @@ where
                     },
                 );
             }
-            self.ordinary.after_micros(AMPDU_ABORT_SETTLE_US).await;
-            self.ampdu
-                .active_mut()
-                .finish_timeout_abort(hardware, cookie)?;
-            self.release_frames();
-            self.cookie = None;
-            self.ordinary
-                .reset_terminal_exchange(active.traffic.queue());
-            self.last_aggregate_status = Some(MacAmpduTxStatus {
-                result: MacAmpduTxResult::HardwareTimeout,
-                original_subframes: u16::from(active.original_subframes),
-                aggregate_attempts: active.retry.aggregate_attempts(),
-                aggregate_rate: active.config.rate(),
-                block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
-                ordinary_retry: None,
-            });
-            #[cfg(any(feature = "diagnostics", test))]
-            if let Some(observer) = self.observer {
-                observer.observe(AggregateTxObservation::HardwareTimeout);
-                Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
-            }
-            return Ok(WifiTxProgress::Complete);
+            let Some(deadline_micros) = self
+                .ordinary
+                .now_micros()
+                .checked_add(AMPDU_ABORT_SETTLE_US)
+            else {
+                self.ampdu.active_mut().require_reset(cookie)?;
+                return Err(AggregateTxError::DeadlineOverflow);
+            };
+            active.deadline_micros = deadline_micros;
+            self.active = ConnectedTxActive::AbortSettling(active);
+            return Ok(WifiTxProgress::Pending);
         }
         if service_event == AggregateTxServiceEvent::Collision {
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;

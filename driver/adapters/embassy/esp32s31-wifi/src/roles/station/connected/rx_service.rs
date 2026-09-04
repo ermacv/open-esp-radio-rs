@@ -8,7 +8,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::RawMutex;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
     datapath::{

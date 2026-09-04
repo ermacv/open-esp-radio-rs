@@ -7,6 +7,9 @@ use super::*;
 use crate::datapath::software_tx_queue::{IndexedLeaseArena, RoundRobinTxQueues};
 use core::marker::PhantomData;
 
+mod service_phase;
+use service_phase::{AggregateServiceAction, AggregateServicePhase};
+
 // Retention is deliberately bounded independently of the physical producer
 // pool. Active and standby aggregates own their leases outside this arena;
 // growing the DMA frontier must not multiply scheduler metadata per peer.
@@ -325,7 +328,7 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
     observer: Option<&'observer dyn AggregateTxObserver>,
     #[cfg(not(any(feature = "diagnostics", test)))]
     observer_lifetime: PhantomData<&'observer ()>,
-    deadline_micros: Option<u64>,
+    aggregate_phase: Option<AggregateServicePhase>,
     #[cfg(any(feature = "diagnostics", test))]
     exchange_started_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))]
@@ -337,8 +340,6 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
     prepared_second: Option<N>,
     prepared_second_key: Option<ApTxFlowKey>,
     prepared_standby: Option<PreparedStandby>,
-    #[cfg(feature = "tx-core1-materializer-probe")]
-    core1_materialization_in_flight: bool,
     buffered_unicast: ApPowerSaveFrameQueue,
     buffered_group: ApGroupFrameQueue,
     prepared_buffered_release: Option<BufferedUnicastRelease<N>>,
@@ -366,7 +367,7 @@ where
             observer,
             #[cfg(not(any(feature = "diagnostics", test)))]
             observer_lifetime: PhantomData,
-            deadline_micros: None,
+            aggregate_phase: None,
             #[cfg(any(feature = "diagnostics", test))]
             exchange_started_micros: None,
             #[cfg(any(feature = "diagnostics", test))]
@@ -378,8 +379,6 @@ where
             prepared_second: None,
             prepared_second_key: None,
             prepared_standby: None,
-            #[cfg(feature = "tx-core1-materializer-probe")]
-            core1_materialization_in_flight: false,
             buffered_unicast: ApPowerSaveFrameQueue::new(),
             buffered_group: ApGroupFrameQueue::new(),
             prepared_buffered_release: None,
@@ -392,40 +391,7 @@ where
     }
 
     pub(super) const fn aggregate_pending(&self) -> bool {
-        self.deadline_micros.is_some()
-    }
-
-    #[cfg(feature = "tx-phase-telemetry")]
-    #[inline(never)]
-    fn publish_shadow_grant(&self, identity: ApAssociationIdentity, frame_credits: u8) {
-        let grant = super::access_point_egress_shadow_grant();
-        let slot = u8::try_from(identity.association_id())
-            .ok()
-            .and_then(core::num::NonZeroU8::new)
-            .expect("an AP association slot is non-zero and byte-sized");
-        let generation = core::num::NonZeroU32::new(identity.association_epoch())
-            .expect("an AP association epoch is non-zero");
-        let frame_credits = core::num::NonZeroU8::new(frame_credits)
-            .expect("an AP aggregate policy has a non-zero frame limit");
-        grant
-            .publish(
-                EgressGrantKey::new(
-                    crate::roles::concurrent::AP_NETWORK_INTERFACE_ID.value(),
-                    slot,
-                    generation,
-                    open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
-                ),
-                frame_credits,
-            )
-            .expect("the Core0 shadow-grant publication is single-owner and non-reusable");
-    }
-
-    #[cfg(feature = "tx-phase-telemetry")]
-    #[inline(never)]
-    fn clear_shadow_grant(&self) {
-        super::access_point_egress_shadow_grant()
-            .clear()
-            .expect("the Core0 shadow-grant publication is single-owner and non-reusable");
+        self.aggregate_phase.is_some()
     }
 
     pub(super) fn has_prepared(&self) -> bool {
@@ -438,10 +404,6 @@ where
     }
 
     pub(super) fn prepared_start_ready(&self) -> bool {
-        #[cfg(feature = "tx-core1-materializer-probe")]
-        if self.core1_materialization_in_flight {
-            return false;
-        }
         self.has_prepared()
     }
 
@@ -531,7 +493,7 @@ where
                     && batch.admitted < usize::from(batch.policy.frame_limit())
             }
             None => {
-                (self.deadline_micros.is_some()
+                (self.aggregate_phase.is_some()
                     || self.active_frames.len() != 0
                     || self.prepared_first.is_some())
                     && self.prepared_second.is_none()
@@ -550,22 +512,10 @@ where
     }
 }
 
-impl<
-    'observer,
-    'resources,
-    M,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    Esp32s31AccessPointNetworkTx<
-        'observer,
-        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    >
+impl<'observer, B, N> Esp32s31AccessPointNetworkTx<'observer, B, N>
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
+    N: SoftwareTxFrame,
 {
     pub(super) fn advance_prepared<
         P,
@@ -577,12 +527,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -593,14 +538,7 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<(), Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -616,14 +554,7 @@ where
     #[cfg(feature = "tx-phase-telemetry")]
     fn record_partial_frontier(
         &self,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) {
         let Some(batch) = self.prepared_standby.as_ref() else {
             return;
@@ -645,35 +576,22 @@ where
             batch.mismatch_claims,
         );
         let ownership = network.ownership_snapshot();
-        let radio_owned = ownership.radio_owned(TX_QUEUE_DEPTH);
         CORE0_PERFORMANCE.record_ap_partial_publication(
             batch.admitted,
             ownership.free,
-            ownership.ready_for_interface,
-            ownership.ready_for_other_interfaces,
-            ownership.ingress_reserved,
-            ownership.application_reserved,
-            ownership.tokens_in_flight,
-            radio_owned,
-            radio_owned.saturating_sub(batch.admitted.saturating_add(retained)),
+            0,
+            0,
+            0,
+            0,
+            0,
+            ownership.radio_owned,
+            ownership
+                .radio_owned
+                .saturating_sub(batch.admitted.saturating_add(retained)),
         );
     }
 
-    fn push_active_frame(
-        &mut self,
-        key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        (),
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    > {
+    fn push_active_frame(&mut self, key: ApTxFlowKey, frame: N) -> Result<(), N> {
         let frame_index = self.frame_arena.insert(frame)?;
         if self.active_frames.push_back(key, frame_index).is_err() {
             return Err(self.frame_arena.take(frame_index));
@@ -681,21 +599,7 @@ where
         Ok(())
     }
 
-    fn push_active_frame_front(
-        &mut self,
-        key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        (),
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    > {
+    fn push_active_frame_front(&mut self, key: ApTxFlowKey, frame: N) -> Result<(), N> {
         let frame_index = self.frame_arena.insert(frame)?;
         if self.active_frames.push_front(key, frame_index).is_err() {
             return Err(self.frame_arena.take(frame_index));
@@ -703,66 +607,25 @@ where
         Ok(())
     }
 
-    fn restore_active_pair_front(
-        &mut self,
-        key: ApTxFlowKey,
-        first: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        second: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) {
+    fn restore_active_pair_front(&mut self, key: ApTxFlowKey, first: N, second: N) {
         // `push_front` reverses insertion order. Restore the younger frame
         // first so the next scheduler turn observes the original prefix.
         self.restore_active_frame_front(key, second);
         self.restore_active_frame_front(key, first);
     }
 
-    fn restore_active_frame_front(
-        &mut self,
-        key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) {
+    fn restore_active_frame_front(&mut self, key: ApTxFlowKey, frame: N) {
         self.push_active_frame_front(key, frame)
             .unwrap_or_else(|_| panic!("AP rollback lost its bounded arena credit"));
     }
 
-    fn pop_active_key(
-        &mut self,
-        key: ApTxFlowKey,
-    ) -> Option<
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    > {
+    fn pop_active_key(&mut self, key: ApTxFlowKey) -> Option<N> {
         self.active_frames
             .pop_key(key)
             .map(|index| self.frame_arena.take(index))
     }
 
-    fn pop_scheduled_active(
-        &mut self,
-        engine: &Esp32s31ApEngine<'_>,
-    ) -> Option<(
-        ApTxFlowKey,
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    )> {
+    fn pop_scheduled_active(&mut self, engine: &Esp32s31ApEngine<'_>) -> Option<(ApTxFlowKey, N)> {
         loop {
             let (key, index) = self.active_frames.pop_scheduled()?;
             let frame = self.frame_arena.take(index);
@@ -773,17 +636,7 @@ where
         }
     }
 
-    fn observe_network_claim(
-        &self,
-        frame: &PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) {
+    fn observe_network_claim(&self, frame: &N) {
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe_access_point_network_claim(frame.as_slice());
@@ -795,14 +648,7 @@ where
     fn retain_active_frame(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        frame: N,
     ) -> Result<(), Esp32s31AccessPointDatapathError> {
         self.observe_network_claim(&frame);
         let Some((key, frame)) = self.retain_power_save(engine, frame)? else {
@@ -820,20 +666,8 @@ where
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
         key: ApTxFlowKey,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        Option<
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        >,
-        Esp32s31AccessPointDatapathError,
-    > {
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    ) -> Result<Option<N>, Esp32s31AccessPointDatapathError> {
         if !key.is_current(engine) {
             while let Some(frame) = self.pop_active_key(key) {
                 drop(frame);
@@ -843,7 +677,7 @@ where
         if let Some(frame) = self.pop_active_key(key) {
             return Ok(Some(frame));
         }
-        while let Some(frame) = network.try_receive() {
+        while let Some(frame) = network.try_take() {
             self.observe_network_claim(&frame);
             let Some((frame_key, frame)) = self.retain_power_save(engine, frame)? else {
                 continue;
@@ -871,25 +705,12 @@ where
     fn take_scheduled_active_or_network(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        Option<(
-            ApTxFlowKey,
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        )>,
-        Esp32s31AccessPointDatapathError,
-    > {
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
+    ) -> Result<Option<(ApTxFlowKey, N)>, Esp32s31AccessPointDatapathError> {
         if let Some((key, frame)) = self.pop_scheduled_active(engine) {
             return Ok(Some((key, frame)));
         }
-        let Some(frame) = network.try_receive() else {
+        let Some(frame) = network.try_take() else {
             return Ok(None);
         };
         self.observe_network_claim(&frame);
@@ -899,21 +720,8 @@ where
     fn retain_power_save(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        Option<(
-            ApTxFlowKey,
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        )>,
-        Esp32s31AccessPointDatapathError,
-    > {
+        frame: N,
+    ) -> Result<Option<(ApTxFlowKey, N)>, Esp32s31AccessPointDatapathError> {
         let unbound_key = ApTxFlowKey::unbound_from_ethernet(frame.as_slice());
         let Some(peer) = frame
             .as_slice()
@@ -1496,12 +1304,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -1513,22 +1316,8 @@ where
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        frame: N,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -1625,21 +1414,10 @@ where
                 .require_unprotected_ht_aggregate(admission.rate())
                 .map_err(Esp32s31ApAmpduError::Protection)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-            let mut frame = match network.try_promote(frame) {
-                Ok(frame) => frame,
-                Err(frame) => {
+            let (mut frame, mut second) = match network.try_materialize_pair(frame, second) {
+                Ok(frames) => frames,
+                Err((frame, second)) => {
                     self.restore_active_pair_front(flow_key, frame, second);
-                    return Ok(WifiTxProgress::Complete);
-                }
-            };
-            let mut second = match network.try_promote(second) {
-                Ok(second) => second,
-                Err(second) => {
-                    self.restore_active_pair_front(
-                        flow_key,
-                        PinnedNetworkTxFrame::Direct(frame),
-                        second,
-                    );
                     return Ok(WifiTxProgress::Complete);
                 }
             };
@@ -1700,7 +1478,7 @@ where
                     break;
                 };
                 debug_assert!(admission.accepts_ethernet(next.as_slice()));
-                let mut next = match network.try_promote(next) {
+                let mut next = match network.try_materialize(next) {
                     Ok(next) => next,
                     Err(next) => {
                         self.restore_active_frame_front(flow_key, next);
@@ -1756,7 +1534,7 @@ where
             let deadline_micros = ordinary
                 .now_micros()
                 .saturating_add(ordinary.publication_timeout_micros());
-            self.deadline_micros = Some(deadline_micros);
+            self.aggregate_phase = Some(AggregateServicePhase::Published(deadline_micros));
             #[cfg(any(feature = "diagnostics", test))]
             control.observe_ht_aggregate(policy.rate());
             self.last_started_frames = admitted;
@@ -1780,12 +1558,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -1796,22 +1569,8 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        frame: N,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<(), Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -1841,12 +1600,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -1857,14 +1611,7 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<(), Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -1886,8 +1633,6 @@ where
                 .prepared_standby
                 .take()
                 .expect("checked stale AP standby batch remains owned");
-            #[cfg(feature = "tx-phase-telemetry")]
-            self.clear_shadow_grant();
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::StandbyCancelled);
@@ -1929,12 +1674,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -1945,14 +1685,7 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<bool, Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -1974,65 +1707,29 @@ where
         }
         let key = ApTxFlowKey::associated(admission.association());
         let mut frames = [const { None }; SLOTS];
-        #[cfg(feature = "tx-core1-materializer-probe")]
-        let completed = if self.core1_materialization_in_flight {
-            match network.poll_core1_materialization(&mut frames) {
-                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Pending => {
-                    return Ok(false);
-                }
-                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Cancelled => {
-                    self.core1_materialization_in_flight = false;
-                    return Ok(false);
-                }
-                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Ready(count) => {
-                    self.core1_materialization_in_flight = false;
-                    Some(count)
-                }
-            }
-        } else {
-            None
-        };
-        #[cfg(not(feature = "tx-core1-materializer-probe"))]
-        let completed: Option<usize> = None;
-
-        let count = if let Some(count) = completed {
-            count
-        } else {
-            let burst_limit = remaining.min(SLOTS).min(network.promotion_capacity());
-            if burst_limit == 0 {
-                return Ok(false);
-            }
-            let mut count = 0;
-            while count < burst_limit {
-                let Some(frame) =
-                    self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
-                else {
-                    break;
-                };
-                debug_assert!(admission.accepts_ethernet(frame.as_slice()));
-                frames[count] = Some(frame);
-                count += 1;
-            }
-            if count == 0 {
-                return Ok(false);
-            }
-            #[cfg(feature = "tx-core1-materializer-probe")]
-            if network.core1_materializer_selected() {
-                if network.try_submit_core1_materialization(&mut frames) {
-                    self.core1_materialization_in_flight = true;
-                    return Ok(true);
-                }
-                for frame in frames[..count].iter_mut().rev().filter_map(Option::take) {
-                    self.restore_active_frame_front(key, frame);
-                }
-                return Ok(false);
-            }
-            count
-        };
+        let burst_limit = remaining.min(SLOTS).min(network.materialization_capacity());
+        if burst_limit == 0 {
+            return Ok(false);
+        }
+        let mut count = 0;
+        while count < burst_limit {
+            let Some(frame) =
+                self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
+            else {
+                break;
+            };
+            debug_assert!(admission.accepts_ethernet(frame.as_slice()));
+            frames[count] = Some(frame);
+            count += 1;
+        }
+        if count == 0 {
+            return Ok(false);
+        }
 
         #[cfg(any(feature = "diagnostics", test))]
         let started = self.observer.map(AggregateTxObserver::now_micros);
-        if !network.try_promote_batch(&mut frames) {
+        let mut promoted = [const { None }; SLOTS];
+        if !network.try_materialize_batch(&mut frames, &mut promoted) {
             for frame in frames[..count].iter_mut().rev().filter_map(Option::take) {
                 self.restore_active_frame_front(key, frame);
             }
@@ -2040,12 +1737,10 @@ where
         }
 
         let peer = admission.peer();
-        for slot in frames[..count].iter_mut() {
+        for slot in promoted[..count].iter_mut() {
             let mut frame = slot
                 .take()
-                .expect("the selected AP burst retains every packet owner")
-                .into_direct()
-                .unwrap_or_else(|_| panic!("successful promotion leaves only DMA owners"));
+                .expect("successful AP burst promotion publishes every DMA owner");
             let offset = frame.ethernet_offset();
             let length = frame.ethernet_length();
             let encoded = control
@@ -2099,12 +1794,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -2116,22 +1806,8 @@ where
             TX_BUFFER_SIZE,
         >,
         key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        frame: N,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<bool, Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -2161,7 +1837,7 @@ where
                     .map_err(Esp32s31ApAmpduError::Protection)
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             }
-            let mut frame = match network.try_promote(frame) {
+            let mut frame = match network.try_materialize(frame) {
                 Ok(frame) => frame,
                 Err(frame) => {
                     self.restore_active_frame_front(key, frame);
@@ -2240,21 +1916,10 @@ where
                 .map_err(Esp32s31ApAmpduError::Protection)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         }
-        let mut first = match network.try_promote(first) {
-            Ok(first) => first,
-            Err(first) => {
+        let (mut first, mut frame) = match network.try_materialize_pair(first, frame) {
+            Ok(frames) => frames,
+            Err((first, frame)) => {
                 self.restore_active_pair_front(first_key, first, frame);
-                return Ok(false);
-            }
-        };
-        let mut frame = match network.try_promote(frame) {
-            Ok(frame) => frame,
-            Err(frame) => {
-                self.restore_active_pair_front(
-                    first_key,
-                    PinnedNetworkTxFrame::Direct(first),
-                    frame,
-                );
                 return Ok(false);
             }
         };
@@ -2311,8 +1976,6 @@ where
             .expect("checked standby arena")
             .push(peer, frame, encoded)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-        #[cfg(feature = "tx-phase-telemetry")]
-        self.publish_shadow_grant(admission.association(), policy.frame_limit());
         self.prepared_standby = Some(PreparedStandby {
             admission,
             policy,
@@ -2344,12 +2007,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -2361,14 +2019,7 @@ where
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
-        network: &PinnedTxInterfaceConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -2427,7 +2078,9 @@ where
             .publish_standby(ordinary, hardware)
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         let now = ordinary.now_micros();
-        self.deadline_micros = Some(now.saturating_add(ordinary.publication_timeout_micros()));
+        self.aggregate_phase = Some(AggregateServicePhase::Published(
+            now.saturating_add(ordinary.publication_timeout_micros()),
+        ));
         #[cfg(any(feature = "diagnostics", test))]
         {
             self.exchange_started_micros = publication_started;
@@ -2456,10 +2109,6 @@ where
             control.observe_ht_aggregate(_batch.policy.rate());
         }
         self.prepare_ready_standby(aggregate, control, network)?;
-        #[cfg(feature = "tx-phase-telemetry")]
-        if self.prepared_standby.is_none() {
-            self.clear_shadow_grant();
-        }
         Ok(WifiTxProgress::Pending)
     }
 
@@ -2473,12 +2122,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -2489,30 +2133,13 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                TX_QUEUE_DEPTH,
-            >,
-        >,
+        network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
     ) -> Result<(), Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        #[cfg(feature = "tx-core1-materializer-probe")]
-        if self.core1_materialization_in_flight {
-            network
-                .expect("an in-flight Core1 batch retains its interface capability")
-                .cancel_core1_materialization();
-            self.core1_materialization_in_flight = false;
-        }
-        #[cfg(not(feature = "tx-core1-materializer-probe"))]
         let _ = network;
         self.rollback_prepared_buffered_release(control)?;
         self.discard_group_buffer(control)?;
@@ -2537,8 +2164,6 @@ where
                 observer.observe(AggregateTxObservation::StandbyCancelled);
             }
         }
-        #[cfg(feature = "tx-phase-telemetry")]
-        self.clear_shadow_grant();
         Ok(())
     }
 
@@ -2565,7 +2190,8 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        if let Some(deadline) = self.deadline_micros {
+        if let Some(phase) = self.aggregate_phase {
+            let deadline = phase.deadline();
             let (_, ordinary) = control
                 .mac
                 .try_aggregate_adapter()
@@ -2576,7 +2202,7 @@ where
         }
     }
 
-    pub(super) async fn service<
+    pub(super) fn service<
         P,
         E,
         T,
@@ -2587,12 +2213,7 @@ where
         const BUFFER_SIZE: usize,
     >(
         &mut self,
-        aggregate: &mut Esp32s31AccessPointAmpdu<
-            '_,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-            SLOTS,
-            BUFFER_SIZE,
-        >,
+        aggregate: &mut Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
         control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
@@ -2615,8 +2236,8 @@ where
             + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
-        if self.deadline_micros.is_none() {
-            let progress = match control.service_tx(hardware, wake).await {
+        if self.aggregate_phase.is_none() {
+            let progress = match control.service_tx(hardware, wake) {
                 Ok(progress) => progress,
                 Err(error) => {
                     if self.active_group_release.is_some() {
@@ -2647,11 +2268,43 @@ where
             return Ok(progress);
         }
 
-        let service_event = AggregateTxServiceEvent::classify(wake).map_err(|error| {
-            Esp32s31AccessPointDatapathError::Aggregate(
-                Esp32s31ApAmpduError::ConflictingInterruptEvents(error.events),
-            )
+        let phase = self
+            .aggregate_phase
+            .expect("ordinary service returned above");
+        let action = phase.action(wake, || {
+            let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+                Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
+                    error,
+                ))
+            })?;
+            Ok(ordinary.now_micros())
         })?;
+        let service_event = match action {
+            AggregateServiceAction::Wait => return Ok(WifiTxProgress::Pending),
+            AggregateServiceAction::Observe(event) => event,
+            AggregateServiceAction::FinishAbort => {
+                let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+                    Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
+                        error,
+                    ))
+                })?;
+                aggregate
+                    .active_mut()
+                    .finish_timeout_abort(hardware)
+                    .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                ordinary.reset_aggregate_contention();
+                self.aggregate_phase = None;
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.exchange_started_micros = None;
+                }
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.observer {
+                    observer.observe(AggregateTxObservation::HardwareTimeout);
+                }
+                return Ok(WifiTxProgress::Complete);
+            }
+        };
         if service_event == AggregateTxServiceEvent::Collision {
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
@@ -2668,7 +2321,7 @@ where
                 ));
             }
             ordinary.reset_aggregate_contention();
-            self.deadline_micros = None;
+            self.aggregate_phase = None;
             #[cfg(any(feature = "diagnostics", test))]
             {
                 self.exchange_started_micros = None;
@@ -2697,22 +2350,10 @@ where
                     error,
                 ))
             })?;
-            ordinary.after_micros(16).await;
-            aggregate
-                .active_mut()
-                .finish_timeout_abort(hardware)
-                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-            ordinary.reset_aggregate_contention();
-            self.deadline_micros = None;
-            #[cfg(any(feature = "diagnostics", test))]
-            {
-                self.exchange_started_micros = None;
-            }
-            #[cfg(any(feature = "diagnostics", test))]
-            if let Some(observer) = self.observer {
-                observer.observe(AggregateTxObservation::HardwareTimeout);
-            }
-            return Ok(WifiTxProgress::Complete);
+            // Sample after the abort request; no wait future owns this phase.
+            self.aggregate_phase = Some(AggregateServicePhase::ResetRequired);
+            self.aggregate_phase = Some(AggregateServicePhase::after_abort(ordinary.now_micros())?);
+            return Ok(WifiTxProgress::Pending);
         }
 
         let aggregate_progress = {
@@ -2772,7 +2413,7 @@ where
                     debug_assert!(self.terminal_acknowledged.is_none());
                     self.terminal_acknowledged = Some(completion.acknowledged);
                 }
-                self.deadline_micros = None;
+                self.aggregate_phase = None;
                 #[cfg(any(feature = "diagnostics", test))]
                 {
                     self.exchange_started_micros = None;
@@ -2789,11 +2430,11 @@ where
                         error,
                     ))
                 })?;
-                self.deadline_micros = Some(
+                self.aggregate_phase = Some(AggregateServicePhase::Published(
                     ordinary
                         .now_micros()
                         .saturating_add(ordinary.publication_timeout_micros()),
-                );
+                ));
                 Ok(WifiTxProgress::Pending)
             }
             Esp32s31ApAmpduProgress::Pending => {
@@ -2872,27 +2513,12 @@ pub(super) trait AccessPointPowerSaveNetworkTx<
     ) -> Result<(), Esp32s31AccessPointDatapathError>;
 }
 
-impl<
-    'observer,
-    'resources,
-    M,
-    P,
-    E,
-    T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const TX_QUEUE_DEPTH: usize,
-    const DMA_BUFFER_SIZE: usize,
-    const TX_BUFFER_SIZE: usize,
-> AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>
-    for Esp32s31AccessPointNetworkTx<
-        'observer,
-        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    >
+impl<'observer, B, N, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
+    AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>
+    for Esp32s31AccessPointNetworkTx<'observer, B, N>
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
+    N: SoftwareTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,

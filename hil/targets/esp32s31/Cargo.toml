@@ -17,13 +17,10 @@ publish = false
 [workspace.dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-# Pin the reviewed current-upstream xarxa base while the published embassy-net
-# still uses smoltcp. The patch below unifies support crates with crates.io.
-# Upstream Runner::run() drains ingress in one executor poll. The minimal
-# fork adds the bounded work-conserving runner required to keep socket tasks
-# schedulable under sustained packet-rate load.
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272", features = ["auto-icmp-echo-reply", "dhcpv4", "dns", "icmp", "medium-ethernet", "slaac", "tcp", "udp"] }
-embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "3b91c62054669719af1cfc97110ae6ddb5498272" }
+# Owned-packet Xarxa/Embassy line. Link scheduling and radio policy remain
+# private to open-radio rather than extending the generic driver API.
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d", features = ["auto-icmp-echo-reply", "dhcpv4", "dns", "medium-ethernet", "slaac", "tcp", "udp"] }
+embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d" }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"] }

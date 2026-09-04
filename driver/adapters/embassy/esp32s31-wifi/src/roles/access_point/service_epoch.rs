@@ -78,11 +78,9 @@ where
         F,
         N,
         NR,
-        Q,
         const FRAME_CAPACITY: usize,
         const HEADROOM: usize,
         const TRAILER: usize,
-        const RX_QUEUE_DEPTH: usize,
         const TX_QUEUE_DEPTH: usize,
         const AMPDU_SLOTS: usize,
         const AMPDU_BUFFER_SIZE: usize,
@@ -103,7 +101,6 @@ where
         >,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
         #[cfg(feature = "diagnostics")] mut live_hardware_observer: impl FnMut(&mut H),
-        publish_shared_rx: Q,
         stop: F,
         mut status_observer: impl FnMut(AccessPointServiceStatus),
         security_material: N,
@@ -112,13 +109,14 @@ where
         IR: MacInterruptRoute,
         NM: RawMutex,
         NR: crate::datapath::network::DatapathNetwork<
-                'resources,
-                NM,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                RX_QUEUE_DEPTH,
-                TX_QUEUE_DEPTH,
+                PhysicalTxFrame = PinnedTxFrame<
+                    'resources,
+                    NM,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    TX_QUEUE_DEPTH,
+                >,
             >,
         H: RxDma
             + TxHardware
@@ -130,7 +128,6 @@ where
         C: AccessPointRxProtocolConsumer,
         F: Future<Output = ()>,
         N: FnMut() -> ([u8; 32], u64),
-        Q: FnMut(u8),
     {
         let network_link = network.link_controller();
         network_link.set_link_state(
@@ -199,7 +196,6 @@ where
                 network_link
                     .set_link_state(crate::roles::concurrent::AP_NETWORK_INTERFACE_ID, state)
             },
-            publish_shared_rx,
             #[cfg(any(feature = "diagnostics", test))]
             aggregate_tx_observer,
             #[cfg(feature = "diagnostics")]
@@ -331,7 +327,7 @@ where
             protocol_rx,
             role,
         } = self;
-        let (processor, (), (), (), ()) = role.into_parts();
+        let (processor, (), (), ()) = role.into_parts();
         let Esp32s31AccessPointProtocolStopped {
             transmit,
             rx_frame,

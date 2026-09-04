@@ -8,9 +8,8 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
 };
 
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::TryReceiveError;
-use open_esp_radio_embassy_net::NoopRawMutex;
-use open_esp_radio_embassy_net::RxEnqueueError;
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
 };
@@ -23,6 +22,7 @@ use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_ieee80211::vif::StaApRxAddresses;
+use open_esp_radio_network::RxEnqueueError;
 use std::boxed::Box;
 
 use super::*;
@@ -282,15 +282,15 @@ impl DatapathNetworkRxSet for PairedNetworkRx {
 
     fn get_mut(
         &mut self,
-        _interface: open_esp_radio_embassy_net::NetworkInterfaceId,
+        _interface: open_esp_radio_network::NetworkInterfaceId,
     ) -> Option<&mut dyn DatapathNetworkRx> {
         None
     }
 
     fn pair_mut(
         &mut self,
-        _first: open_esp_radio_embassy_net::NetworkInterfaceId,
-        _second: open_esp_radio_embassy_net::NetworkInterfaceId,
+        _first: open_esp_radio_network::NetworkInterfaceId,
+        _second: open_esp_radio_network::NetworkInterfaceId,
     ) -> Option<(&mut dyn DatapathNetworkRx, &mut dyn DatapathNetworkRx)> {
         None
     }

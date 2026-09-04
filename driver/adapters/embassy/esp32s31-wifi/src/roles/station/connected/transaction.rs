@@ -80,52 +80,18 @@ where
     }
 }
 
-impl<
-    'resources,
-    'irq,
-    RM,
-    CM,
-    N,
-    B,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
-> Esp32s31ConnectedStationRunner<CM>
-    for DatapathRunner<
-        'resources,
-        'irq,
-        RM,
-        N,
-        B,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-    >
+impl<'irq, RM, CM, N, B, RX> Esp32s31ConnectedStationRunner<CM>
+    for DatapathRunner<'irq, RM, N, B, RX>
 where
-    RM: open_esp_radio_embassy_net::RawMutex,
+    RM: RawMutex,
     CM: RawMutex,
-    N: crate::datapath::network::DatapathNetwork<
-            'resources,
-            RM,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+    N: crate::datapath::network::DatapathNetwork,
     B: crate::datapath::DatapathServices<
-            'resources,
-            RM,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
+            N::TxFrame,
+            N::PhysicalTxFrame,
             Exit = open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason,
         > + Esp32s31ConnectedStationIngress,
+    RX: crate::datapath::network::DatapathNetworkRxSet,
 {
     type Error = B::Error;
 

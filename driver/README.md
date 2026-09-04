@@ -62,6 +62,8 @@ module for the former vendor-derived `wdev` naming.
 - `ieee802154`: portable allocation-free frames, normalized metadata,
   capabilities and finite command/event state transitions.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
+- `wifi/datapath`: executor- and stack-neutral radio egress ownership,
+  demand and physical materialization contracts.
 - `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
 - `chips/esp32s31/bluetooth/memory`: statically bound CPU-owned controller-SRAM
   layout and the future packet/list ownership boundary below the S31 LLL and
@@ -72,11 +74,25 @@ module for the former vendor-derived `wdev` naming.
   source-reviewed S31 MAC.
 - `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
+- `adapters/embassy-net-compat`: copied-frame adapter for the unchanged
+  released Embassy driver interface; payload arenas are separate from hot
+  lease queues, and it has no fork or radio dependency.
+- `adapters/embassy/esp32s31-wifi-compat`: narrow bridge from that unchanged
+  driver to the shared ESP32-S31 selected-burst and fixed-SRAM materializer;
+  it has no Xarxa or owned-network dependency.
+- `adapters/embassy-net`: owned-packet adapter for the optimized Xarxa/Embassy
+  integration; it has no physical SRAM, DMA or Wi-Fi policy.
+- `adapters/research`: synchronous hardware-first Ethernet/ARP/IPv4/ICMP/UDP
+  engine. It has no Xarxa, Embassy, PAC or executor dependency and constructs
+  radio-selected work directly in a reserved physical batch.
 - `integration/esp32s31/bluetooth`: one-time production placement and claim of
   the statically bound ESP32-S31 controller-memory graph.
 - `integration/esp32s31/embassy-wifi`: production composition and the only
   place applications enter the current ESP32-S31 station/AP/monitor service
-  or its explicit ESP-NOW composition hooks.
+  or its explicit ESP-NOW composition hooks. It selects exactly one of the
+  optimized owned or released compatibility network leaves at compile time.
+- `common/network`: adapter-neutral interface/link/error values with no stack,
+  driver, executor, queue or packet-allocation policy.
 - `common/dma`: audited generic pinned-memory foundation.
 
 `embassy-net::Stack`, DHCP, sockets and network tasks are application-owned.
@@ -250,12 +266,20 @@ separate protocol states. `SingleRoleServices` and `ConcurrentRoleServices`
 only compose these owners. AP/STA peer state, security, Block-Ack negotiation,
 rate policy and lifecycle remain separate.
 
-Permanent STA and AP network endpoints share one finite physical TX credit
-pool. Each endpoint retains one ingress response credit. Ordinary egress uses
-the remaining pool elastically: an inactive peer imposes no quota, while every
-returned credit wakes one active endpoint which is actually waiting. Per-VIF
-FIFOs preserve publication order and the physical datapath scheduler owns
-cross-VIF frame fairness.
+The optimized network integration transfers general-memory packet owners into
+driver-owned per-VIF/peer-generation/TID software queues. Core0 selects a flow,
+reserves a complete batch from one finite internal-SRAM execution pool, and
+only then copies the selected owners into DMA-visible storage. The physical
+pool is independent of peer count and returns only on terminal radio
+completion.
+
+Public Xarxa/Embassy demand/grant scheduling is not part of the design. The
+repository instead maintains separate compatibility, owned and research
+integration boundaries around one radio-native scheduler. See the
+[Wi-Fi egress architecture](../docs/WIFI_EGRESS_ARCHITECTURE.md) and
+[cutover plan](../docs/WIFI_EGRESS_CUTOVER_PLAN.md). The current round-robin
+flow selector is a work-conserving foundation, not yet an airtime-fairness
+claim.
 
 ## Extension rules
 

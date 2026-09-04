@@ -8,49 +8,23 @@ use super::*;
 impl<
     'slot,
     'ampdu,
-    'resources,
-    M,
+    B,
     P,
     E,
     T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
->
-    Esp32s31ConnectedTx<
-        'slot,
-        'ampdu,
-        'resources,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+> Esp32s31ConnectedTx<'slot, 'ampdu, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
     pub fn new(
         ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-        ampdu: AggregateTxResources<
-            'ampdu,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            SLOTS,
-            AMPDU_BUFFER_SIZE,
-        >,
+        ampdu: AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         config: AggregateTxConfig,
         rate_control: StaRateControlAssociation,
         aggregate_rate_policy: StaTxRatePolicy,
@@ -116,15 +90,10 @@ where
         })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "owned-network"))]
     pub(super) fn new_for_test(
         ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-        ampdu: AggregateTxResources<
-            'ampdu,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            SLOTS,
-            AMPDU_BUFFER_SIZE,
-        >,
+        ampdu: AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         config: AggregateTxConfig,
     ) -> Result<Self, AggregateTxError> {
         use open_esp_radio_esp32s31_wifi_mac::rate_control::{
@@ -396,7 +365,9 @@ where
         match &self.active {
             ConnectedTxActive::Idle => 1,
             ConnectedTxActive::Ordinary => 1,
-            ConnectedTxActive::Aggregate(active) => usize::from(active.original_subframes),
+            ConnectedTxActive::Aggregate(active) | ConnectedTxActive::AbortSettling(active) => {
+                usize::from(active.original_subframes)
+            }
         }
     }
 
@@ -507,12 +478,7 @@ where
     ) -> Result<
         (
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            AggregateTxResources<
-                'ampdu,
-                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-                SLOTS,
-                AMPDU_BUFFER_SIZE,
-            >,
+            AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
             Esp32s31ConnectedTxParked<'ampdu, SLOTS>,
         ),
         Self,
@@ -566,12 +532,7 @@ where
     /// state is reconstructed from values outside the parked capability.
     pub fn resume(
         resources: WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-        aggregate: AggregateTxResources<
-            'ampdu,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            SLOTS,
-            AMPDU_BUFFER_SIZE,
-        >,
+        aggregate: AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         parked: Esp32s31ConnectedTxParked<'ampdu, SLOTS>,
     ) -> Self {
         let Esp32s31ConnectedTxParked {
@@ -622,7 +583,7 @@ where
     /// storage after every referenced network lease has been released.
     ///
     /// An active or partially detached aggregate is returned intact. Losing
-    /// that value would leak pinned `embassy-net` leases or make DMA lifetime
+    /// that value would leak physical frame owners or make DMA lifetime
     /// unknowable to an outer reconnect owner.
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn try_into_parts(
@@ -630,12 +591,7 @@ where
     ) -> Result<
         (
             Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            AggregateTxResources<
-                'ampdu,
-                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-                SLOTS,
-                AMPDU_BUFFER_SIZE,
-            >,
+            AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         ),
         Self,
     > {
@@ -692,12 +648,7 @@ where
         (
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
             ConnectedTxHandoff,
-            AggregateTxResources<
-                'ampdu,
-                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-                SLOTS,
-                AMPDU_BUFFER_SIZE,
-            >,
+            AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         ),
         Self,
     > {
@@ -720,12 +671,7 @@ where
     ) -> Result<
         Esp32s31ConnectedTxTeardownParts<
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            AggregateTxResources<
-                'ampdu,
-                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-                SLOTS,
-                AMPDU_BUFFER_SIZE,
-            >,
+            AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         >,
         Self,
     > {
@@ -743,16 +689,18 @@ where
         })
     }
 
-    pub async fn wait_deadline(&mut self) {
+    pub fn next_deadline_micros(&self) -> Option<u64> {
         match &self.active {
-            ConnectedTxActive::Aggregate(active) => {
-                self.ordinary
-                    .wait_until_micros(active.deadline_micros)
-                    .await;
-            }
-            ConnectedTxActive::Idle | ConnectedTxActive::Ordinary => {
-                self.ordinary.wait_deadline().await;
-            }
+            ConnectedTxActive::Aggregate(active) => Some(active.deadline_micros),
+            ConnectedTxActive::AbortSettling(active) => Some(active.deadline_micros),
+            ConnectedTxActive::Ordinary => self.ordinary.next_deadline_micros(),
+            ConnectedTxActive::Idle => None,
+        }
+    }
+
+    pub async fn wait_deadline(&mut self) {
+        if let Some(deadline) = self.next_deadline_micros() {
+            self.ordinary.wait_until_micros(deadline).await;
         }
     }
 }

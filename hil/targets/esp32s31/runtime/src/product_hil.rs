@@ -11,7 +11,7 @@ use core::{
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_futures::select::{Either, select};
 use embassy_net::{
-    Config as NetworkConfig, ConfigV4, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
+    Config as NetworkConfig, ConfigV4, Ipv4Address, Ipv4Cidr, Stack, StaticConfigV4,
 };
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
@@ -34,11 +34,11 @@ use open_esp_radio::{
 #[cfg(feature = "mac-irq-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31MacIrqObservation;
 use open_esp_radio_esp32s31_embassy_wifi::{
-    ConnectedDisconnectReason, Esp32s31MonitorBasebandFormat, Esp32s31MonitorFrame,
-    Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, Esp32s31RadioConfig, Esp32s31RadioParts,
-    Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, Esp32s31StationLinkState,
-    Esp32s31StationStatus, Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiNetworkRunner,
-    Esp32s31WifiParts, Esp32s31AccessPointStatus,
+    ConnectedDisconnectReason, Esp32s31AccessPointStatus, Esp32s31MonitorBasebandFormat,
+    Esp32s31MonitorFrame, Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, Esp32s31RadioConfig,
+    Esp32s31RadioParts, Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem,
+    Esp32s31StationLinkState, Esp32s31StationStatus, Esp32s31WifiControl, Esp32s31WifiDevice,
+    Esp32s31WifiNetworkRunner, Esp32s31WifiParts, Esp32s31WifiStackResources,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::{
@@ -80,7 +80,7 @@ use open_esp_radio_hil_protocol::{
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
 use open_esp_radio_wifi_embassy::await_stack_boundary;
-use static_cell::ConstStaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::console::publish_station_lifecycle;
 use crate::console::{
@@ -104,11 +104,10 @@ mod traffic;
 ))]
 use traffic::observe_open_radio_core0_task_polls;
 use traffic::{
-    configure_multi_flow_burst_datagrams, observe_open_radio_task_polls,
-    start_connected_traffic, start_traffic_dispatcher,
+    configure_multi_flow_burst_datagrams, observe_open_radio_task_polls, start_connected_traffic,
+    start_traffic_dispatcher,
 };
 
-const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
@@ -372,10 +371,8 @@ pub(in crate::product_hil) struct ObservedTxVector {
 }
 
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
-static STATION_NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> =
-    ConstStaticCell::new(StackResources::new());
-static ACCESS_POINT_NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> =
-    ConstStaticCell::new(StackResources::new());
+static STATION_NETWORK_RESOURCES: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
+static ACCESS_POINT_NETWORK_RESOURCES: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
 static APP_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
 static PRIMARY_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
 static APP_NETWORK_READY: Signal<CriticalSectionRawMutex, ()> = Signal::new();
@@ -1323,9 +1320,6 @@ pub(in crate::product_hil) async fn qualification_sample(
 
 #[embassy_executor::task(pool_size = 2)]
 async fn network_runner_task(runner: Esp32s31WifiNetworkRunner<'static>) {
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
-    let network = runner.run_observed(traffic::network_scheduler::observe);
-    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
     let network = runner.run();
     observe_open_radio_task_polls(
         network,
@@ -1367,7 +1361,7 @@ async fn run_network_composition(spawner: Spawner, start: AppNetworkStart) -> ! 
         spawner,
         start.station_device,
         network_config(start.station_ipv4),
-        STATION_NETWORK_RESOURCES.take(),
+        STATION_NETWORK_RESOURCES.init(Esp32s31WifiStackResources::new()),
         start.seed,
         WifiNetworkInterface::Station,
         start.l1_cache,
@@ -1376,7 +1370,7 @@ async fn run_network_composition(spawner: Spawner, start: AppNetworkStart) -> ! 
         spawner,
         start.access_point_device,
         NetworkConfig::default(),
-        ACCESS_POINT_NETWORK_RESOURCES.take(),
+        ACCESS_POINT_NETWORK_RESOURCES.init(Esp32s31WifiStackResources::new()),
         start.seed ^ (1_u64 << 63),
         WifiNetworkInterface::AccessPoint,
         start.l1_cache,
@@ -1389,7 +1383,7 @@ fn start_network_endpoint(
     spawner: Spawner,
     device: Esp32s31WifiDevice,
     config: NetworkConfig,
-    resources: &'static mut StackResources<NETWORK_SOCKET_COUNT>,
+    resources: &'static mut Esp32s31WifiStackResources,
     seed: u64,
     network_interface: WifiNetworkInterface,
     l1_cache: &'static L1CachePerformanceCounters,
@@ -1543,10 +1537,8 @@ async fn access_point_status_task(mut status: Esp32s31AccessPointStatus) {
             largest = largest.max(window);
         }
         AP_TX_BLOCK_ACK_OPERATIONAL_PEERS.store(peers, Ordering::Release);
-        AP_TX_BLOCK_ACK_SMALLEST_WINDOW.store(
-            if peers == 0 { 0 } else { smallest },
-            Ordering::Release,
-        );
+        AP_TX_BLOCK_ACK_SMALLEST_WINDOW
+            .store(if peers == 0 { 0 } else { smallest }, Ordering::Release);
         AP_TX_BLOCK_ACK_LARGEST_WINDOW.store(largest, Ordering::Release);
     }
 }
@@ -1718,7 +1710,6 @@ async fn report_network(stack: Stack<'static>, network_interface: WifiNetworkInt
     }
 }
 
-
 pub async fn run(
     spawner: Spawner,
     _secondary_core_spawner: SendSpawner,
@@ -1776,46 +1767,16 @@ pub async fn run(
         phy_calibration_artifact,
     } = startup;
     L1_CACHE_COUNTERS_ENABLED.store(l1_cache_counters, Ordering::Relaxed);
-    configure_multi_flow_burst_datagrams(if matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
-    ) {
-        32
-    } else {
-        1
-    });
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
-    open_esp_radio_embassy_net::configure_keyed_egress_schedule_for_diagnostics(!matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaFifoDiagnostic
-    ));
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
-    open_esp_radio_embassy_net::configure_keyed_egress_multi_dispatch_for_diagnostics(
-        !matches!(
+    configure_multi_flow_burst_datagrams(
+        if matches!(
             tx_buffer,
-            open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
-        ),
+            open_esp_radio_hil_protocol::WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
+        ) {
+            32
+        } else {
+            1
+        },
     );
-    open_esp_radio_embassy_net::configure_egress_control_for_diagnostics(!matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
-    ));
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
-    embassy_net::configure_blocked_egress_socket_wake_suppression(!matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaWakeStormControlDiagnostic
-    ));
-    #[cfg(feature = "tx-architecture-probes")]
-    open_esp_radio_embassy_net::configure_tx_staging_copy_probe(matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::PsramStagingCopyDiagnostic
-            | open_esp_radio_hil_protocol::WifiTxBufferPolicy::Core1MaterializationDiagnostic
-    ));
-    #[cfg(feature = "tx-architecture-probes")]
-    open_esp_radio_embassy_net::configure_tx_core1_materializer_probe(matches!(
-        tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::Core1MaterializationDiagnostic
-    ));
     #[cfg(feature = "tx-psram-dma-probe")]
     open_esp_radio_esp32s31_embassy_wifi::configure_direct_psram_tx_dma_probe(matches!(
         tx_buffer,

@@ -32,9 +32,6 @@ open-radio-hil = [
     "dep:open-esp-radio-wifi-embassy",
     "dep:postcard",
     "dep:serde",
-    "embassy-net/tx-egress-metadata",
-    "open-esp-radio-embassy-net/tx-egress-diagnostic-switch",
-    "open-esp-radio-embassy-net/tx-egress-scheduling",
 ]
 driver-observation = [
     "open-esp-radio-esp32s31-embassy-wifi/diagnostics",
@@ -56,15 +53,10 @@ connected-datapath-poll-telemetry = [
 # this image: their compile-time branches and DMA-visible owners measurably
 # change the linked hot-path layout even when runtime-disabled.
 task-residence-telemetry = ["connected-datapath-poll-telemetry"]
-# Same-image home for invasive TX backing/materialization A/B probes. It
-# retains residence timing, but must never be used as the production CPU
-# budget because the alternative implementations are part of this ELF.
+# Same-image home for hardware-address and memory-transfer probes. It retains
+# residence timing, but must never be used as the production CPU budget.
 tx-architecture-probes = [
     "task-residence-telemetry",
-    "open-esp-radio-esp32s31-embassy-wifi/tx-core1-materializer-probe",
-    "open-esp-radio-embassy-net/tx-core1-materializer-probe",
-    "open-esp-radio-esp32s31-embassy-wifi/tx-staging-copy-probe",
-    "open-esp-radio-embassy-net/tx-staging-copy-probe",
     "tx-psram-dma-probe",
     "gdma-mem2mem-probe",
 ]
@@ -93,7 +85,6 @@ core0-rx-cycle-telemetry = [
 core0-rx-coarse-telemetry = [
     "connected-datapath-poll-telemetry",
     "open-esp-radio-esp32s31-embassy-wifi/core0-rx-coarse-telemetry",
-    "open-esp-radio-esp32s31-embassy-wifi/network-scheduler-telemetry",
 ]
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.

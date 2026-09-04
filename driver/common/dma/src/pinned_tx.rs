@@ -365,6 +365,35 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
         (self.index, result)
     }
 
+    /// Writes one frame transactionally and publishes it only on success.
+    ///
+    /// The error branch returns the still-live network lease. Bytes written by
+    /// a failed callback remain private to that lease and can never be
+    /// observed by a radio owner.
+    pub fn try_publish<R, E>(
+        mut self,
+        length: usize,
+        write: impl FnOnce(&mut [u8]) -> Result<R, E>,
+    ) -> Result<(u8, R), (Self, E)> {
+        assert!(length <= FRAME_CAPACITY, "TX frame exceeds slot capacity");
+        // SAFETY: this non-Clone Network lease is the unique SLOT_NETWORK
+        // owner. No radio lease can exist before `publish_ready` below.
+        #[allow(unsafe_code, reason = "network lease uniquely initializes its TX slot")]
+        let storage = unsafe {
+            core::slice::from_raw_parts_mut(
+                self.slot.storage_mut_ptr(),
+                self.slot.storage_capacity(),
+            )
+        };
+        let result = match write(&mut storage[HEADROOM..HEADROOM + length]) {
+            Ok(result) => result,
+            Err(error) => return Err((self, error)),
+        };
+        self.slot.publish_ready(self.index, length);
+        self.live = false;
+        Ok((self.index, result))
+    }
+
     pub fn release(mut self) -> u8 {
         self.slot.claim(
             self.index,
@@ -685,6 +714,21 @@ mod tests {
         assert_eq!(radio.storage_mut()[0], 0);
         StableDmaBacking::prepare_for_dma_read(&mut radio);
         assert_eq!(radio.storage_mut()[0], 0x5a);
+    }
+
+    #[test]
+    fn failed_transactional_writer_never_publishes_the_slot() {
+        let pool = TestPool::new();
+        let lease = pool.claim_network(0);
+        let (lease, error) = lease
+            .try_publish(4, |frame| {
+                frame.copy_from_slice(&[1, 2, 3, 4]);
+                Err::<(), _>(7)
+            })
+            .unwrap_err();
+        assert_eq!(error, 7);
+        assert_eq!(lease.release(), 0);
+        assert_eq!(pool.claim_network(0).release(), 0);
     }
 
     #[test]

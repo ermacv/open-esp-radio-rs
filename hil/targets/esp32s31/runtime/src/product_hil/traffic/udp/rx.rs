@@ -32,7 +32,6 @@ use open_esp_radio_hil_protocol::{
     Transport as HilTransport, TransportEvidence,
 };
 
-use super::UdpSocketBuffers;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
@@ -177,11 +176,15 @@ async fn receive_multi_flow(
     let mut states = multi_rx_flow_states(session_config);
     let mut unknown_packets = 0_u32;
     let started = loop {
-        let (length, sequence, endpoint) = socket
+        let Ok((length, sequence, endpoint)) = socket
             .recv_from_with(|packet, metadata| {
                 (packet.len(), iperf2_udp_sequence(packet), metadata.endpoint)
             })
-            .await;
+            .await
+        else {
+            unknown_packets = unknown_packets.saturating_add(1);
+            continue;
+        };
         match observe_multi_rx_packet(&mut states, endpoint, length, sequence) {
             MultiRxPacket::Data(started) => break started,
             MultiRxPacket::Unknown => unknown_packets = unknown_packets.saturating_add(1),
@@ -197,7 +200,7 @@ async fn receive_multi_flow(
             }),
         )
         .await;
-        let Ok((length, sequence, endpoint)) = received else {
+        let Ok(Ok((length, sequence, endpoint))) = received else {
             break;
         };
         if matches!(
@@ -251,17 +254,10 @@ async fn receive_multi_flow(
 
 pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
     stack: Stack<'a>,
-    buffers: UdpSocketBuffers<'a>,
     config: UdpRxBenchmarkConfig,
     telemetry: UdpRxTelemetry,
 ) -> ! {
-    let mut socket = UdpSocket::new(
-        stack,
-        buffers.rx_metadata,
-        buffers.rx,
-        buffers.tx_metadata,
-        buffers.tx,
-    );
+    let mut socket = UdpSocket::new(stack);
     socket
         .bind(config.local_port)
         .unwrap_or_else(|error| panic!("production UDP RX socket bind failed: {error:?}"));
@@ -296,7 +292,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             .await
             {
                 Either::First(session) => break session,
-                Either::Second(Some(sequence)) if sequence < 0 => {
+                Either::Second(Ok(Some(sequence))) if sequence < 0 => {
                     publish_event_reliably(
                         0,
                         0,
@@ -382,9 +378,12 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                     .payload_bytes,
             );
             let (first_length, first_sequence) = loop {
-                let (length, sequence) = socket
+                let Ok((length, sequence)) = socket
                     .recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet)))
-                    .await;
+                    .await
+                else {
+                    continue;
+                };
                 #[cfg(feature = "rx-delivery-telemetry")]
                 if let Some(sequence) = sequence {
                     rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
@@ -413,7 +412,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 )
                 .await
                 {
-                    Ok((_, Some(value))) if value < 0 => {
+                    Ok(Ok((_, Some(value)))) if value < 0 => {
                         #[cfg(feature = "rx-delivery-telemetry")]
                         rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
                             session.session_id,
@@ -421,7 +420,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                         );
                         terminal_seen = true;
                         #[cfg(feature = "rx-delivery-telemetry")]
-                        while let Ok(Some(sequence)) = with_timeout(
+                        while let Ok(Ok(Some(sequence))) = with_timeout(
                             config.idle_timeout,
                             socket.recv_from_with(|packet, _| iperf2_udp_sequence(packet)),
                         )
@@ -434,7 +433,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                         }
                         break;
                     }
-                    Ok((length, packet_sequence)) => {
+                    Ok(Ok((length, packet_sequence))) => {
                         #[cfg(feature = "rx-delivery-telemetry")]
                         if let Some(sequence) = packet_sequence {
                             rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
@@ -454,7 +453,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                         datagrams = datagrams.saturating_add(1);
                         last_packet = received_at;
                     }
-                    Err(_) => break,
+                    Ok(Err(_)) | Err(_) => break,
                 }
             }
             let elapsed_us = last_packet.duration_since(started).as_micros().max(1);

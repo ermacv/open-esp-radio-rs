@@ -3,37 +3,16 @@ use super::*;
 impl<
     'slot,
     'ampdu,
-    'resources,
-    M,
+    B,
     P,
     E,
     T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
->
-    Esp32s31ConnectedTx<
-        'slot,
-        'ampdu,
-        'resources,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+> Esp32s31ConnectedTx<'slot, 'ampdu, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 where
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
@@ -115,34 +94,14 @@ where
 }
 
 impl<
-    M: RawMutex,
+    B: MaterializedTxFrame,
     P,
     E,
     T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
-> Drop
-    for Esp32s31ConnectedTx<
-        '_,
-        '_,
-        '_,
-        M,
-        P,
-        E,
-        T,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        SLOTS,
-        AMPDU_BUFFER_SIZE,
-        ORDINARY_BUFFER_SIZE,
-    >
+> Drop for Esp32s31ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,

@@ -950,38 +950,18 @@ pub enum WifiTxUdpChecksumPolicy {
     OmitIpv4Diagnostic,
 }
 
-/// Backing selected for one same-image TX ownership-boundary experiment.
+/// TX storage policy selected for a same-image hardware experiment.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WifiTxBufferPolicy {
-    /// Let the network stack format directly into the final DMA-visible slot.
+    /// Queue an owned general-memory packet, select its radio flow, then copy
+    /// it once into the fixed internal-SRAM execution pool.
     #[default]
-    DirectDma,
-    /// Same direct-DMA owner path, but expose ordinary FIFO egress to Xarxa.
-    /// This is a same-ELF control for the resolved-egress scheduler; it is not
-    /// a supported production policy.
-    DirectDmaFifoDiagnostic,
-    /// Keep resolved-egress selection but retain socket-originated network
-    /// wakes while the cooperative runner is already waiting for a physical
-    /// TX credit. This is a same-image control for wake suppression only.
-    DirectDmaWakeStormControlDiagnostic,
-    /// Keep resolved-egress selection and wake suppression, but return from
-    /// Xarxa after every one packet. This is a same-image control for bounded
-    /// multi-packet socket dispatch.
-    DirectDmaSingleDispatchControlDiagnostic,
-    /// Keep the complete keyed direct-SRAM path but disable only the affine
-    /// candidate/grant control plane. This is a same-ELF CPU-cost control.
-    DirectDmaEgressControlDisabledDiagnostic,
-    /// Keep direct DMA backing, but have the HIL producer publish one bounded
+    OwnedSramPromotion,
+    /// Keep owned-packet promotion, but have the HIL producer publish one bounded
     /// destination-homogeneous burst at a time. This isolates packet-selection
     /// order from physical SRAM capacity without changing the radio datapath.
-    DirectDmaEgressBurstDiagnostic,
-    /// Format in ordinary task memory, then copy once into the final DMA slot.
-    /// This measures materialization cost but does not yet add software queues.
-    PsramStagingCopyDiagnostic,
-    /// Keep driver-side peer/TID scheduling, but execute the selected
-    /// PSRAM-to-SRAM batch materialization in the network-core driver poll.
-    Core1MaterializationDiagnostic,
+    OwnedSramPromotionBurstDiagnostic,
     /// Keep Wi-Fi descriptors in internal SRAM but publish PSRAM packet-buffer
     /// addresses after an explicit cache writeback. Hardware support is not
     /// assumed; this value exists only for the bounded DMA-address HIL.

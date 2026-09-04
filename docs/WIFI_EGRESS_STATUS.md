@@ -71,7 +71,20 @@ The first correctness image on the direct-main production branch passes
 placement, source-graph and stack-frame audits. The same three frames return to
 50,432, 17,792 and 8,336 bytes respectively. This is direct evidence that the
 branch separation removed the obsolete scheduling-state cost without changing
-radio ownership or relaxing a gate. STA and AP runtime smoke remain pending.
+radio ownership or relaxing a gate.
+
+Clean correctness HIL completes the Phase 1 runtime baseline:
+
+- `station-reconnect-ht40`, run `1788522354561-00281173`: ten cold boots and
+  all thirty reconnect cycles passed;
+- `access-point-icmp`, exact firmware replay run
+  `1788522571979-00281656`: all AP start/stop, station return and ICMP checks
+  passed.
+
+Runtime painting reported at least 25,500 bytes free on the 192-KiB Core0 task
+stack. Core1 retained 10,128 bytes in station operation and 8,856 bytes after
+the exercised AP lifecycle, above their configured gates. These are lifecycle
+and memory-safety baselines, not throughput claims.
 
 The HIL wire protocol is currently 79. A historical firmware using an older
 protocol cannot be replayed by the current runner merely because its binary

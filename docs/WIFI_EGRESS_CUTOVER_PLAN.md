@@ -46,13 +46,14 @@ Status: the scheduling oracle is frozen and pushed at `0e7cbdf9`. Production
 branch `refactor/wifi-owned-egress` starts directly from `origin/main` at
 `d66b3101` and carries only the canonical documents and independent main test
 correction. Its first correctness image passes source, placement and post-LTO
-stack audits; STA and AP runtime smoke remain pending.
+stack audits. STA reconnect run `1788522354561-00281173` and AP ICMP replay
+`1788522571979-00281656` pass, so the production baseline is established.
 
 - Preserve the old scheduling implementation and its exact dependencies only
   on the remote oracle branches.
 - Run workspace, formatting, Clippy, source-only and direct target checks on
   the direct-main production branch.
-- Run clean STA and AP smoke HIL before the Xarxa migration.
+- Run clean STA and AP smoke HIL before the Xarxa migration. Complete.
 
 Gate:
 

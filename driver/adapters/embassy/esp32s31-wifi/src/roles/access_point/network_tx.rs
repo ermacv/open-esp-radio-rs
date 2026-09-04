@@ -1133,6 +1133,9 @@ where
         >,
         role_key: ApTxFlowKey,
     ) {
+        if !crate::diagnostics::core0_rx_performance::ap_egress_identity_observation_enabled() {
+            return;
+        }
         let Some(network) = network else {
             return;
         };

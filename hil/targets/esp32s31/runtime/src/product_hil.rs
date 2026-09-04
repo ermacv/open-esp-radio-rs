@@ -281,6 +281,9 @@ mod rx_statistics_tests {
         assert!(egress_control_diagnostics_enabled(
             WifiTxBufferPolicy::DirectDma
         ));
+        assert!(egress_control_diagnostics_enabled(
+            WifiTxBufferPolicy::DirectDmaEgressIdentityObservationDisabledDiagnostic
+        ));
     }
 }
 
@@ -1829,6 +1832,11 @@ pub async fn run(
     open_esp_radio_esp32s31_embassy_wifi::configure_ap_terminal_identity_diagnostics(
         egress_control_diagnostics_enabled,
     );
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_esp32s31_embassy_wifi::configure_ap_egress_identity_observation(!matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::DirectDmaEgressIdentityObservationDisabledDiagnostic
+    ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     embassy_net::configure_blocked_egress_socket_wake_suppression(!matches!(
         tx_buffer,

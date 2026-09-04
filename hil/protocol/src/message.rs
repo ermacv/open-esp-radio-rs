@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 78;
+pub const PROTOCOL_VERSION: u16 = 79;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -972,6 +972,10 @@ pub enum WifiTxBufferPolicy {
     /// Keep the complete keyed direct-SRAM path but disable only the affine
     /// lifecycle-demand mirror. This is a same-ELF CPU-cost control.
     DirectDmaEgressControlDisabledDiagnostic,
+    /// Keep the authoritative egress-control path but disable only the
+    /// per-frame AP egress-identity observer. This is a same-ELF Core0
+    /// attribution control and does not change admission or radio metadata.
+    DirectDmaEgressIdentityObservationDisabledDiagnostic,
     /// Keep direct DMA backing, but have the HIL producer publish one bounded
     /// destination-homogeneous burst at a time. This isolates packet-selection
     /// order from physical SRAM capacity without changing the radio datapath.

@@ -13,6 +13,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "tx-phase-telemetry")]
 static AP_TERMINAL_IDENTITY_DIAGNOSTICS_ENABLED: AtomicBool = AtomicBool::new(true);
 
+#[cfg(feature = "tx-phase-telemetry")]
+static AP_EGRESS_IDENTITY_OBSERVATION_ENABLED: AtomicBool = AtomicBool::new(true);
+
 /// Select AP terminal-identity observation for a same-image HIL control.
 ///
 /// This never changes completion, retry or release behavior. It exists only
@@ -27,6 +30,23 @@ pub fn configure_ap_terminal_identity_diagnostics(enabled: bool) {
 #[inline(always)]
 pub(crate) fn ap_terminal_identity_diagnostics_enabled() -> bool {
     AP_TERMINAL_IDENTITY_DIAGNOSTICS_ENABLED.load(Ordering::Acquire)
+}
+
+/// Select the per-frame AP egress-identity observer for a same-image HIL
+/// control.
+///
+/// This observer compares already-retained stack metadata with the AP role
+/// lookup and records telemetry. Disabling it does not remove either the
+/// metadata or the authoritative admission validation.
+#[cfg(feature = "tx-phase-telemetry")]
+pub fn configure_ap_egress_identity_observation(enabled: bool) {
+    AP_EGRESS_IDENTITY_OBSERVATION_ENABLED.store(enabled, Ordering::Release);
+}
+
+#[cfg(feature = "tx-phase-telemetry")]
+#[inline(always)]
+pub(crate) fn ap_egress_identity_observation_enabled() -> bool {
+    AP_EGRESS_IDENTITY_OBSERVATION_ENABLED.load(Ordering::Acquire)
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

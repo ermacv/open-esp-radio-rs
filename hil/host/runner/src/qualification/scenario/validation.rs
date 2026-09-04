@@ -75,6 +75,7 @@ impl Scenario {
                 | WifiTxBufferPolicy::DirectDmaWakeStormControlDiagnostic
                 | WifiTxBufferPolicy::DirectDmaSingleDispatchControlDiagnostic
                 | WifiTxBufferPolicy::DirectDmaEgressControlDisabledDiagnostic
+                | WifiTxBufferPolicy::DirectDmaEgressIdentityObservationDisabledDiagnostic
                 | WifiTxBufferPolicy::DirectDmaEgressBurstDiagnostic
                 | WifiTxBufferPolicy::PsramStagingCopyDiagnostic
                 | WifiTxBufferPolicy::Core1MaterializationDiagnostic

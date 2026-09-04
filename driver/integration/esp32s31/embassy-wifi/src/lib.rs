@@ -134,6 +134,8 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance:
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::configure_ap_terminal_identity_diagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::configure_ap_egress_identity_observation;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::egress::{
     EgressPolicyShadowSnapshot, EgressPolicyVifShadowSnapshot, egress_policy_shadow_snapshot,
 };

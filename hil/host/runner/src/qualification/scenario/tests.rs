@@ -393,6 +393,33 @@ fn l1_cache_counter_control_is_a_same_image_core0_control() {
 }
 
 #[test]
+fn ap_egress_identity_observer_probe_changes_only_the_runtime_observer() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let enabled = catalog
+        .get("diagnostic-ap-saturated-plus-sparse-tx-core0")
+        .unwrap();
+    let disabled = catalog
+        .get("diagnostic-ap-saturated-plus-sparse-tx-egress-identity-observation-disabled-core0")
+        .unwrap();
+
+    assert_eq!(enabled.image, ImageClass::DiagnosticCore0RxCoarse);
+    assert_eq!(enabled.image, disabled.image);
+    assert_eq!(enabled.isolation, disabled.isolation);
+    assert_eq!(enabled.data_plane, disabled.data_plane);
+    assert_eq!(enabled.rx_checksum, disabled.rx_checksum);
+    assert_eq!(enabled.rx_admission, disabled.rx_admission);
+    assert_eq!(enabled.workload, disabled.workload);
+    assert_eq!(enabled.link, disabled.link);
+    assert_eq!(enabled.evidence, disabled.evidence);
+    assert_eq!(enabled.tx_buffer, WifiTxBufferPolicy::DirectDma);
+    assert_eq!(
+        disabled.tx_buffer,
+        WifiTxBufferPolicy::DirectDmaEgressIdentityObservationDisabledDiagnostic
+    );
+}
+
+#[test]
 fn ap_egress_control_l1_probe_is_a_same_image_runtime_control() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();

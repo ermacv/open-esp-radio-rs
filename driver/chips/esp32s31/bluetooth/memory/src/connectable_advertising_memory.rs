@@ -39,7 +39,7 @@ type AdvertisingTxPacketLength =
 type AdvertisingTxPacketInput<'a> =
     BluetoothLeTxPacketPreparedInput<'a, LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 
-/// Why a protocol-validated advertising PDU cannot fit this S31 allocation.
+/// Why an encoded advertising PDU cannot fit this S31 allocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothLegacyConnectableAdvertisingPduFitError {
     /// The complete encoded extent disagrees with the trusted payload length.
@@ -87,8 +87,8 @@ fn allocation_checked_packet(
 pub struct BluetoothLegacyConnectableAdvIndPacketInput<'a>(AdvertisingTxPacketInput<'a>);
 
 impl<'a> BluetoothLegacyConnectableAdvIndPacketInput<'a> {
-    /// Prove only S31 allocation fit; the portable Link Layer owns PDU validity.
-    pub fn from_protocol_validated(
+    /// Check only S31 allocation fit; the caller owns protocol validity.
+    pub fn try_from_encoded_extent(
         pdu: &'a [u8],
         payload_bytes: u8,
     ) -> Result<Self, BluetoothLegacyConnectableAdvertisingPduFitError> {
@@ -101,8 +101,8 @@ impl<'a> BluetoothLegacyConnectableAdvIndPacketInput<'a> {
 pub struct BluetoothLegacyConnectableScanResponsePacketInput<'a>(AdvertisingTxPacketInput<'a>);
 
 impl<'a> BluetoothLegacyConnectableScanResponsePacketInput<'a> {
-    /// Prove only S31 allocation fit; the portable Link Layer owns PDU validity.
-    pub fn from_protocol_validated(
+    /// Check only S31 allocation fit; the caller owns protocol validity.
+    pub fn try_from_encoded_extent(
         pdu: &'a [u8],
         payload_bytes: u8,
     ) -> Result<Self, BluetoothLegacyConnectableAdvertisingPduFitError> {
@@ -126,10 +126,11 @@ impl BluetoothLegacyConnectableAdvertisingOwnAddress {
     }
 }
 
-/// Complete protocol-validated input needed to lower one one-channel event.
+/// Complete allocation-fit input needed to lower one one-channel event.
 ///
-/// This value contains no portable Link Layer owner. Its PDU wrappers prove
-/// only controller-allocation fit and never parse Bluetooth header semantics.
+/// This value contains no portable Link Layer owner. Its PDU wrappers check
+/// only controller-allocation fit and never parse Bluetooth header semantics;
+/// the chip protocol bridge must retain the corresponding validated LL owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothLegacyConnectableAdvertisingMemoryInput<'a> {
     adv_ind: BluetoothLegacyConnectableAdvIndPacketInput<'a>,
@@ -552,9 +553,9 @@ mod tests {
         primary_channel: BluetoothLegacyAdvertisingPrimaryChannel,
     ) -> BluetoothLegacyConnectableAdvertisingMemoryInput<'static> {
         BluetoothLegacyConnectableAdvertisingMemoryInput::new(
-            BluetoothLegacyConnectableAdvIndPacketInput::from_protocol_validated(&ADV_IND_PDU, 9)
+            BluetoothLegacyConnectableAdvIndPacketInput::try_from_encoded_extent(&ADV_IND_PDU, 9)
                 .expect("the portable ADV_IND fits the S31 packet allocation"),
-            BluetoothLegacyConnectableScanResponsePacketInput::from_protocol_validated(
+            BluetoothLegacyConnectableScanResponsePacketInput::try_from_encoded_extent(
                 &SCAN_RESPONSE_PDU,
                 6,
             )
@@ -598,7 +599,7 @@ mod tests {
     fn packet_fit_is_proved_without_interpreting_protocol_headers() {
         let oversized = [0; 40];
         assert_eq!(
-            BluetoothLegacyConnectableAdvIndPacketInput::from_protocol_validated(&oversized, 38),
+            BluetoothLegacyConnectableAdvIndPacketInput::try_from_encoded_extent(&oversized, 38),
             Err(
                 BluetoothLegacyConnectableAdvertisingPduFitError::PayloadExceedsAllocation {
                     payload_bytes: 38,
@@ -607,7 +608,7 @@ mod tests {
             )
         );
         assert_eq!(
-            BluetoothLegacyConnectableScanResponsePacketInput::from_protocol_validated(
+            BluetoothLegacyConnectableScanResponsePacketInput::try_from_encoded_extent(
                 &[0xaa, 0xbb, 0xcc],
                 2,
             ),

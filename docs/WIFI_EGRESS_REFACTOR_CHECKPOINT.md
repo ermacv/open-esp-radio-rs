@@ -1,6 +1,6 @@
 # Wi-Fi egress refactor checkpoint
 
-Status: canonical architecture checkpoint, 2026-09-02. This document defines
+Status: canonical architecture checkpoint, 2026-09-04. This document defines
 the current implementation boundary and the next refactor stages. Older design
 notes remain useful as experimental history, but do not override this status.
 
@@ -43,18 +43,23 @@ compatibility are deletion work, not optimization targets.
 ## Current audited checkpoint
 
 ```text
-open-esp-radio-rs-wifi: 507843866f1b915791e11f2ee8910193178ade1b
-Xarxa:                   616725874b1138bd4969a9b40eb6536ff2119445
-Embassy:                 7bc4dd9d016782b104c502a31aae06531c676387
+open-esp-radio-rs-wifi: 87af12c907f2994d79659d1c2b0ff0b16e3913bf
+Xarxa:                   0cdbfc427a062ba533781ee31fbf75a45dcb679a
+Embassy:                 04dbb95a80145a92f959a3a39a8eb348fd919356
 branch:                  refactor/wifi-interface-egress-scheduler
-workspace:               clean
-application SHA-256:     00deb6297d18675a65fd1130d3e462c056853a00357c393199b90979d650c46d
-runtime ELF SHA-256:     383fbb3ef433b7cc89ee9d8b0dda8ccfd4a3fe5609f1254ab5f340e7837855c0
+source-only audit:       PASS
+application SHA-256:     7de473147ea3eff14dc9253887c106bcdda25cabc2d26117e58643aba86eb695
+runtime ELF SHA-256:     ac4192a031ef92100464887beddc70b57304f7263096341d1f486f13a7b857da
 ```
 
-The HIL bundle records the clean commit, effective lockfile, build tools,
-application, runtime ELF/bin and lab provenance. Rebuilding is source
-reconstructable but bit-reproducibility is intentionally not claimed.
+The source-only audit built the final performance image, checked placement,
+stack frames, the autonomous source graph and forbidden direct vendor-radio
+targets, and passed all workspace tests. The image above has not yet been
+flashed for a new performance run; the recorded HIL measurements later in this
+document remain the behavioral baseline. A new HIL bundle must record the
+clean commit, effective lockfile, build tools, application, runtime ELF/bin and
+lab provenance. Rebuilding is source reconstructable but bit-reproducibility
+is intentionally not claimed.
 
 The earlier exact checkpoint below is retained as historical evidence. It is
 not the current implementation boundary.
@@ -2231,3 +2236,130 @@ latency regression, no aggregation/fairness regression, and no more than 1%
 throughput or one percentage point of task-residence overhead per core in the
 same-image control. These are engineering acceptance gates, not claims that a
 task-residence ratio equals physical CPU saturation.
+
+## 2026-09-04 external-review audit and corrected cutover order
+
+The external reviews were treated as hypotheses and checked against all three
+repositories. They identified four real defects, several useful API cleanup
+items, and one unproven liveness concern. The resulting dependency checkpoints
+are Xarxa `0cdbfc427a062ba533781ee31fbf75a45dcb679a` and Embassy
+`04dbb95a80145a92f959a3a39a8eb348fd919356`.
+
+### Confirmed and fixed
+
+1. **Feature-off Xarxa RAM and code were not zero-cost.** UDP scheduling arrays
+   and intrusive packet metadata existed even without `tx-egress-metadata`.
+   They are now fully feature-gated. On the x86_64 audit target, feature-off
+   sizes returned exactly to the pre-egress baseline: `udp::Socket` 176 bytes,
+   `PacketBuffer` 80 bytes and `PacketMetadata` 24 bytes. The acceptance
+   mechanism is the feature OFF/ON compile matrix; exact host layout numbers
+   are evidence, not portable unit-test constants.
+2. **The UDP index used the wrong cardinality.** Sixteen IP destinations were
+   incorrectly treated as sixteen physical scheduling domains. A seventeenth
+   destination disabled demand publication and could leave authoritative UDP
+   waiting forever even when all destinations mapped to one BSSID/key. New
+   owners now enter one intrusive unclassified list, are resolved by the
+   interface, and move without payload copy into FIFO queues keyed by the
+   driver's opaque `EgressKey`. Seventeen distinct IP destinations mapping to
+   one device key now publish one demand and remain live.
+3. **The interface catalogue capacity was an undocumented S31 constant and
+   could fail silently.** `EgressSchedule` now declares `max_active_keys`,
+   Xarxa has a generated `iface-egress-key-count-*` capacity, and the S31
+   composition selects 16. A schedule larger than compiled storage, or a
+   driver producing more keys than it declared, fails explicitly. Silent
+   omission is no longer possible in Shadow or Authoritative mode.
+4. **Embassy feature-off compilation was broken.** `egress_schedule()` lacked
+   its feature guard. The explicit OFF/ON matrix then exposed a second test-only
+   telemetry guard defect. Both are fixed, and the bridge test now checks every
+   `EgressSchedule` field including `max_active_keys`. An unknown future Xarxa
+   hardware-address variant also fails explicitly instead of bypassing the
+   driver's route-to-key classifier.
+
+The UDP topology tests additionally prove that an unresolved ARP head cannot
+hide a later resolved device key, fifteen interleaved keys form bounded
+contiguous runs, one device key preserves global FIFO across multiple IP
+destinations, and indexed-slot reuse retains ordinary FIFO ownership when
+scheduling is disabled. The relevant Xarxa suites pass with 220 scheduling
+feature tests and 675 default workspace tests. Embassy passes feature-off,
+feature-on and bridge tests. The open-radio adapter passes 26 unit, 33 device
+and three stack tests with scheduling diagnostics enabled.
+
+### Confirmed but deliberately not hidden by a compatibility fallback
+
+`Authoritative` currently covers catalogued UDP only. TCP and raw are still
+labelled `UncataloguedBulk` and use ordinary data admission; therefore the name
+does not yet describe the whole interface. This is a real pre-cutover blocker,
+not evidence that the UDP vertical slice is wrong. It must be resolved by
+adding real providers, not by reserving one generic escape credit or by
+silently redefining Authoritative to mean UDP-only.
+
+TCP needs a transport-work provider, not an artificial ready-packet queue. One
+connected TCP socket already has a stable remote route and canonical stream/
+retransmit storage. Its demand must represent currently emit-able segments and
+control state, retain a catalogue handle, and remain fallible at the existing
+synchronous `dispatch()` emission boundary. In particular, queued bytes which
+are blocked by cwnd or the peer window must not hold a radio grant. Raw sockets
+need the same route/key classification discipline as UDP packet owners before
+their bypass can be removed.
+
+### Useful cleanup, but not current correctness claims
+
+- The demand/grant lifecycle is an optional scheduling capability rather than
+  a fundamental property of every simple Ethernet driver. Splitting it into an
+  explicit typed capability is desirable before API stabilization, but is not
+  required to validate the current fork and should not precede provider
+  correctness.
+- `tx-egress-metadata` no longer describes the feature accurately and should
+  become `egress-scheduling` at the no-compatibility API cutover.
+- `airtime_hundred_nanoseconds` is transported through Xarxa without being
+  consumed there. Terminal airtime belongs to the radio-side record keyed by
+  grant serial unless a stack-side use is demonstrated.
+- `transmit_control()` represents a valid bounded reserve but the API should
+  eventually expose a typed generic admission class rather than encode a
+  hidden DNS/DHCP/ICMP list in a method name.
+- Grant serial, activation and epoch wrap behavior needs a formal no-ABA rule.
+  This is a contract-completion task, not a likely present-time overflow.
+- Mirrored Xarxa/Embassy protocol types remain reasonable because neither
+  generic crate should depend on the other, but every field and enum variant
+  needs conversion/conformance coverage.
+- The suggested wake-suppression failure has not been demonstrated. Current
+  tests prove bounded self-wake versus real credit wait; adversarial RX,
+  socket-close, TCP-window and control-reserve sequences are still required
+  before claiming the wake domain is complete.
+
+### Corrected execution order
+
+1. **Foundation regression gate.** Build the newly pinned dependencies and run
+   clean same-image STA saturated TX plus sparse AP TX. Confirm that the
+   device-key UDP topology and explicit capacity contract preserve BA32,
+   prompt sparse transmission, zero lifecycle errors and the existing CPU/
+   throughput bounds. The boundary-only grant timeline remains diagnostic and
+   must not be interpreted as production load.
+2. **Remove incomplete provider semantics.** Add TCP demand and keyed dispatch,
+   then raw packet-owner classification. Add TCP sparse, TX saturation and
+   bidirectional tests. Delete `UncataloguedBulk` only when no bulk protocol can
+   bypass Authoritative admission. Until then the authoritative mode is an
+   experimental UDP vertical slice and cannot be declared a final cutover.
+3. **Complete terminal radio accounting.** Carry grant identity through the
+   aggregate/retry/BA path, prove whether physical aggregates are serial-
+   homogeneous, and return terminal airtime/rate/retry outcome to Core0 AQL/
+   deficit state. Remove the unused airtime value from the generic stack
+   protocol unless this work demonstrates a stack-side consumer.
+4. **Stabilize the generic API.** Decide the explicit scheduling capability,
+   rename the feature, replace `transmit_control()` with a typed admission
+   class, formalize serial/epoch wrap, and complete cross-crate conformance and
+   adversarial wake tests. There is no legacy compatibility requirement.
+5. **Implement radio policy.** Replace the flat provisional policy with bounded
+   VIF/peer/AC state, weighted airtime DRR, AQL-like outstanding limits,
+   power-save eligibility and a fixed shared SRAM execution horizon.
+6. **Qualification matrix and cleanup.** Run STA/AP/STA+AP, RX/TX/bidirectional,
+   sparse/saturated, multi-peer, mixed-rate, reassociation, power-save and HE20
+   scenarios. Then remove the same-image selector, StackSelected/shadow
+   scaffolding and obsolete telemetry, establish a clean production baseline,
+   and only afterward start the separately measured Core1 optimization phase.
+
+This order changes one earlier priority: provider completeness now precedes
+claiming terminal fairness cutover. It does not invalidate the core topology.
+Selection by opaque device key before final SRAM backing, bounded burst grants,
+fixed radio working-set memory and Core0-owned physical policy remain the
+architecturally correct direction.

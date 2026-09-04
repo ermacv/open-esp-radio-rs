@@ -356,24 +356,9 @@ pub(super) type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     RX_BUFFER_SIZE,
     { RX_BUFFER_SIZE + 4 },
 >;
-type ConnectedLiveTx = Esp32s31ConnectedTx<
-    'static,
-    'static,
-    'static,
-    CriticalSectionRawMutex,
-    open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile,
-    fn() -> u32,
-    open_esp_radio_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_TX_QUEUE_DEPTH,
-    TX_AMPDU_FRAME_COUNT,
-    TX_AMPDU_BUFFER_SIZE,
-    {
+type ConnectedLiveTx = Esp32s31ConnectedTx<'static, 'static, open_esp_radio_esp32s31_wifi_embassy::datapath::PinnedTxFrame<'static, CriticalSectionRawMutex, NETWORK_FRAME_CAPACITY, NETWORK_TX_HEADROOM, NETWORK_TX_TRAILER, NETWORK_TX_QUEUE_DEPTH>, open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile, fn() -> u32, open_esp_radio_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE, {
         open_esp_radio_esp32s31_wifi_embassy::composition::resources::ESP32S31_DEFAULT_TX_BUFFER_SIZE
-    },
->;
+    }>;
 type ConnectedDriverServices = Esp32s31ConnectedDriverServices<
     'static,
     CriticalSectionRawMutex,

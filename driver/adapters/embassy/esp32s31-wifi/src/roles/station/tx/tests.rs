@@ -432,14 +432,17 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let tx = Esp32s31ConnectedTx::<
-        NoopRawMutex,
+        crate::datapath::PinnedTxFrame<
+            '_,
+            NoopRawMutex,
+            TEST_FRAME_CAPACITY,
+            TEST_HEADROOM,
+            TEST_TRAILER,
+            TEST_QUEUE_DEPTH,
+        >,
         _,
         _,
         _,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
         TEST_SLOTS,
         0,
         TEST_BUFFER_SIZE,
@@ -484,14 +487,17 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut tx = Esp32s31ConnectedTx::<
-        NoopRawMutex,
+        crate::datapath::PinnedTxFrame<
+            '_,
+            NoopRawMutex,
+            TEST_FRAME_CAPACITY,
+            TEST_HEADROOM,
+            TEST_TRAILER,
+            TEST_QUEUE_DEPTH,
+        >,
         _,
         _,
         _,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
         TEST_SLOTS,
         0,
         TEST_BUFFER_SIZE,
@@ -542,14 +548,17 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     assert_eq!(aggregate.primary().state(), TxSlotState::Free);
 
     let mut tx = Esp32s31ConnectedTx::<
-        NoopRawMutex,
+        crate::datapath::PinnedTxFrame<
+            '_,
+            NoopRawMutex,
+            TEST_FRAME_CAPACITY,
+            TEST_HEADROOM,
+            TEST_TRAILER,
+            TEST_QUEUE_DEPTH,
+        >,
         _,
         _,
         _,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
         TEST_SLOTS,
         0,
         TEST_BUFFER_SIZE,
@@ -1665,6 +1674,104 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     for _ in 0..TEST_QUEUE_DEPTH {
         drop(network.try_receive_tx_direct().unwrap());
     }
+}
+
+#[test]
+fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
+    use open_esp_radio_dma::PinnedDmaTxPool;
+    use open_esp_radio_research_datapath::PinnedBatchResources;
+    use open_esp_radio_wifi_datapath::ReservedTxBatch;
+
+    type ResearchPool =
+        PinnedDmaTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
+    let pool = ResearchPool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+        ResearchPool::new(),
+    )));
+    let resources = PinnedBatchResources::<TEST_QUEUE_DEPTH>::new();
+    let allocator = resources.bind(pool);
+    let mut batch = allocator
+        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+        .unwrap();
+    for marker in 1..=TEST_QUEUE_DEPTH as u8 {
+        batch
+            .try_write(17, |frame| {
+                frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+                frame[6..12].copy_from_slice(&STATION);
+                frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+                frame[14..].fill(marker);
+                Ok::<_, core::convert::Infallible>(())
+            })
+            .unwrap();
+    }
+    let first = batch.try_take_physical().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut retention = RetainedAmpduDmaStorage::new();
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
+        ordinary,
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            &mut retention,
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &batch),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(batch.pending_frames(), 0);
+    assert_eq!(allocator.free_credits(), 0);
+    // The batch wrapper does not own frames after the radio takes them.
+    drop(batch);
+    assert_eq!(allocator.free_credits(), 0);
+
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE
+            },
+        )),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 2);
+    assert_eq!(allocator.free_credits(), 0);
+
+    hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
+    let status = tx.take_last_aggregate_status().unwrap();
+    assert_eq!(status.result, MacAmpduTxResult::Delivered);
+    assert_eq!(status.original_subframes, 3);
+    assert_eq!(status.aggregate_attempts, 2);
+    assert_eq!(allocator.free_credits(), TEST_QUEUE_DEPTH);
+    let _parts = tx
+        .try_into_teardown_parts()
+        .unwrap_or_else(|_| panic!("completed research TX detaches"));
+    assert_eq!(allocator.free_credits(), TEST_QUEUE_DEPTH);
+    assert!(
+        allocator
+            .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+            .is_some()
+    );
 }
 
 #[test]

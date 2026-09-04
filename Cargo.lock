@@ -2516,6 +2516,7 @@ dependencies = [
  "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
  "open-esp-radio-network",
+ "open-esp-radio-research-datapath",
  "open-esp-radio-wifi-datapath",
  "open-esp-radio-wifi-embassy",
  "open-esp-radio-wifi-softmac",

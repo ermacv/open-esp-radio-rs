@@ -40,8 +40,9 @@ The network boundaries are now separate crates and dependency graphs:
 - `open-esp-radio-embassy-net` implements only owned `PacketBuf` transfer over
   Xarxa `122e97146fc0a174ef3310f4526defc37663bed4` and Embassy
   `244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d`;
-- `open-esp-radio-esp32s31-wifi-embassy` alone owns the fixed internal-SRAM
-  promotion pool and its physical telemetry.
+- `open-esp-radio-esp32s31-wifi-embassy` owns the product's fixed internal-SRAM
+  promotion pool and telemetry; research has its own allocator composition
+  over the same common pinned-DMA ownership primitive.
 
 `tools/check-network-adapter-boundaries.sh` compiles each boundary independently
 and rejects dependency leakage back into the compatibility or owned crates.
@@ -52,7 +53,9 @@ The ESP32-S31 radio adapter now exposes a private, static-dispatch boundary:
 
 - `SoftwareTxFrame` is an independently owned, adapter-neutral Ethernet frame;
 - `MaterializedTxFrame` is the final DMA-stable owner with explicit Ethernet
-  offset and length;
+  geometry and conservative capacity bounds;
+- `PhysicalTxSource` supplies final owners without requiring software Ethernet
+  storage: it adapts the product materializer and research's prepared batch;
 - `SelectedBurstMaterializer` owns synchronous, all-or-none movement between
   those domains.
 
@@ -66,6 +69,12 @@ contract now uses only associated ownership/capability types; its former
 adapter lifetime, mutex and queue/layout parameters have been deleted.
 `SoftwareTxFrame` accepts affine pool leases whose storage lifetime is carried
 by the concrete owner instead of demanding `'static` from every implementation.
+
+The concrete STA TX implementation is now also generic over its physical frame,
+including retained aggregate storage, retry and teardown. A host test transfers
+the real research SRAM owners through STA encode, partial BA, retry and terminal
+release; no software-frame materializer is implemented by the research batch.
+This is a tested buffer seam, not yet an executor-neutral radio runner.
 
 The compatibility endpoint separates payload storage from queue metadata.
 STA/AP RX/TX payload arenas are placed in PSRAM by the product; channels carry
@@ -144,8 +153,10 @@ At the current source checkpoint:
   tests pass;
 - `open-esp-radio-esp32s31-wifi-embassy-compat`: all 3 shared-radio bridge
   tests pass;
-- `open-esp-radio-esp32s31-wifi-embassy`: all 247 unit tests and 5 physical
+- `open-esp-radio-esp32s31-wifi-embassy`: all 248 unit tests and 5 physical
   ownership/materialization boundary tests pass;
+- `open-esp-radio-wifi-datapath`: all 4 queue/ownership tests pass;
+- `open-esp-radio-research-datapath`: all 10 protocol/physical-source tests pass;
 - the same radio crate without the optimized network feature passes 226 host
   unit tests and warning-free all-target clippy;
 - product integration cross-checks for both mutually exclusive network
@@ -186,8 +197,8 @@ They do not prove the performance of the current owned path.
    qualification.
 5. The compatibility product composition has no HIL correctness, resource or
    performance qualification yet.
-6. The research engine and pinned-SRAM batch are not yet composed with a
-   production radio runner or HIL target.
+6. The research pinned-SRAM batch is host-tested with the production STA TX
+   owner, but no complete research radio runner or HIL target exists yet.
 7. Core1 load after cutover is unknown. Moving work away from Core0 is not an
    accepted optimization without total-CPU evidence.
 8. `DatapathTxConsumer` currently calls the owned source through a trait object;
@@ -210,7 +221,8 @@ The research path now has an independent code foundation, but no hardware
 composition or performance claim. `open-esp-radio-wifi-datapath` owns the
 stack/executor-neutral radio key, demand, admission and materialization
 contracts. The previous complete-frame materializer contract has moved out of
-the Embassy adapter without changing STA/AP behavior.
+the Embassy adapter. STA physical consumption now also accepts already-built
+SRAM owners directly; existing product BA/retry/teardown tests still pass.
 
 `open-esp-radio-research-datapath` implements a synchronous, allocation-free
 Ethernet/ARP/IPv4/ICMP/UDP engine. It stores canonical UDP/control work in a
@@ -220,15 +232,23 @@ cover direct UDP construction and checksum validation, synchronous UDP RX,
 ARP reply admission and ICMP echo replies. The crate has no Embassy, Xarxa,
 PAC or executor dependency.
 
-The research crate also binds a whole reserved batch transactionally to the
-real pinned-SRAM ownership primitive. The next gate is its composition with a
-production radio scheduler/encoder in a fused Core0 runner. Until that exists
-and HIL runs, this is architectural code, not evidence of lower CPU use.
+The research crate binds a whole reserved batch transactionally to the real
+pinned-SRAM ownership primitive. Its direct physical-source implementation is
+covered by partial-build/drop tests and by a STA partial-BA/retry test. The
+remaining composition gate is a fused Core0 runner with synchronous radio
+service and external executor waits. Until that exists and HIL runs, this is
+architectural code, not evidence of lower CPU use.
+
+Current UDP enqueue copies caller payload into inline canonical work storage;
+final emission then copies that payload into SRAM. There is no intermediate
+complete Ethernet frame, but application-to-radio one-copy is not implemented.
 
 ## Next decision gates
 
-The immediate gate is correctness and resource qualification of the owned
-one-copy path, not micro-optimization.
+The immediate code gate is extracting synchronous radio service and composing
+the fused research runner. This does not require completing product fairness
+first. Correctness/resource HIL qualification of the owned one-copy path and
+the research composition follows; micro-optimization is not the current gate.
 
 Only after clean single-peer and multi-peer measurements may the project decide
 whether to:
@@ -237,4 +257,4 @@ whether to:
 - add a generic heterogeneous packet-owner API;
 - add a direct-SRAM optimized API;
 - move a research result into the production core;
-- optimize Core1 or fuse the network and radio owners.
+- optimize Core1 or promote a research fused owner into a product integration.

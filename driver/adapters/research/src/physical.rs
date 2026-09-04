@@ -1,13 +1,13 @@
 //! Executor-neutral fixed-SRAM batch composition for the research engine.
 
-use core::pin::Pin;
+use core::{cell::Cell, pin::Pin};
 
 use open_esp_radio_dma::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, DmaIndexReturn, PinnedDmaTxPool,
     PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,
 };
 use open_esp_radio_network::NetworkInterfaceId;
-use open_esp_radio_wifi_datapath::{BatchWriteError, ReservedTxBatch};
+use open_esp_radio_wifi_datapath::{BatchWriteError, PhysicalTxSource, ReservedTxBatch};
 
 /// Static free-credit storage for one fused pinned TX allocator.
 pub struct PinnedBatchResources<const QUEUE_DEPTH: usize> {
@@ -110,8 +110,9 @@ impl<
             free_return: &self.free_return,
             pool: self.pool,
             reserved,
-            prepared: [const { None }; BATCH_CAPACITY],
-            prepared_cursor: 0,
+            prepared: [const { Cell::new(None) }; BATCH_CAPACITY],
+            prepared_cursor: Cell::new(0),
+            prepared_count: Cell::new(0),
         })
     }
 
@@ -165,17 +166,20 @@ pub struct PinnedReservedTxBatch<
     free_return: &'allocator AffineSpscSender<'resources, u8, QUEUE_DEPTH>,
     pool: &'static PinnedDmaTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     reserved: [Option<u8>; BATCH_CAPACITY],
-    prepared: [Option<
-        PinnedResearchTxFrame<
-            'allocator,
-            'resources,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
+    prepared: [Cell<
+        Option<
+            PinnedResearchTxFrame<
+                'allocator,
+                'resources,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                QUEUE_DEPTH,
+            >,
         >,
     >; BATCH_CAPACITY],
-    prepared_cursor: usize,
+    prepared_cursor: Cell<usize>,
+    prepared_count: Cell<usize>,
 }
 
 impl<
@@ -198,11 +202,11 @@ impl<
     >
 {
     pub fn prepared_len(&self) -> usize {
-        self.prepared.iter().filter(|frame| frame.is_some()).count()
+        self.prepared_count.get()
     }
 
     pub fn take_prepared(
-        &mut self,
+        &self,
     ) -> Option<
         PinnedResearchTxFrame<
             'allocator,
@@ -213,10 +217,11 @@ impl<
             QUEUE_DEPTH,
         >,
     > {
-        while self.prepared_cursor < BATCH_CAPACITY {
-            let index = self.prepared_cursor;
-            self.prepared_cursor += 1;
+        while self.prepared_cursor.get() < BATCH_CAPACITY {
+            let index = self.prepared_cursor.get();
+            self.prepared_cursor.set(index + 1);
             if let Some(frame) = self.prepared[index].take() {
+                self.prepared_count.set(self.prepared_count.get() - 1);
                 return Some(frame);
             }
         }
@@ -227,6 +232,43 @@ impl<
         if self.free_return.try_send(index).is_err() {
             unreachable!("a reserved research SRAM credit returns exactly once");
         }
+    }
+}
+
+impl<
+    'allocator,
+    'resources,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const BATCH_CAPACITY: usize,
+> PhysicalTxSource
+    for PinnedReservedTxBatch<
+        'allocator,
+        'resources,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        BATCH_CAPACITY,
+    >
+{
+    type Frame = PinnedResearchTxFrame<
+        'allocator,
+        'resources,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+    >;
+
+    fn pending_frames(&self) -> usize {
+        self.prepared_len()
+    }
+
+    fn try_take_physical(&self) -> Option<Self::Frame> {
+        self.take_prepared()
     }
 }
 
@@ -271,7 +313,7 @@ impl<
                 return Err(BatchWriteError::Write(error));
             }
         };
-        self.prepared[position] = Some(TaggedStableDmaBacking::new(
+        self.prepared[position].set(Some(TaggedStableDmaBacking::new(
             self.interface,
             ReturningStableDmaBacking::new(
                 self.pool.claim_radio(index),
@@ -279,7 +321,10 @@ impl<
                     free: self.free_return,
                 },
             ),
-        ));
+        )));
+        self.prepared_count.set(self.prepared_count.get() + 1);
+        self.prepared_cursor
+            .set(self.prepared_cursor.get().min(position));
         Ok(())
     }
 }
@@ -393,6 +438,48 @@ mod tests {
         assert_eq!(&frame.ethernet()[42..], b"final-sram");
         drop(frame);
         drop(batch);
+        assert_eq!(allocator.free_credits(), 3);
+    }
+
+    #[test]
+    fn physical_source_tracks_partial_build_and_returns_unconsumed_frames() {
+        let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+        let resources = PinnedBatchResources::<3>::new();
+        let allocator = resources.bind(pool);
+        let mut batch = allocator
+            .try_reserve::<3>(NetworkInterfaceId::new(1), 3)
+            .unwrap();
+        assert!(batch.try_take_physical().is_none());
+        batch
+            .try_write(14, |frame| {
+                frame.fill(1);
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        assert_eq!(batch.pending_frames(), 1);
+        let first = batch.try_take_physical().unwrap();
+        assert_eq!(first.ethernet(), &[1; 14]);
+        assert_eq!(batch.pending_frames(), 0);
+        assert!(batch.try_take_physical().is_none());
+        assert_eq!(
+            batch.try_write(14, |_| Err("writer failed")),
+            Err(BatchWriteError::Write("writer failed"))
+        );
+        assert_eq!(batch.pending_frames(), 0);
+        assert_eq!(allocator.free_credits(), 1);
+        batch
+            .try_write(14, |frame| {
+                frame.fill(2);
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        assert_eq!(batch.pending_frames(), 1);
+        // An earlier empty read must not hide newly prepared work. Dropping
+        // the container releases only its unconsumed frame, not `first`.
+        assert_eq!(allocator.free_credits(), 1);
+        drop(batch);
+        assert_eq!(allocator.free_credits(), 2);
+        drop(first);
         assert_eq!(allocator.free_credits(), 3);
     }
 

@@ -6,6 +6,14 @@ only when ownership, liveness, resources and performance are demonstrated.
 Micro-optimization does not block structural cutover unless a regression makes
 the path unusable or obscures correctness.
 
+Current execution order: complete the research radio-owner seam and fused
+runner (4B/8), then capture the comparative HIL baseline (5/7/8), then implement
+and qualify airtime policy (6). Phase numbers identify workstreams, not a
+requirement to finish product fairness before building the research runner.
+Product qualification remains mandatory, but does not gate executor-neutral
+research composition. No CPU/throughput improvement is inferred from code-only
+cutover.
+
 ## Phase 0: architecture and evidence checkpoint — complete
 
 - [x] Audit Embassy driver APIs, Xarxa ownership and the public grant prototype.
@@ -75,13 +83,35 @@ This phase is not performance-qualified until Phase 5.
   shows meaningful cost; otherwise retain the simpler boundary.
 - [x] Make STA, AP and paired services consume the same physical materializer,
   with role-specific peer/lifecycle policy outside it.
+- [x] Remove concrete Embassy pinned-frame/mutex geometry from the STA TX
+  implementation, including retention, retry and teardown resources.
+- [x] Separate `PhysicalTxSource` from complete-frame materialization, so a
+  research SRAM batch enters the real STA encoder without a software-frame
+  wrapper or extra copy.
+- [ ] Separate synchronous radio service from the executor wait adapter.
 
-The completed boundary consists of `SoftwareTxFrame`, `MaterializedTxFrame`
-and `SelectedBurstMaterializer`. Radio services no longer carry an Embassy
+The completed buffer boundary consists of `SoftwareTxFrame`,
+`MaterializedTxFrame`, `PhysicalTxSource` and `SelectedBurstMaterializer`.
+Radio services no longer carry an Embassy
 mutex, queue depth, frame layout or resource lifetime in their trait contract.
 The current owned adapter supplies those details only in its concrete
 implementation. `DatapathNetwork` likewise contains only associated
 capability/owner types; the old adapter geometry parameters have been removed.
+The concrete STA runner still uses Embassy IRQ/time/future integration; an
+executor-neutral synchronous owner turn is the next extraction, not complete.
+
+Next synchronous-service cutover:
+
+1. Turn ordinary and aggregate abort-settle waits into explicit retained
+   states with a next deadline. Never release DMA owners during the settle
+   interval or replace the wait with a busy loop.
+2. Make a bounded service call consume current time and captured events,
+   returning progress and the next deadline; keep executor waiting outside it.
+3. Preserve completion/timeout priority, standby state and teardown safety.
+   Test early/spurious wakes, completion during abort, and terminal release.
+4. Compose research's physical source with that owner in a fused runner;
+   retain shared encoder/BA/retry code instead of creating a research copy.
+5. Add split transport around the same engine only after the fused path works.
 
 ## Phase 5: owned-path HIL qualification
 
@@ -156,6 +186,8 @@ BA, retry or fairness semantics.
   deferred radio-keyed work queue in host-testable code.
 - [x] Bind its `ReservedTxBatch` transactionally to production pinned SRAM
   leases.
+- [x] Feed those physical owners into the existing STA aggregate/BA/retry
+  state machine; host-test partial BA, retained retry and terminal release.
 - [ ] Compose the first fused Core0 runner and radio scheduler/encoder.
 - [ ] Add the same engine in split-core mode using ownership-transferring batch
   SPSC queues.
@@ -168,6 +200,11 @@ BA, retry or fairness semantics.
 The research path has no Xarxa/Embassy compatibility requirement, but all
 memory, generation, control-liveness and radio correctness requirements still
 apply.
+
+Do not conflate direct final-frame construction with zero payload copies:
+current research enqueue copies into inline work storage before final emission.
+Payload-owner handles, caller-filled storage and a fused local free list are
+separate candidates to measure after a functioning runner exists.
 
 ## Phase 9: promotion decisions and optimization
 

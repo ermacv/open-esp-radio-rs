@@ -65,12 +65,15 @@ software queues report durable work
 The protocol is synchronous within an owner turn and batch-oriented across a
 core boundary. It is never a per-packet request/reply RPC.
 
-The code-level boundary has three deliberately small traits:
+The code-level boundary separates complete-frame integration from physical
+radio consumption:
 
 - `SoftwareTxFrame`: affine software ownership plus interface and Ethernet
   view;
-- `MaterializedTxFrame`: stable DMA ownership plus the exact Ethernet geometry
-  used by descriptor/A-MPDU construction;
+- `MaterializedTxFrame`: stable DMA ownership plus exact Ethernet geometry,
+  maximum Ethernet length and guaranteed storage capacity for admission;
+- `PhysicalTxSource`: synchronous transfer of final physical owners, whether
+  already constructed in SRAM or materialized on demand;
 - `SelectedBurstMaterializer`: queue observation, owner removal and
   reserve-before-remove single/batch materialization.
 
@@ -82,6 +85,14 @@ The same crate also defines the research-side `EgressWorkProvider` and
 an already reserved physical batch. `AdmissionClass` is orthogonal to the
 radio peer/TID key, so bounded link-control service does not corrupt airtime or
 aggregation identity.
+
+The STA TX owner itself is parameterized by `MaterializedTxFrame`, not a
+concrete Embassy pinned lease. Its aggregate builder consumes
+`PhysicalTxSource`; the complete-frame materializer supplies that interface
+automatically. Research reserved batches supply it directly without software
+Ethernet objects or a compatibility materialization copy. The STA runtime is
+still housed in the Embassy adapter: this removes its buffer coupling, not
+its remaining asynchronous service/executor coupling.
 
 STA, AP and STA+AP policy are generic over those owners. Adapter mutexes,
 queue dimensions, Xarxa packet types and Embassy runner lifetimes are not part
@@ -227,6 +238,13 @@ the final Ethernet/IP/L4 representation is emitted through a
 `ReservedTxBatch`. This domain code contains no executor, PAC, Xarxa or Embassy
 dependency. Fused and split-core composition are transports around the same
 state machine, not separate network implementations.
+
+The current research enqueue API copies caller bytes into its inline canonical
+work storage, then packet emission copies those payload bytes into final SRAM.
+Thus it removes complete-frame staging, but does not yet provide an
+application-to-radio one-copy or zero-copy API. Independently owned payload
+handles and caller-filled storage remain research alternatives, not claims
+about the current implementation.
 
 The same synchronous state machines must run in fused and split modes. Only the
 transport boundary changes, giving a direct measurement of cross-core cost.

@@ -60,6 +60,14 @@ pub trait SoftwareTxFrame {
 /// contract beside materialization avoids depending on one SRAM-pool lease
 /// type while retaining exact, typed DMA geometry.
 pub trait MaterializedTxFrame: StableDmaBacking {
+    /// Upper bound for the Ethernet length of every owner of this type.
+    /// Radio admission may use this before removing a frame from its source.
+    const MAX_ETHERNET_LENGTH: usize;
+
+    /// Storage bytes guaranteed by every owner of this type. Heterogeneous
+    /// backings must report their smallest capacity, not their largest one.
+    const MIN_STORAGE_CAPACITY: usize;
+
     fn ethernet(&self) -> &[u8];
 
     fn ethernet_offset(&self) -> usize;
@@ -84,6 +92,9 @@ impl<R: DmaIndexReturn, const FRAME_CAPACITY: usize, const HEADROOM: usize, cons
         ReturningStableDmaBacking<PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>, R>,
     >
 {
+    const MAX_ETHERNET_LENGTH: usize = FRAME_CAPACITY;
+    const MIN_STORAGE_CAPACITY: usize = HEADROOM + FRAME_CAPACITY + TRAILER;
+
     fn ethernet(&self) -> &[u8] {
         core::ops::Deref::deref(self).ethernet()
     }
@@ -94,6 +105,33 @@ impl<R: DmaIndexReturn, const FRAME_CAPACITY: usize, const HEADROOM: usize, cons
 
     fn ethernet_length(&self) -> usize {
         core::ops::Deref::deref(self).ethernet_length()
+    }
+}
+
+/// Synchronous source of final physical frame owners for one selected egress.
+///
+/// The source may construct a frame on demand or transfer one already prepared
+/// in SRAM. Radio aggregation must not require a complete software Ethernet
+/// representation. A failed take must preserve pending work, and must never
+/// wait for another core or executor while holding physical credits.
+pub trait PhysicalTxSource {
+    type Frame: MaterializedTxFrame;
+
+    /// Pending frames, including work which still needs a physical credit.
+    fn pending_frames(&self) -> usize;
+
+    fn try_take_physical(&self) -> Option<Self::Frame>;
+}
+
+impl<M: SelectedBurstMaterializer> PhysicalTxSource for M {
+    type Frame = M::PhysicalFrame;
+
+    fn pending_frames(&self) -> usize {
+        self.queue_len()
+    }
+
+    fn try_take_physical(&self) -> Option<Self::Frame> {
+        self.try_materialize_next()
     }
 }
 

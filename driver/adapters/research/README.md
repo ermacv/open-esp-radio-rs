@@ -8,8 +8,9 @@ The current engine is allocation-free and synchronous. It owns bounded
 general-memory UDP/control work, parses Ethernet/ARP/IPv4/ICMP/UDP, reports
 durable `EgressDemand`, and writes only radio-selected work into a caller-owned
 `ReservedTxBatch`. No complete Ethernet-frame staging tier is required for
-normal UDP TX: the canonical payload is copied once while the final frame is
-constructed in its physical destination.
+normal UDP TX. The current enqueue API copies caller bytes into canonical work
+storage; final construction copies that payload into SRAM. This is two payload
+copies from the caller, not an application-to-radio one-copy API.
 
 Current source scope:
 
@@ -19,16 +20,19 @@ Current source scope:
 - ICMP echo reply generation;
 - typed bulk/link-control admission;
 - fixed per-radio-flow queues with exact-owner failure semantics;
+- transactional pinned-SRAM reservation and direct final-frame construction;
+- `PhysicalTxSource` transfer into the shared STA encoder/BA/retry owner,
+  covered by a host regression with partial BlockAck and terminal credit return;
 - no heap, executor, Xarxa, Embassy, PAC or hardware dependency.
 
 Not yet implemented:
 
 - ARP cache and unresolved datagram retention;
 - fragments, IPv6, DHCP or TCP;
-- physical ESP32-S31 SRAM batch composition;
+- a fused ESP32-S31 radio runner/HIL target;
 - split-core batch SPSC transport;
 - airtime scheduling or hardware completion feedback.
 
-The next boundary binds `ReservedTxBatch` to production pinned SRAM leases,
+The next boundary separates synchronous radio service from executor waits,
 then composes the same engine in fused and split-core runners. Hardware claims
 start only after that composition is measured by HIL.

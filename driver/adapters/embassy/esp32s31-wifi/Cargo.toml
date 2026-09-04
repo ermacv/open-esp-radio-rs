@@ -31,6 +31,7 @@ static_cell = "2.1.1"
 log = { version = "0.4", optional = true }
 
 [dev-dependencies]
+open-esp-radio-research-datapath = { path = "../../research" }
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal", features = ["validation-probes"] }

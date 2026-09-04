@@ -365,7 +365,9 @@ where
         match &self.active {
             ConnectedTxActive::Idle => 1,
             ConnectedTxActive::Ordinary => 1,
-            ConnectedTxActive::Aggregate(active) => usize::from(active.original_subframes),
+            ConnectedTxActive::Aggregate(active) | ConnectedTxActive::AbortSettling(active) => {
+                usize::from(active.original_subframes)
+            }
         }
     }
 
@@ -581,7 +583,7 @@ where
     /// storage after every referenced network lease has been released.
     ///
     /// An active or partially detached aggregate is returned intact. Losing
-    /// that value would leak pinned `embassy-net` leases or make DMA lifetime
+    /// that value would leak physical frame owners or make DMA lifetime
     /// unknowable to an outer reconnect owner.
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn try_into_parts(
@@ -687,16 +689,18 @@ where
         })
     }
 
-    pub async fn wait_deadline(&mut self) {
+    pub fn next_deadline_micros(&self) -> Option<u64> {
         match &self.active {
-            ConnectedTxActive::Aggregate(active) => {
-                self.ordinary
-                    .wait_until_micros(active.deadline_micros)
-                    .await;
-            }
-            ConnectedTxActive::Idle | ConnectedTxActive::Ordinary => {
-                self.ordinary.wait_deadline().await;
-            }
+            ConnectedTxActive::Aggregate(active) => Some(active.deadline_micros),
+            ConnectedTxActive::AbortSettling(active) => Some(active.deadline_micros),
+            ConnectedTxActive::Ordinary => self.ordinary.next_deadline_micros(),
+            ConnectedTxActive::Idle => None,
+        }
+    }
+
+    pub async fn wait_deadline(&mut self) {
+        if let Some(deadline) = self.next_deadline_micros() {
+            self.ordinary.wait_until_micros(deadline).await;
         }
     }
 }

@@ -263,6 +263,7 @@ struct AggregateActive<const SLOTS: usize> {
     config: AmpduTxConfig,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
+    /// Next deadline for the enclosing published/abort-settling phase.
     deadline_micros: u64,
     #[cfg(any(feature = "diagnostics", test))]
     first_publication_micros: Option<u64>,
@@ -284,6 +285,7 @@ enum ConnectedTxActive<const SLOTS: usize> {
     Idle,
     Ordinary,
     Aggregate(AggregateActive<SLOTS>),
+    AbortSettling(AggregateActive<SLOTS>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

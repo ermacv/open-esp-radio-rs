@@ -171,6 +171,9 @@ struct Hardware {
     last_he_queue: Option<u8>,
     ordinary_completion: Option<MacTxCompletionObservation>,
     aggregate_completion: Option<MacHtAmpduCompletionObservation>,
+    abort_requests: usize,
+    timeout_detaches: usize,
+    timeout_detach_succeeds: bool,
 }
 
 impl CcmpKeyHardware for Hardware {
@@ -231,6 +234,7 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
     }
 
     fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
+        self.abort_requests += 1;
         true
     }
 
@@ -242,7 +246,16 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
         match reason {
-            MacTxDetachReason::Timeout => MacTxDetachOutcome::Failed,
+            MacTxDetachReason::Timeout => {
+                self.timeout_detaches += 1;
+                if self.timeout_detach_succeeds {
+                    MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
+                        expected_descriptor_head,
+                    )))
+                } else {
+                    MacTxDetachOutcome::Failed
+                }
+            }
             MacTxDetachReason::Collision | MacTxDetachReason::Completed => {
                 MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
                     expected_descriptor_head,
@@ -532,12 +545,12 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     );
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete),
     );
 
@@ -632,12 +645,12 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     );
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -736,12 +749,12 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     }));
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -798,12 +811,12 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b1));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -820,12 +833,12 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
 
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -889,12 +902,12 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.he_publications, 2);
@@ -913,12 +926,12 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -1044,12 +1057,12 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
     );
     hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -1113,12 +1126,12 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     }));
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }
@@ -1167,12 +1180,12 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete),
     );
 }
@@ -1273,12 +1286,12 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 2);
@@ -1286,12 +1299,12 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert!(tx.has_prepared_network_tx());
@@ -1312,12 +1325,12 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(10, 0b111));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 
@@ -1378,12 +1391,12 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b1));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 
@@ -1513,12 +1526,12 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -1528,6 +1541,103 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
         ))
     );
     assert_eq!(tx.ordinary.peek_qos_sequence(0), next_sequence);
+}
+
+#[test]
+fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach() {
+    use open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT;
+
+    for detach_succeeds in [true, false] {
+        let (mut device, network) = make_network();
+        send_frame(&mut device, 1);
+        send_frame(&mut device, 2);
+        let first = network.try_receive_tx_direct().unwrap();
+        let mut hardware = Hardware {
+            timeout_detach_succeeds: detach_succeeds,
+            ..Hardware::default()
+        };
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+        let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+        let mut retention = RetainedAmpduDmaStorage::new();
+        let mut tx = Esp32s31ConnectedTx::new_for_test(
+            ordinary,
+            AggregateTxResources::single(
+                HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+                &mut retention,
+            ),
+            AggregateTxConfig {
+                rate: TxPhyRate::Ht(TEST_RATE),
+                frame_limit: TEST_SLOTS as u8,
+                attempt_limit: 2,
+                completion_timeout_us: 250_000,
+                he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+            },
+        )
+        .unwrap();
+        tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
+        tx.start_network(&mut hardware, first, &network.tx_consumer())
+            .unwrap();
+        let completion_deadline = tx.next_deadline_micros().unwrap();
+        assert_eq!(
+            tx.service(&mut hardware, WifiTxWake::Deadline),
+            Ok(WifiTxProgress::Pending)
+        );
+        assert_eq!(tx.next_deadline_micros(), Some(completion_deadline));
+        assert_eq!(hardware.abort_requests, 0);
+
+        let timeout = WifiTxWake::Interrupt {
+            events: EVENT_TX_TIMEOUT,
+        };
+        let abort_started = tx.ordinary.now_micros();
+        assert_eq!(
+            tx.service(&mut hardware, timeout),
+            Ok(WifiTxProgress::Pending)
+        );
+        let deadline = tx.next_deadline_micros().unwrap();
+        assert_eq!(deadline, abort_started + AMPDU_ABORT_SETTLE_US);
+        assert_eq!(tx.ordinary.now_micros(), abort_started);
+        assert_eq!(tx.active_network_frame_count(), 2);
+        assert_eq!(network.tx_consumer().promotion_capacity(), 1);
+        tx = match tx.try_into_parts() {
+            Err(owner) => owner,
+            Ok(_) => panic!("settling DMA owner must not be handed off"),
+        };
+        hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
+        embassy_futures::block_on(tx.ordinary.wait_until_micros(deadline - 1));
+        for wake in [
+            timeout,
+            WifiTxWake::Deadline,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE,
+            },
+        ] {
+            assert_eq!(tx.service(&mut hardware, wake), Ok(WifiTxProgress::Pending));
+            assert_eq!(tx.next_deadline_micros(), Some(deadline));
+            assert_eq!(network.tx_consumer().promotion_capacity(), 1);
+        }
+        assert_eq!(hardware.abort_requests, 1);
+        assert_eq!(hardware.timeout_detaches, 0);
+        embassy_futures::block_on(tx.wait_deadline());
+        assert_eq!(tx.ordinary.now_micros(), deadline);
+        let result = tx.service(&mut hardware, WifiTxWake::Deadline);
+        assert_eq!(hardware.timeout_detaches, 1);
+        assert_eq!(hardware.ht_publications, 1);
+        if detach_succeeds {
+            assert_eq!(result, Ok(WifiTxProgress::Complete));
+            assert_eq!(
+                tx.take_last_aggregate_status().unwrap().result,
+                MacAmpduTxResult::HardwareTimeout
+            );
+            assert_eq!(network.tx_consumer().promotion_capacity(), TEST_QUEUE_DEPTH);
+            assert!(tx.try_into_parts().is_ok());
+        } else {
+            assert!(result.is_err());
+            assert_eq!(tx.ampdu.active().state(), TxSlotState::ResetRequired);
+            assert!(tx.try_into_parts().is_err());
+            assert_eq!(network.tx_consumer().promotion_capacity(), 1);
+        }
+    }
 }
 
 #[test]
@@ -1571,12 +1681,12 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -1633,12 +1743,12 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 2);
@@ -1647,12 +1757,12 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
 
     hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(
@@ -1737,12 +1847,12 @@ fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 2);
@@ -1750,12 +1860,12 @@ fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
 
     hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     let status = tx.take_last_aggregate_status().unwrap();
@@ -1813,12 +1923,12 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b01));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(tx.take_last_aggregate_status(), None);
@@ -1840,12 +1950,12 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
 
     hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(0, 0));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
     let aggregate = tx

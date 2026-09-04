@@ -459,12 +459,12 @@ fn finish_tx(
 ) {
     hardware.completion = Some(completion(status));
     assert_eq!(
-        embassy_futures::block_on(tx.service(
+        tx.service(
             hardware,
             WifiTxWake::Interrupt {
                 events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
             },
-        )),
+        ),
         Ok(WifiTxProgress::Complete)
     );
 }

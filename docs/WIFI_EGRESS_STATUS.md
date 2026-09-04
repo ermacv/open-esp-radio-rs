@@ -76,6 +76,20 @@ the real research SRAM owners through STA encode, partial BA, retry and terminal
 release; no software-frame materializer is implemented by the research batch.
 This is a tested buffer seam, not yet an executor-neutral radio runner.
 
+Shared ordinary TX and STA aggregate service now execute synchronously.
+Timeout-abort returns `Pending` with retained state and a settle deadline;
+late completion/repeated wakes cannot return credits before detach. Host tests
+also prove that cancelling a polling wait preserves its in-progress ordinary
+transaction. Existing Embassy adapters remain responsible for waiting. AP
+aggregate service still has its own asynchronous settle path and is the next
+state-machine cutover; the fused research runner is not yet implemented.
+
+Each retained TX phase has one actionable deadline. An intermediate layout
+with separate publication/settle deadlines failed the 50 KiB image-frame gate;
+the compact phase representation passes at approximately 33 KiB maximum frame
+in the current performance image. This is a build-time stack observation, not
+runtime stack high-water or CPU evidence. The budget was not increased.
+
 The compatibility endpoint separates payload storage from queue metadata.
 STA/AP RX/TX payload arenas are placed in PSRAM by the product; channels carry
 only unique mutable leases. A frame slot returns to its origin free queue on
@@ -153,10 +167,13 @@ At the current source checkpoint:
   tests pass;
 - `open-esp-radio-esp32s31-wifi-embassy-compat`: all 3 shared-radio bridge
   tests pass;
-- `open-esp-radio-esp32s31-wifi-embassy`: all 248 unit tests and 5 physical
+- `open-esp-radio-esp32s31-wifi-embassy`: all 249 unit tests and 5 physical
   ownership/materialization boundary tests pass;
 - `open-esp-radio-wifi-datapath`: all 4 queue/ownership tests pass;
 - `open-esp-radio-research-datapath`: all 10 protocol/physical-source tests pass;
+- `open-esp-radio-esp32s31-wifi-sta`: all 73 tests pass, including retained
+  timeout service and polling-wait cancellation;
+- `open-esp-radio-esp32s31-wifi-ap`: all 27 tests pass;
 - the same radio crate without the optimized network feature passes 226 host
   unit tests and warning-free all-target clippy;
 - product integration cross-checks for both mutually exclusive network
@@ -236,8 +253,9 @@ The research crate binds a whole reserved batch transactionally to the real
 pinned-SRAM ownership primitive. Its direct physical-source implementation is
 covered by partial-build/drop tests and by a STA partial-BA/retry test. The
 remaining composition gate is a fused Core0 runner with synchronous radio
-service and external executor waits. Until that exists and HIL runs, this is
-architectural code, not evidence of lower CPU use.
+service and external executor waits. Ordinary/STA TX service is now synchronous;
+AP aggregate service and runner composition remain. Until those exist and HIL
+runs, this is architectural code, not evidence of lower CPU use.
 
 Current UDP enqueue copies caller payload into inline canonical work storage;
 final emission then copies that payload into SRAM. There is no intermediate

@@ -60,6 +60,6 @@ where
         hardware: &'a mut H,
         wake: WifiTxWake,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        Esp32s31SingleMpduTx::service(self, hardware, wake)
+        async move { Esp32s31SingleMpduTx::service(self, hardware, wake) }
     }
 }

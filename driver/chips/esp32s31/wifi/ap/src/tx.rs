@@ -394,7 +394,7 @@ where
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
-        Ok(self.ordinary.service(hardware, wake).await?)
+        Ok(self.ordinary.service(hardware, wake)?)
     }
 
     pub fn take_last_outcome(&mut self) -> Option<OrdinaryTxOutcome> {

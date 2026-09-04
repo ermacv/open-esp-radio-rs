@@ -339,7 +339,7 @@ where
         hardware: &'a mut H,
         wake: WifiTxWake,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        Esp32s31ConnectedTx::service(self, hardware, wake)
+        async move { Esp32s31ConnectedTx::service(self, hardware, wake) }
     }
 
     fn has_prepared(&self) -> bool {

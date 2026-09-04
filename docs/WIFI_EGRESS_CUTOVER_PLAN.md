@@ -89,6 +89,12 @@ This phase is not performance-qualified until Phase 5.
   research SRAM batch enters the real STA encoder without a software-frame
   wrapper or extra copy.
 - [ ] Separate synchronous radio service from the executor wait adapter.
+  - [x] Shared ordinary TX: synchronous service and retained abort deadline.
+  - [x] STA A-MPDU: synchronous service, retained abort state and deadline query.
+  - [x] Test early/repeated wakes, late completion, cancelled polling wait and
+    failed-detach quarantine without returning physical credits.
+  - [ ] Apply the same state topology to AP A-MPDU service.
+  - [ ] Compose bounded runner turns with external IRQ/timer waits.
 
 The completed buffer boundary consists of `SoftwareTxFrame`,
 `MaterializedTxFrame`, `PhysicalTxSource` and `SelectedBurstMaterializer`.
@@ -97,18 +103,21 @@ mutex, queue depth, frame layout or resource lifetime in their trait contract.
 The current owned adapter supplies those details only in its concrete
 implementation. `DatapathNetwork` likewise contains only associated
 capability/owner types; the old adapter geometry parameters have been removed.
-The concrete STA runner still uses Embassy IRQ/time/future integration; an
-executor-neutral synchronous owner turn is the next extraction, not complete.
+The concrete runner still uses Embassy IRQ/time/future integration. Ordinary
+and STA aggregate service no longer await; the complete executor-neutral owner
+turn is not yet composed. Timer capabilities still reside in the owner graph.
 
 Next synchronous-service cutover:
 
-1. Turn ordinary and aggregate abort-settle waits into explicit retained
-   states with a next deadline. Never release DMA owners during the settle
-   interval or replace the wait with a busy loop.
-2. Make a bounded service call consume current time and captured events,
-   returning progress and the next deadline; keep executor waiting outside it.
-3. Preserve completion/timeout priority, standby state and teardown safety.
-   Test early/spurious wakes, completion during abort, and terminal release.
+1. Finish AP aggregate abort-settle state extraction; shared ordinary and STA
+   aggregate transitions are complete. Never release DMA owners during the
+   settle interval or replace the wait with a busy loop.
+2. Compose bounded service calls using captured events and a clock, with
+   progress/next-deadline queries; keep executor waiting outside transitions.
+3. Preserve role-specific completion/timeout priority, standby state and
+   teardown safety. Extend the adversarial host tests to AP composition.
+   Keep one actionable deadline per retained phase, and check the final image's
+   stack frames: small owner-layout changes can alter large coroutine frames.
 4. Compose research's physical source with that owner in a fused runner;
    retain shared encoder/BA/retry code instead of creating a research copy.
 5. Add split transport around the same engine only after the fused path works.

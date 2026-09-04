@@ -1043,16 +1043,17 @@ where
         self.ordinary.wait_deadline()
     }
 
+    pub fn next_deadline_micros(&self) -> Option<u64> {
+        self.ordinary.next_deadline_micros()
+    }
+
     /// Consume one IRQ/deadline edge and retain or release DMA ownership.
-    pub async fn service<H: TxHardware>(
+    pub fn service<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
-        self.ordinary
-            .service(hardware, wake)
-            .await
-            .map_err(Into::into)
+        self.ordinary.service(hardware, wake).map_err(Into::into)
     }
 }
 #[cfg(test)]
@@ -1095,6 +1096,8 @@ mod tests {
         publications: u8,
         completion: Option<MacTxCompletionObservation>,
         timeout: bool,
+        abort_requests: usize,
+        timeout_detaches: usize,
         collision: bool,
         legacy: Option<(u8, MacLegacyTxProgram)>,
         cleared_key: Option<u8>,
@@ -1135,6 +1138,7 @@ mod tests {
         }
 
         fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
+            self.abort_requests += 1;
             self.timeout
         }
 
@@ -1149,6 +1153,7 @@ mod tests {
                 MacTxDetachReason::Timeout if !self.timeout => MacTxDetachOutcome::NoEvent,
                 MacTxDetachReason::Collision if !self.collision => MacTxDetachOutcome::NoEvent,
                 MacTxDetachReason::Timeout => {
+                    self.timeout_detaches += 1;
                     self.timeout = false;
                     MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
                         expected_descriptor_head,
@@ -1183,6 +1188,7 @@ mod tests {
     struct TestTimer {
         now: u64,
         settled: u64,
+        pending_wait: bool,
     }
 
     impl WifiTxTimer for TestTimer {
@@ -1191,8 +1197,14 @@ mod tests {
         }
 
         fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-            self.now = deadline_micros;
-            ready(())
+            core::future::poll_fn(move |_| {
+                if self.pending_wait {
+                    core::task::Poll::Pending
+                } else {
+                    self.now = deadline_micros;
+                    core::task::Poll::Ready(())
+                }
+            })
         }
 
         fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
@@ -1296,12 +1308,12 @@ mod tests {
         assert_eq!(hardware.publications, 1);
         hardware.completion = Some(completion(0));
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Complete)
         );
         assert!(matches!(
@@ -1433,12 +1445,12 @@ mod tests {
 
         hardware.completion = Some(completion(5));
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Pending)
         );
         assert_eq!(tx.policy().contention_exponent(LegacyTxQueue::Voice), 3);
@@ -1449,12 +1461,12 @@ mod tests {
 
         hardware.completion = Some(completion(0));
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Complete)
         );
         assert_eq!(tx.policy().contention_exponent(LegacyTxQueue::Voice), 2);
@@ -1510,12 +1522,12 @@ mod tests {
         assert!(tx.active());
         hardware.completion = Some(completion(0));
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Complete)
         );
         assert!(tx.try_into_parts().is_ok());
@@ -1544,12 +1556,12 @@ mod tests {
 
         hardware.completion = Some(completion(0));
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Complete)
         );
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
@@ -1585,12 +1597,12 @@ mod tests {
 
         hardware.completion = Some(completion(0));
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Complete)
         );
         assert!(matches!(
@@ -1625,12 +1637,12 @@ mod tests {
         hardware.completion = Some(completion(5));
 
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Pending)
         );
         assert_eq!(hardware.publications, 2);
@@ -1648,12 +1660,12 @@ mod tests {
         assert_eq!(active.retries.ack_timeouts, 1);
         hardware.completion = Some(completion(0));
         assert_eq!(
-            crate::test_support::block_on(tx.service(
+            tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
                     events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
-            )),
+            ),
             Ok(WifiTxProgress::Complete)
         );
         assert_ne!(
@@ -1674,7 +1686,7 @@ mod tests {
     }
 
     #[test]
-    fn timeout_waits_sixteen_micros_and_terminates_without_republication() {
+    fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() {
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
@@ -1688,10 +1700,41 @@ mod tests {
         };
 
         assert_eq!(
-            crate::test_support::block_on(tx.service(&mut hardware, timeout)),
+            tx.service(&mut hardware, timeout),
+            Ok(WifiTxProgress::Pending)
+        );
+        let deadline = tx.next_deadline_micros().unwrap();
+        assert_eq!(deadline, tx.ordinary.timer.now + 16);
+        assert_eq!(tx.ordinary.timer.settled, 0);
+        assert_eq!(tx.ordinary.slot_state(), TxSlotState::HardwareOwned);
+        assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
+        assert!(tx.ordinary.buffer_mut().is_err());
+        assert_eq!(hardware.abort_requests, 1);
+        assert_eq!(hardware.timeout_detaches, 0);
+        // An interrupt from the aborted exchange must not detach early or
+        // turn the timeout into a successful completion.
+        hardware.completion = Some(completion(0));
+        tx.ordinary.timer.now = deadline - 1;
+        for wake in [
+            timeout,
+            WifiTxWake::Deadline,
+            WifiTxWake::Interrupt {
+                events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+            },
+        ] {
+            assert_eq!(tx.service(&mut hardware, wake), Ok(WifiTxProgress::Pending));
+            assert_eq!(tx.next_deadline_micros(), Some(deadline));
+        }
+        assert_eq!(hardware.abort_requests, 1);
+        assert_eq!(hardware.timeout_detaches, 0);
+        tx.ordinary.timer.now = deadline;
+        assert_eq!(
+            tx.service(&mut hardware, WifiTxWake::Deadline),
             Ok(WifiTxProgress::Complete)
         );
-        assert_eq!(tx.ordinary.timer.settled, 16);
+        assert_eq!(hardware.timeout_detaches, 1);
+        assert_eq!(tx.next_deadline_micros(), None);
+        assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
         assert_eq!(hardware.publications, 1);
         assert_eq!(
             tx.take_last_outcome()
@@ -1701,6 +1744,36 @@ mod tests {
                 .result,
             MacTxResult::HardwareTimeout
         );
+    }
+
+    #[test]
+    fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
+        tx.start(&mut hardware, &ethernet()).unwrap();
+        hardware.timeout = true;
+        tx.ordinary.timer.pending_wait = true;
+        {
+            let mut service = core::pin::pin!(tx.ordinary.service_polling(&mut hardware, 1));
+            let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+            assert!(service.as_mut().poll(&mut context).is_pending());
+        }
+        assert!(tx.ordinary.active());
+        assert_eq!(tx.ordinary.slot_state(), TxSlotState::HardwareOwned);
+        assert_eq!(hardware.abort_requests, 1);
+        assert_eq!(hardware.timeout_detaches, 0);
+        let deadline = tx.next_deadline_micros().unwrap();
+        tx.ordinary.timer.now = deadline;
+        assert_eq!(
+            tx.service(&mut hardware, WifiTxWake::Deadline),
+            Ok(WifiTxProgress::Complete)
+        );
+        assert_eq!(hardware.abort_requests, 1);
+        assert_eq!(hardware.timeout_detaches, 1);
     }
 
     #[test]
@@ -1724,10 +1797,7 @@ mod tests {
             } else {
                 WifiTxProgress::Complete
             };
-            assert_eq!(
-                crate::test_support::block_on(tx.service(&mut hardware, collision)),
-                Ok(expected)
-            );
+            assert_eq!(tx.service(&mut hardware, collision), Ok(expected));
         }
         assert_eq!(
             tx.ordinary.slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1] & 0x08,
@@ -1753,8 +1823,17 @@ mod tests {
             let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
             tx.start(&mut hardware, &ethernet()).unwrap();
 
+            let deadline = tx.next_deadline_micros().unwrap();
+            tx.ordinary.timer.now = deadline - 1;
             assert_eq!(
-                crate::test_support::block_on(tx.service(&mut hardware, WifiTxWake::Deadline)),
+                tx.service(&mut hardware, WifiTxWake::Deadline),
+                Ok(WifiTxProgress::Pending)
+            );
+            assert_eq!(hardware.abort_requests, 0);
+            tx.ordinary.timer.now = deadline;
+
+            assert_eq!(
+                tx.service(&mut hardware, WifiTxWake::Deadline),
                 Err(SingleMpduTxError::RadioResetRequired(
                     TxResetReason::ExecutorDeadline
                 ))

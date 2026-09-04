@@ -1159,7 +1159,6 @@ where
                     Esp32s31StaApStationTxOwnershipError::AlreadyParked,
                 ))?
                 .service(hardware, wake)
-                .await
                 .map_err(Esp32s31StaApStationTxError::Operation)?;
             let retained = self
                 .tx()

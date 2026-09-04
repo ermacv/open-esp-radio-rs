@@ -1224,12 +1224,9 @@ impl BluetoothPeripheralConnectionMemoryGraphRecyclePrepared {
     }
 
     /// Validate and copy every contiguous completed PDU without mutating SRAM.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc extraction failure retains the complete affine graph"
-        )
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc extraction failure retains the complete affine graph"
     )]
     pub fn extract_received(
         self,

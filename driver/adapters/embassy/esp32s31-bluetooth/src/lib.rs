@@ -102,11 +102,11 @@ pub use modem_timer_task::EmbassyBluetoothModemTimerWakers;
 #[cfg(target_arch = "riscv32")]
 pub use modem_timer_task::{EmbassyBluetoothModemTimerDriveStep, EmbassyBluetoothModemTimerDriver};
 
-use core::{
-    future::{Future, poll_fn},
-    task::Poll,
-};
+#[cfg(any(target_arch = "riscv32", test))]
+use core::future::Future;
+use core::{future::poll_fn, task::Poll};
 
+#[cfg(any(target_arch = "riscv32", test))]
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::RawMutex, waitqueue::GenericAtomicWaker};
 #[cfg(test)]

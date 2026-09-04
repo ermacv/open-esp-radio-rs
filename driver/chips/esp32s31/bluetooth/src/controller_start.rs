@@ -244,6 +244,20 @@ pub struct BluetoothPeripheralConnectionSchedulerStartFailure<E> {
     head: crate::BluetoothPeripheralConnectionSchedulerHeadPublished,
 }
 
+/// Recurring connection rejection before the atomic LL/phase commit.
+#[must_use = "the exact recurring merge remains cancellable and retryable"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionRecurringSchedulerStartFailure<E> {
+    Validation {
+        error: crate::BluetoothSchedulerHeadPublicationError,
+        merged: crate::scheduler::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    },
+    Interrupts {
+        error: E,
+        merged: crate::scheduler::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    },
+}
+
 #[cfg(target_arch = "riscv32")]
 impl<E> BluetoothPeripheralConnectionSchedulerStartFailure<E> {
     /// Inspect the stable interrupt-storage rejection.
@@ -1553,6 +1567,88 @@ pub enum BluetoothLePacketStartTimingError {
 pub enum BluetoothPeripheralConnectionCompletionStep {
     SchedulerEpochUnavailable(crate::BluetoothPeripheralConnectionSchedulerRecycled),
     Completed(crate::BluetoothPeripheralConnectionSchedulerCompleted),
+}
+
+/// Production attempt to enter recurring preparation from one exact completion.
+#[must_use = "retain the prepared candidate or the exact retry owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionRecurringCandidateStep {
+    Prepared(crate::BluetoothPeripheralConnectionRecurringEventCandidate),
+    SchedulerEpochUnavailable(BluetoothPeripheralConnectionRecurringRetry),
+    TimingPolicyUnavailable(BluetoothPeripheralConnectionRecurringRetry),
+    Rejected {
+        error: crate::BluetoothPeripheralConnectionRecurringCandidateError,
+        retry: BluetoothPeripheralConnectionRecurringRetry,
+    },
+}
+
+/// Exact completed connection and typed event distance restored before admission.
+#[must_use = "retry recurrence or retain the exact completed connection"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothPeripheralConnectionRecurringRetry {
+    completed: crate::BluetoothPeripheralConnectionSchedulerCompleted,
+    delta: open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionRecurringRetry {
+    fn new(
+        completed: crate::BluetoothPeripheralConnectionSchedulerCompleted,
+        delta: open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+    ) -> Self {
+        Self { completed, delta }
+    }
+
+    fn from_cancelled(
+        cancelled: (
+            crate::BluetoothPeripheralConnectionSchedulerCompleted,
+            open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+        ),
+    ) -> Self {
+        let (completed, delta) = cancelled;
+        Self::new(completed, delta)
+    }
+
+    pub const fn completed(&self) -> &crate::BluetoothPeripheralConnectionSchedulerCompleted {
+        &self.completed
+    }
+
+    pub const fn delta(
+        &self,
+    ) -> open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta {
+        self.delta
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        crate::BluetoothPeripheralConnectionSchedulerCompleted,
+        open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+    ) {
+        (self.completed, self.delta)
+    }
+}
+
+/// Result after a fresh sequence sample closes recurring preparation.
+#[must_use = "retain the task service and prepared or retryable recurring owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothPeripheralConnectionRecurringSequenceCompletion<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    Prepared {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        merged: crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    },
+    EventRejected {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        failure: crate::BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    },
+    EmptyListRejected {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        failure: crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    },
 }
 
 /// Why an affine post-enable controller-time acquisition did not start.
@@ -4222,6 +4318,48 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    /// Apply this fresh sequence sample to one reserved connection recurrence.
+    pub fn finish_peripheral_connection_recurring_event(
+        self,
+        admitted: crate::BluetoothPeripheralConnectionRecurringPreSequence,
+    ) -> BluetoothPeripheralConnectionRecurringSequenceCompletion<'runtime, S, SCHEDULER_CAPACITY>
+    {
+        let Self {
+            mut controller,
+            sample,
+            ..
+        } = self;
+        let prepared = match controller
+            .runtime
+            .prepare_peripheral_connection_recurring_event(
+                admitted,
+                crate::scheduler::BluetoothPeripheralConnectionSequenceObservation { sample },
+            ) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                return BluetoothPeripheralConnectionRecurringSequenceCompletion::EventRejected {
+                    task: controller,
+                    failure,
+                };
+            }
+        };
+        match controller
+            .runtime
+            .prepare_peripheral_connection_recurring_empty_list_merge(prepared)
+        {
+            Ok(merged) => BluetoothPeripheralConnectionRecurringSequenceCompletion::Prepared {
+                task: controller,
+                merged,
+            },
+            Err(failure) => {
+                BluetoothPeripheralConnectionRecurringSequenceCompletion::EmptyListRejected {
+                    task: controller,
+                    failure,
+                }
+            }
+        }
+    }
+
     /// Begin the source-ordered first legacy-advertising transaction.
     #[expect(
         clippy::result_large_err,
@@ -4741,6 +4879,127 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 completed,
             ) => BluetoothPeripheralConnectionCompletionStep::Completed(completed),
         }
+    }
+
+    /// Build one provisional recurrence from the real completed connection owner.
+    ///
+    /// The default runtime remains fail-closed because neither main-XTAL
+    /// selection nor PHY initialization proves a worst-case local SCA. A board
+    /// may opt in through its connection runtime config with an explicit ppm
+    /// bound; that same config explicitly selects the reviewed software-WW path.
+    pub fn prepare_peripheral_connection_recurring_candidate(
+        &mut self,
+        completed: crate::BluetoothPeripheralConnectionSchedulerCompleted,
+        delta: open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
+    ) -> BluetoothPeripheralConnectionRecurringCandidateStep {
+        let Some(epoch) = *self.scheduler_epoch else {
+            return BluetoothPeripheralConnectionRecurringCandidateStep::SchedulerEpochUnavailable(
+                BluetoothPeripheralConnectionRecurringRetry::new(completed, delta),
+            );
+        };
+        let Some(timing_policy) = self
+            .peripheral_connection_resources
+            .config()
+            .recurring_timing_policy()
+        else {
+            return BluetoothPeripheralConnectionRecurringCandidateStep::TimingPolicyUnavailable(
+                BluetoothPeripheralConnectionRecurringRetry::new(completed, delta),
+            );
+        };
+        match completed.prepare_recurring_event_candidate(
+            delta,
+            epoch,
+            self.runtime.scheduler_config(),
+            timing_policy,
+        ) {
+            Ok(candidate) => {
+                BluetoothPeripheralConnectionRecurringCandidateStep::Prepared(candidate)
+            }
+            Err(failure) => {
+                let error = failure.error();
+                let (completed, delta) = failure.into_retry_parts();
+                let retry = BluetoothPeripheralConnectionRecurringRetry::new(completed, delta);
+                BluetoothPeripheralConnectionRecurringCandidateStep::Rejected { error, retry }
+            }
+        }
+    }
+
+    /// Reserve one provisional recurrence before acquiring its sequence sample.
+    #[allow(
+        clippy::result_large_err,
+        reason = "timeline rejection retains the complete recurring candidate"
+    )]
+    pub fn admit_peripheral_connection_recurring_candidate(
+        &mut self,
+        candidate: crate::BluetoothPeripheralConnectionRecurringEventCandidate,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionRecurringPreSequence,
+        crate::BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    > {
+        self.runtime
+            .admit_peripheral_connection_recurring_event(candidate)
+    }
+
+    /// Cancel one candidate which owns no scheduler reservation yet.
+    pub fn cancel_peripheral_connection_recurring_candidate(
+        &mut self,
+        candidate: crate::BluetoothPeripheralConnectionRecurringEventCandidate,
+    ) -> BluetoothPeripheralConnectionRecurringRetry {
+        BluetoothPeripheralConnectionRecurringRetry::from_cancelled(candidate.cancel())
+    }
+
+    /// Release a recurring reservation before sequence authorization.
+    pub fn cancel_peripheral_connection_recurring_pre_sequence(
+        &mut self,
+        admitted: crate::BluetoothPeripheralConnectionRecurringPreSequence,
+    ) -> BluetoothPeripheralConnectionRecurringRetry {
+        let cancelled = self
+            .runtime
+            .cancel_peripheral_connection_recurring_pre_sequence(admitted);
+        BluetoothPeripheralConnectionRecurringRetry::from_cancelled(cancelled)
+    }
+
+    /// Release a sequence-authorized recurring event and its timeline slot.
+    pub fn cancel_peripheral_connection_recurring_event(
+        &mut self,
+        prepared: crate::BluetoothPeripheralConnectionRecurringEventPrepared,
+    ) -> BluetoothPeripheralConnectionRecurringRetry {
+        let cancelled = self
+            .runtime
+            .cancel_peripheral_connection_recurring_event(prepared);
+        BluetoothPeripheralConnectionRecurringRetry::from_cancelled(cancelled)
+    }
+
+    /// Retry the infallible detach plus empty-list identity merge.
+    #[allow(
+        clippy::result_large_err,
+        reason = "list rejection retains the complete recurring event and reservation"
+    )]
+    pub fn prepare_peripheral_connection_recurring_empty_list_merge(
+        &mut self,
+        prepared: crate::BluetoothPeripheralConnectionRecurringEventPrepared,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    > {
+        self.runtime
+            .prepare_peripheral_connection_recurring_empty_list_merge(prepared)
+    }
+
+    /// Undo an unpublished empty-list merge while preserving its reservation.
+    #[allow(
+        clippy::result_large_err,
+        reason = "identity mismatch retains the complete recurring merge"
+    )]
+    pub fn cancel_peripheral_connection_recurring_empty_list_merge(
+        &mut self,
+        merged: crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionRecurringEventPrepared,
+        crate::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    > {
+        self.runtime
+            .cancel_peripheral_connection_recurring_empty_list_merge(merged)
     }
 
     /// Move this exact task service into its initialized scheduler epoch.

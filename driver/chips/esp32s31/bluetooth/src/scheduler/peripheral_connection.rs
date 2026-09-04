@@ -4,7 +4,76 @@
 //! The parent scheduler retains protocol-neutral timeline, list-epoch and MMIO
 //! publication primitives.
 
-use super::*;
+#[cfg(target_arch = "riscv32")]
+mod recurring;
+#[cfg(all(test, not(target_arch = "riscv32")))]
+#[path = "peripheral_connection/recurring/transaction.rs"]
+mod recurring_transaction_tests;
+#[cfg(target_arch = "riscv32")]
+pub use recurring::{
+    BluetoothPeripheralConnectionRecurringCandidateError,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionRecurringEventCandidate,
+    BluetoothPeripheralConnectionRecurringEventPreparationError,
+    BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    BluetoothPeripheralConnectionRecurringEventPrepared,
+    BluetoothPeripheralConnectionRecurringPreSequence,
+};
+
+use super::BluetoothSchedulerEmptyListMergeError;
+#[cfg(target_arch = "riscv32")]
+use super::{
+    BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState,
+    BluetoothSchedulerHeadPublicationError,
+};
+
+use crate::BluetoothControllerPoweredTaskRuntime;
+#[cfg(target_arch = "riscv32")]
+use crate::BluetoothSchedulerWakeBatch;
+#[cfg(target_arch = "riscv32")]
+use crate::peripheral_connection::{
+    BluetoothPeripheralConnectionCompletedEvent,
+    BluetoothPeripheralConnectionCompletionClassification,
+    BluetoothPeripheralConnectionFirstEventCompletionObservation,
+    BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    BluetoothPeripheralConnectionFirstEventRunning,
+    BluetoothPeripheralConnectionFirstEventRxPublished,
+    BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::peripheral_connection::{
+    BluetoothPeripheralConnectionFirstEventCandidate,
+    BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
+    BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::scheduler_timeline::{
+    BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerWindowReservation,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::{
+    BluetoothControllerTimeSample, BluetoothSchedulerReservationError,
+    BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
+    BluetoothSchedulerTimingPolicy,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothLeRxError, BluetoothPeripheralConnectionMemoryGraphRecycleError,
+    BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+};
+use open_esp_radio_esp32s31_hal::{
+    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListHeadRetirementObservation,
+    BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
+    BluetoothSchedulerSoftwareListRemovalReady,
+};
 
 /// Fresh initial-admission sample sealed by the controller-time worker.
 #[cfg(any(target_arch = "riscv32", test))]

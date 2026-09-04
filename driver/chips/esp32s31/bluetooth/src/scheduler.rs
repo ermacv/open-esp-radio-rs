@@ -48,6 +48,17 @@ pub use peripheral_connection::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use peripheral_connection::{
+    BluetoothPeripheralConnectionRecurringCandidateError,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionRecurringEventCandidate,
+    BluetoothPeripheralConnectionRecurringEventPreparationError,
+    BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    BluetoothPeripheralConnectionRecurringEventPrepared,
+    BluetoothPeripheralConnectionRecurringPreSequence,
+};
+#[cfg(target_arch = "riscv32")]
+pub use peripheral_connection::{
     BluetoothPeripheralConnectionSchedulerCompleted,
     BluetoothPeripheralConnectionSchedulerCompletionObserved,
     BluetoothPeripheralConnectionSchedulerCompletionObservedDrainStep,
@@ -80,22 +91,6 @@ use crate::legacy_advertising::{
     BluetoothLegacyAdvertisingRunningEventCompletionObservation,
 };
 #[cfg(target_arch = "riscv32")]
-use crate::peripheral_connection::{
-    BluetoothPeripheralConnectionCompletedEvent,
-    BluetoothPeripheralConnectionCompletionClassification,
-    BluetoothPeripheralConnectionFirstEventCompletionObservation,
-    BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    BluetoothPeripheralConnectionFirstEventRunning,
-    BluetoothPeripheralConnectionFirstEventRxPublished,
-    BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
-};
-#[cfg(any(target_arch = "riscv32", test))]
-use crate::peripheral_connection::{
-    BluetoothPeripheralConnectionFirstEventCandidate,
-    BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
-    BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
-};
-#[cfg(target_arch = "riscv32")]
 use crate::scheduler_timeline::BluetoothSchedulerRecurringReserved;
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
@@ -122,8 +117,6 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPassiveScanMemoryGraphCompletionObserved, BluetoothPassiveScanMemoryGraphRecycleError,
     BluetoothPassiveScanMemoryGraphRecycled, BluetoothPassiveScanMemoryGraphRunning,
     BluetoothPassiveScanSchedulerItemCompletionStatus,
-    BluetoothPeripheralConnectionMemoryGraphRecycleError,
-    BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{

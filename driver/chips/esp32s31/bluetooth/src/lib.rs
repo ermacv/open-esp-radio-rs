@@ -220,6 +220,10 @@ pub use controller_start::{
     BluetoothPeripheralConnectionControllerPreparationStep,
     BluetoothPeripheralConnectionControllerPreparationTerminal,
     BluetoothPeripheralConnectionPostUnlinkArmStep,
+    BluetoothPeripheralConnectionRecurringCandidateStep,
+    BluetoothPeripheralConnectionRecurringRetry,
+    BluetoothPeripheralConnectionRecurringSchedulerStartFailure,
+    BluetoothPeripheralConnectionRecurringSequenceCompletion,
     BluetoothPeripheralConnectionSchedulerStartFailure,
     BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
@@ -505,6 +509,8 @@ pub use passive_scanning_runner::{
 pub use passive_scanning_timing::BluetoothPassiveScanEventPhase;
 #[cfg(target_arch = "riscv32")]
 pub use peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use peripheral_connection::BluetoothPeripheralConnectionRecurringTimingError;
 pub use peripheral_connection::{
     BluetoothLe1MPacketStartTiming, BluetoothPeripheralConnectionFirstEventPrepared,
     BluetoothPeripheralConnectionRuntimeAllocation, BluetoothPeripheralConnectionRuntimeBeginError,
@@ -574,6 +580,14 @@ pub use scheduler::{
     BluetoothPassiveScanSchedulerSoftwareListRemovalRecheck,
     BluetoothPassiveScanSchedulerSoftwareListUnlinkStep,
     BluetoothPassiveScanSchedulerSoftwareListUnlinked,
+    BluetoothPeripheralConnectionRecurringCandidateError,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    BluetoothPeripheralConnectionRecurringEventCandidate,
+    BluetoothPeripheralConnectionRecurringEventPreparationError,
+    BluetoothPeripheralConnectionRecurringEventPreparationFailure,
+    BluetoothPeripheralConnectionRecurringEventPrepared,
+    BluetoothPeripheralConnectionRecurringPreSequence,
     BluetoothPeripheralConnectionSchedulerCompleted,
     BluetoothPeripheralConnectionSchedulerHardwareHeadEmptyObserved,
     BluetoothPeripheralConnectionSchedulerHardwareHeadRetirementStep,

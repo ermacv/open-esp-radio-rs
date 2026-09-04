@@ -54,20 +54,31 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::BluetoothSchedulerFinishedHardwareListObserved;
 
-#[cfg(target_arch = "riscv32")]
-pub(crate) use completion::{
-    BluetoothPeripheralConnectionCompletedEvent,
-    BluetoothPeripheralConnectionCompletionClassification,
-    BluetoothPeripheralConnectionFirstEventCompletionObservation,
-    BluetoothPeripheralConnectionFirstEventCompletionObserved,
-    BluetoothPeripheralConnectionRecycledEvent,
-};
-
 use crate::BluetoothSchedulerInstant;
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothSchedulerRawWindow,
     BluetoothSchedulerSoftwareConfig,
+};
+#[cfg(target_arch = "riscv32")]
+pub(crate) use completion::{
+    BluetoothPeripheralConnectionCompletedEvent,
+    BluetoothPeripheralConnectionCompletedEventRecurringParts,
+    BluetoothPeripheralConnectionCompletedEventRecurringRemainder,
+    BluetoothPeripheralConnectionCompletionClassification,
+    BluetoothPeripheralConnectionFirstEventCompletionObservation,
+    BluetoothPeripheralConnectionFirstEventCompletionObserved,
+    BluetoothPeripheralConnectionRecycledEvent,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use recurring::BluetoothPeripheralConnectionRecurringPhase;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use recurring::BluetoothPeripheralConnectionRecurringTimingError;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use recurring::{
+    BluetoothPeripheralConnectionLocalSleepClockAccuracy,
+    BluetoothPeripheralConnectionRecurringTimingPolicy,
+    BluetoothPeripheralConnectionWindowWideningMode,
 };
 
 // Source-owned S31 first-event policy. The 5,154-us LE 1M reservation is
@@ -166,7 +177,7 @@ pub(crate) struct BluetoothPeripheralConnectionFirstWindow {
 }
 
 impl BluetoothPeripheralConnectionFirstWindow {
-    #[cfg(test)]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn anchor(self) -> BluetoothSchedulerInstant {
         self.anchor
     }
@@ -203,6 +214,8 @@ impl BluetoothPeripheralConnectionFirstWindow {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPeripheralConnectionRuntimeConfig {
     default_tx_power_dbm: BluetoothPeripheralConnectionDefaultTxPowerDbm,
+    #[cfg(any(target_arch = "riscv32", test))]
+    recurring_timing_policy: Option<BluetoothPeripheralConnectionRecurringTimingPolicy>,
 }
 
 impl BluetoothPeripheralConnectionRuntimeConfig {
@@ -210,12 +223,47 @@ impl BluetoothPeripheralConnectionRuntimeConfig {
     pub const fn new(default_tx_power_dbm: BluetoothPeripheralConnectionDefaultTxPowerDbm) -> Self {
         Self {
             default_tx_power_dbm,
+            #[cfg(any(target_arch = "riscv32", test))]
+            recurring_timing_policy: None,
         }
+    }
+
+    /// Opt in to the reviewed software window-widening profile.
+    ///
+    /// The caller must own the physical worst-case accuracy of the selected
+    /// local sleep clock. The ordinary constructor deliberately leaves
+    /// recurrence unavailable rather than inferring accuracy from the clock
+    /// source or selecting a vendor mode without authority.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub const fn with_software_recurring_timing(
+        mut self,
+        local_sleep_clock_accuracy_ppm: u16,
+    ) -> Option<Self> {
+        let Some(local_sleep_clock_accuracy) =
+            BluetoothPeripheralConnectionLocalSleepClockAccuracy::new(
+                local_sleep_clock_accuracy_ppm,
+            )
+        else {
+            return None;
+        };
+        self.recurring_timing_policy =
+            Some(BluetoothPeripheralConnectionRecurringTimingPolicy::new(
+                Some(local_sleep_clock_accuracy),
+                BluetoothPeripheralConnectionWindowWideningMode::SoftwareZeroAccumulatedUncertainty,
+            ));
+        Some(self)
     }
 
     /// Physical default power used for every first-event descriptor.
     pub const fn default_tx_power_dbm(self) -> BluetoothPeripheralConnectionDefaultTxPowerDbm {
         self.default_tx_power_dbm
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn recurring_timing_policy(
+        self,
+    ) -> Option<BluetoothPeripheralConnectionRecurringTimingPolicy> {
+        self.recurring_timing_policy
     }
 }
 
@@ -900,6 +948,9 @@ impl BluetoothPeripheralConnectionFirstEventPublicationRemainder {
         graph: BluetoothPeripheralConnectionMemoryGraphRxPublished,
     ) -> BluetoothPeripheralConnectionFirstEventRxPublished {
         BluetoothPeripheralConnectionFirstEventRxPublished {
+            recurring_phase: BluetoothPeripheralConnectionRecurringPhase::from_nominal_anchor(
+                self.first_window.anchor(),
+            ),
             graph,
             event: self.event,
             first_window: self.first_window,
@@ -918,6 +969,7 @@ pub(crate) struct BluetoothPeripheralConnectionFirstEventRxPublished {
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -938,6 +990,7 @@ impl BluetoothPeripheralConnectionFirstEventRxPublished {
             _first_window: self.first_window,
             _requested_window: self.requested_window,
             _resolved_window: self.resolved_window,
+            recurring_phase: self.recurring_phase,
         }
     }
 }
@@ -951,6 +1004,7 @@ pub(crate) struct BluetoothPeripheralConnectionFirstEventRunning {
     _first_window: BluetoothPeripheralConnectionFirstWindow,
     _requested_window: BluetoothSchedulerRawWindow,
     _resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -975,6 +1029,7 @@ impl BluetoothPeripheralConnectionFirstEventRunning {
             _first_window,
             _requested_window,
             _resolved_window,
+            recurring_phase,
         } = self;
         match graph.observe_completion(observed) {
             BluetoothPeripheralConnectionMemoryGraphCompletionObservation::ListMismatch {
@@ -987,6 +1042,7 @@ impl BluetoothPeripheralConnectionFirstEventRunning {
                     _first_window,
                     _requested_window,
                     _resolved_window,
+                    recurring_phase,
                 },
                 observed,
             },
@@ -997,6 +1053,7 @@ impl BluetoothPeripheralConnectionFirstEventRunning {
                     _first_window,
                     _requested_window,
                     _resolved_window,
+                    recurring_phase,
                 })
             }
             BluetoothPeripheralConnectionMemoryGraphCompletionObservation::CompletionObserved(
@@ -1008,6 +1065,7 @@ impl BluetoothPeripheralConnectionFirstEventRunning {
                     _first_window,
                     _requested_window,
                     _resolved_window,
+                    recurring_phase,
                 ),
             ),
         }

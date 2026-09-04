@@ -7,6 +7,7 @@ use open_esp_radio_bluetooth_ll::connection::LePeripheralConnectionEventPeerActi
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_bluetooth_ll::connection::{
     LePeripheralConnectionEventCompleted, LePeripheralConnectionEventInFlight,
+    LePeripheralConnectionEventPrepared,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -18,6 +19,7 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothPeripheralConnectionMemoryGraphRecycleError,
     BluetoothPeripheralConnectionMemoryGraphRecyclePrepared,
     BluetoothPeripheralConnectionMemoryGraphRxExtracted,
+    BluetoothPeripheralConnectionMemoryGraphRxPublished,
     BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
 };
 #[cfg(target_arch = "riscv32")]
@@ -28,8 +30,9 @@ use open_esp_radio_esp32s31_hal::{
 
 #[cfg(target_arch = "riscv32")]
 use super::{
-    BluetoothPeripheralConnectionFirstEventRunning, BluetoothPeripheralConnectionFirstWindow,
-    BluetoothPeripheralConnectionPacketStartTiming,
+    BluetoothPeripheralConnectionFirstEventRunning,
+    BluetoothPeripheralConnectionFirstEventRxPublished, BluetoothPeripheralConnectionFirstWindow,
+    BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecurringPhase,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::BluetoothSchedulerRawWindow;
@@ -53,6 +56,7 @@ pub(crate) struct BluetoothPeripheralConnectionFirstEventCompletionObserved {
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -63,6 +67,7 @@ impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
         first_window: BluetoothPeripheralConnectionFirstWindow,
         requested_window: BluetoothSchedulerRawWindow,
         resolved_window: BluetoothSchedulerRawWindow,
+        recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
     ) -> Self {
         Self {
             graph,
@@ -70,6 +75,7 @@ impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
             first_window,
             requested_window,
             resolved_window,
+            recurring_phase,
         }
     }
 
@@ -104,6 +110,7 @@ impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
             first_window,
             requested_window,
             resolved_window,
+            recurring_phase,
         } = self;
         match graph.prepare_recycle_after_software_list_removal(removal) {
             Ok(graph) => Ok(BluetoothPeripheralConnectionCompletionRecyclePrepared {
@@ -112,6 +119,7 @@ impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
                 first_window,
                 requested_window,
                 resolved_window,
+                recurring_phase,
             }),
             Err(failure) => {
                 let error = failure.error();
@@ -124,6 +132,7 @@ impl BluetoothPeripheralConnectionFirstEventCompletionObserved {
                         first_window,
                         requested_window,
                         resolved_window,
+                        recurring_phase,
                     },
                     removal,
                 })
@@ -141,6 +150,7 @@ pub(crate) struct BluetoothPeripheralConnectionCompletionRecyclePrepared {
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -159,6 +169,7 @@ impl BluetoothPeripheralConnectionCompletionRecyclePrepared {
                 first_window: self.first_window,
                 requested_window: self.requested_window,
                 resolved_window: self.resolved_window,
+                recurring_phase: self.recurring_phase,
             },
             removal,
         )
@@ -180,6 +191,7 @@ impl BluetoothPeripheralConnectionCompletionRecyclePrepared {
             first_window,
             requested_window,
             resolved_window,
+            recurring_phase,
         } = self;
         match graph.extract_received() {
             Ok(graph) => Ok(BluetoothPeripheralConnectionCompletionRxExtracted {
@@ -188,6 +200,7 @@ impl BluetoothPeripheralConnectionCompletionRecyclePrepared {
                 first_window,
                 requested_window,
                 resolved_window,
+                recurring_phase,
             }),
             Err(failure) => Err(BluetoothPeripheralConnectionCompletionRxExtractionFailure {
                 error: failure.error(),
@@ -197,6 +210,7 @@ impl BluetoothPeripheralConnectionCompletionRecyclePrepared {
                     first_window,
                     requested_window,
                     resolved_window,
+                    recurring_phase,
                 },
             }),
         }
@@ -256,6 +270,7 @@ pub(crate) struct BluetoothPeripheralConnectionCompletionRxExtracted {
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -267,6 +282,7 @@ impl BluetoothPeripheralConnectionCompletionRxExtracted {
             first_window: self.first_window,
             requested_window: self.requested_window,
             resolved_window: self.resolved_window,
+            recurring_phase: self.recurring_phase,
         }
     }
 
@@ -281,6 +297,7 @@ impl BluetoothPeripheralConnectionCompletionRxExtracted {
             first_window: self.first_window,
             requested_window: self.requested_window,
             resolved_window: self.resolved_window,
+            recurring_phase: self.recurring_phase,
         }
     }
 }
@@ -288,10 +305,6 @@ impl BluetoothPeripheralConnectionCompletionRxExtracted {
 /// CPU-owned active connection after event-local SRAM reclamation.
 #[cfg(target_arch = "riscv32")]
 #[must_use = "the active connection must classify completion before LL advance"]
-#[allow(
-    dead_code,
-    reason = "the next recurring-event transition consumes the preserved active graph and phase"
-)]
 pub(crate) struct BluetoothPeripheralConnectionRecycledEvent {
     graph: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
     event: LePeripheralConnectionEventInFlight,
@@ -301,6 +314,7 @@ pub(crate) struct BluetoothPeripheralConnectionRecycledEvent {
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -343,10 +357,6 @@ pub(crate) enum BluetoothPeripheralConnectionCompletionClassification {
 /// Closed portable event retaining every reclaimed S31 connection resource.
 #[cfg(target_arch = "riscv32")]
 #[must_use = "the completed connection owner must enter recurrence or teardown"]
-#[allow(
-    dead_code,
-    reason = "recurrence consumes the retained active graph and scheduling phase in the next edge"
-)]
 pub(crate) struct BluetoothPeripheralConnectionCompletedEvent {
     graph: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
     event: LePeripheralConnectionEventCompleted,
@@ -356,6 +366,57 @@ pub(crate) struct BluetoothPeripheralConnectionCompletedEvent {
     first_window: BluetoothPeripheralConnectionFirstWindow,
     requested_window: BluetoothSchedulerRawWindow,
     resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
+}
+
+/// Opaque observations retained while recurrence provisionally owns the active
+/// memory graph and portable completion.
+///
+/// Keeping this remainder in the completion module makes it impossible for the
+/// recurring preparation path to reconstruct only a subset of the completed
+/// event after cancellation.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothPeripheralConnectionCompletedEventRecurringRemainder {
+    batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+    status: BluetoothPeripheralConnectionSchedulerItemCompletionStatus,
+    packet_start: Option<BluetoothPeripheralConnectionPacketStartTiming>,
+    first_window: BluetoothPeripheralConnectionFirstWindow,
+    requested_window: BluetoothSchedulerRawWindow,
+    resolved_window: BluetoothSchedulerRawWindow,
+    recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
+}
+
+/// Closed-event components temporarily held by one combined recurrence owner.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothPeripheralConnectionCompletedEventRecurringParts {
+    pub(crate) graph: BluetoothPeripheralConnectionMemoryGraphActiveCpuOwned,
+    pub(crate) event: LePeripheralConnectionEventCompleted,
+    pub(crate) remainder: BluetoothPeripheralConnectionCompletedEventRecurringRemainder,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothPeripheralConnectionCompletedEventRecurringRemainder {
+    pub(crate) const fn packet_start(
+        &self,
+    ) -> Option<&BluetoothPeripheralConnectionPacketStartTiming> {
+        self.packet_start.as_ref()
+    }
+
+    pub(crate) fn join_recurring_rx_publication(
+        self,
+        graph: BluetoothPeripheralConnectionMemoryGraphRxPublished,
+        event: LePeripheralConnectionEventPrepared,
+        recurring_phase: BluetoothPeripheralConnectionRecurringPhase,
+    ) -> BluetoothPeripheralConnectionFirstEventRxPublished {
+        BluetoothPeripheralConnectionFirstEventRxPublished {
+            graph,
+            event,
+            first_window: self.first_window,
+            requested_window: self.requested_window,
+            resolved_window: self.resolved_window,
+            recurring_phase,
+        }
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -381,6 +442,61 @@ impl BluetoothPeripheralConnectionCompletedEvent {
     ) -> Option<&BluetoothPeripheralConnectionPacketStartTiming> {
         self.packet_start.as_ref()
     }
+
+    /// Nominal phase committed by the event which just completed.
+    pub(crate) const fn recurring_phase(&self) -> BluetoothPeripheralConnectionRecurringPhase {
+        self.recurring_phase
+    }
+
+    /// Split only for the combined recurring preparation transaction.
+    pub(crate) fn into_recurring_parts(
+        self,
+    ) -> BluetoothPeripheralConnectionCompletedEventRecurringParts {
+        BluetoothPeripheralConnectionCompletedEventRecurringParts {
+            graph: self.graph,
+            event: self.event,
+            remainder: BluetoothPeripheralConnectionCompletedEventRecurringRemainder {
+                batch: self.batch,
+                status: self.status,
+                packet_start: self.packet_start,
+                first_window: self.first_window,
+                requested_window: self.requested_window,
+                resolved_window: self.resolved_window,
+                recurring_phase: self.recurring_phase,
+            },
+        }
+    }
+
+    /// Rejoin the exact components returned by [`Self::into_recurring_parts`].
+    pub(crate) fn from_recurring_parts(
+        parts: BluetoothPeripheralConnectionCompletedEventRecurringParts,
+    ) -> Self {
+        let BluetoothPeripheralConnectionCompletedEventRecurringParts {
+            graph,
+            event,
+            remainder,
+        } = parts;
+        let BluetoothPeripheralConnectionCompletedEventRecurringRemainder {
+            batch,
+            status,
+            packet_start,
+            first_window,
+            requested_window,
+            resolved_window,
+            recurring_phase,
+        } = remainder;
+        Self {
+            graph,
+            event,
+            batch,
+            status,
+            packet_start,
+            first_window,
+            requested_window,
+            resolved_window,
+            recurring_phase,
+        }
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -399,6 +515,7 @@ impl BluetoothPeripheralConnectionRecycledEvent {
             first_window: self.first_window,
             requested_window: self.requested_window,
             resolved_window: self.resolved_window,
+            recurring_phase: self.recurring_phase,
         }
     }
 

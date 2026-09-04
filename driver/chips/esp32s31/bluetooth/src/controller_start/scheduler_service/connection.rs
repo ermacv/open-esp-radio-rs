@@ -3,6 +3,7 @@
 use super::super::{
     BluetoothControllerPublishedTaskService, BluetoothPeripheralConnectionPostUnlinkArmStep,
     BluetoothPeripheralConnectionPostUnlinkRearm, BluetoothPeripheralConnectionPostUnlinkTake,
+    BluetoothPeripheralConnectionRecurringSchedulerStartFailure,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalJoin,
     BluetoothPeripheralConnectionSchedulerSoftwareListRemovalRecheck,
     BluetoothPeripheralConnectionSchedulerStartFailure,
@@ -15,6 +16,65 @@ use crate::dtm_post_unlink::BluetoothDtmPostUnlinkArmError;
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Validate and run one recurring event through a single commit/publication edge.
+    ///
+    /// Common-list/head validation and stable interrupt preparation are the
+    /// only fallible operations. The LL successor and proposed phase commit
+    /// together only after both succeed; RX/head/event/RUN then publish as one
+    /// infallible suffix.
+    #[allow(
+        clippy::result_large_err,
+        reason = "every pre-commit rejection returns the complete recurring merge"
+    )]
+    pub fn start_peripheral_connection_recurring_scheduler(
+        &mut self,
+        merged: crate::scheduler::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    ) -> Result<
+        crate::BluetoothPeripheralConnectionSchedulerRunning,
+        BluetoothPeripheralConnectionRecurringSchedulerStartFailure<S::Error>,
+    >
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let validated = match self
+            .runtime
+            .validate_peripheral_connection_recurring_scheduler(merged)
+        {
+            Ok(validated) => validated,
+            Err(failure) => {
+                return Err(
+                    BluetoothPeripheralConnectionRecurringSchedulerStartFailure::Validation {
+                        error: failure.error(),
+                        merged: failure.into_merged(),
+                    },
+                );
+            }
+        };
+        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
+            Ok(interrupts) => interrupts,
+            Err(error) => {
+                return Err(
+                    BluetoothPeripheralConnectionRecurringSchedulerStartFailure::Interrupts {
+                        error,
+                        merged: validated.into_merged(),
+                    },
+                );
+            }
+        };
+        let committed = validated.commit(interrupts);
+        let (head, interrupts) = self
+            .runtime
+            .publish_peripheral_connection_recurring_scheduler_head(committed);
+        let address = head.scheduler_item_address();
+        let (event, publication, reservation) = head.into_parts();
+        let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
+        Ok(crate::BluetoothPeripheralConnectionSchedulerRunning::new(
+            event,
+            run,
+            reservation,
+        ))
+    }
+
     /// Admit one RX/head-published connection event through the common RUN suffix.
     #[allow(
         clippy::result_large_err,

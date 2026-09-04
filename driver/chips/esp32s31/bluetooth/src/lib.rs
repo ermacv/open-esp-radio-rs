@@ -172,6 +172,18 @@ pub use common_phy_state::{
 #[cfg(target_arch = "riscv32")]
 pub use controller_hal::BluetoothControllerHalInitialized;
 #[cfg(target_arch = "riscv32")]
+pub use controller_start::peripheral_connection::{
+    BluetoothPeripheralConnectionCompletionStep,
+    BluetoothPeripheralConnectionControllerPreparationError,
+    BluetoothPeripheralConnectionControllerPreparationOutcome,
+    BluetoothPeripheralConnectionControllerPreparationPending,
+    BluetoothPeripheralConnectionControllerPreparationStep,
+    BluetoothPeripheralConnectionControllerPreparationTerminal,
+    BluetoothPeripheralConnectionRecurringCandidateStep,
+    BluetoothPeripheralConnectionRecurringRetry,
+    BluetoothPeripheralConnectionRecurringSequenceCompletion,
+};
+#[cfg(target_arch = "riscv32")]
 pub use controller_start::{
     BluetoothAlwaysAwakePostEnableTimeBeginError, BluetoothAlwaysAwakePostEnableTimeBeginFailure,
     BluetoothAlwaysAwakePostEnableTimeError, BluetoothAlwaysAwakePostEnableTimeFailure,
@@ -213,17 +225,8 @@ pub use controller_start::{
     BluetoothPassiveScanControllerPreparationTerminal, BluetoothPassiveScanPostUnlinkArmStep,
     BluetoothPassiveScanSchedulerStartFailure,
     BluetoothPassiveScanSoftwareListRemovalPublishedStep,
-    BluetoothPeripheralConnectionCompletionStep,
-    BluetoothPeripheralConnectionControllerPreparationError,
-    BluetoothPeripheralConnectionControllerPreparationOutcome,
-    BluetoothPeripheralConnectionControllerPreparationPending,
-    BluetoothPeripheralConnectionControllerPreparationStep,
-    BluetoothPeripheralConnectionControllerPreparationTerminal,
     BluetoothPeripheralConnectionPostUnlinkArmStep,
-    BluetoothPeripheralConnectionRecurringCandidateStep,
-    BluetoothPeripheralConnectionRecurringRetry,
     BluetoothPeripheralConnectionRecurringSchedulerStartFailure,
-    BluetoothPeripheralConnectionRecurringSequenceCompletion,
     BluetoothPeripheralConnectionSchedulerStartFailure,
     BluetoothPeripheralConnectionSoftwareListRemovalPublishedStep,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,

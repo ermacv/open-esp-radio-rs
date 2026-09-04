@@ -27,6 +27,7 @@ use super::{
     BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError,
     BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity,
     BluetoothLegacyConnectableAdvertisingMemoryGraphStorage,
+    BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
     BluetoothLegacyConnectableAdvertisingSchedulerSpan, LEGACY_ADVERTISING_TX_PACKET_BYTES,
 };
 
@@ -259,6 +260,27 @@ impl SchedulerItemStorage {
         self.words[SCHEDULER_ITEM_CONTROL].set(words.word_4c);
     }
 
+    fn completion_status(
+        &self,
+    ) -> Option<BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus> {
+        match self.words[SCHEDULER_ITEM_WORD_38].get() {
+            u32::MAX => None,
+            0 => Some(BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero),
+            _ => Some(BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero),
+        }
+    }
+
+    #[cfg(test)]
+    fn model_controller_completion(
+        &self,
+        status: BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    ) {
+        self.words[SCHEDULER_ITEM_WORD_38].set(match status {
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero => 0,
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero => 1,
+        });
+    }
+
     fn retains_graph(
         &self,
         context: BluetoothControllerSramLinkAddress,
@@ -435,6 +457,20 @@ impl BluetoothLegacyConnectableAdvertisingGraphStorage {
         snapshot: BluetoothLegacyConnectableAdvertisingSoftwareLinkSnapshot,
     ) {
         self.scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT].set(snapshot.0);
+    }
+
+    pub(super) fn completion_status(
+        &self,
+    ) -> Option<BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus> {
+        self.scheduler_item.completion_status()
+    }
+
+    #[cfg(test)]
+    pub(super) fn model_controller_completion(
+        &self,
+        status: BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    ) {
+        self.scheduler_item.model_controller_completion(status);
     }
 
     pub(super) fn adv_ind_pdu(&self, length: AdvertisingTxPacketLength) -> &[u8] {

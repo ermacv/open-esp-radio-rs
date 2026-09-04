@@ -15,12 +15,14 @@ use core::{marker::PhantomPinned, pin::Pin};
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothMemoryListSelector, BluetoothRxMemoryListPublished,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerSoftwareListRemovalReady,
 };
 use pin_project::pin_project;
 
 use crate::{
+    BLUETOOTH_NON_SCANNING_RX_NODE_COUNT, BluetoothLeReceivedBatch, BluetoothLeRxError,
     BluetoothLegacyAdvertisingPrimaryChannel, BluetoothNonScanningRxMemoryCpuOwned,
     BluetoothNonScanningRxMemoryIdentity,
     le_tx_packet::{
@@ -943,6 +945,326 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.prepared.binding.scheduler_item_address()
     }
+
+    /// Consume one fenced finished-list observation and inspect the sole item.
+    pub fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation {
+        if observed.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            return BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::ListMismatch {
+                running: self,
+                observed,
+            };
+        }
+        let Some(status) = self
+            .prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .completion_status()
+        else {
+            return BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::StillInFlight(self);
+        };
+        BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved {
+                running: self,
+                status,
+            },
+        )
+    }
+
+    #[cfg(test)]
+    fn model_controller_completion(
+        &self,
+        status: BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    ) {
+        self.prepared
+            .storage
+            .as_ref()
+            .get_ref()
+            .graph
+            .model_controller_completion(status);
+    }
+}
+
+/// Opaque category of one non-sentinel connectable-advertising item status.
+///
+/// Zero versus nonzero remains diagnostic and does not classify an RX PDU or
+/// authorize portable `CONNECT_IND` admission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus {
+    Zero,
+    NonZero,
+}
+
+/// One bounded observation of the hardware-owned response-capable graph.
+#[must_use = "the graph and any unrelated finished-list proof remain owned"]
+pub enum BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation {
+    ListMismatch {
+        running: BluetoothLegacyConnectableAdvertisingMemoryGraphRunning,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothLegacyConnectableAdvertisingMemoryGraphRunning),
+    CompletionObserved(BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved),
+}
+
+/// Hardware-owned graph after its sole item produced a non-sentinel status.
+#[must_use = "the completed graph must pass exact scheduler removal before CPU access"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved {
+    running: BluetoothLegacyConnectableAdvertisingMemoryGraphRunning,
+    status: BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved {
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.running.scheduler_item_address()
+    }
+
+    pub const fn status(
+        &self,
+    ) -> BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus {
+        self.status
+    }
+
+    /// Bind the exact post-unlink removal proof before reading or resetting SRAM.
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc mismatch returns both exact affine owners"
+        )
+    )]
+    pub fn prepare_recycle_after_software_list_removal(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleFailure,
+    > {
+        let error = if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleError::HardwareListMismatch)
+        } else if removal.completed_head().address() != Some(self.scheduler_item_address()) {
+            Some(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleError::SchedulerItemMismatch,
+            )
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(
+                BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleFailure {
+                    completed: self,
+                    removal,
+                    error,
+                },
+            );
+        }
+        Ok(
+            BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared {
+                completed: self,
+                removal,
+            },
+        )
+    }
+}
+
+/// Why completed-graph recycle authorization did not match this event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleError {
+    HardwareListMismatch,
+    SchedulerItemMismatch,
+}
+
+/// Lossless recycle rejection retaining the completed graph and removal proof.
+#[must_use = "the completed graph and removal proof remain hardware-owned"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleFailure {
+    completed: BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+    error: BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleError,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleFailure {
+    pub const fn error(&self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleError {
+        self.error
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Completed graph authorized for bounded, copy-only RX extraction.
+#[must_use = "the receive result must be extracted or returned unchanged"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared {
+    completed: BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared {
+    /// Recover both unchanged owners before RX extraction starts.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+
+    /// Copy every contiguous completed PDU without mutating either graph.
+    #[cfg_attr(
+        target_pointer_width = "64",
+        expect(
+            clippy::result_large_err,
+            reason = "the no-alloc extraction failure retains the complete affine graph"
+        )
+    )]
+    pub fn extract_received(
+        self,
+    ) -> Result<
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtracted,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtractionFailure,
+    > {
+        let batch = match self
+            .completed
+            .running
+            .prepared
+            .pool
+            .extract_completed_rx_batch()
+        {
+            Ok(batch) => batch,
+            Err(error) => {
+                return Err(
+                    BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtractionFailure {
+                        prepared: self,
+                        error,
+                    },
+                );
+            }
+        };
+        Ok(
+            BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtracted {
+                prepared: self,
+                batch,
+            },
+        )
+    }
+}
+
+/// Malformed completed RX storage retaining the unchanged recycle owner.
+#[must_use = "the unchanged graph remains unavailable until fail-stop handling"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtractionFailure {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared,
+    error: BluetoothLeRxError,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtractionFailure {
+    pub const fn error(&self) -> BluetoothLeRxError {
+        self.error
+    }
+
+    pub fn into_prepared(self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared {
+        self.prepared
+    }
+}
+
+impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtractionFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtractionFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Copied RX batch paired with the sole reclaimable response-capable graph.
+#[must_use = "commit reclamation before reusing either pinned allocation"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtracted {
+    prepared: BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared,
+    batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRxExtracted {
+    pub const fn batch(&self) -> BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT> {
+        self.batch
+    }
+
+    /// Recover the unchanged recycle transaction before reclamation commits.
+    #[doc(hidden)]
+    pub fn into_prepared(self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared {
+        self.prepared
+    }
+
+    /// Rearm both RX nodes, restore the graph, and return ordinary CPU owners.
+    pub fn commit(self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphRecyclePrepared {
+            completed,
+            removal: _,
+        } = self.prepared;
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObserved { running, status } =
+            completed;
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
+            prepared,
+            _rx_publication: _,
+        } = running;
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
+            storage,
+            binding,
+            mut pool,
+            adv_ind_length: _,
+            scan_response_length: _,
+            primary_channel: _,
+            scheduler_span: _,
+        } = prepared;
+        let mut owner =
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned { storage, binding };
+        owner.reinitialize_graph();
+        pool.reinitialize_after_event();
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
+            owner,
+            pool,
+            batch: self.batch,
+            status,
+        }
+    }
+}
+
+/// Reclaimed graph, rearmed RX pool, copied batch, and opaque scheduler status.
+#[must_use = "return both memory owners and the event result to the role layer"]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
+    owner: BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
+    pool: BluetoothNonScanningRxMemoryCpuOwned,
+    batch: BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+    status: BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+}
+
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphRecycled {
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
+        BluetoothNonScanningRxMemoryCpuOwned,
+        BluetoothLeReceivedBatch<BLUETOOTH_NON_SCANNING_RX_NODE_COUNT>,
+        BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus,
+    ) {
+        (self.owner, self.pool, self.batch, self.status)
+    }
 }
 
 /// Why the complete response-capable graph could not be prepared.
@@ -1067,6 +1389,10 @@ impl Default for BluetoothLegacyConnectableAdvertisingMemoryGraphStorage {
 mod tests {
     use super::*;
     use crate::{BluetoothNonScanningRxMemoryModelAddress, BluetoothNonScanningRxMemoryStorage};
+    use open_esp_radio_esp32s31_hal::{
+        BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+        BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    };
 
     const ADVERTISER: [u8; 6] = [1, 2, 3, 4, 5, 6];
     const ADV_IND_PDU: [u8; 11] = [0x60, 9, 1, 2, 3, 4, 5, 6, 2, 1, 6];
@@ -1106,6 +1432,73 @@ mod tests {
             BluetoothLegacyConnectableAdvertisingOwnAddress::Random(ADVERTISER),
             primary_channel,
         )
+    }
+
+    fn running(
+        graph_base: u32,
+        pool_base: u32,
+    ) -> (
+        BluetoothLegacyConnectableAdvertisingMemoryGraphRunning,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity,
+        BluetoothNonScanningRxMemoryIdentity,
+    ) {
+        let owner = owner(graph_base);
+        let graph_identity = owner.identity();
+        let pool = pool(pool_base);
+        let pool_identity = pool.identity();
+        let receive_head = pool.head();
+        let published = owner
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel37),
+                pool,
+                0,
+            )
+            .expect("the disjoint response graph is supported")
+            .prepare_event_fields(6_000, 6_200)
+            .expect("the pristine one-item graph accepts event fields")
+            .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link()
+            .prepare_publication()
+            .into_rx_published(BluetoothRxMemoryListPublished::from_parts_for_validation(
+                BluetoothRxMemoryListClass::NonScanning.selector(),
+                receive_head,
+            ))
+            .unwrap_or_else(|_| panic!("the exact RX publication must join this graph"));
+        let BluetoothLegacyConnectableAdvertisingMemoryGraphRxPublished {
+            prepared,
+            rx_publication,
+        } = published;
+        (
+            BluetoothLegacyConnectableAdvertisingMemoryGraphRunning {
+                prepared,
+                _rx_publication: rx_publication,
+            },
+            graph_identity,
+            pool_identity,
+        )
+    }
+
+    fn finished_list(index: u8) -> BluetoothSchedulerFinishedHardwareListObserved {
+        let observation =
+            BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[index])
+                .expect("the selected hardware list is representable");
+        let BluetoothSchedulerFinishedListPop::List { observed, .. } = observation.pop_lowest()
+        else {
+            panic!("the semantic observation contains the selected list")
+        };
+        observed
+    }
+
+    fn removal_ready(
+        index: BluetoothSchedulerHardwareListIndex,
+        address: BluetoothControllerSramAddress,
+    ) -> BluetoothSchedulerSoftwareListRemovalReady {
+        let head = BluetoothSchedulerHardwareListHead::from_address(address)
+            .expect("the scheduler item forms a nonempty head");
+        let empty = BluetoothSchedulerHardwareListHeadEmptyObserved::from_identity_for_validation(
+            index, head,
+        );
+        BluetoothSchedulerSoftwareListRemovalReady::from_head_for_validation(empty)
     }
 
     #[test]
@@ -1216,6 +1609,144 @@ mod tests {
             BluetoothRxMemoryListClass::NonScanning.selector()
         );
         assert_eq!(published.rx_publication().head(), receive_head);
+    }
+
+    #[test]
+    fn completion_requires_list_zero_and_a_non_sentinel_item_status() {
+        let (running, _, _) = running(0x2f00_3000, 0x2f00_7000);
+        let scheduler_item = running.scheduler_item_address();
+        let running = match running.observe_completion(finished_list(0)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::StillInFlight(
+                running,
+            ) => running,
+            _ => panic!("the in-flight sentinel must retain hardware ownership"),
+        };
+        running.model_controller_completion(
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        );
+
+        let running = match running.observe_completion(finished_list(1)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::ListMismatch {
+                running,
+                observed,
+            } => {
+                assert_ne!(observed.index(), BluetoothSchedulerHardwareListIndex::ZERO);
+                running
+            }
+            _ => panic!("an unrelated finished list must retain both owners"),
+        };
+        assert_eq!(running.scheduler_item_address(), scheduler_item);
+
+        let completed = match running.observe_completion(finished_list(0)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the matching finished list may consume a non-sentinel status"),
+        };
+        assert_eq!(completed.scheduler_item_address(), scheduler_item);
+        assert_eq!(
+            completed.status(),
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero
+        );
+    }
+
+    #[test]
+    fn matching_removal_extracts_then_rearms_both_cpu_owned_graphs() {
+        let (running, graph_identity, pool_identity) = running(0x2f00_3400, 0x2f00_7400);
+        let scheduler_item = running.scheduler_item_address();
+        running.model_controller_completion(
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero,
+        );
+        let completed = match running.observe_completion(finished_list(0)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the modeled non-sentinel status completes the item"),
+        };
+        let extracted = completed
+            .prepare_recycle_after_software_list_removal(removal_ready(
+                BluetoothSchedulerHardwareListIndex::ZERO,
+                scheduler_item,
+            ))
+            .unwrap_or_else(|_| panic!("the exact removal proof must authorize RX extraction"))
+            .extract_received()
+            .unwrap_or_else(|_| panic!("an event without a received PDU is a valid empty batch"));
+        assert!(extracted.batch().is_empty());
+
+        let (owner, pool, batch, status) = extracted.commit().into_parts();
+        assert_eq!(owner.identity(), graph_identity);
+        assert_eq!(pool.identity(), pool_identity);
+        assert!(pool.is_initialized());
+        assert!(batch.is_empty());
+        assert_eq!(
+            status,
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::Zero
+        );
+    }
+
+    #[test]
+    fn removal_list_mismatch_retains_the_completed_graph_and_proof() {
+        let (running, _, _) = running(0x2f00_3800, 0x2f00_7800);
+        let scheduler_item = running.scheduler_item_address();
+        running.model_controller_completion(
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        );
+        let completed = match running.observe_completion(finished_list(0)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the modeled non-sentinel status completes the item"),
+        };
+        let another_list = BluetoothSchedulerHardwareListIndex::new(1)
+            .expect("the second scheduler list is representable");
+
+        let failure = match completed.prepare_recycle_after_software_list_removal(removal_ready(
+            another_list,
+            scheduler_item,
+        )) {
+            Ok(_) => panic!("another scheduler list must not authorize reclamation"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleError::HardwareListMismatch
+        );
+        let (completed, removal) = failure.into_parts();
+        assert_eq!(completed.scheduler_item_address(), scheduler_item);
+        assert_eq!(removal.index(), another_list);
+    }
+
+    #[test]
+    fn removal_head_mismatch_retains_the_completed_graph_and_proof() {
+        let (running, _, _) = running(0x2f00_3c00, 0x2f00_7c00);
+        let scheduler_item = running.scheduler_item_address();
+        running.model_controller_completion(
+            BluetoothLegacyConnectableAdvertisingSchedulerItemCompletionStatus::NonZero,
+        );
+        let completed = match running.observe_completion(finished_list(0)) {
+            BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
+                completed,
+            ) => completed,
+            _ => panic!("the modeled non-sentinel status completes the item"),
+        };
+        let foreign = owner(0x2f00_8000);
+        let foreign_item = foreign.binding.scheduler_item_address();
+
+        let failure = match completed.prepare_recycle_after_software_list_removal(removal_ready(
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            foreign_item,
+        )) {
+            Ok(_) => panic!("another scheduler item must not authorize reclamation"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothLegacyConnectableAdvertisingMemoryGraphRecycleError::SchedulerItemMismatch
+        );
+        let (completed, removal) = failure.into_parts();
+        assert_eq!(completed.scheduler_item_address(), scheduler_item);
+        assert_eq!(removal.completed_head().address(), Some(foreign_item));
+        assert_ne!(completed.scheduler_item_address(), foreign_item);
     }
 
     #[test]

@@ -129,11 +129,8 @@ pub(super) type ControlResources =
 type ControlPublisher =
     ConnectedControlPublisher<'static, CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
 type NetworkRxPublisher = <NetworkRunner as DatapathNetwork>::RxPublisher;
-type EmbassyConnectedRxSink = EmbassyNetConnectedRxSink<
-    'static,
-    NetworkRxPublisher,
-    ControlPublisher,
->;
+type EmbassyConnectedRxSink =
+    EmbassyNetConnectedRxSink<'static, NetworkRxPublisher, ControlPublisher>;
 #[cfg(feature = "diagnostics")]
 type ConnectedRxSink = ObservedConnectedRxSink<EmbassyConnectedRxSink>;
 #[cfg(not(feature = "diagnostics"))]

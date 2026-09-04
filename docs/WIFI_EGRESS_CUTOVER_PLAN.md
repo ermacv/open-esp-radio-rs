@@ -132,10 +132,14 @@ estimates. Correct ownership and work conservation precede estimator tuning.
 
 ## Phase 7: compatibility product integration
 
-- [ ] Compose the upstream-clean adapter into an example/product target without
+- [x] Compose the upstream-clean adapter into an example/product target without
   patched Xarxa or Embassy.
-- [ ] Route completed frames through the same radio scheduler and fixed SRAM
+- [x] Route completed frames through the same radio scheduler and fixed SRAM
   execution pool.
+- [x] Separate general-memory payload arenas from hot queue metadata and move
+  unique leases rather than complete frame values through channels.
+- [x] Cross-compile the product and station example source with mutually
+  exclusive owned and released compatibility dependency graphs.
 - [ ] Qualify UDP, TCP, raw and control traffic under bounded queue exhaustion.
 - [ ] Publish its explicit extra-copy/RAM/CPU envelope.
 

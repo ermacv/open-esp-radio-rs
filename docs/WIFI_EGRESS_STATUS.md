@@ -19,6 +19,12 @@ the current code and HIL protocol. Git history retains them.
 Host tests and cross-compilation pass. No post-cutover hardware performance
 result exists yet, so current throughput and CPU targets are not claimed.
 
+The ESP32-S31 product now has two mutually exclusive compile-time network
+compositions. `owned-network` remains the default optimized fork-backed path;
+`compat-network` uses released `embassy-net 0.9.1` and
+`embassy-net-driver 0.2.0`. Selecting both or neither is a compile error. Both
+instantiate the same physical radio runner and fixed SRAM TX horizon.
+
 ## Repository boundaries
 
 The network boundaries are now separate crates and dependency graphs:
@@ -58,6 +64,15 @@ adapter implementation. A host regression test also materializes a non-Xarxa
 software owner through the same physical pool. The shared `DatapathNetwork`
 contract now uses only associated ownership/capability types; its former
 adapter lifetime, mutex and queue/layout parameters have been deleted.
+`SoftwareTxFrame` accepts affine pool leases whose storage lifetime is carried
+by the concrete owner instead of demanding `'static` from every implementation.
+
+The compatibility endpoint separates payload storage from queue metadata.
+STA/AP RX/TX payload arenas are placed in PSRAM by the product; channels carry
+only unique mutable leases. A frame slot returns to its origin free queue on
+ordinary consume, stale-link rejection, unused-token drop, radio
+materialization and callback unwind. The adapter still performs the unavoidable
+compatibility copy into final SRAM after radio selection.
 
 ## Current optimized TX path
 
@@ -125,7 +140,7 @@ At the current source checkpoint:
 
 - `cargo check --workspace` passes;
 - `open-esp-radio-embassy-net`: all 6 owned unit tests pass;
-- `open-esp-radio-embassy-net-compat`: all 6 compatibility device/lifecycle
+- `open-esp-radio-embassy-net-compat`: all 8 compatibility device/lifecycle
   tests pass;
 - `open-esp-radio-esp32s31-wifi-embassy-compat`: all 3 shared-radio bridge
   tests pass;
@@ -133,7 +148,8 @@ At the current source checkpoint:
   ownership/materialization boundary tests pass;
 - the same radio crate without the optimized network feature passes 226 host
   unit tests and warning-free all-target clippy;
-- product integration cross-checks for `riscv32imafc-unknown-none-elf` pass;
+- product integration cross-checks for both mutually exclusive network
+  compositions on `riscv32imafc-unknown-none-elf` pass;
 - the base HIL runtime cross-check passes;
 - the HIL hardware/memory architecture feature set cross-check passes;
 - the HIL scenario catalog validation tests pass;
@@ -168,8 +184,8 @@ They do not prove the performance of the current owned path.
    path.
 4. TCP and raw traffic share the owned API structurally but lack complete HIL
    qualification.
-5. The compatibility integration is an independent library crate but is not
-   yet a product composition.
+5. The compatibility product composition has no HIL correctness, resource or
+   performance qualification yet.
 6. The research integration is not implemented.
 7. Core1 load after cutover is unknown. Moving work away from Core0 is not an
    accepted optimization without total-CPU evidence.
@@ -182,6 +198,10 @@ They do not prove the performance of the current owned path.
     stack value before writing it into static resources. Its 18 KiB HIL
     composition frame is explicitly bounded today; an in-place constructor is
     the correct future fork API if initialization stack use must be reduced.
+11. The standalone station example source composes with both network leaves,
+    but its ordinary ESP-HAL linker profile does not yet implement the HIL
+    product's initialized-PSRAM placement contract for the high-throughput
+    resource graph. Source cross-checking is not a flashable-image claim.
 
 ## Next decision gates
 

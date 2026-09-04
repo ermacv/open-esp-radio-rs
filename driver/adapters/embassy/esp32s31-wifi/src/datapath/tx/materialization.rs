@@ -30,7 +30,7 @@ pub struct MaterializationOwnershipSnapshot {
 /// drop.  The radio may inspect bytes for peer/TID/lifecycle classification,
 /// but physical DMA ownership is represented only by
 /// [`SelectedBurstMaterializer::PhysicalFrame`].
-pub trait SoftwareTxFrame: 'static {
+pub trait SoftwareTxFrame {
     fn interface(&self) -> NetworkInterfaceId;
 
     fn ethernet(&self) -> &[u8];

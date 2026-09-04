@@ -7,26 +7,43 @@
 #[cfg(feature = "tx-psram-dma-probe")]
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use embassy_net::{PacketBufAllocator, PacketPool, PacketPoolStorage};
+#[cfg(feature = "compat-network")]
+use embassy_net_compat as embassy_net;
+#[cfg(feature = "owned-network")]
+use embassy_net_owned as embassy_net;
+#[cfg(feature = "owned-network")]
+use embassy_net_owned::{PacketBufAllocator, PacketPool, PacketPoolStorage};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use open_esp_radio_embassy_net::{
-    OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame,
+#[cfg(feature = "owned-network")]
+use open_esp_radio_embassy_net::{OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame};
+#[cfg(feature = "compat-network")]
+use open_esp_radio_embassy_net_compat::{
+    Device as CompatibilityNetworkDevice, FrameStorage as CompatibilityFrameStorage,
+    Resources as CompatibilityEndpointResources,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
+#[cfg(feature = "owned-network")]
+use open_esp_radio_esp32s31_wifi_embassy::composition::resources::{
+    ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH as NETWORK_OWNER_TX_QUEUE_DEPTH,
+    ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY as NETWORK_PACKET_POOL_CAPACITY,
+    ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY as NETWORK_RX_PACKET_POOL_CAPACITY,
+    ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH as NETWORK_RX_QUEUE_DEPTH,
+};
+#[cfg(feature = "owned-network")]
+use open_esp_radio_esp32s31_wifi_embassy::datapath::network::DualOwnedDatapathNetwork;
 use open_esp_radio_esp32s31_wifi_embassy::{
     composition::resources::{
         ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
-        ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH as NETWORK_OWNER_TX_QUEUE_DEPTH,
-        ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY as NETWORK_PACKET_POOL_CAPACITY,
-        ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY as NETWORK_RX_PACKET_POOL_CAPACITY,
-        ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH as NETWORK_RX_QUEUE_DEPTH,
         ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH as NETWORK_TX_QUEUE_DEPTH,
         ESP32S31_DEFAULT_NETWORK_TX_TRAILER as NETWORK_TX_TRAILER,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
-    datapath::{PinnedTxFrame, PinnedTxPool, PinnedTxResources},
-    datapath::network::DualOwnedDatapathNetwork,
     datapath::tx::resources::AggregateTxResources,
+    datapath::{PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources},
+};
+#[cfg(feature = "compat-network")]
+use open_esp_radio_esp32s31_wifi_embassy_compat::{
+    CompatibilityTxFrame, DualCompatibilityDatapathNetwork,
 };
 use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{
     HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,
@@ -44,11 +61,31 @@ pub(super) const NETWORK_TX_HEADROOM: usize =
 const _: () = assert!(TX_AMPDU_METADATA_SIZE.is_multiple_of(core::mem::align_of::<u32>()));
 pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
 
+/// Complete-frame software horizon for the unchanged Embassy driver.
+///
+/// This is deliberately smaller than the optimized owner pool. Payload slots
+/// live in separate general-memory arenas and circulate through the hot
+/// channels as unique leases; the compatibility track still publishes an
+/// explicit bounded-RAM/extra-copy envelope rather than pretending to be the
+/// fast path.
+#[cfg(feature = "compat-network")]
+pub const ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH: usize = 16;
+
+#[cfg(feature = "owned-network")]
 type NetworkResources = OwnedEndpointResources<
     CriticalSectionRawMutex,
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_OWNER_TX_QUEUE_DEPTH,
 >;
+#[cfg(feature = "compat-network")]
+type NetworkResources = CompatibilityEndpointResources<
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH,
+>;
+#[cfg(feature = "compat-network")]
+type NetworkFrameStorage =
+    CompatibilityFrameStorage<NETWORK_FRAME_CAPACITY, ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH>;
 type NetworkTxResources = PinnedTxResources<
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -57,6 +94,14 @@ type NetworkTxResources = PinnedTxResources<
     NETWORK_TX_QUEUE_DEPTH,
 >;
 type NetworkTxPool = PinnedTxPool<
+    NETWORK_FRAME_CAPACITY,
+    NETWORK_TX_HEADROOM,
+    NETWORK_TX_TRAILER,
+    NETWORK_TX_QUEUE_DEPTH,
+>;
+type PhysicalTxConsumer = PinnedTxConsumer<
+    'static,
+    CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
@@ -71,20 +116,37 @@ pub(super) type RadioTxBacking = PinnedTxFrame<
     NETWORK_TX_TRAILER,
     NETWORK_TX_QUEUE_DEPTH,
 >;
+#[cfg(feature = "owned-network")]
 pub(super) type RadioNetworkTxBacking = OwnedNetworkTxFrame;
+#[cfg(feature = "compat-network")]
+pub(super) type RadioNetworkTxBacking = CompatibilityTxFrame<
+    'static,
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH,
+>;
 type RadioAmpduRetention = RetainedAmpduDmaStorage<RadioTxBacking, TX_AMPDU_FRAME_COUNT>;
 
+#[cfg(feature = "owned-network")]
 pub type Esp32s31WifiNetworkDevice = OwnedNetworkDevice<
     'static,
     CriticalSectionRawMutex,
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_OWNER_TX_QUEUE_DEPTH,
 >;
+#[cfg(feature = "compat-network")]
+pub type Esp32s31WifiNetworkDevice = CompatibilityNetworkDevice<
+    'static,
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH,
+>;
 
 /// Application-side Wi-Fi device plus the general packet allocator consumed
 /// exactly once when Embassy constructs its Xarxa stack.
 pub struct Esp32s31WifiDevice {
     pub(crate) inner: Esp32s31WifiNetworkDevice,
+    #[cfg(feature = "owned-network")]
     pub(crate) packet_allocator: PacketBufAllocator,
 }
 
@@ -107,7 +169,7 @@ impl Esp32s31WifiDevice {
         use embassy_net::driver::{Checksum, Driver as _};
 
         let mut checksum = self.inner.capabilities().checksum;
-        let validate_rx = checksum.udp.rx();
+        let validate_rx = matches!(checksum.udp, Checksum::Both | Checksum::Rx);
         checksum.udp = match (validate_rx, enabled) {
             (true, true) => Checksum::Both,
             (true, false) => Checksum::Rx,
@@ -119,7 +181,10 @@ impl Esp32s31WifiDevice {
     }
 }
 
+#[cfg(feature = "owned-network")]
 pub type Esp32s31WifiStackResources = embassy_net::StackResources<Esp32s31WifiNetworkDevice>;
+#[cfg(feature = "compat-network")]
+pub type Esp32s31WifiStackResources = embassy_net::StackResources<16>;
 
 /// Permanent application-side devices for the two logical Wi-Fi interfaces.
 /// Each device owns independent IP/link/RX state while both publish into the
@@ -128,6 +193,7 @@ pub struct Esp32s31WifiDevices {
     pub station: Esp32s31WifiDevice,
     pub access_point: Esp32s31WifiDevice,
 }
+#[cfg(feature = "owned-network")]
 pub(super) type RadioNetworkRunner = DualOwnedDatapathNetwork<
     'static,
     CriticalSectionRawMutex,
@@ -136,6 +202,16 @@ pub(super) type RadioNetworkRunner = DualOwnedDatapathNetwork<
     NETWORK_TX_TRAILER,
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_OWNER_TX_QUEUE_DEPTH,
+    NETWORK_TX_QUEUE_DEPTH,
+>;
+#[cfg(feature = "compat-network")]
+pub(super) type RadioNetworkRunner = DualCompatibilityDatapathNetwork<
+    'static,
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    NETWORK_TX_HEADROOM,
+    NETWORK_TX_TRAILER,
+    ESP32S31_COMPAT_NETWORK_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
 >;
 pub(super) type NetworkRunner = &'static mut RadioNetworkRunner;
@@ -148,10 +224,43 @@ static NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
 static ACCESS_POINT_NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
+#[cfg(feature = "compat-network")]
+#[allow(
+    unsafe_code,
+    reason = "compatibility payload storage is explicitly placed in the general PSRAM tier"
+)]
+#[unsafe(link_section = ".psram.bss.open_radio_compat_station_rx")]
+static STATION_COMPAT_RX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
+    ConstStaticCell::new(NetworkFrameStorage::new());
+#[cfg(feature = "compat-network")]
+#[allow(
+    unsafe_code,
+    reason = "compatibility payload storage is explicitly placed in the general PSRAM tier"
+)]
+#[unsafe(link_section = ".psram.bss.open_radio_compat_station_tx")]
+static STATION_COMPAT_TX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
+    ConstStaticCell::new(NetworkFrameStorage::new());
+#[cfg(feature = "compat-network")]
+#[allow(
+    unsafe_code,
+    reason = "compatibility payload storage is explicitly placed in the general PSRAM tier"
+)]
+#[unsafe(link_section = ".psram.bss.open_radio_compat_ap_rx")]
+static ACCESS_POINT_COMPAT_RX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
+    ConstStaticCell::new(NetworkFrameStorage::new());
+#[cfg(feature = "compat-network")]
+#[allow(
+    unsafe_code,
+    reason = "compatibility payload storage is explicitly placed in the general PSRAM tier"
+)]
+#[unsafe(link_section = ".psram.bss.open_radio_compat_ap_tx")]
+static ACCESS_POINT_COMPAT_TX_STORAGE: ConstStaticCell<NetworkFrameStorage> =
+    ConstStaticCell::new(NetworkFrameStorage::new());
 static NETWORK_TX_RESOURCES: ConstStaticCell<NetworkTxResources> =
     ConstStaticCell::new(NetworkTxResources::new());
 static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
 
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "network packet payloads are explicitly placed in the PSRAM ownership tier"
@@ -160,6 +269,7 @@ static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
 static STATION_NETWORK_PACKET_STORAGE: ConstStaticCell<
     PacketPoolStorage<NETWORK_PACKET_POOL_CAPACITY>,
 > = ConstStaticCell::new(PacketPoolStorage::new());
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "network packet payloads are explicitly placed in the PSRAM ownership tier"
@@ -168,6 +278,7 @@ static STATION_NETWORK_PACKET_STORAGE: ConstStaticCell<
 static ACCESS_POINT_NETWORK_PACKET_STORAGE: ConstStaticCell<
     PacketPoolStorage<NETWORK_PACKET_POOL_CAPACITY>,
 > = ConstStaticCell::new(PacketPoolStorage::new());
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "RX packet payloads are explicitly separated from the physical DMA staging tier"
@@ -176,6 +287,7 @@ static ACCESS_POINT_NETWORK_PACKET_STORAGE: ConstStaticCell<
 static STATION_RX_PACKET_STORAGE: ConstStaticCell<
     PacketPoolStorage<NETWORK_RX_PACKET_POOL_CAPACITY>,
 > = ConstStaticCell::new(PacketPoolStorage::new());
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "RX packet payloads are explicitly separated from the physical DMA staging tier"
@@ -185,6 +297,7 @@ static ACCESS_POINT_RX_PACKET_STORAGE: ConstStaticCell<
     PacketPoolStorage<NETWORK_RX_PACKET_POOL_CAPACITY>,
 > = ConstStaticCell::new(PacketPoolStorage::new());
 
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
@@ -192,6 +305,7 @@ static ACCESS_POINT_RX_PACKET_STORAGE: ConstStaticCell<
 #[unsafe(link_section = ".critical.bss.open_radio_station_network_pool")]
 static STATION_NETWORK_PACKET_POOL: StaticCell<PacketPool<NETWORK_PACKET_POOL_CAPACITY>> =
     StaticCell::new();
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
@@ -199,6 +313,7 @@ static STATION_NETWORK_PACKET_POOL: StaticCell<PacketPool<NETWORK_PACKET_POOL_CA
 #[unsafe(link_section = ".critical.bss.open_radio_ap_network_pool")]
 static ACCESS_POINT_NETWORK_PACKET_POOL: StaticCell<PacketPool<NETWORK_PACKET_POOL_CAPACITY>> =
     StaticCell::new();
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
@@ -206,6 +321,7 @@ static ACCESS_POINT_NETWORK_PACKET_POOL: StaticCell<PacketPool<NETWORK_PACKET_PO
 #[unsafe(link_section = ".critical.bss.open_radio_station_rx_pool")]
 static STATION_RX_PACKET_POOL: StaticCell<PacketPool<NETWORK_RX_PACKET_POOL_CAPACITY>> =
     StaticCell::new();
+#[cfg(feature = "owned-network")]
 #[allow(
     unsafe_code,
     reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
@@ -317,13 +433,29 @@ static TX_AMPDU_STANDBY_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FR
 static TX_AMPDU_STANDBY_RETENTION: ConstStaticCell<RadioAmpduRetention> =
     ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 
+fn initialize_physical_tx() -> PhysicalTxConsumer {
+    let network_tx_resources = NETWORK_TX_RESOURCES.take();
+    #[cfg(feature = "tx-psram-dma-probe")]
+    let tx_pool = if DIRECT_PSRAM_TX_DMA_PROBE.load(Ordering::Acquire) {
+        NetworkTxPool::pin_static_with_dma_read_prepare(
+            PSRAM_NETWORK_TX_POOL.take(),
+            prepare_psram_for_wifi_dma_read,
+        )
+    } else {
+        NetworkTxPool::pin_static(NETWORK_TX_POOL.take())
+    };
+    #[cfg(not(feature = "tx-psram-dma-probe"))]
+    let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
+    network_tx_resources.split(tx_pool)
+}
+
+#[cfg(feature = "owned-network")]
 pub(crate) fn initialize_network(
     station_address: [u8; 6],
     access_point_address: [u8; 6],
 ) -> (Esp32s31WifiDevices, WifiNetworkResources) {
     let station_resources = NETWORK_RESOURCES.take();
     let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
-    let network_tx_resources = NETWORK_TX_RESOURCES.take();
     let station_packet_allocator = STATION_NETWORK_PACKET_POOL
         .init(PacketPool::new(STATION_NETWORK_PACKET_STORAGE.take()))
         .allocator();
@@ -336,18 +468,7 @@ pub(crate) fn initialize_network(
     let access_point_rx_allocator = ACCESS_POINT_RX_PACKET_POOL
         .init(PacketPool::new(ACCESS_POINT_RX_PACKET_STORAGE.take()))
         .allocator();
-    #[cfg(feature = "tx-psram-dma-probe")]
-    let tx_pool = if DIRECT_PSRAM_TX_DMA_PROBE.load(Ordering::Acquire) {
-        NetworkTxPool::pin_static_with_dma_read_prepare(
-            PSRAM_NETWORK_TX_POOL.take(),
-            prepare_psram_for_wifi_dma_read,
-        )
-    } else {
-        NetworkTxPool::pin_static(NETWORK_TX_POOL.take())
-    };
-    #[cfg(not(feature = "tx-psram-dma-probe"))]
-    let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
-    let tx_consumer = network_tx_resources.split(tx_pool);
+    let tx_consumer = initialize_physical_tx();
     let station_interface =
         open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =
@@ -370,6 +491,48 @@ pub(crate) fn initialize_network(
             access_point: Esp32s31WifiDevice {
                 inner: access_point_device,
                 packet_allocator: access_point_packet_allocator,
+            },
+        },
+        WifiNetworkResources::Unstarted { device: (), runner },
+    )
+}
+
+#[cfg(feature = "compat-network")]
+pub(crate) fn initialize_network(
+    station_address: [u8; 6],
+    access_point_address: [u8; 6],
+) -> (Esp32s31WifiDevices, WifiNetworkResources) {
+    let station_resources = NETWORK_RESOURCES.take();
+    let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
+    let station_interface =
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+    let access_point_interface =
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID;
+    let (station_device, station_runner) = station_resources.split(
+        station_address,
+        STATION_COMPAT_RX_STORAGE.take(),
+        STATION_COMPAT_TX_STORAGE.take(),
+    );
+    let (access_point_device, access_point_runner) = access_point_resources.split(
+        access_point_address,
+        ACCESS_POINT_COMPAT_RX_STORAGE.take(),
+        ACCESS_POINT_COMPAT_TX_STORAGE.take(),
+    );
+    let runner = DualCompatibilityDatapathNetwork::new(
+        station_interface,
+        station_runner,
+        access_point_interface,
+        access_point_runner,
+        initialize_physical_tx(),
+    );
+    let runner = NETWORK_RUNNER.init(runner);
+    (
+        Esp32s31WifiDevices {
+            station: Esp32s31WifiDevice {
+                inner: station_device,
+            },
+            access_point: Esp32s31WifiDevice {
+                inner: access_point_device,
             },
         },
         WifiNetworkResources::Unstarted { device: (), runner },

@@ -2,10 +2,19 @@
 #![no_std]
 #![recursion_limit = "256"]
 
+#[cfg(all(feature = "owned-network", feature = "compat-network"))]
+compile_error!("select exactly one network integration: owned-network or compat-network");
+#[cfg(not(any(feature = "owned-network", feature = "compat-network")))]
+compile_error!("select exactly one network integration: owned-network or compat-network");
+
 use core::num::NonZeroU16;
 
 use embassy_executor::Spawner;
 use embassy_net::Config;
+#[cfg(feature = "compat-network")]
+use embassy_net_compat as embassy_net;
+#[cfg(feature = "owned-network")]
+use embassy_net_owned as embassy_net;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,

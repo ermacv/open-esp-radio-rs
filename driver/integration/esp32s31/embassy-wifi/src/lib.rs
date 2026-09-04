@@ -7,6 +7,11 @@
 //! runner. Board firmware owns credentials, IP policy and sockets; it does not
 //! assemble PAC, DMA, ISR or role transactions.
 
+#[cfg(all(feature = "owned-network", feature = "compat-network"))]
+compile_error!("select exactly one network integration: owned-network or compat-network");
+#[cfg(not(any(feature = "owned-network", feature = "compat-network")))]
+compile_error!("select exactly one network integration: owned-network or compat-network");
+
 #[cfg(feature = "diagnostics")]
 macro_rules! diagnostics_event {
     ($($argument:tt)*) => { log::info!($($argument)*) };
@@ -119,6 +124,8 @@ pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_adaptive_recyc
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_recycled_rx_probe_delay_for_diagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::rx::dma::configure_interrupt_driven_recycled_append_for_diagnostics;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(feature = "task-poll-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_ap_rx_cycles::{
     CORE0_AP_RX_CYCLES, Core0ApRxCycleSnapshot,
@@ -130,10 +137,6 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::{
 #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
-};
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub use open_esp_radio_esp32s31_wifi_embassy::datapath::{
-    TX_PERFORMANCE, TxPerformanceSnapshot,
 };
 #[cfg(feature = "task-poll-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_reorder_cycles::{

@@ -1301,6 +1301,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-embassy-net-compat"
+version = "0.1.0"
+dependencies = [
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-network",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-coex"
 version = "0.1.0"
 
@@ -1337,10 +1346,12 @@ dependencies = [
  "open-esp-radio-esp32s31-wifi-ap",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-esp32s31-wifi-embassy-compat",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-network",
  "open-esp-radio-wifi-ap",
  "open-esp-radio-wifi-embassy",
  "open-esp-radio-wifi-softmac",
@@ -1462,6 +1473,18 @@ dependencies = [
  "open-esp-radio-wpa2",
  "riscv 0.15.0",
  "static_cell",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-wifi-embassy-compat"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-embassy-net-compat",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-network",
+ "open-esp-radio-wifi-embassy",
 ]
 
 [[package]]

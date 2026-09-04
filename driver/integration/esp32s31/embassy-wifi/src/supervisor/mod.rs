@@ -873,10 +873,8 @@ pub async fn new(
     #[cfg(feature = "diagnostics")]
     let diagnostics_snapshot = initial_connected.diagnostics;
     let initial_connected = initial_connected.resources;
-    let (network_devices, station_network) = crate::radio_resources::initialize_network(
-        station_address,
-        access_point_mac.bytes(),
-    );
+    let (network_devices, station_network) =
+        crate::radio_resources::initialize_network(station_address, access_point_mac.bytes());
     let monitor = initialize_monitor_resources(monitor_memory)
         .map_err(|MonitorResourcesError::InUse| Esp32s31NewError::MonitorResources)?;
     let connected_datapath = initialize_connected_datapath_mailbox(

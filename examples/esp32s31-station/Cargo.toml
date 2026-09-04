@@ -9,7 +9,8 @@ publish = false
 [dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d", features = ["dhcpv4", "medium-ethernet"] }
+embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d", features = ["dhcpv4", "medium-ethernet"], optional = true }
+embassy-net-compat = { package = "embassy-net", version = "0.9.1", features = ["dhcpv4", "medium-ethernet"], optional = true }
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "rt", "unstable"] }
@@ -18,8 +19,19 @@ open-esp-radio = { path = "../../driver/radio", default-features = false, featur
 open-esp-radio-esp32s31-embassy-runtime = { path = "../../driver/adapters/embassy/esp32s31-platform", features = ["esp32s31"] }
 open-esp-radio-esp32s31-phy = { path = "../../driver/chips/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../driver/adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
-open-esp-radio-esp32s31-embassy-wifi = { path = "../../driver/integration/esp32s31/embassy-wifi" }
+open-esp-radio-esp32s31-embassy-wifi = { path = "../../driver/integration/esp32s31/embassy-wifi", default-features = false }
 static_cell = "2.1.1"
+
+[features]
+default = ["owned-network"]
+owned-network = [
+    "dep:embassy-net-owned",
+    "open-esp-radio-esp32s31-embassy-wifi/owned-network",
+]
+compat-network = [
+    "dep:embassy-net-compat",
+    "open-esp-radio-esp32s31-embassy-wifi/compat-network",
+]
 
 [profile.release]
 codegen-units = 1

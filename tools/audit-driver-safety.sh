@@ -142,6 +142,64 @@ for manifest in "${manifests[@]}"; do
         exit 1
     fi
 
+    mapfile -t supported_feature_profiles < <(jq -r \
+        --arg manifest "$manifest_absolute" '
+        .packages[]
+        | select(.manifest_path == $manifest)
+        | .metadata["open-radio"]["supported-feature-profiles"][]?
+    ' "$metadata")
+    if ! $workspace_member && ((${#supported_feature_profiles[@]} != 0)); then
+        for profile in "${supported_feature_profiles[@]}"; do
+            if [[ "$package" == "$generated_unsafe_package" ]]; then
+                cargo check \
+                    --quiet \
+                    --locked \
+                    --offline \
+                    --manifest-path "$manifest" \
+                    --package "$package" \
+                    --target "$target_triple" \
+                    --lib \
+                    --no-default-features \
+                    --features "$profile"
+            elif contains_exactly "$package" "${audited_unsafe_packages[@]}"; then
+                cargo clippy \
+                    --quiet \
+                    --locked \
+                    --offline \
+                    --manifest-path "$manifest" \
+                    --package "$package" \
+                    --target "$target_triple" \
+                    --lib \
+                    --no-default-features \
+                    --features "$profile" \
+                    --no-deps \
+                    -- \
+                    -D unsafe-code \
+                    -D unsafe-op-in-unsafe-fn
+            else
+                cargo clippy \
+                    --quiet \
+                    --locked \
+                    --offline \
+                    --manifest-path "$manifest" \
+                    --package "$package" \
+                    --target "$target_triple" \
+                    --lib \
+                    --no-default-features \
+                    --features "$profile" \
+                    --no-deps \
+                    -- \
+                    -F unsafe-code
+            fi
+        done
+        if contains_exactly "$package" "${audited_unsafe_packages[@]}"; then
+            unsafe_package_count=$((unsafe_package_count + 1))
+        elif [[ "$package" != "$generated_unsafe_package" ]]; then
+            safe_package_count=$((safe_package_count + 1))
+        fi
+        continue
+    fi
+
     if [[ "$package" == "$generated_unsafe_package" ]]; then
         if $workspace_member; then
             generated_workspace_arguments+=(--package "$package")

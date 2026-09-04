@@ -434,6 +434,23 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "347bc855bdbdf50ed9c5a1d80e8204badb0ba149b8732dde38e1e9708ed9d313"
+dependencies = [
+ "document-features",
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "embedded-io-async 0.7.0",
+ "embedded-nal-async",
+ "heapless 0.9.3",
+ "managed",
+ "smoltcp",
+]
+
+[[package]]
+name = "embassy-net"
+version = "0.9.1"
 source = "git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d#244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d"
 dependencies = [
  "document-features",
@@ -1224,6 +1241,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "managed"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1316,6 +1339,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-embassy-net-compat"
+version = "0.1.0"
+dependencies = [
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-network",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-coex"
 version = "0.1.0"
 
@@ -1338,22 +1370,26 @@ version = "0.1.0"
 dependencies = [
  "embassy-executor",
  "embassy-futures",
- "embassy-net",
+ "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "esp-hal",
  "open-esp-radio",
  "open-esp-radio-embassy-net",
+ "open-esp-radio-embassy-net-compat",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-ap",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-esp32s31-wifi-embassy-compat",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-network",
  "open-esp-radio-wifi-ap",
  "open-esp-radio-wifi-embassy",
  "open-esp-radio-wifi-softmac",
@@ -1408,7 +1444,8 @@ version = "0.1.0"
 dependencies = [
  "embassy-executor",
  "embassy-futures",
- "embassy-net",
+ "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
@@ -1481,6 +1518,18 @@ dependencies = [
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
  "static_cell",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-wifi-embassy-compat"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-embassy-net-compat",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-network",
+ "open-esp-radio-wifi-embassy",
 ]
 
 [[package]]
@@ -1896,6 +1945,19 @@ name = "smallvec"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+
+[[package]]
+name = "smoltcp"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f73d40463bba65efc9adc6370b56df76d563cc46e2482bba58351b4afb7535e"
+dependencies = [
+ "bitflags 1.3.2",
+ "byteorder",
+ "cfg-if",
+ "heapless 0.9.3",
+ "managed",
+]
 
 [[package]]
 name = "somni-expr"

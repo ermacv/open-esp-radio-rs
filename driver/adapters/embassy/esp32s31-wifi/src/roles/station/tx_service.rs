@@ -37,6 +37,7 @@ where
         _network: &'a I,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
     where
+        SoftwareFrame: 'a,
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
             + 'a,
     {

@@ -7,12 +7,23 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/ermacv/open-esp-radio-rs"
 description = "Product-level ESP32-S31 Wi-Fi composition for Embassy and esp-hal"
 
+[package.metadata.open-radio]
+# Cargo features are additive, while these two integration leaves are
+# intentionally alternatives. Repository audits compile every declared
+# profile independently instead of constructing an invalid all-feature union.
+supported-feature-profiles = [
+    "owned-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
+    "compat-network,diagnostics,mac-irq-diagnostics,task-poll-telemetry,connected-datapath-cycle-telemetry,core0-rx-coarse-telemetry,tx-psram-dma-probe",
+]
+
 [dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-# Owned-packet Embassy/Xarxa integration. Wi-Fi scheduling remains private to
-# open-radio and is not exposed through the generic network-driver contract.
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"] }
+# Network stacks are mutually exclusive composition leaves. The compatibility
+# leaf resolves only released crates; the owned leaf contains the maintained
+# owner-transfer fork. Neither choice changes radio policy.
+embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"], optional = true }
+embassy-net-compat = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"], optional = true }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "rt", "unstable"] }
@@ -27,8 +38,10 @@ open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap" }
 open-esp-radio-esp32s31-wifi-dma = { path = "../../../chips/esp32s31/wifi/dma" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../chips/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-sta = { path = "../../../chips/esp32s31/wifi/sta" }
-open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net" }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi" }
+open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net", optional = true }
+open-esp-radio-embassy-net-compat = { path = "../../../adapters/embassy-net-compat", optional = true }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi", default-features = false }
+open-esp-radio-esp32s31-wifi-embassy-compat = { path = "../../../adapters/embassy/esp32s31-wifi-compat", optional = true }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
 open-esp-radio-wifi-embassy = { path = "../../../adapters/embassy/wifi" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
@@ -40,10 +53,21 @@ open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 static_cell = "2.1.1"
 
 [features]
-default = []
+default = ["owned-network"]
+owned-network = [
+    "dep:embassy-net-owned",
+    "dep:open-esp-radio-embassy-net",
+    "open-esp-radio-esp32s31-wifi-embassy/owned-network",
+]
+compat-network = [
+    "dep:embassy-net-compat",
+    "dep:open-esp-radio-embassy-net-compat",
+    "dep:open-esp-radio-esp32s31-wifi-embassy-compat",
+]
 diagnostics = [
     "dep:log",
     "open-esp-radio-esp32s31-wifi-embassy/diagnostics",
+    "open-esp-radio-esp32s31-wifi-embassy-compat?/diagnostics",
 ]
 # Hard-IRQ callbacks are a deliberately separate diagnostic boundary. Enabling
 # ordinary value observers must not change the SRAM-closed interrupt call graph.
@@ -56,6 +80,7 @@ connected-datapath-cycle-telemetry = ["dep:riscv"]
 core0-rx-coarse-telemetry = [
     "open-esp-radio-esp32s31-wifi-embassy/core0-rx-coarse-telemetry",
     "open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry",
+    "open-esp-radio-esp32s31-wifi-embassy-compat?/tx-phase-telemetry",
 ]
 tx-psram-dma-probe = [
     "dep:open-esp-radio-esp32s31-platform-pac",

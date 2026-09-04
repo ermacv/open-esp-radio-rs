@@ -109,18 +109,42 @@ for manifest in "${standalone_manifests[@]}"; do
         [.packages[] | select(.manifest_path == $manifest) | .name]
         | if length == 1 then .[0] else error("manifest does not identify exactly one package") end
     ' "$metadata")"
-    cargo clippy \
-        --quiet \
-        --locked \
-        --offline \
-        --manifest-path "$manifest" \
-        --package "$package" \
-        --target "$target_triple" \
-        --lib \
-        --all-features \
-        --no-deps \
-        -- \
-        -D clippy::disallowed-methods
+    mapfile -t supported_feature_profiles < <(jq -r \
+        --arg manifest "$(realpath "$manifest")" '
+        .packages[]
+        | select(.manifest_path == $manifest)
+        | .metadata["open-radio"]["supported-feature-profiles"][]?
+    ' "$metadata")
+    if ((${#supported_feature_profiles[@]} != 0)); then
+        for profile in "${supported_feature_profiles[@]}"; do
+            cargo clippy \
+                --quiet \
+                --locked \
+                --offline \
+                --manifest-path "$manifest" \
+                --package "$package" \
+                --target "$target_triple" \
+                --lib \
+                --no-default-features \
+                --features "$profile" \
+                --no-deps \
+                -- \
+                -D clippy::disallowed-methods
+        done
+    else
+        cargo clippy \
+            --quiet \
+            --locked \
+            --offline \
+            --manifest-path "$manifest" \
+            --package "$package" \
+            --target "$target_triple" \
+            --lib \
+            --all-features \
+            --no-deps \
+            -- \
+            -D clippy::disallowed-methods
+    fi
 done
 
 tools/audit-driver-safety.sh

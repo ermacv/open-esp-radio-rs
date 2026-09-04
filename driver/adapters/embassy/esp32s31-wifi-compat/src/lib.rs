@@ -13,7 +13,7 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net_compat::{
-    EthernetFrame, RadioLinkController, RadioRunner, RadioRxPublisher, RadioTxConsumer,
+    RadioLinkController, RadioRunner, RadioRxPublisher, RadioTxConsumer, RadioTxFrame,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 use open_esp_radio_esp32s31_wifi_embassy::datapath::MaterializationOwnershipSnapshot;
@@ -25,12 +25,19 @@ use open_esp_radio_esp32s31_wifi_embassy::datapath::{
 use open_esp_radio_network::{LinkState, NetworkInterfaceId, RxEnqueueError};
 
 /// Complete frame ownership received from an unchanged Embassy driver.
-pub struct CompatibilityTxFrame<const FRAME_CAPACITY: usize> {
+pub struct CompatibilityTxFrame<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const NETWORK_QUEUE_DEPTH: usize,
+> {
     interface: NetworkInterfaceId,
-    frame: EthernetFrame<FRAME_CAPACITY>,
+    frame: RadioTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>,
 }
 
-impl<const FRAME_CAPACITY: usize> CompatibilityTxFrame<FRAME_CAPACITY> {
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const NETWORK_QUEUE_DEPTH: usize>
+    CompatibilityTxFrame<'_, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>
+{
     pub const fn interface(&self) -> NetworkInterfaceId {
         self.interface
     }
@@ -40,7 +47,9 @@ impl<const FRAME_CAPACITY: usize> CompatibilityTxFrame<FRAME_CAPACITY> {
     }
 }
 
-impl<const FRAME_CAPACITY: usize> SoftwareTxFrame for CompatibilityTxFrame<FRAME_CAPACITY> {
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const NETWORK_QUEUE_DEPTH: usize> SoftwareTxFrame
+    for CompatibilityTxFrame<'_, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>
+{
     fn interface(&self) -> NetworkInterfaceId {
         self.interface
     }
@@ -249,7 +258,7 @@ impl<
         PHYSICAL_QUEUE_DEPTH,
     >
 {
-    type SoftwareFrame = CompatibilityTxFrame<FRAME_CAPACITY>;
+    type SoftwareFrame = CompatibilityTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
     type PhysicalFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, PHYSICAL_QUEUE_DEPTH>;
 
@@ -380,7 +389,7 @@ impl<
 {
     type LinkController = CompatibilityLinkController<'resources, M>;
     type RxPublisher = CompatibilityRxPublisher<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
-    type TxFrame = CompatibilityTxFrame<FRAME_CAPACITY>;
+    type TxFrame = CompatibilityTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
     type PhysicalTxFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, PHYSICAL_QUEUE_DEPTH>;
     type TxConsumer<'network>

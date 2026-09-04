@@ -160,6 +160,7 @@ where
         network: &'a I,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
     where
+        SoftwareFrame: 'a,
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
             + 'a;
 
@@ -236,6 +237,7 @@ where
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         H: 'a,
+        SoftwareFrame: 'a,
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
             + 'a,
     {
@@ -464,6 +466,7 @@ where
         network: &'a I,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a
     where
+        SoftwareFrame: 'a,
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
             + 'a,
     {
@@ -562,6 +565,7 @@ where
         network: &'a I,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
+        SoftwareFrame: 'a,
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = PhysicalFrame>
             + 'a,
     {

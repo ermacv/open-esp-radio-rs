@@ -143,7 +143,7 @@ impl<
 {
     type LinkController = CompatibilityLinkControllers<'resources, M>;
     type RxPublisher = CompatibilityRxPublisher<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
-    type TxFrame = CompatibilityTxFrame<FRAME_CAPACITY>;
+    type TxFrame = CompatibilityTxFrame<'resources, M, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
     type PhysicalTxFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, PHYSICAL_QUEUE_DEPTH>;
     type TxConsumer<'network>

@@ -2,7 +2,7 @@ use core::task::{Context, Waker};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_embassy_net_compat::{
-    Driver as _, ETHERNET_HEADER_LEN, Resources, RxToken as _, TxToken as _,
+    Driver as _, ETHERNET_HEADER_LEN, FrameStorage, Resources, RxToken as _, TxToken as _,
 };
 use open_esp_radio_esp32s31_wifi_embassy::datapath::{
     PinnedTxPool, PinnedTxResources, SelectedBurstMaterializer,
@@ -20,12 +20,25 @@ const NETWORK_QUEUE_DEPTH: usize = 2;
 const PHYSICAL_QUEUE_DEPTH: usize = 1;
 
 type Endpoint = Resources<NoopRawMutex, FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
+type EndpointStorage = FrameStorage<FRAME_CAPACITY, NETWORK_QUEUE_DEPTH>;
 type PhysicalPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, PHYSICAL_QUEUE_DEPTH>;
 type PhysicalResources =
     PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, PHYSICAL_QUEUE_DEPTH>;
 
 fn context() -> Context<'static> {
     Context::from_waker(Waker::noop())
+}
+
+fn endpoint() -> (
+    &'static mut Endpoint,
+    &'static mut EndpointStorage,
+    &'static mut EndpointStorage,
+) {
+    (
+        Box::leak(Box::new(Endpoint::new())),
+        Box::leak(Box::new(EndpointStorage::new())),
+        Box::leak(Box::new(EndpointStorage::new())),
+    )
 }
 
 fn physical() -> open_esp_radio_esp32s31_wifi_embassy::datapath::PinnedTxConsumer<
@@ -43,9 +56,9 @@ fn physical() -> open_esp_radio_esp32s31_wifi_embassy::datapath::PinnedTxConsume
 
 #[test]
 fn unchanged_driver_reaches_the_radio_materializer_without_policy_duplication() {
-    let endpoint = Box::leak(Box::new(Endpoint::new()));
+    let (endpoint, rx_storage, tx_storage) = endpoint();
     let interface = NetworkInterfaceId::new(3);
-    let (mut device, radio) = endpoint.split([2, 0, 0, 0, 0, 3]);
+    let (mut device, radio) = endpoint.split([2, 0, 0, 0, 0, 3], rx_storage, tx_storage);
     let network = CompatibilityDatapathNetwork::new(interface, radio, physical());
     network.set_link_state(interface, LinkState::Up);
 
@@ -76,9 +89,9 @@ fn unchanged_driver_reaches_the_radio_materializer_without_policy_duplication() 
 
 #[test]
 fn compatibility_rx_parts_use_the_same_radio_publication_contract() {
-    let endpoint = Box::leak(Box::new(Endpoint::new()));
+    let (endpoint, rx_storage, tx_storage) = endpoint();
     let interface = NetworkInterfaceId::new(4);
-    let (mut device, radio) = endpoint.split([2, 0, 0, 0, 0, 4]);
+    let (mut device, radio) = endpoint.split([2, 0, 0, 0, 0, 4], rx_storage, tx_storage);
     let network = CompatibilityDatapathNetwork::new(interface, radio, physical());
     network.set_link_state(interface, LinkState::Up);
 
@@ -105,12 +118,14 @@ fn compatibility_rx_parts_use_the_same_radio_publication_contract() {
 
 #[test]
 fn dual_compatibility_endpoints_share_only_the_physical_horizon() {
-    let first_endpoint = Box::leak(Box::new(Endpoint::new()));
-    let second_endpoint = Box::leak(Box::new(Endpoint::new()));
+    let (first_endpoint, first_rx_storage, first_tx_storage) = endpoint();
+    let (second_endpoint, second_rx_storage, second_tx_storage) = endpoint();
     let first_interface = NetworkInterfaceId::new(0);
     let second_interface = NetworkInterfaceId::new(1);
-    let (mut first_device, first_radio) = first_endpoint.split([2, 0, 0, 0, 0, 1]);
-    let (mut second_device, second_radio) = second_endpoint.split([2, 0, 0, 0, 0, 2]);
+    let (mut first_device, first_radio) =
+        first_endpoint.split([2, 0, 0, 0, 0, 1], first_rx_storage, first_tx_storage);
+    let (mut second_device, second_radio) =
+        second_endpoint.split([2, 0, 0, 0, 0, 2], second_rx_storage, second_tx_storage);
     let network = DualCompatibilityDatapathNetwork::new(
         first_interface,
         first_radio,

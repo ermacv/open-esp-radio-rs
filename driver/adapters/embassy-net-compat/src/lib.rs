@@ -18,7 +18,7 @@
 //! in separate crates and cannot enter this dependency graph through features.
 
 use core::{
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
     task::{Context, Poll},
 };
 
@@ -29,7 +29,9 @@ pub use open_esp_radio_network::{
     ETHERNET_HEADER_LEN, FrameLengthError, LinkState, NetworkInterfaceId, RxEnqueueError,
 };
 
-use embassy_net_driver::{Capabilities, HardwareAddress, LinkState as DriverLinkState};
+use embassy_net_driver::{
+    Capabilities, ChecksumCapabilities, HardwareAddress, LinkState as DriverLinkState,
+};
 use embassy_sync::{
     channel::{Channel, Receiver, Sender, TrySendError},
     waitqueue::GenericAtomicWaker,
@@ -82,6 +84,13 @@ pub struct EthernetFrame<const CAPACITY: usize> {
 }
 
 impl<const CAPACITY: usize> EthernetFrame<CAPACITY> {
+    const fn empty() -> Self {
+        Self {
+            length: 0,
+            bytes: [0; CAPACITY],
+        }
+    }
+
     /// Copies one complete Ethernet frame into owned storage.
     pub fn copy_from_slice(frame: &[u8]) -> Result<Self, FrameLengthError> {
         if frame.len() < ETHERNET_HEADER_LEN {
@@ -125,6 +134,48 @@ impl<const CAPACITY: usize> EthernetFrame<CAPACITY> {
         }
     }
 
+    fn copy_from_slice_in_place(&mut self, frame: &[u8]) -> Result<(), FrameLengthError> {
+        if frame.len() < ETHERNET_HEADER_LEN {
+            return Err(FrameLengthError::TooShort);
+        }
+        if frame.len() > CAPACITY {
+            return Err(FrameLengthError::TooLong);
+        }
+        self.length = frame.len();
+        self.as_mut_slice().copy_from_slice(frame);
+        Ok(())
+    }
+
+    fn copy_from_parts_in_place(
+        &mut self,
+        destination: [u8; 6],
+        source: [u8; 6],
+        ether_type: u16,
+        payload: &[u8],
+    ) -> Result<(), FrameLengthError> {
+        let length = ETHERNET_HEADER_LEN
+            .checked_add(payload.len())
+            .ok_or(FrameLengthError::TooLong)?;
+        if length > CAPACITY {
+            return Err(FrameLengthError::TooLong);
+        }
+        self.length = length;
+        self.bytes[..6].copy_from_slice(&destination);
+        self.bytes[6..12].copy_from_slice(&source);
+        self.bytes[12..14].copy_from_slice(&ether_type.to_be_bytes());
+        self.bytes[14..length].copy_from_slice(payload);
+        Ok(())
+    }
+
+    fn prepare(&mut self, length: usize) -> &mut [u8] {
+        assert!(
+            length <= CAPACITY,
+            "embassy-net requested a frame larger than driver capabilities"
+        );
+        self.length = length;
+        self.as_mut_slice()
+    }
+
     /// Returns the populated portion of this frame.
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes[..self.length]
@@ -145,6 +196,34 @@ impl<const CAPACITY: usize> EthernetFrame<CAPACITY> {
     /// Valid frames created through the public API are never empty.
     pub fn is_empty(&self) -> bool {
         self.length == 0
+    }
+}
+
+/// Payload-only backing for one direction of a compatibility endpoint.
+///
+/// The storage is intentionally separate from [`Resources`]. A board may put
+/// these bytes in general memory while keeping queue indexes, wakers and link
+/// atomics in low-latency internal SRAM. Once split, every slot circulates as
+/// one unique mutable lease; frame bytes are never moved through a channel.
+pub struct FrameStorage<const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> {
+    frames: [EthernetFrame<FRAME_CAPACITY>; QUEUE_DEPTH],
+}
+
+impl<const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    FrameStorage<FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    pub const fn new() -> Self {
+        Self {
+            frames: [const { EthernetFrame::empty() }; QUEUE_DEPTH],
+        }
+    }
+}
+
+impl<const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Default
+    for FrameStorage<FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -225,71 +304,92 @@ impl<M: RawMutex> SharedLinkState<M> {
     }
 }
 
-struct QueuedFrame<const CAPACITY: usize> {
+type FrameSlot<const FRAME_CAPACITY: usize> = &'static mut EthernetFrame<FRAME_CAPACITY>;
+
+struct QueuedFrame<const FRAME_CAPACITY: usize> {
     epoch: u32,
-    frame: EthernetFrame<CAPACITY>,
+    frame: FrameSlot<FRAME_CAPACITY>,
 }
 
-/// Static storage for one `embassy-net` device and its radio-side runner.
+/// Hot queue/link metadata for one unchanged `embassy-net` endpoint.
 ///
-/// Two queues are allocated inline. Memory use is therefore deterministic:
-/// `2 * QUEUE_DEPTH * FRAME_CAPACITY` bytes plus small queue metadata.
+/// Payload bytes live in two separately supplied [`FrameStorage`] arenas.
+/// These channels move only unique frame leases, never complete frame values.
 pub struct Resources<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> {
-    rx: Channel<M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
-    tx: Channel<M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx_free: Channel<M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx_ready: Channel<M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_free: Channel<M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_ready: Channel<M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
     tx_published: Signal<M, ()>,
     link: SharedLinkState<M>,
-    split: AtomicBool,
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
     Resources<M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
-    /// Creates empty RX/TX queues with the link down.
+    /// Creates empty ownership queues with the link down.
     pub const fn new() -> Self {
         Self {
-            rx: Channel::new(),
-            tx: Channel::new(),
+            rx_free: Channel::new(),
+            rx_ready: Channel::new(),
+            tx_free: Channel::new(),
+            tx_ready: Channel::new(),
             tx_published: Signal::new(),
             link: SharedLinkState::new(),
-            split: AtomicBool::new(false),
         }
     }
 
-    /// Splits the storage into exclusive network-stack and radio-side handles.
+    /// Binds payload arenas and splits exclusive stack/radio capabilities.
     ///
-    /// The returned `Device` is the only TX producer. That exclusivity is
-    /// what lets it reserve queue capacity before returning an infallible
-    /// `embassy-net` transmit token.
+    /// Storage must be static because frame owners can cross executor and core
+    /// boundaries. Every slot enters exactly one free queue here and returns
+    /// to it only after the corresponding token/lease reaches terminal drop.
     pub fn split(
-        &mut self,
+        &'static mut self,
         station_address: [u8; 6],
+        rx_storage: &'static mut FrameStorage<FRAME_CAPACITY, QUEUE_DEPTH>,
+        tx_storage: &'static mut FrameStorage<FRAME_CAPACITY, QUEUE_DEPTH>,
     ) -> (
-        Device<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>,
-        RadioRunner<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>,
+        Device<'static, M, FRAME_CAPACITY, QUEUE_DEPTH>,
+        RadioRunner<'static, M, FRAME_CAPACITY, QUEUE_DEPTH>,
     ) {
         assert!(
             FRAME_CAPACITY >= ETHERNET_HEADER_LEN,
             "compatibility frame capacity must hold an Ethernet header"
         );
         assert!(QUEUE_DEPTH != 0, "compatibility queues must not be empty");
-        assert!(
-            !self.split.swap(true, Ordering::AcqRel),
-            "compatibility endpoint resources may only be split once"
-        );
+        for frame in &mut rx_storage.frames {
+            assert!(
+                self.rx_free.try_send(frame).is_ok(),
+                "every RX payload slot must enter the free queue exactly once"
+            );
+        }
+        for frame in &mut tx_storage.frames {
+            assert!(
+                self.tx_free.try_send(frame).is_ok(),
+                "every TX payload slot must enter the free queue exactly once"
+            );
+        }
         (
             Device {
-                rx: self.rx.receiver(),
-                tx: self.tx.sender(),
+                rx_ready: self.rx_ready.receiver(),
+                rx_free: self.rx_free.sender(),
+                tx_ready: self.tx_ready.sender(),
+                tx_free: self.tx_free.receiver(),
+                tx_free_return: self.tx_free.sender(),
                 tx_published: &self.tx_published,
                 link: &self.link,
                 station_address,
+                checksum: ChecksumCapabilities::default(),
                 tx_reservation: (),
                 ingress_fairness: IngressPollFairness::new(QUEUE_DEPTH),
             },
             RadioRunner {
-                rx: self.rx.sender(),
-                tx: self.tx.receiver(),
+                rx_ready: self.rx_ready.sender(),
+                rx_free: self.rx_free.receiver(),
+                rx_free_return: self.rx_free.sender(),
+                tx_ready: self.tx_ready.receiver(),
+                tx_free: self.tx_free.sender(),
                 tx_published: &self.tx_published,
                 link: &self.link,
             },
@@ -305,17 +405,29 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Default
     }
 }
 
-/// The `embassy-net` side of the ownership boundary.
+/// The unchanged `embassy-net-driver` side of the ownership boundary.
 pub struct Device<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> {
-    rx: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
-    tx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx_ready: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx_free: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_ready: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_free: Receiver<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_free_return: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     link: &'resources SharedLinkState<M>,
     station_address: [u8; 6],
-    // Borrowed by every TX token. The GAT lifetime prevents a second token
-    // being requested while the first one is live, preserving its reservation.
+    checksum: ChecksumCapabilities,
     tx_reservation: (),
     ingress_fairness: IngressPollFairness,
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    Device<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    /// Override checksum work advertised to an unchanged `embassy-net` stack.
+    pub fn with_checksum_capabilities(mut self, checksum: ChecksumCapabilities) -> Self {
+        self.checksum = checksum;
+        self
+    }
 }
 
 /// The radio-task side of the ownership boundary.
@@ -325,8 +437,11 @@ pub struct RadioRunner<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
-    rx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
-    tx: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx_ready: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx_free: Receiver<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    rx_free_return: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_ready: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    tx_free: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     link: &'resources SharedLinkState<M>,
 }
@@ -357,7 +472,9 @@ pub struct RadioRxPublisher<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
-    rx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    ready: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    free: Receiver<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    free_return: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
 }
 
@@ -378,7 +495,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
     RadioRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     pub fn queue_len(&self) -> usize {
-        self.rx.len()
+        self.ready.len()
     }
 
     pub fn poll_ready(&self, context: &mut Context<'_>) -> Poll<()> {
@@ -386,12 +503,23 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         if !self.link.snapshot().up {
             return Poll::Pending;
         }
-        self.rx.poll_ready_to_send(context)
+        self.free.poll_ready_to_receive(context)
     }
 
     pub fn try_send(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
-        let owned = EthernetFrame::copy_from_slice(frame).map_err(RxEnqueueError::InvalidLength)?;
-        self.try_publish(owned)
+        let snapshot = self.link.snapshot();
+        if !snapshot.up {
+            return Err(RxEnqueueError::LinkDown);
+        }
+        let owned = self
+            .free
+            .try_receive()
+            .map_err(|_| RxEnqueueError::QueueFull)?;
+        if let Err(error) = owned.copy_from_slice_in_place(frame) {
+            self.release(owned);
+            return Err(RxEnqueueError::InvalidLength(error));
+        }
+        self.publish(snapshot.epoch, owned)
     }
 
     pub fn try_send_parts(
@@ -401,24 +529,76 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         ether_type: u16,
         payload: &[u8],
     ) -> Result<(), RxEnqueueError> {
-        let owned = EthernetFrame::copy_from_parts(destination, source, ether_type, payload)
-            .map_err(RxEnqueueError::InvalidLength)?;
-        self.try_publish(owned)
-    }
-
-    fn try_publish(&self, frame: EthernetFrame<FRAME_CAPACITY>) -> Result<(), RxEnqueueError> {
         let snapshot = self.link.snapshot();
         if !snapshot.up {
             return Err(RxEnqueueError::LinkDown);
         }
-        self.rx
-            .try_send(QueuedFrame {
-                epoch: snapshot.epoch,
-                frame,
-            })
-            .map_err(|error| match error {
-                TrySendError::Full(_) => RxEnqueueError::QueueFull,
-            })
+        let owned = self
+            .free
+            .try_receive()
+            .map_err(|_| RxEnqueueError::QueueFull)?;
+        if let Err(error) = owned.copy_from_parts_in_place(destination, source, ether_type, payload)
+        {
+            self.release(owned);
+            return Err(RxEnqueueError::InvalidLength(error));
+        }
+        self.publish(snapshot.epoch, owned)
+    }
+
+    fn publish(&self, epoch: u32, frame: FrameSlot<FRAME_CAPACITY>) -> Result<(), RxEnqueueError> {
+        if let Err(TrySendError::Full(queued)) = self.ready.try_send(QueuedFrame { epoch, frame }) {
+            self.release(queued.frame);
+            unreachable!("an acquired RX payload slot must have one ready-queue credit");
+        }
+        Ok(())
+    }
+
+    fn release(&self, frame: FrameSlot<FRAME_CAPACITY>) {
+        if let Err(TrySendError::Full(_)) = self.free_return.try_send(frame) {
+            unreachable!("an RX payload lease may return to the free queue only once");
+        }
+    }
+}
+
+/// Unique complete-frame owner returned by the upstream-compatible TX queue.
+pub struct RadioTxFrame<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    frame: Option<FrameSlot<FRAME_CAPACITY>>,
+    free: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    RadioTxFrame<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    pub fn as_slice(&self) -> &[u8] {
+        self.frame
+            .as_deref()
+            .expect("live TX lease always owns its payload slot")
+            .as_slice()
+    }
+
+    pub fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
+    for RadioTxFrame<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn drop(&mut self) {
+        if let Some(frame) = self.frame.take()
+            && let Err(TrySendError::Full(_)) = self.free.try_send(frame)
+        {
+            unreachable!("a TX payload lease may return to the free queue only once");
+        }
     }
 }
 
@@ -429,7 +609,8 @@ pub struct RadioTxConsumer<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
-    tx: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    ready: Receiver<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    free: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     link: &'resources SharedLinkState<M>,
 }
@@ -447,40 +628,46 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Copy
 {
 }
 
-impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
-    RadioTxConsumer<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    RadioTxConsumer<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     pub fn queue_len(&self) -> usize {
-        self.tx.len()
+        self.ready.len()
     }
 
-    pub fn try_receive(&self) -> Option<EthernetFrame<FRAME_CAPACITY>> {
+    pub fn try_receive(&self) -> Option<RadioTxFrame<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>> {
         loop {
-            let queued = self.tx.try_receive().ok()?;
+            let queued = self.ready.try_receive().ok()?;
             let current = self.link.snapshot();
             if current.up && current.epoch == queued.epoch {
-                return Some(queued.frame);
+                return Some(RadioTxFrame {
+                    frame: Some(queued.frame),
+                    free: self.free,
+                });
+            }
+            if let Err(TrySendError::Full(_)) = self.free.try_send(queued.frame) {
+                unreachable!("discarding stale TX must return exactly one payload slot");
             }
         }
     }
 
-    pub async fn receive(&self) -> EthernetFrame<FRAME_CAPACITY> {
+    pub async fn receive(&self) -> RadioTxFrame<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
         loop {
             if let Some(frame) = self.try_receive() {
                 return frame;
             }
-            self.tx.ready_to_receive().await;
+            self.ready.ready_to_receive().await;
         }
     }
 
     pub async fn wait_for_publication(self) {
-        if self.tx.is_empty() {
+        if self.ready.is_empty() {
             self.tx_published.wait().await;
         }
     }
 
     pub async fn wait_for_queue_len_at_least(self, minimum: usize) {
-        while self.tx.len() < minimum {
+        while self.ready.len() < minimum {
             self.tx_published.wait().await;
         }
     }
@@ -497,14 +684,17 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         &self,
     ) -> RadioRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
         RadioRxPublisher {
-            rx: self.rx,
+            ready: self.rx_ready,
+            free: self.rx_free,
+            free_return: self.rx_free_return,
             link: self.link,
         }
     }
 
     pub const fn tx_consumer(&self) -> RadioTxConsumer<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
         RadioTxConsumer {
-            tx: self.tx,
+            ready: self.tx_ready,
+            free: self.tx_free,
             tx_published: self.tx_published,
             link: self.link,
         }
@@ -521,18 +711,20 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
     }
 
     /// Takes the next Ethernet frame that the stack wants transmitted.
-    pub fn try_receive_tx(&self) -> Option<EthernetFrame<FRAME_CAPACITY>> {
+    pub fn try_receive_tx(
+        &self,
+    ) -> Option<RadioTxFrame<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>> {
         self.tx_consumer().try_receive()
     }
 
     /// Waits for the next Ethernet frame that the stack wants transmitted.
-    pub async fn receive_tx(&self) -> EthernetFrame<FRAME_CAPACITY> {
+    pub async fn receive_tx(&self) -> RadioTxFrame<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
         self.tx_consumer().receive().await
     }
 
     /// Number of decapsulated RX frames awaiting `embassy-net`.
     pub fn rx_queue_len(&self) -> usize {
-        self.rx.len()
+        self.rx_ready.len()
     }
 
     /// Number of Ethernet TX frames awaiting the radio task.
@@ -542,16 +734,40 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
 }
 
 /// An owned receive token; consuming it releases its fixed queue slot.
-pub struct ReceiveToken<const FRAME_CAPACITY: usize> {
-    frame: EthernetFrame<FRAME_CAPACITY>,
+pub struct ReceiveToken<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    frame: Option<FrameSlot<FRAME_CAPACITY>>,
+    free: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
 }
 
-impl<const FRAME_CAPACITY: usize> embassy_net_driver::RxToken for ReceiveToken<FRAME_CAPACITY> {
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> embassy_net_driver::RxToken
+    for ReceiveToken<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
     fn consume<R, F>(mut self, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        f(self.frame.as_mut_slice())
+        f(self
+            .frame
+            .as_deref_mut()
+            .expect("live RX token always owns its payload slot")
+            .as_mut_slice())
+    }
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
+    for ReceiveToken<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn drop(&mut self) {
+        if let Some(frame) = self.frame.take()
+            && let Err(TrySendError::Full(_)) = self.free.try_send(frame)
+        {
+            unreachable!("an RX token may return its payload slot only once");
+        }
     }
 }
 
@@ -563,7 +779,9 @@ pub struct TransmitToken<
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
 > {
-    tx: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    frame: Option<FrameSlot<FRAME_CAPACITY>>,
+    ready: Sender<'resources, M, QueuedFrame<FRAME_CAPACITY>, QUEUE_DEPTH>,
+    free: Sender<'resources, M, FrameSlot<FRAME_CAPACITY>, QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     epoch: u32,
     _reservation: &'device mut (),
@@ -572,25 +790,26 @@ pub struct TransmitToken<
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> embassy_net_driver::TxToken
     for TransmitToken<'_, '_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
-    fn consume<R, F>(self, length: usize, f: F) -> R
+    fn consume<R, F>(mut self, length: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        assert!(
-            length <= FRAME_CAPACITY,
-            "embassy-net requested a frame larger than driver capabilities"
-        );
-
-        let mut frame = EthernetFrame::with_length(length);
-        let result = f(frame.as_mut_slice());
-
-        // Device::transmit polls capacity before constructing this token.
-        // The token's mutable borrow prevents another token from being issued,
-        // and this private Sender is the queue's only producer.
-        if let Err(TrySendError::Full(_)) = self.tx.try_send(QueuedFrame {
+        let result = f(self
+            .frame
+            .as_deref_mut()
+            .expect("live TX token always owns its reserved payload slot")
+            .prepare(length));
+        let frame = self
+            .frame
+            .take()
+            .expect("completed TX token still owns its payload slot");
+        if let Err(TrySendError::Full(queued)) = self.ready.try_send(QueuedFrame {
             epoch: self.epoch,
             frame,
         }) {
+            if let Err(TrySendError::Full(_)) = self.free.try_send(queued.frame) {
+                unreachable!("failed TX publication must restore its exact payload slot");
+            }
             unreachable!("reserved open-radio TX queue slot was lost");
         }
         self.tx_published.signal(());
@@ -598,11 +817,23 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> embassy
     }
 }
 
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
+    for TransmitToken<'_, '_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn drop(&mut self) {
+        if let Some(frame) = self.frame.take()
+            && let Err(TrySendError::Full(_)) = self.free.try_send(frame)
+        {
+            unreachable!("an unused TX token may restore its payload slot only once");
+        }
+    }
+}
+
 impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Driver
     for Device<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     type RxToken<'device>
-        = ReceiveToken<FRAME_CAPACITY>
+        = ReceiveToken<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>
     where
         Self: 'device;
     type TxToken<'device>
@@ -621,17 +852,20 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
             return None;
         }
         // A receive token must be accompanied by a guaranteed TX token.
-        if self.tx.poll_ready_to_send(cx).is_pending() {
+        if self.tx_free.poll_ready_to_receive(cx).is_pending() {
             self.ingress_fairness.record_natural_stop(QUEUE_DEPTH);
             return None;
         }
 
-        let frame = loop {
-            match self.rx.poll_receive(cx) {
+        let (frame, frame_epoch) = loop {
+            match self.rx_ready.poll_receive(cx) {
                 Poll::Ready(queued) => {
                     let current = self.link.snapshot();
                     if current.up && current.epoch == queued.epoch {
-                        break queued.frame;
+                        break (queued.frame, current.epoch);
+                    }
+                    if let Err(TrySendError::Full(_)) = self.rx_free.try_send(queued.frame) {
+                        unreachable!("discarding stale RX must restore exactly one payload slot");
                     }
                 }
                 Poll::Pending => {
@@ -640,14 +874,26 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
                 }
             }
         };
+        let tx_frame = self
+            .tx_free
+            .try_receive()
+            .expect("single device owner preserves the preflight TX payload credit");
         self.ingress_fairness.record_received();
 
         Some((
-            ReceiveToken { frame },
+            ReceiveToken {
+                frame: Some(frame),
+                free: self.rx_free,
+            },
             TransmitToken {
-                tx: self.tx,
+                frame: Some(tx_frame),
+                ready: self.tx_ready,
+                free: self.tx_free_return,
                 tx_published: self.tx_published,
-                epoch: link.epoch,
+                // Use the lifetime which accepted this RX frame rather than
+                // the earlier preflight snapshot. A concurrent Down -> Up may
+                // advance the epoch while stale queue entries are drained.
+                epoch: frame_epoch,
                 _reservation: &mut self.tx_reservation,
             },
         ))
@@ -659,15 +905,18 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
             let _ = self.link.get(cx);
             return None;
         }
-        self.tx
-            .poll_ready_to_send(cx)
-            .is_ready()
-            .then_some(TransmitToken {
-                tx: self.tx,
-                tx_published: self.tx_published,
-                epoch: link.epoch,
-                _reservation: &mut self.tx_reservation,
-            })
+        let frame = match self.tx_free.poll_receive(cx) {
+            Poll::Ready(frame) => frame,
+            Poll::Pending => return None,
+        };
+        Some(TransmitToken {
+            frame: Some(frame),
+            ready: self.tx_ready,
+            free: self.tx_free_return,
+            tx_published: self.tx_published,
+            epoch: link.epoch,
+            _reservation: &mut self.tx_reservation,
+        })
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> DriverLinkState {
@@ -678,6 +927,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         let mut capabilities = Capabilities::default();
         capabilities.max_transmission_unit = FRAME_CAPACITY;
         capabilities.max_burst_size = Some(QUEUE_DEPTH);
+        capabilities.checksum = self.checksum.clone();
         capabilities
     }
 

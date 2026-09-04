@@ -73,7 +73,8 @@ module for the former vendor-derived `wdev` naming.
 - `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
 - `adapters/embassy-net-compat`: copied-frame adapter for the unchanged
-  released Embassy driver interface; it has no fork or radio dependency.
+  released Embassy driver interface; payload arenas are separate from hot
+  lease queues, and it has no fork or radio dependency.
 - `adapters/embassy/esp32s31-wifi-compat`: narrow bridge from that unchanged
   driver to the shared ESP32-S31 selected-burst and fixed-SRAM materializer;
   it has no Xarxa or owned-network dependency.
@@ -83,7 +84,8 @@ module for the former vendor-derived `wdev` naming.
   the statically bound ESP32-S31 controller-memory graph.
 - `integration/esp32s31/embassy-wifi`: production composition and the only
   place applications enter the current ESP32-S31 station/AP/monitor service
-  or its explicit ESP-NOW composition hooks.
+  or its explicit ESP-NOW composition hooks. It selects exactly one of the
+  optimized owned or released compatibility network leaves at compile time.
 - `common/network`: adapter-neutral interface/link/error values with no stack,
   driver, executor, queue or packet-allocation policy.
 - `common/dma`: audited generic pinned-memory foundation.

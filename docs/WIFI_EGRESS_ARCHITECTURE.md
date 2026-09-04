@@ -113,6 +113,12 @@ Every transfer obeys these rules:
 - a physical slot returns only after the terminal hardware path releases it;
 - descriptor ownership never crosses an executor or core boundary.
 
+`SoftwareTxFrame` may borrow a statically rooted pool lease. The owner must
+outlive the synchronous radio operation which holds it, but the trait itself
+does not impose a blanket `'static` bound. The common core can therefore accept
+affine leases without erasing ownership or copying a frame solely to satisfy a
+type restriction.
+
 ## Integration A: upstream compatibility
 
 This adapter compiles against the released `embassy-net-driver` contract and
@@ -139,7 +145,10 @@ and performance envelope. It is not the baseline for the optimized hot path.
 
 The released-driver endpoint and the ESP32-S31 radio bridge are deliberately
 separate crates. The first knows only the official Embassy driver API and owns
-bounded complete Ethernet frames. The second narrows its radio-side
+bounded complete Ethernet frames. Its payload slots live in separately placed
+general-memory arenas; hot channels transfer only unique mutable leases, so a
+queue operation cannot copy a 1600-byte frame value or force payload and
+waker/epoch metadata into one memory tier. The second narrows its radio-side
 capabilities into the same `DatapathNetwork` and `SelectedBurstMaterializer`
 contracts used by the optimized integration. Therefore STA, AP and concurrent
 role policy is shared, while the extra compatibility copy and queue storage

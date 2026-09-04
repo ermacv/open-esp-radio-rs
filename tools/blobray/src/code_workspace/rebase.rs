@@ -5,7 +5,8 @@ use std::{
 
 use super::{
     CodeBoundaryPack, CodeBoundaryStatus, CodeWorkspace, ReviewedCodeBoundary, ReviewedCodeInput,
-    load_code_boundary_pack, render_code_boundary_pack, validate_review,
+    load_code_boundary_pack, render_code_boundary_decisions, render_code_boundary_pack,
+    validate_review,
 };
 use crate::{
     Result,
@@ -66,6 +67,22 @@ impl CodeRebaseCandidate {
 
         let mut old_boundaries = BTreeMap::new();
         for review in old.boundaries {
+            // Legacy packs may contain generated backlog. It carries no review
+            // decision and must not turn candidate discovery into a pack edit.
+            if review.status == CodeBoundaryStatus::Unreviewed {
+                if review.name.is_some() || review.reason.is_some() {
+                    return Err(crate::Error::invalid(
+                        "unreviewed code boundary must not define name or reason",
+                    ));
+                }
+                continue;
+            }
+            if !old_input_guards.contains(&(review.source.clone(), review.artifact_sha256.clone()))
+            {
+                return Err(crate::Error::invalid(
+                    "reviewed code boundary has no matching source and artifact SHA-256 input guard",
+                ));
+            }
             let key = stable_review_key(&review);
             if old_boundaries.insert(key.clone(), review).is_some() {
                 return Err(crate::Error::invalid(format!(
@@ -77,32 +94,27 @@ impl CodeRebaseCandidate {
 
         let mut preserved = 0;
         let mut changed = 0;
-        let mut added = 0;
-        let mut boundary_guards_current = true;
-        let mut boundaries = Vec::with_capacity(facts.candidates.len());
+        let mut boundaries = Vec::with_capacity(old_boundaries.len());
+        let mut pending_reviews = Vec::new();
         for fact in &facts.candidates {
             let key = stable_fact_key(fact);
-            let review = match old_boundaries.remove(&key) {
-                Some(mut review) => {
-                    boundary_guards_current &= review.artifact_sha256 == fact.artifact_sha256;
-                    review.artifact_sha256.clone_from(&fact.artifact_sha256);
-                    if validate_review(&review, fact).is_ok() {
-                        preserved += 1;
-                        review
-                    } else {
-                        changed += 1;
-                        unreviewed(fact)
-                    }
-                }
-                None => {
-                    boundary_guards_current = false;
-                    added += 1;
-                    unreviewed(fact)
-                }
+            let Some(review) = old_boundaries.remove(&key) else {
+                continue;
             };
-            boundaries.push(review);
+            // A matching range does not authenticate the semantics of changed
+            // bytes. Without body-level evidence, a new digest requires review.
+            if review.artifact_sha256 == fact.artifact_sha256
+                && validate_review(&review, fact).is_ok()
+            {
+                preserved += 1;
+                boundaries.push(review);
+            } else {
+                changed += 1;
+                pending_reviews.push(review);
+            }
         }
         let removed = old_boundaries.len();
+        pending_reviews.extend(old_boundaries.into_values());
         let inputs = facts
             .inputs
             .iter()
@@ -120,18 +132,21 @@ impl CodeRebaseCandidate {
         // Validate the complete rebased document, including duplicate accepted names.
         CodeWorkspace::from_pack(facts, pack.clone(), project_id)?;
 
-        let current = old_input_guards == new_input_guards
-            && boundary_guards_current
-            && changed == 0
-            && added == 0
-            && removed == 0;
-        // Input guards protect the reviewed boundaries, not the mere presence
-        // of an artifact in the project. Adding or removing an input which
-        // contributes no boundary candidate cannot invalidate a human
-        // decision. Any affected candidate is still counted as added,
-        // removed, or changed below and keeps the rebase fail-closed.
-        let safe_to_apply = changed == 0 && added == 0 && removed == 0;
-        let contents = render_code_boundary_pack(&pack, facts);
+        let current = old_input_guards == new_input_guards && changed == 0 && removed == 0;
+        // Discovery changes alone are generated state. Only invalidated human
+        // decisions prevent automatic rebasing of the sparse overlay.
+        let safe_to_apply = changed == 0 && removed == 0;
+        let mut contents = render_code_boundary_pack(&pack);
+        if !pending_reviews.is_empty() {
+            // Keep the former intent visible in a review candidate without
+            // making it active against a different artifact revision.
+            contents.push_str("\n# Previous decisions requiring fresh review (inactive):\n");
+            for line in render_code_boundary_decisions(&pending_reviews).lines() {
+                contents.push_str("# ");
+                contents.push_str(line);
+                contents.push('\n');
+            }
+        }
         Ok(Self {
             pack,
             contents,
@@ -142,7 +157,7 @@ impl CodeRebaseCandidate {
                 inputs_removed,
                 preserved,
                 changed,
-                added,
+                added: 0,
                 removed,
             },
         })
@@ -175,20 +190,6 @@ fn validate_header(pack: &CodeBoundaryPack, project_id: &str) -> Result<()> {
         )));
     }
     Ok(())
-}
-
-fn unreviewed(fact: &CodeBoundaryCandidateFact) -> ReviewedCodeBoundary {
-    ReviewedCodeBoundary {
-        source: fact.source.clone(),
-        artifact_sha256: fact.artifact_sha256.clone(),
-        member: fact.member.clone(),
-        section: fact.section.clone(),
-        entry_offset: fact.entry_offset,
-        end_exclusive_offset: fact.end_limit_offset,
-        status: CodeBoundaryStatus::Unreviewed,
-        name: None,
-        reason: None,
-    }
 }
 
 fn stable_fact_key(fact: &CodeBoundaryCandidateFact) -> StableBoundaryKey {

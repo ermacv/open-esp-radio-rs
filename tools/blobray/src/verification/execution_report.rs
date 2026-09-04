@@ -24,8 +24,8 @@ pub struct DiagnosticCallContractReport {
 
 /// Canonical provenance for the diagnostic contracts used by an execution.
 ///
-/// `knowledge_provider` is the selected descriptor's
-/// `id@analysis_cache_revision`. A neutral target has no provider and must
+/// `knowledge_provider` records the composed knowledge and executable-model
+/// IDs with their revisions. A neutral target has no provider and must
 /// keep `calls` empty. Calls are sorted by `(symbol, argument_count)` so the
 /// same compiled contract has one report and fingerprint identity regardless
 /// of declaration order.

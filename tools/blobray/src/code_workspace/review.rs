@@ -49,8 +49,14 @@ pub(crate) fn render_code_boundary_review(
         writeln!(output, "- Section: `{}`", entry.review.section).unwrap();
         writeln!(
             output,
-            "- Reviewed range: `{:#x}..{:#x}`",
-            entry.review.entry_offset, entry.review.end_exclusive_offset
+            "- {} range: `{:#x}..{:#x}`",
+            if entry.review.status == CodeBoundaryStatus::Unreviewed {
+                "Candidate"
+            } else {
+                "Reviewed"
+            },
+            entry.review.entry_offset,
+            entry.review.end_exclusive_offset
         )
         .unwrap();
         writeln!(output, "- Object kind: `{}`", entry.fact.object_kind).unwrap();

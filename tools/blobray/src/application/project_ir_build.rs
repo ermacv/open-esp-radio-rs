@@ -142,6 +142,12 @@ fn build_project_ir_impl<'a>(
     let mut built = Vec::with_capacity(selected.len());
     let mut stale = Vec::new();
     for (profile, inputs) in selected.into_iter().zip(resolved) {
+        // The coordinator checks all profiles before building them together.
+        // Capture each profile's actual function queries during execution,
+        // independently of the order of those earlier cache lookups.
+        if let Some(store) = function_fact_store.as_deref_mut() {
+            store.begin_stage_queries(&format!("linked-ir:{}", profile.id));
+        }
         let documents =
             linked_ir_export::generate_project_profile(linked_ir_export::ProjectProfileRequest {
                 inputs: inputs.artifacts,

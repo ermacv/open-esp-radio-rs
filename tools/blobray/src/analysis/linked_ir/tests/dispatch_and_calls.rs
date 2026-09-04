@@ -12,7 +12,8 @@ use open_radio_vendor_analysis_model::{
 struct CountingFunctionFactStore {
     facts: BTreeMap<String, Vec<u8>>,
     load_batches: RefCell<Vec<Vec<String>>>,
-    store_batches: Vec<Vec<String>>,
+    publication_batches: Vec<Vec<String>>,
+    newly_inserted_keys: Vec<String>,
 }
 
 impl FunctionFactStore for CountingFunctionFactStore {
@@ -29,11 +30,13 @@ impl FunctionFactStore for CountingFunctionFactStore {
     }
 
     fn store_function_facts(&mut self, facts: &[(String, Vec<u8>)]) -> crate::Result<()> {
-        self.store_batches
+        self.publication_batches
             .push(facts.iter().map(|(key, _)| key.clone()).collect());
         for (key, value) in facts {
             if let Some(previous) = self.facts.insert(key.clone(), value.clone()) {
                 assert_eq!(previous, *value, "an immutable function fact changed");
+            } else {
+                self.newly_inserted_keys.push(key.clone());
             }
         }
         Ok(())
@@ -746,7 +749,8 @@ fn reachable_callees_are_loaded_as_one_late_cache_batch() {
     assert_eq!(store.facts.len(), 3);
 
     store.load_batches.get_mut().clear();
-    store.store_batches.clear();
+    store.publication_batches.clear();
+    store.newly_inserted_keys.clear();
     let warm = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
 
     assert_eq!(warm, cold, "cache reuse changed linked-IR completeness");
@@ -761,8 +765,17 @@ fn reachable_callees_are_loaded_as_one_late_cache_batch() {
         "the root should load eagerly and both discovered callees in one late batch"
     );
     assert!(
-        store.store_batches.is_empty(),
-        "a cache hit unexpectedly reran direct decode/analysis and produced new facts"
+        store.newly_inserted_keys.is_empty(),
+        "a warm run should publish ownership without inserting new function facts"
+    );
+    assert_eq!(
+        store
+            .publication_batches
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        [3],
+        "both eagerly and lazily consumed facts must acquire epoch ownership"
     );
 }
 
@@ -803,18 +816,32 @@ fn changing_one_function_reuses_unrelated_persistent_facts() {
     let cold = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
     assert_eq!(cold.functions.len(), symbols.len());
     assert_eq!(
-        store.store_batches.iter().map(Vec::len).collect::<Vec<_>>(),
+        store
+            .publication_batches
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
         [symbols.len()],
         "the cold run should persist one fact per independent function"
     );
 
     store.load_batches.get_mut().clear();
-    store.store_batches.clear();
+    store.publication_batches.clear();
+    store.newly_inserted_keys.clear();
     let warm = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
     assert_eq!(warm, cold, "cache reuse changed linked-IR completeness");
     assert!(
-        store.store_batches.is_empty(),
+        store.newly_inserted_keys.is_empty(),
         "the unchanged run should reuse every persistent function fact"
+    );
+    assert_eq!(
+        store
+            .publication_batches
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        [symbols.len()],
+        "reused facts must still acquire ownership in the publishing epoch"
     );
 
     let mut changed = empty_resolver();
@@ -822,14 +849,15 @@ fn changing_one_function_reuses_unrelated_persistent_facts() {
     changed.symbols[0].bytes = vec![0x13, 0x00, 0x00, 0x00];
     changed.symbol_ids = resolver.symbol_ids.clone();
     store.load_batches.get_mut().clear();
-    store.store_batches.clear();
+    store.publication_batches.clear();
+    store.newly_inserted_keys.clear();
     let changed_report =
         build_linked_ir_for_source_with_cache(&changed, &map, options, Some(&mut store));
 
     assert_eq!(changed_report.functions.len(), changed.symbols.len());
     assert_eq!(
-        store.store_batches.iter().map(Vec::len).collect::<Vec<_>>(),
-        [1],
+        store.newly_inserted_keys.len(),
+        1,
         "changing one function body should not invalidate unrelated direct facts"
     );
 }
@@ -894,7 +922,8 @@ fn linked_base_shift_does_not_reuse_stale_pc_relative_mmio_facts() {
         cold.functions[0].mmio_accesses[0].address,
         original_address as u32
     );
-    warm_store.store_batches.clear();
+    warm_store.publication_batches.clear();
+    warm_store.newly_inserted_keys.clear();
     let warm =
         build_linked_ir_for_source_with_cache(&shifted, &map, options, Some(&mut warm_store));
 
@@ -910,12 +939,8 @@ fn linked_base_shift_does_not_reuse_stale_pc_relative_mmio_facts() {
         "a linked-base shift reused stale PC-relative MMIO facts"
     );
     assert_eq!(
-        warm_store
-            .store_batches
-            .iter()
-            .map(Vec::len)
-            .collect::<Vec<_>>(),
-        [1],
+        warm_store.newly_inserted_keys.len(),
+        1,
         "a linked-base shift must miss the old persistent function fact"
     );
 }

@@ -549,7 +549,7 @@ impl ProjectAnalysisCache {
         // First use may create `generated/.blobray-cache`; that local cache
         // setup must not look like a concurrent rebind of a project input in
         // the containing directory.
-        self.store_mut()?;
+        self.store_mut()?.begin_stage_queries(stage);
         let mut observed = self.begin_observing_inputs(stage, configuration, inputs)?;
         let signature = observed.snapshot.signature.clone();
         let Some(cached) = self.store_mut()?.stage_output_digests(&signature)? else {
@@ -1094,7 +1094,7 @@ fn stage_analysis_domain(stage: &str) -> Option<&'static [u8]> {
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     if stage.starts_with("linked-ir:") {
-        return Ok(59);
+        return Ok(60);
     }
     match stage {
         "symbol-inventory" => Ok(2),
@@ -1105,7 +1105,9 @@ fn stage_revision(stage: &str) -> Result<u32> {
         "mmio-discovery" => Ok(7),
         "interface-discovery" => Ok(7),
         "interface-capability-context" => Ok(1),
-        "linked-ir" => Ok(59),
+        // v60 records the consumed function queries. Older stage results have
+        // no edges and cannot preserve warm facts across epoch restoration.
+        "linked-ir" => Ok(60),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -1133,6 +1135,80 @@ fn path_key(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restored_stage_preserves_only_its_consumed_function_facts() {
+        use crate::analysis::FunctionFactStore;
+
+        let directory =
+            std::env::temp_dir().join(format!("blobray-stage-fact-epochs-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(directory.join("generated")).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("input.bin");
+        let output = directory.join("generated/output.json");
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&input, b"unchanged input").unwrap();
+        let inputs = [input];
+        let outputs = [output.clone()];
+        let consumed = ("function-direct:consumed".to_owned(), b"fact".to_vec());
+        let unrelated = ("function-direct:unrelated".to_owned(), b"other".to_vec());
+        {
+            let mut cache = ProjectAnalysisCache::deferred(&manifest);
+            // A function query outside this stage must not become its edge.
+            cache
+                .query_store_mut()
+                .unwrap()
+                .store_function_facts(std::slice::from_ref(&unrelated))
+                .unwrap();
+            assert!(
+                !cache
+                    .is_current("linked-ir", "config", &inputs, &outputs)
+                    .unwrap()
+            );
+            cache
+                .query_store_mut()
+                .unwrap()
+                .store_function_facts(std::slice::from_ref(&consumed))
+                .unwrap();
+            fs::write(&output, b"linked output").unwrap();
+            cache
+                .record("linked-ir", "config", &inputs, &outputs)
+                .unwrap();
+            cache.complete_analysis_epoch().unwrap();
+        }
+        fs::remove_file(&output).unwrap();
+        {
+            let mut cache = ProjectAnalysisCache::deferred(&manifest);
+            assert!(
+                cache
+                    .is_current("linked-ir", "config", &inputs, &outputs)
+                    .unwrap()
+            );
+            assert!(cache.last_lookup_restored());
+            assert_eq!(fs::read(&output).unwrap(), b"linked output");
+            cache.complete_analysis_epoch().unwrap();
+        }
+        {
+            let mut cache = ProjectAnalysisCache::deferred(&manifest);
+            // A later stage miss still reuses the facts carried by epoch B,
+            // even though B only restored the whole stage from CAS.
+            assert!(
+                !cache
+                    .is_current("linked-ir", "changed", &inputs, &outputs)
+                    .unwrap()
+            );
+            let facts = cache
+                .query_store_mut()
+                .unwrap()
+                .load_function_facts(&[consumed.0.clone(), unrelated.0])
+                .unwrap();
+            assert_eq!(facts, vec![consumed]);
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn deferred_cache_construction_does_not_touch_persistent_state() {
@@ -1811,8 +1887,8 @@ mod tests {
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
         assert_eq!(stage_revision("mmio-discovery").unwrap(), 7);
-        assert_eq!(stage_revision("linked-ir").unwrap(), 59);
-        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 59);
+        assert_eq!(stage_revision("linked-ir").unwrap(), 60);
+        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 60);
     }
 
     #[test]

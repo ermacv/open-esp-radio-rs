@@ -1,0 +1,21 @@
+[package]
+name = "open-radio-vendor-models-esp32s31"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Guarded executable reconstruction models for the ESP32-S31 investigation"
+
+[dependencies]
+open-radio-vendor-knowledge-esp32s31 = { path = "../knowledge" }
+sha2 = "=0.10.9"
+open-radio-vendor-backend-riscv = { path = "../../../../../../tools/blobray/crates/backend-riscv" }
+open-radio-vendor-chip-models-esp32s31-rev0 = { path = "../../../../chips/esp32s31/blobray-provider/models" }
+open-radio-vendor-execution-model = { path = "../../../../../../tools/blobray/crates/execution-model" }
+open-radio-vendor-harness-esp32s31 = { path = "../contracts" }
+open-radio-vendor-semantics = { path = "../../../../../../tools/blobray/crates/semantics" }
+
+[lints]
+workspace = true

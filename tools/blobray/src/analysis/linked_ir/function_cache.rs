@@ -171,6 +171,15 @@ impl FunctionCacheRun {
             && let Ok(fact) = decode_fact(&value)
             && let Some(graph) = fact.materialize(symbol, &cache.namespace)
         {
+            // Consumption must acquire ownership in the publishing epoch too.
+            // Re-publish the validated bytes through the same immutable batch
+            // path as a miss; merely loading a candidate is not consumption.
+            cache
+                .pending
+                .lock()
+                .expect("function cache pending lock")
+                .entry(key)
+                .or_insert(value);
             cache.reused.fetch_add(1, Ordering::Relaxed);
             tracing::trace!(symbol = symbol.name, "reused persistent function fact");
             return graph;
@@ -249,7 +258,7 @@ impl FunctionCacheRun {
             cache_loaded = cache.loaded.load(Ordering::Relaxed),
             cache_hits = hits,
             cache_misses = lookups.saturating_sub(hits),
-            cache_recomputed_published = facts.len(),
+            cache_facts_published = facts.len(),
             "completed persistent function-fact cache session"
         );
     }
@@ -1377,6 +1386,140 @@ mod tests {
     use std::{cell::Cell, sync::Arc};
 
     use super::*;
+
+    #[test]
+    fn consumed_function_facts_remain_warm_across_successful_epochs() {
+        use crate::application::query_store::QueryStore;
+
+        let root = std::env::temp_dir().join(format!(
+            "blobray-function-epoch-reuse-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("vendor-project.toml");
+        let owner = symbol(0x4000);
+        let resolver = resolver(vec![owner.clone()]);
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let mut cold_counts = Vec::new();
+        for _ in 0..3 {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            let cache =
+                FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, Some(&store));
+            let cold = Cell::new(0);
+            cache.direct_graph(&owner, || {
+                cold.set(cold.get() + 1);
+                DirectCallGraph::default()
+            });
+            cache.persist(&mut store);
+            store.complete_analysis_epoch().unwrap();
+            cold_counts.push(cold.get());
+        }
+        assert_eq!(cold_counts, [1, 0, 0]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn changing_one_function_only_recomputes_that_function_across_epochs() {
+        use crate::application::query_store::QueryStore;
+
+        let root = std::env::temp_dir().join(format!(
+            "blobray-function-epoch-locality-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("vendor-project.toml");
+        let mut owners = vec![symbol(0x1000), symbol(0x2000), symbol(0x3000)];
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let mut recomputed = Vec::new();
+        for epoch in 0..4 {
+            if epoch == 2 {
+                owners[0].bytes[0] ^= 1;
+            }
+            let resolver = resolver(owners.clone());
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            let cache =
+                FunctionCacheRun::prepare(&resolver, &owners, &mmio, "test", true, Some(&store));
+            let mut analyzed = Vec::new();
+            for owner in &owners {
+                cache.direct_graph(owner, || {
+                    analyzed.push(owner.address);
+                    DirectCallGraph::default()
+                });
+            }
+            cache.persist(&mut store);
+            store.complete_analysis_epoch().unwrap();
+            recomputed.push(analyzed);
+        }
+        assert_eq!(
+            recomputed,
+            [vec![0x1000, 0x2000, 0x3000], vec![], vec![0x1000], vec![]]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn aborted_epoch_preserves_published_hits_and_hides_new_function_facts() {
+        use crate::application::query_store::QueryStore;
+
+        let root = std::env::temp_dir().join(format!(
+            "blobray-function-epoch-abort-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("vendor-project.toml");
+        let published = symbol(0x4000);
+        let unpublished = symbol(0x5000);
+        let resolver = resolver(vec![published.clone(), unpublished.clone()]);
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let mut cold_counts = Vec::new();
+        for epoch in 0..3 {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            let cache = FunctionCacheRun::prepare(
+                &resolver,
+                [&published, &unpublished],
+                &mmio,
+                "test",
+                true,
+                Some(&store),
+            );
+            let cold = Cell::new(0);
+            cache.direct_graph(&published, || {
+                cold.set(cold.get() + 1);
+                DirectCallGraph::default()
+            });
+            if epoch != 0 {
+                cache.direct_graph(&unpublished, || {
+                    cold.set(cold.get() + 1);
+                    DirectCallGraph::default()
+                });
+            }
+            cache.persist(&mut store);
+            if epoch != 1 {
+                store.complete_analysis_epoch().unwrap();
+            }
+            cold_counts.push(cold.get());
+        }
+        assert_eq!(cold_counts, [1, 1, 1]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     static UNKEYED_SUMMARY_HOOKS: direct::RiscvSummaryHooks = direct::RiscvSummaryHooks {
         secondary_return_target: |_| false,

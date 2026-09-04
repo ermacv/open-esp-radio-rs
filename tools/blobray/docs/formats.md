@@ -39,7 +39,7 @@ unknown fields.
   remain distinct states; exclusions never count as analyzed coverage;
 - local run specification: ignored bindings to caller-owned private artifacts.
 
-`project files` schema 3 exposes the resolved portability layer separately
+`project files` schema 4 exposes the resolved portability layer separately
 from edit ownership, so a reviewed file can still be identified as reusable
 ecosystem/chip knowledge or as investigation-local review.
 
@@ -127,7 +127,7 @@ provenance, never executable semantics.
 
 ## Durable revision state
 
-- immutable schema-4 revision snapshots (`revisions/snapshots/NAME.json.gz`)
+- immutable schema-5 revision snapshots (`revisions/snapshots/NAME.json.gz`)
   contain only typed vendor artifact/inventory/companion digests and normalized
   vendor-derived features, never vendor payloads, disassembly, or local Rust
   verification ELF identities. They also bind every reviewed record to the
@@ -149,7 +149,7 @@ companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
 generated evidence.
 
-Only schema-4 snapshots and revision-state DSL version 1 are accepted. TOML,
+Only schema-5 snapshots and revision-state DSL version 1 are accepted. TOML,
 older state and migration maps are not parsed or upgraded. Remove invalid
 state and capture a fresh baseline from the live typed vendor bindings.
 
@@ -183,7 +183,7 @@ state and capture a fresh baseline from the live typed vendor bindings.
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
 - revision diff and rebase plans. Diff reports use their own schema 2,
-  independently of schema-3 stored snapshots, and include a typed function
+  independently of schema-5 stored snapshots, and include a typed function
   delta (`changed`, `added`, `removed`, `{ before, after }` remaps and uncertain
   identities) plus research invalidation areas with affected subjects and
   reviewed-record IDs. `@live` is a read-only operand for validating and
@@ -237,6 +237,12 @@ equivalent controlled storage. They remain tool-owned records, not manually
 reviewed fact packs.
 
 ## Internal persistent query store
+
+`project cache gc` retention reports use `schema_version = 2`, with an explicit
+`retired-objects` or `retired-epochs` scope and eligible epoch/query/object
+counts. `--retired-epochs` requires `--retention-days`; the ordinary GC scope is
+unchanged. See [retention policy](cache-policy.md) for protected roots and the
+atomic publication contract. This report change does not change cache schema 10.
 
 `generated/.blobray-cache/queries.sqlite3` and `objects-*.pack` are
 disposable local implementation state, not project formats and not evidence.

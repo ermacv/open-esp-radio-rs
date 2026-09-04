@@ -1,6 +1,8 @@
 use blobray::{KnowledgeProviderDescriptor, ProviderRegistry};
 use open_radio_vendor_chip_knowledge_esp32s31_rev0 as chip_knowledge;
+use open_radio_vendor_chip_models_esp32s31_rev0 as chip_models;
 use open_radio_vendor_knowledge_esp32s31 as esp32s31_knowledge;
+use open_radio_vendor_models_esp32s31 as esp32s31_models;
 
 const CHIP_PROVIDER_ID: &str = "esp32s31-rev0-chip-knowledge-v1";
 const PROJECT_PROVIDER_ID: &str = "esp32s31-radio-knowledge-v1";
@@ -10,18 +12,21 @@ static KNOWLEDGE_PROVIDERS: &[KnowledgeProviderDescriptor] = &[
         id: CHIP_PROVIDER_ID,
         extends: None,
         analysis_cache_revision: 1,
+        execution_models: Some(&chip_models::PROVIDER),
         contracts: &chip_knowledge::CONTRACTS,
-        riscv: Some(&chip_knowledge::RISCV_HARNESS),
+        riscv: Some(&chip_models::RISCV_HARNESS),
     },
     KnowledgeProviderDescriptor {
         id: PROJECT_PROVIDER_ID,
         extends: Some(CHIP_PROVIDER_ID),
-        // Revision 8 adds caller-memory models for reviewed BLE crypto outputs.
+        // Revision 9 authenticates ROM summary bodies and removes an unproven
+        // caller-owned DTM input bound.
         // The overlay harness is precomposed and its contracts are a checked
         // superset of the rev0 chip provider.
-        analysis_cache_revision: 8,
+        analysis_cache_revision: 9,
+        execution_models: Some(&esp32s31_models::PROVIDER),
         contracts: &esp32s31_knowledge::CONTRACTS,
-        riscv: Some(&esp32s31_knowledge::RISCV_HARNESS),
+        riscv: Some(&esp32s31_models::RISCV_HARNESS),
     },
 ];
 
@@ -36,6 +41,32 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn declarative_knowledge_does_not_install_executable_provider_dependencies() {
+        for contents in [
+            include_str!("../../../../chips/esp32s31/blobray-provider/knowledge/Cargo.toml"),
+            include_str!("../../blobray-provider/knowledge/Cargo.toml"),
+        ] {
+            let manifest: toml_edit::Document<String> = contents.parse().unwrap();
+            for (name, _) in manifest["dependencies"].as_table().unwrap() {
+                assert!(
+                    !name.contains("-models-")
+                        && !name.starts_with("open-radio-vendor-addon-")
+                        && name != "open-radio-vendor-execution-model",
+                    "declarative knowledge must not own executable dependency {name}",
+                );
+            }
+        }
+        assert_eq!(
+            chip_models::PROVIDER.kind,
+            blobray::ExecutionModelKind::RuntimeSemantics
+        );
+        assert_eq!(
+            esp32s31_models::PROVIDER.kind,
+            blobray::ExecutionModelKind::ManualReconstruction
+        );
+    }
 
     #[test]
     fn registry_composes_one_explicit_chip_root_and_project_overlay() {
@@ -60,17 +91,15 @@ mod tests {
 
     #[test]
     fn exact_rom_identity_hook_remains_project_local_without_applicability_evidence() {
-        let address = esp32s31_knowledge::wide_signed_divide_target_address();
-        assert!(!(chip_knowledge::SUMMARIES.secondary_return_target)(
-            address
-        ));
-        assert!((esp32s31_knowledge::RISCV_HARNESS
+        let address = esp32s31_models::wide_signed_divide_target_address();
+        assert!(!(chip_models::SUMMARIES.secondary_return_target)(address));
+        assert!((esp32s31_models::RISCV_HARNESS
             .summaries
             .secondary_return_target)(address));
 
         let chip_crystal =
-            (chip_knowledge::SUMMARIES.direct_external_semantic)("rtc_clk_xtal_freq_get").unwrap();
-        let composed_crystal = (esp32s31_knowledge::RISCV_HARNESS
+            (chip_models::SUMMARIES.direct_external_semantic)("rtc_clk_xtal_freq_get").unwrap();
+        let composed_crystal = (esp32s31_models::RISCV_HARNESS
             .summaries
             .direct_external_semantic)("rtc_clk_xtal_freq_get")
         .unwrap();

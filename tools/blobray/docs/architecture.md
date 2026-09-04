@@ -19,7 +19,8 @@ of observed behavior.
 | Generic Blobray | Extract, link, compare, and present facts | Analysis schemas and fail-closed algorithms | Artifact bytes, composition, add-ons | Observed facts, derived IR, pseudo-Rust, reports | Chip addresses, product policy, ledger state | Artifact bytes + provenance | Keep, simplify |
 | Architecture backend | Decode/lift one ISA | ISA semantics, calling-convention implementation | Bytes, relocations, ABI | Instructions, CFG, effects, blockers | Vendors, chips, drivers, ledgers | Artifact bytes + target ABI | Keep |
 | Ecosystem pack | Attach reusable vendor/RTOS vocabulary | Declarative operation names/signatures | Generic semantic vocabulary | Hints and reviewed call annotations | Chip addresses, production code | Reviewed pack | Keep, data-only |
-| Chip pack/provider | Attach reusable chip facts and lifting hooks | Memory map, SVD inputs, ROM identities, chip summaries | Target ABI, ecosystem vocabulary | Chip-enriched derived analysis | Production driver, qualification policy | Reviewed chip pack; observations remain external | Keep, split |
+| Chip pack/knowledge | Declare reusable chip facts | Memory map, SVD inputs, ROM identities, ABI and semantic declarations | Target ABI, ecosystem vocabulary | Reviewed interpretation inputs | Handwritten control flow, production driver, qualification policy | Reviewed chip pack; observations remain external | Keep declarative |
+| Executable analysis models | Interpret external boundaries or temporarily reconstruct selected bodies | Runtime adapters, guarded summary hooks, implementation provenance | Knowledge/contracts and authenticated applicability context | Modeled effects with explicit uncertainty | Hardware truth or qualification policy | Reviewed model implementation, distinct from observations | Separate from knowledge |
 | Project manifest | Compose one investigation | References, local workflow and output selection | Target, ecosystem packs, chip pack, reviewed workspaces | Resolved project | Reusable chip facts duplicated inline | Manifest only for composition | Simplify |
 | Reviewed knowledge | Accept hardware/function meaning after review | Reviewed assertions and links to evidence | Immutable observations and external evidence | Accepted names, fields, enums, contracts | Rewriting underlying observations | Reviewed model | Keep |
 | PAC generation | Publish reviewed register structure | Generator and generated-file contract | Reviewed register model | Raw PAC, bindings index | Driver/runtime policy | Reviewed register model | Keep |
@@ -50,7 +51,7 @@ compiled vendor + production Rust --------+-> verification result
                                     qualification evaluator
 ```
 
-The schema-3 composition is deliberately layered:
+The project composition is deliberately layered:
 
 1. `target.toml` owns only architecture and ABI facts;
 2. `ecosystem.toml` owns reusable vendor/RTOS semantic catalogs;
@@ -73,8 +74,9 @@ Likewise, projects for different chips may reference one ecosystem pack. A
 generic algorithm or schema belongs in Blobray source; generic is not a dump
 for reusable vendor data. ESP-IDF vocabulary and public header-versioned
 interface layouts, for example, are data-only ecosystem add-ons, while
-ESP32-S31 addresses and compiled summary hooks remain chip knowledge only when
-they are revision-stable. Exact artifact roots/digests/runtime guards,
+ESP32-S31 addresses remain chip knowledge only when they are revision-stable.
+Executable summary hooks belong to separately selected model providers even
+when reusable across investigations. Exact artifact roots/digests/runtime guards,
 body-identity guards, private callback cells, and Wi-Fi/BLE/802.15.4 artifact
 profiles remain investigation-local because they describe the supplied blob
 lineage. A project
@@ -82,6 +84,22 @@ provider may compose with a chip provider only when its compiled descriptor
 explicitly extends that exact reusable root, exposes a contract superset and a
 distinct precomposed harness/cache domain. Unrelated providers, transitive
 extension chains and contract downgrades fail closed.
+
+The ESP32-S31 host composes separate chip/project `knowledge` and `models`
+crates. Dependencies point from models to knowledge; knowledge does not install
+runtime addons or construct function traces. The host registers each model
+provider's identity, revision, kind and applicability separately, and doctor
+exposes that selection. Model revisions participate in both stage identities
+and function harness cache domains. Descriptive provenance is not a proof of
+model equivalence; exact body/context guards remain mandatory where applicable.
+See the [provider ownership contract](../../../verification/vendor/targets/esp32s31/blobray-provider/OWNERSHIP.md).
+
+Reviewed [function routes](function-workspace.md) may select unique calls by
+identity/operation and derive their instruction sites and exact payload from
+current observations. Explicit occurrence selectors resolve ambiguity; a
+review file need not reproduce a generated expression to attach its meaning.
+Whole upstream-chain discovery and typed guard expressions remain separate
+work from these call selectors.
 
 ## Demand-driven analysis and persistent ownership
 
@@ -142,7 +160,8 @@ and the semantic fingerprints required by that query domain. It never contains
 output paths, profile names, timestamps, UI state, reviewed ledger state, or
 production-driver state. Results are immutable: changed inputs create a new
 key instead of mutating the meaning of an old result. Indexed dependency edges
-describe stage ownership, while direct-function facts use the conservative
+describe stage ownership and its consumed direct-function queries, while the
+direct-function keys use the conservative
 projection above rather than claiming exact dependency-level invalidation.
 Incomplete results remain cacheable; a blocker is a valid fact, not a cache
 failure.
@@ -168,7 +187,10 @@ generated artifacts, recovery requires explicit removal of the entire
 
 Pack lifetime is reachability-based with explicit retention roots. Analysis
 epoch memberships, query results, stage-output bindings and timestamped retired
-objects are preserved.
+objects are preserved by ordinary compaction. Explicit
+`project cache gc --retired-epochs --retention-days DAYS --apply` can remove
+whole successful epochs older than the retirement cutoff while preserving
+current, standalone and pinned owners and their shared query/CAS data.
 When unprotected unreachable records exceed the bounded compaction
 threshold, the store streams all live objects into a new immutable generation,
 fsyncs it, atomically redirects SQLite, and only then removes old generations.

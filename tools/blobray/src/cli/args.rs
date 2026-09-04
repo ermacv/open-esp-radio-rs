@@ -71,6 +71,16 @@ pub(crate) struct UiArgs {
     )]
     pub(crate) format: OutputFormat,
 
+    /// Select human or JSON runtime error diagnostics on stderr; stdout remains the command result.
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value_t,
+        help_heading = "Output and diagnostics"
+    )]
+    pub(crate) diagnostic_format: OutputFormat,
+
     /// Include expanded evidence and component details in human output.
     #[arg(long, global = true, help_heading = "Output and diagnostics")]
     pub(crate) details: bool,
@@ -751,6 +761,7 @@ mod tests {
         assert!(arguments.dry_run);
         assert!(!arguments.apply);
         assert_eq!(arguments.retention_days, None);
+        assert!(!arguments.retired_epochs);
         assert_eq!(arguments.max_size, Some(1_048_576));
 
         let invocation = ParsedInvocation::parse([
@@ -767,6 +778,34 @@ mod tests {
         };
         assert!(arguments.apply);
         assert!(!arguments.dry_run);
+        assert_eq!(arguments.retention_days, Some(30));
+        assert!(!arguments.retired_epochs);
+    }
+
+    #[test]
+    fn retired_epoch_gc_is_explicit_and_requires_a_retirement_age() {
+        let without_age = ParsedInvocation::parse(
+            ["project", "cache", "gc", "--dry-run", "--retired-epochs"].map(str::to_owned),
+        )
+        .unwrap_err();
+        assert!(without_age.to_string().contains("--retention-days"));
+        let invocation = ParsedInvocation::parse(
+            [
+                "project",
+                "cache",
+                "gc",
+                "--apply",
+                "--retired-epochs",
+                "--retention-days",
+                "30",
+            ]
+            .map(str::to_owned),
+        )
+        .unwrap();
+        let Command::ProjectCacheGc(arguments) = invocation.command else {
+            panic!("expected project cache gc")
+        };
+        assert!(arguments.retired_epochs);
         assert_eq!(arguments.retention_days, Some(30));
     }
 

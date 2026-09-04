@@ -47,6 +47,22 @@ pub(crate) struct ReviewedCodeBoundary {
     pub(crate) reason: Option<String>,
 }
 
+impl ReviewedCodeBoundary {
+    pub(super) fn unreviewed(fact: &CodeBoundaryCandidateFact) -> Self {
+        Self {
+            source: fact.source.clone(),
+            artifact_sha256: fact.artifact_sha256.clone(),
+            member: fact.member.clone(),
+            section: fact.section.clone(),
+            entry_offset: fact.entry_offset,
+            end_exclusive_offset: fact.end_limit_offset,
+            status: CodeBoundaryStatus::Unreviewed,
+            name: None,
+            reason: None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct CodeWorkspaceSummary {
     pub(crate) inputs: usize,
@@ -106,6 +122,16 @@ impl CodeWorkspace {
             .collect::<BTreeMap<_, _>>();
         let mut reviews = BTreeMap::new();
         for review in pack.boundaries {
+            // Accept legacy backlog entries without treating their generated
+            // ranges or continued existence as human decisions.
+            if review.status == CodeBoundaryStatus::Unreviewed {
+                if review.name.is_some() || review.reason.is_some() {
+                    return Err(crate::Error::invalid(
+                        "unreviewed code boundary must not define name or reason",
+                    ));
+                }
+                continue;
+            }
             let key = review_key(&review);
             if reviews.insert(key.clone(), review).is_some() {
                 return Err(crate::Error::invalid(format!(
@@ -120,12 +146,6 @@ impl CodeWorkspace {
                 display_key(key)
             )));
         }
-        if let Some(key) = fact_map.keys().find(|key| !reviews.contains_key(*key)) {
-            return Err(crate::Error::invalid(format!(
-                "generated code-boundary candidate {} is missing from the reviewed pack; regenerate the pack",
-                display_key(key)
-            )));
-        }
 
         let mut names = BTreeMap::<String, BoundaryKey>::new();
         let mut entries = Vec::with_capacity(fact_map.len());
@@ -135,7 +155,10 @@ impl CodeWorkspace {
             ..CodeWorkspaceSummary::default()
         };
         for (key, fact) in fact_map {
-            let review = reviews.remove(&key).expect("completeness checked above");
+            // Absence is generated review backlog, not a missing human fact.
+            let review = reviews
+                .remove(&key)
+                .unwrap_or_else(|| ReviewedCodeBoundary::unreviewed(fact));
             validate_review(&review, fact)?;
             match review.status {
                 CodeBoundaryStatus::Unreviewed => summary.unreviewed += 1,

@@ -2,7 +2,7 @@
 
 use super::{
     body_identity::*, direct_semantic::*, fail_stop::*, i2c::*, intrinsics::*,
-    reference_intrinsic_trace,
+    reference_intrinsic_trace, rf::*,
 };
 use crate::*;
 
@@ -252,29 +252,117 @@ fn i2c_write_summary_requires_exact_body_and_phy_entry_contract() {
 }
 
 #[test]
-fn wide_divide_identity_requires_exact_name_address_and_size() {
-    assert!(reviewed_identity_matches(
-        ReviewedBodyIdentity {
-            name: "__divdi3",
-            address: u64::from(ROM_DIVDI3_ADDRESS),
-            size: ROM_DIVDI3_SIZE,
-        },
-        ReviewedBodyIdentity {
-            name: "__divdi3",
-            address: u64::from(ROM_DIVDI3_ADDRESS),
-            size: ROM_DIVDI3_SIZE,
-        },
-    ));
-    assert!(!reviewed_identity_matches(
-        ReviewedBodyIdentity {
-            name: "__divdi3",
-            address: u64::from(ROM_DIVDI3_ADDRESS),
-            size: ROM_DIVDI3_SIZE - 1,
-        },
-        ReviewedBodyIdentity {
-            name: "__divdi3",
-            address: u64::from(ROM_DIVDI3_ADDRESS),
-            size: ROM_DIVDI3_SIZE,
-        },
-    ));
+fn linked_body_binding_rejects_same_size_mutations_and_unresolved_context() {
+    let binding = ReviewedLinkedBody {
+        name: "synthetic",
+        address: 0x1000,
+        size: 4,
+        // SHA-256 of the synthetic fixture [1, 2, 3, 4], not vendor bytes.
+        sha256: "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a",
+    };
+    let mut exact = symbol(vec![1, 2, 3, 4]);
+    exact.name = "synthetic".to_owned();
+    exact.address = 0x1000;
+    assert!(binding.matches(&exact));
+    for index in 0..exact.bytes.len() {
+        let mut changed = exact.clone();
+        changed.bytes[index] ^= 1;
+        assert!(!binding.matches(&changed));
+    }
+    let mut unresolved = exact.clone();
+    unresolved.addresses_resolved = false;
+    assert!(!binding.matches(&unresolved));
+    let mut member = exact.clone();
+    member.member = Some("other.o".to_owned());
+    assert!(!binding.matches(&member));
+    let mut relocated = exact.clone();
+    relocated.relocations.push(artifact::SymbolRelocation {
+        address: 0x1000,
+        kind: artifact::RelocationKind::Call,
+        symbol: "other".to_owned(),
+        addend: 0,
+    });
+    assert!(!binding.matches(&relocated));
+    let mut renamed = exact.clone();
+    renamed.name = "other".to_owned();
+    assert!(!binding.matches(&renamed));
+    let mut moved = exact.clone();
+    moved.address += 4;
+    assert!(!binding.matches(&moved));
+    exact.bytes.push(0);
+    assert!(!binding.matches(&exact));
+}
+
+const ROM_SUMMARY_BODIES: &[(&str, u64, usize)] = &[
+    ("phy_wait_rfpll_cal_end", 0x2f82_5874, 86),
+    ("phy_rfpll_cap_init_cal", 0x2f82_5ada, 192),
+    ("phy_set_rf_freq_offset", 0x2f82_5c10, 16),
+    ("phy_iq_est_enable", 0x2f82_89d4, 180),
+    ("__divdi3", ROM_DIVDI3_ADDRESS as u64, ROM_DIVDI3_SIZE),
+];
+
+fn accepts_reviewed_rom_body(symbol: &artifact::ArtifactSymbolDefinition) -> bool {
+    exact_rfpll_calibration_poll(symbol)
+        || exact_rfpll_cap_calibration_search(symbol)
+        || exact_rf_frequency_offset_scratch_wrapper(symbol)
+        || exact_iq_estimator_poll(symbol)
+        || exact_wide_signed_divide(symbol)
+}
+
+#[test]
+fn rom_hooks_reject_synthetic_bodies_with_matching_symbol_metadata() {
+    for &(name, address, size) in ROM_SUMMARY_BODIES {
+        for fill in [0, 0xff] {
+            let mut fake = symbol(vec![fill; size]);
+            fake.name = name.to_owned();
+            fake.address = address;
+            assert!(!accepts_reviewed_rom_body(&fake), "{name}");
+            assert!(
+                reference_intrinsic_trace(&fake, &map(), &StructuralPointerContext::default())
+                    .is_none()
+            );
+            let arguments = core::array::from_fn(|index| SymbolicValue::input(index as u8));
+            assert!(wide_signed_divide_intrinsic(&fake, &arguments).is_none());
+        }
+    }
+}
+
+#[test]
+fn dtm_callee_metadata_cannot_prove_a_caller_owned_channel_domain() {
+    let channel = MemoryObjectLocation {
+        root: MemoryObjectRoot::Argument { index: 0 },
+        offset: 0x0e,
+    };
+    for fill in [0, 0xff] {
+        let mut fake = symbol(vec![fill; 550]);
+        fake.name = "r_sym_ble_G4zC4UNjJYmyjOsZ3vNq".to_owned();
+        fake.address = 0x1003_4b1c;
+        assert!((RISCV_HARNESS.summaries.caller_memory_input_domain)(&fake, &channel, 8).is_none());
+    }
+}
+
+#[test]
+#[ignore = "requires caller-owned BLOBRAY_REVIEWED_ROM path; authenticates before loading"]
+fn authenticated_rom_bindings_accept_reviewed_bodies_and_reject_every_byte_mutation() {
+    use sha2::{Digest, Sha256};
+    let path = std::path::PathBuf::from(
+        std::env::var_os("BLOBRAY_REVIEWED_ROM").expect("set BLOBRAY_REVIEWED_ROM"),
+    );
+    let image = std::fs::read(&path).unwrap();
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&image)),
+        "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87"
+    );
+    for &(name, address, size) in ROM_SUMMARY_BODIES {
+        let exact = artifact::load_code_symbol_exact(&path, None, name, address)
+            .unwrap()
+            .unwrap();
+        assert_eq!(exact.bytes.len(), size);
+        assert!(accepts_reviewed_rom_body(&exact), "{name}");
+        for index in 0..exact.bytes.len() {
+            let mut changed = exact.clone();
+            changed.bytes[index] ^= 1;
+            assert!(!accepts_reviewed_rom_body(&changed), "{name} byte {index}");
+        }
+    }
 }

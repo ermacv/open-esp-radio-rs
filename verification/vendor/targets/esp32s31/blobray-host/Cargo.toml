@@ -16,7 +16,9 @@ path = "src/main.rs"
 [dependencies]
 blobray = { path = "../../../../../tools/blobray", default-features = false }
 open-radio-vendor-chip-knowledge-esp32s31-rev0 = { path = "../../../chips/esp32s31/blobray-provider/knowledge" }
+open-radio-vendor-chip-models-esp32s31-rev0 = { path = "../../../chips/esp32s31/blobray-provider/models" }
 open-radio-vendor-knowledge-esp32s31 = { path = "../blobray-provider/knowledge" }
+open-radio-vendor-models-esp32s31 = { path = "../blobray-provider/models" }
 serde_json = "=1.0.151"
 
 [dev-dependencies]

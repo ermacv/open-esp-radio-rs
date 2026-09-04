@@ -116,12 +116,43 @@ fn fresh_cache_retention_preview_is_typed_and_read_only() {
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["operation"], "retention-prune");
+    assert_eq!(report["schema_version"], 2);
+    assert_eq!(report["plan"]["scope"], "retired-objects");
+    assert_eq!(report["plan"]["eligible_epochs"], 0);
     assert_eq!(report["dry_run"], true);
     assert_eq!(report["plan"]["retention_seconds"], 30 * 24 * 60 * 60);
     assert_eq!(report["plan"]["eligible_objects"], 0);
     assert_eq!(report["plan"]["maintenance"]["present"], false);
     assert_eq!(tree_snapshot(&project.root), before);
     assert!(!project.root.join("generated/.blobray-cache").exists());
+}
+
+#[test]
+fn retired_epoch_preview_reports_explicit_scope_without_creating_cache_state() {
+    let project = TemporaryProject::from_public_fixture("fresh-epoch-retention");
+    let before = tree_snapshot(&project.root);
+    let output = project.cache_command(
+        &[
+            "gc",
+            "--dry-run",
+            "--retention-days",
+            "30",
+            "--retired-epochs",
+        ],
+        Some("json"),
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema_version"], 2);
+    assert_eq!(report["plan"]["scope"], "retired-epochs");
+    assert_eq!(report["plan"]["eligible_epochs"], 0);
+    assert_eq!(report["plan"]["eligible_queries"], 0);
+    assert_eq!(report["plan"]["would_prune"], false);
+    assert_eq!(tree_snapshot(&project.root), before);
 }
 
 #[cfg(target_os = "linux")]

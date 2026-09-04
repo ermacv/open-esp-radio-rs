@@ -34,7 +34,7 @@ pub(crate) const REVISION_SNAPSHOT_REPORT_SCHEMA: u32 = 2;
 pub(crate) const LIVE_REVISION_SELECTOR: &str = "@live";
 
 const REVISION_STATE_HEADER: &str = "blobray-revision-state 1";
-const REVISION_CUTOVER_INSTRUCTION: &str = "remove revisions/state.blobray and create a new current state with `project revision snapshot CURRENT`";
+const REVISION_CUTOVER_INSTRUCTION: &str = "preserve revisions/state.blobray and its snapshots as historical evidence in a separate archive, then move the old state out of the active revisions/state.blobray path and create a new current state with `project revision snapshot CURRENT --run-spec PATH` using authenticated artifacts and regenerated findings; do not relabel an old snapshot schema";
 
 static STATE_STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -4676,6 +4676,9 @@ mod tests {
         let snapshot_error = load(&obsolete_snapshot_path).unwrap_err().to_string();
         assert!(snapshot_error.contains(&format!("not current schema {REVISION_SCHEMA}")));
         assert!(snapshot_error.contains("create a new current state"));
+        assert!(snapshot_error.contains("preserve revisions/state.blobray"));
+        assert!(snapshot_error.contains("authenticated artifacts"));
+        assert!(snapshot_error.contains("do not relabel an old snapshot schema"));
         assert!(snapshot_error.contains("project revision snapshot CURRENT"));
 
         let state = state_path(&manifest);

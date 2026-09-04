@@ -61,17 +61,7 @@ rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
     std::fs::remove_dir_all(directory).unwrap();
 }
 
-#[test]
-fn schema_v11_parses_distinct_callback_route_kinds() {
-    let directory = std::env::temp_dir().join(format!(
-        "blobray-function-callback-routes-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&directory).unwrap();
-    let pack_path = directory.join("functions.toml");
-    std::fs::write(
-        &pack_path,
-        r#"schema = 11
+pub(super) const CALLBACK_ROUTES: &str = r#"schema = 11
 id = "fixture"
 
 [[event-routes]]
@@ -152,19 +142,27 @@ case-handler-source = "vendor"
 case-handler-function = "vendor::handle"
 case-handler-site = 0x2040
 rationale = "The reviewed source domain, subscription, selector and handler are structurally bound."
-"#,
-    )
-    .unwrap();
+"#;
+
+#[test]
+fn schema_v11_parses_distinct_callback_route_kinds() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-function-callback-routes-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let pack_path = directory.join("functions.toml");
+    std::fs::write(&pack_path, CALLBACK_ROUTES).unwrap();
 
     let pack = FunctionPack::load_reviewed(&pack_path).unwrap();
     assert!(matches!(
         &pack.event_routes[0],
         ReviewedEventRoute::StaticEventCallback(route)
-            if route.dispatch_sites.len() == 2
+            if route.dispatch_sites.as_ref().is_some_and(|sites| sites.len() == 2)
                 && route.callback_function == "vendor::callback"
                 && route.delivery_entry == "vendor::event_loop"
-                && route.receive_site == 0x1040
-                && route.run_site == 0x1050
+                && route.receive_site == Some(0x1040)
+                && route.run_site == Some(0x1050)
     ));
     assert!(matches!(
         &pack.event_routes[1],
@@ -185,6 +183,60 @@ fn schema_v10_is_rejected_without_a_compatibility_path() {
     let pack_path = directory.join("functions.toml");
     std::fs::write(&pack_path, "schema = 10\nid = \"fixture\"\n").unwrap();
     assert!(FunctionPack::load_reviewed(&pack_path).is_err());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn callback_route_generated_sites_and_payload_are_optional_but_typed() {
+    let directory =
+        std::env::temp_dir().join(format!("blobray-route-selectors-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("functions.toml");
+    let sparse = CALLBACK_ROUTES
+        .lines()
+        .filter(|line| {
+            let key = line.split('=').next().unwrap_or("").trim();
+            !key.ends_with("-site") && !key.ends_with("-sites") && key != "payload-value"
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&path, &sparse).unwrap();
+    let pack = FunctionPack::load_reviewed(&path).unwrap();
+    let ReviewedEventRoute::StaticEventCallback(route) = &pack.event_routes[0] else {
+        panic!("static route");
+    };
+    assert!(route.dispatch_sites.is_none() && route.upstream_sites.is_none());
+    assert!(
+        route.binding_site.is_none() && route.receive_site.is_none() && route.run_site.is_none()
+    );
+    let ReviewedEventRoute::BrokerSubscription(route) = &pack.event_routes[1] else {
+        panic!("broker route");
+    };
+    assert!(route.payload_value.is_none() && route.binding_callback_store_site.is_none());
+    assert!(route.dispatch_site.is_none() && route.domain.call_site.is_none());
+    for (key, value) in [
+        ("binding-site", "-1"),
+        ("dispatch-sites", "\"all\""),
+        ("payload-value", "7"),
+    ] {
+        let invalid = if key == "payload-value" {
+            sparse.replace(
+                "payload-role = \"mask\"",
+                &format!("payload-role = \"mask\"\n{key} = {value}"),
+            )
+        } else {
+            sparse.replacen(
+                "id = \"static\"",
+                &format!("id = \"static\"\n{key} = {value}"),
+                1,
+            )
+        };
+        std::fs::write(&path, invalid).unwrap();
+        assert!(
+            FunctionPack::load_reviewed(&path).is_err(),
+            "invalid {key} must not behave like omission"
+        );
+    }
     std::fs::remove_dir_all(directory).unwrap();
 }
 

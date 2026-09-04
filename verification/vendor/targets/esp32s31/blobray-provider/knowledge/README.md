@@ -1,14 +1,15 @@
-# ESP32-S31 investigation knowledge overlay
+# ESP32-S31 investigation declarative knowledge
 
-This crate owns reviewed lifting knowledge whose current evidence is bounded
-to the ESP32-S31 vendor investigation: exact symbol/body identities, linked
-addresses and relocation schemas, registered archive-table assumptions and
-the combined RISC-V harness. The harness first applies the reusable rev0 chip
-add-on, then applies these exact project summaries.
+This crate owns reviewed semantic declarations, artifact-local RAM access
+classifications and the investigation's ABI/entry contracts. The `pp_post`
+declaration records event meaning; it contains neither an instruction trace
+nor an executable body matcher.
 
-It must not depend on the production PAC, HAL, PHY, MAC, driver, HIL, or
-qualification policy. Those dependencies belong to the generic verifier or
-to qualification tooling.
+It has no dependency on model providers, executable C/ESP-IDF addons or the
+execution-model interpreter. Its backend dependency supplies typed memory
+classification records. Selecting these declarations alone installs no summary
+hooks and cannot replace function control flow.
 
-See [`../OWNERSHIP.md`](../OWNERSHIP.md) for the per-module promotion audit and
-the reasons exact ROM-looking summaries remain fail-closed in this overlay.
+The sibling [`models`](../models/README.md) crate owns all temporary executable
+reconstructions and their applicability checks. The host composes facts and
+models explicitly. See [`../OWNERSHIP.md`](../OWNERSHIP.md).

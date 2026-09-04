@@ -21,12 +21,15 @@ pub(crate) struct ProjectCacheGcArgs {
     /// Compute and report the exact reachability-compaction plan without writing cache state.
     #[arg(long, required_unless_present = "apply", conflicts_with = "apply")]
     pub(crate) dry_run: bool,
-    /// Apply an age-based prune to persisted unreachable CAS objects.
+    /// Apply the selected retirement scope after quota and space preflight.
     #[arg(long, required_unless_present = "dry_run", conflicts_with = "dry_run")]
     pub(crate) apply: bool,
-    /// Protect retired CAS objects newer than this many whole days.
+    /// Protect objects and selected epochs retired within this many whole days.
     #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..))]
     pub(crate) retention_days: Option<u64>,
+    /// Also prune unpinned successful epochs retired before the age cutoff.
+    #[arg(long, requires = "retention_days")]
+    pub(crate) retired_epochs: bool,
     /// Require the projected cache to fit this many bytes without evicting live results.
     #[arg(long, value_name = "BYTES", value_parser = clap::value_parser!(u64).range(1..))]
     pub(crate) max_size: Option<u64>,
@@ -66,9 +69,9 @@ pub(crate) struct ProjectInitArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ProjectConfigureArgs {
-    /// Replace the project ecosystem-pack list with this reusable pack.
+    /// Replace the ecosystem-pack list; repeat this option to compose multiple packs.
     #[arg(long, conflicts_with = "no_ecosystem_pack")]
-    pub(crate) ecosystem_pack: Option<PathBuf>,
+    pub(crate) ecosystem_pack: Vec<PathBuf>,
     /// Remove every configured ecosystem pack.
     #[arg(long, conflicts_with = "ecosystem_pack")]
     pub(crate) no_ecosystem_pack: bool,

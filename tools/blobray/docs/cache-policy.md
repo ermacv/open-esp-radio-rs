@@ -6,6 +6,15 @@ The append-only CAS pack stores generated outputs and large query values.
 Reviewed TOML, revision snapshots and reproducible linked IR remain outside
 this cache.
 
+A successfully consumed function fact belongs to the publishing analysis epoch,
+including when it was loaded from an earlier completed epoch. Each linked-IR
+stage records its consumed function queries as dependencies. Restoring a whole
+stage atomically carries that dependency closure into the new epoch; every
+dependency must be visible in the caller's snapshot. Merely finding a result in
+an unfinished epoch does not authorize publishing it. Batched profiles keep
+separate dependency scopes, including shared functions used by several profiles.
+Existing identical function values acquire membership without another CAS write.
+
 ## Inline versus CAS
 
 Query values of at most 65,536 bytes are stored as SQLite BLOBs. Larger values
@@ -56,14 +65,15 @@ space trade-off.
 When the final stage owner of a CAS object disappears, the same SQLite
 transaction records `retired_unix_seconds`. The object is then obsolete but is
 still protected from ordinary compaction. If the same digest becomes current
-again, publication removes its retirement marker. Function facts and current
-stage/query references are never age or LRU candidates.
+again, publication removes its retirement marker. Current, standalone and
+pinned epoch ownership is never an age or LRU candidate.
 
 Every schema-10 query-result row belongs to at least one analysis epoch. This is
 a store invariant: a result without epoch membership is invalid cache state,
-not a garbage-collection candidate. Query results remain durable roots rather
-than age or per-result LRU candidates. The hard quota reports live state that
-cannot fit without deleting it.
+not a garbage-collection candidate. Ordinary compaction and the default
+retention scope preserve every query-result row and successful historical
+epoch. The hard quota reports protected state that cannot fit without deleting
+it; it does not select additional eviction candidates.
 
 Preview a retention prune before applying it:
 
@@ -80,6 +90,45 @@ retention-protected digest to a new pack, verifies it, and switches the SQLite
 index atomically. Only persisted retired objects at or before the cutoff are
 age-pruned; unreachable indexed crash garbage may be removed by the same
 reachability rewrite and contributes only to the reported reclaimed bytes.
+
+To include completed historical analysis epochs, explicitly add
+`--retired-epochs` to both preview and apply:
+
+```console
+cargo blobray project cache gc --dry-run --retention-days 30 --retired-epochs \
+  --project path/to/vendor-project.toml --format json
+cargo blobray project cache gc --apply --retention-days 30 --retired-epochs \
+  --project path/to/vendor-project.toml --format json
+```
+
+This scope removes whole successful epochs retired at or before the cutoff.
+Age starts when a later successful analysis retires the epoch, **not** when
+the original analysis was created or completed. The current published epoch,
+the standalone focused-analysis epoch, every epoch with any persisted pin
+(`manual`, `revision-baseline` or `revision-current`), and unfinished epochs are
+excluded. Normal analysis and ordinary compaction do not expire successful
+history. Abandoned unfinished epochs retain their separate cleanup policy at
+the next successful analysis publication.
+
+The plan reports eligible epoch, query and object counts. Queries disappear
+only when all their epoch owners are removed; shared function facts and CAS
+objects remain available to their surviving owners. An object's final epoch
+owner already satisfied the retirement age, so its exclusive CAS data is
+removed in the same prune, without starting another retention interval.
+The command verifies the preserved CAS pack before atomically deleting epoch
+and query metadata and publishing the new pack index. A corrupt preserved
+object aborts before epoch deletion. Pruning does not change visibility: pins
+keep historical data without making it a current analysis result. If a retained
+query lacks ownership of a dependency that would otherwise lose its final
+epoch, GC fails closed and asks for the retained query to be recomputed with
+complete dependency ownership.
+
+Reviewed TOML, revision snapshots, evidence files and generated outputs outside
+`generated/.blobray-cache/` are unaffected. SQLite pages freed by metadata
+deletion can be reused but are not shrunk with `VACUUM`; the quota projection
+conservatively keeps the current physical database size. Metadata-only pruning
+still reserves working space for the complete pack and SQLite rewrite.
+
 `--max-size` is a hard post-prune assessment: when current and younger
 protected state cannot fit, the command fails before rewriting the cache and
 suggests a shorter retention age, a larger limit, or deleting the whole disposable

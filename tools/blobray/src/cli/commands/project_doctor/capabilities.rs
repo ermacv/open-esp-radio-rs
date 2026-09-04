@@ -109,6 +109,20 @@ fn collect_knowledge_provider(context: &ProjectContext<'_>, report: &mut DoctorR
         },
     };
     report.capability(capability);
+    if let Some(provider) = context.target.knowledge_provider.as_deref()
+        && let Ok(models) = crate::harnesses::execution_model_providers(provider)
+    {
+        for model in models {
+            report.capability(
+                CapabilityReport::new("execution-model-provider", "installed")
+                    .field("id", model.id)
+                    .field("revision", u64::from(model.revision))
+                    .field("kind", model.kind.label())
+                    .field("applicability", model.applicability)
+                    .field("evidence", model.evidence),
+            );
+        }
+    }
 }
 
 fn collect_memory_map(context: &ProjectContext<'_>, report: &mut DoctorReport) {

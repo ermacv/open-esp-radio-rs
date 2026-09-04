@@ -6,9 +6,9 @@ use crate::{
     Result,
     application::{
         ProjectCacheCompactionResult, ProjectCacheMaintenancePlan, ProjectCachePruneResult,
-        ProjectCacheRetentionPlan, ProjectCacheStatistics, compact_project_cache,
-        project_cache_maintenance_plan, project_cache_retention_plan, project_cache_statistics,
-        prune_project_cache,
+        ProjectCacheRetentionPlan, ProjectCacheRetentionScope, ProjectCacheStatistics,
+        compact_project_cache, project_cache_maintenance_plan, project_cache_retention_plan,
+        project_cache_statistics, prune_project_cache,
     },
     cli::{ProjectCacheCompactArgs, ProjectCacheGcArgs, output, table},
 };
@@ -78,12 +78,23 @@ pub(super) fn gc(arguments: ProjectCacheGcArgs, project_manifest: &Path) -> Resu
             "project cache gc --apply requires --retention-days; current/live results are never age-eviction candidates",
         ));
     }
+    if arguments.retired_epochs && arguments.retention_days.is_none() {
+        return Err(crate::Error::invalid(
+            "project cache gc --retired-epochs requires --retention-days",
+        ));
+    }
     if let Some(retention_days) = arguments.retention_days {
         let retention = retention_duration(retention_days)?;
+        let scope = if arguments.retired_epochs {
+            ProjectCacheRetentionScope::RetiredEpochs
+        } else {
+            ProjectCacheRetentionScope::RetiredObjects
+        };
         if arguments.apply {
-            let result = prune_project_cache(project_manifest, retention, arguments.max_size)?;
+            let result =
+                prune_project_cache(project_manifest, retention, arguments.max_size, scope)?;
             let document = CachePruneDocument {
-                schema_version: 1,
+                schema_version: 2,
                 command: "project cache gc",
                 dry_run: false,
                 operation: "retention-prune",
@@ -91,10 +102,14 @@ pub(super) fn gc(arguments: ProjectCacheGcArgs, project_manifest: &Path) -> Resu
             };
             output::render_report(&document, || render_prune_result(&result));
         } else {
-            let plan =
-                project_cache_retention_plan(project_manifest, retention, arguments.max_size)?;
+            let plan = project_cache_retention_plan(
+                project_manifest,
+                retention,
+                arguments.max_size,
+                scope,
+            )?;
             let document = CacheRetentionPlanDocument {
-                schema_version: 1,
+                schema_version: 2,
                 command: "project cache gc",
                 dry_run: true,
                 operation: "retention-prune",
@@ -303,8 +318,9 @@ fn render_retention_plan(plan: &ProjectCacheRetentionPlan) {
     outputln!("{}", output::heading("Project cache retention dry run"));
     let status = if plan.ready_to_prune {
         output::success(format!(
-            "READY — {} retired objects are older than the cutoff; would reclaim {}",
+            "READY — {} objects and {} epochs satisfy the retirement cutoff; would reclaim {}",
             plan.eligible_objects,
+            plan.eligible_epochs,
             human_bytes(plan.maintenance.reclaimable_bytes),
         ))
     } else {
@@ -321,7 +337,7 @@ fn render_retention_plan(plan: &ProjectCacheRetentionPlan) {
         table::render(["Metric", "Value"], retention_rows(plan))
     );
     outputln!(
-        "\nCurrent query results and stage outputs are hard roots; retention and --max-size never evict them."
+        "\nCurrent, standalone and pinned epochs are protected; --max-size never expands the selected retirement scope."
     );
 }
 
@@ -331,8 +347,10 @@ fn render_prune_result(result: &ProjectCachePruneResult) {
         outputln!(
             "\n{}",
             output::success(format!(
-                "PRUNED — removed {} retired objects, reclaimed {}, final size {}",
+                "PRUNED — removed {} objects, {} epochs and {} queries; reclaimed {}, final size {}",
                 result.pruned_objects,
+                result.pruned_epochs,
+                result.pruned_queries,
                 human_bytes(result.reclaimed_bytes),
                 human_bytes(result.final_root_bytes),
             ))
@@ -354,6 +372,24 @@ fn render_prune_result(result: &ProjectCachePruneResult) {
 
 fn retention_rows(plan: &ProjectCacheRetentionPlan) -> Vec<[String; 2]> {
     let mut rows = vec![
+        [
+            "Scope".to_owned(),
+            match plan.scope {
+                ProjectCacheRetentionScope::RetiredObjects => "retired objects",
+                ProjectCacheRetentionScope::RetiredEpochs => {
+                    "retired objects and successful retired epochs"
+                }
+            }
+            .to_owned(),
+        ],
+        [
+            "Eligible epochs".to_owned(),
+            plan.eligible_epochs.to_string(),
+        ],
+        [
+            "Eligible queries".to_owned(),
+            plan.eligible_queries.to_string(),
+        ],
         [
             "Retention age".to_owned(),
             format!("{} days", plan.retention_seconds / (24 * 60 * 60)),
@@ -578,6 +614,9 @@ mod tests {
     #[test]
     fn retention_document_separates_obsolete_candidates_from_hard_roots() {
         let plan = ProjectCacheRetentionPlan {
+            scope: ProjectCacheRetentionScope::RetiredObjects,
+            eligible_epochs: 0,
+            eligible_queries: 0,
             maintenance: ProjectCacheMaintenancePlan {
                 cache_root: "generated/.blobray-cache".into(),
                 present: true,
@@ -607,7 +646,7 @@ mod tests {
             reason: None,
         };
         let document = serde_json::to_value(CacheRetentionPlanDocument {
-            schema_version: 1,
+            schema_version: 2,
             command: "project cache gc",
             dry_run: true,
             operation: "retention-prune",
@@ -617,6 +656,8 @@ mod tests {
 
         assert_eq!(document["dry_run"], true);
         assert_eq!(document["operation"], "retention-prune");
+        assert_eq!(document["schema_version"], 2);
+        assert_eq!(document["plan"]["scope"], "retired-objects");
         assert_eq!(document["plan"]["eligible_objects"], 3);
         assert_eq!(document["plan"]["maintenance"]["max_size_bytes"], 700);
     }

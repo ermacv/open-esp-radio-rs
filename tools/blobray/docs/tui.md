@@ -83,7 +83,9 @@ the corresponding TOML pack is the only operation that can promote them to a
 named ABI or executable model.
 Code boundaries are kept in the light snapshot and can be filtered by source,
 section, address, reviewed name, symbol evidence, reason, or caller. The view
-is read-only: edit `code/boundaries.toml`, validate it, then reload.
+is read-only: edit `code/boundaries.toml`, validate it, then reload. The
+[code workspace](code-workspace.md) stores accepted and rejected decisions;
+unreviewed candidates are reconstructed from the current inventory.
 Implementation state follows the same boundary: `tui/state/detail.rs` owns
 lazy caches, `state/filter.rs` owns matching and `state/navigation.rs` owns
 reviewed cross-links. Code, function, register, interface and comparison views are

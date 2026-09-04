@@ -82,22 +82,42 @@ pub(crate) fn extract(input: &ArtifactSymbolSelector, svd: &MmioMap) -> Result<F
         &input.symbol,
         artifact::CodeSymbolSelection::Exported,
     )?;
-    let symbol = symbols
+    let candidates = symbols
         .iter()
-        .find(|candidate| {
+        .filter(|candidate| {
             candidate.name == input.symbol
                 && input
                     .member
                     .as_deref()
                     .is_none_or(|member| candidate.member.as_deref() == Some(member))
         })
-        .ok_or_else(|| {
-            format!(
+        .collect::<Vec<_>>();
+    let symbol = match candidates.as_slice() {
+        [] => {
+            return Err(crate::Error::invalid(format!(
                 "symbol {} in member {:?} was not found",
                 input.symbol, input.member
-            )
-        })
-        .map_err(crate::Error::invalid)?;
+            )));
+        }
+        [symbol] => *symbol,
+        _ => {
+            let choices = candidates
+                .iter()
+                .map(|candidate| {
+                    format!(
+                        "{}@{:#x}",
+                        candidate.member.as_deref().unwrap_or("<linked-image>"),
+                        candidate.address
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(crate::Error::invalid(format!(
+                "symbol {} in member {:?} is ambiguous ({choices}); select a unique archive member",
+                input.symbol, input.member
+            )));
+        }
+    };
     Ok(trace_binary_symbol(
         symbol,
         svd,

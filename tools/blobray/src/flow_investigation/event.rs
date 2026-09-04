@@ -789,8 +789,11 @@ fn investigate_static_event_callback(
     })?;
     if route.upstream_chain.len() < 2
         || route.upstream_chain.last() != Some(&route.dispatcher)
-        || route.upstream_sites.len() != route.upstream_chain.len() - 1
-        || route.dispatch_sites.is_empty()
+        || route
+            .upstream_sites
+            .as_ref()
+            .is_some_and(|sites| sites.len() != route.upstream_chain.len() - 1)
+        || route.dispatch_sites.as_ref().is_some_and(Vec::is_empty)
     {
         return Err(route_mismatch(
             &route.id,
@@ -891,6 +894,12 @@ fn investigate_static_event_callback(
         &route.id,
         "event run",
     )?;
+    if receive_call.site == run_call.site {
+        return Err(route_mismatch(
+            &route.id,
+            "event receive and run sites must be distinct",
+        ));
+    }
     let run_event = run_call
         .arguments
         .get(usize::from(route.run_event_argument))
@@ -904,15 +913,19 @@ fn investigate_static_event_callback(
         &delivery.symbol,
         delivery.address.map(u64::from),
     )?;
-    let delivery_order =
-        super::cfg::must_execute_before(&delivery_body, route.receive_site, route.run_site);
+    let delivery_order = super::cfg::must_execute_before(
+        &delivery_body,
+        receive_call.site.expect("selected call has a site"),
+        run_call.site.expect("selected call has a site"),
+    );
     let run_event_exact = run_call.argument_is_exact(usize::from(route.run_event_argument));
     let receive_result_flow_proven = delivery_order.as_ref().is_some_and(|order| {
         order.earlier_block == order.later_block
             && run_call.argument_is_result_of(usize::from(route.run_event_argument), receive_call)
     });
     let mut steps = Vec::new();
-    for (edge, site) in route.upstream_chain.windows(2).zip(&route.upstream_sites) {
+    for (index, edge) in route.upstream_chain.windows(2).enumerate() {
+        let site = route.upstream_sites.as_ref().map(|sites| sites[index]);
         let owner = route_function(
             &reader,
             &route.id,
@@ -920,12 +933,12 @@ fn investigate_static_event_callback(
             &edge[0],
             "upstream stage",
         )?;
-        let call = stored_exact_direct_call(&owner, &edge[1], *site, &route.id, "upstream direct")?;
+        let call = stored_exact_direct_call(&owner, &edge[1], site, &route.id, "upstream direct")?;
         if call.kind != "internal" || !call.direct() {
             return Err(route_mismatch(
                 &route.id,
                 format!(
-                    "upstream edge {:?} -> {:?} at {site:#010x} is not an internal direct call",
+                    "upstream edge {:?} -> {:?} is not an internal direct call",
                     edge[0], edge[1]
                 ),
             ));
@@ -964,14 +977,14 @@ fn investigate_static_event_callback(
         origin_path: None,
     }];
     let mut dispatch_queue_resolutions = Vec::new();
-    for site in &route.dispatch_sites {
-        let call = stored_exact_call(
-            &dispatcher,
-            &route.dispatch_call,
-            *site,
-            &route.id,
-            "event enqueue",
-        )?;
+    let dispatches = crate::function_workspace::select_route_calls(
+        &dispatcher.calls,
+        &route.dispatch_call,
+        route.dispatch_sites.as_deref(),
+        "event enqueue",
+    )
+    .map_err(|error| route_mismatch(&route.id, error))?;
+    for call in dispatches {
         let object = stored_exact_argument(
             call,
             route.dispatch_object_argument,
@@ -990,7 +1003,7 @@ fn investigate_static_event_callback(
             route.dispatch_queue_argument,
             receive_call,
             route.receive_queue_argument,
-            *site,
+            call.site.expect("selected call has a site"),
             &route.id,
         )?);
         steps.push(observed_direct_call_step(
@@ -1007,7 +1020,7 @@ fn investigate_static_event_callback(
             site: call.site,
             operation: call.semantic_operation.clone(),
             detail: format!(
-                "reviewed source124/event-enqueue association; exact R9 call chain reaches a call carrying static object {object}"
+                "reviewed upstream/event-enqueue association; generated direct-call chain reaches a call carrying static object {object}"
             ),
             constant: parse_constant(object).map(u64::from),
             access: None,
@@ -1174,7 +1187,11 @@ fn investigate_broker_subscription(
         &route.id,
         "broker payload",
     )?;
-    if payload != route.payload_value {
+    if route
+        .payload_value
+        .as_deref()
+        .is_some_and(|expected| payload != expected)
+    {
         return Err(route_mismatch(&route.id, "broker payload changed"));
     }
     let domain_profile = profile(project, &route.domain.profile)?;
@@ -1274,17 +1291,18 @@ fn investigate_broker_subscription(
                 subscriber_object,
             )
         })
-        .collect::<BTreeSet<_>>()
-        .len();
-    if callback_stores != 1 {
-        return Err(route_mismatch(
-            &route.id,
-            format!(
-                "expected one callback-pointer store at {:#010x}, found {callback_stores}",
-                route.binding_callback_store_site
-            ),
-        ));
-    }
+        .collect::<BTreeSet<_>>();
+    let callback_store_site = match callback_stores.len() {
+        1 => callback_stores.first().expect("one matching store").0,
+        count => {
+            return Err(route_mismatch(
+                &route.id,
+                format!(
+                    "expected one callback-pointer store into the subscribed object, found {count}; refine the store site selector"
+                ),
+            ));
+        }
+    };
     let binding_artifact = binding_reader
         .authenticated_source_artifact(&route.binding_source, &binding.artifact_sha256)?;
     let binding_body = artifact::inspect_function_body_at_data(
@@ -1296,8 +1314,8 @@ fn investigate_broker_subscription(
     )?;
     let callback_store_order = super::cfg::must_execute_before(
         &binding_body,
-        route.binding_callback_store_site,
-        route.binding_site,
+        callback_store_site,
+        subscribe.site.expect("selected call has a site"),
     );
     let case = stored_exact_direct_call(
         &callback,
@@ -1349,7 +1367,7 @@ fn investigate_broker_subscription(
             kind: "memory".to_owned(),
             evidence: EvidenceLevel::Reviewed,
             function: route.binding_entry.clone(),
-            site: Some(route.binding_callback_store_site),
+            site: Some(callback_store_site),
             operation: Some("callback-pointer-store".to_owned()),
             detail: callback_store_order.as_ref().map_or_else(
                 || {
@@ -1516,45 +1534,18 @@ fn route_function(
 fn stored_exact_call<'a>(
     function: &'a artifacts::StoredFunction,
     matcher: &crate::function_workspace::ReviewedEventCallMatcher,
-    site: u32,
+    site: Option<u32>,
     route: &str,
     role: &str,
 ) -> Result<&'a artifacts::StoredCall> {
-    let matches = function
-        .calls
-        .iter()
-        .filter(|call| {
-            call.site == Some(site)
-                && match matcher {
-                    crate::function_workspace::ReviewedEventCallMatcher::Operation(operation) => {
-                        call.semantic_operation.as_deref() == Some(operation)
-                    }
-                    crate::function_workspace::ReviewedEventCallMatcher::Function(target) => {
-                        call.target == *target
-                    }
-                }
-        })
-        .collect::<Vec<_>>();
-    match matches.as_slice() {
-        [call] if call.direct() => Ok(*call),
-        [_call] => Err(route_mismatch(
-            route,
-            format!("{role} call at {site:#010x} is indirect"),
-        )),
-        _ => Err(route_mismatch(
-            route,
-            format!(
-                "expected one {role} call at {site:#010x}, found {}",
-                matches.len()
-            ),
-        )),
-    }
+    crate::function_workspace::select_route_call(&function.calls, matcher, site, role)
+        .map_err(|error| route_mismatch(route, error))
 }
 
 fn stored_exact_direct_call<'a>(
     function: &'a artifacts::StoredFunction,
     target: &str,
-    site: u32,
+    site: Option<u32>,
     route: &str,
     role: &str,
 ) -> Result<&'a artifacts::StoredCall> {
@@ -1568,7 +1559,7 @@ fn stored_exact_direct_call<'a>(
     if call.kind != "internal" {
         return Err(route_mismatch(
             route,
-            format!("{role} call at {site:#010x} is not internal"),
+            format!("{role} call is not internal"),
         ));
     }
     Ok(call)
@@ -1643,7 +1634,7 @@ fn normalize_word_value(value: &str) -> &str {
 
 fn callback_write_matches<'a>(
     effect: &'a artifacts::StoredInstructionEffect,
-    site: u32,
+    site: Option<u32>,
     offset: i64,
     callback: &str,
     subscriber_object: &str,
@@ -1660,7 +1651,7 @@ fn callback_write_matches<'a>(
     else {
         return None;
     };
-    (*observed_site == site
+    (site.is_none_or(|site| *observed_site == site)
         && access == "write"
         && *observed_offset == offset
         && value == callback
@@ -2550,12 +2541,13 @@ mod tests {
         };
         let subscribed = "memory:*(absolute:0x00002000+0x0)+0x8&0xffffffff|0x00000000";
         assert!(
-            callback_write_matches(&effect, 0x1000, 0, "const:0x00003000", subscribed).is_some()
+            callback_write_matches(&effect, Some(0x1000), 0, "const:0x00003000", subscribed)
+                .is_some()
         );
         assert!(
             callback_write_matches(
                 &effect,
-                0x1000,
+                Some(0x1000),
                 0,
                 "const:0x00003000",
                 "memory:*(absolute:0x00002000+0x0)+0xc&0xffffffff|0x00000000",

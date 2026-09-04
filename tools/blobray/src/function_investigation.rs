@@ -1360,9 +1360,9 @@ mod tests {
                 dispatch_call: crate::function_workspace::ReviewedEventCallMatcher::Operation(
                     "event.send".to_owned(),
                 ),
-                dispatch_sites: vec![0x1000],
+                dispatch_sites: Some(vec![0x1000]),
                 upstream_chain: vec!["vendor::root".to_owned(), "vendor::dispatch".to_owned()],
-                upstream_sites: vec![0x0ffc],
+                upstream_sites: Some(vec![0x0ffc]),
                 dispatch_object_argument: 0,
                 dispatch_queue_argument: 1,
                 binding_profile: "controller".to_owned(),
@@ -1371,7 +1371,7 @@ mod tests {
                 binding_call: crate::function_workspace::ReviewedEventCallMatcher::Operation(
                     "event.init".to_owned(),
                 ),
-                binding_site: 0x1004,
+                binding_site: Some(0x1004),
                 binding_object_argument: 0,
                 binding_callback_argument: 1,
                 delivery_profile: "controller".to_owned(),
@@ -1380,12 +1380,12 @@ mod tests {
                 receive_call: crate::function_workspace::ReviewedEventCallMatcher::Operation(
                     "event.receive".to_owned(),
                 ),
-                receive_site: 0x1008,
+                receive_site: Some(0x1008),
                 receive_queue_argument: 0,
                 run_call: crate::function_workspace::ReviewedEventCallMatcher::Operation(
                     "event.run".to_owned(),
                 ),
-                run_site: 0x100c,
+                run_site: Some(0x100c),
                 run_event_argument: 0,
                 callback_profile: "controller".to_owned(),
                 callback_source: "vendor".to_owned(),

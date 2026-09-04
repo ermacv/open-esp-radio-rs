@@ -10,8 +10,6 @@ description = "ESP32-S31 reviewed vendor-code knowledge without production-drive
 
 [dependencies]
 open-radio-vendor-backend-riscv = { path = "../../../../../../tools/blobray/crates/backend-riscv" }
-open-radio-vendor-chip-knowledge-esp32s31-rev0 = { path = "../../../../chips/esp32s31/blobray-provider/knowledge" }
-open-radio-vendor-execution-model = { path = "../../../../../../tools/blobray/crates/execution-model" }
 open-radio-vendor-harness-esp32s31 = { path = "../contracts" }
 open-radio-vendor-semantics = { path = "../../../../../../tools/blobray/crates/semantics" }
 

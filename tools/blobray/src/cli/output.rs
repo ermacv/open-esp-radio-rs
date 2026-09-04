@@ -17,6 +17,7 @@ static CONTEXT: OnceLock<OutputContext> = OnceLock::new();
 static STATE: Mutex<OutputState> = Mutex::new(OutputState {
     claimed: false,
     report: None,
+    write_error: None,
 });
 
 thread_local! {
@@ -26,11 +27,13 @@ thread_local! {
 struct OutputState {
     claimed: bool,
     report: Option<Box<RawValue>>,
+    write_error: Option<io::Error>,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct OutputContext {
     format: OutputFormat,
+    diagnostic_format: OutputFormat,
     human_ansi: bool,
     human_width: usize,
     details: bool,
@@ -59,6 +62,7 @@ pub(super) fn init(arguments: &UiArgs) {
     CONTEXT
         .set(OutputContext {
             format: arguments.format,
+            diagnostic_format: arguments.diagnostic_format,
             human_ansi,
             human_width,
             details: arguments.details,
@@ -68,6 +72,10 @@ pub(super) fn init(arguments: &UiArgs) {
 
 pub(super) fn format() -> OutputFormat {
     context().format
+}
+
+pub(super) fn json_diagnostics() -> bool {
+    context().diagnostic_format == OutputFormat::Json
 }
 
 pub(super) fn details() -> bool {
@@ -128,12 +136,17 @@ fn emit_text(text: String, newline: bool) {
     match format() {
         OutputFormat::Human => {
             with_progress_suspended(|| {
-                let mut stdout = io::stdout().lock();
-                if newline {
-                    writeln!(stdout, "{text}").expect("writing command output to stdout");
-                } else {
-                    write!(stdout, "{text}").expect("writing command output to stdout");
+                let mut state = STATE.lock().expect("command output state lock");
+                if state.write_error.is_some() {
+                    return;
                 }
+                let mut stdout = io::stdout().lock();
+                let result = if newline {
+                    writeln!(stdout, "{text}")
+                } else {
+                    write!(stdout, "{text}")
+                };
+                state.write_error = result.err();
             });
         }
         OutputFormat::Json => {
@@ -158,26 +171,43 @@ fn emit_report(report: Box<RawValue>) {
 }
 
 pub(super) fn finish() -> Result<()> {
+    let mut state = STATE.lock().expect("command output state lock");
+    if let Some(error) = state.write_error.take() {
+        return finish_write(Err(error.into()));
+    }
     if format() != OutputFormat::Json {
         return Ok(());
     }
-    let state = STATE.lock().expect("command output state lock");
     let report = state
         .report
         .as_ref()
         .expect("a successful JSON command must emit one typed report");
-    with_progress_suspended(|| -> Result<()> {
+    finish_write(with_progress_suspended(|| -> Result<()> {
         let mut stdout = io::stdout().lock();
         serde_json::to_writer_pretty(&mut stdout, report)?;
         writeln!(stdout)?;
         Ok(())
-    })?;
-    Ok(())
+    }))
+}
+
+/// A reader may intentionally stop after the desired prefix. Finish the
+/// command's work and preserve its result status, without a stdout panic.
+fn finish_write(result: Result<()>) -> Result<()> {
+    match result {
+        Err(crate::Error::Io(error)) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        Err(crate::Error::Json(error))
+            if error.io_error_kind() == Some(io::ErrorKind::BrokenPipe) =>
+        {
+            Ok(())
+        }
+        result => result,
+    }
 }
 
 fn context() -> OutputContext {
     CONTEXT.get().copied().unwrap_or(OutputContext {
         format: OutputFormat::Human,
+        diagnostic_format: OutputFormat::Human,
         human_ansi: false,
         human_width: 100,
         details: false,

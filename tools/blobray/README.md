@@ -53,6 +53,9 @@ traces may enter the qualification evaluator.
 Use `--details` only when you need the complete component or file inventory.
 Use `--format json` for automation. Human results go to stdout; diagnostics,
 tracing, and progress go to stderr.
+Use `--diagnostic-format json --quiet` for structured runtime errors on stderr.
+The [automation contract](docs/automation.md) describes exit statuses, logical
+next actions, reusable pack composition and selecting a resource-limited host.
 
 Inspect the project-owned incremental cache without changing it:
 
@@ -271,6 +274,8 @@ format is human or JSON.
 - [Architecture and responsibility boundaries](docs/architecture.md)
 - [Persistent formats and schemas](docs/formats.md)
 - [Read-only TUI](docs/tui.md)
+- [CLI automation and host selection](docs/automation.md)
+- [Function review and generated route witnesses](docs/function-workspace.md)
 
 Shell completions and the complete command manual are generated from the same
 `clap` grammar:

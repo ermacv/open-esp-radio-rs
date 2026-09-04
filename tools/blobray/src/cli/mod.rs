@@ -35,8 +35,8 @@ pub(crate) fn output_line(arguments: std::fmt::Arguments<'_>) {
 
 pub(crate) fn run() -> Result<bool> {
     let invocation = ParsedInvocation::parse(std::env::args().skip(1))?;
-    ui::init(&invocation.ui)?;
     output::init(&invocation.ui);
+    ui::init(&invocation.ui)?;
     let progress = progress::command_span(&invocation.command);
     let _entered = progress.as_ref().map(tracing::Span::enter);
     dispatch::run(resolver::resolve(invocation)?)
@@ -44,4 +44,8 @@ pub(crate) fn run() -> Result<bool> {
 
 pub(crate) fn finish_output() -> Result<()> {
     output::finish()
+}
+
+pub(crate) fn json_diagnostics() -> bool {
+    output::json_diagnostics()
 }

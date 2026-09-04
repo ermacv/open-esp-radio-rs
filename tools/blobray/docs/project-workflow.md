@@ -41,7 +41,7 @@ three independent workflow dimensions: generated `freshness`, `research`
 completeness, and `verification`. Phase readiness only says that configured
 artifacts are present and structurally inspectable; an `open` research state
 can therefore coexist with a ready review artifact. `doctor` is deliberately
-deep but still does not claim reproducible freshness. Its JSON schema 3 report
+deep but still does not claim reproducible freshness. Its JSON schema 4 report
 includes per-section timings so expensive symbol, register, interface or input
 validation is attributable. Use `project check` when current bytes must be
 reproduced, rather than interpreting either inspection command as a freshness
@@ -211,7 +211,7 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-typed next action. Report schema 16 ranks unique user actions, exposes the
+typed next action. Report schema 18 ranks unique user actions, exposes the
 reviewed names and roles of referenced functions, and includes required public
 analysis-surface coverage gates:
 independent findings coalesce only when they lead to the same executable action
@@ -597,7 +597,7 @@ unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
 While `baseline` and `current` differ, `project status` and deep doctor report
 `revision-review-pending` instead of `ready`; a captured snapshot is not an
-accepted review decision. Blobray accepts only schema-4 snapshots and
+accepted review decision. Blobray accepts only schema-5 snapshots and
 revision-state DSL version 1. TOML and older state are not migrated or
 interpreted: remove invalid state, then capture a fresh current snapshot from
 the live typed vendor bindings.
@@ -662,6 +662,12 @@ retention projection, temporary space requirement, available space and an
 optional byte-exact `--max-size` guard without creating or changing cache
 state. `cache gc --apply` additionally requires `--retention-days` and prunes
 only CAS objects with a persisted obsolete timestamp at or before that cutoff.
+Adding `--retired-epochs` explicitly includes completed historical epochs whose
+retirement timestamp satisfies that cutoff. Current, standalone and pinned
+epochs remain protected; shared queries and objects survive with their owners.
+The dry-run report lists eligible epoch, query and object counts. See
+[cache retention policy](cache-policy.md#retention-and-hard-quotas) for ownership,
+evidence preservation and quota behavior.
 `cache compact` is an explicit reachability mutation; both mutations are
 supported only on Linux local filesystems, hold the cache writer lock, rewrite
 and verify every preserved CAS digest through the pinned cache root, atomically

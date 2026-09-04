@@ -5,6 +5,7 @@
 // silently assuming every context pointer is in a0..a7.
 const MAX_CONTEXT_ARGUMENTS: u8 = 16;
 
+mod call_selection;
 mod facts;
 mod interface_links;
 mod pack;
@@ -14,6 +15,7 @@ mod review;
 mod template;
 mod validation;
 
+pub(crate) use call_selection::{select_route_call, select_route_calls};
 pub(crate) use facts::*;
 pub(crate) use interface_links::*;
 pub(crate) use pack::*;

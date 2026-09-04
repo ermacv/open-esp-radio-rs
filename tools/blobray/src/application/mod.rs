@@ -4,6 +4,7 @@ pub(crate) mod action;
 pub(crate) mod artifact_store;
 pub(crate) mod capability_context;
 mod comparison;
+mod configuration;
 mod error;
 pub(crate) mod event_replay;
 pub(crate) mod generated_file;
@@ -24,6 +25,7 @@ pub(crate) mod status;
 use std::{collections::BTreeMap, path::Path};
 
 pub use action::{ExecutableAction, ProjectContextRequirement};
+pub use configuration::{ProjectConfigureReport, ProjectConfigureRequest, configure_project};
 pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
 pub use pipeline::StageReport as ProjectAnalysisStageReport;
@@ -37,7 +39,7 @@ pub(crate) use query_store::{
     QueryStoreMaintenancePlan as ProjectCacheMaintenancePlan,
     QueryStorePruneResult as ProjectCachePruneResult,
     QueryStoreRetentionPlan as ProjectCacheRetentionPlan,
-    QueryStoreStatistics as ProjectCacheStatistics,
+    QueryStoreStatistics as ProjectCacheStatistics, RetentionScope as ProjectCacheRetentionScope,
 };
 pub(crate) use resolve::{
     ExplicitProjectContext, ProjectContext, ProjectSession, ProjectSessionOptions,
@@ -186,20 +188,22 @@ pub(crate) fn compact_project_cache(
     query_store::QueryStore::compact_cache(manifest, max_size_bytes)
 }
 
-/// Inspect persisted unreachable-object retention without mutating the cache.
+/// Inspect the explicitly selected retirement scope without mutating the cache.
 pub(crate) fn project_cache_retention_plan(
     manifest: &Path,
     retention: std::time::Duration,
     max_size_bytes: Option<u64>,
+    scope: ProjectCacheRetentionScope,
 ) -> crate::Result<ProjectCacheRetentionPlan> {
-    query_store::QueryStore::retention_plan(manifest, retention, max_size_bytes)
+    query_store::QueryStore::retention_plan(manifest, retention, max_size_bytes, scope)
 }
 
-/// Prune only persisted unreachable objects older than the requested age.
+/// Prune the selected retired objects/epochs while preserving protected owners.
 pub(crate) fn prune_project_cache(
     manifest: &Path,
     retention: std::time::Duration,
     max_size_bytes: Option<u64>,
+    scope: ProjectCacheRetentionScope,
 ) -> crate::Result<ProjectCachePruneResult> {
-    query_store::QueryStore::prune_cache(manifest, retention, max_size_bytes)
+    query_store::QueryStore::prune_cache(manifest, retention, max_size_bytes, scope)
 }

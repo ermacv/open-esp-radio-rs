@@ -270,7 +270,7 @@ selector-role = "broker-event"
 selector-value = 0x80000004
 dispatch-payload-argument = 2
 payload-role = "finished-list-mask"
-payload-value = "expr:BitOr(memory:*(absolute:0x10061438+0x0)+0x14&0x0000ffff|0x00000000,rmw:read0[0x2010125c]&0x0000ffff|0x00000000)"
+# The exact payload expression is derived from authenticated linked IR.
 domain-profile = "ble-controller-all"
 domain-source = "ble-controller"
 domain-entry = "ble-controller::r_sym_bt_XPuqTHliEO5V9xpR7aJR"

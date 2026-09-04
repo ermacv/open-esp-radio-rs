@@ -77,6 +77,7 @@ pub(crate) use open_radio_vendor_backend_riscv::{
     Rv32CallArguments, Rv32IntrinsicResult, artifact, codegen, direct_target_audit, execution,
     interface_discovery,
 };
+pub use open_radio_vendor_contracts::{ExecutionModelKind, ExecutionModelProviderSpec};
 pub(crate) use open_radio_vendor_execution_model as execution_model;
 pub use open_radio_vendor_execution_model::{
     DeviceModel as ExecutionDeviceModel, DeviceModelCoverage as ExecutionDeviceModelCoverage,
@@ -159,7 +160,21 @@ fn render_error(error: Error) -> ExitCode {
                 .unwrap_or(ExitCode::FAILURE)
         }
         error => {
-            eprintln!("{:?}", miette::Report::new(error));
+            use std::io::Write as _;
+            if cli::json_diagnostics() {
+                let mut diagnostic = String::new();
+                miette::JSONReportHandler::new()
+                    .render_report(&mut diagnostic, &error)
+                    .expect("formatting a diagnostic into a String");
+                // The envelope is ours; the diagnostic retains miette's code,
+                // source spans, causes and help without duplicating that model.
+                let _ = writeln!(
+                    std::io::stderr().lock(),
+                    "{{\"schema_version\":1,\"diagnostic\":{diagnostic}}}"
+                );
+            } else {
+                let _ = writeln!(std::io::stderr().lock(), "{:?}", miette::Report::new(error));
+            }
             ExitCode::FAILURE
         }
     }

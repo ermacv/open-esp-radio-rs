@@ -3,13 +3,18 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 workspace_root="$(cd -- "$script_dir/../../.." && pwd)"
-binary="$workspace_root/target/blobray/blobray"
+binary="${BLOBRAY_BINARY:-$workspace_root/target/blobray/blobray}"
 
-if [[ ! -x "$binary" ]]; then
+if [[ ! -f "$binary" || ! -x "$binary" ]]; then
     echo "error: optimized blobray binary is missing: $binary" >&2
-    echo "build it first with: cargo build --profile blobray -p blobray-esp32s31 --bin blobray" >&2
+    echo "set BLOBRAY_BINARY to an executable built with --profile blobray" >&2
+    echo "default host build: cargo build --profile blobray -p blobray-esp32s31 --bin blobray" >&2
     exit 2
 fi
+
+# Both launch backends must execute the same caller-selected file. A local
+# bare filename must not become a PATH lookup; systemd needs an absolute path.
+binary="$(cd -- "$(dirname -- "$binary")" && pwd)/$(basename -- "$binary")"
 
 limit_backend="${BLOBRAY_LIMIT_BACKEND:-auto}"
 report_usage="${BLOBRAY_REPORT_USAGE:-0}"

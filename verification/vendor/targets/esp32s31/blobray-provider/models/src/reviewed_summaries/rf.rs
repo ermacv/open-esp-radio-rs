@@ -20,67 +20,47 @@ const ROM_PHY_IQ_EST_ENABLE_ADDRESS: u64 = 0x2f82_89d4;
 const ROM_PHY_IQ_EST_ENABLE_SIZE: usize = 180;
 
 pub(super) fn exact_rfpll_calibration_poll(symbol: &artifact::ArtifactSymbolDefinition) -> bool {
-    reviewed_identity_matches(
-        ReviewedBodyIdentity {
-            name: &symbol.name,
-            address: symbol.address,
-            size: symbol.bytes.len(),
-        },
-        ReviewedBodyIdentity {
-            name: "phy_wait_rfpll_cal_end",
-            address: ROM_PHY_WAIT_RFPLL_CAL_END_ADDRESS,
-            size: ROM_PHY_WAIT_RFPLL_CAL_END_SIZE,
-        },
-    )
+    ReviewedLinkedBody {
+        name: "phy_wait_rfpll_cal_end",
+        address: ROM_PHY_WAIT_RFPLL_CAL_END_ADDRESS,
+        size: ROM_PHY_WAIT_RFPLL_CAL_END_SIZE,
+        sha256: "f9c4486efcf67dee40dc43ddf0357b8fbd000a762c3090544814cfa77145286e",
+    }
+    .matches(symbol)
 }
 
 pub(super) fn exact_rfpll_cap_calibration_search(
     symbol: &artifact::ArtifactSymbolDefinition,
 ) -> bool {
-    reviewed_identity_matches(
-        ReviewedBodyIdentity {
-            name: &symbol.name,
-            address: symbol.address,
-            size: symbol.bytes.len(),
-        },
-        ReviewedBodyIdentity {
-            name: "phy_rfpll_cap_init_cal",
-            address: ROM_PHY_RFPLL_CAP_INIT_CAL_ADDRESS,
-            size: ROM_PHY_RFPLL_CAP_INIT_CAL_SIZE,
-        },
-    )
+    ReviewedLinkedBody {
+        name: "phy_rfpll_cap_init_cal",
+        address: ROM_PHY_RFPLL_CAP_INIT_CAL_ADDRESS,
+        size: ROM_PHY_RFPLL_CAP_INIT_CAL_SIZE,
+        sha256: "15fb1d7873ad0feaa01b5645b542b38cc3886807d5d9b979b1b8d5084595f8d3",
+    }
+    .matches(symbol)
 }
 
 pub(super) fn exact_rf_frequency_offset_scratch_wrapper(
     symbol: &artifact::ArtifactSymbolDefinition,
 ) -> bool {
-    reviewed_identity_matches(
-        ReviewedBodyIdentity {
-            name: &symbol.name,
-            address: symbol.address,
-            size: symbol.bytes.len(),
-        },
-        ReviewedBodyIdentity {
-            name: "phy_set_rf_freq_offset",
-            address: ROM_PHY_SET_RF_FREQ_OFFSET_ADDRESS,
-            size: ROM_PHY_SET_RF_FREQ_OFFSET_SIZE,
-        },
-    )
+    ReviewedLinkedBody {
+        name: "phy_set_rf_freq_offset",
+        address: ROM_PHY_SET_RF_FREQ_OFFSET_ADDRESS,
+        size: ROM_PHY_SET_RF_FREQ_OFFSET_SIZE,
+        sha256: "c980b21358bd4854fe271d23456385b08981569a1429c6869a952d4b4fd5130d",
+    }
+    .matches(symbol)
 }
 
 pub(super) fn exact_iq_estimator_poll(symbol: &artifact::ArtifactSymbolDefinition) -> bool {
-    reviewed_identity_matches(
-        ReviewedBodyIdentity {
-            name: &symbol.name,
-            address: symbol.address,
-            size: symbol.bytes.len(),
-        },
-        ReviewedBodyIdentity {
-            name: "phy_iq_est_enable",
-            address: ROM_PHY_IQ_EST_ENABLE_ADDRESS,
-            size: ROM_PHY_IQ_EST_ENABLE_SIZE,
-        },
-    )
+    ReviewedLinkedBody {
+        name: "phy_iq_est_enable",
+        address: ROM_PHY_IQ_EST_ENABLE_ADDRESS,
+        size: ROM_PHY_IQ_EST_ENABLE_SIZE,
+        sha256: "0f2ae45a5762be934b704a677f4d650dcb84ee291a6ca0e840e11c64751bde60",
+    }
+    .matches(symbol)
 }
 
 pub(super) fn rf_frequency_offset_scratch_trace(

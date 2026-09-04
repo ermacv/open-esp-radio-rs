@@ -1,3 +1,5 @@
+mod support;
+
 use std::{path::Path, process::Command};
 
 fn repository_root() -> &'static Path {
@@ -61,7 +63,12 @@ fn checked_register_publications_are_typed_reports() {
         let output = blobray()
             .args(arguments)
             .arg("--project")
-            .arg(project())
+            .arg(
+                project()
+                    .parent()
+                    .unwrap()
+                    .join("publication/vendor-project.toml"),
+            )
             .args(["--format", "json", "--color", "never"])
             .output()
             .expect("run register publication check");
@@ -502,24 +509,16 @@ fn research_surfaces_are_protocol_exact_and_keep_inspection_visible() {
     );
 }
 
+#[cfg(unix)]
 #[test]
-fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
-    // `local.toml` is an ignored, caller-owned binding to private artifacts.
-    // Deep doctor intentionally authenticates it when present, so its result
-    // may depend on binaries produced by another checkout. This repository
-    // contract covers only checked-in review packs; local artifact freshness
-    // is validated by the explicit project workflow instead.
-    if project()
-        .parent()
-        .expect("project manifest has a parent")
-        .join("local.toml")
-        .is_file()
-    {
-        return;
-    }
+fn checked_in_review_packs_pass_doctor_without_runtime_revision_state() {
+    // Revision history is a separately versioned runtime protocol. Validate
+    // source-owned packs without depending on ignored local bindings/findings;
+    // the checked historical state's migration contract is tested below.
+    let fixture = support::ProjectFixture::checked_inputs(repository_root(), "packs", false);
     let output = blobray()
         .args(["project", "doctor", "--project"])
-        .arg(project())
+        .arg(&fixture.manifest)
         .args([
             "--format",
             "json",
@@ -532,7 +531,8 @@ fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
         .expect("validate the checked-in ESP32-S31 project");
     assert!(
         output.status.success(),
-        "stderr: {}",
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -545,6 +545,38 @@ fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
     ));
     assert_eq!(document["project"]["id"], "esp32s31-radio-rev0");
     assert_eq!(document["target"]["id"], "esp32s31-rev0");
+    let models = document["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|capability| capability["name"] == "execution-model-provider")
+        .collect::<Vec<_>>();
+    assert_eq!(models.len(), 2);
+    for (id, kind) in [
+        ("esp32s31-rev0-runtime-models", "runtime-semantics"),
+        (
+            "esp32s31-radio-reconstruction-models",
+            "manual-reconstruction",
+        ),
+    ] {
+        let model = models
+            .iter()
+            .find(|model| model["details"]["id"] == id)
+            .unwrap();
+        assert_eq!(model["status"], "installed");
+        assert_eq!(model["details"]["kind"], kind);
+        assert!(
+            model["details"]["applicability"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty())
+        );
+        assert!(
+            model["details"]["evidence"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty())
+        );
+    }
+
     assert!(
         document["capabilities"]
             .as_array()
@@ -558,6 +590,8 @@ fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
                         && capability["status"] == "baseline-missing")
                     || (capability["name"] == "reusable-capabilities"
                         && capability["status"] == "incomplete")
+                    || (capability["name"] == "execution-model-provider"
+                        && capability["status"] == "installed")
             }))
     );
 }
@@ -715,4 +749,81 @@ fn reusable_radio_capability_report_is_deterministic_and_fail_closed() {
                         })
             })
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_artifact_publication_context_requires_authenticated_inputs() {
+    let fixture = support::ProjectFixture::checked_inputs(repository_root(), "auth", false);
+    let output = blobray()
+        .args(["registers", "validate", "--project"])
+        .arg(&fixture.manifest)
+        .args(["--format", "json", "--diagnostic-format", "json", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let diagnostic: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    let message = diagnostic["diagnostic"]["message"].as_str().unwrap();
+    assert!(message.contains("no active run spec"), "{message}");
+    assert!(message.contains("authenticate"), "{message}");
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_reports_historical_snapshot_migration_without_rewriting_evidence() {
+    let fixture = support::ProjectFixture::checked_inputs(repository_root(), "revision", true);
+    let state = fixture
+        .manifest
+        .parent()
+        .unwrap()
+        .join("revisions/state.blobray");
+    let original = std::fs::read(&state).unwrap();
+    let snapshots = std::fs::read_dir(state.parent().unwrap().join("snapshots"))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let bytes = std::fs::read(&path).unwrap();
+            (path, bytes)
+        })
+        .collect::<Vec<_>>();
+    let output = blobray()
+        .args(["project", "doctor", "--project"])
+        .arg(&fixture.manifest)
+        .args([
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "--progress",
+            "never",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let capability = document["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["name"] == "revision-workflow")
+        .unwrap();
+    assert_eq!(capability["status"], "invalid", "{capability}");
+    let detail = capability.to_string();
+    assert!(detail.contains("not current schema"), "{detail}");
+    assert!(
+        detail.contains("preserve revisions/state.blobray"),
+        "{detail}"
+    );
+    assert!(detail.contains("authenticated artifacts"), "{detail}");
+    assert!(detail.contains("--run-spec PATH"), "{detail}");
+    assert_eq!(std::fs::read(state).unwrap(), original);
+    for (path, bytes) in snapshots {
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
 }

@@ -37,7 +37,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
             ),
             RevisionStateHealth::Invalid => executable_step(
                 context,
-                "replace the invalid revision state with a current snapshot",
+                "preserve historical state and snapshots, move the invalid active state aside, then capture authenticated current findings",
                 ["project", "revision", "snapshot", "CURRENT"],
                 ProjectContextRequirement::RunSpec,
             ),

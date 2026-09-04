@@ -21,6 +21,9 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 
+mod retention;
+pub(crate) use retention::RetentionScope;
+
 type PackedObjectLocations = Vec<(String, u64, u64)>;
 
 const STORE_SCHEMA: i64 = 10;
@@ -127,6 +130,9 @@ pub(crate) struct QueryStoreCompactionResult {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct QueryStoreRetentionPlan {
+    pub(crate) scope: RetentionScope,
+    pub(crate) eligible_epochs: u64,
+    pub(crate) eligible_queries: u64,
     pub(crate) maintenance: QueryStoreMaintenancePlan,
     pub(crate) retention_seconds: u64,
     pub(crate) cutoff_unix_seconds: u64,
@@ -143,6 +149,8 @@ pub(crate) struct QueryStoreRetentionPlan {
 pub(crate) struct QueryStorePruneResult {
     pub(crate) plan: QueryStoreRetentionPlan,
     pub(crate) pruned_objects: u64,
+    pub(crate) pruned_epochs: u64,
+    pub(crate) pruned_queries: u64,
     pub(crate) compacted: bool,
     pub(crate) final_root_bytes: u64,
     pub(crate) reclaimed_bytes: u64,
@@ -158,6 +166,9 @@ struct CacheFilesystemAssessment {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RetentionMeasurements {
+    scope: RetentionScope,
+    eligible_epochs: u64,
+    eligible_queries: u64,
     retired_objects: u64,
     eligible_objects: u64,
     eligible_payload_bytes: u64,
@@ -229,13 +240,23 @@ fn build_maintenance_plan(
     filesystem: CacheFilesystemAssessment,
     max_size_bytes: Option<u64>,
 ) -> Result<QueryStoreMaintenancePlan> {
+    build_maintenance_plan_for_rewrite(statistics, filesystem, max_size_bytes, false)
+}
+
+fn build_maintenance_plan_for_rewrite(
+    statistics: &QueryStoreStatistics,
+    filesystem: CacheFilesystemAssessment,
+    max_size_bytes: Option<u64>,
+    rewrite_metadata: bool,
+) -> Result<QueryStoreMaintenancePlan> {
     let projected_root_bytes = statistics
         .root_bytes
         .checked_sub(statistics.reclaimable_pack_bytes)
         .ok_or_else(|| {
             crate::Error::invalid("query cache reclaimable bytes exceed its physical size")
         })?;
-    let would_compact = statistics.present && statistics.reclaimable_pack_bytes != 0;
+    let would_compact =
+        statistics.present && (statistics.reclaimable_pack_bytes != 0 || rewrite_metadata);
     let temporary_bytes_required = if would_compact {
         statistics
             .preserved_record_bytes
@@ -329,12 +350,18 @@ fn build_retention_plan(
                 "query cache retention plan preserves more CAS bytes than the pack contains",
             )
         })?;
-    let maintenance = build_maintenance_plan(&projected, filesystem, max_size_bytes)?;
-    let would_prune = statistics.present && measurements.eligible_objects != 0;
+    let maintenance = build_maintenance_plan_for_rewrite(
+        &projected,
+        filesystem,
+        max_size_bytes,
+        measurements.eligible_epochs != 0,
+    )?;
+    let would_prune = statistics.present
+        && (measurements.eligible_objects != 0 || measurements.eligible_epochs != 0);
     let reason = if !statistics.present {
         Some("cache is not created".to_owned())
-    } else if measurements.eligible_objects == 0 {
-        Some("no retired CAS objects satisfy the retention cutoff".to_owned())
+    } else if !would_prune {
+        Some("no objects or epochs in the selected scope satisfy the retirement cutoff".to_owned())
     } else {
         maintenance.reason.clone()
     };
@@ -343,6 +370,9 @@ fn build_retention_plan(
         && maintenance.enough_free_space
         && maintenance.over_max_size_bytes == 0;
     Ok(QueryStoreRetentionPlan {
+        scope: measurements.scope,
+        eligible_epochs: measurements.eligible_epochs,
+        eligible_queries: measurements.eligible_queries,
         maintenance,
         retention_seconds,
         cutoff_unix_seconds,
@@ -488,8 +518,17 @@ pub(crate) struct QueryStore {
     /// restricted to this snapshot plus the standalone focused scope and the
     /// writer's private publication epoch.
     published_epoch: Option<String>,
+    /// Nested function queries consumed by stages awaiting publication.
+    /// Read-only lookups do not acquire ownership or become dependencies.
+    stage_function_queries: BTreeMap<String, StageFunctionQueries>,
+    active_function_query_stage: Option<String>,
     _root_pin: PinnedCacheRoot,
     _access_lock: File,
+}
+
+struct StageFunctionQueries {
+    keys: BTreeSet<String>,
+    publication_failed: bool,
 }
 
 /// Lifetime guard for the persistent-cache snapshot seen by a plan.
@@ -692,6 +731,8 @@ impl QueryStore {
             active_epoch: None,
             publishing_epoch: None,
             published_epoch: Some(active_epoch),
+            stage_function_queries: BTreeMap::new(),
+            active_function_query_stage: None,
             _root_pin: root_pin,
             _access_lock: guard.access_lock.try_clone()?,
         };
@@ -743,14 +784,14 @@ impl QueryStore {
 
     /// Plan an age-based prune without creating or mutating cache state.
     ///
-    /// Age is applied only to CAS objects that were transactionally marked
-    /// unreachable when their final stage owner disappeared. Current query
-    /// results and stage outputs are unconditional roots and are never quota
-    /// eviction candidates.
+    /// Object-only scope uses persisted CAS retirement timestamps. The explicit
+    /// epoch scope also uses successful epoch retirement timestamps; current,
+    /// standalone and pinned owners remain protected in either scope.
     pub(crate) fn retention_plan(
         project_manifest: &Path,
         retention: Duration,
         max_size_bytes: Option<u64>,
+        scope: RetentionScope,
     ) -> Result<QueryStoreRetentionPlan> {
         let retention_seconds = retention.as_secs();
         let cutoff_unix_seconds = unix_timestamp_seconds()?.saturating_sub(retention_seconds);
@@ -759,6 +800,7 @@ impl QueryStore {
             retention_seconds,
             cutoff_unix_seconds,
             max_size_bytes,
+            scope,
         )
     }
 
@@ -767,6 +809,7 @@ impl QueryStore {
         retention_seconds: u64,
         cutoff_unix_seconds: u64,
         max_size_bytes: Option<u64>,
+        scope: RetentionScope,
     ) -> Result<QueryStoreRetentionPlan> {
         let Some(guard) = Self::plan_read_guard(project_manifest)? else {
             let project_root = project_manifest.parent().unwrap_or_else(|| Path::new("."));
@@ -781,6 +824,9 @@ impl QueryStore {
                 retention_seconds,
                 cutoff_unix_seconds,
                 RetentionMeasurements {
+                    scope,
+                    eligible_epochs: 0,
+                    eligible_queries: 0,
                     retired_objects: 0,
                     eligible_objects: 0,
                     eligible_payload_bytes: 0,
@@ -823,7 +869,8 @@ impl QueryStore {
                 "query cache reports {preserved_record_bytes} preserved record bytes in {pack_bytes} pack bytes"
             ))
         })?;
-        let measurements = retention_measurements(&connection, cutoff_unix_seconds, pack_bytes)?;
+        let measurements =
+            retention::measurements(&connection, cutoff_unix_seconds, pack_bytes, scope)?;
         drop(connection);
 
         let postflight = fingerprint_cache_tree(storage_root)?;
@@ -879,14 +926,15 @@ impl QueryStore {
         )
     }
 
-    /// Remove only persisted, unreachable CAS objects older than `retention`,
-    /// then rewrite the pack through the pinned Linux cache generation.
+    /// Prune the explicit retirement scope and rewrite its surviving CAS pack.
+    /// Epoch metadata changes only in the verified pack's publication transaction.
     pub(crate) fn prune_cache(
         project_manifest: &Path,
         retention: Duration,
         max_size_bytes: Option<u64>,
+        scope: RetentionScope,
     ) -> Result<QueryStorePruneResult> {
-        let plan = Self::retention_plan(project_manifest, retention, max_size_bytes)?;
+        let plan = Self::retention_plan(project_manifest, retention, max_size_bytes, scope)?;
         // `--max-size` is a hard post-prune assessment even when retention has
         // no eligible objects. A successful no-op must never imply that the
         // requested bound was satisfied.
@@ -896,6 +944,8 @@ impl QueryStore {
                 final_root_bytes: plan.maintenance.root_bytes,
                 plan,
                 pruned_objects: 0,
+                pruned_epochs: 0,
+                pruned_queries: 0,
                 compacted: false,
                 reclaimed_bytes: 0,
             });
@@ -907,6 +957,7 @@ impl QueryStore {
             plan.retention_seconds,
             plan.cutoff_unix_seconds,
             max_size_bytes,
+            scope,
         )?;
         validate_retention_plan(&locked_plan)?;
         if !locked_plan.would_prune {
@@ -916,12 +967,16 @@ impl QueryStore {
                 final_root_bytes: final_statistics.root_bytes,
                 plan: locked_plan,
                 pruned_objects: 0,
+                pruned_epochs: 0,
+                pruned_queries: 0,
                 compacted: false,
                 reclaimed_bytes: 0,
             });
         }
         let pruned_objects = locked_plan.eligible_objects;
-        store.compact_with_retention_cutoff(Some(locked_plan.cutoff_unix_seconds))?;
+        let pruned_epochs = locked_plan.eligible_epochs;
+        let pruned_queries = locked_plan.eligible_queries;
+        store.compact_with_retention_cutoff(Some(locked_plan.cutoff_unix_seconds), scope)?;
         drop(store);
 
         let final_statistics = Self::statistics(project_manifest)?;
@@ -942,6 +997,8 @@ impl QueryStore {
                 .saturating_sub(final_statistics.root_bytes),
             plan: locked_plan,
             pruned_objects,
+            pruned_epochs,
+            pruned_queries,
             compacted: true,
         })
     }
@@ -1564,6 +1621,8 @@ impl QueryStore {
             active_epoch: Some(standalone_epoch_id()),
             publishing_epoch: None,
             published_epoch: Some(active_epoch),
+            stage_function_queries: BTreeMap::new(),
+            active_function_query_stage: None,
             _root_pin: root_pin,
             _access_lock: access_lock,
         };
@@ -1749,6 +1808,7 @@ impl QueryStore {
         retention_seconds: u64,
         cutoff_unix_seconds: u64,
         max_size_bytes: Option<u64>,
+        scope: RetentionScope,
     ) -> Result<QueryStoreRetentionPlan> {
         self.validate_root_identity()?;
         let fingerprint = fingerprint_cache_tree(&self.storage_root)?;
@@ -1770,7 +1830,7 @@ impl QueryStore {
             ))
         })?;
         let measurements =
-            retention_measurements(&self.connection, cutoff_unix_seconds, pack_bytes)?;
+            retention::measurements(&self.connection, cutoff_unix_seconds, pack_bytes, scope)?;
         let statistics = QueryStoreStatistics {
             present: true,
             cache_root: self.root.clone(),
@@ -1899,6 +1959,19 @@ impl QueryStore {
             .transpose()
     }
 
+    /// Start a stage's dependency scope. Completed scopes remain available for
+    /// batched profile builds whose stage records are published afterwards.
+    pub(crate) fn begin_stage_queries(&mut self, stage: &str) {
+        self.stage_function_queries.insert(
+            stage.to_owned(),
+            StageFunctionQueries {
+                keys: BTreeSet::new(),
+                publication_failed: false,
+            },
+        );
+        self.active_function_query_stage = Some(stage.to_owned());
+    }
+
     pub(crate) fn record_stage(
         &mut self,
         stage: &str,
@@ -1906,13 +1979,25 @@ impl QueryStore {
         outputs: &[(String, String, PathBuf)],
     ) -> Result<()> {
         self.validate_root_identity()?;
+        if self.active_function_query_stage.as_deref() == Some(stage) {
+            self.active_function_query_stage = None;
+        }
+        let dependencies = match self.stage_function_queries.remove(stage) {
+            Some(scope) if scope.publication_failed => {
+                return Err(crate::Error::invalid(format!(
+                    "stage {stage:?} cannot be cached after a nested function-fact publication failed; rerun the analysis"
+                )));
+            }
+            Some(scope) => scope.keys.into_iter().collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
         let content_digests = outputs
             .iter()
             .map(|(_, digest, _)| digest.clone())
             .collect::<Vec<_>>();
         self.ensure_file_objects(outputs)?;
         let value = serde_json::to_vec(&content_digests)?;
-        self.put(query_key, "project-stage", query_key, &[], &value)?;
+        self.put(query_key, "project-stage", query_key, &dependencies, &value)?;
         let paths = outputs
             .iter()
             .map(|(path, _, _)| path.clone())
@@ -1934,6 +2019,11 @@ impl QueryStore {
                 "cached stage {stage:?} has {} paths for {} output digests",
                 paths.len(),
                 content_digests.len()
+            )));
+        }
+        if self.stage_output_digests(query_key)?.as_deref() != Some(content_digests) {
+            return Err(crate::Error::invalid(format!(
+                "cached stage {stage:?} does not name a visible result with these output digests"
             )));
         }
         self.bind_stage(stage, query_key, paths, content_digests)
@@ -2028,6 +2118,7 @@ impl QueryStore {
     ) -> Result<()> {
         self.validate_root_identity()?;
         let active_epoch = self.writable_active_epoch()?.to_owned();
+        let visible_epochs = self.visible_epoch_sql_list()?;
         let transaction = self
             .connection
             .transaction()
@@ -2051,7 +2142,7 @@ impl QueryStore {
                 params![&active_epoch, stage, query_key],
             )
             .map_err(|error| store_error("record cached stage binding", error))?;
-        attach_query_to_epoch(&transaction, &active_epoch, query_key)?;
+        attach_query_closure_to_epoch(&transaction, &active_epoch, query_key, &visible_epochs)?;
         transaction
             .execute(
                 "DELETE FROM stage_outputs WHERE epoch_id = ?1 AND stage = ?2",
@@ -2378,9 +2469,9 @@ impl QueryStore {
 
     /// Store many small immutable function facts in one SQLite transaction.
     ///
-    /// Function workers never touch SQLite. The analysis layer collects misses
-    /// in memory and publishes them here after the parallel phase, avoiding a
-    /// transaction/fsync boundary for every analyzed symbol.
+    /// Function workers never touch SQLite. The analysis layer collects new
+    /// facts and validated hits in memory, then publishes them here after the
+    /// parallel phase. Hits acquire epoch ownership without rewriting CAS.
     fn put_function_fact_batch(&mut self, facts: &[(String, Vec<u8>)]) -> Result<()> {
         self.put_function_fact_batch_observed(facts, |_| {})
     }
@@ -2831,19 +2922,21 @@ impl QueryStore {
     fn compact_with_retention_cutoff(
         &mut self,
         _retention_cutoff_unix_seconds: Option<u64>,
+        _scope: RetentionScope,
     ) -> Result<()> {
         self.validate_root_identity()
     }
 
     #[cfg(target_os = "linux")]
     fn compact(&mut self) -> Result<()> {
-        self.compact_with_retention_cutoff(None)
+        self.compact_with_retention_cutoff(None, RetentionScope::RetiredObjects)
     }
 
     #[cfg(target_os = "linux")]
     fn compact_with_retention_cutoff(
         &mut self,
         retention_cutoff_unix_seconds: Option<u64>,
+        scope: RetentionScope,
     ) -> Result<()> {
         self.validate_root_identity()?;
         if retention_cutoff_unix_seconds.is_none() {
@@ -2857,33 +2950,8 @@ impl QueryStore {
                 })
             })
             .transpose()?;
-        let live = {
-            let mut statement = self
-                .connection
-                .prepare(
-                    "SELECT digest FROM objects
-                     WHERE digest IN (
-                         SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
-                         UNION
-                         SELECT digest FROM stage_outputs
-                         UNION
-                         SELECT digest FROM retired_objects
-                         WHERE ?1 IS NULL OR retired_unix_seconds > ?1
-                     )
-                     ORDER BY digest",
-                )
-                .map_err(|error| store_error("prepare live query-cache objects", error))?;
-            let rows = statement
-                .query_map([retention_cutoff], |row| row.get::<_, String>(0))
-                .map_err(|error| store_error("read live query-cache objects", error))?;
-            let mut live = Vec::new();
-            for row in rows {
-                live.push(row.map_err(|error| {
-                    store_error("decode live query-cache object digest", error)
-                })?);
-            }
-            live
-        };
+        let live =
+            retention::preserved_digests(&self.connection, retention_cutoff_unix_seconds, scope)?;
 
         let pack_name = format!("objects-{}.pack", self.next_pack_generation);
         let destination = self.storage_root.join(&pack_name);
@@ -2945,6 +3013,7 @@ impl QueryStore {
             .connection
             .transaction()
             .map_err(|error| store_error("begin query-cache compaction transaction", error))?;
+        retention::delete_epochs(&transaction, retention_cutoff_unix_seconds, scope)?;
         {
             let mut statement = transaction
                 .prepare(
@@ -3134,7 +3203,19 @@ impl crate::analysis::FunctionFactStore for QueryStore {
     }
 
     fn store_function_facts(&mut self, facts: &[(String, Vec<u8>)]) -> Result<()> {
-        self.put_function_fact_batch(facts)
+        let result = self.put_function_fact_batch(facts);
+        if let Some(scope) = self
+            .active_function_query_stage
+            .as_ref()
+            .and_then(|stage| self.stage_function_queries.get_mut(stage))
+        {
+            if result.is_ok() {
+                scope.keys.extend(facts.iter().map(|(key, _)| key.clone()));
+            } else {
+                scope.publication_failed = true;
+            }
+        }
+        result
     }
 }
 
@@ -3417,6 +3498,64 @@ fn validate_published_epoch(connection: &Connection, epoch_id: &str) -> Result<(
             "published analysis epoch {epoch_id} does not exist"
         ))),
     }
+}
+
+/// Stage restoration consumes the complete recorded query closure without
+/// re-executing its children. Publish all memberships in the binding's
+/// transaction; UNION bounds traversal even if a damaged index has a cycle.
+/// Every node must already belong to the caller's visible snapshot. Merely
+/// existing in the immutable index is insufficient: an abandoned epoch can
+/// own unpublished values there. Validate before attaching any membership.
+fn attach_query_closure_to_epoch(
+    connection: &Connection,
+    epoch_id: &str,
+    query_key: &str,
+    visible_epochs: &str,
+) -> Result<()> {
+    validate_epoch_id(epoch_id)?;
+    let hidden = connection
+        .query_row(
+            &format!(
+                "WITH RECURSIVE consumed(query_key) AS (
+                     SELECT ?1
+                     UNION
+                     SELECT edge.dependency_key
+                     FROM query_dependencies AS edge
+                     JOIN consumed ON edge.query_key = consumed.query_key
+                 )
+                 SELECT query_key FROM consumed
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM query_epoch_members AS member
+                     WHERE member.query_key = consumed.query_key
+                       AND member.epoch_id IN ({visible_epochs})
+                 )
+                 ORDER BY query_key LIMIT 1"
+            ),
+            [query_key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| store_error("validate stage query dependency visibility", error))?;
+    if let Some(hidden) = hidden {
+        return Err(crate::Error::invalid(format!(
+            "stage query {query_key:?} consumes query {hidden:?} outside the visible analysis snapshot"
+        )));
+    }
+    connection
+        .execute(
+            "WITH RECURSIVE consumed(query_key) AS (
+                 SELECT ?2
+                 UNION
+                 SELECT edge.dependency_key
+                 FROM query_dependencies AS edge
+                 JOIN consumed ON edge.query_key = consumed.query_key
+             )
+             INSERT OR IGNORE INTO query_epoch_members(epoch_id, query_key)
+             SELECT ?1, query_key FROM consumed",
+            params![epoch_id, query_key],
+        )
+        .map_err(|error| store_error("scope stage query dependencies to analysis epoch", error))?;
+    Ok(())
 }
 
 fn attach_query_to_epoch(connection: &Connection, epoch_id: &str, query_key: &str) -> Result<()> {
@@ -3713,67 +3852,6 @@ fn validate_reachable_object_references(connection: &Connection) -> Result<()> {
         )));
     }
     Ok(())
-}
-
-fn retention_measurements(
-    connection: &Connection,
-    cutoff_unix_seconds: u64,
-    pack_bytes: u64,
-) -> Result<RetentionMeasurements> {
-    let cutoff = i64::try_from(cutoff_unix_seconds)
-        .map_err(|_| crate::Error::invalid("retention cutoff is outside SQLite INTEGER"))?;
-    let retired_objects = query_nonnegative_count(
-        connection,
-        "count retired query-cache objects",
-        "SELECT COUNT(*) FROM retired_objects",
-    )?;
-    let (eligible_objects, eligible_payload_bytes, eligible_record_bytes) = connection
-        .query_row(
-            "SELECT COUNT(*), COALESCE(SUM(objects.payload_length), 0),
-                    COALESCE(SUM(?1 + objects.payload_length), 0)
-             FROM retired_objects JOIN objects USING (digest)
-             WHERE retired_objects.retired_unix_seconds <= ?2
-               AND NOT EXISTS (
-                   SELECT 1 FROM query_results
-                   WHERE object_digest = retired_objects.digest
-               )
-               AND NOT EXISTS (
-                   SELECT 1 FROM stage_outputs
-                   WHERE stage_outputs.digest = retired_objects.digest
-               )",
-            params![PACK_HEADER_BYTES as i64, cutoff],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            },
-        )
-        .map_err(|error| store_error("measure retention-eligible query-cache objects", error))?;
-    let eligible_objects = nonnegative(eligible_objects, "retention-eligible object count")?;
-    let eligible_payload_bytes = nonnegative(
-        eligible_payload_bytes,
-        "retention-eligible object payload bytes",
-    )?;
-    let eligible_record_bytes = nonnegative(
-        eligible_record_bytes,
-        "retention-eligible object record bytes",
-    )?;
-    let projected_preserved_record_bytes =
-        query_preserved_record_bytes(connection, Some(cutoff_unix_seconds))?;
-    if projected_preserved_record_bytes > pack_bytes {
-        return Err(crate::Error::invalid(format!(
-            "query cache retention plan preserves {projected_preserved_record_bytes} bytes in a {pack_bytes}-byte pack"
-        )));
-    }
-    Ok(RetentionMeasurements {
-        retired_objects,
-        eligible_objects,
-        eligible_payload_bytes,
-        eligible_record_bytes,
-        projected_preserved_record_bytes,
-    })
 }
 
 fn validate_indexed_pack_extents(connection: &Connection, root: &Path) -> Result<()> {
@@ -4374,7 +4452,283 @@ mod benchmark;
 mod tests {
     use super::*;
 
-    fn manifest(name: &str) -> PathBuf {
+    #[test]
+    fn restored_stage_acquires_transitive_query_ownership() {
+        let manifest = manifest("stage-transitive-epochs");
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            store
+                .put("leaf", "function", "leaf-inputs", &[], b"leaf")
+                .unwrap();
+            store
+                .put(
+                    "middle",
+                    "function",
+                    "middle-inputs",
+                    &["leaf".to_owned()],
+                    b"middle",
+                )
+                .unwrap();
+            store
+                .put(
+                    "stage",
+                    "project-stage",
+                    "stage",
+                    &["middle".to_owned()],
+                    b"[]",
+                )
+                .unwrap();
+            store
+                .bind_restored_stage("linked-ir", "stage", &[], &[])
+                .unwrap();
+            store.complete_analysis_epoch().unwrap();
+        }
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            store
+                .bind_restored_stage("linked-ir", "stage", &[], &[])
+                .unwrap();
+            store.complete_analysis_epoch().unwrap();
+        }
+        let store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        assert_eq!(store.get("leaf").unwrap(), Some(b"leaf".to_vec()));
+        assert_eq!(store.get("middle").unwrap(), Some(b"middle".to_vec()));
+    }
+
+    #[test]
+    fn failed_stage_epoch_cannot_publish_its_new_function_dependencies() {
+        use crate::analysis::FunctionFactStore;
+
+        let manifest = manifest("stage-function-abort");
+        let published = (
+            "function-direct:published".to_owned(),
+            b"published".to_vec(),
+        );
+        let failed = ("function-direct:failed".to_owned(), b"failed".to_vec());
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            store.begin_stage_queries("linked-ir");
+            store
+                .store_function_facts(std::slice::from_ref(&published))
+                .unwrap();
+            store
+                .record_stage("linked-ir", "published-stage", &[])
+                .unwrap();
+            store.complete_analysis_epoch().unwrap();
+        }
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            store
+                .bind_restored_stage("linked-ir", "published-stage", &[], &[])
+                .unwrap();
+            store.begin_stage_queries("linked-ir:failed");
+            store
+                .store_function_facts(std::slice::from_ref(&failed))
+                .unwrap();
+            store
+                .record_stage("linked-ir:failed", "failed-stage", &[])
+                .unwrap();
+            // No complete_analysis_epoch: B's dependencies stay private.
+        }
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            assert_eq!(
+                store
+                    .load_function_facts(&[published.0.clone(), failed.0.clone()])
+                    .unwrap(),
+                vec![published]
+            );
+            assert!(
+                store
+                    .stage_output_digests("failed-stage")
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                store
+                    .bind_restored_stage("linked-ir:failed", "failed-stage", &[], &[])
+                    .is_err()
+            );
+            store
+                .bind_restored_stage("linked-ir", "published-stage", &[], &[])
+                .unwrap();
+            store.complete_analysis_epoch().unwrap();
+        }
+        let store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        assert!(store.load_function_facts(&[failed.0]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn missing_stage_dependency_rolls_back_the_binding() {
+        let manifest = manifest("stage-missing-dependency");
+        let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        store
+            .put(
+                "stage",
+                "project-stage",
+                "stage",
+                &["missing".to_owned()],
+                b"[]",
+            )
+            .unwrap();
+        assert!(
+            store
+                .bind_restored_stage("linked-ir", "stage", &[], &[])
+                .is_err()
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM stage_bindings", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn restored_stage_cannot_promote_a_dependency_from_a_failed_epoch() {
+        let manifest = manifest("stage-hidden-dependency");
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            store
+                .put("published", "function", "inputs", &[], b"published")
+                .unwrap();
+            store.complete_analysis_epoch().unwrap();
+        }
+        {
+            let mut failed = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            failed
+                .put("hidden", "function", "inputs", &[], b"unpublished")
+                .unwrap();
+        }
+        let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        // A visible parent may name an existing but unpublished child. The
+        // complete closure, including indirect children, must be validated
+        // before the binding acquires ownership of any published sibling.
+        store
+            .put(
+                "middle",
+                "function",
+                "inputs",
+                &["hidden".to_owned()],
+                b"middle",
+            )
+            .unwrap();
+        store
+            .put(
+                "stage",
+                "project-stage",
+                "stage",
+                &["middle".to_owned(), "published".to_owned()],
+                b"[]",
+            )
+            .unwrap();
+        assert_eq!(
+            store.stage_output_digests("stage").unwrap(),
+            Some(Vec::new())
+        );
+        assert!(store.get("hidden").unwrap().is_none());
+
+        let error = store
+            .bind_restored_stage("linked-ir", "stage", &[], &[])
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("outside the visible analysis snapshot")
+        );
+        assert!(store.get("hidden").unwrap().is_none());
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM query_epoch_members
+             WHERE epoch_id = ?1 AND query_key IN ('hidden', 'published')",
+                    [store.writable_active_epoch().unwrap()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM stage_bindings", [], |row| row
+                    .get::<_, i64>(0),)
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn failed_function_publication_prevents_incomplete_stage_dependencies() {
+        use crate::analysis::FunctionFactStore;
+
+        let manifest = manifest("stage-failed-function-write");
+        let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let key = "function-direct:immutable".to_owned();
+        store
+            .store_function_facts(&[(key.clone(), b"first".to_vec())])
+            .unwrap();
+        store.begin_stage_queries("linked-ir");
+        assert!(
+            store
+                .store_function_facts(&[(key, b"conflict".to_vec())])
+                .is_err()
+        );
+        assert!(store.record_stage("linked-ir", "stage", &[]).is_err());
+        assert!(store.stage_output_digests("stage").unwrap().is_none());
+    }
+
+    #[test]
+    fn batched_profiles_record_their_own_consumed_function_queries() {
+        use crate::analysis::FunctionFactStore;
+
+        let manifest = manifest("batched-profile-dependencies");
+        let shared = ("function-direct:shared".to_owned(), b"shared".to_vec());
+        let first = ("function-direct:first".to_owned(), b"first".to_vec());
+        let second = ("function-direct:second".to_owned(), b"second".to_vec());
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            // All cache lookups precede execution, then all publications
+            // follow execution. A shared fact belongs to both profiles.
+            store.begin_stage_queries("linked-ir:first");
+            store.begin_stage_queries("linked-ir:second");
+            store.begin_stage_queries("linked-ir:first");
+            store
+                .store_function_facts(&[shared.clone(), first.clone()])
+                .unwrap();
+            store.begin_stage_queries("linked-ir:second");
+            store
+                .store_function_facts(&[shared.clone(), second.clone()])
+                .unwrap();
+            store
+                .record_stage("linked-ir:first", "first-stage", &[])
+                .unwrap();
+            store
+                .record_stage("linked-ir:second", "second-stage", &[])
+                .unwrap();
+            store.complete_analysis_epoch().unwrap();
+        }
+        {
+            let mut store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+            store
+                .bind_restored_stage("linked-ir:first", "first-stage", &[], &[])
+                .unwrap();
+            store.complete_analysis_epoch().unwrap();
+        }
+        let store = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        assert_eq!(
+            store
+                .load_function_facts(&[first.0.clone(), shared.0.clone(), second.0])
+                .unwrap(),
+            vec![first, shared]
+        );
+    }
+
+    pub(super) fn manifest(name: &str) -> PathBuf {
         let directory =
             std::env::temp_dir().join(format!("blobray-query-store-{}-{name}", std::process::id()));
         if directory.is_dir() {
@@ -4384,7 +4738,7 @@ mod tests {
         directory.join("vendor-project.toml")
     }
 
-    fn output(manifest: &Path, name: &str, value: &[u8]) -> (String, String, PathBuf) {
+    pub(super) fn output(manifest: &Path, name: &str, value: &[u8]) -> (String, String, PathBuf) {
         let path = manifest.parent().unwrap().join(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, value).unwrap();
@@ -4402,7 +4756,7 @@ mod tests {
         QueryStore::stage_output_digests_read_only(&guard, query_key, validate_payloads)
     }
 
-    fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<(u64, String)>)> {
+    pub(super) fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<(u64, String)>)> {
         fn collect(
             root: &Path,
             directory: &Path,
@@ -4501,7 +4855,8 @@ mod tests {
         assert_eq!(fs::read(&external_pack).unwrap(), b"caller-owned");
         assert!(!pack_root.join("queries.sqlite3").exists());
 
-        let socket_manifest = manifest("plan-cold-unsupported-entry");
+        // Leave room for a caller-owned TMPDIR within the Unix socket path limit.
+        let socket_manifest = manifest("sock");
         let socket_root = socket_manifest
             .parent()
             .unwrap()
@@ -6561,7 +6916,9 @@ mod tests {
         let project_root = manifest.parent().unwrap();
         let before = snapshot_tree(project_root);
 
-        let plan = QueryStore::retention_plan_at(&manifest, 1, 1, None).unwrap();
+        let plan =
+            QueryStore::retention_plan_at(&manifest, 1, 1, None, RetentionScope::RetiredObjects)
+                .unwrap();
 
         assert_eq!(snapshot_tree(project_root), before);
         assert_eq!(plan.retired_objects, 1);
@@ -6572,7 +6929,13 @@ mod tests {
         );
         assert!(plan.ready_to_prune);
 
-        let result = QueryStore::prune_cache(&manifest, Duration::ZERO, None).unwrap();
+        let result = QueryStore::prune_cache(
+            &manifest,
+            Duration::ZERO,
+            None,
+            RetentionScope::RetiredObjects,
+        )
+        .unwrap();
 
         assert!(result.compacted);
         assert_eq!(result.pruned_objects, 1);
@@ -6614,7 +6977,13 @@ mod tests {
         let project_root = manifest.parent().unwrap();
         let before = snapshot_tree(project_root);
 
-        let error = QueryStore::prune_cache(&manifest, Duration::ZERO, Some(1)).unwrap_err();
+        let error = QueryStore::prune_cache(
+            &manifest,
+            Duration::ZERO,
+            Some(1),
+            RetentionScope::RetiredObjects,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("over --max-size"));
         assert_eq!(snapshot_tree(project_root), before);
@@ -6644,12 +7013,24 @@ mod tests {
         }
         let project_root = manifest.parent().unwrap();
         let before = snapshot_tree(project_root);
-        let plan = QueryStore::retention_plan(&manifest, Duration::ZERO, Some(1)).unwrap();
+        let plan = QueryStore::retention_plan(
+            &manifest,
+            Duration::ZERO,
+            Some(1),
+            RetentionScope::RetiredObjects,
+        )
+        .unwrap();
         assert!(!plan.would_prune);
         assert_eq!(plan.eligible_objects, 0);
         assert!(plan.maintenance.over_max_size_bytes > 0);
 
-        let error = QueryStore::prune_cache(&manifest, Duration::ZERO, Some(1)).unwrap_err();
+        let error = QueryStore::prune_cache(
+            &manifest,
+            Duration::ZERO,
+            Some(1),
+            RetentionScope::RetiredObjects,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("over --max-size"));
         assert_eq!(snapshot_tree(project_root), before);
@@ -6671,21 +7052,23 @@ mod tests {
             .connection
             .execute("UPDATE retired_objects SET retired_unix_seconds = 100", [])
             .unwrap();
-        let measurements = retention_measurements(
+        let measurements = retention::measurements(
             &store.connection,
             99,
             fs::metadata(store.active_storage_pack_path().unwrap())
                 .unwrap()
                 .len(),
+            RetentionScope::RetiredObjects,
         )
         .unwrap();
         assert_eq!(measurements.eligible_objects, 0);
-        let measurements = retention_measurements(
+        let measurements = retention::measurements(
             &store.connection,
             100,
             fs::metadata(store.active_storage_pack_path().unwrap())
                 .unwrap()
                 .len(),
+            RetentionScope::RetiredObjects,
         )
         .unwrap();
         assert_eq!(measurements.eligible_objects, 1);

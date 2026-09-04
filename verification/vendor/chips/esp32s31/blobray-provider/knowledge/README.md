@@ -1,10 +1,11 @@
-# Reusable ESP32-S31 rev0 knowledge add-on
+# ESP32-S31 rev0 declarative knowledge
 
-This provider composes generic C and ESP-IDF semantics with only one reviewed
-chip-wide direct semantic: ESP32-S31's fixed 40 MHz crystal query. Its entry
-and diagnostic contracts come from the sibling rev0 ROM contract crate.
+This crate publishes the reviewed 40 MHz crystal semantic declaration and
+compressed-pointer encoding facts, with entry/diagnostic contracts supplied
+by the sibling contracts crate. It has no executable addon dependencies and
+installs no summary hooks.
 
-Exact function bodies, linked addresses, relocation layouts and private
-archive ABIs are deliberately absent. Those facts cannot be selected by the
-chip pack unless separate evidence proves their applicability across every
-investigation using the pack.
+The sibling [`models`](../models/README.md) crate interprets these facts and
+composes the reusable C/ESP-IDF runtime adapters. The host chooses that
+executable provider explicitly. Exact private function reconstructions remain
+in the investigation model crate.

@@ -9,6 +9,9 @@ use std::cmp::Ordering;
 
 mod fact;
 mod identity;
+mod model_provider;
+
+pub use model_provider::{ExecutionModelKind, ExecutionModelProviderSpec};
 
 pub use fact::{
     Applicability, ApplicabilityContext, EffectiveFactMetadata, EvidenceReference,

@@ -34,7 +34,7 @@ const fn classification(
     )
 }
 
-pub(super) static CLASSIFICATIONS: &[ReviewedMemoryAccessClassification] = &[
+pub static CLASSIFICATIONS: &[ReviewedMemoryAccessClassification] = &[
     classification(
         "ble-controller-rx-pool-source-word-08",
         "ble-controller::r_sym_ble_D3G2s4EUhwQF8UMS2GBp",

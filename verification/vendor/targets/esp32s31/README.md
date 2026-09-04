@@ -14,6 +14,13 @@ evidence policy, dispositions and verification inputs. Adding one newly
 accepted register name or W1C fact should normally change one sparse reviewed
 pack, not copy the generated MMIO inventory or the chip baseline.
 
+For register-only changes, the [source-only publication project](publication/README.md)
+checks the same SVD, PAC and bindings without selecting binary investigation
+facts or requiring private artifacts. The full investigation retains exact-input
+authentication. Its checked historical revision state uses schema 4; current
+Blobray reports it as migration-required. Follow the [preserving migration
+procedure](revisions/README.md) before capturing a schema-5 baseline.
+
 ## Local inputs
 
 `local.toml` is ignored and contains machine-local paths to authenticated

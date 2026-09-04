@@ -9,6 +9,9 @@ mod contexts;
 mod primitives;
 mod types;
 
+#[cfg(test)]
+mod broker_tests;
+
 use contexts::{validate_function, validate_inputs};
 use primitives::validate_id;
 use types::validate_types;
@@ -300,12 +303,13 @@ fn validate_static_event_callback(
     facts: &FunctionFacts,
 ) -> ValidationResult<()> {
     validate_static_event_callback_shape(route)?;
-    for (edge, site) in route.upstream_chain.windows(2).zip(&route.upstream_sites) {
+    for (index, edge) in route.upstream_chain.windows(2).enumerate() {
+        let site = route.upstream_sites.as_ref().map(|sites| sites[index]);
         let owner = require_function(facts, &route.profile, &route.source, &edge[0], &route.id)?;
         let call = exact_call(
             owner,
             &super::ReviewedEventCallMatcher::Function(edge[1].clone()),
-            *site,
+            site,
             &route.id,
             "upstream direct",
         )?;
@@ -313,7 +317,7 @@ fn validate_static_event_callback(
             return Err(event_route_error(
                 &route.id,
                 format!(
-                    "upstream edge {:?} -> {:?} at {site:#010x} must be an internal direct call, got {:?}",
+                    "upstream edge {:?} -> {:?} must be an internal direct call, got {:?}",
                     edge[0], edge[1], call.kind,
                 ),
             ));
@@ -329,7 +333,7 @@ fn validate_static_event_callback(
     let dispatches = exact_calls(
         dispatcher,
         &route.dispatch_call,
-        &route.dispatch_sites,
+        route.dispatch_sites.as_deref(),
         &route.id,
         "dispatch",
     )?;
@@ -361,6 +365,12 @@ fn validate_static_event_callback(
         &route.id,
         "event run",
     )?;
+    if receive.site == run.site {
+        return Err(event_route_error(
+            &route.id,
+            "event receive and run sites must be distinct",
+        ));
+    }
     if run
         .arguments
         .get(usize::from(route.run_event_argument))
@@ -396,6 +406,18 @@ fn validate_static_event_callback(
         "dispatch object",
     )?;
     for dispatch in &dispatches {
+        if exact_argument(
+            dispatch,
+            route.dispatch_object_argument,
+            &route.id,
+            "dispatch object",
+        )? != object
+        {
+            return Err(event_route_error(
+                &route.id,
+                "dispatch and binding calls do not carry one exact shared event object",
+            ));
+        }
         exact_argument(
             dispatch,
             route.dispatch_queue_argument,
@@ -403,11 +425,7 @@ fn validate_static_event_callback(
             "dispatch queue",
         )?;
     }
-    if dispatches.iter().skip(1).any(|call| {
-        call.arguments
-            .get(usize::from(route.dispatch_object_argument))
-            .is_none_or(|value| value != object)
-    }) || exact_argument(
+    if exact_argument(
         binding_call,
         route.binding_object_argument,
         &route.id,
@@ -455,7 +473,7 @@ fn validate_static_event_callback_shape(
             "dispatch queue and event-object arguments must be distinct",
         ));
     }
-    if route.receive_site == route.run_site {
+    if route.receive_site.is_some() && route.receive_site == route.run_site {
         return Err(event_route_error(
             &route.id,
             "event receive and run sites must be distinct",
@@ -463,12 +481,15 @@ fn validate_static_event_callback_shape(
     }
     if route.upstream_chain.len() < 2
         || route.upstream_chain.last() != Some(&route.dispatcher)
-        || route.upstream_sites.len() != route.upstream_chain.len() - 1
-        || route.dispatch_sites.is_empty()
+        || route
+            .upstream_sites
+            .as_ref()
+            .is_some_and(|sites| sites.len() != route.upstream_chain.len() - 1)
+        || route.dispatch_sites.as_ref().is_some_and(Vec::is_empty)
     {
         return Err(event_route_error(
             &route.id,
-            "static event route requires a two-or-more-function upstream chain ending at its dispatcher, one exact site per upstream edge, and at least one dispatch site",
+            "static event route requires an upstream chain ending at its dispatcher; optional upstream sites must cover every edge and optional dispatch sites must be non-empty",
         ));
     }
     validate_rationale(&route.id, &route.rationale)
@@ -573,12 +594,16 @@ fn validate_broker_subscription(
             "broker publish does not carry the reviewed selector",
         ));
     }
-    if exact_argument(
+    let payload = exact_argument(
         dispatch,
         route.dispatch_payload_argument,
         &route.id,
         "broker payload",
-    )? != route.payload_value
+    )?;
+    if route
+        .payload_value
+        .as_deref()
+        .is_some_and(|expected| payload != expected)
     {
         return Err(event_route_error(
             &route.id,
@@ -635,7 +660,9 @@ fn validate_broker_subscription(
         .memory_writes
         .iter()
         .filter(|write| {
-            write.site == route.binding_callback_store_site
+            route
+                .binding_callback_store_site
+                .is_none_or(|site| write.site == site)
                 && write.offset == route.binding_callback_store_offset
                 && write.width == 32
                 && write.value.as_deref() == Some(&callback_value)
@@ -690,7 +717,7 @@ fn validate_broker_subscription(
             None => {
                 return Err(event_route_error(
                     &route.id,
-                    "broker terminal validation exceeded the 128-node/1024-edge reviewed-route graph limit",
+                    "broker terminal validation exceeded the 12-depth/128-node/1024-edge reviewed-route graph limit",
                 ));
             }
         }
@@ -705,7 +732,9 @@ fn validate_broker_subscription_shape(
     validate_route_label(&route.id, "execution context", &route.execution_context)?;
     validate_route_label(&route.id, "selector role", &route.selector_role)?;
     validate_route_label(&route.id, "payload role", &route.payload_role)?;
-    validate_route_label(&route.id, "payload value", &route.payload_value)?;
+    if let Some(value) = &route.payload_value {
+        validate_route_label(&route.id, "payload value", value)?;
+    }
     if route.dispatch_selector_argument == route.dispatch_payload_argument
         || route.binding_domain_argument == route.binding_object_argument
     {
@@ -729,70 +758,23 @@ fn validate_broker_subscription_shape(
 fn exact_calls<'a>(
     function: &'a super::FunctionFact,
     matcher: &super::ReviewedEventCallMatcher,
-    sites: &[u32],
+    sites: Option<&[u32]>,
     route: &str,
     role: &str,
 ) -> ValidationResult<Vec<&'a super::FunctionCallFact>> {
-    let mut calls = Vec::new();
-    let mut unique = BTreeSet::new();
-    for site in sites {
-        if !unique.insert(*site) {
-            return Err(event_route_error(
-                route,
-                format!("duplicate {role} site {site:#x}"),
-            ));
-        }
-        calls.push(exact_call(function, matcher, *site, route, role)?);
-    }
-    Ok(calls)
+    super::select_route_calls(&function.calls, matcher, sites, role)
+        .map_err(|error| event_route_error(route, error))
 }
 
 fn exact_call<'a>(
     function: &'a super::FunctionFact,
     matcher: &super::ReviewedEventCallMatcher,
-    site: u32,
+    site: Option<u32>,
     route: &str,
     role: &str,
 ) -> ValidationResult<&'a super::FunctionCallFact> {
-    let matches = function
-        .calls
-        .iter()
-        .filter(|call| call.site == Some(site) && call_matches(call, matcher))
-        .collect::<Vec<_>>();
-    match matches.as_slice() {
-        [call] => require_direct_call(call, site, route, role),
-        _ => Err(event_route_error(
-            route,
-            format!(
-                "expected one exact {role} call at {site:#010x}, found {}",
-                matches.len()
-            ),
-        )),
-    }
-}
-
-fn require_direct_call<'a>(
-    call: &'a super::FunctionCallFact,
-    site: u32,
-    route: &str,
-    role: &str,
-) -> ValidationResult<&'a super::FunctionCallFact> {
-    if !call.direct {
-        return Err(event_route_error(
-            route,
-            format!("{role} call at {site:#010x} is indirect"),
-        ));
-    }
-    Ok(call)
-}
-
-fn call_matches(call: &super::FunctionCallFact, matcher: &super::ReviewedEventCallMatcher) -> bool {
-    match matcher {
-        super::ReviewedEventCallMatcher::Operation(operation) => {
-            call.semantic_operation.as_deref() == Some(operation)
-        }
-        super::ReviewedEventCallMatcher::Function(function) => call.target == *function,
-    }
+    super::select_route_call(&function.calls, matcher, site, role)
+        .map_err(|error| event_route_error(route, error))
 }
 
 fn exact_argument<'a>(
@@ -911,35 +893,47 @@ fn function_path_exists(
     target: &str,
     limits: RouteGraphLimits,
 ) -> Option<bool> {
-    let mut frontier = vec![(start, 0usize)];
-    let mut visited = BTreeSet::new();
+    // Visit shortest paths first: a deeper visit must not hide a later path
+    // that reaches the same node with enough depth budget left.
+    let mut frontier = std::collections::VecDeque::from([(start, 0usize)]);
+    let mut visited = BTreeSet::from([start]);
     let mut examined_edges = 0usize;
-    while let Some((identity, depth)) = frontier.pop() {
+    let mut depth_limited = false;
+    while let Some((identity, depth)) = frontier.pop_front() {
         if identity == target {
             return Some(true);
         }
-        if depth == limits.depth || visited.contains(identity) {
-            continue;
-        }
-        if visited.len() == limits.nodes {
-            return None;
-        }
-        visited.insert(identity.to_owned());
         let Some(function) = facts.function(profile, source, identity) else {
             continue;
         };
         for call in &function.calls {
-            if facts.function(profile, source, &call.target).is_none() {
-                continue;
-            }
             if examined_edges == limits.edges {
                 return None;
             }
             examined_edges += 1;
-            frontier.push((call.target.as_str(), depth + 1));
+            if call.kind != "internal"
+                || !call.direct
+                || call.site.is_none()
+                || facts.function(profile, source, &call.target).is_none()
+                || visited.contains(call.target.as_str())
+            {
+                continue;
+            }
+            if depth == limits.depth {
+                depth_limited = true;
+                continue;
+            }
+            if call.target == target {
+                return Some(true);
+            }
+            if visited.len() >= limits.nodes {
+                return None;
+            }
+            visited.insert(call.target.as_str());
+            frontier.push_back((call.target.as_str(), depth + 1));
         }
     }
-    Some(false)
+    (!depth_limited).then_some(false)
 }
 
 #[derive(Clone, Copy)]
@@ -1023,6 +1017,218 @@ mod tests {
             argument_exact: exact,
             argument_result_provenance: Vec::new(),
             guard_paths: None,
+        }
+    }
+
+    fn graph(edges: &[(&str, &[&str])]) -> FunctionFacts {
+        FunctionFacts {
+            inputs: Vec::new(),
+            functions: edges
+                .iter()
+                .map(|(identity, targets)| super::super::FunctionFact {
+                    profile: "fixture".to_owned(),
+                    source: "vendor".to_owned(),
+                    identity: (*identity).to_owned(),
+                    member: None,
+                    symbol: (*identity).to_owned(),
+                    address: None,
+                    selection: "fixture".to_owned(),
+                    body_complete: true,
+                    call_targets_complete: true,
+                    transitive_effects_complete: false,
+                    executable_complete: false,
+                    transitive_effects_materialized: false,
+                    call_graph_closed: true,
+                    context_projection_materialized: false,
+                    context_projection_complete: false,
+                    context_projection_blockers: Vec::new(),
+                    decode_blockers: Vec::new(),
+                    direct_calls: targets.len(),
+                    calls: targets
+                        .iter()
+                        .map(|target| {
+                            let mut edge = call(Vec::new(), Vec::new());
+                            edge.target = (*target).to_owned();
+                            edge.kind = "internal".to_owned();
+                            edge
+                        })
+                        .collect(),
+                    memory_writes: Vec::new(),
+                    mmio_addresses: Vec::new(),
+                    context_fields: Vec::new(),
+                    memory_fields: Vec::new(),
+                    semantic_operations: Vec::new(),
+                    trampoline_calls: 0,
+                    event_dispatches: Vec::new(),
+                    scenario_suggestions: Vec::new(),
+                    pseudo: String::new(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn route_reachability_preserves_shorter_paths_and_reports_budget_exhaustion() {
+        let facts = graph(&[
+            ("root", &["shared", "long"]),
+            ("long", &["detour"]),
+            ("detour", &["shared"]),
+            ("shared", &["step"]),
+            ("step", &["terminal"]),
+            ("terminal", &[]),
+        ]);
+        let search =
+            |limits| function_path_exists(&facts, "fixture", "vendor", "root", "terminal", limits);
+        assert_eq!(
+            search(RouteGraphLimits {
+                depth: 3,
+                nodes: 128,
+                edges: 1024
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            search(RouteGraphLimits {
+                depth: 2,
+                nodes: 128,
+                edges: 1024
+            }),
+            None
+        );
+        assert_eq!(
+            search(RouteGraphLimits {
+                depth: 12,
+                nodes: 2,
+                edges: 1024
+            }),
+            None
+        );
+        assert_eq!(
+            search(RouteGraphLimits {
+                depth: 12,
+                nodes: 128,
+                edges: 1
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn route_reachability_requires_observed_internal_direct_edges() {
+        let facts = graph(&[("root", &["terminal"]), ("terminal", &[])]);
+        // An observed edge already proves reachability; unrelated siblings
+        // must not consume the remaining budget before we report the witness.
+        let siblings = graph(&[
+            ("root", &["terminal", "other"]),
+            ("terminal", &[]),
+            ("other", &[]),
+        ]);
+        assert_eq!(
+            function_path_exists(
+                &siblings,
+                "fixture",
+                "vendor",
+                "root",
+                "terminal",
+                RouteGraphLimits {
+                    depth: 1,
+                    nodes: 1,
+                    edges: 1
+                }
+            ),
+            Some(true)
+        );
+        for change in 0..3 {
+            let mut facts = facts.clone();
+            let edge = &mut facts.functions[0].calls[0];
+            match change {
+                0 => edge.direct = false,
+                1 => edge.site = None,
+                _ => edge.kind = "external".to_owned(),
+            }
+            assert_eq!(
+                function_path_exists(
+                    &facts,
+                    "fixture",
+                    "vendor",
+                    "root",
+                    "terminal",
+                    RouteGraphLimits {
+                        depth: 12,
+                        nodes: 128,
+                        edges: 1024
+                    }
+                ),
+                Some(false)
+            );
+        }
+    }
+
+    #[test]
+    fn every_explicit_or_inferred_dispatch_requires_an_exact_shared_object() {
+        let document = super::super::tests::CALLBACK_ROUTES.parse().unwrap();
+        let pack = super::super::pack_parse::parse(&document).unwrap();
+        let super::super::ReviewedEventRoute::StaticEventCallback(route) = &pack.event_routes[0]
+        else {
+            panic!("static route");
+        };
+        let mut facts = graph(&[
+            ("vendor::isr", &["vendor::enqueue"]),
+            ("vendor::enqueue", &[]),
+            ("vendor::init", &[]),
+            ("vendor::event_loop", &[]),
+            ("vendor::callback", &[]),
+        ]);
+        for function in &mut facts.functions {
+            function.profile = "controller".to_owned();
+        }
+        facts.functions[0].calls[0].site = Some(0x1010);
+        let observed = |operation: &str, site, arguments: Vec<&str>| {
+            let mut call = call(arguments.clone(), vec![true; arguments.len()]);
+            call.semantic_operation = Some(operation.to_owned());
+            call.site = Some(site);
+            call
+        };
+        facts.functions[1].calls = vec![
+            observed(
+                "event.send",
+                0x1010,
+                vec!["const:0x00002000", "const:0x00003000"],
+            ),
+            observed(
+                "event.send",
+                0x1020,
+                vec!["const:0x00002000", "const:0x00003000"],
+            ),
+        ];
+        facts.functions[2].calls = vec![observed(
+            "event.init",
+            0x1030,
+            vec!["const:0x00003000", "const:0x00004000"],
+        )];
+        facts.functions[3].calls = vec![
+            observed("event.receive", 0x1040, vec!["const:0x00002000"]),
+            observed("event.run", 0x1050, vec!["result:event.receive"]),
+        ];
+        facts.functions[4].address = Some(0x4000);
+        for infer in [false, true] {
+            let mut route = route.clone();
+            if infer {
+                route.dispatch_sites = None;
+                route.upstream_sites = None;
+                route.binding_site = None;
+                route.receive_site = None;
+                route.run_site = None;
+            }
+            validate_static_event_callback(&route, &facts).unwrap();
+            let mut ambiguous = facts.clone();
+            ambiguous.functions[1].calls[1].argument_exact[1] = false;
+            assert!(
+                validate_static_event_callback(&route, &ambiguous)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("dispatch object argument is not exact")
+            );
         }
     }
 
@@ -1114,12 +1320,25 @@ mod tests {
     fn reviewed_route_calls_require_direct_instruction_provenance() {
         let mut indirect = call(vec!["const:0x00000004"], vec![true]);
         indirect.direct = false;
-        assert!(require_direct_call(&indirect, 0x1000, "fixture", "dispatch").is_err());
+        assert!(
+            super::super::select_route_call(
+                std::slice::from_ref(&indirect),
+                &super::super::ReviewedEventCallMatcher::Function("fixture::target".to_owned()),
+                Some(0x1000),
+                "dispatch"
+            )
+            .is_err()
+        );
         indirect.direct = true;
         assert_eq!(
-            require_direct_call(&indirect, 0x1000, "fixture", "dispatch")
-                .unwrap()
-                .target,
+            super::super::select_route_call(
+                std::slice::from_ref(&indirect),
+                &super::super::ReviewedEventCallMatcher::Function("fixture::target".to_owned()),
+                Some(0x1000),
+                "dispatch"
+            )
+            .unwrap()
+            .target,
             "fixture::target"
         );
     }

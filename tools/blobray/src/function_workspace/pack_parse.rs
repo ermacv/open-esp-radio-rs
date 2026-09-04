@@ -211,26 +211,26 @@ fn parse_static_event_callback_route(table: &Table, context: &str) -> Result<Rev
             mechanism: required_table_string(table, "mechanism", context)?,
             execution_context: required_table_string(table, "execution-context", context)?,
             dispatch_call: parse_call_matcher(table, "dispatch", context)?,
-            dispatch_sites: required_u32_array(table, "dispatch-sites", context)?,
+            dispatch_sites: optional_u32_array(table, "dispatch-sites", context)?,
             upstream_chain: required_string_array(table, "upstream-chain", context)?,
-            upstream_sites: required_u32_array(table, "upstream-sites", context)?,
+            upstream_sites: optional_u32_array(table, "upstream-sites", context)?,
             dispatch_object_argument: required_u8(table, "dispatch-object-argument", context)?,
             dispatch_queue_argument: required_u8(table, "dispatch-queue-argument", context)?,
             binding_profile: required_table_string(table, "binding-profile", context)?,
             binding_source: required_table_string(table, "binding-source", context)?,
             binding_entry: required_table_string(table, "binding-entry", context)?,
             binding_call: parse_call_matcher(table, "binding", context)?,
-            binding_site: required_u32(table, "binding-site", context)?,
+            binding_site: optional_u32(table, "binding-site", context)?,
             binding_object_argument: required_u8(table, "binding-object-argument", context)?,
             binding_callback_argument: required_u8(table, "binding-callback-argument", context)?,
             delivery_profile: required_table_string(table, "delivery-profile", context)?,
             delivery_source: required_table_string(table, "delivery-source", context)?,
             delivery_entry: required_table_string(table, "delivery-entry", context)?,
             receive_call: parse_call_matcher(table, "receive", context)?,
-            receive_site: required_u32(table, "receive-site", context)?,
+            receive_site: optional_u32(table, "receive-site", context)?,
             receive_queue_argument: required_u8(table, "receive-queue-argument", context)?,
             run_call: parse_call_matcher(table, "run", context)?,
-            run_site: required_u32(table, "run-site", context)?,
+            run_site: optional_u32(table, "run-site", context)?,
             run_event_argument: required_u8(table, "run-event-argument", context)?,
             callback_profile: required_table_string(table, "callback-profile", context)?,
             callback_source: required_table_string(table, "callback-source", context)?,
@@ -255,19 +255,22 @@ fn parse_broker_subscription_route(table: &Table, context: &str) -> Result<Revie
             mechanism: required_table_string(table, "mechanism", context)?,
             execution_context: required_table_string(table, "execution-context", context)?,
             dispatch_call: parse_call_matcher(table, "dispatch", context)?,
-            dispatch_site: required_u32(table, "dispatch-site", context)?,
+            dispatch_site: optional_u32(table, "dispatch-site", context)?,
             dispatch_selector_argument: required_u8(table, "dispatch-selector-argument", context)?,
             selector_role: required_table_string(table, "selector-role", context)?,
             selector_value: required_u32(table, "selector-value", context)?,
             dispatch_payload_argument: required_u8(table, "dispatch-payload-argument", context)?,
             payload_role: required_table_string(table, "payload-role", context)?,
-            payload_value: required_table_string(table, "payload-value", context)?,
+            payload_value: table
+                .get("payload-value")
+                .map(|_| required_table_string(table, "payload-value", context))
+                .transpose()?,
             domain: super::ReviewedEventDomainWitness {
                 profile: required_table_string(table, "domain-profile", context)?,
                 source: required_table_string(table, "domain-source", context)?,
                 entry: required_table_string(table, "domain-entry", context)?,
                 call: parse_call_matcher(table, "domain", context)?,
-                call_site: required_u32(table, "domain-site", context)?,
+                call_site: optional_u32(table, "domain-site", context)?,
                 dispatch_argument: required_u8(table, "domain-dispatch-argument", context)?,
                 call_object_argument: required_u8(table, "domain-call-object-argument", context)?,
                 call_selector_argument: required_u8(
@@ -281,10 +284,10 @@ fn parse_broker_subscription_route(table: &Table, context: &str) -> Result<Revie
             binding_source: required_table_string(table, "binding-source", context)?,
             binding_entry: required_table_string(table, "binding-entry", context)?,
             binding_call: parse_call_matcher(table, "binding", context)?,
-            binding_site: required_u32(table, "binding-site", context)?,
+            binding_site: optional_u32(table, "binding-site", context)?,
             binding_domain_argument: required_u8(table, "binding-domain-argument", context)?,
             binding_object_argument: required_u8(table, "binding-object-argument", context)?,
-            binding_callback_store_site: required_u32(
+            binding_callback_store_site: optional_u32(
                 table,
                 "binding-callback-store-site",
                 context,
@@ -299,7 +302,7 @@ fn parse_broker_subscription_route(table: &Table, context: &str) -> Result<Revie
             callback_function: required_table_string(table, "callback-function", context)?,
             callback_selector_argument: required_u8(table, "callback-selector-argument", context)?,
             case_handler,
-            case_handler_site: required_u32(table, "case-handler-site", context)?,
+            case_handler_site: optional_u32(table, "case-handler-site", context)?,
             terminal: parse_terminal(table, context)?,
             rationale: required_table_string(table, "rationale", context)?,
         },
@@ -707,6 +710,20 @@ fn required_u32(table: &Table, key: &str, context: &str) -> Result<u32> {
     required_integer(table, key, context)?
         .try_into()
         .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit u32")))
+}
+
+fn optional_u32(table: &Table, key: &str, context: &str) -> Result<Option<u32>> {
+    table
+        .get(key)
+        .map(|_| required_u32(table, key, context))
+        .transpose()
+}
+
+fn optional_u32_array(table: &Table, key: &str, context: &str) -> Result<Option<Vec<u32>>> {
+    table
+        .get(key)
+        .map(|_| required_u32_array(table, key, context))
+        .transpose()
 }
 
 fn required_string_array(table: &Table, key: &str, context: &str) -> Result<Vec<String>> {

@@ -1,0 +1,63 @@
+# Source-only register publication. Investigation-specific binary models and
+# reviewed memory-access facts belong to ../vendor-project.toml instead.
+schema = 4
+id = "esp32s31-radio-publication"
+target-spec = "../target.toml"
+ecosystem-packs = ["../../../knowledge/espressif/radio.toml"]
+chip-pack = "../../../chips/esp32s31/chip.toml"
+
+[applicability]
+artifact-lineages = ["esp32s31-radio"]
+
+[reviewed-knowledge]
+packs = ["../reviewed/project-facts.toml"]
+default-pack = "../reviewed/project-facts.toml"
+
+[registers]
+owned-ranges = [
+    "modem-radio-core-low",
+    "modem-radio-core-mid",
+    "coex-hw-timer",
+    "i2c-ana-mst",
+    "modem-radio-core-high",
+    "modem-syscon-radio",
+    "modem-lpcon-lp-timer-clock",
+    "modem-lpcon-coex-lp-clock",
+    "modem-lpcon-shared-clock-gates",
+    "modem-lpcon-shared-clock-map",
+    "modem-lpcon-phy-tick",
+    "lp-aon-phy-aux",
+    "lp-periclkrst-tsens-phy-aux",
+    "lp-tsens-phy-aux",
+    "ieee802154-core0-route",
+    "ieee802154-core1-route",
+    "hp-sys-clkrst-radio-modem-control",
+    "hp-sys-clkrst-radio-ref160",
+    "hp-sys-clkrst-radio-modem-configuration",
+    "pmu-radio-active-icg-modem",
+    "pmu-radio-active-clock-power",
+    "pmu-radio-immediate-clock-power",
+    "pmu-radio-immediate-sleep-sysclk",
+    "pmu-radio-immediate-modem-icg",
+    "pmu-radio-rf-power",
+    "pmu-radio-analog-peripheral-power",
+]
+# Optional observations for this publication workspace only. Unavailable facts
+# leave the checked register model as the publication source.
+facts = "generated/findings/mmio.json"
+
+[registers.svd]
+output = "../../../../../svd/esp32s31-radio.svd"
+
+[registers.pac-raw]
+output = "../../../../../driver/chips/esp32s31/pac-raw/src/lib.rs"
+target = "none"
+edition = "2024"
+
+[registers.bindings]
+output = "../../../../../svd/esp32s31-radio.bindings.toml"
+crate-name = "open_esp_radio_esp32s31_pac_raw"
+
+[registers.api]
+pack = "../registers/api.toml"
+output = "../../../../../driver/chips/esp32s31/pac/src/generated.rs"

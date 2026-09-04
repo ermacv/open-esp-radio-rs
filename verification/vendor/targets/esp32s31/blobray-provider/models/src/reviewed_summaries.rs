@@ -1,9 +1,9 @@
 //! Reviewed semantic summaries for effects that cannot yet be reconstructed
 //! from the structural instruction trace alone.
 //!
-//! Vendor summaries are selected by the target provider from an exact symbol
-//! name, load address and size. Artifact authentication is a caller-owned
-//! precondition; Blobray does not embed expected body digests.
+//! These are temporary executable models, not declarative facts or generated
+//! reconstruction. Each entry point enforces its body/context applicability;
+//! a mismatch returns None and preserves structural analysis fallback.
 
 use crate::*;
 

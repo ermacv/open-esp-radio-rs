@@ -49,6 +49,8 @@ struct BluetoothNonScanningRxNodeBinding {
 
 struct BluetoothNonScanningRxMemoryBinding {
     identity: BluetoothNonScanningRxMemoryIdentity,
+    base: u32,
+    end_exclusive: u32,
     nodes: [BluetoothNonScanningRxNodeBinding; BLUETOOTH_NON_SCANNING_RX_NODE_COUNT],
 }
 
@@ -90,6 +92,8 @@ impl BluetoothNonScanningRxMemoryBinding {
 
         Ok(Self {
             identity,
+            base,
+            end_exclusive,
             nodes: [node(0)?, node(1)?],
         })
     }
@@ -200,6 +204,10 @@ impl BluetoothNonScanningRxMemoryCpuOwned {
 
     pub(crate) const fn tail(&self) -> BluetoothControllerSramAddress {
         self.binding.nodes[1].header.controller_address()
+    }
+
+    pub(crate) const fn controller_range(&self) -> (u32, u32) {
+        (self.binding.base, self.binding.end_exclusive)
     }
 
     /// Whether both packet allocations are armed in the bounded rotation graph.

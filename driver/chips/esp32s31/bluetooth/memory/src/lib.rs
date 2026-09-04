@@ -21,6 +21,7 @@
 extern crate std;
 
 mod ble_phy_engine;
+mod connectable_advertising_memory;
 mod direction_finding_workspace;
 mod dtm_event_image;
 mod dtm_rx_result;
@@ -46,6 +47,20 @@ pub use ble_phy_engine::{
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineBinding,
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
     BluetoothBlePhyLe1MPacketStartCalibration,
+};
+
+#[cfg(not(target_arch = "riscv32"))]
+pub use connectable_advertising_memory::BluetoothLegacyConnectableAdvertisingMemoryGraphModelAddress;
+pub use connectable_advertising_memory::{
+    BluetoothLegacyConnectableAdvertisingMemoryGraphBindError,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphBindFailure,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+    BluetoothLegacyConnectableAdvertisingMemoryGraphStorage,
+    BluetoothLegacyConnectableAdvertisingSchedulerSpan,
 };
 
 #[cfg(not(target_arch = "riscv32"))]

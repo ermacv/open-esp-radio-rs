@@ -19,3 +19,13 @@ pub use owned::{
     OwnedEndpointResources, OwnedLinkController, OwnedNetworkDevice, OwnedNetworkRunner,
     OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxFrameSource,
 };
+
+impl open_esp_radio_wifi_datapath::SoftwareTxFrame for OwnedNetworkTxFrame {
+    fn interface(&self) -> NetworkInterfaceId {
+        OwnedNetworkTxFrame::interface(self)
+    }
+
+    fn ethernet(&self) -> &[u8] {
+        OwnedNetworkTxFrame::ethernet(self)
+    }
+}

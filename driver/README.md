@@ -62,6 +62,8 @@ module for the former vendor-derived `wdev` naming.
 - `ieee802154`: portable allocation-free frames, normalized metadata,
   capabilities and finite command/event state transitions.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
+- `wifi/datapath`: executor- and stack-neutral radio egress ownership,
+  demand and physical materialization contracts.
 - `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
 - `chips/esp32s31/bluetooth/memory`: statically bound CPU-owned controller-SRAM
   layout and the future packet/list ownership boundary below the S31 LLL and
@@ -80,6 +82,9 @@ module for the former vendor-derived `wdev` naming.
   it has no Xarxa or owned-network dependency.
 - `adapters/embassy-net`: owned-packet adapter for the optimized Xarxa/Embassy
   integration; it has no physical SRAM, DMA or Wi-Fi policy.
+- `adapters/research`: synchronous hardware-first Ethernet/ARP/IPv4/ICMP/UDP
+  engine. It has no Xarxa, Embassy, PAC or executor dependency and constructs
+  radio-selected work directly in a reserved physical batch.
 - `integration/esp32s31/bluetooth`: one-time production placement and claim of
   the statically bound ESP32-S31 controller-memory graph.
 - `integration/esp32s31/embassy-wifi`: production composition and the only

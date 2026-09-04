@@ -148,9 +148,15 @@ BA, retry or fairness semantics.
 
 ## Phase 8: research datapath
 
-- [ ] Create a separate research crate/composition that reuses production
-  hardware leaves.
-- [ ] Start with a synchronous fused Core0 Ethernet/ARP/IPv4/ICMP/UDP engine.
+- [x] Extract the stack/executor-neutral radio materialization contract from
+  the Embassy adapter into `open-esp-radio-wifi-datapath`.
+- [x] Create a separate allocation-free research network crate with no Xarxa,
+  Embassy, PAC or executor dependency.
+- [x] Implement the synchronous Ethernet/ARP/IPv4/ICMP/UDP protocol engine and
+  deferred radio-keyed work queue in host-testable code.
+- [x] Bind its `ReservedTxBatch` transactionally to production pinned SRAM
+  leases.
+- [ ] Compose the first fused Core0 runner and radio scheduler/encoder.
 - [ ] Add the same engine in split-core mode using ownership-transferring batch
   SPSC queues.
 - [ ] Sweep SRAM caps, batch sizes and payload sizes in one runtime-selectable

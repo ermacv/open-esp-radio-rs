@@ -34,14 +34,16 @@ pub mod tx;
 #[cfg(feature = "tx-phase-telemetry")]
 mod tx_performance;
 
+#[cfg(feature = "tx-phase-telemetry")]
+pub use open_esp_radio_wifi_datapath::MaterializationOwnershipSnapshot;
+pub use open_esp_radio_wifi_datapath::{
+    MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame,
+};
 #[cfg(feature = "owned-network")]
 pub use sram_tx::DatapathTxConsumer;
 pub use sram_tx::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxResources,
 };
-#[cfg(feature = "tx-phase-telemetry")]
-pub use tx::materialization::MaterializationOwnershipSnapshot;
-pub use tx::materialization::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
 #[cfg(feature = "tx-phase-telemetry")]
 pub use tx_performance::{
     TX_PERFORMANCE, TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot,

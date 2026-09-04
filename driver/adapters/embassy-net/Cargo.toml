@@ -11,6 +11,7 @@ description = "Owned-packet boundary for the optimized open ESP radio Embassy/Xa
 owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d" }
 embassy-sync = "0.8.0"
 open-esp-radio-network = { path = "../../common/network" }
+open-esp-radio-wifi-datapath = { path = "../../wifi/datapath" }
 xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", features = ["async"] }
 
 [dev-dependencies]

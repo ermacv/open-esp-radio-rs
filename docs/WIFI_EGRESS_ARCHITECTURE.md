@@ -74,6 +74,15 @@ The code-level boundary has three deliberately small traits:
 - `SelectedBurstMaterializer`: queue observation, owner removal and
   reserve-before-remove single/batch materialization.
 
+Those existing complete-frame contracts now live in the independent
+`open-esp-radio-wifi-datapath` crate rather than the ESP32-S31 Embassy adapter.
+The same crate also defines the research-side `EgressWorkProvider` and
+`ReservedTxBatch` boundary: a deferred transport owner reports durable
+`EgressFlowKey` demand and constructs only a radio-selected prefix directly in
+an already reserved physical batch. `AdmissionClass` is orthogonal to the
+radio peer/TID key, so bounded link-control service does not corrupt airtime or
+aggregation identity.
+
 STA, AP and STA+AP policy are generic over those owners. Adapter mutexes,
 queue dimensions, Xarxa packet types and Embassy runner lifetimes are not part
 of the radio-service traits. This is the seam used by all three integrations;
@@ -211,6 +220,13 @@ Permitted experiments include:
 The first oracle implements Ethernet, ARP, IPv4, ICMP and UDP. TCP is added only
 after the radio/DMA/copy ceiling is established; otherwise TCP complexity would
 hide the hardware cost being measured.
+
+The protocol engine is allocation-free and synchronous. Its general-memory
+queue owns canonical UDP/control work rather than complete Ethernet frames;
+the final Ethernet/IP/L4 representation is emitted through a
+`ReservedTxBatch`. This domain code contains no executor, PAC, Xarxa or Embassy
+dependency. Fused and split-core composition are transports around the same
+state machine, not separate network implementations.
 
 The same synchronous state machines must run in fused and split modes. Only the
 transport boundary changes, giving a direct measurement of cross-core cost.

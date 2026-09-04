@@ -1297,6 +1297,7 @@ dependencies = [
  "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
  "embassy-sync 0.8.0",
  "open-esp-radio-network",
+ "open-esp-radio-wifi-datapath",
  "xarxa-driver",
 ]
 
@@ -1467,6 +1468,7 @@ dependencies = [
  "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
  "open-esp-radio-network",
+ "open-esp-radio-wifi-datapath",
  "open-esp-radio-wifi-embassy",
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
@@ -1616,6 +1618,14 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-ieee80211",
  "open-esp-radio-wpa2",
+]
+
+[[package]]
+name = "open-esp-radio-wifi-datapath"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-dma",
+ "open-esp-radio-network",
 ]
 
 [[package]]

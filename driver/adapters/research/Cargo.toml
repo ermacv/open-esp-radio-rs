@@ -1,0 +1,16 @@
+[package]
+name = "open-esp-radio-research-datapath"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Hardware-first synchronous network datapath for radio research"
+
+[dependencies]
+open-esp-radio-dma = { path = "../../common/dma" }
+open-esp-radio-network = { path = "../../common/network" }
+open-esp-radio-wifi-datapath = { path = "../../wifi/datapath" }
+
+[lints]
+workspace = true

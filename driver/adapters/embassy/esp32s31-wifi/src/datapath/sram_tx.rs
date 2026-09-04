@@ -20,26 +20,15 @@ use open_esp_radio_dma::{
 };
 
 #[cfg(feature = "tx-phase-telemetry")]
-use super::tx::materialization::MaterializationOwnershipSnapshot;
-#[cfg(feature = "owned-network")]
-use super::tx::materialization::SelectedBurstMaterializer;
-use super::tx::materialization::{MaterializedTxFrame, SoftwareTxFrame};
-#[cfg(feature = "tx-phase-telemetry")]
 use super::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
 #[cfg(feature = "owned-network")]
 use open_esp_radio_embassy_net::{OwnedNetworkTxFrame, OwnedTxFrameSource};
 use open_esp_radio_network::NetworkInterfaceId;
-
+#[cfg(feature = "tx-phase-telemetry")]
+use open_esp_radio_wifi_datapath::MaterializationOwnershipSnapshot;
 #[cfg(feature = "owned-network")]
-impl SoftwareTxFrame for OwnedNetworkTxFrame {
-    fn interface(&self) -> NetworkInterfaceId {
-        OwnedNetworkTxFrame::interface(self)
-    }
-
-    fn ethernet(&self) -> &[u8] {
-        OwnedNetworkTxFrame::ethernet(self)
-    }
-}
+use open_esp_radio_wifi_datapath::SelectedBurstMaterializer;
+use open_esp_radio_wifi_datapath::SoftwareTxFrame;
 
 /// Permanently located storage for DMA-visible TX frames.
 pub type PinnedTxPool<
@@ -595,24 +584,3 @@ pub type PinnedTxFrame<
     NetworkInterfaceId,
     PinnedTxBacking<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 >;
-
-impl<
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> MaterializedTxFrame for PinnedTxFrame<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-{
-    fn ethernet(&self) -> &[u8] {
-        core::ops::Deref::deref(self).ethernet()
-    }
-
-    fn ethernet_offset(&self) -> usize {
-        core::ops::Deref::deref(self).ethernet_offset()
-    }
-
-    fn ethernet_length(&self) -> usize {
-        core::ops::Deref::deref(self).ethernet_length()
-    }
-}

@@ -1,13 +1,26 @@
+#![no_std]
+#![forbid(unsafe_code)]
+
 //! Radio-owned boundary between durable software backlog and physical TX.
 //!
 //! Network integrations may retain packets in different memory and ownership
-//! models.  Radio policy sees only an affine software frame and this
-//! synchronous batch materializer.  Selection therefore precedes scarce SRAM
-//! admission without exposing Xarxa, Embassy tokens or a compatibility
-//! adapter's queue representation to STA/AP policy.
+//! models. Radio policy sees only affine software frames and synchronous batch
+//! materialization. Selection therefore precedes scarce SRAM admission without
+//! exposing a network stack, executor or adapter queue to STA/AP policy.
 
-use open_esp_radio_dma::StableDmaBacking;
+use open_esp_radio_dma::{
+    DmaIndexReturn, PinnedDmaTxRadioLease, ReturningStableDmaBacking, StableDmaBacking,
+    TaggedStableDmaBacking,
+};
 use open_esp_radio_network::NetworkInterfaceId;
+
+mod egress;
+
+pub use egress::{
+    AdmissionClass, BatchWriteError, DeferredTxWork, EgressDemand, EgressFlowKey, EgressSelection,
+    EgressWorkProvider, EnqueueError, FillFailure, FillOutcome, FillStopReason, FixedEgressQueue,
+    RadioEgressKey, RadioPeer, ReservedTxBatch, TrafficIdentifier, TrafficIdentifierError,
+};
 
 /// Two owners that must cross a materialization boundary atomically.
 pub type FramePair<Frame> = (Frame, Frame);
@@ -17,7 +30,7 @@ pub type MaterializedPairResult<SoftwareFrame, PhysicalFrame> =
     Result<FramePair<PhysicalFrame>, FramePair<SoftwareFrame>>;
 
 /// Diagnostic snapshot of the bounded physical materialization horizon.
-#[cfg(feature = "tx-phase-telemetry")]
+#[cfg(feature = "ownership-telemetry")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MaterializationOwnershipSnapshot {
     pub free: usize,
@@ -27,7 +40,7 @@ pub struct MaterializationOwnershipSnapshot {
 /// One affine software-owned Ethernet frame selected for radio service.
 ///
 /// Implementations retain their original allocation until materialization or
-/// drop.  The radio may inspect bytes for peer/TID/lifecycle classification,
+/// drop. The radio may inspect bytes for peer/TID/lifecycle classification,
 /// but physical DMA ownership is represented only by
 /// [`SelectedBurstMaterializer::PhysicalFrame`].
 pub trait SoftwareTxFrame {
@@ -64,12 +77,32 @@ pub trait MaterializedTxFrame: StableDmaBacking {
     }
 }
 
+impl<R: DmaIndexReturn, const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
+    MaterializedTxFrame
+    for TaggedStableDmaBacking<
+        NetworkInterfaceId,
+        ReturningStableDmaBacking<PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>, R>,
+    >
+{
+    fn ethernet(&self) -> &[u8] {
+        core::ops::Deref::deref(self).ethernet()
+    }
+
+    fn ethernet_offset(&self) -> usize {
+        core::ops::Deref::deref(self).ethernet_offset()
+    }
+
+    fn ethernet_length(&self) -> usize {
+        core::ops::Deref::deref(self).ethernet_length()
+    }
+}
+
 /// Synchronous, batch-oriented admission from software ownership into the
 /// fixed physical radio horizon.
 ///
 /// Implementations must reserve every requested destination before consuming
-/// any source owner.  A failed operation returns or retains every source
-/// unchanged.  No method may wait for another executor/core while holding a
+/// any source owner. A failed operation returns or retains every source
+/// unchanged. No method may wait for another executor/core while holding a
 /// physical credit.
 pub trait SelectedBurstMaterializer {
     type SoftwareFrame: SoftwareTxFrame;
@@ -91,7 +124,7 @@ pub trait SelectedBurstMaterializer {
 
     fn materialization_capacity(&self) -> usize;
 
-    #[cfg(feature = "tx-phase-telemetry")]
+    #[cfg(feature = "ownership-telemetry")]
     fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot;
 
     /// Materialize one selected batch atomically with respect to source

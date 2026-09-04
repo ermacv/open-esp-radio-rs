@@ -186,7 +186,8 @@ They do not prove the performance of the current owned path.
    qualification.
 5. The compatibility product composition has no HIL correctness, resource or
    performance qualification yet.
-6. The research integration is not implemented.
+6. The research engine and pinned-SRAM batch are not yet composed with a
+   production radio runner or HIL target.
 7. Core1 load after cutover is unknown. Moving work away from Core0 is not an
    accepted optimization without total-CPU evidence.
 8. `DatapathTxConsumer` currently calls the owned source through a trait object;
@@ -202,6 +203,27 @@ They do not prove the performance of the current owned path.
     but its ordinary ESP-HAL linker profile does not yet implement the HIL
     product's initialized-PSRAM placement contract for the high-throughput
     resource graph. Source cross-checking is not a flashable-image claim.
+
+## Research datapath foundation
+
+The research path now has an independent code foundation, but no hardware
+composition or performance claim. `open-esp-radio-wifi-datapath` owns the
+stack/executor-neutral radio key, demand, admission and materialization
+contracts. The previous complete-frame materializer contract has moved out of
+the Embassy adapter without changing STA/AP behavior.
+
+`open-esp-radio-research-datapath` implements a synchronous, allocation-free
+Ethernet/ARP/IPv4/ICMP/UDP engine. It stores canonical UDP/control work in a
+bounded general-memory queue, publishes durable per-radio-key demand and emits
+the final frame only after selection through `ReservedTxBatch`. Host tests
+cover direct UDP construction and checksum validation, synchronous UDP RX,
+ARP reply admission and ICMP echo replies. The crate has no Embassy, Xarxa,
+PAC or executor dependency.
+
+The research crate also binds a whole reserved batch transactionally to the
+real pinned-SRAM ownership primitive. The next gate is its composition with a
+production radio scheduler/encoder in a fused Core0 runner. Until that exists
+and HIL runs, this is architectural code, not evidence of lower CPU use.
 
 ## Next decision gates
 

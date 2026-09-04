@@ -12,6 +12,8 @@ fi
 cargo check --manifest-path driver/adapters/embassy-net-compat/Cargo.toml --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy-compat --all-targets
 cargo check --manifest-path driver/adapters/embassy-net/Cargo.toml --all-targets
+cargo check -p open-esp-radio-wifi-datapath --all-targets
+cargo check -p open-esp-radio-research-datapath --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy --no-default-features --all-targets
 
@@ -77,6 +79,30 @@ fi
 
 if rg -q 'open-esp-radio-(dma|esp32s31)' driver/adapters/embassy-net/Cargo.toml; then
     echo "optimized owned adapter acquired a physical radio dependency" >&2
+    exit 1
+fi
+
+research_dependencies="$(
+    cargo tree \
+        -p open-esp-radio-research-datapath \
+        --edges normal \
+        --prefix none
+)"
+if rg -q '^(embassy-|xarxa(-driver)?|open-esp-radio-embassy)' \
+    <<<"${research_dependencies}"; then
+    echo "research datapath acquired an Embassy or Xarxa dependency" >&2
+    exit 1
+fi
+
+radio_datapath_dependencies="$(
+    cargo tree \
+        -p open-esp-radio-wifi-datapath \
+        --edges normal \
+        --prefix none
+)"
+if rg -q '^(embassy-|xarxa(-driver)?|open-esp-radio-embassy|open-esp-radio-esp32s31)' \
+    <<<"${radio_datapath_dependencies}"; then
+    echo "radio-native datapath contract acquired an adapter or chip dependency" >&2
     exit 1
 fi
 

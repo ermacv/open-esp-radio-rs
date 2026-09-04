@@ -15,12 +15,12 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
-#[cfg(feature = "tx-phase-telemetry")]
-use open_esp_radio_embassy_net::{EgressGrantKey, EgressShadowGrant};
 use open_esp_radio_embassy_net::{
-    FrameLengthError, LinkState, PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer,
+    DatapathTxConsumer, FrameLengthError, LinkState, OwnedNetworkTxFrame, PinnedTxFrame,
     RxEnqueueError,
 };
+#[cfg(feature = "tx-phase-telemetry")]
+use open_esp_radio_embassy_net::{EgressGrantKey, EgressShadowGrant};
 
 use open_esp_radio_esp32s31_wifi::{
     ampdu_tx::HtAmpduTxRolePolicy,

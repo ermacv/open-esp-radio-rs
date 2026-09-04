@@ -14,7 +14,7 @@ use core::future::{Future, pending};
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 use open_esp_radio_embassy_net::{
-    NetworkInterfaceId, PinnedNetworkTxFrame, PinnedTxInterfaceConsumer, RawMutex,
+    DatapathTxConsumer, NetworkInterfaceId, OwnedNetworkTxFrame, RawMutex,
 };
 
 use super::{
@@ -526,8 +526,9 @@ pub trait DatapathPairedNetworkTxService<
         &'a mut self,
         hardware: &'a mut H,
         physical_tx: &'a mut PhysicalTx,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -573,7 +574,8 @@ pub trait DatapathPairedNetworkTxService<
         &mut self,
         _hardware: &mut H,
         _physical_tx: &mut PhysicalTx,
-        _network: &PinnedTxInterfaceConsumer<
+        _network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -593,7 +595,8 @@ pub trait DatapathPairedNetworkTxService<
         &mut self,
         _hardware: &mut H,
         _physical_tx: &mut PhysicalTx,
-        _network: &PinnedTxInterfaceConsumer<
+        _network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -609,14 +612,7 @@ pub trait DatapathPairedNetworkTxService<
         &mut self,
         _physical_tx: &mut PhysicalTx,
         _network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         Ok(())
@@ -629,8 +625,9 @@ pub trait DatapathPairedNetworkTxService<
     fn prepare<'a>(
         &'a mut self,
         _physical_tx: &'a mut PhysicalTx,
-        _frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        _network: &'a PinnedTxInterfaceConsumer<
+        _frame: OwnedNetworkTxFrame,
+        _network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -973,8 +970,9 @@ where
 
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1098,7 +1096,8 @@ where
 
     fn advance_prepared_tx(
         &mut self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1149,7 +1148,8 @@ where
 
     fn start_prepared_tx(
         &mut self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1185,14 +1185,7 @@ where
     fn cancel_prepared_tx(
         &mut self,
         network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         let prepared = self.prepared.take().or_else(|| {
@@ -1224,8 +1217,9 @@ where
 
     fn prepare_tx<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,

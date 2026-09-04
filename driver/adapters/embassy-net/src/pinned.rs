@@ -36,8 +36,8 @@ use crate::egress_control::{EgressBurstLease, egress_control_enabled};
 #[cfg(feature = "tx-egress-scheduling")]
 use crate::{DefaultEgressNetworkScheduler, EgressGrantKey};
 use crate::{
-    ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, OwnedNetworkTxFrame, RxEnqueueError,
-    SharedLinkState,
+    ETHERNET_HEADER_LEN, EgressPeerResolver, FrameLengthError, OwnedNetworkTxFrame,
+    OwnedTxFrameSource, RxEnqueueError, SharedLinkState,
 };
 
 /// Opaque identity of one logical network endpoint sharing a physical radio.
@@ -3104,6 +3104,26 @@ pub struct PinnedTxInterfaceConsumer<
     interface: NetworkInterfaceId,
 }
 
+/// Radio-side composition of one owned software frontier and its fixed SRAM
+/// execution pool.
+///
+/// The source is object-safe so its queue depth does not leak through every
+/// Wi-Fi role type. Physical admission remains typed and happens only after
+/// peer/VIF selection has claimed an owner from `source`.
+pub struct DatapathTxConsumer<
+    'source,
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    source: &'source dyn OwnedTxFrameSource,
+    physical:
+        PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+}
+
 /// Non-blocking result of reclaiming one Core1-materialized burst.
 #[cfg(feature = "tx-core1-materializer-probe")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3127,6 +3147,19 @@ impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize
 }
 
 impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Clone
+    for DatapathTxConsumer<'_, '_, M, F, H, T, Q>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Copy
+    for DatapathTxConsumer<'_, '_, M, F, H, T, Q>
+{
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Clone
     for PinnedTxConsumer<'_, M, F, H, T, Q>
 {
     fn clone(&self) -> Self {
@@ -3137,6 +3170,116 @@ impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize
 impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Copy
     for PinnedTxConsumer<'_, M, F, H, T, Q>
 {
+}
+
+impl<
+    'source,
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> DatapathTxConsumer<'source, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    pub fn new(
+        source: &'source dyn OwnedTxFrameSource,
+        physical: PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> DatapathTxConsumer<'source, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    {
+        assert_eq!(source.interface(), physical.interface());
+        DatapathTxConsumer { source, physical }
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.source.queue_len()
+    }
+
+    pub fn interface(&self) -> NetworkInterfaceId {
+        self.source.interface()
+    }
+
+    pub fn try_receive(&self) -> Option<OwnedNetworkTxFrame> {
+        self.source.try_receive()
+    }
+
+    pub fn try_promote(
+        &self,
+        frame: OwnedNetworkTxFrame,
+    ) -> Result<
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        OwnedNetworkTxFrame,
+    > {
+        self.physical.try_promote_owned(frame)
+    }
+
+    /// Claim a physical credit first and only then remove the next software
+    /// owner, so aggregate extension cannot lose or reorder a packet when SRAM
+    /// is exhausted.
+    pub fn try_receive_direct(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+        self.physical
+            .try_promote_owned_from(|| self.source.try_receive())
+    }
+
+    pub fn promotion_capacity(&self) -> usize {
+        self.physical.owned_promotion_capacity()
+    }
+
+    pub fn try_promote_batch<const BATCH: usize>(
+        &self,
+        sources: &mut [Option<OwnedNetworkTxFrame>; BATCH],
+        destinations: &mut [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
+                 BATCH],
+    ) -> bool {
+        self.physical.try_promote_owned_batch(sources, destinations)
+    }
+
+    pub fn try_promote_pair(
+        &self,
+        first: OwnedNetworkTxFrame,
+        second: OwnedNetworkTxFrame,
+    ) -> Result<
+        (
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        ),
+        (OwnedNetworkTxFrame, OwnedNetworkTxFrame),
+    > {
+        let mut sources = [Some(first), Some(second)];
+        let mut destinations = [None, None];
+        if !self.try_promote_batch(&mut sources, &mut destinations) {
+            return Err((
+                sources[0]
+                    .take()
+                    .expect("failed pair promotion retains its first owner"),
+                sources[1]
+                    .take()
+                    .expect("failed pair promotion retains its second owner"),
+            ));
+        }
+        Ok((
+            destinations[0]
+                .take()
+                .expect("successful pair promotion publishes its first owner"),
+            destinations[1]
+                .take()
+                .expect("successful pair promotion publishes its second owner"),
+        ))
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub fn ownership_snapshot(&self) -> PinnedTxOwnershipSnapshot {
+        self.physical.ownership_snapshot()
+    }
 }
 
 impl<
@@ -3496,6 +3639,178 @@ impl<
         Ok(promoted)
     }
 
+    /// Reserve physical SRAM before claiming the next software owner.
+    ///
+    /// This is the safe aggregate-extension primitive: an empty software
+    /// frontier returns the reserved credit, while a present owner is copied
+    /// exactly once and can no longer fail physical admission.
+    pub fn try_promote_owned_from(
+        &self,
+        next: impl FnOnce() -> Option<OwnedNetworkTxFrame>,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+        let index = self.physical.free_tx_claim.try_receive().ok()?;
+        let Some(frame) = next() else {
+            if let Err(TrySendError::Full(_)) = self.physical.free_tx.try_send(index) {
+                unreachable!("unused promotion reservation returns its physical TX credit");
+            }
+            return None;
+        };
+        assert_eq!(
+            frame.interface(),
+            self.interface,
+            "owned TX frame crossed its logical interface"
+        );
+        assert!(
+            frame.ethernet().len() <= FRAME_CAPACITY,
+            "owned network frame exceeds physical TX capacity"
+        );
+        #[cfg(feature = "tx-phase-telemetry")]
+        let promotion_started = TxPerformanceSample::read();
+        #[cfg(feature = "tx-phase-telemetry")]
+        let credit_acquired = promotion_started;
+        let length = frame.ethernet().len();
+        let lease = self.physical.tx_pool.claim_network(index);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let destination_claimed = TxPerformanceSample::read();
+        #[cfg(feature = "tx-phase-telemetry")]
+        let publication_started = TxPerformanceSample::read();
+        #[cfg(feature = "tx-phase-telemetry")]
+        let mut copy = TxPerformanceSample::default();
+        let (index, ()) = lease.publish(length, |dma| {
+            #[cfg(feature = "tx-phase-telemetry")]
+            let copy_started = TxPerformanceSample::read();
+            dma.copy_from_slice(frame.ethernet());
+            #[cfg(feature = "tx-phase-telemetry")]
+            {
+                copy = TxPerformanceSample::read().wrapping_delta_since(copy_started);
+            }
+        });
+        #[cfg(feature = "tx-phase-telemetry")]
+        let published = TxPerformanceSample::read();
+        drop(frame);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let source_released = TxPerformanceSample::read();
+        let promoted = self.physical.claim(self.interface, index);
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_promotion(
+            length,
+            promotion_started,
+            credit_acquired,
+            destination_claimed,
+            copy,
+            publication_started,
+            published,
+            source_released,
+            TxPerformanceSample::read(),
+        );
+        Some(promoted)
+    }
+
+    /// Promote a selected burst atomically into final DMA-visible SRAM.
+    ///
+    /// Physical credits are reserved for the complete occupied set before any
+    /// source owner is consumed. Failure leaves `sources` unchanged and
+    /// `destinations` empty. Success consumes every source and publishes one
+    /// physical owner at the matching index.
+    pub fn try_promote_owned_batch<const BATCH: usize>(
+        &self,
+        sources: &mut [Option<OwnedNetworkTxFrame>; BATCH],
+        destinations: &mut [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
+                 BATCH],
+    ) -> bool {
+        assert!(
+            destinations.iter().all(Option::is_none),
+            "owned burst promotion requires an empty destination array"
+        );
+        let promotion_count = sources.iter().flatten().count();
+        if promotion_count == 0 {
+            return true;
+        }
+
+        for source in sources.iter().flatten() {
+            assert_eq!(
+                source.interface(),
+                self.interface,
+                "owned burst crossed its logical interface"
+            );
+            assert!(
+                source.ethernet().len() <= FRAME_CAPACITY,
+                "owned network frame exceeds physical TX capacity"
+            );
+        }
+
+        let mut reserved = [None; BATCH];
+        for slot in reserved.iter_mut().take(promotion_count) {
+            let Ok(index) = self.physical.free_tx_claim.try_receive() else {
+                for index in reserved.iter_mut().filter_map(Option::take) {
+                    if let Err(TrySendError::Full(_)) = self.physical.free_tx.try_send(index) {
+                        unreachable!("failed burst reservation returns its physical TX credit");
+                    }
+                }
+                #[cfg(feature = "tx-phase-telemetry")]
+                {
+                    let now = TxPerformanceSample::read();
+                    TX_PERFORMANCE.record_promotion_no_credit(now, now);
+                }
+                return false;
+            };
+            *slot = Some(index);
+        }
+
+        let mut next_reserved = 0;
+        for (source, destination) in sources.iter_mut().zip(destinations.iter_mut()) {
+            let Some(source) = source.take() else {
+                continue;
+            };
+            let index = reserved[next_reserved]
+                .take()
+                .expect("one physical credit was reserved per source owner");
+            next_reserved += 1;
+
+            #[cfg(feature = "tx-phase-telemetry")]
+            let promotion_started = TxPerformanceSample::read();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let credit_acquired = promotion_started;
+            let length = source.ethernet().len();
+            let lease = self.physical.tx_pool.claim_network(index);
+            #[cfg(feature = "tx-phase-telemetry")]
+            let destination_claimed = TxPerformanceSample::read();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let publication_started = TxPerformanceSample::read();
+            #[cfg(feature = "tx-phase-telemetry")]
+            let mut copy = TxPerformanceSample::default();
+            let (index, ()) = lease.publish(length, |dma| {
+                #[cfg(feature = "tx-phase-telemetry")]
+                let copy_started = TxPerformanceSample::read();
+                dma.copy_from_slice(source.ethernet());
+                #[cfg(feature = "tx-phase-telemetry")]
+                {
+                    copy = TxPerformanceSample::read().wrapping_delta_since(copy_started);
+                }
+            });
+            #[cfg(feature = "tx-phase-telemetry")]
+            let published = TxPerformanceSample::read();
+            drop(source);
+            #[cfg(feature = "tx-phase-telemetry")]
+            let source_released = TxPerformanceSample::read();
+            *destination = Some(self.physical.claim(self.interface, index));
+            #[cfg(feature = "tx-phase-telemetry")]
+            TX_PERFORMANCE.record_promotion(
+                length,
+                promotion_started,
+                credit_acquired,
+                destination_claimed,
+                copy,
+                publication_started,
+                published,
+                source_released,
+                TxPerformanceSample::read(),
+            );
+        }
+        debug_assert!(reserved.iter().all(Option::is_none));
+        true
+    }
+
     pub const fn interface(self) -> NetworkInterfaceId {
         self.interface
     }
@@ -3581,6 +3896,11 @@ impl<
             return self.physical.free_tx_claim.len();
         }
         usize::MAX
+    }
+
+    /// Free physical SRAM slots available to owned-source promotion.
+    pub fn owned_promotion_capacity(&self) -> usize {
+        self.physical.free_tx_claim.len()
     }
 
     /// Whether this same-image run moves selected staged bursts through the

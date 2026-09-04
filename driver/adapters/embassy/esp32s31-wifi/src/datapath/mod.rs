@@ -17,8 +17,8 @@ use embassy_futures::{
 };
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::{
-    LinkState, NetworkInterfaceId, PinnedNetworkTxFrame, PinnedRxPublisher,
-    PinnedTxInterfaceConsumer, RawMutex,
+    DatapathTxConsumer, LinkState, NetworkInterfaceId, OwnedNetworkTxFrame, PinnedRxPublisher,
+    RawMutex,
 };
 pub use open_esp_radio_esp32s31_wifi::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
@@ -465,15 +465,9 @@ pub trait DatapathServices<
     /// from `network`, and return all of them only after BlockAck/detach.
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -539,7 +533,8 @@ pub trait DatapathServices<
     /// new network frame. Ordinary synchronous roles need no such edge.
     fn advance_prepared_tx(
         &mut self,
-        _network: &PinnedTxInterfaceConsumer<
+        _network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -564,7 +559,8 @@ pub trait DatapathServices<
 
     fn start_prepared_tx(
         &mut self,
-        _network: &PinnedTxInterfaceConsumer<
+        _network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -579,7 +575,8 @@ pub trait DatapathServices<
     fn cancel_prepared_tx(
         &mut self,
         _network: Option<
-            &PinnedTxInterfaceConsumer<
+            &DatapathTxConsumer<
+                '_,
                 'resources,
                 M,
                 FRAME_CAPACITY,
@@ -598,15 +595,9 @@ pub trait DatapathServices<
 
     fn prepare_tx<'a>(
         &'a mut self,
-        _frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        _network: &'a PinnedTxInterfaceConsumer<
+        _frame: OwnedNetworkTxFrame,
+        _network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -666,4 +657,4 @@ mod scheduler;
 mod service;
 
 #[cfg(test)]
-mod tests;
+mod owned_tests;

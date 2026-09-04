@@ -20,7 +20,7 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
+    DatapathTxConsumer, OwnedNetworkTxFrame, PinnedTxFrame, RawMutex,
 };
 use open_esp_radio_esp32s31_hal::types::MacInterface;
 use open_esp_radio_esp32s31_wifi::ampdu_tx::{

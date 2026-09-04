@@ -10,7 +10,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use embassy_net::{PacketBufAllocator, PacketPool, PacketPoolStorage};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use open_esp_radio_embassy_net::{
-    OwnedEndpointResources, OwnedNetworkDevice, PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxPool,
+    OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame, PinnedTxFrame, PinnedTxPool,
     PinnedTxResources,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
@@ -71,14 +71,7 @@ pub(super) type RadioTxBacking = PinnedTxFrame<
     NETWORK_TX_TRAILER,
     NETWORK_TX_QUEUE_DEPTH,
 >;
-pub(super) type RadioNetworkTxBacking = PinnedNetworkTxFrame<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_TX_QUEUE_DEPTH,
->;
+pub(super) type RadioNetworkTxBacking = OwnedNetworkTxFrame;
 type RadioAmpduRetention = RetainedAmpduDmaStorage<RadioTxBacking, TX_AMPDU_FRAME_COUNT>;
 
 pub type Esp32s31WifiNetworkDevice = OwnedNetworkDevice<

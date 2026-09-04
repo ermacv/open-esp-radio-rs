@@ -6,8 +6,8 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    Driver as _, NetworkEndpointConfig, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources,
-    PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, SplitPinnedDevice, TxToken as _,
+    DatapathTxConsumer, NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources,
+    OwnedNetworkDevice, PinnedTxFrame, PinnedTxPool, PinnedTxResources,
 };
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
@@ -39,8 +39,10 @@ use open_esp_radio_ieee80211::station::{
 };
 use open_esp_radio_ieee80211::wmm::{WmmAccessCategory, parse_wmm_parameter_element};
 use open_esp_radio_wifi_softmac::MacTxPlan;
+use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
 use super::*;
+use crate::datapath::network::{DatapathNetwork, OwnedDatapathNetwork};
 
 #[derive(Default)]
 struct RecordingAggregateTxObserver {
@@ -101,17 +103,63 @@ fn record_block_ack_status(tid: u8, operational: bool) {
     }
 }
 
-type Resources = PinnedEndpointResources<NoopRawMutex, TEST_FRAME_CAPACITY, TEST_QUEUE_DEPTH>;
-type Pool = PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
-type Device = SplitPinnedDevice<
-    'static,
-    NoopRawMutex,
-    TEST_FRAME_CAPACITY,
-    TEST_HEADROOM,
-    TEST_TRAILER,
-    TEST_QUEUE_DEPTH,
-    TEST_QUEUE_DEPTH,
->;
+type OwnedNetwork<const F: usize, const H: usize, const T: usize, const Q: usize> =
+    OwnedDatapathNetwork<'static, NoopRawMutex, F, H, T, Q, Q, Q>;
+
+struct Device<const Q: usize = TEST_QUEUE_DEPTH> {
+    inner: OwnedNetworkDevice<'static, NoopRawMutex, Q, Q>,
+    allocator: PacketBufAllocator,
+}
+
+struct Network<
+    const F: usize = TEST_FRAME_CAPACITY,
+    const H: usize = TEST_HEADROOM,
+    const T: usize = TEST_TRAILER,
+    const Q: usize = TEST_QUEUE_DEPTH,
+> {
+    inner: OwnedNetwork<F, H, T, Q>,
+}
+
+struct TestTxToken<'a, const Q: usize> {
+    device: &'a mut OwnedNetworkDevice<'static, NoopRawMutex, Q, Q>,
+    packet: PacketBuf,
+}
+
+impl<const Q: usize> Device<Q> {
+    fn transmit(&mut self, _context: &mut Context<'_>) -> Option<TestTxToken<'_, Q>> {
+        let packet = self.allocator.try_alloc()?;
+        Some(TestTxToken {
+            device: &mut self.inner,
+            packet,
+        })
+    }
+}
+
+impl<const Q: usize> TestTxToken<'_, Q> {
+    fn consume<R>(mut self, length: usize, emit: impl FnOnce(&mut [u8]) -> R) -> R {
+        assert!(length <= self.packet.capacity());
+        self.packet.set_len(length);
+        let result = emit(&mut self.packet);
+        self.device
+            .transmit(self.packet)
+            .unwrap_or_else(|_| panic!("test owned TX queue has the advertised credit"));
+        result
+    }
+}
+
+impl<const F: usize, const H: usize, const T: usize, const Q: usize> Network<F, H, T, Q> {
+    fn tx_consumer(&self) -> DatapathTxConsumer<'_, 'static, NoopRawMutex, F, H, T, Q> {
+        self.inner.tx_consumer(NetworkInterfaceId::new(0))
+    }
+
+    fn try_receive_tx_direct(&self) -> Option<PinnedTxFrame<'static, NoopRawMutex, F, H, T, Q>> {
+        self.tx_consumer().try_receive_direct()
+    }
+
+    fn tx_queue_len(&self) -> usize {
+        self.inner.tx_queue_len(NetworkInterfaceId::new(0))
+    }
+}
 
 #[derive(Default)]
 struct Hardware {
@@ -337,27 +385,44 @@ fn make_ordinary<'a, const BUFFER_SIZE: usize>(
     )
 }
 
-fn make_network() -> (
-    Device,
-    open_esp_radio_embassy_net::PinnedNetworkRunner<
-        'static,
+fn make_network() -> (Device, Network) {
+    make_network_config::<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>()
+}
+
+fn make_network_config<const F: usize, const H: usize, const T: usize, const Q: usize>()
+-> (Device<Q>, Network<F, H, T, Q>) {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(OwnedEndpointResources::<
         NoopRawMutex,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        TEST_QUEUE_DEPTH,
-        TEST_QUEUE_DEPTH,
-    >,
-) {
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
-    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
-    (device, network)
+        Q,
+        Q,
+    >::new()));
+    let pool = PinnedTxPool::<F, H, T, Q>::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+        PinnedTxPool::new(),
+    )));
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::<
+        NoopRawMutex,
+        F,
+        H,
+        T,
+        Q,
+    >::new()));
+    let (_unused_provider, physical) = tx_resources.split(pool);
+    let packet_storage = std::boxed::Box::leak(std::boxed::Box::new(PacketPoolStorage::<Q>::new()));
+    let packet_pool = std::boxed::Box::leak(std::boxed::Box::new(PacketPool::new(packet_storage)));
+    let rx_storage = std::boxed::Box::leak(std::boxed::Box::new(PacketPoolStorage::<1>::new()));
+    let rx_pool = std::boxed::Box::leak(std::boxed::Box::new(PacketPool::new(rx_storage)));
+    let allocator = packet_pool.allocator();
+    let (device, radio) = resources.split(NetworkInterfaceId::new(0), STATION, rx_pool.allocator());
+    radio.link_controller().set_link_up(true);
+    (
+        Device {
+            inner: device,
+            allocator,
+        },
+        Network {
+            inner: OwnedDatapathNetwork::new(radio, physical),
+        },
+    )
 }
 
 #[test]
@@ -613,19 +678,8 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 12;
     const QUEUE_DEPTH: usize = 3;
-    type LargeResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
-    type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
-
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
-    let pool = LargePool::pin_static(std::boxed::Box::leak(
-        std::boxed::Box::new(LargePool::new()),
-    ));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) =
+        make_network_config::<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>();
     for marker in 1..=2 {
         device
             .transmit(&mut context())
@@ -997,19 +1051,8 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 1_632;
     const QUEUE_DEPTH: usize = 4;
-    type LargeResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
-    type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
-
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
-    let pool = LargePool::pin_static(std::boxed::Box::leak(
-        std::boxed::Box::new(LargePool::new()),
-    ));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) =
+        make_network_config::<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>();
     for marker in 1..=4 {
         device
             .transmit(&mut context())
@@ -1128,21 +1171,8 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
 #[test]
 fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     const PIPELINE_DEPTH: usize = 6;
-    type PipelineResources =
-        PinnedEndpointResources<NoopRawMutex, TEST_FRAME_CAPACITY, PIPELINE_DEPTH>;
-    type PipelinePool =
-        PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, PIPELINE_DEPTH>;
-
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(PipelineResources::new()));
-    let pool = PipelinePool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
-        PipelinePool::new(),
-    )));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) =
+        make_network_config::<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, PIPELINE_DEPTH>();
     for marker in 1..=3 {
         device
             .transmit(&mut context())
@@ -1376,14 +1406,7 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
 
 #[test]
 fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
-    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) = make_network();
     send_frame(&mut device, 1);
 
     let mut hardware = Hardware::default();
@@ -1429,14 +1452,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
 
 #[test]
 fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
-    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
-    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
-    let (provider, consumer) = tx_resources.split(pool);
-    let endpoint = NetworkEndpointConfig::single_radio_peer(NetworkInterfaceId::new(0), STATION);
-    let (mut device, rx) = resources.split(provider, endpoint);
-    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
-    network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
+    let (mut device, network) = make_network();
     send_frame(&mut device, 1);
     send_frame(&mut device, 2);
 
@@ -1537,10 +1553,12 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 1);
-    // Only the unused third slot can return to the producer while the two
-    // submitted frames remain radio-owned.
+    // General packet owners return at promotion. The two radio-owned frames
+    // consume physical SRAM, while a new software owner can queue
+    // independently in the freed general pool.
     send_frame(&mut device, 3);
-    assert!(device.transmit(&mut context()).is_none());
+    assert_eq!(network.tx_queue_len(), 1);
+    assert_eq!(network.tx_consumer().promotion_capacity(), 1);
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
     assert_eq!(
@@ -1615,7 +1633,8 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(hardware.ht_publications, 2);
-    assert!(device.transmit(&mut context()).is_none());
+    assert_eq!(network.tx_consumer().promotion_capacity(), 0);
+    assert!(device.transmit(&mut context()).is_some());
 
     hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
     assert_eq!(

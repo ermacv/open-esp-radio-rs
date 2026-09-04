@@ -427,13 +427,18 @@ impl OwnedNetworkTxFrame {
         self.interface
     }
 
-    pub(crate) const fn tag(&self) -> &NetworkInterfaceId {
+    pub const fn tag(&self) -> &NetworkInterfaceId {
         &self.interface
     }
 
     /// Complete Ethernet-II bytes.
     pub fn ethernet(&self) -> &[u8] {
         &self.packet
+    }
+
+    /// Complete Ethernet-II bytes before physical SRAM admission.
+    pub fn as_slice(&self) -> &[u8] {
+        self.ethernet()
     }
 
     /// Release the wrapper while retaining the exact packet owner.
@@ -482,6 +487,17 @@ pub struct OwnedNetworkRunner<
     link: &'resources OwnedLinkState<M>,
     rx_allocator: PacketBufAllocator,
     rx_waiter: &'resources PacketPoolWaiter,
+}
+
+/// Object-safe radio-side view of one bounded owned TX frontier.
+///
+/// The trait deliberately exposes no physical memory or scheduler policy. It
+/// lets a radio adapter compose the software owner queue with its private SRAM
+/// allocator without depending on the queue's compile-time depth.
+pub trait OwnedTxFrameSource {
+    fn interface(&self) -> NetworkInterfaceId;
+    fn queue_len(&self) -> usize;
+    fn try_receive(&self) -> Option<OwnedNetworkTxFrame>;
 }
 
 impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
@@ -579,10 +595,26 @@ impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH:
     }
 }
 
+impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> OwnedTxFrameSource
+    for OwnedNetworkRunner<'_, M, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+{
+    fn interface(&self) -> NetworkInterfaceId {
+        OwnedNetworkRunner::interface(self)
+    }
+
+    fn queue_len(&self) -> usize {
+        OwnedNetworkRunner::tx_queue_len(self)
+    }
+
+    fn try_receive(&self) -> Option<OwnedNetworkTxFrame> {
+        OwnedNetworkRunner::try_receive_tx(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{PinnedNetworkTxFrame, PinnedTxPool, PinnedTxResources};
+    use crate::{PinnedTxPool, PinnedTxResources};
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use xarxa_driver::{PacketPool, PacketPoolStorage};
 
@@ -756,22 +788,68 @@ mod tests {
         let (_network_provider, physical) = physical_resources.split(physical_pool);
         let physical = physical.for_interface(NetworkInterfaceId::new(0));
         let mut burst = [
-            Some(PinnedNetworkTxFrame::Owned(radio.try_receive_tx().unwrap())),
-            Some(PinnedNetworkTxFrame::Owned(radio.try_receive_tx().unwrap())),
+            Some(radio.try_receive_tx().unwrap()),
+            Some(radio.try_receive_tx().unwrap()),
         ];
+        let mut promoted = [None, None];
 
-        assert!(!physical.try_promote_batch(&mut burst));
-        assert!(matches!(burst[0], Some(PinnedNetworkTxFrame::Owned(_))));
-        assert!(matches!(burst[1], Some(PinnedNetworkTxFrame::Owned(_))));
+        assert!(!physical.try_promote_owned_batch(&mut burst, &mut promoted));
+        assert!(promoted.iter().all(Option::is_none));
         assert_eq!(
-            burst[0].as_ref().unwrap().as_slice(),
+            burst[0].as_ref().unwrap().ethernet(),
             &[0x41; ETHERNET_HEADER_LEN]
         );
         assert_eq!(
-            burst[1].as_ref().unwrap().as_slice(),
+            burst[1].as_ref().unwrap().ethernet(),
             &[0x42; ETHERNET_HEADER_LEN]
         );
         assert!(general.try_alloc().is_none());
+    }
+
+    #[test]
+    fn datapath_consumer_reserves_sram_before_removing_the_next_owner() {
+        const PHYSICAL_CAPACITY: usize = 64;
+        const HEADROOM: usize = 16;
+        const TRAILER: usize = 8;
+        type PhysicalPool = PinnedTxPool<PHYSICAL_CAPACITY, HEADROOM, TRAILER, 1>;
+        type PhysicalResources =
+            PinnedTxResources<NoopRawMutex, PHYSICAL_CAPACITY, HEADROOM, TRAILER, 1>;
+
+        let general = allocator::<2>();
+        let rx = allocator::<1>();
+        let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+        let (mut device, radio) =
+            endpoint.split(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1], rx);
+        radio.link_controller().set_link_up(true);
+        device.transmit(frame(general, 0x51)).unwrap();
+        device.transmit(frame(general, 0x52)).unwrap();
+
+        let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
+        let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
+        let (_network_provider, physical) = physical_resources.split(physical_pool);
+        let consumer = crate::DatapathTxConsumer::new(
+            &radio,
+            physical.for_interface(NetworkInterfaceId::new(0)),
+        );
+
+        let first = consumer
+            .try_receive_direct()
+            .expect("one free SRAM slot promotes the first software owner");
+        assert_eq!(first.as_slice(), &[0x51; ETHERNET_HEADER_LEN]);
+        assert_eq!(consumer.queue_len(), 1);
+
+        assert!(consumer.try_receive_direct().is_none());
+        assert_eq!(
+            consumer.queue_len(),
+            1,
+            "SRAM exhaustion must not remove the next software owner"
+        );
+
+        drop(first);
+        let second = consumer
+            .try_receive_direct()
+            .expect("the returned SRAM slot promotes the retained owner");
+        assert_eq!(second.as_slice(), &[0x52; ETHERNET_HEADER_LEN]);
     }
 
     #[test]

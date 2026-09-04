@@ -47,7 +47,8 @@ where
         &mut self,
         hardware: &mut H,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -268,7 +269,8 @@ where
     fn prepare_aggregate(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -302,7 +304,8 @@ where
     fn prepare_reserved(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -375,7 +378,8 @@ where
     fn extend_reserved(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -481,7 +485,8 @@ where
     /// to MAC hardware at this edge.
     fn prepare_standby(
         &mut self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -581,7 +586,8 @@ where
     pub(super) fn prepare_network_standby(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -688,7 +694,8 @@ where
     pub(super) fn start_prepared_network<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -815,7 +822,8 @@ where
     fn push_candidate(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,

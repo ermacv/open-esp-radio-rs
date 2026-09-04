@@ -337,8 +337,6 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
     prepared_second: Option<N>,
     prepared_second_key: Option<ApTxFlowKey>,
     prepared_standby: Option<PreparedStandby>,
-    #[cfg(feature = "tx-core1-materializer-probe")]
-    core1_materialization_in_flight: bool,
     buffered_unicast: ApPowerSaveFrameQueue,
     buffered_group: ApGroupFrameQueue,
     prepared_buffered_release: Option<BufferedUnicastRelease<N>>,
@@ -378,8 +376,6 @@ where
             prepared_second: None,
             prepared_second_key: None,
             prepared_standby: None,
-            #[cfg(feature = "tx-core1-materializer-probe")]
-            core1_materialization_in_flight: false,
             buffered_unicast: ApPowerSaveFrameQueue::new(),
             buffered_group: ApGroupFrameQueue::new(),
             prepared_buffered_release: None,
@@ -438,10 +434,6 @@ where
     }
 
     pub(super) fn prepared_start_ready(&self) -> bool {
-        #[cfg(feature = "tx-core1-materializer-probe")]
-        if self.core1_materialization_in_flight {
-            return false;
-        }
         self.has_prepared()
     }
 
@@ -562,7 +554,7 @@ impl<
     Esp32s31AccessPointNetworkTx<
         'observer,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        OwnedNetworkTxFrame,
     >
 where
     M: RawMutex,
@@ -593,7 +585,8 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -616,7 +609,8 @@ where
     #[cfg(feature = "tx-phase-telemetry")]
     fn record_partial_frontier(
         &self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -662,18 +656,8 @@ where
     fn push_active_frame(
         &mut self,
         key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        (),
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    > {
+        frame: OwnedNetworkTxFrame,
+    ) -> Result<(), OwnedNetworkTxFrame> {
         let frame_index = self.frame_arena.insert(frame)?;
         if self.active_frames.push_back(key, frame_index).is_err() {
             return Err(self.frame_arena.take(frame_index));
@@ -684,18 +668,8 @@ where
     fn push_active_frame_front(
         &mut self,
         key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        (),
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    > {
+        frame: OwnedNetworkTxFrame,
+    ) -> Result<(), OwnedNetworkTxFrame> {
         let frame_index = self.frame_arena.insert(frame)?;
         if self.active_frames.push_front(key, frame_index).is_err() {
             return Err(self.frame_arena.take(frame_index));
@@ -706,22 +680,8 @@ where
     fn restore_active_pair_front(
         &mut self,
         key: ApTxFlowKey,
-        first: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        second: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        first: OwnedNetworkTxFrame,
+        second: OwnedNetworkTxFrame,
     ) {
         // `push_front` reverses insertion order. Restore the younger frame
         // first so the next scheduler turn observes the original prefix.
@@ -729,28 +689,12 @@ where
         self.restore_active_frame_front(key, first);
     }
 
-    fn restore_active_frame_front(
-        &mut self,
-        key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) {
+    fn restore_active_frame_front(&mut self, key: ApTxFlowKey, frame: OwnedNetworkTxFrame) {
         self.push_active_frame_front(key, frame)
             .unwrap_or_else(|_| panic!("AP rollback lost its bounded arena credit"));
     }
 
-    fn pop_active_key(
-        &mut self,
-        key: ApTxFlowKey,
-    ) -> Option<
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    > {
+    fn pop_active_key(&mut self, key: ApTxFlowKey) -> Option<OwnedNetworkTxFrame> {
         self.active_frames
             .pop_key(key)
             .map(|index| self.frame_arena.take(index))
@@ -759,10 +703,7 @@ where
     fn pop_scheduled_active(
         &mut self,
         engine: &Esp32s31ApEngine<'_>,
-    ) -> Option<(
-        ApTxFlowKey,
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    )> {
+    ) -> Option<(ApTxFlowKey, OwnedNetworkTxFrame)> {
         loop {
             let (key, index) = self.active_frames.pop_scheduled()?;
             let frame = self.frame_arena.take(index);
@@ -773,17 +714,7 @@ where
         }
     }
 
-    fn observe_network_claim(
-        &self,
-        frame: &PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) {
+    fn observe_network_claim(&self, frame: &OwnedNetworkTxFrame) {
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe_access_point_network_claim(frame.as_slice());
@@ -795,14 +726,7 @@ where
     fn retain_active_frame(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
+        frame: OwnedNetworkTxFrame,
     ) -> Result<(), Esp32s31AccessPointDatapathError> {
         self.observe_network_claim(&frame);
         let Some((key, frame)) = self.retain_power_save(engine, frame)? else {
@@ -820,7 +744,8 @@ where
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
         key: ApTxFlowKey,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -828,12 +753,7 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> Result<
-        Option<
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        >,
-        Esp32s31AccessPointDatapathError,
-    > {
+    ) -> Result<Option<OwnedNetworkTxFrame>, Esp32s31AccessPointDatapathError> {
         if !key.is_current(engine) {
             while let Some(frame) = self.pop_active_key(key) {
                 drop(frame);
@@ -871,7 +791,8 @@ where
     fn take_scheduled_active_or_network(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -879,13 +800,7 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> Result<
-        Option<(
-            ApTxFlowKey,
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        )>,
-        Esp32s31AccessPointDatapathError,
-    > {
+    ) -> Result<Option<(ApTxFlowKey, OwnedNetworkTxFrame)>, Esp32s31AccessPointDatapathError> {
         if let Some((key, frame)) = self.pop_scheduled_active(engine) {
             return Ok(Some((key, frame)));
         }
@@ -899,21 +814,8 @@ where
     fn retain_power_save(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> Result<
-        Option<(
-            ApTxFlowKey,
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        )>,
-        Esp32s31AccessPointDatapathError,
-    > {
+        frame: OwnedNetworkTxFrame,
+    ) -> Result<Option<(ApTxFlowKey, OwnedNetworkTxFrame)>, Esp32s31AccessPointDatapathError> {
         let unbound_key = ApTxFlowKey::unbound_from_ethernet(frame.as_slice());
         let Some(peer) = frame
             .as_slice()
@@ -1513,15 +1415,9 @@ where
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1625,21 +1521,10 @@ where
                 .require_unprotected_ht_aggregate(admission.rate())
                 .map_err(Esp32s31ApAmpduError::Protection)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-            let mut frame = match network.try_promote(frame) {
-                Ok(frame) => frame,
-                Err(frame) => {
+            let (mut frame, mut second) = match network.try_promote_pair(frame, second) {
+                Ok(frames) => frames,
+                Err((frame, second)) => {
                     self.restore_active_pair_front(flow_key, frame, second);
-                    return Ok(WifiTxProgress::Complete);
-                }
-            };
-            let mut second = match network.try_promote(second) {
-                Ok(second) => second,
-                Err(second) => {
-                    self.restore_active_pair_front(
-                        flow_key,
-                        PinnedNetworkTxFrame::Direct(frame),
-                        second,
-                    );
                     return Ok(WifiTxProgress::Complete);
                 }
             };
@@ -1796,15 +1681,9 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1857,7 +1736,8 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1945,7 +1825,8 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1974,65 +1855,29 @@ where
         }
         let key = ApTxFlowKey::associated(admission.association());
         let mut frames = [const { None }; SLOTS];
-        #[cfg(feature = "tx-core1-materializer-probe")]
-        let completed = if self.core1_materialization_in_flight {
-            match network.poll_core1_materialization(&mut frames) {
-                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Pending => {
-                    return Ok(false);
-                }
-                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Cancelled => {
-                    self.core1_materialization_in_flight = false;
-                    return Ok(false);
-                }
-                open_esp_radio_embassy_net::PinnedTxCore1MaterializationPoll::Ready(count) => {
-                    self.core1_materialization_in_flight = false;
-                    Some(count)
-                }
-            }
-        } else {
-            None
-        };
-        #[cfg(not(feature = "tx-core1-materializer-probe"))]
-        let completed: Option<usize> = None;
-
-        let count = if let Some(count) = completed {
-            count
-        } else {
-            let burst_limit = remaining.min(SLOTS).min(network.promotion_capacity());
-            if burst_limit == 0 {
-                return Ok(false);
-            }
-            let mut count = 0;
-            while count < burst_limit {
-                let Some(frame) =
-                    self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
-                else {
-                    break;
-                };
-                debug_assert!(admission.accepts_ethernet(frame.as_slice()));
-                frames[count] = Some(frame);
-                count += 1;
-            }
-            if count == 0 {
-                return Ok(false);
-            }
-            #[cfg(feature = "tx-core1-materializer-probe")]
-            if network.core1_materializer_selected() {
-                if network.try_submit_core1_materialization(&mut frames) {
-                    self.core1_materialization_in_flight = true;
-                    return Ok(true);
-                }
-                for frame in frames[..count].iter_mut().rev().filter_map(Option::take) {
-                    self.restore_active_frame_front(key, frame);
-                }
-                return Ok(false);
-            }
-            count
-        };
+        let burst_limit = remaining.min(SLOTS).min(network.promotion_capacity());
+        if burst_limit == 0 {
+            return Ok(false);
+        }
+        let mut count = 0;
+        while count < burst_limit {
+            let Some(frame) =
+                self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
+            else {
+                break;
+            };
+            debug_assert!(admission.accepts_ethernet(frame.as_slice()));
+            frames[count] = Some(frame);
+            count += 1;
+        }
+        if count == 0 {
+            return Ok(false);
+        }
 
         #[cfg(any(feature = "diagnostics", test))]
         let started = self.observer.map(AggregateTxObserver::now_micros);
-        if !network.try_promote_batch(&mut frames) {
+        let mut promoted = [const { None }; SLOTS];
+        if !network.try_promote_batch(&mut frames, &mut promoted) {
             for frame in frames[..count].iter_mut().rev().filter_map(Option::take) {
                 self.restore_active_frame_front(key, frame);
             }
@@ -2040,12 +1885,10 @@ where
         }
 
         let peer = admission.peer();
-        for slot in frames[..count].iter_mut() {
+        for slot in promoted[..count].iter_mut() {
             let mut frame = slot
                 .take()
-                .expect("the selected AP burst retains every packet owner")
-                .into_direct()
-                .unwrap_or_else(|_| panic!("successful promotion leaves only DMA owners"));
+                .expect("successful AP burst promotion publishes every DMA owner");
             let offset = frame.ethernet_offset();
             let length = frame.ethernet_length();
             let encoded = control
@@ -2116,15 +1959,9 @@ where
             TX_BUFFER_SIZE,
         >,
         key: ApTxFlowKey,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -2240,21 +2077,10 @@ where
                 .map_err(Esp32s31ApAmpduError::Protection)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         }
-        let mut first = match network.try_promote(first) {
-            Ok(first) => first,
-            Err(first) => {
+        let (mut first, mut frame) = match network.try_promote_pair(first, frame) {
+            Ok(frames) => frames,
+            Err((first, frame)) => {
                 self.restore_active_pair_front(first_key, first, frame);
-                return Ok(false);
-            }
-        };
-        let mut frame = match network.try_promote(frame) {
-            Ok(frame) => frame,
-            Err(frame) => {
-                self.restore_active_pair_front(
-                    first_key,
-                    PinnedNetworkTxFrame::Direct(first),
-                    frame,
-                );
                 return Ok(false);
             }
         };
@@ -2361,7 +2187,8 @@ where
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -2490,7 +2317,8 @@ where
             TX_BUFFER_SIZE,
         >,
         network: Option<
-            &PinnedTxInterfaceConsumer<
+            &DatapathTxConsumer<
+                '_,
                 'resources,
                 M,
                 FRAME_CAPACITY,
@@ -2505,14 +2333,6 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        #[cfg(feature = "tx-core1-materializer-probe")]
-        if self.core1_materialization_in_flight {
-            network
-                .expect("an in-flight Core1 batch retains its interface capability")
-                .cancel_core1_materialization();
-            self.core1_materialization_in_flight = false;
-        }
-        #[cfg(not(feature = "tx-core1-materializer-probe"))]
         let _ = network;
         self.rollback_prepared_buffered_release(control)?;
         self.discard_group_buffer(control)?;
@@ -2889,7 +2709,7 @@ impl<
     for Esp32s31AccessPointNetworkTx<
         'observer,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        OwnedNetworkTxFrame,
     >
 where
     M: RawMutex,

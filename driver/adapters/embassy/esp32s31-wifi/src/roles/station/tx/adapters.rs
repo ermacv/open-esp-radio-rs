@@ -375,8 +375,9 @@ where
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -430,7 +431,8 @@ where
     fn start_prepared(
         &mut self,
         hardware: &mut H,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -445,14 +447,7 @@ where
     fn cancel_prepared(
         &mut self,
         _network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         self.cancel_prepared_network()
@@ -464,8 +459,9 @@ where
 
     fn prepare<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,

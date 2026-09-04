@@ -375,7 +375,7 @@ impl<
         S,
         L,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        OwnedNetworkTxFrame,
         COUNT,
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
@@ -755,15 +755,9 @@ where
 
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -816,7 +810,8 @@ where
 
     fn advance_prepared_tx(
         &mut self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -846,15 +841,9 @@ where
 
     fn prepare_tx<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -871,7 +860,8 @@ where
 
     fn start_prepared_tx(
         &mut self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -900,7 +890,8 @@ where
     fn cancel_prepared_tx(
         &mut self,
         network: Option<
-            &PinnedTxInterfaceConsumer<
+            &DatapathTxConsumer<
+                '_,
                 'resources,
                 M,
                 FRAME_CAPACITY,

@@ -174,7 +174,6 @@ where
             // Core0 owner services policy here, after returning to its unique
             // mutable scheduling boundary. Saturated traffic uses the same
             // finite service at the explicit completed-BA boundary below.
-            let _ = self.network.service_egress_control();
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.discard_wakes_completed();
             let network_tx_pending =
@@ -342,7 +341,7 @@ where
                     // target.
                     if self.services.has_prepared_tx() {
                         let interface = self.retained_prepared_tx_interface();
-                        let network_tx = self.tx_consumer_for(interface);
+                        let network_tx = self.network.tx_consumer(interface);
                         self.services.advance_prepared_tx(&network_tx)?;
                         if self.services.can_prepare_tx()
                             && self.services.prepared_tx_start_ready()
@@ -375,7 +374,7 @@ where
                         continue;
                     };
                     let interface = self.tx_interface_for(&frame);
-                    let network_tx = self.tx_consumer_for(interface);
+                    let network_tx = self.network.tx_consumer(interface);
                     #[cfg(feature = "tx-phase-telemetry")]
                     let tx_phase_started = Core0PerformanceSample::read();
                     let progress = self.services.start_tx(frame, &network_tx).await?;
@@ -430,7 +429,6 @@ where
                             // transaction is still a scheduling boundary.
                             // Advance egress control once here, not once per
                             // frame while assembling the successor aggregate.
-                            let _ = self.network.service_egress_control();
                             let network_tx_pending =
                                 self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
                             let control_ready = self.control_ready_latched

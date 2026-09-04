@@ -10,7 +10,7 @@ use core::{
     future::{Future, pending, ready},
 };
 
-use open_esp_radio_embassy_net::{PinnedNetworkTxFrame, PinnedTxInterfaceConsumer, RawMutex};
+use open_esp_radio_embassy_net::{DatapathTxConsumer, OwnedNetworkTxFrame, RawMutex};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
@@ -163,8 +163,9 @@ pub trait DatapathNetworkTxService<
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -209,7 +210,8 @@ pub trait DatapathNetworkTxService<
     fn advance_prepared(
         &mut self,
         _hardware: &mut H,
-        _network: &PinnedTxInterfaceConsumer<
+        _network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -228,7 +230,8 @@ pub trait DatapathNetworkTxService<
     fn start_prepared(
         &mut self,
         _hardware: &mut H,
-        _network: &PinnedTxInterfaceConsumer<
+        _network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -244,14 +247,7 @@ pub trait DatapathNetworkTxService<
     fn cancel_prepared(
         &mut self,
         _network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         Ok(())
@@ -263,8 +259,9 @@ pub trait DatapathNetworkTxService<
 
     fn prepare<'a>(
         &'a mut self,
-        _frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        _network: &'a PinnedTxInterfaceConsumer<
+        _frame: OwnedNetworkTxFrame,
+        _network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -515,8 +512,9 @@ where
 
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -573,7 +571,8 @@ where
 
     fn advance_prepared_tx(
         &mut self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -599,7 +598,8 @@ where
 
     fn start_prepared_tx(
         &mut self,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -617,14 +617,7 @@ where
     fn cancel_prepared_tx(
         &mut self,
         network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         self.role
@@ -639,8 +632,9 @@ where
 
     fn prepare_tx<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,

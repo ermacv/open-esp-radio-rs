@@ -159,7 +159,10 @@ where
         }
         match self.interfaces {
             DatapathInterfaceScope::Single(interface) => self.network.tx_queue_len(interface),
-            DatapathInterfaceScope::Pair { .. } => self.network.physical_tx_queue_len(),
+            DatapathInterfaceScope::Pair { first, second } => self
+                .network
+                .tx_queue_len(first)
+                .saturating_add(self.network.tx_queue_len(second)),
         }
     }
 
@@ -215,11 +218,7 @@ where
                 && self.retained_prepared_tx_interface() == interface)
     }
 
-    pub(super) fn try_receive_network_tx(
-        &mut self,
-    ) -> Option<
-        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    > {
+    pub(super) fn try_receive_network_tx(&mut self) -> Option<OwnedNetworkTxFrame> {
         let interface = self.next_network_tx_interface()?;
         if let DatapathInterfaceScope::Pair { first, second } = self.interfaces
             && self.prepared_tx_interface.is_none()
@@ -246,32 +245,13 @@ where
         charge_pair_tx_frames(&mut self.pair_tx_served_frames, slot, frames);
     }
 
-    pub(super) fn tx_interface_for(
-        &self,
-        frame: &PinnedNetworkTxFrame<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            TX_QUEUE_DEPTH,
-        >,
-    ) -> NetworkInterfaceId {
+    pub(super) fn tx_interface_for(&self, frame: &OwnedNetworkTxFrame) -> NetworkInterfaceId {
         let interface = *frame.tag();
         assert!(
             self.interfaces.contains(interface),
             "tagged TX lease does not belong to this DATAPATH scope"
         );
         interface
-    }
-
-    pub(super) fn tx_consumer_for(
-        &self,
-        interface: NetworkInterfaceId,
-    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
-    {
-        assert!(self.interfaces.contains(interface));
-        self.network.tx_consumer(interface)
     }
 
     /// Whether the other VIF already has published work while `interface`
@@ -338,11 +318,12 @@ where
     /// Cancel the retained software transaction with the exact logical-VIF
     /// capability that owns any out-of-core materialization request.
     pub(super) fn cancel_prepared_network_tx(&mut self) -> Result<(), B::Error> {
-        let network = self
-            .services
-            .has_prepared_tx()
-            .then(|| self.tx_consumer_for(self.retained_prepared_tx_interface()));
-        self.services.cancel_prepared_tx(network.as_ref())
+        if !self.services.has_prepared_tx() {
+            return self.services.cancel_prepared_tx(None);
+        }
+        let interface = self.retained_prepared_tx_interface();
+        let network = self.network.tx_consumer(interface);
+        self.services.cancel_prepared_tx(Some(&network))
     }
 }
 

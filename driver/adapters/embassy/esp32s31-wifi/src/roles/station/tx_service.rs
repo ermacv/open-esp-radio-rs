@@ -7,7 +7,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::{PinnedNetworkTxFrame, PinnedTxInterfaceConsumer, RawMutex};
+use open_esp_radio_embassy_net::{DatapathTxConsumer, OwnedNetworkTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
@@ -42,8 +42,9 @@ where
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        _network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        _network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,

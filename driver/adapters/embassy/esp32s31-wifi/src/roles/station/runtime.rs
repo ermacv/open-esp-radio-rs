@@ -12,7 +12,7 @@
 use core::future::Future;
 
 use open_esp_radio_embassy_net::{
-    PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
+    DatapathTxConsumer, OwnedNetworkTxFrame, PinnedTxFrame, RawMutex,
 };
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
@@ -1045,8 +1045,9 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1194,7 +1195,8 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1241,14 +1243,7 @@ where
             ORDINARY_BUFFER_SIZE,
         >,
         network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         <Esp32s31StaApConnectedTx<
@@ -1352,8 +1347,9 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1428,8 +1424,9 @@ where
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1474,7 +1471,8 @@ where
     fn start_prepared(
         &mut self,
         hardware: &mut H,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1489,14 +1487,7 @@ where
     fn cancel_prepared(
         &mut self,
         network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         self.tx_mut().cancel_prepared(network)
@@ -1508,8 +1499,9 @@ where
 
     fn prepare<'a>(
         &'a mut self,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,

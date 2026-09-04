@@ -247,7 +247,7 @@ where
         }
 
         let interface = self.retained_prepared_tx_interface();
-        let network = self.tx_consumer_for(interface);
+        let network = self.network.tx_consumer(interface);
         #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         self.services.advance_prepared_tx(&network)?;
@@ -303,7 +303,7 @@ where
         );
         self.account_tx_frames(admitted);
         self.account_pair_tx_frames(interface, admitted);
-        let network_tx = self.tx_consumer_for(interface);
+        let network_tx = self.network.tx_consumer(interface);
         #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         let progress = self.services.start_prepared_tx(&network_tx)?;
@@ -350,7 +350,7 @@ where
         if self.competing_tx_pending(interface) {
             return Ok(());
         }
-        let network = self.tx_consumer_for(interface);
+        let network = self.network.tx_consumer(interface);
         self.services.advance_prepared_tx(&network)?;
         if self.services.prepared_tx_start_ready() {
             self.prepared_tx_interface = Some(interface);
@@ -544,7 +544,7 @@ where
                 Either4::Fourth(()) => {
                     let interface =
                         active_tx_interface.expect("active TX preparation requires one VIF owner");
-                    let network = self.tx_consumer_for(interface);
+                    let network = self.network.tx_consumer(interface);
                     self.services.advance_prepared_tx(&network)?;
                     if self.services.prepared_tx_start_ready() {
                         self.prepared_tx_interface = Some(interface);

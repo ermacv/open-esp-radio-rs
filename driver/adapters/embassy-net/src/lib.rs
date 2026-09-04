@@ -78,15 +78,15 @@ pub use egress_peer::{
 };
 pub use owned::{
     OwnedEndpointResources, OwnedLinkController, OwnedNetworkDevice, OwnedNetworkRunner,
-    OwnedNetworkTxFrame, OwnedRxPublisher,
+    OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxFrameSource,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use pinned::PinnedTxOwnershipSnapshot;
 #[cfg(feature = "tx-staging-copy-probe")]
 pub use pinned::configure_tx_staging_copy_probe;
 pub use pinned::{
-    DualPinnedNetworkRunner, EgressQueueTopology, NetworkEndpointConfig, NetworkInterfaceId,
-    PinnedEndpointResources, PinnedNetworkLinkController, PinnedNetworkRunner,
+    DatapathTxConsumer, DualPinnedNetworkRunner, EgressQueueTopology, NetworkEndpointConfig,
+    NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkLinkController, PinnedNetworkRunner,
     PinnedNetworkTxFrame, PinnedReceiveToken, PinnedRxPublisher, PinnedTransmitToken,
     PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider,
     PinnedTxResources, SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher,

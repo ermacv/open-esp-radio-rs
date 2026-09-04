@@ -850,7 +850,7 @@ impl<
         network_tx::Esp32s31AccessPointNetworkTx<
             'ampdu,
             PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            OwnedNetworkTxFrame,
         >,
         Security,
         StatusObserver,
@@ -891,8 +891,9 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1035,7 +1036,8 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1080,7 +1082,8 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: &PinnedTxInterfaceConsumer<
+        network: &DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1130,14 +1133,7 @@ where
             >,
         >,
         network: Option<
-            &PinnedTxInterfaceConsumer<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                QUEUE_DEPTH,
-            >,
+            &DatapathTxConsumer<'_, 'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
     ) -> Result<(), Self::Error> {
         let active =
@@ -1196,8 +1192,9 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxInterfaceConsumer<
+        frame: OwnedNetworkTxFrame,
+        network: &'a DatapathTxConsumer<
+            '_,
             'resources,
             M,
             FRAME_CAPACITY,

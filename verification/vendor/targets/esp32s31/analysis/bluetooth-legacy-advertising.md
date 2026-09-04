@@ -161,17 +161,20 @@ management, but it does not prove that the open fixed two-node pool safely
 covers a three-channel response event. The first open memory typestate
 therefore accepts exactly one primary channel and fails closed otherwise.
 
-The portable Link Layer now owns the semantic advertisement, scan-response
-data and the typed bounded `ADV_IND`/`SCAN_RSP` encodings. The S31 memory
-transition consumes that exact prepared portable event; it does not parse or
-revalidate Bluetooth wire semantics. It owns only the private two-header TX
+The portable Link Layer owns the semantic advertisement, scan-response data
+and typed bounded `ADV_IND`/`SCAN_RSP` encodings. A later chip aggregate must
+retain that affine portable event while translating it into a short-lived S31
+memory input: two allocation-fit PDU borrows, the already selected own-address
+behavior and exactly one translated primary channel. The memory crate has no
+portable Link Layer dependency, does not retain that event and does not parse
+or revalidate Bluetooth wire semantics. It owns only the private two-header TX
 chain, the exact affine non-scanning RX pool, the common advertising reset
-projection, the compressed RX consumer link and the opaque scheduler
-duration. The joined owner remains non-publishable and losslessly returns the
-portable event, graph and RX pool on cancellation or rejection. Scheduler
-admission, RX dispatch, accepted `CONNECT_IND` transfer and multi-channel
-buffering are separate later boundaries rather than implied capabilities of
-this memory profile.
+projection, the compressed RX consumer link and the opaque scheduler duration.
+The joined memory owner remains non-publishable and losslessly returns only the
+graph and RX pool on cancellation or rejection. Scheduler admission, RX
+dispatch, accepted `CONNECT_IND` transfer and multi-channel buffering are
+separate later boundaries rather than implied capabilities of this memory
+profile.
 
 ## Minimum production admission contract
 

@@ -52,6 +52,7 @@ pub use ble_phy_engine::{
 #[cfg(not(target_arch = "riscv32"))]
 pub use connectable_advertising_memory::BluetoothLegacyConnectableAdvertisingMemoryGraphModelAddress;
 pub use connectable_advertising_memory::{
+    BluetoothLegacyConnectableAdvIndPacketInput,
     BluetoothLegacyConnectableAdvertisingMemoryGraphBindError,
     BluetoothLegacyConnectableAdvertisingMemoryGraphBindFailure,
     BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
@@ -60,7 +61,11 @@ pub use connectable_advertising_memory::{
     BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure,
     BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
     BluetoothLegacyConnectableAdvertisingMemoryGraphStorage,
+    BluetoothLegacyConnectableAdvertisingMemoryInput,
+    BluetoothLegacyConnectableAdvertisingOwnAddress,
+    BluetoothLegacyConnectableAdvertisingPduFitError,
     BluetoothLegacyConnectableAdvertisingSchedulerSpan,
+    BluetoothLegacyConnectableScanResponsePacketInput,
 };
 
 #[cfg(not(target_arch = "riscv32"))]

@@ -10,10 +10,6 @@ mod codec;
 
 use core::{marker::PhantomPinned, pin::Pin};
 
-use open_esp_radio_bluetooth_ll::{
-    LeDeviceAddressKind, advertising::PrimaryAdvertisingChannel,
-    connectable_advertising::LegacyPreparedConnectableAdvertisingEvent,
-};
 #[cfg(not(target_arch = "riscv32"))]
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddressError;
@@ -42,6 +38,121 @@ type AdvertisingTxPacketLength =
     BluetoothLeTxPacketPreparedLength<LEGACY_ADVERTISING_TX_PACKET_BYTES>;
 type AdvertisingTxPacketInput<'a> =
     BluetoothLeTxPacketPreparedInput<'a, LEGACY_ADVERTISING_TX_PACKET_BYTES>;
+
+/// Why a protocol-validated advertising PDU cannot fit this S31 allocation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyConnectableAdvertisingPduFitError {
+    /// The complete encoded extent disagrees with the trusted payload length.
+    EncodedExtentMismatch {
+        expected_bytes: usize,
+        actual_bytes: usize,
+    },
+    /// The payload exceeds the reviewed legacy-advertising allocation class.
+    PayloadExceedsAllocation {
+        payload_bytes: usize,
+        capacity: usize,
+    },
+}
+
+fn allocation_checked_packet(
+    pdu: &[u8],
+    payload_bytes: u8,
+) -> Result<AdvertisingTxPacketInput<'_>, BluetoothLegacyConnectableAdvertisingPduFitError> {
+    let payload_bytes = usize::from(payload_bytes);
+    if payload_bytes > LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES {
+        return Err(
+            BluetoothLegacyConnectableAdvertisingPduFitError::PayloadExceedsAllocation {
+                payload_bytes,
+                capacity: LEGACY_ADVERTISING_MAX_PAYLOAD_BYTES,
+            },
+        );
+    }
+    let expected_bytes = 2 + payload_bytes;
+    if pdu.len() != expected_bytes {
+        return Err(
+            BluetoothLegacyConnectableAdvertisingPduFitError::EncodedExtentMismatch {
+                expected_bytes,
+                actual_bytes: pdu.len(),
+            },
+        );
+    }
+    Ok(AdvertisingTxPacketInput::from_validated_encoded_pdu(
+        pdu,
+        payload_bytes as u8,
+    ))
+}
+
+/// Allocation-fit projection of one protocol-validated `ADV_IND` PDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLegacyConnectableAdvIndPacketInput<'a>(AdvertisingTxPacketInput<'a>);
+
+impl<'a> BluetoothLegacyConnectableAdvIndPacketInput<'a> {
+    /// Prove only S31 allocation fit; the portable Link Layer owns PDU validity.
+    pub fn from_protocol_validated(
+        pdu: &'a [u8],
+        payload_bytes: u8,
+    ) -> Result<Self, BluetoothLegacyConnectableAdvertisingPduFitError> {
+        allocation_checked_packet(pdu, payload_bytes).map(Self)
+    }
+}
+
+/// Allocation-fit projection of one protocol-validated `SCAN_RSP` PDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLegacyConnectableScanResponsePacketInput<'a>(AdvertisingTxPacketInput<'a>);
+
+impl<'a> BluetoothLegacyConnectableScanResponsePacketInput<'a> {
+    /// Prove only S31 allocation fit; the portable Link Layer owns PDU validity.
+    pub fn from_protocol_validated(
+        pdu: &'a [u8],
+        payload_bytes: u8,
+    ) -> Result<Self, BluetoothLegacyConnectableAdvertisingPduFitError> {
+        allocation_checked_packet(pdu, payload_bytes).map(Self)
+    }
+}
+
+/// Address behavior already selected by the chip protocol bridge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLegacyConnectableAdvertisingOwnAddress {
+    Public,
+    Random([u8; 6]),
+}
+
+impl BluetoothLegacyConnectableAdvertisingOwnAddress {
+    const fn codec(self) -> BluetoothLegacyAdvertisingOwnAddress {
+        match self {
+            Self::Public => BluetoothLegacyAdvertisingOwnAddress::Public,
+            Self::Random(address) => BluetoothLegacyAdvertisingOwnAddress::Random(address),
+        }
+    }
+}
+
+/// Complete protocol-validated input needed to lower one one-channel event.
+///
+/// This value contains no portable Link Layer owner. Its PDU wrappers prove
+/// only controller-allocation fit and never parse Bluetooth header semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothLegacyConnectableAdvertisingMemoryInput<'a> {
+    adv_ind: BluetoothLegacyConnectableAdvIndPacketInput<'a>,
+    scan_response: BluetoothLegacyConnectableScanResponsePacketInput<'a>,
+    own_address: BluetoothLegacyConnectableAdvertisingOwnAddress,
+    primary_channel: BluetoothLegacyAdvertisingPrimaryChannel,
+}
+
+impl<'a> BluetoothLegacyConnectableAdvertisingMemoryInput<'a> {
+    pub const fn new(
+        adv_ind: BluetoothLegacyConnectableAdvIndPacketInput<'a>,
+        scan_response: BluetoothLegacyConnectableScanResponsePacketInput<'a>,
+        own_address: BluetoothLegacyConnectableAdvertisingOwnAddress,
+        primary_channel: BluetoothLegacyAdvertisingPrimaryChannel,
+    ) -> Self {
+        Self {
+            adv_ind,
+            scan_response,
+            own_address,
+            primary_channel,
+        }
+    }
+}
 
 /// Complete reviewed scheduler span for one response-capable LE 1M item.
 ///
@@ -166,35 +277,19 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned {
     }
 
     /// Bind both response PDUs and one reusable RX pool without publication.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc rejection returns the portable event and both exact affine memory owners"
-        )
-    )]
-    pub fn prepare_response_capable_event<'a>(
+    pub fn prepare_response_capable_event(
         mut self,
-        event: LegacyPreparedConnectableAdvertisingEvent<'a>,
+        input: BluetoothLegacyConnectableAdvertisingMemoryInput<'_>,
         pool: BluetoothNonScanningRxMemoryCpuOwned,
         default_tx_power_dbm: i8,
     ) -> Result<
-        BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared<'a>,
-        BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure<'a>,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared,
+        BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure,
     > {
-        if event.channels().channel_count() != 1 {
-            return Err(BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure::new(
-                self,
-                pool,
-                event,
-                BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError::RequiresOnePrimaryChannel,
-            ));
-        }
         if !pool.is_initialized() {
             return Err(BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure::new(
                 self,
                 pool,
-                event,
                 BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError::ReceivePoolNotReady,
             ));
         }
@@ -202,45 +297,23 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned {
             return Err(BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure::new(
                 self,
                 pool,
-                event,
                 BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError::ReceivePoolOverlapsGraph,
             ));
         }
 
-        let primary_channel = event
-            .channels()
-            .channel(0)
-            .map(s31_primary_channel)
-            .expect("a prepared one-channel event contains its primary channel");
-        let advertiser = event.advertisement().advertiser();
-        let own_address = match advertiser.kind() {
-            LeDeviceAddressKind::Public => BluetoothLegacyAdvertisingOwnAddress::Public,
-            LeDeviceAddressKind::Random => {
-                BluetoothLegacyAdvertisingOwnAddress::Random(advertiser.wire_bytes())
-            }
-        };
-        let adv_ind = event.adv_ind_pdu();
-        let scan_response = event.scan_response_pdu();
-        let adv_ind_packet = AdvertisingTxPacketInput::from_validated_encoded_pdu(
-            adv_ind.as_bytes(),
-            adv_ind.payload_length(),
-        );
-        let scan_response_packet = AdvertisingTxPacketInput::from_validated_encoded_pdu(
-            scan_response.as_bytes(),
-            scan_response.payload_length(),
-        );
         let (adv_ind_length, scan_response_length) = self
             .storage
             .as_mut()
             .project()
             .graph
-            .prepare_pdus(adv_ind_packet, scan_response_packet);
-        let scheduler_span = codec::response_capable_scheduler_span(adv_ind.payload_length());
+            .prepare_pdus(input.adv_ind.0, input.scan_response.0);
+        let scheduler_span =
+            codec::response_capable_scheduler_span(input.adv_ind.0.payload_bytes());
         self.storage.as_ref().get_ref().graph.prepare_profile(
             &self.binding,
             pool.head(),
             pool.tail(),
-            own_address,
+            input.own_address.codec(),
             default_tx_power_dbm,
         );
 
@@ -248,39 +321,27 @@ impl BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned {
             storage: self.storage,
             binding: self.binding,
             pool,
-            event,
             adv_ind_length,
             scan_response_length,
-            primary_channel,
+            primary_channel: input.primary_channel,
             scheduler_span,
         })
     }
 }
 
-const fn s31_primary_channel(
-    channel: PrimaryAdvertisingChannel,
-) -> BluetoothLegacyAdvertisingPrimaryChannel {
-    match channel {
-        PrimaryAdvertisingChannel::Channel37 => BluetoothLegacyAdvertisingPrimaryChannel::Channel37,
-        PrimaryAdvertisingChannel::Channel38 => BluetoothLegacyAdvertisingPrimaryChannel::Channel38,
-        PrimaryAdvertisingChannel::Channel39 => BluetoothLegacyAdvertisingPrimaryChannel::Channel39,
-    }
-}
-
 /// Prepared response-capable graph with no publication authority.
 #[must_use = "the prepared graph and receive pool must be retained or cancelled"]
-pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared<'a> {
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
     storage: Pin<&'static mut BluetoothLegacyConnectableAdvertisingMemoryGraphStorage>,
     binding: BluetoothLegacyConnectableAdvertisingGraphBinding,
     pool: BluetoothNonScanningRxMemoryCpuOwned,
-    event: LegacyPreparedConnectableAdvertisingEvent<'a>,
     adv_ind_length: AdvertisingTxPacketLength,
     scan_response_length: AdvertisingTxPacketLength,
     primary_channel: BluetoothLegacyAdvertisingPrimaryChannel,
     scheduler_span: BluetoothLegacyConnectableAdvertisingSchedulerSpan,
 }
 
-impl<'a> BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared<'a> {
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared {
     pub const fn identity(&self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphIdentity {
         self.binding.identity()
     }
@@ -330,46 +391,37 @@ impl<'a> BluetoothLegacyConnectableAdvertisingMemoryGraphPrepared<'a> {
     ) -> (
         BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
         BluetoothNonScanningRxMemoryCpuOwned,
-        LegacyPreparedConnectableAdvertisingEvent<'a>,
     ) {
         let mut owner = BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned {
             storage: self.storage,
             binding: self.binding,
         };
         owner.reinitialize_graph();
-        (owner, self.pool, self.event)
+        (owner, self.pool)
     }
 }
 
 /// Why the complete response-capable graph could not be prepared.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError {
-    RequiresOnePrimaryChannel,
     ReceivePoolNotReady,
     ReceivePoolOverlapsGraph,
 }
 
 /// Failed preparation retaining both affine memory owners.
-pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure<'a> {
+pub struct BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure {
     owner: BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
     pool: BluetoothNonScanningRxMemoryCpuOwned,
-    event: LegacyPreparedConnectableAdvertisingEvent<'a>,
     error: BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError,
 }
 
-impl<'a> BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure<'a> {
+impl BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure {
     fn new(
         owner: BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
         pool: BluetoothNonScanningRxMemoryCpuOwned,
-        event: LegacyPreparedConnectableAdvertisingEvent<'a>,
         error: BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError,
     ) -> Self {
-        Self {
-            owner,
-            pool,
-            event,
-            error,
-        }
+        Self { owner, pool, error }
     }
 
     pub const fn error(&self) -> BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError {
@@ -381,14 +433,13 @@ impl<'a> BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure<'a> {
     ) -> (
         BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned,
         BluetoothNonScanningRxMemoryCpuOwned,
-        LegacyPreparedConnectableAdvertisingEvent<'a>,
         BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError,
     ) {
-        (self.owner, self.pool, self.event, self.error)
+        (self.owner, self.pool, self.error)
     }
 }
 
-impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure<'_> {
+impl core::fmt::Debug for BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_struct("BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareFailure")
@@ -472,15 +523,10 @@ impl Default for BluetoothLegacyConnectableAdvertisingMemoryGraphStorage {
 mod tests {
     use super::*;
     use crate::{BluetoothNonScanningRxMemoryModelAddress, BluetoothNonScanningRxMemoryStorage};
-    use open_esp_radio_bluetooth_ll::{
-        LeDeviceAddress,
-        advertising::{AdvertisingInterval, LegacyAdvertisingData, PrimaryAdvertisingChannelMap},
-        connectable_advertising::{
-            LeChannelSelectionAlgorithmTwoSupport, LegacyConnectableAdvertisement,
-            LegacyConnectableAdvertisingSet, LegacyPreparedConnectableAdvertisingEvent,
-            LegacyScanResponseData,
-        },
-    };
+
+    const ADVERTISER: [u8; 6] = [1, 2, 3, 4, 5, 6];
+    const ADV_IND_PDU: [u8; 11] = [0x60, 9, 1, 2, 3, 4, 5, 6, 2, 1, 6];
+    const SCAN_RESPONSE_PDU: [u8; 8] = [0x44, 6, 1, 2, 3, 4, 5, 6];
 
     fn owner(base: u32) -> BluetoothLegacyConnectableAdvertisingMemoryGraphCpuOwned {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(
@@ -502,26 +548,20 @@ mod tests {
             .expect("the RX pool fits controller SRAM")
     }
 
-    fn event(
-        channels: PrimaryAdvertisingChannelMap,
-    ) -> LegacyPreparedConnectableAdvertisingEvent<'static> {
-        LegacyConnectableAdvertisingSet::new(
-            LegacyConnectableAdvertisement::new(
-                LeDeviceAddress::from_wire_bytes([1, 2, 3, 4, 5, 6], LeDeviceAddressKind::Random),
-                LegacyAdvertisingData::new(&[2, 1, 6]).expect("advertising data fits"),
-                LeChannelSelectionAlgorithmTwoSupport::Supported,
-            ),
-            LegacyScanResponseData::new(&[]).expect("an empty scan response is valid"),
-            channels,
-            AdvertisingInterval::new(32).expect("the minimum interval is valid"),
+    fn input(
+        primary_channel: BluetoothLegacyAdvertisingPrimaryChannel,
+    ) -> BluetoothLegacyConnectableAdvertisingMemoryInput<'static> {
+        BluetoothLegacyConnectableAdvertisingMemoryInput::new(
+            BluetoothLegacyConnectableAdvIndPacketInput::from_protocol_validated(&ADV_IND_PDU, 9)
+                .expect("the portable ADV_IND fits the S31 packet allocation"),
+            BluetoothLegacyConnectableScanResponsePacketInput::from_protocol_validated(
+                &SCAN_RESPONSE_PDU,
+                6,
+            )
+            .expect("the portable SCAN_RSP fits the S31 packet allocation"),
+            BluetoothLegacyConnectableAdvertisingOwnAddress::Random(ADVERTISER),
+            primary_channel,
         )
-        .begin_event()
-        .prepare()
-    }
-
-    fn one_channel() -> PrimaryAdvertisingChannelMap {
-        PrimaryAdvertisingChannelMap::new(true, false, false)
-            .expect("channel 37 forms a non-empty plan")
     }
 
     #[test]
@@ -530,55 +570,53 @@ mod tests {
         let graph_identity = owner.identity();
         let pool = pool(0x2f00_4000);
         let pool_identity = pool.identity();
-        let event = event(one_channel());
-        let adv_ind = event.adv_ind_pdu();
-        let scan_response = event.scan_response_pdu();
         let prepared = owner
-            .prepare_response_capable_event(event, pool, 0)
-            .expect("the disjoint one-channel response graph is supported");
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel37),
+                pool,
+                0,
+            )
+            .expect("the disjoint response graph is supported");
 
         assert_eq!(prepared.identity(), graph_identity);
         assert_eq!(prepared.receive_identity(), pool_identity);
-        assert_eq!(prepared.adv_ind_pdu(), adv_ind.as_bytes());
-        assert_eq!(prepared.scan_response_pdu(), scan_response.as_bytes());
+        assert_eq!(prepared.adv_ind_pdu(), &ADV_IND_PDU);
+        assert_eq!(prepared.scan_response_pdu(), &SCAN_RESPONSE_PDU);
         assert_eq!(
             prepared.primary_channel(),
             BluetoothLegacyAdvertisingPrimaryChannel::Channel37
         );
         assert!(prepared.is_ready_for_scheduler_lowering());
 
-        let (owner, pool, event) = prepared.cancel();
+        let (owner, pool) = prepared.cancel();
         assert_eq!(owner.identity(), graph_identity);
         assert_eq!(pool.identity(), pool_identity);
         assert!(pool.is_initialized());
-        assert_eq!(event.channels(), one_channel());
     }
 
     #[test]
-    fn unsupported_channel_plan_returns_both_owners_for_retry() {
-        let owner = owner(0x2f00_0800);
-        let graph_identity = owner.identity();
-        let pool = pool(0x2f00_4800);
-        let pool_identity = pool.identity();
-        let channels = PrimaryAdvertisingChannelMap::new(true, true, false)
-            .expect("two channels are a valid generic advertising plan");
-        let failure = match owner.prepare_response_capable_event(event(channels), pool, 0) {
-            Ok(_) => panic!("response-capable multi-channel buffering is not yet proven"),
-            Err(failure) => failure,
-        };
+    fn packet_fit_is_proved_without_interpreting_protocol_headers() {
+        let oversized = [0; 40];
         assert_eq!(
-            failure.error(),
-            BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError::RequiresOnePrimaryChannel
+            BluetoothLegacyConnectableAdvIndPacketInput::from_protocol_validated(&oversized, 38),
+            Err(
+                BluetoothLegacyConnectableAdvertisingPduFitError::PayloadExceedsAllocation {
+                    payload_bytes: 38,
+                    capacity: 37,
+                }
+            )
         );
-        let (owner, pool, unsupported_event, _) = failure.into_parts();
-        assert_eq!(owner.identity(), graph_identity);
-        assert_eq!(pool.identity(), pool_identity);
-        let _unsupported_set = unsupported_event.cancel().into_set();
-
-        assert!(
-            owner
-                .prepare_response_capable_event(event(one_channel()), pool, 0)
-                .is_ok()
+        assert_eq!(
+            BluetoothLegacyConnectableScanResponsePacketInput::from_protocol_validated(
+                &[0xaa, 0xbb, 0xcc],
+                2,
+            ),
+            Err(
+                BluetoothLegacyConnectableAdvertisingPduFitError::EncodedExtentMismatch {
+                    expected_bytes: 4,
+                    actual_bytes: 3,
+                }
+            )
         );
     }
 
@@ -589,7 +627,11 @@ mod tests {
         let pool = pool(0x2f00_5800);
         let pool_identity = pool.identity();
         let prepared = owner
-            .prepare_response_capable_event(event(one_channel()), pool, 0)
+            .prepare_response_capable_event(
+                input(BluetoothLegacyAdvertisingPrimaryChannel::Channel39),
+                pool,
+                0,
+            )
             .expect("the complete response topology is initially ready");
         prepared
             .storage
@@ -599,7 +641,7 @@ mod tests {
             .emulate_missing_rx_consumer_link();
 
         assert!(!prepared.is_ready_for_scheduler_lowering());
-        let (owner, pool, _) = prepared.cancel();
+        let (owner, pool) = prepared.cancel();
         assert_eq!(owner.identity(), graph_identity);
         assert_eq!(pool.identity(), pool_identity);
         assert!(pool.is_initialized());
@@ -611,7 +653,11 @@ mod tests {
         let graph_identity = owner.identity();
         let pool = pool(0x2f00_6000);
         let pool_identity = pool.identity();
-        let failure = match owner.prepare_response_capable_event(event(one_channel()), pool, 0) {
+        let failure = match owner.prepare_response_capable_event(
+            input(BluetoothLegacyAdvertisingPrimaryChannel::Channel37),
+            pool,
+            0,
+        ) {
             Ok(_) => panic!("overlapping controller-memory extents must fail closed"),
             Err(failure) => failure,
         };
@@ -620,7 +666,7 @@ mod tests {
             failure.error(),
             BluetoothLegacyConnectableAdvertisingMemoryGraphPrepareError::ReceivePoolOverlapsGraph
         );
-        let (owner, pool, _, _) = failure.into_parts();
+        let (owner, pool, _) = failure.into_parts();
         assert_eq!(owner.identity(), graph_identity);
         assert_eq!(pool.identity(), pool_identity);
         assert!(pool.is_initialized());

@@ -8,7 +8,6 @@ repository.workspace = true
 description = "ESP32-S31 Bluetooth controller-memory layouts and ownership"
 
 [dependencies]
-open-esp-radio-bluetooth-ll = { path = "../../../../bluetooth/ll" }
 open-esp-radio-esp32s31-hal = { path = "../../hal" }
 pin-project = "1.1.13"
 vcell = "0.1.3"

@@ -78,7 +78,7 @@ pub use egress_peer::{
 };
 pub use owned::{
     OwnedEndpointResources, OwnedLinkController, OwnedNetworkDevice, OwnedNetworkRunner,
-    OwnedNetworkTxFrame, OwnedRxEnqueueError, OwnedRxPublisher,
+    OwnedNetworkTxFrame, OwnedRxPublisher,
 };
 #[cfg(feature = "tx-phase-telemetry")]
 pub use pinned::PinnedTxOwnershipSnapshot;
@@ -285,6 +285,10 @@ pub enum RxEnqueueError {
     InvalidLength(FrameLengthError),
     /// The fixed receive queue is full.
     QueueFull,
+    /// The dedicated receive packet pool has no free owner.
+    PoolExhausted,
+    /// The logical network interface is not active.
+    LinkDown,
 }
 
 pub(crate) struct SharedLinkState<M: RawMutex> {

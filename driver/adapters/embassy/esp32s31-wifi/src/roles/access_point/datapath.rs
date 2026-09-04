@@ -301,7 +301,11 @@ where
                         }
                     }
                 }
-                Err(RxEnqueueError::QueueFull) => {
+                Err(
+                    RxEnqueueError::QueueFull
+                    | RxEnqueueError::PoolExhausted
+                    | RxEnqueueError::LinkDown,
+                ) => {
                     #[cfg(feature = "diagnostics")]
                     self.network_backpressure_since_micros
                         .get_or_insert_with(|| Instant::now().as_micros());

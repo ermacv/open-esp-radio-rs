@@ -139,6 +139,7 @@ pub fn assemble_esp32s31_connected_driver<
             TRAILER,
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
+            N::RxPublisher,
         >,
     >,
     Esp32s31ConnectedDriverAssemblyFailure<

@@ -2157,6 +2157,7 @@ pub enum PinnedNetworkTxFrame<
     const QUEUE_DEPTH: usize,
 > {
     Direct(PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>),
+    Owned(OwnedNetworkTxFrame),
     #[cfg(feature = "tx-staging-copy-probe")]
     Staged(StagedTxFrame<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>),
 }
@@ -2167,6 +2168,7 @@ impl<'resources, M: RawMutex, const F: usize, const H: usize, const T: usize, co
     pub fn as_slice(&self) -> &[u8] {
         match self {
             Self::Direct(frame) => frame.as_slice(),
+            Self::Owned(frame) => frame.ethernet(),
             #[cfg(feature = "tx-staging-copy-probe")]
             Self::Staged(frame) => frame.as_slice(),
         }
@@ -2179,6 +2181,7 @@ impl<'resources, M: RawMutex, const F: usize, const H: usize, const T: usize, co
     pub fn tag(&self) -> &NetworkInterfaceId {
         match self {
             Self::Direct(frame) => frame.tag(),
+            Self::Owned(frame) => frame.tag(),
             #[cfg(feature = "tx-staging-copy-probe")]
             Self::Staged(frame) => frame.tag(),
         }
@@ -2187,6 +2190,7 @@ impl<'resources, M: RawMutex, const F: usize, const H: usize, const T: usize, co
     pub fn into_direct(self) -> Result<PinnedTxFrame<'resources, M, F, H, T, Q>, Self> {
         match self {
             Self::Direct(frame) => Ok(frame),
+            Self::Owned(frame) => Err(Self::Owned(frame)),
             #[cfg(feature = "tx-staging-copy-probe")]
             Self::Staged(frame) => Err(Self::Staged(frame)),
         }
@@ -3675,7 +3679,9 @@ impl<
             };
             let source = match frame {
                 PinnedNetworkTxFrame::Staged(source) => source.handoff_to_materializer(),
-                PinnedNetworkTxFrame::Direct(_) => unreachable!("validated staged batch"),
+                PinnedNetworkTxFrame::Direct(_) | PinnedNetworkTxFrame::Owned(_) => {
+                    unreachable!("validated staged batch")
+                }
             };
             request.pairs[next] = TxMaterializationPair {
                 source,
@@ -3807,6 +3813,9 @@ impl<
     > {
         match frame {
             PinnedNetworkTxFrame::Direct(frame) => Ok(frame),
+            PinnedNetworkTxFrame::Owned(frame) => self
+                .try_promote_owned(frame)
+                .map_err(PinnedNetworkTxFrame::Owned),
             #[cfg(feature = "tx-staging-copy-probe")]
             PinnedNetworkTxFrame::Staged(frame) => {
                 #[cfg(feature = "tx-phase-telemetry")]
@@ -3863,30 +3872,31 @@ impl<
     /// Promote one bounded packet burst without partial ownership movement.
     ///
     /// Every occupied entry must belong to this interface. The method first
-    /// reserves all physical DMA credits required by staged entries. If that
+    /// reserves all physical DMA credits required by non-direct entries. If that
     /// reservation cannot be completed, it returns `false`, restores every
     /// reserved credit and leaves `frames` byte-for-byte and owner-for-owner
     /// unchanged. On success every occupied entry is direct DMA backing.
-    /// Staged producer credits are returned together and their waiter is
-    /// woken once for the complete burst rather than once per packet.
-    #[cfg(feature = "tx-staging-copy-probe")]
+    /// General owned packets return to their originating pools after their
+    /// copy completes. Legacy staged producer credits are returned together
+    /// and their waiter is woken once for the complete burst rather than once
+    /// per packet.
     pub fn try_promote_batch<const BATCH: usize>(
         &self,
         frames: &mut [Option<
             PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >; BATCH],
     ) -> bool {
-        let staged_count = frames
+        let promotion_count = frames
             .iter()
             .flatten()
-            .filter(|frame| matches!(frame, PinnedNetworkTxFrame::Staged(_)))
+            .filter(|frame| !matches!(frame, PinnedNetworkTxFrame::Direct(_)))
             .count();
-        if staged_count == 0 {
+        if promotion_count == 0 {
             return true;
         }
 
         let mut reserved = [None; BATCH];
-        for slot in reserved.iter_mut().take(staged_count) {
+        for slot in reserved.iter_mut().take(promotion_count) {
             let Ok(index) = self.physical.free_tx_claim.try_receive() else {
                 for index in reserved.iter_mut().filter_map(Option::take) {
                     if let Err(TrySendError::Full(_)) = self.physical.free_tx.try_send(index) {
@@ -3917,13 +3927,10 @@ impl<
                 continue;
             }
 
-            let source = match slot.take().expect("checked occupied batch entry") {
-                PinnedNetworkTxFrame::Staged(source) => source,
-                PinnedNetworkTxFrame::Direct(_) => unreachable!("direct entry was skipped"),
-            };
+            let source = slot.take().expect("checked occupied batch entry");
             let index = reserved[next_reserved]
                 .take()
-                .expect("one destination credit was reserved per staged source");
+                .expect("one destination credit was reserved per non-direct source");
             next_reserved += 1;
 
             #[cfg(feature = "tx-phase-telemetry")]
@@ -3949,22 +3956,28 @@ impl<
             });
             #[cfg(feature = "tx-phase-telemetry")]
             let published = TxPerformanceSample::read();
-            let source_index = source.release_index();
-            if let Err(TrySendError::Full(_)) = self.physical.free_staged.try_send(source_index) {
-                unreachable!("batch promotion returns every unique staged TX credit");
-            }
-            // Preserve producer/copy overlap without returning to one wake
-            // per frame. The first returned index changes the staged pool
-            // from empty to ready and lets Core1 refill software backlog
-            // while Core0 copies the rest of this burst. If Core1 drains the
-            // pool concurrently, a later return creates a new real edge and
-            // legitimately wakes it again.
-            if self.physical.free_staged.len() == 1 {
-                self.physical.tx_credit_wakers.wake_waiter_after(
-                    self.interface,
-                    self.physical.tx_active,
-                    self.physical.tx_credit_waiters,
-                );
+            match source {
+                PinnedNetworkTxFrame::Owned(source) => drop(source),
+                #[cfg(feature = "tx-staging-copy-probe")]
+                PinnedNetworkTxFrame::Staged(source) => {
+                    let source_index = source.release_index();
+                    if let Err(TrySendError::Full(_)) =
+                        self.physical.free_staged.try_send(source_index)
+                    {
+                        unreachable!("batch promotion returns every unique staged TX credit");
+                    }
+                    // Preserve producer/copy overlap without returning to one
+                    // wake per frame. If Core1 drains the pool concurrently,
+                    // a later return creates a new real edge.
+                    if self.physical.free_staged.len() == 1 {
+                        self.physical.tx_credit_wakers.wake_waiter_after(
+                            self.interface,
+                            self.physical.tx_active,
+                            self.physical.tx_credit_waiters,
+                        );
+                    }
+                }
+                PinnedNetworkTxFrame::Direct(_) => unreachable!("direct entry was skipped"),
             }
             #[cfg(feature = "tx-phase-telemetry")]
             let source_released = TxPerformanceSample::read();
@@ -3985,20 +3998,6 @@ impl<
         }
         debug_assert!(reserved.iter().all(Option::is_none));
         true
-    }
-
-    /// Direct-only builds already satisfy the batch postcondition without an
-    /// ownership transition.
-    #[cfg(not(feature = "tx-staging-copy-probe"))]
-    pub fn try_promote_batch<const BATCH: usize>(
-        &self,
-        frames: &mut [Option<
-            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        >; BATCH],
-    ) -> bool {
-        frames.iter().flatten().all(|frame| {
-            *frame.tag() == self.interface && matches!(frame, PinnedNetworkTxFrame::Direct(_))
-        })
     }
 }
 

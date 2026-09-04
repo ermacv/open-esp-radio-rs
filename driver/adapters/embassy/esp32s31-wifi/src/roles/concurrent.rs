@@ -171,6 +171,7 @@ where
             TRAILER,
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
+            RxPublisher = PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
         >,
     Services: DatapathServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {

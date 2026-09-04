@@ -369,6 +369,7 @@ impl<
         TRAILER,
         RX_QUEUE_DEPTH,
         TX_QUEUE_DEPTH,
+        N::RxPublisher,
     >
 where
     N: DatapathNetwork<

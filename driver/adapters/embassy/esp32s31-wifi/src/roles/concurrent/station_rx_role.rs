@@ -92,7 +92,11 @@ impl<'storage, O, Q> Esp32s31StaApStationRxSink<'storage, O, Q> {
         {
             match network.try_send_parts(record.frame) {
                 Ok(()) => self.offset = record.next_offset,
-                Err(RxEnqueueError::QueueFull) => {
+                Err(
+                    RxEnqueueError::QueueFull
+                    | RxEnqueueError::PoolExhausted
+                    | RxEnqueueError::LinkDown,
+                ) => {
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
                 Err(RxEnqueueError::InvalidLength(error)) => {

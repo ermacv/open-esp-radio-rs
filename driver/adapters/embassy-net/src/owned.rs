@@ -10,24 +10,13 @@ use core::task::{Context, Poll, Waker};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
+use embassy_sync::once_lock::OnceLock;
+use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::GenericAtomicWaker;
 use owned_embassy_net_driver::{Capabilities, Driver, HardwareAddress, LinkState};
-use xarxa_driver::{PacketBuf, PacketBufAllocator};
+use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPoolWaiter};
 
-use crate::{ETHERNET_HEADER_LEN, FrameLengthError, NetworkInterfaceId};
-
-/// Why a received Ethernet frame was not admitted to the owned network queue.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OwnedRxEnqueueError {
-    /// The supplied bytes do not contain one valid-sized Ethernet frame.
-    InvalidLength(FrameLengthError),
-    /// The dedicated RX packet pool has no free owner.
-    PoolExhausted,
-    /// The bounded network RX queue is full.
-    QueueFull,
-    /// This logical interface is not active.
-    LinkDown,
-}
+use crate::{ETHERNET_HEADER_LEN, FrameLengthError, NetworkInterfaceId, RxEnqueueError};
 
 #[derive(Clone, Copy)]
 struct LinkSnapshot {
@@ -44,6 +33,7 @@ struct LinkSnapshot {
 struct OwnedLinkState<M: RawMutex> {
     state: AtomicU32,
     network_waker: GenericAtomicWaker<M>,
+    radio_waker: GenericAtomicWaker<M>,
 }
 
 impl<M: RawMutex> OwnedLinkState<M> {
@@ -51,6 +41,7 @@ impl<M: RawMutex> OwnedLinkState<M> {
         Self {
             state: AtomicU32::new(0),
             network_waker: GenericAtomicWaker::new(M::INIT),
+            radio_waker: GenericAtomicWaker::new(M::INIT),
         }
     }
 
@@ -81,6 +72,7 @@ impl<M: RawMutex> OwnedLinkState<M> {
             ) {
                 Ok(_) => {
                     self.network_waker.wake();
+                    self.radio_waker.wake();
                     return;
                 }
                 Err(observed) => current = observed,
@@ -90,6 +82,10 @@ impl<M: RawMutex> OwnedLinkState<M> {
 
     fn register_network_waker(&self, waker: &Waker) {
         self.network_waker.register(waker);
+    }
+
+    fn register_radio_waker(&self, waker: &Waker) {
+        self.radio_waker.register(waker);
     }
 
     fn wake_network(&self) {
@@ -114,6 +110,8 @@ pub struct OwnedEndpointResources<
 > {
     rx: Channel<M, QueuedPacket, RX_QUEUE_DEPTH>,
     tx: Channel<M, QueuedPacket, TX_QUEUE_DEPTH>,
+    tx_published: Signal<M, ()>,
+    rx_waiter: OnceLock<PacketPoolWaiter>,
     link: OwnedLinkState<M>,
     split: AtomicBool,
 }
@@ -126,6 +124,8 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
         Self {
             rx: Channel::new(),
             tx: Channel::new(),
+            tx_published: Signal::new(),
+            rx_waiter: OnceLock::new(),
             link: OwnedLinkState::new(),
             split: AtomicBool::new(false),
         }
@@ -152,19 +152,33 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
             "owned endpoint resources may only be split once"
         );
         let resources: &Self = self;
+        let rx_waiter = rx_allocator
+            .try_claim_waiter()
+            .expect("an owned RX pool may have only one asynchronous radio waiter");
+        resources
+            .rx_waiter
+            .init(rx_waiter)
+            .unwrap_or_else(|_| unreachable!("owned endpoint initializes its RX waiter once"));
+        let rx_waiter = resources
+            .rx_waiter
+            .try_get()
+            .expect("owned RX waiter was initialized");
         (
             OwnedNetworkDevice {
                 hardware_address,
                 rx: resources.rx.receiver(),
                 tx: resources.tx.sender(),
+                tx_published: &resources.tx_published,
                 link: &resources.link,
             },
             OwnedNetworkRunner {
                 interface,
                 rx: resources.rx.sender(),
                 tx: resources.tx.receiver(),
+                tx_published: &resources.tx_published,
                 link: &resources.link,
                 rx_allocator,
+                rx_waiter,
             },
         )
     }
@@ -188,6 +202,7 @@ pub struct OwnedNetworkDevice<
     hardware_address: [u8; 6],
     rx: Receiver<'resources, M, QueuedPacket, RX_QUEUE_DEPTH>,
     tx: Sender<'resources, M, QueuedPacket, TX_QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
     link: &'resources OwnedLinkState<M>,
 }
 
@@ -240,7 +255,10 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
             epoch: snapshot.epoch,
             packet,
         }) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.tx_published.signal(());
+                Ok(())
+            }
             Err(TrySendError::Full(queued)) => Err(queued.packet),
         }
     }
@@ -297,6 +315,7 @@ pub struct OwnedRxPublisher<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize
     rx: Sender<'resources, M, QueuedPacket, RX_QUEUE_DEPTH>,
     link: &'resources OwnedLinkState<M>,
     rx_allocator: PacketBufAllocator,
+    rx_waiter: &'resources PacketPoolWaiter,
 }
 
 impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> OwnedRxPublisher<'_, M, RX_QUEUE_DEPTH> {
@@ -307,24 +326,35 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> OwnedRxPublisher<'_, M, RX_QUEUE_
 
     /// Poll until one bounded RX queue entry can be published.
     pub fn poll_ready(&self, context: &mut Context<'_>) -> Poll<()> {
-        self.rx.poll_ready_to_send(context)
+        self.link.register_radio_waker(context.waker());
+        if !self.link.snapshot().up {
+            return Poll::Pending;
+        }
+        if self.rx.poll_ready_to_send(context).is_pending() {
+            return Poll::Pending;
+        }
+        if self.rx_allocator.has_available() {
+            return Poll::Ready(());
+        }
+        self.rx_waiter.register(context.waker());
+        if self.rx_allocator.has_available() {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
     }
 
     /// Copy one received Ethernet frame into its final Xarxa owner.
-    pub fn try_send(&self, frame: &[u8]) -> Result<(), OwnedRxEnqueueError> {
+    pub fn try_send(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
         if frame.len() < ETHERNET_HEADER_LEN {
-            return Err(OwnedRxEnqueueError::InvalidLength(
-                FrameLengthError::TooShort,
-            ));
+            return Err(RxEnqueueError::InvalidLength(FrameLengthError::TooShort));
         }
         let mut packet = self
             .rx_allocator
             .try_alloc()
-            .ok_or(OwnedRxEnqueueError::PoolExhausted)?;
+            .ok_or(RxEnqueueError::PoolExhausted)?;
         if frame.len() > packet.capacity() {
-            return Err(OwnedRxEnqueueError::InvalidLength(
-                FrameLengthError::TooLong,
-            ));
+            return Err(RxEnqueueError::InvalidLength(FrameLengthError::TooLong));
         }
         packet.set_len(frame.len());
         packet.copy_from_slice(frame);
@@ -338,18 +368,16 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> OwnedRxPublisher<'_, M, RX_QUEUE_
         source: [u8; 6],
         ether_type: u16,
         payload: &[u8],
-    ) -> Result<(), OwnedRxEnqueueError> {
-        let frame_len = ETHERNET_HEADER_LEN.checked_add(payload.len()).ok_or(
-            OwnedRxEnqueueError::InvalidLength(FrameLengthError::TooLong),
-        )?;
+    ) -> Result<(), RxEnqueueError> {
+        let frame_len = ETHERNET_HEADER_LEN
+            .checked_add(payload.len())
+            .ok_or(RxEnqueueError::InvalidLength(FrameLengthError::TooLong))?;
         let mut packet = self
             .rx_allocator
             .try_alloc()
-            .ok_or(OwnedRxEnqueueError::PoolExhausted)?;
+            .ok_or(RxEnqueueError::PoolExhausted)?;
         if frame_len > packet.capacity() {
-            return Err(OwnedRxEnqueueError::InvalidLength(
-                FrameLengthError::TooLong,
-            ));
+            return Err(RxEnqueueError::InvalidLength(FrameLengthError::TooLong));
         }
         packet.set_len(frame_len);
         packet[..6].copy_from_slice(&destination);
@@ -360,15 +388,13 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> OwnedRxPublisher<'_, M, RX_QUEUE_
     }
 
     /// Publish an already-owned RX packet without copying it again.
-    pub fn try_publish(&self, packet: PacketBuf) -> Result<(), OwnedRxEnqueueError> {
+    pub fn try_publish(&self, packet: PacketBuf) -> Result<(), RxEnqueueError> {
         if packet.len() < ETHERNET_HEADER_LEN {
-            return Err(OwnedRxEnqueueError::InvalidLength(
-                FrameLengthError::TooShort,
-            ));
+            return Err(RxEnqueueError::InvalidLength(FrameLengthError::TooShort));
         }
         let snapshot = self.link.snapshot();
         if !snapshot.up {
-            return Err(OwnedRxEnqueueError::LinkDown);
+            return Err(RxEnqueueError::LinkDown);
         }
         match self.rx.try_send(QueuedPacket {
             epoch: snapshot.epoch,
@@ -378,7 +404,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> OwnedRxPublisher<'_, M, RX_QUEUE_
                 self.link.wake_network();
                 Ok(())
             }
-            Err(TrySendError::Full(_)) => Err(OwnedRxEnqueueError::QueueFull),
+            Err(TrySendError::Full(_)) => Err(RxEnqueueError::QueueFull),
         }
     }
 }
@@ -387,6 +413,10 @@ impl OwnedNetworkTxFrame {
     /// Logical VIF which accepted this owner.
     pub const fn interface(&self) -> NetworkInterfaceId {
         self.interface
+    }
+
+    pub(crate) const fn tag(&self) -> &NetworkInterfaceId {
+        &self.interface
     }
 
     /// Complete Ethernet-II bytes.
@@ -401,12 +431,25 @@ impl OwnedNetworkTxFrame {
 }
 
 /// Link-state capability which can coexist with packet publication handles.
-#[derive(Clone, Copy)]
 pub struct OwnedLinkController<'resources, M: RawMutex> {
+    interface: NetworkInterfaceId,
     link: &'resources OwnedLinkState<M>,
 }
 
+impl<M: RawMutex> Clone for OwnedLinkController<'_, M> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex> Copy for OwnedLinkController<'_, M> {}
+
 impl<M: RawMutex> OwnedLinkController<'_, M> {
+    /// Permanent logical interface controlled by this capability.
+    pub const fn interface(&self) -> NetworkInterfaceId {
+        self.interface
+    }
+
     /// Publish the role's link level. A Down -> Up edge creates a new epoch.
     pub fn set_link_up(&self, up: bool) {
         self.link.set(up);
@@ -423,24 +466,35 @@ pub struct OwnedNetworkRunner<
     interface: NetworkInterfaceId,
     rx: Sender<'resources, M, QueuedPacket, RX_QUEUE_DEPTH>,
     tx: Receiver<'resources, M, QueuedPacket, TX_QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
     link: &'resources OwnedLinkState<M>,
     rx_allocator: PacketBufAllocator,
+    rx_waiter: &'resources PacketPoolWaiter,
 }
 
-impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
-    OwnedNetworkRunner<'_, M, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
+    OwnedNetworkRunner<'resources, M, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     /// A copyable link-only capability for role lifecycle code.
-    pub const fn link_controller(&self) -> OwnedLinkController<'_, M> {
-        OwnedLinkController { link: self.link }
+    pub const fn link_controller(&self) -> OwnedLinkController<'resources, M> {
+        OwnedLinkController {
+            interface: self.interface,
+            link: self.link,
+        }
+    }
+
+    /// Permanent logical interface represented by this endpoint.
+    pub const fn interface(&self) -> NetworkInterfaceId {
+        self.interface
     }
 
     /// RX-only publication capability for the physical datapath.
-    pub const fn rx_publisher(&self) -> OwnedRxPublisher<'_, M, RX_QUEUE_DEPTH> {
+    pub const fn rx_publisher(&self) -> OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH> {
         OwnedRxPublisher {
             rx: self.rx,
             link: self.link,
             rx_allocator: self.rx_allocator,
+            rx_waiter: self.rx_waiter,
         }
     }
 
@@ -450,12 +504,12 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
     }
 
     /// Copy one received Ethernet frame directly into its final Xarxa owner.
-    pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), OwnedRxEnqueueError> {
+    pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
         self.rx_publisher().try_send(frame)
     }
 
     /// Publish an already-owned RX packet without copying it again.
-    pub fn try_publish_rx(&self, packet: PacketBuf) -> Result<(), OwnedRxEnqueueError> {
+    pub fn try_publish_rx(&self, packet: PacketBuf) -> Result<(), RxEnqueueError> {
         self.rx_publisher().try_publish(packet)
     }
 
@@ -496,7 +550,19 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
     /// the radio scheduler after it claims the owner.
     pub async fn wait_tx_publication(&self) {
         if self.tx.is_empty() {
-            self.tx.ready_to_receive().await;
+            self.tx_published.wait().await;
+        }
+    }
+
+    /// Wait until the submission frontier reaches `minimum` packets.
+    ///
+    /// This observes publication events rather than repeatedly polling a
+    /// nonempty channel, so a burst collector cannot spin while waiting for
+    /// another frame. Callers must still apply their own sparse-traffic
+    /// deadline; this method does not require a BA-sized burst.
+    pub async fn wait_tx_queue_len_at_least(&self, minimum: usize) {
+        while self.tx.len() < minimum {
+            self.tx_published.wait().await;
         }
     }
 }
@@ -504,12 +570,28 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{PinnedTxPool, PinnedTxResources};
+    use crate::{PinnedNetworkTxFrame, PinnedTxPool, PinnedTxResources};
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use xarxa_driver::{PacketPool, PacketPoolStorage};
 
     extern crate std;
     use self::std::boxed::Box;
+    use self::std::sync::Arc;
+    use self::std::sync::atomic::{AtomicUsize, Ordering as StdOrdering};
+    use self::std::task::Wake;
+
+    #[derive(Default)]
+    struct WakeCount(AtomicUsize);
+
+    impl Wake for WakeCount {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, StdOrdering::Relaxed);
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.fetch_add(1, StdOrdering::Relaxed);
+        }
+    }
 
     fn allocator<const N: usize>() -> PacketBufAllocator {
         let storage = Box::leak(Box::new(PacketPoolStorage::<N>::new()));
@@ -564,6 +646,29 @@ mod tests {
     }
 
     #[test]
+    fn rx_readiness_waits_for_both_link_and_pool_capacity() {
+        let rx = allocator::<1>();
+        let held = rx.try_alloc().unwrap();
+        let resources = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 1>::new()));
+        let (_device, radio) = resources.split(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1], rx);
+        let link = radio.link_controller();
+        let publisher = radio.rx_publisher();
+        let wake_count = Arc::new(WakeCount::default());
+        let waker = Waker::from(wake_count.clone());
+        let mut context = Context::from_waker(&waker);
+
+        assert_eq!(publisher.poll_ready(&mut context), Poll::Pending);
+        link.set_link_up(true);
+        let after_link = wake_count.0.load(StdOrdering::Relaxed);
+        assert_ne!(after_link, 0);
+        assert_eq!(publisher.poll_ready(&mut context), Poll::Pending);
+
+        drop(held);
+        assert!(wake_count.0.load(StdOrdering::Relaxed) > after_link);
+        assert_eq!(publisher.poll_ready(&mut context), Poll::Ready(()));
+    }
+
+    #[test]
     fn selected_owner_promotes_once_and_no_credit_returns_it_unchanged() {
         const PHYSICAL_CAPACITY: usize = 64;
         const HEADROOM: usize = 16;
@@ -614,6 +719,47 @@ mod tests {
         };
         assert_eq!(second.as_slice(), &[0x32; ETHERNET_HEADER_LEN]);
         assert!(general.try_alloc().is_some());
+    }
+
+    #[test]
+    fn owned_burst_promotion_does_not_move_a_partial_prefix() {
+        const PHYSICAL_CAPACITY: usize = 64;
+        const HEADROOM: usize = 16;
+        const TRAILER: usize = 8;
+        type PhysicalPool = PinnedTxPool<PHYSICAL_CAPACITY, HEADROOM, TRAILER, 1>;
+        type PhysicalResources =
+            PinnedTxResources<NoopRawMutex, PHYSICAL_CAPACITY, HEADROOM, TRAILER, 1>;
+
+        let general = allocator::<2>();
+        let rx = allocator::<1>();
+        let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+        let (mut device, radio) =
+            endpoint.split(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1], rx);
+        radio.link_controller().set_link_up(true);
+        device.transmit(frame(general, 0x41)).unwrap();
+        device.transmit(frame(general, 0x42)).unwrap();
+
+        let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
+        let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
+        let (_network_provider, physical) = physical_resources.split(physical_pool);
+        let physical = physical.for_interface(NetworkInterfaceId::new(0));
+        let mut burst = [
+            Some(PinnedNetworkTxFrame::Owned(radio.try_receive_tx().unwrap())),
+            Some(PinnedNetworkTxFrame::Owned(radio.try_receive_tx().unwrap())),
+        ];
+
+        assert!(!physical.try_promote_batch(&mut burst));
+        assert!(matches!(burst[0], Some(PinnedNetworkTxFrame::Owned(_))));
+        assert!(matches!(burst[1], Some(PinnedNetworkTxFrame::Owned(_))));
+        assert_eq!(
+            burst[0].as_ref().unwrap().as_slice(),
+            &[0x41; ETHERNET_HEADER_LEN]
+        );
+        assert_eq!(
+            burst[1].as_ref().unwrap().as_slice(),
+            &[0x42; ETHERNET_HEADER_LEN]
+        );
+        assert!(general.try_alloc().is_none());
     }
 
     #[test]

@@ -19,7 +19,7 @@ publish = false
 [workspace.dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "unstable"] }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/runtime/embassy/esp32s31/ieee80211" }
 open-esp-radio-esp32s31-radio-platform-esp-hal = { path = "../../../../../driver/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 open-esp-radio-dma = { path = "../../../../../driver/memory" }
@@ -45,7 +45,7 @@ strip = false
 # This workspace is intentionally excluded from the root workspace, so Cargo
 # does not inherit the root patch table automatically.
 [patch."https://github.com/esp-rs/esp-pacs"]
-esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "5b8b56036abd5f4646505b15988cc9da51cec826" }
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc26128b929b044d76f09cf2d1d2f6" }
 
 [patch."https://github.com/ermacv/embassy.git"]
 embassy-futures = { version = "0.1.2", registry = "crates-io" }

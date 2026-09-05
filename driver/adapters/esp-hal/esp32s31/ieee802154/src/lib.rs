@@ -1,9 +1,8 @@
 //! ESP-HAL CPU-route ownership for the ESP32-S31 IEEE 802.15.4 MAC IRQ.
 //!
-//! ESP32-S31's PAC does not yet name modem source 132, so this adapter uses the
-//! pinned ESP-HAL raw-source hook. It keeps the source number, priority, bound
-//! core, and process-wide route claim behind one affine owner. This adapter
-//! retains the unique PAC interrupt-register owner in stable ISR storage;
+//! The typed PAC interrupt identifies the IEEE 802.15.4 MAC route. This adapter
+//! keeps its priority, bound core, and process-wide claim behind one affine
+//! owner. It retains the unique PAC interrupt-register owner in stable ISR storage;
 //! the chip IRQ layer handles its status semantics, and Embassy receives
 //! acknowledged event tokens without PAC handles.
 
@@ -17,23 +16,21 @@ use core::cell::{Cell, RefCell};
 use critical_section::Mutex;
 use esp_hal::{
     interrupt::{self, InterruptHandler, Priority},
+    peripherals::Interrupt,
     system::Cpu,
     time::Instant,
 };
 use open_esp_radio_esp32s31_ieee802154_irq::{
-    IEEE802154_MAC_INTERRUPT_SOURCE, Ieee802154AcknowledgedInterruptSink,
-    Ieee802154InterruptDisposition, handle_ieee802154_interrupt,
+    Ieee802154AcknowledgedInterruptSink, Ieee802154InterruptDisposition,
+    handle_ieee802154_interrupt,
 };
 use open_esp_radio_esp32s31_ieee802154_runtime::Ieee802154MonotonicMicrosecondClock;
 use open_esp_radio_esp32s31_pac::{
     Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters,
 };
 
-const SOURCE: u16 = IEEE802154_MAC_INTERRUPT_SOURCE.number();
+const SOURCE: Interrupt = Interrupt::IEEE802154;
 const ROUTE_PRIORITY: Priority = Priority::Priority1;
-
-const _: () = assert!(SOURCE == 132);
-const _: () = assert!(ROUTE_PRIORITY as u8 == 1);
 
 /// Bind the ACK watchdog to ESP-HAL's one-microsecond monotonic clock.
 ///
@@ -122,7 +119,7 @@ pub fn activate(
         *INTERRUPT_REGISTERS.borrow_ref_mut(critical_section) = Some(registers);
     });
     let core = Cpu::current();
-    interrupt::bind_raw_handler(SOURCE, handler.handler().callback(), ROUTE_PRIORITY);
+    interrupt::bind_handler(SOURCE, handler);
     Ok(BoundEspHalIeee802154InterruptRoute { core })
 }
 
@@ -160,7 +157,7 @@ impl BoundEspHalIeee802154InterruptRoute {
             return Err((EspHalIeee802154InterruptRouteError::WrongCore, self));
         }
 
-        interrupt::disable_raw(self.core, SOURCE);
+        interrupt::disable(self.core, SOURCE);
         let registers = critical_section::with(|critical_section| {
             INTERRUPT_REGISTERS.borrow_ref_mut(critical_section).take()
         })

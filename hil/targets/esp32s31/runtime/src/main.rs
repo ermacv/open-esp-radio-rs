@@ -37,11 +37,9 @@ use embassy_executor::SendSpawner;
 #[cfg(feature = "boot-smoke")]
 use embassy_time::{Duration, Timer};
 #[cfg(feature = "open-radio-hil")]
-use esp_hal::interrupt::software::SoftwareInterrupt;
-#[cfg(feature = "open-radio-hil")]
 use esp_hal::system::{CpuControl, Stack};
 use esp_hal::{
-    interrupt::software::SoftwareInterruptControl,
+    interrupt::software::SoftwareInterrupt,
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
@@ -51,6 +49,7 @@ use static_cell::StaticCell;
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
 mod console;
+mod exception;
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
 #[cfg(feature = "open-radio-hil")]
@@ -138,6 +137,10 @@ static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_m
 static APP_STACK_PAINT_END: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "open-radio-hil")]
 #[unsafe(link_section = ".critical.bss.open_radio_app_core_bootstrap_stack")]
+#[cfg_attr(
+    not(feature = "psram-task-stack"),
+    unsafe(export_name = "__open_radio_cpu1_task_stack")
+)]
 static mut APP_CORE_STACK: Stack<APP_CORE_BOOTSTRAP_STACK_BYTES> = Stack::new();
 static mut INITIALIZED_DATA: u32 = DATA_SENTINEL;
 static mut BSS_PROBE: u32 = 0;
@@ -370,6 +373,7 @@ extern "C" fn runtime_main() -> ! {
     // hardware mapping without reinitializing the PSRAM device or MMU.
     let _psram =
         unsafe { open_esp_radio_hil_esp32s31_board::adopt_initialized_psram(peripherals.PSRAM) };
+    exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(feature = "open-radio-hil")]
     let l1_cache = L1_CACHE_PERFORMANCE.init(
         open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters::new(peripherals.CACHE),
@@ -380,14 +384,13 @@ extern "C" fn runtime_main() -> ! {
         psram_task_stack::install_current_hart_interrupt_stack();
     }
 
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
 
     #[cfg(feature = "open-radio-hil")]
     let app_spawner = {
         let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
-        let app_interrupt = software_interrupts.software_interrupt1;
+        let app_interrupt = SoftwareInterrupt::new(peripherals.FROM_CPU_INTR1);
         let guard = cpu_control
             .start_app_core(
                 unsafe { &mut *ptr::addr_of_mut!(APP_CORE_STACK) },
@@ -419,7 +422,9 @@ extern "C" fn runtime_main() -> ! {
         }
     };
 
-    let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
+    let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
+        peripherals.FROM_CPU_INTR0,
+    )));
 
     // Bootstrap intentionally hands MIE over clear. Timer and software wake
     // interrupt ownership is complete at this point.
@@ -510,7 +515,8 @@ fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
 extern "C" fn runtime_cpu1_psram_main() -> ! {
     // The original singleton was consumed and forgotten by the bootstrap
     // closure immediately before the non-returning stack switch.
-    let app_interrupt = unsafe { SoftwareInterrupt::<1>::steal() };
+    let app_interrupt =
+        SoftwareInterrupt::new(unsafe { esp_hal::peripherals::FROM_CPU_INTR1::steal() });
     run_app_core(app_interrupt)
 }
 
@@ -658,6 +664,7 @@ fn paint_app_core_stack() {
         address += 4;
     }
     APP_STACK_PAINT_END.store(paint_end, Ordering::Release);
+    exception::install_stack_guard(bottom as usize);
 }
 
 #[cfg(feature = "open-radio-hil")]

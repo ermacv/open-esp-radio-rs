@@ -17,7 +17,7 @@ use embassy_time::{Duration, Timer, with_timeout};
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
-    interrupt::software::SoftwareInterruptControl,
+    interrupt::software::SoftwareInterrupt,
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio_esp32s31_bluetooth::{
@@ -72,7 +72,6 @@ fn main() -> ! {
     esp_println::logger::init_logger_from_env();
     esp_println::println!("open-radio: application entered");
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
     let platform = RADIO_PLATFORM.init(EspHalRadioPlatform::new(
@@ -87,7 +86,9 @@ fn main() -> ! {
     ));
     let hardware =
         BluetoothRadioHardware::take().expect("Bluetooth radio must have a unique owner");
-    let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
+    let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
+        peripherals.FROM_CPU_INTR0,
+    )));
     esp_println::println!("open-radio: executor starting");
     executor.run(|spawner| {
         spawner.spawn(

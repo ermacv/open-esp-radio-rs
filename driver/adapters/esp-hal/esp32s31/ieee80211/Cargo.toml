@@ -20,7 +20,7 @@ esp32s31 = [
 ]
 
 [dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "unstable"], optional = true }
 open-esp-radio-esp32s31-coex = { path = "../../../../chips/esp32s31/coex", optional = true }
 open-esp-radio-esp32s31-hal = { path = "../../../../chips/esp32s31/hal", optional = true }
 open-esp-radio-esp32s31-phy = { path = "../../../../chips/esp32s31/phy", optional = true }

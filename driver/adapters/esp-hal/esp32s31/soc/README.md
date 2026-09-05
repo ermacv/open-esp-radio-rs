@@ -7,7 +7,8 @@ ownership remains in `driver/chips/esp32s31/pac`.
 
 The private source modules follow the resources and operations they own:
 
-- `cache/maintenance.rs`: PSRAM writeback before a DMA reader observes memory.
+- `cache/maintenance.rs`: validates the borrowed PSRAM range and delegates
+  writeback to HAL before a DMA reader observes memory.
 - `cache/performance.rs`: cache counter snapshots and the retained CACHE witness.
 - `flash/mmu.rs`: flash MMU operations with the retained SPI0 witness.
 - `dma/mem2mem/descriptor.rs`: descriptor images, burst sizing, chain construction,
@@ -28,8 +29,12 @@ payload and descriptor borrows until completion or cleanup.
 `psram-dma-diagnostic` additionally enables the existing blocking comparison
 path. The descriptor sizing tests run on the host without those features.
 
-CACHE maintenance and performance counters retain their existing distinct
-contracts: writeback takes the affected mutable memory range, while performance
+HAL owns the cache sync engine and serializes writeback with its DMA and
+executable-PSRAM cache operations. The adapter does not maintain a second
+register sequence or lock for that engine.
+
+CACHE maintenance and performance counters have distinct contracts:
+writeback takes the affected mutable memory range, while performance
 counters retain the CACHE witness. There is no shared CACHE lease or
 coordinator between those APIs; the adapter does not establish that simultaneous use is safe.
 

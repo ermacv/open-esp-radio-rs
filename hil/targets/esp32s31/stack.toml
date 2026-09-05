@@ -1,6 +1,7 @@
 schema = 3
 
-# CPU0 thread mode and its hardware ISRs share this downward-growing stack.
+# Primary thread stack bounds. Dedicated SRAM interrupt stacks have separate
+# placement checks.
 stack_start_symbol = "_stack_start"
 stack_end_symbol = "_stack_end"
 
@@ -8,12 +9,10 @@ stack_end_symbol = "_stack_end"
 # machines above this line are reported for review, not silently accepted.
 warn_frame_bytes = 8192
 
-# Rust may transiently materialize a large async future before it reaches its
-# Embassy task arena. 50 KiB bounds the expanded concurrent owner transaction
-# plus the owned network endpoints while still rejecting the former
-# 52,864-byte owner-future move before flashing. Runtime painting independently
-# enforces aggregate call-chain headroom on the 192-KiB PSRAM task stack, and
-# the separate 4-KiB move limit rejects hidden by-value owner copies.
+# CPU0 may transiently materialize a large async owner transaction. Functions
+# assigned a smaller execution stack also obey that linked stack's capacity
+# minus its call-chain reserve. Runtime painting checks aggregate headroom;
+# the separate move limit rejects hidden by-value owner copies.
 max_frame_bytes = 51200
 
 # Reject implicit copies/moves large enough to hide owner graphs or buffers in
@@ -83,8 +82,9 @@ reason = "one-time ownership split constructs the two logical network devices an
 [[reviewed_frames]]
 function_contains = "::product_hil::start_network_endpoint"
 source_ends_with = ["hil/targets/esp32s31/runtime/src/product_hil.rs", "runtime/src/product_hil.rs"]
-max_bytes = 18432
-reason = "one-time HIL endpoint composition initializes the Xarxa stack directly in static resources and transfers its affine runner into a static Embassy task arena; no packet payload storage is local and runtime painting independently bounds the CPU stack call chain"
+max_bytes = 12288
+execution_stack = { storage_symbol = "__open_radio_cpu1_task_stack", minimum_free_bytes = 4096 }
+reason = "network endpoint construction runs on CPU1; its frame must leave room for the executor and nested constructors within the linked CPU1 stack"
 
 [[reviewed_frames]]
 function_contains = "ProductionWifiEpochRunner as"

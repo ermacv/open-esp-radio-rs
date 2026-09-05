@@ -95,7 +95,7 @@ fn main() -> ! {
         Err(_) => fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=flash-init\r\n"),
     };
 
-    let psram = board::initialize_psram(peripherals.PSRAM, true);
+    let psram = board::initialize_psram(peripherals.PSRAM);
     let (psram_base, psram_size) = psram.raw_parts();
     if psram_base as usize != 0x5000_0000 || !board::has_expected_psram_capacity(&psram) {
         fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=psram-init\r\n");

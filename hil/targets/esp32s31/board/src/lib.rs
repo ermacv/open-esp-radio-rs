@@ -7,7 +7,7 @@
 
 use esp_hal::{
     peripherals::PSRAM,
-    psram::{Psram, PsramConfig, PsramSize, PsramTiming},
+    psram::{Psram, PsramConfig, PsramSize, PsramTimingParams},
 };
 
 pub const BOARD_NAME: &str = "ESP32-S31-Function-CoreBoard-1";
@@ -20,16 +20,15 @@ pub const FLASH_SIZE_BYTES: usize = 16 * 1024 * 1024;
 pub const FLASH_MMU_PAGE_SIZE_BYTES: u32 = 64 * 1024;
 pub const FLASH_DATA_LINES: u8 = 4;
 
-pub const fn psram_config(cache_already_initialized: bool) -> PsramConfig {
+pub const fn psram_config() -> PsramConfig {
     PsramConfig {
         size: PsramSize::AutoDetect,
-        cache_already_initialized,
-        timing: PsramTiming::MHZ_250,
+        timing: PsramTimingParams::MHZ_250,
     }
 }
 
-pub fn initialize_psram(peripheral: PSRAM<'static>, cache_already_initialized: bool) -> Psram {
-    Psram::new(peripheral, psram_config(cache_already_initialized))
+pub fn initialize_psram(peripheral: PSRAM<'static>) -> Psram {
+    Psram::new(peripheral, psram_config())
 }
 
 /// Adopts the board's PSRAM mapping after the HIL bootstrap transfers control

@@ -23,7 +23,7 @@ description = "Pinned public esp-radio commit 7f914782f5c689a74f37df83b89a0827d3
 
 [[sources]]
 id = "S31_ESP_PACS_SVD"
-description = "ermacv/esp-pacs commit 5b8b56036abd5f4646505b15988cc9da51cec826, pinned by Cargo.lock. esp32s31/svd/patches/_modem_syscon.yml sha256 1f19377269adfab69596d7762499a28984b975fdb9f95f791de2ceff6f82f2e0 proves the selected MODEM_SYSCON register reset values, including CLK_CONF 0x00200002; the same pinned PAC provides the exact LP_AON_CLKRST, LP_PERICLKRST and LP_TSENS register/field geometry."
+description = "Reviewed ermacv/esp-pacs source snapshot 5b8b56036abd5f4646505b15988cc9da51cec826, retained independently of the build dependency revision. esp32s31/svd/patches/_modem_syscon.yml sha256 1f19377269adfab69596d7762499a28984b975fdb9f95f791de2ceff6f82f2e0 proves the selected MODEM_SYSCON register reset values, including CLK_CONF 0x00200002; the same reviewed PAC provides the exact LP_AON_CLKRST, LP_PERICLKRST and LP_TSENS register/field geometry."
 
 [[sources]]
 id = "ROM_REV0_PHY_TSENS"

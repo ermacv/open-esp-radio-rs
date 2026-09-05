@@ -14,7 +14,7 @@ esp32s31 = ["dep:esp-hal"]
 
 [dependencies]
 critical-section = "1.2.0"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "unstable"], optional = true }
 open-esp-radio-bluetooth-hci = { path = "../../../../bluetooth/hci" }
 open-esp-radio-esp32s31-bluetooth = { path = "../../../../chips/esp32s31/bluetooth" }
 open-esp-radio-esp32s31-hal = { path = "../../../../chips/esp32s31/hal" }

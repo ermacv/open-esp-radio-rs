@@ -47,6 +47,16 @@ pub struct ReviewedStackFrame {
     pub source_ends_with: Vec<String>,
     pub max_bytes: u64,
     pub reason: String,
+    #[serde(default)]
+    pub execution_stack: Option<ExecutionStack>,
+}
+
+/// Stack storage and call-chain headroom for a function's execution context.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionStack {
+    pub storage_symbol: String,
+    pub minimum_free_bytes: u64,
 }
 
 impl StackBudget {
@@ -96,6 +106,13 @@ impl StackBudget {
             ));
         }
         for reviewed in &self.reviewed_frames {
+            if reviewed.execution_stack.as_ref().is_some_and(|stack| {
+                stack.storage_symbol.is_empty() || stack.minimum_free_bytes == 0
+            }) {
+                return Err(Error::InvalidPolicy(
+                    "execution stacks require a storage symbol and positive headroom".into(),
+                ));
+            }
             if reviewed.function_contains.is_empty() || reviewed.reason.is_empty() {
                 return Err(Error::InvalidPolicy(
                     "reviewed stack frames require a selector and reason".into(),
@@ -239,14 +256,41 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
     frames.sort_by_key(|frame| (core::cmp::Reverse(frame.size), frame.address));
     let mut violations = Vec::new();
     let mut audit = AuditReport::default();
-    for frame in frames
-        .iter()
-        .filter(|frame| frame.size > budget.warn_frame_bytes)
-    {
+    for frame in &frames {
         let reviewed = budget
             .reviewed_frames
             .iter()
             .find(|reviewed| reviewed_frame_matches(frame, reviewed));
+        if let Some(stack) = reviewed.and_then(|reviewed| reviewed.execution_stack.as_ref()) {
+            let capacity = elf
+                .symbols()
+                .find(|symbol| {
+                    symbol.is_definition()
+                        && symbol.name().ok() == Some(stack.storage_symbol.as_str())
+                })
+                .map(|symbol| symbol.size())
+                .ok_or_else(|| Error::Elf {
+                    path: elf_path.to_owned(),
+                    message: format!("missing execution stack storage `{}`", stack.storage_symbol),
+                })?;
+            let available = capacity.checked_sub(stack.minimum_free_bytes)
+                .filter(|available| *available != 0)
+                .ok_or_else(|| Error::Elf {
+                    path: elf_path.to_owned(),
+                    message: format!("execution stack `{}` has {capacity} bytes and cannot retain {} bytes of headroom", stack.storage_symbol, stack.minimum_free_bytes),
+                })?;
+            if frame.size > available {
+                violations.push(frame.clone());
+                audit.errors.push(format!(
+                    "frame {} is {} bytes, exceeding the {available}-byte execution limit of `{}` ({capacity} bytes of storage minus {} bytes of call-chain headroom)",
+                    compact_function(frame), frame.size, stack.storage_symbol, stack.minimum_free_bytes,
+                ));
+                continue;
+            }
+        }
+        if frame.size <= budget.warn_frame_bytes {
+            continue;
+        }
         let error = if frame.size > budget.max_frame_bytes {
             Some(format!(
                 "frame {} is {} bytes, exceeding the {}-byte hard budget",
@@ -525,6 +569,7 @@ mod tests {
                 source_ends_with: Vec::new(),
                 max_bytes: 32 * 1024,
                 reason: "synthetic fixture".into(),
+                execution_stack: None,
             }],
         }
     }
@@ -595,6 +640,7 @@ mod tests {
             source_ends_with: Vec::new(),
             max_bytes: 8 * 1024 + 512,
             reason: "synthetic fixture".into(),
+            execution_stack: None,
         });
         let report = analyze_stack(&path, &policy).unwrap();
         assert!(report.audit.errors[0].contains("reviewed frame"));
@@ -612,6 +658,7 @@ mod tests {
             ],
             max_bytes: 16 * 1024,
             reason: "fixture".into(),
+            execution_stack: None,
         };
         let frame = |file: &str| StackFrame {
             address: 0,
@@ -636,6 +683,47 @@ mod tests {
             &frame("./another-package-0.1.0/src/supervisor.rs"),
             &reviewed
         ));
+    }
+
+    #[test]
+    fn execution_stack_rejects_reviewed_frames_that_exceed_storage_or_headroom() {
+        let mut policy = budget();
+        policy.reviewed_frames[0].execution_stack = Some(super::ExecutionStack {
+            storage_symbol: "secondary_stack".into(),
+            minimum_free_bytes: 4 * 1024,
+        });
+        for (size, passes) in [(12 * 1024, true), (12 * 1024 + 1, false), (17_424, false)] {
+            let path = test_elf(true, size, 0x20000, 0x1000);
+            let report = analyze_stack(&path, &policy).unwrap();
+            assert_eq!(audit_stack(&report).is_ok(), passes);
+            if !passes {
+                assert!(report.audit.errors[0].contains("secondary_stack"));
+            }
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn execution_stack_is_checked_below_the_global_warning_threshold() {
+        let mut policy = budget();
+        policy.reviewed_frames[0].execution_stack = Some(super::ExecutionStack {
+            storage_symbol: "secondary_stack".into(),
+            minimum_free_bytes: 12 * 1024,
+        });
+        let path = test_elf(true, 6 * 1024, 0x20000, 0x1000);
+        assert!(audit_stack(&analyze_stack(&path, &policy).unwrap()).is_err());
+        policy.reviewed_frames[0]
+            .execution_stack
+            .as_mut()
+            .unwrap()
+            .storage_symbol = "missing_stack".into();
+        assert!(
+            analyze_stack(&path, &policy)
+                .unwrap_err()
+                .to_string()
+                .contains("missing execution stack")
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -674,6 +762,19 @@ mod tests {
                 flags: SymbolFlags::None,
             });
         }
+        let stack_section =
+            object.add_section(Vec::new(), b".bss".to_vec(), SectionKind::UninitializedData);
+        object.append_section_bss(stack_section, 16 * 1024, 16);
+        object.add_symbol(Symbol {
+            name: b"secondary_stack".to_vec(),
+            value: 0,
+            size: 16 * 1024,
+            kind: SymbolKind::Data,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(stack_section),
+            flags: SymbolFlags::None,
+        });
         if include_stack_sizes {
             let section = object.add_section(
                 Vec::new(),

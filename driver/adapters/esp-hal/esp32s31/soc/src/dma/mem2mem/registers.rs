@@ -100,14 +100,8 @@ pub(super) fn disable_channel_interrupts() {
 
 pub(super) fn enable_and_configure_group() {
     let clock = HP_SYS_CLKRST::regs().axi_pdma_ctrl0();
-    clock.modify(|_, writer| {
-        writer
-            .axi_pdma_sys_clk_en()
-            .set_bit()
-            .axi_pdma_rst_en()
-            .set_bit()
-    });
-    clock.modify(|_, writer| writer.axi_pdma_rst_en().clear_bit());
+    clock.modify(|_, writer| writer.sys_clk_en().set_bit().rst_en().set_bit());
+    clock.modify(|_, writer| writer.rst_en().clear_bit());
 
     let regs = AXI_GDMA::regs();
     // The channel state machines can consume and write back descriptors

@@ -8,17 +8,17 @@ publish = false
 
 [dependencies]
 edge-dhcp = { version = "0.8.0", default-features = false }
-embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "317fb69357779a844a502fc171518395529c6394", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
 embassy-time = "0.5.1"
 static_cell = "2.1.1"
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31"] }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "rt", "unstable"] }
-esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["auto", "esp32s31", "log-04"] }
+esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["auto", "esp32s31", "log-04"] }
 open-esp-radio = { path = "../../driver/radio", default-features = false, features = ["wifi"] }
 open-esp-radio-esp32s31-embassy-runtime = { path = "../../driver/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
 open-esp-radio-esp32s31-phy = { path = "../../driver/chips/esp32s31/phy" }
@@ -34,7 +34,7 @@ panic = "abort"
 strip = false
 
 [patch."https://github.com/esp-rs/esp-pacs"]
-esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "5b8b56036abd5f4646505b15988cc9da51cec826" }
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc26128b929b044d76f09cf2d1d2f6" }
 
 [patch."https://github.com/ermacv/embassy.git"]
 embassy-futures = { version = "0.1.2", registry = "crates-io" }

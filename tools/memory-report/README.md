@@ -31,6 +31,13 @@ headroom. Generated async `poll` functions are included. Local frames do not
 prove indirect call chains, so HIL stack painting remains independently
 mandatory.
 
+A reviewed frame can name an `execution_stack` with a `storage_symbol` and
+`minimum_free_bytes`. Its additional limit is the linked ELF symbol's size
+minus that reserve, even below the ordinary review threshold. Missing or
+unsized storage fails the audit when the matching function is present. This
+prevents a primary-core allowance from admitting a frame larger than the
+secondary core's stack; it does not prove the aggregate call-chain bound.
+
 Every frame above the review threshold must match a `reviewed_frames` policy
 entry and stay below its individual ceiling. A new large frame or growth of a
 reviewed frame therefore fails the build instead of producing an unactioned

@@ -23,6 +23,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "aligned"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee4508988c62edf04abd8d92897fca0c2995d907ce1dfeaf369dac3716a40685"
+dependencies = [
+ "as-slice",
+]
+
+[[package]]
+name = "as-slice"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "516b6b4f0e40d50dcda9365d53964ec74560ad4284da2e7fc97122cd83174516"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -85,6 +103,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "block-device-driver"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44c051592f59fe68053524b4c4935249b806f72c1f544cfb7abe4f57c3be258e"
+dependencies = [
+ "aligned",
 ]
 
 [[package]]
@@ -152,21 +179,6 @@ checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "crc"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
-dependencies = [
- "crc-catalog",
-]
-
-[[package]]
-name = "crc-catalog"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
 name = "critical-section"
@@ -451,11 +463,11 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d#244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d"
+source = "git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394#317fb69357779a844a502fc171518395529c6394"
 dependencies = [
  "document-features",
  "embassy-futures",
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "embedded-io-async 0.7.0",
@@ -473,7 +485,7 @@ checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 [[package]]
 name = "embassy-net-driver"
 version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d#244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d"
+source = "git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394#317fb69357779a844a502fc171518395529c6394"
 dependencies = [
  "xarxa-driver",
 ]
@@ -705,24 +717,23 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "esp-backtrace"
-version = "0.19.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.20.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "esp-config",
  "esp-metadata-generated",
  "esp-println",
  "heapless 0.9.3",
- "riscv 0.15.0",
+ "riscv",
  "xtensa-lx",
 ]
 
 [[package]]
 name = "esp-bootloader-esp-idf"
-version = "0.5.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.6.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
- "crc",
  "document-features",
  "esp-config",
  "esp-hal-procmacros",
@@ -730,15 +741,14 @@ dependencies = [
  "esp-rom-sys",
  "esp-storage",
  "jiff",
- "md-5",
  "sha2",
- "strum 0.27.2",
+ "strum",
 ]
 
 [[package]]
 name = "esp-config"
-version = "0.7.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.8.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -749,18 +759,18 @@ dependencies = [
 
 [[package]]
 name = "esp-hal"
-version = "1.1.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "1.2.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "bitfield",
  "bytemuck",
  "critical-section",
  "delegate",
+ "digest 0.10.7",
  "digest 0.11.3",
  "document-features",
  "embassy-embedded-hal",
  "embassy-futures",
- "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0",
  "embassy-usb-driver",
  "embassy-usb-synopsys-otg",
@@ -797,10 +807,11 @@ dependencies = [
  "rand_core 0.10.1",
  "rand_core 0.6.4",
  "rand_core 0.9.5",
- "riscv 0.16.1",
+ "riscv",
+ "sdio",
  "somni-template",
  "static_cell",
- "strum 0.28.0",
+ "strum",
  "ufmt-write",
  "xtensa-lx",
  "xtensa-lx-rt",
@@ -808,8 +819,8 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-procmacros"
-version = "0.22.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.23.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "proc-macro-crate",
@@ -821,13 +832,13 @@ dependencies = [
 
 [[package]]
 name = "esp-metadata-generated"
-version = "0.4.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.5.1"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 
 [[package]]
 name = "esp-println"
-version = "0.17.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.18.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -838,18 +849,18 @@ dependencies = [
 
 [[package]]
 name = "esp-riscv-rt"
-version = "0.14.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.15.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
- "riscv 0.15.0",
+ "riscv",
  "riscv-rt",
 ]
 
 [[package]]
 name = "esp-rom-sys"
-version = "0.1.4"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.1.5"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -858,8 +869,8 @@ dependencies = [
 
 [[package]]
 name = "esp-storage"
-version = "0.9.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.10.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "esp-hal",
@@ -872,78 +883,78 @@ dependencies = [
 
 [[package]]
 name = "esp-sync"
-version = "0.2.1"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.3.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "embassy-sync 0.6.2",
  "embassy-sync 0.7.2",
  "embassy-sync 0.8.0",
  "esp-metadata-generated",
- "riscv 0.15.0",
+ "riscv",
  "xtensa-lx",
 ]
 
 [[package]]
 name = "esp32"
-version = "0.40.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.41.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32c2"
-version = "0.29.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.30.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32c3"
-version = "0.32.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.33.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32c5"
-version = "0.2.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.3.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32c6"
-version = "0.23.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.24.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32c61"
-version = "0.3.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.4.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32h2"
-version = "0.19.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.20.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32p4"
-version = "0.2.0"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.3.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "critical-section",
  "vcell",
@@ -951,24 +962,24 @@ dependencies = [
 
 [[package]]
 name = "esp32s2"
-version = "0.31.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.32.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32s3"
-version = "0.35.2"
-source = "git+https://github.com/esp-rs/esp-pacs?rev=aaa5c2ea8#aaa5c2ea8a82f0aa202422d69682e3179d7b2365"
+version = "0.36.0"
+source = "git+https://github.com/esp-rs/esp-pacs?rev=5cd68d2#5cd68d29dbf5c007d833f6a01f42ff4a193725e3"
 dependencies = [
  "vcell",
 ]
 
 [[package]]
 name = "esp32s31"
-version = "0.1.0"
-source = "git+https://github.com/ermacv/esp-pacs?rev=5b8b56036abd5f4646505b15988cc9da51cec826#5b8b56036abd5f4646505b15988cc9da51cec826"
+version = "0.2.0"
+source = "git+https://github.com/ermacv/esp-pacs?rev=507d14dbccfc26128b929b044d76f09cf2d1d2f6#507d14dbccfc26128b929b044d76f09cf2d1d2f6"
 dependencies = [
  "critical-section",
  "vcell",
@@ -988,9 +999,9 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "fugit"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04ae150b98ef345142101da0a0b4ccfcc577bc8f5b9778b852e9427c667654d3"
+checksum = "e88e2d6927cbdbbbdc85fc550cee539e63ae0f76445f13094833f63bb65b62f5"
 dependencies = [
  "gcd",
 ]
@@ -1256,16 +1267,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "md-5"
-version = "0.10.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
-dependencies = [
- "cfg-if",
- "digest 0.10.7",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1332,7 +1333,7 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
  "embassy-sync 0.8.0",
  "open-esp-radio-network",
  "open-esp-radio-wifi-datapath",
@@ -1362,7 +1363,7 @@ dependencies = [
  "esp-hal",
  "esp-sync",
  "portable-atomic",
- "riscv 0.15.0",
+ "riscv",
 ]
 
 [[package]]
@@ -1372,7 +1373,7 @@ dependencies = [
  "embassy-executor",
  "embassy-futures",
  "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "esp-hal",
@@ -1446,7 +1447,7 @@ dependencies = [
  "embassy-executor",
  "embassy-futures",
  "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=244b4a3b80cb2f8a02f17b698f0ef4614e5fc01d)",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=317fb69357779a844a502fc171518395529c6394)",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
@@ -1645,12 +1646,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
-name = "pastey"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
-
-[[package]]
 name = "pbkdf2"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1772,21 +1767,8 @@ dependencies = [
  "critical-section",
  "embedded-hal 1.0.0",
  "paste",
- "riscv-macros 0.3.0",
+ "riscv-macros",
  "riscv-pac",
-]
-
-[[package]]
-name = "riscv"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e42cdafa0aa3f0f956b7993cace26de5dafff7bb4f2c5b1dcb2c3723f4267a4f"
-dependencies = [
- "critical-section",
- "embedded-hal 1.0.0",
- "pastey",
- "riscv-macros 0.4.1",
- "riscv-types",
 ]
 
 [[package]]
@@ -1794,17 +1776,6 @@ name = "riscv-macros"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d323d13972c1b104aa036bc692cd08b822c8bbf23d79a27c526095856499799"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "riscv-macros"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ad9f6dda08d90d091bc0743967cab369b8fe39ea74b26783ba2ca5c0ce39e86"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1823,7 +1794,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d07b9f3a0eff773fc4df11f44ada4fa302e529bff4b7fe7e6a4b98a65ce9174"
 dependencies = [
- "riscv 0.15.0",
+ "riscv",
  "riscv-pac",
  "riscv-rt-macros",
  "riscv-target-parser",
@@ -1847,12 +1818,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1376b15f3ff160e9b1e8ea564ce427f2f6fcf77528cc0a8bf405cb476f9cea7"
 
 [[package]]
-name = "riscv-types"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3f2ad9f15a07f4a0e1677124f9120ce7e83ab7e1ca7186af0ca9da529b62e80"
-
-[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1869,6 +1834,18 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
+name = "sdio"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f7328e9dbad1337ef2d94a8404428a42d77a9916cda7c2e51287a1998da9afb"
+dependencies = [
+ "aligned",
+ "block-device-driver",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+]
 
 [[package]]
 name = "serde"
@@ -2022,16 +1999,7 @@ version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros 0.27.2",
-]
-
-[[package]]
-name = "strum"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
-dependencies = [
- "strum_macros 0.28.0",
+ "strum_macros",
 ]
 
 [[package]]
@@ -2039,18 +2007,6 @@ name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "strum_macros"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -2330,15 +2286,15 @@ dependencies = [
 [[package]]
 name = "xtensa-lx"
 version = "0.13.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "critical-section",
 ]
 
 [[package]]
 name = "xtensa-lx-rt"
-version = "0.22.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+version = "0.23.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "document-features",
  "xtensa-lx",
@@ -2348,7 +2304,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
+source = "git+https://github.com/ermacv/esp-hal?rev=bee3369c35dfc10048b1d524150d99869f8a4352#bee3369c35dfc10048b1d524150d99869f8a4352"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -19,7 +19,7 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     efuse::{self, InterfaceMacAddress},
-    interrupt::software::SoftwareInterruptControl,
+    interrupt::software::SoftwareInterrupt,
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
@@ -64,7 +64,6 @@ fn main() -> ! {
     esp_println::logger::init_logger_from_env();
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
 
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     platform_executor::init(OneShotTimer::new(timer_group.timer0));
 
@@ -82,7 +81,9 @@ fn main() -> ! {
         peripherals.I2C_ANA_MST,
     );
 
-    let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
+    let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
+        peripherals.FROM_CPU_INTR0,
+    )));
     executor.run(|spawner| {
         let task = station_task(spawner, radio, trng)
             .expect("station task storage must be available once");

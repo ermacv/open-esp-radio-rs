@@ -25,7 +25,13 @@ placement and compiler stack frames: frames above 8 KiB require an explicit
 reviewed allowance, and every frame is rejected above the 50-KiB hard limit.
 The separate compiler move limit is 4 KiB. These limits are configured in
 `stack.toml`; runtime evidence independently enforces its absolute per-core
-headroom.
+headroom. Network endpoint construction also has a limit derived from the
+linked CPU1 stack size minus its call-chain reserve. Each core arms a hardware
+write watchpoint on the bottom word of its task stack when no debugger owns
+the watchpoint. Fatal CPU exceptions report the hart, faulting instruction,
+fault address and saved return address through the ROM console. Watchpoints
+and stack painting complement the frame audit; individual frame sizes alone
+cannot prove the maximum depth of nested or indirect calls.
 
 `data_plane` is selected by the startup command, not by rebuilding. Every
 repository scenario selects the production `split-radio-network` topology: it

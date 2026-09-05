@@ -8,7 +8,7 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     efuse::{self, InterfaceMacAddress},
-    interrupt::software::SoftwareInterruptControl,
+    interrupt::software::SoftwareInterrupt,
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
@@ -52,7 +52,6 @@ const AP_CLIENT_LIMIT: u8 = 4;
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
@@ -68,7 +67,9 @@ fn main() -> ! {
         peripherals.LP_TSENS,
         peripherals.I2C_ANA_MST,
     );
-    let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
+    let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
+        peripherals.FROM_CPU_INTR0,
+    )));
     executor.run(|spawner| {
         spawner.spawn(
             access_point_task(spawner, radio, trng)

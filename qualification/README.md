@@ -1,10 +1,12 @@
-# Qualification v3
+# Qualification v4
 
 Qualification is the sole readiness authority for a supported product path.
 The checked-in TOML manifests declare capability roots, dependencies, required
-evidence and known blockers. They never declare proof outcomes.
+evidence and known blockers. The evaluator lives in `evaluator/`. Programs
+explicitly declare implementation, host and async states; vendor and HIL
+states are derived from independent evidence.
 
-The ESP32-S31 Wi-Fi and Bluetooth programs are independent:
+The ESP32-S31 Wi-Fi, Bluetooth LE and IEEE 802.15.4 programs are independent:
 
 ```console
 cargo qualification validate \
@@ -26,29 +28,30 @@ Three commands have deliberately different contracts:
 
 There is no `check` compatibility command and no `.ledger` parser.
 
-## Derived axes
+## Declared and derived axes
 
 Every capability has five independent axes:
 
-- `implementation` is complete only when all named public production owners
-  resolve under `driver/*/src` and no implementation blocker remains;
-- `host` is covered only when all named driver test functions resolve and no
-  host blocker remains. Test execution is still enforced by the workspace test
-  job; source discovery alone is not a test-run attestation;
+- `implementation` is the reviewed declaration `complete` or `incomplete`;
+- `host` is the reviewed declaration `covered` or `incomplete`. The evaluator
+  checks consistency with declared gaps; it does not find or run Rust tests.
+  Workspace testing remains a separate repository check;
 - `vendor` is derived from Blobray's complete compact evidence index. Only a
   fresh, baseline-accepted, release-eligible `production-trace` for every
   declared root evaluated from a clean worktree can qualify the axis;
 - `hil` is derived from immutable schema-2 HIL bundles. Every required scenario
   must pass with enough repetitions in a sealed run from the exact current
   clean commit;
-- `async` is bounded only when at least one `async-contracts` reference names a
-  declared host test and no async blocker remains, or is explicitly not
-  applicable with a reason.
+- `async` is the reviewed declaration `bounded`, `incomplete`, or explicitly
+  `not-applicable` with a reason. Consistency with gaps is checked; the
+  evaluator does not infer executor behavior from source names.
+
 
 `proof-ready` means all five axes are terminal. `ready` additionally requires
 every dependency to be ready. `required-capabilities` must exactly equal the
-manifest capability set, so deleting a difficult node cannot improve the
-summary.
+manifest capability set, preventing a mismatch between required roots and declared capabilities.
+Changing the declared program still requires review; validation cannot prove
+that a removed capability was unnecessary.
 
 Known `gaps` are planning facts, not editable outcomes. The evaluator also adds
 a deterministic derived gap whenever machine evidence is absent.
@@ -56,7 +59,7 @@ a deterministic derived gap whenever machine evidence is absent.
 ## Evidence ownership
 
 ```text
-driver owners/tests ───────────────┐
+reviewed capability declarations ─┐
 Blobray vendor evidence index ─────┼─> qualification evaluator ─> JSON/verdict
 sealed HIL run bundles ────────────┘
 ```

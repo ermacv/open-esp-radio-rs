@@ -35,8 +35,8 @@ required-capabilities = [
 ]
 
 [verification]
-project = "verification/vendor/targets/esp32s31/vendor-project.toml"
-evidence-index = "verification/vendor/targets/esp32s31/evidence/vendor-evidence.json"
+project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/vendor-evidence.json"
 
 [hil]
 target = "esp32s31"
@@ -81,8 +81,8 @@ host = "covered"
 async = "bounded"
 depends-on = ["clock-reset-prerequisite"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
@@ -98,7 +98,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["controller-initialization"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
   { axis = "implementation", id = "source-127-expiration-consumer-and-periodic-phy-tracking-missing" },
@@ -116,8 +116,8 @@ host = "covered"
 async = "incomplete"
 depends-on = ["controller-initialization"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
   { axis = "implementation", id = "periodic-bluetooth-client-tracking-and-last-owner-phy-release-missing" },
@@ -135,7 +135,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["common-phy-baseband"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/verification-policy.toml",
+  "verification/vendor/projects/esp32s31/verification-policy.toml",
 ]
 gaps = [
   { axis = "implementation", id = "ble-environment-word-semantics-and-packet-engine-missing" },
@@ -152,9 +152,9 @@ host = "covered"
 async = "incomplete"
 depends-on = ["controller-initialization"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
-  "verification/vendor/targets/esp32s31/functions/reviewed.toml",
-  "verification/vendor/targets/esp32s31/registers/evidence/vendor-radio-libraries.toml",
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/functions/reviewed.toml",
+  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
 ]
 gaps = [
   { axis = "implementation", id = "scanner-resume-action-deferred-until-scan-ull" },
@@ -173,8 +173,8 @@ host = "covered"
 async = "incomplete"
 depends-on = ["controller-initialization"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
   { axis = "implementation", id = "normal-scan-and-nonscan-current-next-list-lifecycle-missing" },
@@ -192,7 +192,7 @@ host = "covered"
 async = "not-applicable"
 depends-on = ["controller-memory-lists"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
@@ -209,7 +209,7 @@ host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-memory-graph"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
   { axis = "vendor", id = "rx-result-low-twenty-four-physical-meanings-missing" },
@@ -226,7 +226,7 @@ host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-memory-graph"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
@@ -243,7 +243,7 @@ host = "covered"
 async = "not-applicable"
 depends-on = ["controller-timebase", "dtm-link-state-reset"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
@@ -259,7 +259,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
@@ -276,7 +276,7 @@ host = "covered"
 async = "not-applicable"
 depends-on = ["dtm-tx-payload"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
@@ -333,7 +333,7 @@ host = "covered"
 async = "bounded"
 depends-on = ["controller-initialization", "controller-timebase", "interrupt-runtime"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
   { axis = "implementation", id = "nonempty-list-lock-modify-admission-missing" },
@@ -350,8 +350,8 @@ host = "covered"
 async = "incomplete"
 depends-on = ["interrupt-runtime"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-interrupt-runtime.md",
-  "verification/vendor/targets/esp32s31/functions/reviewed.toml",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-interrupt-runtime.md",
+  "verification/vendor/projects/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
   { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
@@ -370,7 +370,7 @@ host = "incomplete"
 async = "incomplete"
 depends-on = ["common-phy-baseband", "interrupt-runtime", "controller-memory-lists", "dtm-memory-graph", "dtm-rx-accounting", "dtm-link-state-reset", "dtm-scheduler-item", "dtm-tx-payload", "dtm-tx-timing", "scheduler-head-transaction", "scheduler-finished-list-drain"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/README.md",
 ]
 gaps = [
   { axis = "implementation", id = "unrelated-list-dispatch-and-live-radio-role-composition-missing" },
@@ -422,7 +422,7 @@ host = "covered"
 async = "bounded"
 depends-on = ["controller-timebase", "scheduler-finished-list-drain", "hci-controller-endpoints", "packet-dataplane"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/vendor-project.toml",
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
 ]
 gaps = [
   { axis = "implementation", id = "unrelated-finished-list-dispatch-missing" },
@@ -439,9 +439,9 @@ host = "incomplete"
 async = "incomplete"
 depends-on = ["packet-dataplane", "portable-legacy-advertising", "portable-connectable-advertising", "portable-peripheral-connection", "legacy-passive-scanning"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/vendor-project.toml",
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-legacy-advertising.md",
-  "verification/vendor/targets/esp32s31/analysis/bluetooth-peripheral-connection.md",
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-legacy-advertising.md",
+  "verification/vendor/projects/esp32s31/analysis/bluetooth-peripheral-connection.md",
 ]
 gaps = [
   { axis = "implementation", id = "s31-peripheral-event-reliability-supervision-and-llcp-missing" },
@@ -460,7 +460,7 @@ host = "incomplete"
 async = "incomplete"
 depends-on = ["hci-handoff-storage", "hci-bootstrap", "hci-controller-endpoints", "le-link-layer"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/vendor-project.toml",
+  "verification/vendor/projects/esp32s31/vendor-project.toml",
 ]
 gaps = [
   { axis = "implementation", id = "link-layer-and-acl-router-missing" },
@@ -479,7 +479,7 @@ host = "incomplete"
 async = "incomplete"
 depends-on = ["interrupt-runtime", "packet-dataplane", "hci-controller-endpoints"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/README.md",
 ]
 gaps = [
   { axis = "implementation", id = "link-layer-runtime-missing" },
@@ -513,7 +513,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["async-controller-runtime"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/README.md",
 ]
 gaps = [
   { axis = "implementation", id = "bluetooth-lifecycle-hooks-and-wifi-platform-migration-missing" },
@@ -531,7 +531,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["async-controller-runtime"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/README.md",
+  "verification/vendor/projects/esp32s31/README.md",
 ]
 gaps = [
   { axis = "implementation", id = "powered-cleanup-and-cold-reconstruction-missing" },

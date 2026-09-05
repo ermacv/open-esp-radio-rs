@@ -635,7 +635,7 @@ pub(crate) fn next(
     let (direct_diagnostic_owners, graphs) = load_research_graphs(session, &graph_scopes)?;
     let (interface_context, capability_diagnostic) = interface_research_context(session);
     let reviewed_memory_accesses =
-        crate::harnesses::reviewed_memory_accesses(session.project.analysis_provider.as_deref())?;
+        crate::providers::reviewed_memory_accesses(session.project.analysis_provider.as_deref())?;
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
         add_blockers(

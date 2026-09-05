@@ -1,0 +1,13 @@
+schema = 4
+id = "beta-system"
+repetitions = 3
+description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
+image = "boot-smoke"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["smoke", "psram-stack"]
+
+[workload]
+kind = "boot-smoke"
+
+[criteria]

@@ -44,7 +44,7 @@ The network boundaries are now separate crates and dependency graphs:
   promotion pool and telemetry; research has its own allocator composition
   over the same common pinned-DMA ownership primitive.
 
-`tools/check-network-adapter-boundaries.sh` compiles each boundary independently
+`cargo xtask check network` compiles each boundary independently
 and rejects dependency leakage back into the compatibility or owned crates.
 It also compiles the ESP32-S31 radio adapter with `--no-default-features` and
 rejects Xarxa or optimized Embassy-network dependencies in that normal graph.
@@ -189,7 +189,7 @@ At the current source checkpoint:
 - the base HIL runtime cross-check passes;
 - the HIL hardware/memory architecture feature set cross-check passes;
 - the HIL scenario catalog validation tests pass;
-- before the main synchronization, `tools/audit-source-only.sh` passed at
+- before the main synchronization, `tools/repo/audit-source-only.sh` passed at
   `2da6cfe5`, including the final 4 MiB HIL image, placement, stack-frame and
   forbidden-ROM audits;
 - after rebasing onto `origin/main` at `71522d1b`, workspace tests and network

@@ -11,8 +11,8 @@ required-capabilities = [
 ]
 
 [verification]
-project = "verification/vendor/targets/esp32s31/vendor-project.toml"
-evidence-index = "verification/vendor/targets/esp32s31/evidence/vendor-evidence.json"
+project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/vendor-evidence.json"
 
 [hil]
 target = "esp32s31"
@@ -27,7 +27,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md",
+  "verification/vendor/projects/esp32s31/analysis/ieee802154-lifecycle.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -46,7 +46,7 @@ host = "covered"
 async = "not-applicable"
 depends-on = ["clock-reset-foundation"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md",
+  "verification/vendor/projects/esp32s31/analysis/ieee802154-dataplane.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -65,7 +65,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["static-mac-policy"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md",
+  "verification/vendor/projects/esp32s31/analysis/ieee802154-control.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -85,7 +85,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["clock-reset-foundation"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md",
+  "verification/vendor/projects/esp32s31/analysis/ieee802154-lifecycle.md",
 ]
 gaps = [
   { axis = "implementation", id = "shared-phy-timer-lock-rf-wakeup-and-track-children-missing" },
@@ -103,7 +103,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["clock-reset-foundation"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md",
+  "verification/vendor/projects/esp32s31/analysis/ieee802154-control.md",
 ]
 gaps = [
   { axis = "implementation", id = "whole-radio-route-runtime-composition-missing" },
@@ -121,7 +121,7 @@ host = "covered"
 async = "incomplete"
 depends-on = ["rf-channel-readiness", "active-interrupt-runtime"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md",
+  "verification/vendor/projects/esp32s31/analysis/ieee802154-dataplane.md",
 ]
 gaps = [
   { axis = "implementation", id = "phy-ready-whole-radio-mac-composition-missing" },

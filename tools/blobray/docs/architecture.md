@@ -92,7 +92,7 @@ provider's identity, revision, kind and applicability separately, and doctor
 exposes that selection. Model revisions participate in both stage identities
 and function harness cache domains. Descriptive provenance is not a proof of
 model equivalence; exact body/context guards remain mandatory where applicable.
-See the [provider ownership contract](../../../verification/vendor/targets/esp32s31/blobray-provider/OWNERSHIP.md).
+See the [provider ownership contract](../../../verification/vendor/projects/esp32s31/blobray-provider/OWNERSHIP.md).
 
 Reviewed [function routes](function-workspace.md) may select unique calls by
 identity/operation and derive their instruction sites and exact payload from

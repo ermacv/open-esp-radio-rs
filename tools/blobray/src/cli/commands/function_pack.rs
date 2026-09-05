@@ -158,7 +158,7 @@ fn reviewed_interface_links(
         target
             .knowledge_provider
             .as_deref()
-            .map(crate::harnesses::contracts)
+            .map(crate::providers::contracts)
             .transpose()?,
     )?;
     Ok(Some(link_reviewed_interfaces(

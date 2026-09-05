@@ -150,6 +150,7 @@ pub(in crate::cli) enum RegisterWorkspaceCommand {
     Review(RegisterReviewArgs),
     ExportSvd(RegisterExportArgs),
     GeneratePacRaw(RegisterPacRawArgs),
+    GeneratePacApi(CheckArgs),
     GenerateBindings(RegisterBindingsArgs),
 }
 

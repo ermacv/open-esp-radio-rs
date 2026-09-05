@@ -7,18 +7,19 @@ polling, delay, recovery and lifecycle policy.
 
 ## Sources and generated outputs
 
-The [project configuration](../../../../verification/vendor/targets/esp32s31/vendor-project.toml)
+The [source-only publication configuration](../../../../registers/esp32s31/publication/vendor-project.toml)
 declares the outputs below. Generation belongs to the host-side
 [Blobray publisher](../../../../tools/blobray/README.md), with shared schemas
-and invariants in `tools/blobray/crates/register-model`. There is no runtime
+and invariants in `tools/blobray/crates/register-model`. Reviewed model, ownership policy and provenance live together under
+[`registers/esp32s31`](../../../../registers/esp32s31/README.md). There is no runtime
 `pac-gen` dependency or additional generator crate under `driver`.
 
 | Artifact | Source and responsibility |
 | --- | --- |
-| [Radio SVD](../../../../svd/esp32s31-radio.svd) | Published from the reviewed chip register model and project policy |
+| [Radio SVD](../../../../registers/esp32s31/published/radio.svd) | Published from the reviewed chip register model and project policy |
 | [raw/src/lib.rs](raw/src/lib.rs) | Generated svd2rust register accessors from that SVD |
-| [src/generated.rs](src/generated.rs) | Generated semantic capability catalog selected by [registers/api.toml](../../../../verification/vendor/targets/esp32s31/registers/api.toml) |
-| [Radio bindings](../../../../svd/esp32s31-radio.bindings.toml) | Published register-to-raw-PAC binding metadata |
+| [src/generated.rs](src/generated.rs) | Generated semantic capability catalog selected by [PAC API policy](../../../../registers/esp32s31/policy/api.toml) |
+| [Radio bindings](../../../../registers/esp32s31/published/radio.bindings.toml) | Published register-to-raw-PAC binding metadata |
 | [src/ownership.rs](src/ownership.rs) and domain modules | Handwritten authority, register-local operations and restricted access |
 | [Raw sidecars](raw/README.md) | Handwritten IEEE 802.15.4 ownership and validation operations, with their own unsafe policy |
 
@@ -42,7 +43,7 @@ paths does not update upstream hardware descriptions or qualify new behavior.
 
 ## Validation
 
-`tools/audit-source-only.sh` validates register sources, dependency direction,
+`cargo xtask check source-only` validates register sources, dependency direction,
 handwritten unsafe boundaries and the final linked image. It also checks
 publication reproducibility when the reviewed local inputs are present.
 Generated addresses, masks and field positions are not regression test oracles;

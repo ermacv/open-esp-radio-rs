@@ -1,4 +1,4 @@
-//! Machine diagnostics, composable packs, and the process-launch boundary.
+//! Machine diagnostics and composable packs.
 
 use std::{fs, path::PathBuf, process::Command};
 
@@ -114,38 +114,4 @@ fn a_closed_stdout_consumer_does_not_panic_in_either_output_format() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn resource_launcher_preserves_the_selected_host_and_argument_boundaries() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let root = std::env::temp_dir().join(format!("blobray-host-launcher-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
-    let host = root.join("selected host");
-    fs::write(&host, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
-    fs::set_permissions(&host, fs::Permissions::from_mode(0o700)).unwrap();
-    for selected in [
-        host.as_path(),
-        std::path::Path::new("./selected host"),
-        std::path::Path::new("selected host"),
-    ] {
-        let output =
-            Command::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/run-limited"))
-                .current_dir(&root)
-                .env("BLOBRAY_BINARY", selected)
-                .env("BLOBRAY_LIMIT_BACKEND", "watchdog")
-                .env("BLOBRAY_REPORT_USAGE", "0")
-                .args(["--format", "json", "a path with spaces"])
-                .output()
-                .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(output.stdout, b"--format\njson\na path with spaces\n");
-    }
-    fs::remove_dir_all(root).unwrap();
 }

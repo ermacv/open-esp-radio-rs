@@ -19,7 +19,7 @@ project directory:
 
 ```console
 cargo blobray project research next \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 ```
 
 ## Ranking strategies
@@ -198,20 +198,20 @@ selection auditable without dropping hidden findings.
 ```console
 cargo blobray project research next \
   --focus hardware-access --protocol ble --limit 20 \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 
 cargo blobray project research next \
   --strategy quick-wins --protocol wifi --budget 20 --limit 8 \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 
 cargo blobray project research next \
   --strategy frontier --scope ieee802154-coex-client --limit 20 \
   --format json \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 
 cargo blobray project research next \
   --finding register-0x20103100-32 --format json \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 ```
 
 Exact finding lookup derives the complete selected candidate set and its

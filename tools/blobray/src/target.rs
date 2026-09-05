@@ -203,7 +203,7 @@ impl TargetSpec {
                 id: self.id.clone(),
             }
         })?;
-        if !crate::harnesses::is_available(provider) {
+        if !crate::providers::is_available(provider) {
             return Err(TargetError::KnowledgeProviderUnavailable {
                 id: self.id.clone(),
                 provider: provider.to_owned(),

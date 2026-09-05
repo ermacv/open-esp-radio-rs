@@ -36,7 +36,7 @@ pub(crate) fn analyze_project(
 ) -> ProjectAnalysisReport {
     let inputs = project_analysis_inputs(session);
     let compiled_knowledge_identity =
-        crate::harnesses::analysis_cache_identity(session.target.knowledge_provider.as_deref());
+        crate::providers::analysis_cache_identity(session.target.knowledge_provider.as_deref());
     let (pipeline_inputs, pipeline_input_error) = pipeline_input_observation(session);
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
@@ -65,7 +65,7 @@ pub(crate) fn plan_project(
 ) -> ProjectAnalysisPlanReport {
     let inputs = project_analysis_inputs(session);
     let compiled_knowledge_identity =
-        crate::harnesses::analysis_cache_identity(session.target.knowledge_provider.as_deref());
+        crate::providers::analysis_cache_identity(session.target.knowledge_provider.as_deref());
     let (pipeline_inputs, pipeline_input_error) = pipeline_input_observation(session);
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
@@ -199,6 +199,20 @@ fn append_interface_workspace_inputs(
     paths.extend(interfaces.semantic_catalogs.iter().cloned());
     paths.extend(interfaces.capability_packs.iter().cloned());
     paths.extend(interfaces.interface_template_packs.iter().cloned());
+}
+
+fn append_register_workspace_inputs(
+    paths: &mut Vec<std::path::PathBuf>,
+    registers: &crate::project::RegisterWorkspacePaths,
+) -> Result<()> {
+    paths.push(registers.facts.clone());
+    paths.extend(RegisterModel::input_paths(&registers.model)?);
+    paths.extend(registers.reviewed_knowledge.iter().cloned());
+    paths.extend(registers.ownership_policy.iter().cloned());
+    paths.extend(registers.api_pack.iter().cloned());
+    paths.extend(registers.lint_pack.iter().cloned());
+    paths.extend(registers.evidence_catalogs.iter().cloned());
+    Ok(())
 }
 
 impl ResolvedProjectAnalysisOperations<'_> {
@@ -534,7 +548,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
                     .target
                     .knowledge_provider
                     .as_deref()
-                    .map(crate::harnesses::contracts)
+                    .map(crate::providers::contracts)
                     .transpose()?,
             )?);
         }
@@ -545,12 +559,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
         let mut paths = self.common_inputs();
         paths.extend(self.session.project.memory_map.iter().cloned());
         if let Some(registers) = self.session.project.registers.as_ref() {
-            paths.push(registers.facts.clone());
-            paths.extend(RegisterModel::input_paths(&registers.model)?);
-            paths.extend(registers.reviewed_knowledge.iter().cloned());
-            paths.extend(registers.api_pack.iter().cloned());
-            paths.extend(registers.lint_pack.iter().cloned());
-            paths.extend(registers.evidence_catalogs.iter().cloned());
+            append_register_workspace_inputs(&mut paths, registers)?;
             if include_ir {
                 paths.extend(registers.review_ir_reports.iter().cloned());
             }
@@ -628,7 +637,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
     }
 
     fn linked_ir_semantic_cache_domain(&self) -> Option<&'static str> {
-        crate::harnesses::riscv_or_neutral(self.session.target.knowledge_provider.as_deref())
+        crate::providers::riscv_or_neutral(self.session.target.knowledge_provider.as_deref())
             .ok()
             .map(|harness| harness.semantic_cache_domain)
     }
@@ -1775,8 +1784,9 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
 #[cfg(test)]
 mod cache_domain_tests {
     use super::{
-        append_interface_workspace_inputs, ensure_unique_replay_outputs, linked_ir_stage_cacheable,
-        register_catalog_input_paths, stage_configuration,
+        append_interface_workspace_inputs, append_register_workspace_inputs,
+        ensure_unique_replay_outputs, linked_ir_stage_cacheable, register_catalog_input_paths,
+        stage_configuration,
     };
     use crate::{
         function_workspace::{ReviewedEventReplay, ReviewedEventStateModel},
@@ -1985,9 +1995,12 @@ mod cache_domain_tests {
         .unwrap();
         let svd = directory.join("public.svd");
         let reviewed = directory.join("reviewed/radio.toml");
+        let policy = directory.join("ownership.toml");
+        std::fs::write(&policy, "schema = 1\nowned-ranges = [\"radio\"]\n").unwrap();
         let registers = crate::project::RegisterWorkspacePaths {
             facts: directory.join("mmio.json"),
             model: model.clone(),
+            ownership_policy: Some(policy.clone()),
             owned_ranges: vec!["radio".to_owned()],
             non_operational_functions: Vec::new(),
             review_output: None,
@@ -2005,9 +2018,25 @@ mod cache_domain_tests {
 
         let inputs =
             register_catalog_input_paths(std::slice::from_ref(&svd), Some(&registers)).unwrap();
-        std::fs::remove_dir_all(&directory).unwrap();
-
         assert_eq!(inputs, vec![svd, model, fragment, reviewed]);
+
+        let mut inputs = Vec::new();
+        append_register_workspace_inputs(&mut inputs, &registers).unwrap();
+        assert!(inputs.contains(&policy));
+        // Every selected input is pinned by the pipeline observation. Here the
+        // policy alone is sufficient to demonstrate mid-run scope mutation.
+        let mut observation =
+            super::PipelineInputObservation::capture(vec![policy.clone()]).unwrap();
+        std::fs::write(&policy, "schema = 1\nowned-ranges = [\"other\"]\n").unwrap();
+        assert!(
+            observation
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("project inputs changed")
+        );
+        drop(observation);
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

@@ -275,7 +275,7 @@ fn report_blocked_publications(paths: &RegisterWorkspacePaths, summary: &mut Pip
     }
 }
 
-fn validate_output_paths(paths: &RegisterWorkspacePaths) -> Result<()> {
+pub(crate) fn validate_output_paths(paths: &RegisterWorkspacePaths) -> Result<()> {
     let mut outputs = Vec::new();
     if let Some(path) = paths.svd_output.as_deref() {
         outputs.push(("svd-publication", path));
@@ -317,6 +317,12 @@ fn validate_output_paths(paths: &RegisterWorkspacePaths) -> Result<()> {
             .map(|path| ("linked-IR review input", path.as_path())),
     );
     inputs.extend(paths.api_pack.as_deref().map(|path| ("PAC API pack", path)));
+    inputs.extend(
+        paths
+            .ownership_policy
+            .as_deref()
+            .map(|path| ("register ownership policy", path)),
+    );
     inputs.extend(
         paths
             .lint_pack

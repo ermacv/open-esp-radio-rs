@@ -21,5 +21,5 @@ Regenerate it through the ESP32-S31 Blobray project:
 
 ```console
 cargo blobray project publish \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 ```

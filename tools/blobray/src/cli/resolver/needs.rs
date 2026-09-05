@@ -134,6 +134,7 @@ impl ResolutionNeeds {
             Command::RegisterReview(_)
             | Command::RegisterExportSvd(_)
             | Command::RegisterGeneratePacRaw(_)
+            | Command::RegisterGeneratePacApi(_)
             | Command::RegisterGenerateBindings(_) => {
                 Self::new(true, false, false, false, false, false, true).with_review_context()
             }

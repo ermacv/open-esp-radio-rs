@@ -154,7 +154,7 @@ pub(super) fn run(
         .map_err(crate::Error::invalid)?;
     let loaded_profiles = profiles::load(&profile_path)?;
     let diagnostic_contracts =
-        crate::harnesses::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
+        crate::providers::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
     let mut matched = 0_usize;
     let mut different = 0_usize;
     let mut reports = Vec::with_capacity(loaded_profiles.len());

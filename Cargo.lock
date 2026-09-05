@@ -250,6 +250,7 @@ dependencies = [
  "serde_json",
  "serde_stacker",
  "sha2",
+ "signal-hook",
  "svd-parser",
  "svd-rs",
  "svd2rust",
@@ -2202,6 +2203,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-xtask"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata",
+ "clap",
+ "libc",
+ "object 0.39.1",
+ "rustc-demangle",
+ "serde_json",
+ "signal-hook",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2756,6 +2772,7 @@ version = "0.1.0"
 dependencies = [
  "open-radio-vendor-contracts",
  "roxmltree",
+ "serde",
  "thiserror 2.0.19",
 ]
 
@@ -2787,7 +2804,7 @@ dependencies = [
 name = "open-radio-vendor-chip-knowledge-esp32s31-rev0"
 version = "0.1.0"
 dependencies = [
- "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-analysis-model",
  "open-radio-vendor-chip-contracts-esp32s31-rev0",
  "open-radio-vendor-semantics",
 ]
@@ -2833,7 +2850,7 @@ dependencies = [
 name = "open-radio-vendor-knowledge-esp32s31"
 version = "0.1.0"
 dependencies = [
- "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-analysis-model",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-semantics",
 ]

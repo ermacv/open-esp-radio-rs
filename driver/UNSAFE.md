@@ -7,7 +7,7 @@ ownership. Most driver crates forbid unsafe code. Trusted exceptions use
 permission to add unsafe operations.
 
 The executable policy is
-[`tools/audit-driver-safety.sh`](../tools/audit-driver-safety.sh). Its generated
+[`cargo xtask check safety`](../tools/repo/src/checks/safety.rs). Its generated
 package handling, audited-unsafe list and direct-PAC-dependency list are
 separate controls. Package names remain stable across the directory moves
 shown below.

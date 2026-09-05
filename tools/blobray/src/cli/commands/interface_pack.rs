@@ -80,7 +80,7 @@ fn validate(
         target
             .knowledge_provider
             .as_deref()
-            .map(crate::harnesses::contracts)
+            .map(crate::providers::contracts)
             .transpose()?,
     )?;
     let summary = workspace.summary();

@@ -285,6 +285,7 @@ description = "manually reviewed register identity"
         RegisterWorkspacePaths {
             facts: model.with_file_name("unused-mmio.json"),
             model: model.to_owned(),
+            ownership_policy: None,
             owned_ranges: vec!["radio".to_owned()],
             non_operational_functions: Vec::new(),
             review_output: None,

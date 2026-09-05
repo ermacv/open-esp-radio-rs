@@ -70,7 +70,7 @@ pub(super) fn run(
                 crate::verification::profiles::TransactionComparison::Observables,
             effect_policy: None,
             call_equivalences: &[],
-            diagnostic_contracts: crate::harnesses::diagnostic_contracts_or_empty(
+            diagnostic_contracts: crate::providers::diagnostic_contracts_or_empty(
                 target.knowledge_provider.as_deref(),
             )?,
             coverage_domain: &unconstrained_coverage,

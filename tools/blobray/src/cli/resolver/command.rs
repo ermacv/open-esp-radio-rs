@@ -230,6 +230,14 @@ pub(super) fn resolve_command(
                 memory_map,
             }
         }
+        Command::RegisterGeneratePacApi(arguments) => {
+            let (project, memory_map) = environment.into_project_registers()?;
+            ResolvedInvocation::RegisterWorkspace {
+                command: RegisterWorkspaceCommand::GeneratePacApi(arguments),
+                project,
+                memory_map,
+            }
+        }
         Command::RegisterGenerateBindings(arguments) => {
             let (project, memory_map) = environment.into_project_registers()?;
             ResolvedInvocation::RegisterWorkspace {

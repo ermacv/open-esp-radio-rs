@@ -110,6 +110,7 @@ impl<'a> ProjectSource<'a> {
 pub(crate) struct RegisterWorkspacePaths {
     pub(crate) facts: PathBuf,
     pub(crate) model: PathBuf,
+    pub(crate) ownership_policy: Option<PathBuf>,
     pub(crate) owned_ranges: Vec<String>,
     pub(crate) non_operational_functions: Vec<String>,
     pub(crate) review_output: Option<PathBuf>,
@@ -308,7 +309,7 @@ impl ProjectSpec {
         }
         if let Some(provider) = &self.analysis_provider {
             if let Some(existing) = &target.knowledge_provider {
-                let composed = crate::harnesses::compose_provider(existing, provider).map_err(
+                let composed = crate::providers::compose_provider(existing, provider).map_err(
                     |error| {
                         crate::Error::invalid(format!(
                             "project {:?} cannot compose analysis-provider {provider:?} over chip knowledge-provider {existing:?}: {error}",

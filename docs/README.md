@@ -14,12 +14,19 @@
   the cutover, verification and remaining evidence gaps.
 - [`WIFI_EGRESS_CUTOVER_PLAN.md`](WIFI_EGRESS_CUTOVER_PLAN.md): ordered
   integration, HIL, fairness and research work with acceptance gates.
+- [`../tools/repo/README.md`](../tools/repo/README.md): repository `cargo xtask`
+  commands and source/build policy ownership.
+- [`tooling-audit/XTASK_PORTABILITY_PLAN.md`](tooling-audit/XTASK_PORTABILITY_PLAN.md):
+  approved automation migration scope and acceptance gates.
 - [`../tools/blobray/README.md`](../tools/blobray/README.md):
   Blobray workflow and canonical documentation.
 - [`BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md`](BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md):
   dated Bluetooth baseline and original refactor findings.
 - [`DRIVER_STRUCTURE_AUDIT.md`](DRIVER_STRUCTURE_AUDIT.md): complete driver
   inventory, ownership findings and proposed module/package boundaries.
+- [`REPOSITORY_TOOLING_ARCHITECTURE.md`](REPOSITORY_TOOLING_ARCHITECTURE.md):
+  current non-driver ownership map and completed normalization of tools,
+  verification, register publication, HIL and qualification.
 - [`DRIVER_STRUCTURE_PLAN.md`](DRIVER_STRUCTURE_PLAN.md): completed structural
   migration, validation and ownership decisions.
 - [`driver-audit/migration-history.md`](driver-audit/migration-history.md):

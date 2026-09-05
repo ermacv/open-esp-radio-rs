@@ -7,7 +7,7 @@ use super::{
     model::{AnalysisSurfaceDetail, Component, LinkedIrProfileDetail, Phase, Readiness},
 };
 use crate::application::{ProjectContext, ProjectContextRequirement};
-use crate::{artifacts::inspect_linked_ir, harnesses, run_spec::InputRole};
+use crate::{artifacts::inspect_linked_ir, providers, run_spec::InputRole};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     fn component(name: &'static str, collect: impl FnOnce() -> Component) -> Component {
@@ -534,7 +534,7 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
         if context.run_spec.is_none() || requested.is_empty() || !missing.is_empty() {
             incomplete = true;
         }
-        let contract = harnesses::entry_contract_or_neutral(
+        let contract = providers::entry_contract_or_neutral(
             context.target.knowledge_provider.as_deref(),
             &profile.entry_contract,
         );

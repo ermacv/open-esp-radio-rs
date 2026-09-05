@@ -1,5 +1,10 @@
 # Аудит shell-скриптов и параллельных сбоев
 
+Исторический снимок до переноса автоматизации в Rust. Прежние команды и
+результаты ниже сохранены; текущие замены перечислены в
+[карте xtask](../tools/repo/README.md). Linux/OpenWrt HIL scripts остаются
+стендовыми инструментами. Старые PASS не являются результатами нового gate.
+
 Дата: 2026-09-05. Область: существующие tracked и nonignored файлы
 репозитория с расширением `.sh`/`.bash` либо shell shebang, включая файлы без
 расширения. Найдено 11 скриптов: семь `.sh`, четыре без расширения.
@@ -28,22 +33,22 @@
 В исправлениях нет lock retries, задержек или сериализации тестов. Прогон с
 `--test-threads=1` был диагностическим и не считается устранением причины.
 Regression tests находятся отдельно от production-кода:
-[HIL](../hil/host/runner/src/transport/fixture_lock/tests.rs),
+[HIL](../hil/host/runner/src/lab/lock/tests.rs),
 [Blobray](../tools/blobray/src/application/query_store/lock_tests.rs).
 
 ## Назначение и решение для каждого скрипта
 
 | Скрипт | Что проверяет или делает; реальный потребитель | Решение |
 | --- | --- | --- |
-| [audit-source-only.sh](../tools/audit-source-only.sh) | Общий source-only gate из README/AGENTS: Cargo, Clippy, PAC, qualification, ABI и конечный ELF | Сохранён; сетевой gate включён, анализ ELF ограничен через launcher |
-| [audit-cargo-metadata.sh](../tools/audit-cargo-metadata.sh) | Обнаруживает действительные Cargo workspace roots и проверяет lockfiles; вызывается source-only, проверяется Python regression tests | Оставить: root Cargo не покрывает независимые workspaces |
-| [audit-driver-architecture.sh](../tools/audit-driver-architecture.sh) | Компилирует feature profiles, проверяет Cargo boundaries и composition tests; вызывается source-only | Сохранён; вложенные `target` исключены из поиска manifests |
-| [audit-driver-safety.sh](../tools/audit-driver-safety.sh) | Compiler-enforced unsafe policy, reviewed PAC consumers, ownership tests; вызывается source-only | Оставить: явные allowlists обозначают reviewed authority |
-| [check-network-adapter-boundaries.sh](../tools/check-network-adapter-boundaries.sh) | Owned/compat/research/runtime dependencies и compile profiles; ранее только ручной запуск из WIFI_EGRESS_STATUS | Сохранён; graph policy переписана, source spelling удалён, лёгкий режим включён в source-only |
-| [check-esp32s31-examples.sh](../tools/check-esp32s31-examples.sh) | Target `cargo check` четырёх independent examples и compat-варианта; вызывается source-only | Оставить; не называть этот результат link/run evidence |
-| [check-standalone](../tools/blobray/scripts/check-standalone) | Копирует generic Blobray в отдельный workspace, проверяет локальные пути и компилирует все targets | Сохранён как ручная portability check, выполнен и описан в Blobray README |
-| [run-limited](../tools/blobray/scripts/run-limited) | Ограничивает память/время process tree; используется при настоящем Blobray analysis и проверяется launcher test | Сохранён; отказ мониторинга и завершение при отмене исправлены |
-| [build-analysis-inputs](../verification/vendor/targets/esp32s31/build-analysis-inputs) | Собирает три Rust comparison ELF; ручной workflow, declaration CLI используется host test | Сохранён и описан; теперь Cargo parallelism по умолчанию, явный лимит через env |
+| `audit-source-only.sh` | Общий source-only gate из README/AGENTS: Cargo, Clippy, PAC, qualification, ABI и конечный ELF | Сохранён; сетевой gate включён, анализ ELF ограничен через launcher |
+| `audit-cargo-metadata.sh` | Обнаруживает действительные Cargo workspace roots и проверяет lockfiles; вызывается source-only, проверяется Python regression tests | Оставить: root Cargo не покрывает независимые workspaces |
+| `audit-driver-architecture.sh` | Компилирует feature profiles, проверяет Cargo boundaries и composition tests; вызывается source-only | Сохранён; вложенные `target` исключены из поиска manifests |
+| `audit-driver-safety.sh` | Compiler-enforced unsafe policy, reviewed PAC consumers, ownership tests; вызывается source-only | Оставить: явные allowlists обозначают reviewed authority |
+| `check-network-adapter-boundaries.sh` | Owned/compat/research/runtime dependencies и compile profiles; ранее только ручной запуск из WIFI_EGRESS_STATUS | Сохранён; graph policy переписана, source spelling удалён, лёгкий режим включён в source-only |
+| `check-esp32s31-examples.sh` | Target `cargo check` четырёх independent examples и compat-варианта; вызывается source-only | Оставить; не называть этот результат link/run evidence |
+| `check-standalone` | Копирует generic Blobray в отдельный workspace, проверяет локальные пути и компилирует все targets | Сохранён как ручная portability check, выполнен и описан в Blobray README |
+| `run-limited` | Ограничивает память/время process tree; используется при настоящем Blobray analysis и проверяется launcher test | Сохранён; отказ мониторинга и завершение при отмене исправлены |
+| `build-analysis-inputs` | Собирает три Rust comparison ELF; ручной workflow, declaration CLI используется host test | Сохранён и описан; теперь Cargo parallelism по умолчанию, явный лимит через env |
 | [install.sh](../hil/host/linux-net/install.sh) | Устанавливает fixture helper, patched hostapd, capability и ограниченные sudo-команды; ручная настройка из HIL README | Оставить отдельно от source audit |
 | [open-radio-net](../hil/host/linux-net/open-radio-net) | Выполняет конечный список операций Linux fixture; вызывается типизированным HIL transport через установленный helper | Оставить: наблюдает реальное association/channel state |
 
@@ -74,7 +79,7 @@ Cargo может записывать в разном порядке: из вр�
 только overrides, которые Cargo объявил unused, с проверкой тождественности
 графа до и после удаления. Повторных попыток замаскировать отказ нет.
 
-Четырнадцать [тестов сетевого аудита](../tools/tests/test_network_adapter_boundaries.py)
+Четырнадцать `тестов сетевого аудита`
 включают настоящие Cargo workspaces: чужой member не должен включать chip
 feature у проверяемого consumer, relative patches должны сохранять identity,
 а изменение версии относительно исходного lock должно отклоняться.
@@ -100,7 +105,7 @@ Architecture gate проверяет выбранные dependency profiles: к�
 последние известные PID и исходную process group. `INT`/`TERM` запускают
 существующий десятисекундный grace period с последующим `KILL`, даже если
 ребёнок игнорирует `TERM`. Пределы 1 GiB и 15 минут не менялись.
-Шесть [поведенческих тестов](../tools/tests/test_run_limited.py) запускают
+Шесть [поведенческих тестов](../tools/blobray/scripts/tests/test_run_limited.py) запускают
 маленькие процессы и проверяют ошибки `ps`, некорректный/пустой вывод,
 отмену и сохранение exit status; тяжёлый анализ для этого не запускается.
 При полностью недоступной таблице процессов watchdog может завершить только
@@ -129,7 +134,7 @@ ShellCheck 0.11.0. Для проверки использован официал
 - Обычный параллельный `cargo test --workspace --locked --offline`: 3940
   passed, 23 ignored, 0 failed. После исправления lock ownership выполнены
   повторные полные прогоны; последний включает явный `AccessLock::file()`.
-- `tools/audit-source-only.sh`: PASS, включая 22 Python tests, девять
+- `tools/repo/audit-source-only.sh`: PASS, включая 22 Python tests, девять
   изолированных network graphs, строгий workspace Clippy, safety/architecture,
   PAC/qualification и конечный ELF через resource launcher.
 - Отдельный network gate: девять compile profiles проходят. Настоящий

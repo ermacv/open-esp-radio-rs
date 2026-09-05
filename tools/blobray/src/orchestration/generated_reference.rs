@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     ArtifactSymbolSelector, FunctionAnalysis, MmioMap, ObservableEvent, ResolvedReferenceProgram,
-    Result, artifact_sha256, codegen, extract, extract_reference, harnesses, returns_equal,
+    Result, artifact_sha256, codegen, extract, extract_reference, providers, returns_equal,
     traces_equal,
 };
 
@@ -357,8 +357,8 @@ pub(crate) fn generate_compile_and_prove_exact_mmio_leaf(
     companions: &[PathBuf],
     vendor_trace: &FunctionAnalysis,
 ) -> Result<GeneratedReferenceProof> {
-    let riscv_harness = harnesses::riscv(harness)?;
-    let entry_contract = harnesses::entry_contract(harness, "none")?;
+    let riscv_harness = providers::riscv(harness)?;
+    let entry_contract = providers::entry_contract(harness, "none")?;
     let reference_trace =
         extract_reference(vendor_input, companions, riscv_harness, entry_contract, svd)?;
     let resolved = ResolvedReferenceProgram::try_from(&reference_trace)

@@ -1,0 +1,1018 @@
+# Shareable project entry point. Local artifact paths belong in an untracked
+# run spec passed with --run-spec, or in a private copy referenced here.
+schema = 4
+id = "esp32s31-radio-rev0"
+target-spec = "target.toml"
+ecosystem-packs = ["../../knowledge/espressif/radio.toml"]
+chip-pack = "../../chips/esp32s31/chip.toml"
+# The project provider explicitly extends the rev0 chip provider selected by
+# chip.toml. Exact ABI contracts and body/address-guarded summaries remain in
+# this investigation overlay; generic C/ESP-IDF and reusable chip behavior are
+# composed by the compiled descriptor, never by manifest precedence.
+analysis-provider = "esp32s31-radio-knowledge-v1"
+verification-addon = "verification-addon.toml"
+
+[applicability]
+artifact-lineages = ["esp32s31-radio"]
+
+[reviewed-knowledge]
+packs = ["../../../../registers/esp32s31/model/reviewed.toml"]
+default-pack = "../../../../registers/esp32s31/model/reviewed.toml"
+
+[analysis.symbols]
+output = "generated/findings/symbols.json"
+
+[analysis.navigation]
+output = "generated/findings/navigation.json"
+
+[code]
+pack = "code/boundaries.toml"
+
+[code.review]
+output = "generated/reports/code-boundaries.md"
+
+[[analysis.ir]]
+id = "rom-all"
+sources = ["rom"]
+roots = "all"
+include-reachable = true
+entry-contract = "esp32s31-phy-registered"
+output = "generated/findings/rom-all.ir"
+
+[[analysis.ir]]
+id = "archive-all"
+sources = ["archive"]
+roots = "all"
+include-reachable = true
+entry-contract = "esp32s31-phy-registered"
+output = "generated/findings/archive-all.ir"
+
+[[analysis.ir]]
+id = "libpp-all"
+sources = ["libpp"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/libpp-all.ir"
+
+[[analysis.ir]]
+id = "libnet80211-all"
+sources = ["libnet80211"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/libnet80211-all.ir"
+
+# Canonical cross-library image for the AP data path.  The separate libpp and
+# libnet80211 images remain useful for archive-local provenance, but cannot
+# resolve calls that cross their link boundary.  This existing combined image
+# contains both sides and therefore owns call-order analysis for AP RX/TX.
+[[analysis.ir]]
+id = "wifi-ap-data-path"
+sources = ["wifi-sta-ap-receive"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/wifi-ap-data-path.ir"
+
+[[analysis.ir]]
+id = "wifi-sta-lifecycle"
+sources = ["wifi-sta-lifecycle"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/wifi-sta-lifecycle.ir"
+
+[[analysis.ir]]
+id = "wifi-key-role"
+sources = ["wifi-key-role"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/wifi-key-role.ir"
+
+[[analysis.ir]]
+id = "coex-all"
+sources = ["coex"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/coex-all.ir"
+
+[[analysis.ir]]
+id = "btbb-all"
+sources = ["btbb"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/btbb-all.ir"
+
+# Canonical derived view of the standalone BLE controller boundary.  The
+# authenticated archives remain the observed source; this linked unit exists
+# to preserve cross-archive call identity and ordering for semantic analysis.
+[[analysis.ir]]
+id = "ble-controller-all"
+sources = ["ble-controller"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ble-controller-all.ir"
+
+# Diagnostic bodies are dead-stripped from the operational linked controller.
+# Analyze their authenticated archive members directly instead of retaining
+# debug code in the controller image or rebuilding an oracle application.
+[[analysis.ir]]
+id = "ble-phy-state-diagnostic"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_phy_hw_state_dump"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-phy-state-diagnostic.ir"
+
+[[analysis.ir]]
+id = "ble-coex-register-diagnostic"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_sym_ble_uPvbSnU52H5Jo6zGRBEO"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-coex-register-diagnostic.ir"
+
+# The public DTM RSSI getter and its current internal target are dead-stripped
+# from the operational controller image. Keep their exact archive call chain
+# as generated evidence; the reviewed pack separately owns the signed load.
+[[analysis.ir]]
+id = "ble-dtm-rssi"
+sources = ["ble-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "esp_ble_get_dtm_rx_rssi"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ble-dtm-rssi.ir"
+
+[[analysis.ir]]
+id = "btdm-scheduler-diagnostic"
+sources = ["btdm-diagnostics"]
+roots = "symbol-prefix"
+symbol-prefix = "r_btdm_sched_list_details_dump"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/btdm-scheduler-diagnostic.ir"
+
+# Canonical BR/EDR controller image. The authenticated Classic controller,
+# shared BTDM, baseband and PHY archives remain the provenance authority; this
+# linked view only restores cross-archive call identity for generated analysis.
+[[analysis.ir]]
+id = "bredr-controller-all"
+sources = ["bredr-controller"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/bredr-controller-all.ir"
+
+# Small lifecycle and interface views remain cheap navigation slices.  They do
+# not claim register coverage; ble-controller-all owns the complete lazy pass
+# used to derive controller MMIO shapes and candidate field partitions.
+[[analysis.ir]]
+id = "ble-controller-lifecycle"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_controller_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-controller-lifecycle.ir"
+
+[[analysis.ir]]
+id = "ble-hci-transport"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_hci_trans_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-hci-transport.ir"
+
+[[analysis.ir]]
+id = "ble-npl-boundary"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_get_npl_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-npl-boundary.ir"
+
+[[analysis.ir]]
+id = "ble-npl-layout"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_ll_get_npl_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-npl-layout.ir"
+
+[[analysis.ir]]
+id = "ble-stack-lifecycle"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_base_stack_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-stack-lifecycle.ir"
+
+[[analysis.ir]]
+id = "btdm-task-lifecycle"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_btdm_task_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/btdm-task-lifecycle.ir"
+
+# Focused IEEE 802.15.4 discovery surfaces over the authenticated BTBB and
+# coexistence artifacts. Keep the public esp_ieee802154_ controller family out
+# of executable analysis until its matching linked ESP-IDF image exists. The
+# existing artifact-wide profiles remain the function/register inventory
+# authority; these focused profiles only bound human-sized review scopes.
+[[analysis.public-symbol-families]]
+id = "ble-public-controller"
+protocols = ["ble"]
+source = "ble-controller"
+symbol-prefix = "r_ble_controller_"
+disposition = "required"
+profile = "ble-controller-all"
+
+[[analysis.public-symbol-families]]
+id = "bredr-public-controller"
+protocols = ["bluetooth"]
+source = "bredr-controller"
+symbol-prefix = "bredr_controller_"
+disposition = "required"
+profile = "bredr-controller-all"
+
+[[analysis.public-symbol-families]]
+id = "ieee802154-public-controller"
+protocols = ["ieee802154"]
+source = "ieee802154"
+symbol-prefix = "esp_ieee802154_"
+disposition = "required"
+profile = "ieee802154-controller"
+
+[[analysis.ir]]
+id = "ieee802154-btbb"
+sources = ["btbb"]
+roots = "symbol-prefix"
+symbol-prefix = "ieee802154_"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ieee802154-btbb.ir"
+
+[[analysis.ir]]
+id = "ieee802154-zb"
+sources = ["btbb"]
+roots = "symbol-prefix"
+symbol-prefix = "zb_"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ieee802154-zb.ir"
+
+[[analysis.ir]]
+id = "ieee802154-coex"
+sources = ["coex"]
+roots = "symbol-prefix"
+symbol-prefix = "esp_coex_ieee802154_"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ieee802154-coex.ir"
+
+[registers]
+facts = "generated/findings/mmio.json"
+ownership-policy = "../../../../registers/esp32s31/policy/ownership.toml"
+
+[registers.review]
+output = "generated/reports/register-review.md"
+linked-ir = [
+    "generated/findings/rom-all.ir",
+    "generated/findings/archive-all.ir",
+    "generated/findings/libpp-all.ir",
+    "generated/findings/libnet80211-all.ir",
+    "generated/findings/wifi-sta-lifecycle.ir",
+    "generated/findings/wifi-key-role.ir",
+    "generated/findings/coex-all.ir",
+    "generated/findings/btbb-all.ir",
+    "generated/findings/ble-controller-all.ir",
+    "generated/findings/ble-phy-state-diagnostic.ir",
+    "generated/findings/ble-coex-register-diagnostic.ir",
+    "generated/findings/btdm-scheduler-diagnostic.ir",
+    "generated/findings/bredr-controller-all.ir",
+    "generated/findings/ble-controller-lifecycle.ir",
+    "generated/findings/ble-hci-transport.ir",
+    "generated/findings/ble-npl-boundary.ir",
+    "generated/findings/ble-npl-layout.ir",
+    "generated/findings/ble-stack-lifecycle.ir",
+    "generated/findings/btdm-task-lifecycle.ir",
+]
+# `phy_reg_check` is a diagnostic register dump: it reads every word in broad
+# MMIO windows and prints the values without using them to control hardware.
+# Preserve those raw observations, but do not make diagnostic-only addresses
+# part of the release register-model review debt.
+# `wdev_record_rx_linked_list` snapshots descriptor/MMIO state into the debug
+# ring consumed by `wdev_dump_rx_linked_list`; its two otherwise unknown reads
+# at 0x20104090/0x20104094 do not control the RX path.
+# `r_sym_ble_q4fRanBdVgftXY2ep3Zs` is the complete base_stack.c diagnostic
+# snapshot leaf: it formats register values, copies two scratch images and is
+# reached only by the BLE log-buffer trigger.  Its 0x201014bc/cc reads and
+# 0x201014c8 scratch write are retained as observations but do not define the
+# standalone controller's operational register debt.
+non-operational-functions = [
+    "archive:phy_reg_check",
+    "ble-controller:r_sym_ble_q4fRanBdVgftXY2ep3Zs",
+    "libpp:wdev_record_rx_linked_list",
+    "libpp-replay:wdev_record_rx_linked_list",
+    "wifi-key-role:dbg_dump_rx_links",
+    "wifi-key-role:wdev_record_rx_linked_list",
+    "wifi-sta-ap-receive:dbg_dump_rx_links",
+    "wifi-sta-ap-receive:wdev_record_rx_linked_list",
+    "wifi-sta-lifecycle:dbg_dump_rx_links",
+    "wifi-sta-lifecycle:wdev_record_rx_linked_list",
+]
+
+[registers.svd]
+output = "../../../../registers/esp32s31/published/radio.svd"
+
+[registers.pac-raw]
+output = "../../../../driver/chips/esp32s31/pac/raw/src/lib.rs"
+target = "none"
+edition = "2024"
+
+[registers.bindings]
+output = "../../../../registers/esp32s31/published/radio.bindings.toml"
+crate-name = "open_esp_radio_esp32s31_pac_raw"
+
+[registers.api]
+pack = "../../../../registers/esp32s31/policy/api.toml"
+output = "../../../../driver/chips/esp32s31/pac/src/generated.rs"
+
+[registers.lints]
+pack = "../../../../registers/esp32s31/policy/lints.toml"
+
+[registers.evidence]
+catalogs = [
+    "../../../../registers/esp32s31/evidence/policy.toml",
+    "../../../../registers/esp32s31/evidence/platform.toml",
+    "../../../../registers/esp32s31/evidence/vendor-rom.toml",
+    "../../../../registers/esp32s31/evidence/vendor-radio-libraries.toml",
+    "../../../../registers/esp32s31/evidence/vendor-libpp.toml",
+    "../../../../registers/esp32s31/evidence/vendor-net80211.toml",
+    "../../../../registers/esp32s31/evidence/hil-open.toml",
+    "../../../../registers/esp32s31/evidence/hil-vendor.toml",
+    "../../../../registers/esp32s31/evidence/promoted-driver-provenance.toml",
+]
+
+[interfaces]
+facts = "generated/findings/interfaces.json"
+pack = "interfaces/reviewed.toml"
+
+[interfaces.capability-context]
+output = "generated/findings/capability-context.json"
+
+[functions]
+pack = "functions/reviewed.toml"
+profiles = [
+    "rom-all",
+    "archive-all",
+    "libpp-all",
+    "libnet80211-all",
+    "wifi-ap-data-path",
+    "wifi-sta-lifecycle",
+    "wifi-key-role",
+    "coex-all",
+    "btbb-all",
+    "ble-controller-all",
+    "ble-phy-state-diagnostic",
+    "ble-coex-register-diagnostic",
+    "ble-dtm-rssi",
+    "btdm-scheduler-diagnostic",
+]
+
+[functions.review]
+output = "generated/reports/function-review.md"
+
+# Human-sized review surfaces over artifact-wide IR. Roots may use the stable
+# SOURCE:SYMBOL shorthand; Blobray resolves the concrete archive identity
+# and follows only calls present in the selected profiles.
+[review]
+output = "generated/findings/review-scopes.json"
+publication-scopes = [
+    "phy-init",
+    "ble-standalone-runtime-hardware",
+]
+
+[[review.scopes]]
+id = "phy-init"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
+profiles = ["archive-all"]
+roots = ["archive:phy_bb_init", "archive:register_chipv7_phy"]
+include-reachable = true
+
+[[review.scopes]]
+id = "phy-pll-tracking"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "shared"]
+profiles = ["archive-all"]
+roots = ["archive:phy_param_track_tot"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-rx"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_mac_rx_disable",
+    "libpp:hal_mac_rx_enable",
+    "libpp:wDev_AppendRxBlocks",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-tx"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_mac_txq_enable",
+    "libpp:hal_mac_txq_disable",
+    "libpp:hal_mac_tx_config_edca",
+    "libpp:hal_mac_tx_get_blockack",
+    "libpp:hal_mac_tx_set_ppdu",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-interrupts"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = ["libpp:wDev_ProcessFiq"]
+include-reachable = true
+
+[[review.scopes]]
+id = "station-state"
+protocols = ["wifi"]
+profiles = ["libnet80211-all", "libpp-all"]
+roots = ["libnet80211:ieee80211_sta_new_state"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-sta-connected"
+protocols = ["wifi"]
+profiles = ["wifi-sta-lifecycle"]
+roots = [
+    "wifi-sta-lifecycle:ieee80211_sta_new_state",
+    "wifi-sta-lifecycle:cnx_sta_pm",
+    "wifi-sta-lifecycle:pm_start",
+    "wifi-sta-lifecycle:pm_set_beacon_filter",
+    "wifi-sta-lifecycle:hal_set_sta_beacon_filter",
+    "wifi-sta-lifecycle:hal_enable_sta_beacon_filter",
+    "wifi-sta-lifecycle:hal_disable_sta_beacon_filter",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-sta-beacon-filter-policy"
+protocols = ["wifi"]
+profiles = ["wifi-sta-lifecycle"]
+roots = [
+    "wifi-sta-lifecycle:hal_set_sta_beacon_filter",
+    "wifi-sta-lifecycle:hal_enable_sta_beacon_filter",
+    "wifi-sta-lifecycle:hal_disable_sta_beacon_filter",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-key-role"
+protocols = ["wifi"]
+profiles = ["wifi-key-role"]
+roots = [
+    "wifi-key-role:esp_wifi_set_ap_key_internal",
+    "wifi-key-role:ppInstallKey",
+    "wifi-key-role:hal_crypto_set_key_entry",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-link-identity"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_mac_set_bssid",
+    "libpp:hal_mac_clr_bssid",
+    "libpp:hal_rx_enable_bssid_check",
+    "libpp:hal_rx_disable_bssid_check",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-interface-context"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_mac_set_addr",
+    "libpp:hal_mac_set_bssid",
+    "libpp:hal_mac_clr_bssid",
+    "libpp:hal_rx_enable_bssid_check",
+    "libpp:hal_rx_disable_bssid_check",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-data-path"
+protocols = ["wifi"]
+profiles = ["wifi-ap-data-path"]
+roots = [
+    "wifi-sta-ap-receive:lmacRxDone",
+    "wifi-sta-ap-receive:lmacProcessRxSucData",
+    "wifi-sta-ap-receive:wdevProcessRxSucDataAll",
+    "wifi-sta-ap-receive:ppRxPkt",
+    "wifi-sta-ap-receive:ampdu_dispatch",
+    "wifi-sta-ap-receive:hostap_input",
+    "wifi-sta-ap-receive:hostap_deliver_data",
+    "wifi-sta-ap-receive:ieee80211_output",
+    "wifi-sta-ap-receive:ppTxPkt",
+    "wifi-sta-ap-receive:ppTxProtoProc",
+    "wifi-sta-ap-receive:lmacProcessTxComplete",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-coex-register-leaves"
+protocols = ["wifi", "coex"]
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_set_rx_beacon_pti",
+    "libpp:hal_clear_rx_beacon_pti",
+    "libpp:hal_set_itwt_pti",
+    "libpp:hal_clr_itwt_pti",
+    "libpp:hal_set_tx_pti",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-tsf-stop"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = ["libpp:hal_disable_softap_tsf"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-tsf-start"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = ["libpp:hal_mac_tsf_reset"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-tx-retry-rate"
+protocols = ["wifi"]
+profiles = ["libpp-all"]
+roots = ["libpp:rcGetRate"]
+include-reachable = false
+
+[[review.scopes]]
+id = "wifi-tx-completion-dispatch"
+protocols = ["wifi"]
+profiles = ["wifi-sta-lifecycle"]
+roots = [
+    "wifi-sta-lifecycle:lmacPostTxComplete",
+    "wifi-sta-lifecycle:ppTask",
+    "wifi-sta-lifecycle:lmacProcessTxComplete",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "wifi-rx-completion-dispatch"
+protocols = ["wifi"]
+profiles = ["wifi-sta-lifecycle"]
+roots = [
+    "wifi-sta-lifecycle:lmacRxDone",
+    "wifi-sta-lifecycle:ppTask",
+    "wifi-sta-lifecycle:ppRxPkt",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "coex-core"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
+profiles = ["coex-all"]
+roots = [
+    "coex:coex_pre_init",
+    "coex:coex_init",
+    "coex:coex_enable",
+    "coex:coex_disable",
+    "coex:coex_core_status_get",
+    "coex:coex_core_request",
+    "coex:coex_core_release",
+    "coex:coex_core_pti_get",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "coex-timer"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
+profiles = ["coex-all"]
+roots = [
+    "coex:coex_hw_timer_set",
+    "coex:coex_hw_timer_enable",
+    "coex:coex_hw_timer_disable",
+    "coex:coex_hw_timer_force",
+    "coex:coex_hw_timer_unforce",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "coex-timer-control"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
+profiles = ["coex-all"]
+roots = [
+    "coex:coex_hw_timer_enable",
+    "coex:coex_hw_timer_disable",
+    "coex:coex_hw_timer_force",
+    "coex:coex_hw_timer_unforce",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "coex-external-register-leaves"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
+profiles = ["coex-all"]
+roots = [
+    "coex:hal_enable_extern_coex",
+    "coex:hal_disable_extern_coex",
+    "coex:hal_set_extern_coex_delay",
+    "coex:hal_set_extern_coex_mode",
+    "coex:hal_set_extern_coex_sync",
+    "coex:hal_set_extern_coex_validity",
+    "coex:hal_set_extern_pti",
+    "coex:hal_clr_extern_pti",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "coex-scheduler"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
+profiles = ["coex-all"]
+roots = [
+    "coex:coex_schm_interval_set",
+    "coex:coex_schm_interval_get",
+    "coex:coex_schm_curr_period_get",
+    "coex:coex_schm_curr_phase_get",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "btbb-coex-client"
+protocols = ["bluetooth", "ble", "coex"]
+profiles = ["btbb-all"]
+roots = ["btbb:coex_pti_v2"]
+include-reachable = true
+
+# Navigation-only diagnostic surfaces. They intentionally remain outside
+# operational publication debt while exposing the vendor's own block/offset
+# map and binary BLE state inventory for focused human review.
+[[review.scopes]]
+id = "shared-phy-register-diagnostics"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "shared"]
+profiles = ["archive-all"]
+roots = ["archive:phy_reg_check"]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-register-diagnostics"
+protocols = ["ble"]
+profiles = ["ble-phy-state-diagnostic", "ble-coex-register-diagnostic"]
+roots = [
+    "ble-diagnostics:r_ble_phy_hw_state_dump",
+    "ble-diagnostics:r_sym_ble_uPvbSnU52H5Jo6zGRBEO",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "btdm-scheduler-diagnostics"
+protocols = ["bluetooth", "ble", "shared"]
+profiles = ["btdm-scheduler-diagnostic"]
+roots = ["btdm-diagnostics:r_btdm_sched_list_details_dump"]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-controller-lifecycle"
+protocols = ["ble"]
+profiles = [
+    "ble-controller-lifecycle",
+    "ble-npl-boundary",
+    "ble-npl-layout",
+]
+roots = [
+    "ble-controller:r_ble_controller_init",
+    "ble-controller:r_ble_controller_deinit",
+    "ble-controller:r_ble_get_npl_element_info",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-host-controller-interface"
+protocols = ["ble"]
+profiles = ["ble-hci-transport"]
+roots = [
+    "ble-controller:r_ble_hci_trans_init",
+    "ble-controller:r_ble_hci_trans_cfg_hs",
+    "ble-controller:r_ble_hci_trans_hs_cmd_tx",
+    "ble-controller:r_ble_hci_trans_hs_acl_tx",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-stack-lifecycle"
+protocols = ["ble"]
+profiles = ["ble-stack-lifecycle"]
+roots = [
+    "ble-controller:r_base_stack_initEnv",
+    "ble-controller:r_base_stack_enable",
+    "ble-controller:r_base_stack_disable",
+    "ble-controller:r_base_stack_deinitEnv",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "btdm-task-lifecycle"
+protocols = ["bluetooth", "ble"]
+profiles = ["btdm-task-lifecycle"]
+roots = [
+    "ble-controller:r_btdm_task_init",
+    "ble-controller:r_btdm_task_enable",
+    "ble-controller:r_btdm_task_disable",
+    "ble-controller:r_btdm_task_shutdown",
+    "ble-controller:r_btdm_task_deinit",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "bredr-controller-lifecycle"
+protocols = ["bluetooth"]
+profiles = ["bredr-controller-all"]
+roots = [
+    "bredr-controller:bredr_controller_init",
+    "bredr-controller:bredr_controller_deinit",
+    "bredr-controller:bredr_controller_state_get",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "bredr-host-controller-interface"
+protocols = ["bluetooth"]
+profiles = ["bredr-controller-all"]
+roots = [
+    "bredr-controller:bredr_hci_trans_register_tx",
+    "bredr-controller:bredr_hci_trans_acl_rx",
+    "bredr-controller:bredr_hci_trans_sync_rx",
+]
+include-reachable = true
+
+# Operational lifecycle coverage is intentionally separate from the cheap
+# navigation slices above.  The canonical linked profile follows every direct
+# cross-archive edge rooted at the public controller, base-stack and BTDM task
+# transactions.  This scope is not a publication gate until every reached
+# MMIO fact has a reviewed owner and optional feature callbacks have been
+# classified explicitly.
+[[review.scopes]]
+id = "ble-standalone-runtime-hardware"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    # Reached by the pinned public S31 outer enable glue through
+    # btdm_lp_reset(true) -> esp_phy_enable/esp_btbb_enable. The wrapper source
+    # proves reachability; this linked vendor body remains the effect authority.
+    "ble-controller:bt_bb_v2_init_cmplx",
+    # Complete S31 body corresponding to the ecosystem BLE PHY register-init
+    # role. Keep it explicit until the reviewed indirect interface edge from
+    # the public lifecycle is resolved by the canonical linked image.
+    "ble-controller:r_sym_ble_3472b6bNiQdnWkYo6Ggv",
+    # Complete positional address-slot writer. Named public- and random-address
+    # callers prove two uses, while selector two remains intentionally unnamed.
+    "ble-controller:r_sym_ble_ylitQQeG9NPtG1fXz4Tk",
+    "ble-controller:r_ble_controller_init",
+    "ble-controller:r_ble_controller_deinit",
+    "ble-controller:r_base_stack_initEnv",
+    "ble-controller:r_base_stack_enable",
+    "ble-controller:r_base_stack_disable",
+    "ble-controller:r_base_stack_deinitEnv",
+    "ble-controller:r_btdm_task_init",
+    "ble-controller:r_btdm_task_enable",
+    "ble-controller:r_btdm_task_disable",
+    "ble-controller:r_btdm_task_shutdown",
+    "ble-controller:r_btdm_task_deinit",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "ble-direct-test-mode"
+protocols = ["ble"]
+profiles = ["ble-controller-all", "ble-dtm-rssi"]
+roots = [
+    # Complete transmitter and receiver command bodies reach allocation,
+    # packet construction, event preparation and common scheduler insertion.
+    "ble-controller:r_sym_ble_odiPxxFv9QenApESv5qy",
+    "ble-controller:r_sym_ble_ssKOV2juzhIVJk3r8x6R",
+    # Test End owns synchronous stop and teardown. The recycle callback is an
+    # explicit root because the scheduler invokes it through a stored pointer,
+    # so an ordinary direct-call traversal cannot prove that edge.
+    "ble-controller:r_sym_ble_9DFKLYZzjaztWMiPU4NR",
+    "ble-controller:r_sym_ble_kdHGLPeGDJlAvxmbjQ6e",
+    # Archive-only public getter closes packet-result high byte -> signed RSSI
+    # without retaining diagnostic/application glue in the controller image.
+    "ble-diagnostics:esp_ble_get_dtm_rx_rssi",
+    # The common worker publishes the finished-list mask through the broker,
+    # and the BLE scheduler consumes it through another stored callback. Both
+    # asynchronous ingress edges must be explicit or the scope loses the
+    # hardware-completion half of the DTM lifecycle.
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Legacy advertising has a different packet-engine and SRAM contract from
+# Direct Test Mode.  Keep its builders, event scheduler and completion path in
+# one independent research frontier so DTM's access address, channel lowering,
+# timing and descriptor interpretations cannot leak into the advertising
+# driver.  Same-chip public source establishes the role of these current
+# symbols through object-section correspondence; the linked current artifact,
+# not the old source, remains the authority for their behavior.
+#
+# esp_ble_adv_aa_setting is intentionally absent: the canonical linked image
+# dead-strips that public setter.  Inspect it directly in libble_app.a member
+# 94.o as inventory evidence; its environment write is not yet evidence of the
+# hardware-consumed access-address layout or byte order.
+[[review.scopes]]
+id = "ble-legacy-nonconnectable-advertising"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    # Primary-channel PDU construction and role reset/start lifecycle.
+    "ble-controller:r_sym_ble_MrW1ZaJZqsHzi3wwRhsn",
+    "ble-controller:r_sym_ble_c9Zmr2aWmPOsZoITHDe9",
+    "ble-controller:r_sym_ble_fxKAT8in6cXLv0gLB2W5",
+    "ble-controller:r_sym_ble_fiiv8hEPVagnOAVa7EM2",
+    "ble-controller:r_sym_ble_cfILxLFIWftw22I0zQab",
+    "ble-controller:r_sym_ble_8UzoZYkzYu9MXbM1vyWN",
+    # First/next primary event scheduling plus callback-owned recycling.
+    "ble-controller:r_sym_ble_mqh4OXzoN59kvnkKFMA1",
+    "ble-controller:r_sym_ble_77zgK6v8rbStzf0ReBjv",
+    "ble-controller:r_sym_ble_pfcv0QVYrNS6KoQetydw",
+    # Asynchronous hardware-finished ingress and BLE scheduler consumption.
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Minimum hardware-admission slice for the first open Link Layer role. Root the
+# actual packet producer, link-state producer and first-event producer instead
+# of the broad all-feature start routine. Recycling is callback-owned, and the
+# two common roots close the asynchronous hardware-finished edge, so all six
+# must remain explicit. Broad allocation/start/reset and next-event policy stay
+# in the larger investigation scope above; this slice answers only whether one
+# prepared ADV_NONCONN_IND can cross CPU -> hardware -> CPU ownership without
+# importing scan/connection policy.
+[[review.scopes]]
+id = "ble-legacy-nonconnectable-admission"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_MrW1ZaJZqsHzi3wwRhsn",
+    "ble-controller:r_sym_ble_fxKAT8in6cXLv0gLB2W5",
+    "ble-controller:r_sym_ble_mqh4OXzoN59kvnkKFMA1",
+    "ble-controller:r_sym_ble_pfcv0QVYrNS6KoQetydw",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Minimum receive-only frontier for the next open Link Layer role.  The roots
+# deliberately stop at legacy passive 1M scanning: parameter validation and
+# HCI packet syntax are portable policy, while extended/active scanning,
+# initiator state and the vendor's ULL object graph are outside this hardware
+# investigation.  Start/reset close CPU -> hardware ownership.  RX processing,
+# scheduler recycling and selector-4 resume are callback-owned and therefore
+# remain explicit roots.  The common worker and BLE scheduler close the
+# asynchronous finished-list edge just as they do for DTM and advertising.
+[[review.scopes]]
+id = "ble-legacy-passive-scanning"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_znMr0TnKK4lkFEsrathq",
+    "ble-controller:r_sym_ble_XwMfMguyw9lccbIeVsvN",
+    "ble-controller:r_sym_ble_FI34eU2bYuxQYjeVS51T",
+    "ble-controller:r_sym_ble_jMEoTs6F9eIXRCc3ssv4",
+    "ble-controller:r_sym_ble_GUS6jpjPpQlTJuvOrYMV",
+    "ble-controller:r_sym_ble_XYr0jejHXj4ULilAqOsG",
+    "ble-controller:r_sym_ble_h1CfV40z3TOeYWAmKSQ9",
+    "ble-controller:r_sym_ble_q4hMJ7XLGGCzxwmAKSge",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Hardware-admission subset of the passive-scanning investigation above.
+# Allocation/start/reset own CPU -> controller publication, scheduler recycling
+# is callback-owned, and the two common roots close the asynchronous finished
+# edge.  Upper packet parsing and HCI reporting deliberately remain in the
+# larger scope: this slice ranks only facts needed to publish and reclaim one
+# receive window.
+[[review.scopes]]
+id = "ble-legacy-passive-scan-admission"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_znMr0TnKK4lkFEsrathq",
+    "ble-controller:r_sym_ble_XwMfMguyw9lccbIeVsvN",
+    "ble-controller:r_sym_ble_FI34eU2bYuxQYjeVS51T",
+    "ble-controller:r_sym_ble_h1CfV40z3TOeYWAmKSQ9",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Peripheral connection setup and completion are a distinct controller-SRAM
+# contract.  The current archive obscures its function names, but member 51.o
+# retains the ble_lll_conn.c source path and the named same-chip revision keeps
+# the corresponding function-section order.  Root the peripheral constructor,
+# the descriptor recycler and the scheduler-item completion callback explicitly:
+# the latter two are callback-owned and are not both recoverable from ordinary
+# direct-call traversal.  The common worker and BLE scheduler close the same
+# asynchronous finished-list edge used by the other live BLE roles.
+[[review.scopes]]
+id = "ble-peripheral-connection-hardware"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    "ble-controller:r_sym_ble_DCD5eVhcHQ9ueSpewKn1",
+    "ble-controller:r_sym_ble_7LDXbnFJ4YehO5PIXaNN",
+    "ble-controller:r_sym_ble_vssfeWXnPIcnyOfdsX00",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+# Response-capable advertising is the causal bridge between the advertising
+# RX descriptor and the first peripheral connection event. Keep the upper
+# address/filter policy visible as evidence, but do not copy that architecture
+# into the Rust LL: the scope exists to prove the exact PDU and time provenance.
+[[review.scopes]]
+id = "ble-connectable-advertising-response"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    # RX descriptor -> normalized timestamp/PDU -> CONNECT_IND dispatch.
+    "ble-controller:r_sym_ble_JCW3xBO3VoZM1jvZVHin",
+    "ble-controller:r_sym_ble_oTadGkcNzoRFY8JfdVJw",
+    "ble-controller:r_sym_ble_qWmmMxppHhdB6LLNTjHe",
+    # Portable request parsing and first-anchor construction.
+    "ble-controller:r_sym_ble_yGsYADDrqjYziP9c5GNW",
+    "ble-controller:r_sym_ble_EhsfmEgcePNEwVjH4OHN",
+    "ble-controller:r_sym_ble_lOibLRJHxbsSHA967fML",
+    "ble-controller:r_sym_ble_mVQi032HguLS2FtruQIm",
+    # Lower first-event construction plus callback-owned completion.
+    "ble-controller:r_sym_ble_DCD5eVhcHQ9ueSpewKn1",
+    "ble-controller:r_sym_ble_7LDXbnFJ4YehO5PIXaNN",
+    "ble-controller:r_sym_ble_vssfeWXnPIcnyOfdsX00",
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "ieee802154-baseband-leaves"
+protocols = ["ieee802154"]
+profiles = ["ieee802154-btbb", "ieee802154-zb"]
+roots = [
+    "btbb:ieee802154_ed_trig_tx_rampup_get",
+    "btbb:ieee802154_rx_rampup_get",
+    "btbb:ieee802154_set_rx_sense",
+    "btbb:ieee802154_tx_rampup_get",
+    "btbb:ieee802154_txon_delay_set",
+    "btbb:zb_rx_auto_sel",
+    "btbb:zb_rx_core_set",
+    "btbb:zb_rx_v0_0_set",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "ieee802154-coex-client"
+protocols = ["ieee802154", "coex"]
+profiles = ["ieee802154-coex"]
+roots = [
+    "coex:esp_coex_ieee802154_ack_pti_set",
+    "coex:esp_coex_ieee802154_coex_break_notify",
+    "coex:esp_coex_ieee802154_extcoex_rx_stage",
+    "coex:esp_coex_ieee802154_extcoex_tx_stage",
+    "coex:esp_coex_ieee802154_force_rx_enable",
+    "coex:esp_coex_ieee802154_status_disable",
+    "coex:esp_coex_ieee802154_status_enable",
+    "coex:esp_coex_ieee802154_txrx_pti_set",
+]
+include-reachable = true

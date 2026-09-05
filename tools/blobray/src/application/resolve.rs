@@ -185,7 +185,7 @@ impl ProjectSession {
                         crate::Error::invalid(format!("cannot load reviewed knowledge: {error}"))
                     })?;
             let mut sources = knowledge.constrained_artifact_sources();
-            sources.extend(crate::harnesses::reviewed_memory_access_artifact_sources(
+            sources.extend(crate::providers::reviewed_memory_access_artifact_sources(
                 target.knowledge_provider.as_deref(),
             )?);
             if !sources.is_empty() {
@@ -285,7 +285,7 @@ impl ProjectSession {
                 crate::Error::invalid(format!("cannot reload reviewed knowledge: {error}"))
             })?;
         let mut sources = knowledge.constrained_artifact_sources();
-        sources.extend(crate::harnesses::reviewed_memory_access_artifact_sources(
+        sources.extend(crate::providers::reviewed_memory_access_artifact_sources(
             self.target.knowledge_provider.as_deref(),
         )?);
         if sources.is_empty() {
@@ -385,7 +385,7 @@ fn cached_interface_workspace<'a>(
         let contracts = target
             .knowledge_provider
             .as_deref()
-            .and_then(|harness| crate::harnesses::contracts(harness).ok());
+            .and_then(|harness| crate::providers::contracts(harness).ok());
         crate::interfaces::InterfaceWorkspace::load_with_templates(
             &paths.facts,
             pack,

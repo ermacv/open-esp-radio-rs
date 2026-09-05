@@ -21,7 +21,7 @@ cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all [--tag qualification]
 ```
 
-Scenarios are versioned TOML files in `hil/scenarios`; they contain workload,
+Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain workload,
 isolation and acceptance criteria, never serial paths or secrets. Machine-local
 device, STA/AP and OpenWrt values live only in mode-0600 `hil/local.toml`.
 
@@ -154,3 +154,24 @@ derived history views and Markdown narratives are never proof inputs.
 `boot-smoke` intentionally precedes the radio protocol and proves only runtime
 relocation plus one Embassy timer wake. It uses its single fixed PASS record;
 all radio, lifecycle and traffic evidence uses the typed HIL protocol.
+
+## Source ownership
+
+`runner/src` follows execution and evidence boundaries:
+
+- `scenario` owns catalog values, discovery and semantic acceptance rules;
+  `image/class` owns the unchanged image identities and feature recipes.
+- `image` owns build/rebuild and placement/stack auditing; the reusable ELF
+  analyzer remains `tools/memory-report`.
+- `lab` owns local configuration, topology/provenance and the exclusive fixture
+  guard; `fixture` implements controlled host and peer capabilities.
+- `session` owns one UART capture and its protocol/readiness/validation state.
+- `workload` groups system, IEEE 802.15.4, IEEE 802.11 role and network traffic
+  operations. They report scenario outcomes, not product readiness.
+- `evidence` owns sealed run models, archive/integrity/verification and build
+  provenance. `reporting` renders HTML/JUnit and rebuildable history views.
+
+The recursive [catalog contract](../scenarios/README.md) is checked independently
+by the runner and qualification evaluator. Shared synthetic input documents
+exercise both readers; qualification never imports execution or validation
+implementation from the runner. Tests are adjacent files within each owner.

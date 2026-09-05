@@ -1,7 +1,7 @@
 //! Ownership-bound access to recovered ESP32-S31 PHY/baseband registers.
 //!
 //! Register layout and legal field images come from
-//! `svd/esp32s31-radio.svd`. Complete ROM/blob bodies cited there define the
+//! `registers/esp32s31/published/radio.svd`. Complete ROM/blob bodies cited there define the
 //! finite operation order.
 
 #![deny(unsafe_code)]

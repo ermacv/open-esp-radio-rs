@@ -1,5 +1,9 @@
 # Итог структурирования driver
 
+Проверки ниже относятся к завершённой структурной миграции. Текущий запуск
+source gate — `cargo xtask check source-only`; результаты прежнего shell gate
+не подменяют проверку новой автоматизации.
+
 Дата: 2026-09-05. Структурная миграция и итоговые проверки завершены. Область работы — организация существующего кода и владения,
 без расширения поддержанных радиорежимов или hardware qualification.
 
@@ -46,7 +50,7 @@ WPA2/STA: сохранены прежние exports и production/test items. AP
 | `cargo check --workspace` | PASS |
 | `cargo test --workspace` | 3942 passed, 0 failed, 23 ignored; два новых AP profile tests, прежние suites сохранены |
 | `cargo fmt --all -- --check` и шесть отдельных compositions | PASS |
-| `tools/audit-source-only.sh` | PASS: strict host Clippy, 22 tool tests, Cargo boundaries, target/source/PAC/qualification gates |
+| `tools/repo/audit-source-only.sh` | PASS: strict host Clippy, 22 tool tests, Cargo boundaries, target/source/PAC/qualification gates |
 | Bluetooth strict host/target Clippy, default/all-feature PAC/HAL и AP target checks | PASS |
 | Strict rustdoc MAC/WPA2/AP/Bluetooth | PASS |
 | HIL images: performance, correctness, diagnostic-core0-rx-coarse, diagnostic-core0-rx-cycles, diagnostic-task-poll | PASS: placement, stack, source graph; SHA-256 сверен с фактическими images |

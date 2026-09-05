@@ -6,7 +6,7 @@ use crate::{cli::resolver::RegisterWorkspaceCommand, project::ProjectSpec, regis
 mod publication;
 mod report;
 
-use publication::{export_svd, generate_bindings, generate_pac_raw_source};
+use publication::{export_svd, generate_bindings, generate_pac_api, generate_pac_raw_source};
 use report::*;
 
 pub(super) fn run(
@@ -32,6 +32,7 @@ pub(super) fn run(
         RegisterWorkspaceCommand::GeneratePacRaw(arguments) => {
             generate_pac_raw_source(arguments, paths)
         }
+        RegisterWorkspaceCommand::GeneratePacApi(arguments) => generate_pac_api(arguments, paths),
         RegisterWorkspaceCommand::GenerateBindings(arguments) => {
             generate_bindings(arguments, paths)
         }

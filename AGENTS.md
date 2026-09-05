@@ -15,9 +15,11 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
 - `hil/` contains the typed HIL protocol, host runner, targets, and scenarios.
 - `verification/vendor/` holds reviewed vendor-comparison inputs; `_oracles/`
   is private input and must never be committed.
-- `qualification/` contains machine-checked capability specifications. `svd/` contains
-  reviewed hardware descriptions. `tools/` contains repository utilities and
-  Blobray.
+- `qualification/` owns capability programs and their independent evaluator.
+  `registers/` owns reviewed hardware models, publication policy and generated
+  SVD/bindings. `tools/` contains Blobray, memory analysis and repository checks
+  under `tools/repo/`. Vendor investigation compositions live under
+  `verification/vendor/projects/`.
 
 Keep tests beside their Rust modules (`#[cfg(test)]`) or in a crate's `tests/`
 directory. Do not place production behavior in verification probes.
@@ -30,13 +32,13 @@ cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets
 cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
-tools/audit-source-only.sh
+cargo xtask check source-only
 ```
 
 Use `cargo test -p <package> <test_name>` for focused iteration. Build the
-Blobray with `cargo build --profile blobray -p
-blobray-esp32s31 --bin blobray` and
-run real analyses through `tools/blobray/scripts/run-limited`
+Blobray host with `cargo build --profile blobray -p blobray-esp32s31 --bin
+blobray` and its limiter with `cargo build --profile blobray -p blobray --bin
+blobray-run`. Run real analyses through `target/blobray/blobray-run`
 to enforce its memory and time limits. HIL commands require attached hardware;
 follow `hil/targets/esp32s31/README.md`.
 

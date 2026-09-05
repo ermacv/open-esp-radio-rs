@@ -64,7 +64,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
             .target
             .knowledge_provider
             .as_deref()
-            .and_then(|harness| crate::harnesses::contracts(harness).ok()),
+            .and_then(|harness| crate::providers::contracts(harness).ok()),
     ) {
         Ok(workspace) => {
             let summary = workspace.summary();

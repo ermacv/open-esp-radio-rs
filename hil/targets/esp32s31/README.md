@@ -52,3 +52,19 @@ expected hashes or stored lab secrets.
 Session admission reads functional station link and Block-Ack state from the
 production status owner. Diagnostic aggregate counters are observations only
 and never authorize traffic or change role behaviour.
+
+## Application boundaries
+
+The stage-two `runtime` name and binary identity remain part of the existing
+bootstrap/relocation contract. `product_hil` owns the radio/network composition
+and its persistent observation resources; its `traffic`, `ieee802154` and
+`rx_qualification` children own workload and observation duties. The value-only
+`rx_statistics` child owns RX counter deltas and wire-evidence conversion.
+`console` retains the coupled UART/session admission, logger serialization
+and emergency writer lifecycle. Separating these owners requires an explicit
+state handoff, not a folder or type-name rewrite.
+
+Board/linker/bootstrap/stack policy stays with this concrete HIL composition.
+The standalone examples use a different boot/linker contract; see the station
+example's documented placement limitation before treating source checks as a
+flashable production image.

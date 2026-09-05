@@ -7,19 +7,22 @@ Blobray verification, HIL execution and product qualification.
 
 | Source | Question it answers | May decide readiness? |
 | --- | --- | --- |
-| `driver/` owners and tests | Does the current source contain the declared production and host contracts? | Required, not sufficient |
+| Reviewed implementation/host/async declarations | What reviewed state does the capability program declare, consistently with its gaps? | Required declarations, not test-run evidence |
 | Blobray `production-trace` | Does concrete vendor execution match the exact compiled production entry under the declared bounded contract? | Supplies vendor evidence only |
 | Blobray `shared-core` or static analysis | Does supporting code or a model agree? | No |
 | HIL sealed run | Did the current clean production composition pass the declared scenario on hardware? | Supplies HIL evidence only |
-| Qualification v3 | Are all required axes and dependencies closed by acceptable current evidence? | **Sole readiness authority** |
+| Qualification v4 | Are all required axes and dependencies closed by acceptable current evidence? | **Sole readiness authority** |
 
 No evidence producer imports product-readiness policy. Qualification consumes
 their typed outputs and derives the verdict.
 
-Production owners, general host tests and bounded-async contracts are separate
-manifest declarations. Every `async-contracts` entry must also be a declared
-host test; the evaluator never infers bounded scheduling from unrelated test
-coverage.
+Schema 4 declares implementation, host and async states explicitly. The
+qualification evaluator checks their consistency with gaps and dependencies;
+it does not discover production owners or host tests by source text and does
+not execute those tests. Vendor and HIL states are independently derived.
+Workspace tests and review are responsible for the declared source states.
+The evaluator lives in `qualification/evaluator`; its CLI remains
+`cargo qualification validate|evaluate|gate`.
 
 ## Vendor verification path
 
@@ -99,10 +102,13 @@ a new hardware run; no hand-edited `qualified` field exists.
 6. Use the strict gate for a release decision.
 
 ```console
-tools/blobray/scripts/run-limited \
+cargo build --profile blobray -p blobray-esp32s31 --bin blobray
+cargo build --profile blobray -p blobray --bin blobray-run
+
+target/blobray/blobray-run \
   project verify \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/targets/esp32s31/local.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/projects/esp32s31/local.toml
 
 cargo qualification evaluate \
   --manifest qualification/targets/esp32s31/wifi-sta.toml \

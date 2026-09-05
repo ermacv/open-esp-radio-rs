@@ -4,13 +4,13 @@ use crate::*;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
-    pub(crate) measurements: Vec<reporting::run::Measurement>,
+    pub(crate) measurements: Vec<crate::evidence::run::Measurement>,
     pub(crate) failure: Option<String>,
 }
 
 pub(crate) fn execute_workload(
-    lab: &transport::lab_config::LabConfig,
-    selected: &qualification::scenario::Scenario,
+    lab: &crate::lab::config::LabConfig,
+    selected: &crate::scenario::Scenario,
     output: &Path,
 ) -> ExecutionEvidence {
     execute_workload_inner(lab, selected, output).unwrap_or_else(|error| ExecutionEvidence {
@@ -20,11 +20,11 @@ pub(crate) fn execute_workload(
 }
 
 fn execute_workload_inner(
-    lab: &transport::lab_config::LabConfig,
-    selected: &qualification::scenario::Scenario,
+    lab: &crate::lab::config::LabConfig,
+    selected: &crate::scenario::Scenario,
     output: &Path,
 ) -> Result<ExecutionEvidence> {
-    use qualification::scenario::{Direction, Workload};
+    use crate::scenario::{Direction, Workload};
 
     lab.set_data_plane(selected.data_plane);
     lab.set_rx_checksum(selected.rx_checksum);
@@ -47,7 +47,7 @@ fn execute_workload_inner(
             | Workload::StationAccessPoint { .. }
     )
     .then(|| {
-        transport::controlled_ap::ControlledAp::start(
+        crate::fixture::controlled_ap::ControlledAp::start(
             &lab.station,
             &lab.station_fixture,
             selected
@@ -64,8 +64,8 @@ fn execute_workload_inner(
             boots,
             intervals,
             period_millis,
-        } => transport::timebase::run(
-            transport::timebase::Config {
+        } => crate::workload::system::timebase::run(
+            crate::workload::system::timebase::Config {
                 boots: *boots,
                 intervals: *intervals,
                 period_millis: *period_millis,
@@ -77,8 +77,8 @@ fn execute_workload_inner(
             boots,
             poll_limit,
             timer_threshold,
-        } => transport::ieee802154_event_status::run(
-            transport::ieee802154_event_status::Config {
+        } => crate::workload::ieee802154::event_status::run(
+            crate::workload::ieee802154::event_status::Config {
                 boots: *boots,
                 poll_limit: *poll_limit,
                 timer_threshold: *timer_threshold,
@@ -90,8 +90,8 @@ fn execute_workload_inner(
             boots,
             poll_limit,
             timer_threshold,
-        } => transport::ieee802154_ed_event::run(
-            transport::ieee802154_ed_event::Config {
+        } => crate::workload::ieee802154::ed_event::run(
+            crate::workload::ieee802154::ed_event::Config {
                 boots: *boots,
                 poll_limit: *poll_limit,
                 timer_threshold: *timer_threshold,
@@ -138,11 +138,11 @@ fn execute_workload_inner(
                             maximum,
                         );
                     }
-                    traffic::rx_traffic::run(
+                    crate::workload::traffic::rx_traffic::run(
                         arguments,
                         output,
                         lab,
-                        traffic::rx_traffic::EvidencePolicy {
+                        crate::workload::traffic::rx_traffic::EvidencePolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
                             require_driver_observation: selected
@@ -174,7 +174,7 @@ fn execute_workload_inner(
                             maximum,
                         );
                     }
-                    traffic::tx_traffic::run(
+                    crate::workload::traffic::tx_traffic::run(
                         arguments,
                         output,
                         lab,
@@ -204,11 +204,11 @@ fn execute_workload_inner(
                     if let Some(floor) = selected.criteria.minimum_combined_bps {
                         push_option(&mut arguments, "--combined-floor", floor);
                     }
-                    traffic::bidirectional::run(
+                    crate::workload::traffic::bidirectional::run(
                         arguments,
                         output,
                         lab,
-                        traffic::bidirectional::RunPolicy {
+                        crate::workload::traffic::bidirectional::RunPolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
                             capture_openwrt_tx_monitor_rx: selected.evidence.openwrt_tx_monitor_rx,
@@ -251,24 +251,26 @@ fn execute_workload_inner(
                 push_option(&mut arguments, "--rx-floor", floor);
             }
             match direction {
-                Direction::Rx => traffic::tcp_traffic::run_rx(
+                Direction::Rx => crate::workload::traffic::tcp_traffic::run_rx(
                     arguments,
                     output,
                     lab,
                     selected.criteria.require_no_beacon_loss,
                 ),
-                Direction::Tx => traffic::tcp_traffic::run_tx(
+                Direction::Tx => crate::workload::traffic::tcp_traffic::run_tx(
                     arguments,
                     output,
                     lab,
                     selected.criteria.require_no_beacon_loss,
                 ),
-                Direction::Bidirectional => traffic::tcp_traffic::run_bidirectional(
-                    arguments,
-                    output,
-                    lab,
-                    selected.criteria.require_no_beacon_loss,
-                ),
+                Direction::Bidirectional => {
+                    crate::workload::traffic::tcp_traffic::run_bidirectional(
+                        arguments,
+                        output,
+                        lab,
+                        selected.criteria.require_no_beacon_loss,
+                    )
+                }
             }
         }
         Workload::Icmp {
@@ -288,7 +290,7 @@ fn execute_workload_inner(
             if let Some(maximum) = selected.criteria.maximum_p95_ms {
                 push_option(&mut arguments, "--max-p95-ms", maximum);
             }
-            let evidence = traffic::icmp_latency::run(
+            let evidence = crate::workload::traffic::icmp_latency::run(
                 arguments,
                 output,
                 lab,
@@ -308,7 +310,7 @@ fn execute_workload_inner(
             push_option(&mut arguments, "--cycles", cycles);
             push_option(&mut arguments, "--boots", boots);
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            qualification::station_lifecycle::run(
+            crate::workload::ieee80211::station_lifecycle::run(
                 arguments,
                 output,
                 lab,
@@ -318,7 +320,7 @@ fn execute_workload_inner(
         Workload::StationApLoss { timeout_seconds } => {
             let mut arguments = Vec::new();
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            qualification::station_ap_loss::run(
+            crate::workload::ieee80211::station_ap_loss::run(
                 arguments,
                 output,
                 lab,
@@ -331,7 +333,7 @@ fn execute_workload_inner(
         Workload::StationApAbsence { timeout_seconds } => {
             let mut arguments = Vec::new();
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            qualification::station_ap_absence::run(
+            crate::workload::ieee80211::station_ap_absence::run(
                 arguments,
                 output,
                 lab,
@@ -359,7 +361,7 @@ fn execute_workload_inner(
             if let Some(length) = snapshot_length {
                 push_option(&mut arguments, "--snapshot-length", length);
             }
-            transport::wifi_control::run(
+            crate::workload::ieee80211::control::run(
                 operation.id(),
                 arguments,
                 output,
@@ -388,7 +390,7 @@ fn execute_workload_inner(
                 push_option(&mut arguments, "--channel", channel);
             }
             push_option(&mut arguments, "--snapshot-length", snapshot_length);
-            transport::wifi_capture::run(
+            crate::workload::ieee80211::capture::run(
                 arguments,
                 output,
                 lab,
@@ -405,8 +407,8 @@ fn execute_workload_inner(
             client,
             security,
             traffic,
-        } => qualification::access_point::run(
-            qualification::access_point::Config {
+        } => crate::workload::ieee80211::access_point::run(
+            crate::workload::ieee80211::access_point::Config {
                 cycles: *cycles,
                 boots: *boots,
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
@@ -417,7 +419,7 @@ fn execute_workload_inner(
                 expected_link: selected.link,
                 require_driver_observation: selected.image.requires_driver_observation(),
                 require_rx_delivery_evidence: selected.image
-                    == qualification::scenario::ImageClass::DiagnosticRxDelivery,
+                    == crate::image::ImageClass::DiagnosticRxDelivery,
                 capture_independent_laptop_air_monitor: selected
                     .evidence
                     .independent_laptop_air_monitor,
@@ -437,8 +439,8 @@ fn execute_workload_inner(
             minimum_bps_per_flow,
             maximum_fairness_skew_percent,
             payload_bytes,
-        } => qualification::station_access_point::run(
-            qualification::station_access_point::Config {
+        } => crate::workload::ieee80211::station_access_point::run(
+            crate::workload::ieee80211::station_access_point::Config {
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 duration: std::time::Duration::from_secs(u64::from(*duration_seconds)),
                 direction: *direction,
@@ -455,7 +457,7 @@ fn execute_workload_inner(
             lab,
         ),
         Workload::StationAccessPointReconnect { timeout_seconds } => {
-            qualification::station_access_point_reconnect::run(
+            crate::workload::ieee80211::station_access_point_reconnect::run(
                 std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 output,
                 lab,
@@ -470,8 +472,8 @@ fn execute_workload_inner(
     Ok(ExecutionEvidence::default())
 }
 
-fn boot_smoke(output: &Path, lab: &transport::lab_config::LabConfig) -> Result<()> {
-    let capture = evidence::traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+fn boot_smoke(output: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
+    let capture = crate::session::SerialCapture::start_with_reset(&lab.device.serial);
     let result = capture.wait_for_boot_smoke(std::time::Duration::from_secs(10));
     capture.finish_to(output)?;
     result

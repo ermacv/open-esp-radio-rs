@@ -45,6 +45,8 @@ pub(crate) fn assess(host_units: u64, evidence: RxDeliveryEvidence) -> RxDeliver
         && mac.backward_mac_unavailable == 0;
     let post_reorder_to_enqueue = evidence.network_queue_full != 0
         || evidence.network_invalid_length != 0
+        || evidence.network_pool_exhausted != 0
+        || evidence.network_link_down != 0
         || !same_sequence_stream(evidence.post_reorder, evidence.network_enqueued);
     let ledger = evidence.consumer_ledger;
     let enqueue_to_consumer = ledger.overflow != 0
@@ -84,7 +86,7 @@ pub(crate) fn markdown(host_units: u64, evidence: RxDeliveryEvidence) -> String 
          - Classification: `{}`; host→post-reorder defect: `{}`; before-MAC-sequence ordering: `{}`; post-reorder→enqueue defect: `{}`; enqueue→consumer defect: `{}`\n\
          - Data units host / post-reorder / enqueued / UDP consumer: `{}` / `{}` / `{}` / `{}`\n\
          - Post-reorder gap/missing/late/duplicate/backward: `{}` / `{}` / `{}` / `{}` / `{}`; first anomaly: `{}`\n\
-         - Network queue-full/invalid-length: `{}` / `{}`\n\
+         - Network queue-full/invalid-length/pool-exhausted/link-down: `{}` / `{}` / `{}` / `{}`\n\
          - Ledger matched/pending/skipped/unexpected/overflow: `{}` / `{}` / `{}` / `{}` / `{}`; first expected/observed: `{}` / `{}`\n\
          - Reorder ingress/retries/direct then buffered/released/missing/stale/expiries/discarded/max occupied: `{}` / `{}` / `{}` then `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
          - Post-reorder backward UDP with MAC backward/same/forward/other-TID/unavailable: `{}` / `{}` / `{}` / `{}` / `{}`\n\
@@ -106,6 +108,8 @@ pub(crate) fn markdown(host_units: u64, evidence: RxDeliveryEvidence) -> String 
         display_option(post.first_anomaly),
         evidence.network_queue_full,
         evidence.network_invalid_length,
+        evidence.network_pool_exhausted,
+        evidence.network_link_down,
         ledger.matched,
         ledger.enqueued_not_consumed,
         ledger.skipped_before_observed,
@@ -161,73 +165,4 @@ fn display_option(value: Option<u32>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use open_esp_radio_hil_protocol::{RxConsumerLedgerEvidence, RxReorderDeliveryEvidence};
-
-    fn exact() -> RxDeliveryEvidence {
-        let stage = RxSequenceStageEvidence {
-            data_units: 3,
-            first: Some(0),
-            highest: Some(2),
-            control_markers: 1,
-            ..Default::default()
-        };
-        RxDeliveryEvidence {
-            post_reorder: stage,
-            network_enqueued: stage,
-            udp_consumer: stage,
-            consumer_ledger: RxConsumerLedgerEvidence {
-                matched: 3,
-                ..Default::default()
-            },
-            reorder: RxReorderDeliveryEvidence {
-                released: 3,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn classifies_each_delivery_edge_independently() {
-        assert!(assess(3, exact()).exact());
-
-        let mut post = exact();
-        post.post_reorder.data_units = 2;
-        post.network_enqueued = post.post_reorder;
-        post.udp_consumer = post.post_reorder;
-        post.consumer_ledger.matched = 2;
-        assert_eq!(assess(3, post).frontier(), "at-or-before-post-reorder");
-
-        let mut enqueue = exact();
-        enqueue.network_queue_full = 1;
-        enqueue.network_enqueued.data_units = 2;
-        enqueue.udp_consumer = enqueue.network_enqueued;
-        enqueue.consumer_ledger.matched = 2;
-        assert_eq!(assess(3, enqueue).frontier(), "network-enqueue");
-
-        let mut consumer = exact();
-        consumer.consumer_ledger.enqueued_not_consumed = 1;
-        consumer.udp_consumer.data_units = 2;
-        consumer.consumer_ledger.matched = 2;
-        assert_eq!(assess(3, consumer).frontier(), "network-to-udp-consumer");
-    }
-
-    #[test]
-    fn forward_mac_sequence_localizes_udp_reordering_before_the_target_mac() {
-        let mut evidence = exact();
-        evidence.post_reorder.gap_events = 1;
-        evidence.post_reorder.forward_missing = 1;
-        evidence.post_reorder.late_recovered = 1;
-        evidence.post_reorder.first_anomaly = Some(2);
-        evidence.network_enqueued = evidence.post_reorder;
-        evidence.udp_consumer = evidence.post_reorder;
-        evidence.mac_order.backward_mac_forward = 1;
-
-        assert_eq!(
-            assess(3, evidence).frontier(),
-            "before-802.11-sequence-assignment"
-        );
-    }
-}
+mod tests;

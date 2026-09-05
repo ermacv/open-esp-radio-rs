@@ -12,6 +12,8 @@ const SEEN_WORDS: usize = SEEN_WINDOW / 64;
 pub enum NetworkDropReason {
     QueueFull,
     InvalidLength,
+    PoolExhausted,
+    LinkDown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -286,6 +288,8 @@ pub struct RxDeliveryTracker<const LEDGER_CAPACITY: usize> {
     mac: MacOrderTracker,
     network_queue_full: u32,
     network_invalid_length: u32,
+    network_pool_exhausted: u32,
+    network_link_down: u32,
 }
 
 impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
@@ -299,6 +303,8 @@ impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
             mac: MacOrderTracker::default(),
             network_queue_full: 0,
             network_invalid_length: 0,
+            network_pool_exhausted: 0,
+            network_link_down: 0,
         }
     }
 
@@ -328,6 +334,12 @@ impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
         match reason {
             NetworkDropReason::QueueFull => {
                 self.network_queue_full = self.network_queue_full.saturating_add(1)
+            }
+            NetworkDropReason::PoolExhausted => {
+                self.network_pool_exhausted = self.network_pool_exhausted.saturating_add(1)
+            }
+            NetworkDropReason::LinkDown => {
+                self.network_link_down = self.network_link_down.saturating_add(1)
             }
             NetworkDropReason::InvalidLength => {
                 self.network_invalid_length = self.network_invalid_length.saturating_add(1)
@@ -364,6 +376,8 @@ impl<const LEDGER_CAPACITY: usize> RxDeliveryTracker<LEDGER_CAPACITY> {
             reorder,
             network_queue_full: self.network_queue_full,
             network_invalid_length: self.network_invalid_length,
+            network_pool_exhausted: self.network_pool_exhausted,
+            network_link_down: self.network_link_down,
         })
     }
 }
@@ -375,56 +389,4 @@ impl<const LEDGER_CAPACITY: usize> Default for RxDeliveryTracker<LEDGER_CAPACITY
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sequence_tracker_separates_gap_recovery_duplicate_and_terminal_tail() {
-        let mut tracker = SequenceTracker::default();
-        for sequence in [0, 2, 1, 1, -1, 3] {
-            tracker.observe(sequence);
-        }
-        assert_eq!(tracker.evidence.data_units, 5);
-        assert_eq!(tracker.evidence.gap_events, 1);
-        assert_eq!(tracker.evidence.forward_missing, 1);
-        assert_eq!(tracker.evidence.late_recovered, 1);
-        assert_eq!(tracker.evidence.duplicates, 1);
-        assert_eq!(tracker.evidence.control_markers, 1);
-        assert_eq!(tracker.evidence.data_after_terminal, 1);
-    }
-
-    #[test]
-    fn ledger_reports_the_first_exact_enqueue_consumer_divergence() {
-        let mut ledger = SequenceLedger::<8>::default();
-        for sequence in [10, 11, 12] {
-            ledger.push(sequence);
-        }
-        ledger.consume(10);
-        ledger.consume(12);
-        ledger.consume(11);
-        let evidence = ledger.finish();
-        assert_eq!(evidence.matched, 2);
-        assert_eq!(evidence.skipped_before_observed, 1);
-        assert_eq!(evidence.unexpected_consumer, 1);
-        assert_eq!(evidence.first_expected, Some(11));
-        assert_eq!(evidence.first_observed, Some(12));
-    }
-
-    #[test]
-    fn session_tracker_accounts_network_drop_without_entering_ledger() {
-        let mut tracker = RxDeliveryTracker::<8>::new();
-        tracker.begin(7);
-        tracker.admitted(0, Some((0, 100)));
-        tracker.dropped(1, Some((0, 101)), NetworkDropReason::QueueFull);
-        tracker.consumed(7, 0);
-        tracker.consumed(8, 1);
-        let evidence = tracker
-            .finish(7, RxReorderDeliveryEvidence::default())
-            .unwrap();
-        assert_eq!(evidence.post_reorder.data_units, 2);
-        assert_eq!(evidence.network_enqueued.data_units, 1);
-        assert_eq!(evidence.udp_consumer.data_units, 1);
-        assert_eq!(evidence.network_queue_full, 1);
-        assert_eq!(evidence.consumer_ledger.matched, 1);
-    }
-}
+mod tests;

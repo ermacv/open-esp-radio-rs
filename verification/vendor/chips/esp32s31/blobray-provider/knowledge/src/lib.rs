@@ -3,7 +3,7 @@
 //! Executable C/ESP-IDF adapters and harness composition belong to the sibling
 //! models crate. Selecting facts alone never installs executable summary hooks.
 
-use open_radio_vendor_backend_riscv::ReviewedCompressedPointerEncoding;
+use open_radio_vendor_analysis_model::ReviewedCompressedPointerEncoding;
 pub use open_radio_vendor_chip_contracts_esp32s31_rev0::{CONTRACTS, entry_contract};
 use open_radio_vendor_semantics::*;
 

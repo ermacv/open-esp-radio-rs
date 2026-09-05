@@ -1,0 +1,1464 @@
+Tracked non-driver source snapshot at 994aa0932e96f2a0a41fc1677f7bbf0a50008dda
+Scopes: tools, hil, verification, qualification, svd, examples. Ignored/private/build outputs excluded.
+
+├── examples/
+│   ├── esp32s31-access-point/
+│   │   ├── .cargo/
+│   │   │   └── config.toml
+│   │   ├── Cargo.lock
+│   │   ├── Cargo.toml
+│   │   ├── README.md
+│   │   └── src/
+│   │       ├── dhcp.rs
+│   │       ├── lib.rs
+│   │       ├── main.rs
+│   │       └── services.rs
+│   ├── esp32s31-bluetooth-controller/
+│   │   ├── .cargo/
+│   │   │   └── config.toml
+│   │   ├── Cargo.lock
+│   │   ├── Cargo.toml
+│   │   ├── README.md
+│   │   └── src/
+│   │       └── main.rs
+│   ├── esp32s31-monitor/
+│   │   ├── .cargo/
+│   │   │   └── config.toml
+│   │   ├── Cargo.lock
+│   │   ├── Cargo.toml
+│   │   ├── README.md
+│   │   └── src/
+│   │       └── main.rs
+│   └── esp32s31-station/
+│       ├── .cargo/
+│       │   └── config.toml
+│       ├── Cargo.lock
+│       ├── Cargo.toml
+│       ├── README.md
+│       └── src/
+│           └── main.rs
+├── hil/
+│   ├── README.md
+│   ├── host/
+│   │   ├── README.md
+│   │   ├── linux-net/
+│   │   │   ├── hostapd-he20.conf
+│   │   │   ├── hostapd-ht40.conf
+│   │   │   ├── install.sh
+│   │   │   └── open-radio-net
+│   │   └── runner/
+│   │       ├── Cargo.toml
+│   │       └── src/
+│   │           ├── device/
+│   │           │   └── mod.rs
+│   │           ├── evidence/
+│   │           │   ├── mod.rs
+│   │           │   ├── rx_delivery.rs
+│   │           │   ├── stack_audit.rs
+│   │           │   ├── traffic_capture/
+│   │           │   │   ├── protocol.rs
+│   │           │   │   ├── readiness.rs
+│   │           │   │   ├── tests.rs
+│   │           │   │   └── validation.rs
+│   │           │   └── traffic_capture.rs
+│   │           ├── execution.rs
+│   │           ├── image/
+│   │           │   ├── mod.rs
+│   │           │   └── reproducibility.rs
+│   │           ├── main.rs
+│   │           ├── qualification/
+│   │           │   ├── access_point/
+│   │           │   │   ├── clients.rs
+│   │           │   │   ├── icmp.rs
+│   │           │   │   ├── multi_client.rs
+│   │           │   │   ├── report.rs
+│   │           │   │   ├── tcp.rs
+│   │           │   │   └── udp.rs
+│   │           │   ├── access_point.rs
+│   │           │   ├── mod.rs
+│   │           │   ├── scenario/
+│   │           │   │   ├── catalog.rs
+│   │           │   │   ├── tests.rs
+│   │           │   │   └── validation.rs
+│   │           │   ├── scenario.rs
+│   │           │   ├── station_access_point.rs
+│   │           │   ├── station_access_point_reconnect.rs
+│   │           │   ├── station_ap_absence.rs
+│   │           │   ├── station_ap_loss.rs
+│   │           │   └── station_lifecycle.rs
+│   │           ├── reporting/
+│   │           │   ├── build.rs
+│   │           │   ├── history.rs
+│   │           │   ├── mod.rs
+│   │           │   ├── run/
+│   │           │   │   ├── archive.rs
+│   │           │   │   ├── integrity.rs
+│   │           │   │   ├── model.rs
+│   │           │   │   └── render.rs
+│   │           │   ├── run.rs
+│   │           │   ├── startup_artifact.rs
+│   │           │   └── verification.rs
+│   │           ├── traffic/
+│   │           │   ├── bidirectional/
+│   │           │   │   ├── model.rs
+│   │           │   │   ├── parse.rs
+│   │           │   │   ├── qualify.rs
+│   │           │   │   ├── report.rs
+│   │           │   │   └── tests.rs
+│   │           │   ├── bidirectional.rs
+│   │           │   ├── host_network.rs
+│   │           │   ├── icmp_latency.rs
+│   │           │   ├── mod.rs
+│   │           │   ├── paced_tcp.rs
+│   │           │   ├── paced_udp.rs
+│   │           │   ├── rx_traffic.rs
+│   │           │   ├── tcp_traffic.rs
+│   │           │   └── tx_traffic.rs
+│   │           └── transport/
+│   │               ├── controlled_ap.rs
+│   │               ├── controlled_client.rs
+│   │               ├── controlled_openwrt_client.rs
+│   │               ├── fixture_lock/
+│   │               │   └── tests.rs
+│   │               ├── fixture_lock.rs
+│   │               ├── ieee802154_ed_event.rs
+│   │               ├── ieee802154_event_status.rs
+│   │               ├── lab_config.rs
+│   │               ├── lab_provenance.rs
+│   │               ├── local_air_monitor.rs
+│   │               ├── local_linux_fixture.rs
+│   │               ├── mod.rs
+│   │               ├── network_helper.rs
+│   │               ├── openwrt_fixture.rs
+│   │               ├── openwrt_tx_monitor.rs
+│   │               ├── station_fixture.rs
+│   │               ├── timebase.rs
+│   │               ├── udp_socket.rs
+│   │               ├── wifi_capture/
+│   │               │   ├── assembly.rs
+│   │               │   └── pcapng.rs
+│   │               ├── wifi_capture.rs
+│   │               └── wifi_control.rs
+│   ├── local.example.toml
+│   ├── protocol/
+│   │   ├── Cargo.toml
+│   │   ├── README.md
+│   │   └── src/
+│   │       ├── framing.rs
+│   │       ├── lib.rs
+│   │       ├── message.rs
+│   │       └── stream_pattern.rs
+│   ├── scenarios/
+│   │   ├── access-point-bidirectional.toml
+│   │   ├── access-point-icmp.toml
+│   │   ├── access-point-lifecycle.toml
+│   │   ├── access-point-load-bidirectional.toml
+│   │   ├── access-point-load-rx.toml
+│   │   ├── access-point-load-tx.toml
+│   │   ├── access-point-rx.toml
+│   │   ├── access-point-saturated-plus-sparse-tx.toml
+│   │   ├── access-point-single-client-bidirectional-4m.toml
+│   │   ├── access-point-single-client-bidirectional-6m.toml
+│   │   ├── access-point-single-client-bidirectional-8m.toml
+│   │   ├── access-point-single-client-bidirectional-rx-delivery.toml
+│   │   ├── access-point-single-client-bidirectional-task-poll.toml
+│   │   ├── access-point-single-client-ceiling-bidirectional-task-poll.toml
+│   │   ├── access-point-single-client-ceiling-bidirectional.toml
+│   │   ├── access-point-single-client-ceiling-rx-core0-coarse.toml
+│   │   ├── access-point-single-client-ceiling-rx-core0-cycles.toml
+│   │   ├── access-point-single-client-ceiling-rx-task-residence.toml
+│   │   ├── access-point-single-client-ceiling-rx.toml
+│   │   ├── access-point-single-client-ceiling-tx-architecture-control.toml
+│   │   ├── access-point-single-client-ceiling-tx-core0-coarse.toml
+│   │   ├── access-point-single-client-ceiling-tx-diagnostic.toml
+│   │   ├── access-point-single-client-ceiling-tx-task-poll.toml
+│   │   ├── access-point-single-client-ceiling-tx-task-residence.toml
+│   │   ├── access-point-single-client-ceiling-tx.toml
+│   │   ├── access-point-single-client-load-bidirectional.toml
+│   │   ├── access-point-single-client-load-rx.toml
+│   │   ├── access-point-single-client-load-tx.toml
+│   │   ├── access-point-single-client-rx-task-residence-30.toml
+│   │   ├── access-point-tcp-bidirectional.toml
+│   │   ├── access-point-tcp-rx.toml
+│   │   ├── access-point-tcp-tx.toml
+│   │   ├── access-point-two-client-ceiling-tx.toml
+│   │   ├── access-point-two-client-smoke.toml
+│   │   ├── access-point-tx.toml
+│   │   ├── boot-smoke.toml
+│   │   ├── diagnostic-ap-45-45-cold-epoch.toml
+│   │   ├── diagnostic-ap-airtime-rx40-observed.toml
+│   │   ├── diagnostic-ap-airtime-rx40-tx40-observed.toml
+│   │   ├── diagnostic-ap-airtime-rx40-tx40-open-observed.toml
+│   │   ├── diagnostic-ap-airtime-rx40-tx45-observed.toml
+│   │   ├── diagnostic-ap-airtime-rx45-observed.toml
+│   │   ├── diagnostic-ap-airtime-rx45-tx40-observed.toml
+│   │   ├── diagnostic-ap-airtime-tx40-observed.toml
+│   │   ├── diagnostic-ap-ceiling-rx65-tx65-auto-gi-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-ceiling-rx65-tx65-sgi-correctness.toml
+│   │   ├── diagnostic-ap-ceiling-rx65-tx65-sgi-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-rx40-tx40-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-rx40-tx40-threshold.toml
+│   │   ├── diagnostic-ap-rx40-tx45-core0-coarse.toml
+│   │   ├── diagnostic-ap-rx40-tx45-task-poll.toml
+│   │   ├── diagnostic-ap-rx41-tx40-threshold.toml
+│   │   ├── diagnostic-ap-rx42-task-poll-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-rx42-tx40-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-rx42-tx40-mac-irq-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-rx42-tx40-sgi-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-rx42-tx40-task-poll-fixed-client-mcs7.toml
+│   │   ├── diagnostic-ap-rx42-tx40-threshold.toml
+│   │   ├── diagnostic-ap-rx43-tx40-threshold.toml
+│   │   ├── diagnostic-ap-rx44-tx40-threshold.toml
+│   │   ├── diagnostic-ap-rx45-tx40-cold-boots.toml
+│   │   ├── diagnostic-ap-rx45-tx40-core0-coarse.toml
+│   │   ├── diagnostic-ap-rx45-tx40-queue.toml
+│   │   ├── diagnostic-ap-rx45-tx40-task-poll.toml
+│   │   ├── diagnostic-ap-saturated-plus-sparse-tx-core0.toml
+│   │   ├── diagnostic-ap-saturated-plus-sparse-tx-task-residence.toml
+│   │   ├── diagnostic-ap-single-client-udp-tx-correctness-control.toml
+│   │   ├── diagnostic-ap-single-client-udp-tx-psram-dma.toml
+│   │   ├── diagnostic-ap-single-client-udp-tx-sram-control.toml
+│   │   ├── diagnostic-ap-two-client-udp-bidirectional.toml
+│   │   ├── diagnostic-ap-two-client-udp-rx.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-architecture-control.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-egress-burst-core0.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-egress-burst-task-poll.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-egress-burst.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-no-checksum-core0.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-psram-dma.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-saturation.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-stack-egress-queue-core0.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-stack-egress-queue-task-poll.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-stack-egress-queue.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-task-poll.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx-task-residence.toml
+│   │   ├── diagnostic-ap-two-client-udp-tx.toml
+│   │   ├── diagnostic-sta-rx42-tx40-core0-task-poll-control.toml
+│   │   ├── diagnostic-sta-rx42-tx40-current-ap-control.toml
+│   │   ├── diagnostic-station-ceiling-rx65-tx65-performance.toml
+│   │   ├── icmp-latency-ht40-split.toml
+│   │   ├── icmp-latency.toml
+│   │   ├── ieee802154-ed-event-selective-write.toml
+│   │   ├── ieee802154-event-status-selective-ack.toml
+│   │   ├── monitor-capture.toml
+│   │   ├── station-access-point-ceiling-task-residence.toml
+│   │   ├── station-access-point-lifecycle.toml
+│   │   ├── station-access-point-load.toml
+│   │   ├── station-access-point-reconnect.toml
+│   │   ├── station-access-point-rx-core0-coarse.toml
+│   │   ├── station-access-point-rx-core0-cycles.toml
+│   │   ├── station-access-point-rx-task-residence.toml
+│   │   ├── station-access-point-tx-task-residence.toml
+│   │   ├── station-ap-absence.toml
+│   │   ├── station-ap-loss.toml
+│   │   ├── station-reconnect-ht40.toml
+│   │   ├── station-reconnect.toml
+│   │   ├── tcp-bidirectional-ht40-split.toml
+│   │   ├── tcp-bidirectional.toml
+│   │   ├── tcp-rx-ht40-split.toml
+│   │   ├── tcp-rx.toml
+│   │   ├── tcp-tx-ht40-split.toml
+│   │   ├── tcp-tx.toml
+│   │   ├── timebase.toml
+│   │   ├── udp-bidirectional-ht40-15-75.toml
+│   │   ├── udp-bidirectional-ht40-25-65.toml
+│   │   ├── udp-bidirectional-ht40-35-55.toml
+│   │   ├── udp-bidirectional-ht40-45-45.toml
+│   │   ├── udp-bidirectional-ht40-55-35.toml
+│   │   ├── udp-bidirectional-ht40-65-25.toml
+│   │   ├── udp-bidirectional-ht40-75-15.toml
+│   │   ├── udp-bidirectional-ht40-rx-delivery-split.toml
+│   │   ├── udp-bidirectional-ht40-split-baseline.toml
+│   │   ├── udp-bidirectional-ht40-split-soak.toml
+│   │   ├── udp-bidirectional-ht40-task-poll-diagnostic.toml
+│   │   ├── udp-rx-delivery-diagnostic.toml
+│   │   ├── udp-rx-he20-ceiling.toml
+│   │   ├── udp-rx-ht40-40m-512-performance.toml
+│   │   ├── udp-rx-ht40-ceiling.toml
+│   │   ├── udp-rx-ht40-core0-async-probe256-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-async-probe512-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-coarse-40m-1472-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-coarse-40m-512-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-coarse-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-adaptive-probe-30m-1472-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-adaptive-probe-40m-1472-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-adaptive-probe-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-adaptive-probe-small-frame-8m-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-adaptive-probe-small-frame-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-immediate-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-immediate-small-frame-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-level-irq-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe1024-30m-1472-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe1024-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe1024-small-frame-8m-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe128-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe256-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe256-small-frame-8m-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe256-small-frame-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe512-30m-1472-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe512-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe512-small-frame-8m-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe512-small-frame-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-direct-probe64-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-rx-cache-off-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-rx-cycles-diagnostic.toml
+│   │   ├── udp-rx-ht40-core0-rx-deferred-ready-diagnostic.toml
+│   │   ├── udp-rx-ht40-delivery-40m-512-diagnostic.toml
+│   │   ├── udp-rx-ht40-delivery-diagnostic.toml
+│   │   ├── udp-rx-ht40-guard-interval-auto-diagnostic.toml
+│   │   ├── udp-rx-ht40-openwrt-delivery-diagnostic.toml
+│   │   ├── udp-rx-ht40-performance-ceiling.toml
+│   │   ├── udp-rx-ht40-rate-mask-auto-air-diagnostic.toml
+│   │   ├── udp-rx-ht40-rate-mask-lgi-air-diagnostic.toml
+│   │   ├── udp-rx-ht40-rate-mask-sgi-air-diagnostic.toml
+│   │   ├── udp-rx-ht40-split-baseline.toml
+│   │   ├── udp-rx-ht40-task-poll-diagnostic.toml
+│   │   ├── udp-rx-ht40-task-poll-no-rx-checksum-diagnostic.toml
+│   │   ├── udp-rx-ht40-task-poll-software-checksum-diagnostic.toml
+│   │   ├── udp-rx-ht40-task-residence-30.toml
+│   │   ├── udp-rx-ht40-task-residence-60.toml
+│   │   ├── udp-rx-ht40-task-residence-90.toml
+│   │   ├── udp-rx-ht40-task-residence-saturated.toml
+│   │   ├── udp-tx-emission-1472-no-checksum-diagnostic.toml
+│   │   ├── udp-tx-emission-1472-software-diagnostic.toml
+│   │   ├── udp-tx-emission-256-no-checksum-diagnostic.toml
+│   │   ├── udp-tx-emission-256-software-diagnostic.toml
+│   │   ├── udp-tx-emission-736-no-checksum-diagnostic.toml
+│   │   ├── udp-tx-emission-736-software-diagnostic.toml
+│   │   ├── udp-tx-he20-ceiling.toml
+│   │   ├── udp-tx-he20.toml
+│   │   ├── udp-tx-ht40-ceiling.toml
+│   │   ├── udp-tx-ht40-core0-coarse-diagnostic.toml
+│   │   ├── udp-tx-ht40-no-udp-checksum-diagnostic.toml
+│   │   ├── udp-tx-ht40-performance-ceiling.toml
+│   │   ├── udp-tx-ht40-split-baseline.toml
+│   │   ├── udp-tx-ht40-split-task-poll-diagnostic.toml
+│   │   ├── udp-tx-ht40-task-poll-diagnostic.toml
+│   │   ├── udp-tx-ht40-task-residence-diagnostic.toml
+│   │   ├── wifi-monitor-lifecycle.toml
+│   │   ├── wifi-role-roundtrip.toml
+│   │   └── wifi-scan.toml
+│   └── targets/
+│       └── esp32s31/
+│           ├── Cargo.lock
+│           ├── Cargo.toml
+│           ├── README.md
+│           ├── board/
+│           │   ├── Cargo.toml
+│           │   └── src/
+│           │       └── lib.rs
+│           ├── bootstrap/
+│           │   ├── Cargo.toml
+│           │   ├── build.rs
+│           │   └── src/
+│           │       └── main.rs
+│           ├── linker/
+│           │   ├── bootstrap/
+│           │   │   ├── flash-sections.x
+│           │   │   ├── link.x
+│           │   │   ├── memory.x
+│           │   │   ├── psram-sections.x
+│           │   │   └── sections.x
+│           │   ├── rom/
+│           │   │   └── esp32s31-eco0.x
+│           │   └── runtime/
+│           │       ├── link.x
+│           │       ├── memory.x
+│           │       └── sections.x
+│           ├── memory/
+│           │   └── tcp.toml
+│           ├── partitions/
+│           │   └── hil.csv
+│           ├── runtime/
+│           │   ├── Cargo.toml
+│           │   ├── build.rs
+│           │   └── src/
+│           │       ├── boot_smoke_console.rs
+│           │       ├── console.rs
+│           │       ├── gdma_mem2mem_probe.rs
+│           │       ├── main.rs
+│           │       ├── phy_calibration_artifact.rs
+│           │       ├── product_hil/
+│           │       │   ├── ieee802154.rs
+│           │       │   ├── rx_qualification.rs
+│           │       │   └── traffic/
+│           │       │       ├── bidirectional.rs
+│           │       │       ├── cache_performance.rs
+│           │       │       ├── evidence.rs
+│           │       │       ├── mod.rs
+│           │       │       ├── reporting.rs
+│           │       │       ├── runtime.rs
+│           │       │       ├── tcp.rs
+│           │       │       └── udp/
+│           │       │           ├── mod.rs
+│           │       │           ├── rx.rs
+│           │       │           └── tx.rs
+│           │       ├── product_hil.rs
+│           │       └── psram_task_stack.rs
+│           ├── stack.toml
+│           └── telemetry/
+│               ├── Cargo.toml
+│               └── src/
+│                   ├── aggregate_tx.rs
+│                   ├── lib.rs
+│                   ├── mac_irq.rs
+│                   ├── rx_delivery.rs
+│                   ├── rx_evidence.rs
+│                   ├── rx_pipeline.rs
+│                   └── task_poll.rs
+├── qualification/
+│   ├── README.md
+│   └── targets/
+│       └── esp32s31/
+│           ├── bluetooth-le.toml
+│           ├── ieee802154.toml
+│           ├── records/
+│           │   ├── 2026-07-31-driver-repo-he20-bidirectional.md
+│           │   ├── 2026-07-31-he20-dcm-connected.md
+│           │   ├── 2026-07-31-he20-dcm-ldpc-connected.md
+│           │   ├── 2026-07-31-vendor-oracle-transfer.md
+│           │   ├── 2026-08-02-esp32s31-pinned-rx-throughput.md
+│           │   ├── 2026-08-03-esp32s31-dual-core-rx.md
+│           │   ├── 2026-08-04-esp32s31-cold-scan-port.md
+│           │   ├── 2026-08-04-esp32s31-connected-epoch-transitions.md
+│           │   ├── 2026-08-04-esp32s31-connected-sta-port.md
+│           │   ├── 2026-08-04-esp32s31-he-rx-ampdu-containment.md
+│           │   ├── 2026-08-04-esp32s31-ht-rx-aggregation-metadata.md
+│           │   ├── 2026-08-04-esp32s31-interrupt-epoch.md
+│           │   ├── 2026-08-04-esp32s31-rx-s-mpdu-metadata.md
+│           │   ├── 2026-08-04-esp32s31-sta-join-port.md
+│           │   ├── 2026-08-04-esp32s31-sta-peer-port.md
+│           │   ├── 2026-08-04-esp32s31-station-ap-absence.md
+│           │   ├── 2026-08-04-esp32s31-station-ap-loss.md
+│           │   ├── 2026-08-04-esp32s31-station-reconnect.md
+│           │   ├── 2026-08-04-esp32s31-station-tx-fault.md
+│           │   ├── 2026-08-04-esp32s31-wpa2-port.md
+│           │   ├── 2026-08-06-esp32s31-network-regression.md
+│           │   ├── 2026-08-06-esp32s31-station-rx-fault.md
+│           │   ├── 2026-08-09-wifi-role-roundtrip.md
+│           │   ├── 2026-08-10-esp32s31-rx-delivery-frontier.md
+│           │   ├── 2026-08-10-phy-parent-and-sta-lifecycle.md
+│           │   ├── 2026-08-10-stack-and-he20-regression.md
+│           │   ├── 2026-08-13-ht40-datapath-regression.md
+│           │   ├── 2026-08-17-esp32s31-ap-psram-stack-load.md
+│           │   ├── 2026-08-23-esp32s31-ap-tx-ba16-cutover.md
+│           │   ├── 2026-08-23-esp32s31-ap-tx-ceiling-analysis.md
+│           │   ├── 2026-08-24-esp32s31-ccmp-rx-fragmentation-frontier.md
+│           │   ├── 2026-08-24-esp32s31-ftm-requester-frontier.md
+│           │   ├── 2026-08-24-esp32s31-hardware-beacon-monitor-frontier.md
+│           │   ├── 2026-08-24-esp32s31-ht-duplicate-mcs32-frontier.md
+│           │   ├── 2026-08-25-esp32s31-ieee802154-back-to-back-ed.md
+│           │   ├── 2026-08-25-esp32s31-ieee802154-ed-event.md
+│           │   ├── 2026-08-25-esp32s31-ieee802154-event-status.md
+│           │   ├── 2026-08-25-esp32s31-ieee802154-generated-ed-done.md
+│           │   ├── 2026-08-26-esp32s31-sta-rx-degradation-investigation.md
+│           │   ├── 2026-08-28-esp32s31-core0-rx-load-reduction.md
+│           │   ├── 2026-08-28-esp32s31-sta-tx-ceiling-analysis.md
+│           │   ├── 2026-08-29-esp32s31-sta-ap-current-state.md
+│           │   └── README.md
+│           └── wifi-sta.toml
+├── svd/
+│   ├── README.md
+│   ├── esp32s31-platform-radio-deps.svd
+│   ├── esp32s31-radio.bindings.toml
+│   └── esp32s31-radio.svd
+├── tools/
+│   ├── README.md
+│   ├── audit-cargo-metadata.sh
+│   ├── audit-driver-architecture.sh
+│   ├── audit-driver-safety.sh
+│   ├── audit-source-only.sh
+│   ├── blobray/
+│   │   ├── Cargo.toml
+│   │   ├── README.md
+│   │   ├── addons/
+│   │   │   ├── c/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   ├── README.md
+│   │   │   │   └── src/
+│   │   │   │       └── lib.rs
+│   │   │   └── esp-idf/
+│   │   │       ├── Cargo.toml
+│   │   │       ├── README.md
+│   │   │       └── src/
+│   │   │           ├── bluetooth_controller.rs
+│   │   │           └── lib.rs
+│   │   ├── catalogs/
+│   │   │   └── neutral-embedded.toml
+│   │   ├── crates/
+│   │   │   ├── analysis-model/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   ├── README.md
+│   │   │   │   └── src/
+│   │   │   │       ├── ir/
+│   │   │   │       │   ├── indexed_mmio.rs
+│   │   │   │       │   ├── mod.rs
+│   │   │   │       │   ├── reference/
+│   │   │   │       │   │   └── compaction.rs
+│   │   │   │       │   ├── reference.rs
+│   │   │   │       │   ├── trace/
+│   │   │   │       │   │   ├── events.rs
+│   │   │   │       │   │   ├── flow.rs
+│   │   │   │       │   │   ├── function.rs
+│   │   │   │       │   │   ├── tests.rs
+│   │   │   │       │   │   └── validation.rs
+│   │   │   │       │   ├── trace.rs
+│   │   │   │       │   └── value/
+│   │   │   │       │       ├── constructors.rs
+│   │   │   │       │       ├── inspect.rs
+│   │   │   │       │       ├── mod.rs
+│   │   │   │       │       ├── operations.rs
+│   │   │   │       │       └── rewrite.rs
+│   │   │   │       ├── lib.rs
+│   │   │   │       ├── mmio.rs
+│   │   │   │       └── standard_runtime.rs
+│   │   │   ├── backend-riscv/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   ├── README.md
+│   │   │   │   └── src/
+│   │   │   │       ├── artifact/
+│   │   │   │       │   ├── data_objects.rs
+│   │   │   │       │   ├── debug.rs
+│   │   │   │       │   ├── decode.rs
+│   │   │   │       │   ├── function_body.rs
+│   │   │   │       │   ├── indexed_dispatch.rs
+│   │   │   │       │   ├── inventory.rs
+│   │   │   │       │   ├── mod.rs
+│   │   │   │       │   ├── model.rs
+│   │   │   │       │   ├── relocations.rs
+│   │   │   │       │   ├── sections.rs
+│   │   │   │       │   ├── symbols.rs
+│   │   │   │       │   └── tests.rs
+│   │   │   │       ├── codegen/
+│   │   │   │       │   ├── events/
+│   │   │   │       │   │   ├── calls.rs
+│   │   │   │       │   │   ├── memory.rs
+│   │   │   │       │   │   ├── mmio.rs
+│   │   │   │       │   │   └── polls.rs
+│   │   │   │       │   ├── events.rs
+│   │   │   │       │   ├── flow.rs
+│   │   │   │       │   ├── mod.rs
+│   │   │   │       │   ├── tests/
+│   │   │   │       │   │   ├── calls.rs
+│   │   │   │       │   │   ├── generation.rs
+│   │   │   │       │   │   ├── memory.rs
+│   │   │   │       │   │   ├── mod.rs
+│   │   │   │       │   │   ├── polls.rs
+│   │   │   │       │   │   └── value.rs
+│   │   │   │       │   └── value.rs
+│   │   │   │       ├── direct_target_audit.rs
+│   │   │   │       ├── execution/
+│   │   │   │       │   ├── image/
+│   │   │   │       │   │   ├── access.rs
+│   │   │   │       │   │   ├── closure_identity.rs
+│   │   │   │       │   │   ├── coverage.rs
+│   │   │   │       │   │   └── loader.rs
+│   │   │   │       │   ├── image.rs
+│   │   │   │       │   ├── machine/
+│   │   │   │       │   │   ├── events.rs
+│   │   │   │       │   │   ├── memory.rs
+│   │   │   │       │   │   └── step.rs
+│   │   │   │       │   ├── machine.rs
+│   │   │   │       │   ├── mod.rs
+│   │   │   │       │   ├── model.rs
+│   │   │   │       │   └── tests/
+│   │   │   │       │       ├── calls.rs
+│   │   │   │       │       ├── devices.rs
+│   │   │   │       │       ├── image_and_control.rs
+│   │   │   │       │       ├── memory.rs
+│   │   │   │       │       ├── mod.rs
+│   │   │   │       │       ├── services.rs
+│   │   │   │       │       └── session.rs
+│   │   │   │       ├── interface_discovery/
+│   │   │   │       │   ├── mod.rs
+│   │   │   │       │   ├── model.rs
+│   │   │   │       │   ├── state.rs
+│   │   │   │       │   └── tests.rs
+│   │   │   │       ├── lib.rs
+│   │   │   │       ├── reference_analysis/
+│   │   │   │       │   ├── flatten.rs
+│   │   │   │       │   ├── flow.rs
+│   │   │   │       │   ├── inline.rs
+│   │   │   │       │   ├── intrinsics.rs
+│   │   │   │       │   ├── mod.rs
+│   │   │   │       │   └── resolver.rs
+│   │   │   │       └── static_analysis/
+│   │   │   │           ├── alu.rs
+│   │   │   │           ├── calls.rs
+│   │   │   │           ├── context.rs
+│   │   │   │           ├── memory.rs
+│   │   │   │           ├── memory_access.rs
+│   │   │   │           ├── mod.rs
+│   │   │   │           ├── poll.rs
+│   │   │   │           ├── stack.rs
+│   │   │   │           └── state.rs
+│   │   │   ├── contracts/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   ├── README.md
+│   │   │   │   └── src/
+│   │   │   │       ├── fact.rs
+│   │   │   │       ├── identity.rs
+│   │   │   │       ├── lib.rs
+│   │   │   │       └── model_provider.rs
+│   │   │   ├── execution-model/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   └── src/
+│   │   │   │       ├── device/
+│   │   │   │       │   ├── spec.rs
+│   │   │   │       │   └── standard.rs
+│   │   │   │       ├── device.rs
+│   │   │   │       ├── goal.rs
+│   │   │   │       ├── lib.rs
+│   │   │   │       ├── service.rs
+│   │   │   │       ├── table.rs
+│   │   │   │       └── tests.rs
+│   │   │   ├── register-model/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   ├── README.md
+│   │   │   │   └── src/
+│   │   │   │       ├── lib.rs
+│   │   │   │       ├── model_validation.rs
+│   │   │   │       ├── pac_api.rs
+│   │   │   │       ├── pac_api_render.rs
+│   │   │   │       ├── pac_api_svd.rs
+│   │   │   │       ├── pac_bindings.rs
+│   │   │   │       ├── register_evidence.rs
+│   │   │   │       └── register_lints.rs
+│   │   │   ├── review-model/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   ├── README.md
+│   │   │   │   └── src/
+│   │   │   │       └── lib.rs
+│   │   │   └── semantics/
+│   │   │       ├── Cargo.toml
+│   │   │       ├── README.md
+│   │   │       └── src/
+│   │   │           ├── effect_contract/
+│   │   │           │   ├── compare.rs
+│   │   │           │   ├── model.rs
+│   │   │           │   └── tests.rs
+│   │   │           ├── effect_contract.rs
+│   │   │           ├── equivalence.rs
+│   │   │           └── lib.rs
+│   │   ├── docs/
+│   │   │   ├── analysis-and-semantic-ir.md
+│   │   │   ├── architecture.md
+│   │   │   ├── automation.md
+│   │   │   ├── cache-policy.md
+│   │   │   ├── code-workspace.md
+│   │   │   ├── formats.md
+│   │   │   ├── function-workspace.md
+│   │   │   ├── project-workflow.md
+│   │   │   ├── registers-and-pac.md
+│   │   │   ├── research-next.md
+│   │   │   ├── tui.md
+│   │   │   └── verification.md
+│   │   ├── ecosystem-packs/
+│   │   │   └── embedded-riscv.toml
+│   │   ├── scripts/
+│   │   │   ├── check-standalone
+│   │   │   └── run-limited
+│   │   ├── src/
+│   │   │   ├── analysis/
+│   │   │   │   ├── effective_code.rs
+│   │   │   │   ├── interface_tables.rs
+│   │   │   │   ├── linkage.rs
+│   │   │   │   ├── linked_ir/
+│   │   │   │   │   ├── calls/
+│   │   │   │   │   │   └── abi.rs
+│   │   │   │   │   ├── calls.rs
+│   │   │   │   │   ├── direct_trace.rs
+│   │   │   │   │   ├── effects.rs
+│   │   │   │   │   ├── function_cache.rs
+│   │   │   │   │   ├── identity.rs
+│   │   │   │   │   ├── model.rs
+│   │   │   │   │   ├── provenance.rs
+│   │   │   │   │   ├── pseudo.rs
+│   │   │   │   │   ├── register_index/
+│   │   │   │   │   │   ├── build.rs
+│   │   │   │   │   │   └── evidence.rs
+│   │   │   │   │   ├── register_index.rs
+│   │   │   │   │   ├── return_frontier.rs
+│   │   │   │   │   ├── scenario_suggestions.rs
+│   │   │   │   │   ├── summary/
+│   │   │   │   │   │   ├── effect.rs
+│   │   │   │   │   │   ├── event_dispatch.rs
+│   │   │   │   │   │   └── projection.rs
+│   │   │   │   │   ├── summary.rs
+│   │   │   │   │   ├── tests/
+│   │   │   │   │   │   ├── dispatch_and_calls.rs
+│   │   │   │   │   │   ├── flow_and_mmio.rs
+│   │   │   │   │   │   ├── guard_provenance.rs
+│   │   │   │   │   │   ├── project_summary.rs
+│   │   │   │   │   │   └── recursion_and_delay.rs
+│   │   │   │   │   └── tests.rs
+│   │   │   │   ├── linked_ir.rs
+│   │   │   │   ├── mmio_discovery.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── service.rs
+│   │   │   ├── application/
+│   │   │   │   ├── action.rs
+│   │   │   │   ├── artifact_store.rs
+│   │   │   │   ├── capability_context.rs
+│   │   │   │   ├── comparison.rs
+│   │   │   │   ├── configuration/
+│   │   │   │   │   └── tests.rs
+│   │   │   │   ├── configuration.rs
+│   │   │   │   ├── error.rs
+│   │   │   │   ├── event_replay.rs
+│   │   │   │   ├── generated_file.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── model.rs
+│   │   │   │   ├── operations.rs
+│   │   │   │   ├── pipeline.rs
+│   │   │   │   ├── project_analysis/
+│   │   │   │   │   ├── cache.rs
+│   │   │   │   │   ├── operations.rs
+│   │   │   │   │   └── plan.rs
+│   │   │   │   ├── project_analysis.rs
+│   │   │   │   ├── project_files.rs
+│   │   │   │   ├── project_ir_build.rs
+│   │   │   │   ├── project_publication.rs
+│   │   │   │   ├── query_store/
+│   │   │   │   │   ├── access_lock.rs
+│   │   │   │   │   ├── benchmark.rs
+│   │   │   │   │   ├── lock_tests.rs
+│   │   │   │   │   ├── retention/
+│   │   │   │   │   │   └── tests.rs
+│   │   │   │   │   └── retention.rs
+│   │   │   │   ├── query_store.rs
+│   │   │   │   ├── research.rs
+│   │   │   │   ├── resolve.rs
+│   │   │   │   ├── revision.rs
+│   │   │   │   ├── snapshot/
+│   │   │   │   │   ├── code.rs
+│   │   │   │   │   ├── comparisons.rs
+│   │   │   │   │   ├── functions.rs
+│   │   │   │   │   ├── interfaces.rs
+│   │   │   │   │   ├── policy.rs
+│   │   │   │   │   ├── registers.rs
+│   │   │   │   │   ├── review_queue.rs
+│   │   │   │   │   └── scopes.rs
+│   │   │   │   ├── snapshot.rs
+│   │   │   │   ├── status/
+│   │   │   │   │   ├── analysis.rs
+│   │   │   │   │   ├── configuration_inputs.rs
+│   │   │   │   │   ├── model.rs
+│   │   │   │   │   ├── policy.rs
+│   │   │   │   │   ├── publication.rs
+│   │   │   │   │   ├── review.rs
+│   │   │   │   │   ├── revision.rs
+│   │   │   │   │   └── verification.rs
+│   │   │   │   └── status.rs
+│   │   │   ├── artifact_occurrence.rs
+│   │   │   ├── artifacts/
+│   │   │   │   ├── interface_facts.rs
+│   │   │   │   ├── interface_facts_read.rs
+│   │   │   │   ├── json.rs
+│   │   │   │   ├── linked_ir.rs
+│   │   │   │   ├── linked_ir_bundle.rs
+│   │   │   │   ├── linked_ir_document.rs
+│   │   │   │   ├── linked_ir_read/
+│   │   │   │   │   ├── schema/
+│   │   │   │   │   │   └── mmio.rs
+│   │   │   │   │   └── schema.rs
+│   │   │   │   ├── linked_ir_read.rs
+│   │   │   │   ├── mmio_facts.rs
+│   │   │   │   ├── mmio_facts_read.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── replay_evidence.rs
+│   │   │   │   ├── replay_evidence_read.rs
+│   │   │   │   ├── symbol_inventory/
+│   │   │   │   │   └── read.rs
+│   │   │   │   └── symbol_inventory.rs
+│   │   │   ├── blocker_resolution.rs
+│   │   │   ├── chip_pack.rs
+│   │   │   ├── cli/
+│   │   │   │   ├── args.rs
+│   │   │   │   ├── arguments.rs
+│   │   │   │   ├── commands/
+│   │   │   │   │   ├── audit_image_targets.rs
+│   │   │   │   │   ├── code_workspace.rs
+│   │   │   │   │   ├── discover_mmio.rs
+│   │   │   │   │   ├── execute_compare.rs
+│   │   │   │   │   ├── execute_replay.rs
+│   │   │   │   │   ├── execute_run.rs
+│   │   │   │   │   ├── export_ir/
+│   │   │   │   │   │   ├── human.rs
+│   │   │   │   │   │   └── tests.rs
+│   │   │   │   │   ├── export_ir.rs
+│   │   │   │   │   ├── function_pack/
+│   │   │   │   │   │   └── report.rs
+│   │   │   │   │   ├── function_pack.rs
+│   │   │   │   │   ├── generate_reference.rs
+│   │   │   │   │   ├── generate_reference_batch.rs
+│   │   │   │   │   ├── inspect_analyze.rs
+│   │   │   │   │   ├── inspect_compare.rs
+│   │   │   │   │   ├── inspect_flow.rs
+│   │   │   │   │   ├── inspect_function/
+│   │   │   │   │   │   ├── calls.rs
+│   │   │   │   │   │   ├── document.rs
+│   │   │   │   │   │   ├── render.rs
+│   │   │   │   │   │   └── replacement.rs
+│   │   │   │   │   ├── inspect_function.rs
+│   │   │   │   │   ├── inspect_object.rs
+│   │   │   │   │   ├── inspect_register.rs
+│   │   │   │   │   ├── inspect_scope.rs
+│   │   │   │   │   ├── inspect_trace.rs
+│   │   │   │   │   ├── interface_discovery.rs
+│   │   │   │   │   ├── interface_discovery_options.rs
+│   │   │   │   │   ├── interface_pack/
+│   │   │   │   │   │   └── report.rs
+│   │   │   │   │   ├── interface_pack.rs
+│   │   │   │   │   ├── ir_build.rs
+│   │   │   │   │   ├── mod.rs
+│   │   │   │   │   ├── project_audit_bindings.rs
+│   │   │   │   │   ├── project_cache.rs
+│   │   │   │   │   ├── project_check.rs
+│   │   │   │   │   ├── project_configure.rs
+│   │   │   │   │   ├── project_doctor/
+│   │   │   │   │   │   ├── capabilities.rs
+│   │   │   │   │   │   ├── code.rs
+│   │   │   │   │   │   ├── inputs.rs
+│   │   │   │   │   │   ├── interfaces.rs
+│   │   │   │   │   │   ├── model.rs
+│   │   │   │   │   │   ├── registers.rs
+│   │   │   │   │   │   ├── render.rs
+│   │   │   │   │   │   ├── revision.rs
+│   │   │   │   │   │   └── verification.rs
+│   │   │   │   │   ├── project_doctor.rs
+│   │   │   │   │   ├── project_files.rs
+│   │   │   │   │   ├── project_function_doctor.rs
+│   │   │   │   │   ├── project_init/
+│   │   │   │   │   │   ├── options.rs
+│   │   │   │   │   │   ├── render.rs
+│   │   │   │   │   │   └── tests.rs
+│   │   │   │   │   ├── project_init.rs
+│   │   │   │   │   ├── project_inputs.rs
+│   │   │   │   │   ├── project_ir_doctor.rs
+│   │   │   │   │   ├── project_pipeline/
+│   │   │   │   │   │   ├── plan.rs
+│   │   │   │   │   │   └── status.rs
+│   │   │   │   │   ├── project_pipeline.rs
+│   │   │   │   │   ├── project_publication/
+│   │   │   │   │   │   └── tests.rs
+│   │   │   │   │   ├── project_publication.rs
+│   │   │   │   │   ├── project_research.rs
+│   │   │   │   │   ├── project_revision.rs
+│   │   │   │   │   ├── project_status/
+│   │   │   │   │   │   ├── render.rs
+│   │   │   │   │   │   └── tests.rs
+│   │   │   │   │   ├── project_status.rs
+│   │   │   │   │   ├── project_verification.rs
+│   │   │   │   │   ├── registers/
+│   │   │   │   │   │   ├── publication/
+│   │   │   │   │   │   │   └── report.rs
+│   │   │   │   │   │   ├── publication.rs
+│   │   │   │   │   │   └── report.rs
+│   │   │   │   │   ├── registers.rs
+│   │   │   │   │   ├── symbol_correlate.rs
+│   │   │   │   │   ├── symbol_inventory.rs
+│   │   │   │   │   ├── symbol_lineage.rs
+│   │   │   │   │   ├── tooling.rs
+│   │   │   │   │   ├── verify_evidence.rs
+│   │   │   │   │   ├── verify_inventory.rs
+│   │   │   │   │   ├── verify_profiles.rs
+│   │   │   │   │   └── verify_source.rs
+│   │   │   │   ├── dispatch.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── output.rs
+│   │   │   │   ├── progress.rs
+│   │   │   │   ├── render/
+│   │   │   │   │   └── execution.rs
+│   │   │   │   ├── render.rs
+│   │   │   │   ├── resolver/
+│   │   │   │   │   ├── command.rs
+│   │   │   │   │   ├── defaults.rs
+│   │   │   │   │   ├── environment.rs
+│   │   │   │   │   ├── model.rs
+│   │   │   │   │   ├── needs.rs
+│   │   │   │   │   ├── register_catalog.rs
+│   │   │   │   │   └── tests.rs
+│   │   │   │   ├── resolver.rs
+│   │   │   │   ├── table.rs
+│   │   │   │   ├── terminal.rs
+│   │   │   │   ├── ui.rs
+│   │   │   │   └── values.rs
+│   │   │   ├── code_workspace/
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── pack.rs
+│   │   │   │   ├── rebase.rs
+│   │   │   │   ├── review.rs
+│   │   │   │   ├── template.rs
+│   │   │   │   └── tests.rs
+│   │   │   ├── digest.rs
+│   │   │   ├── ecosystem_pack.rs
+│   │   │   ├── error.rs
+│   │   │   ├── flow_investigation/
+│   │   │   │   ├── cfg.rs
+│   │   │   │   ├── effects.rs
+│   │   │   │   ├── event/
+│   │   │   │   │   └── replay.rs
+│   │   │   │   ├── event.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── model.rs
+│   │   │   │   ├── operation_memory.rs
+│   │   │   │   ├── project_graph.rs
+│   │   │   │   ├── target.rs
+│   │   │   │   └── value.rs
+│   │   │   ├── function_investigation/
+│   │   │   │   ├── correspondence.rs
+│   │   │   │   ├── model.rs
+│   │   │   │   ├── origin.rs
+│   │   │   │   └── replacement.rs
+│   │   │   ├── function_investigation.rs
+│   │   │   ├── function_workspace/
+│   │   │   │   ├── call_selection.rs
+│   │   │   │   ├── facts/
+│   │   │   │   │   ├── parse.rs
+│   │   │   │   │   └── validate.rs
+│   │   │   │   ├── facts.rs
+│   │   │   │   ├── interface_links.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── pack.rs
+│   │   │   │   ├── pack_parse.rs
+│   │   │   │   ├── pack_validate/
+│   │   │   │   │   ├── broker_tests.rs
+│   │   │   │   │   ├── contexts.rs
+│   │   │   │   │   ├── primitives.rs
+│   │   │   │   │   └── types.rs
+│   │   │   │   ├── pack_validate.rs
+│   │   │   │   ├── review.rs
+│   │   │   │   ├── template.rs
+│   │   │   │   ├── tests.rs
+│   │   │   │   └── validation.rs
+│   │   │   ├── harnesses/
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── neutral.rs
+│   │   │   ├── interfaces/
+│   │   │   │   ├── capabilities.rs
+│   │   │   │   ├── execution_models.rs
+│   │   │   │   ├── facts/
+│   │   │   │   │   ├── parse.rs
+│   │   │   │   │   └── validate.rs
+│   │   │   │   ├── facts.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── origin_projection.rs
+│   │   │   │   ├── pack.rs
+│   │   │   │   ├── pack_model.rs
+│   │   │   │   ├── pack_parse.rs
+│   │   │   │   ├── pack_schema.rs
+│   │   │   │   ├── pack_template.rs
+│   │   │   │   ├── pack_tests.rs
+│   │   │   │   ├── semantics.rs
+│   │   │   │   ├── templates.rs
+│   │   │   │   └── validation.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── linked_ir_export/
+│   │   │   │   ├── input.rs
+│   │   │   │   ├── pseudo.rs
+│   │   │   │   └── render_common.rs
+│   │   │   ├── linked_ir_export.rs
+│   │   │   ├── main.rs
+│   │   │   ├── memory_map.rs
+│   │   │   ├── navigation/
+│   │   │   │   ├── build.rs
+│   │   │   │   ├── inspect.rs
+│   │   │   │   ├── model.rs
+│   │   │   │   └── tests.rs
+│   │   │   ├── navigation.rs
+│   │   │   ├── orchestration/
+│   │   │   │   ├── generated_reference.rs
+│   │   │   │   └── mod.rs
+│   │   │   ├── parse.rs
+│   │   │   ├── progress.rs
+│   │   │   ├── project/
+│   │   │   │   ├── load/
+│   │   │   │   │   └── helpers.rs
+│   │   │   │   ├── load.rs
+│   │   │   │   └── tests.rs
+│   │   │   ├── project.rs
+│   │   │   ├── project_analysis.rs
+│   │   │   ├── project_ir.rs
+│   │   │   ├── register_catalog.rs
+│   │   │   ├── registers/
+│   │   │   │   ├── facts.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── model_import.rs
+│   │   │   │   ├── model_tests.rs
+│   │   │   │   ├── pac.rs
+│   │   │   │   ├── physical.rs
+│   │   │   │   ├── project_validation.rs
+│   │   │   │   ├── publication.rs
+│   │   │   │   ├── review.rs
+│   │   │   │   ├── review_draft.rs
+│   │   │   │   ├── review_ir.rs
+│   │   │   │   ├── review_ir_markdown.rs
+│   │   │   │   ├── review_ir_parse.rs
+│   │   │   │   └── workspace.rs
+│   │   │   ├── resource_usage.rs
+│   │   │   ├── review_scopes/
+│   │   │   │   ├── model.rs
+│   │   │   │   └── queue.rs
+│   │   │   ├── review_scopes.rs
+│   │   │   ├── run_spec.rs
+│   │   │   ├── shell.rs
+│   │   │   ├── source_id.rs
+│   │   │   ├── symbol_correspondence.rs
+│   │   │   ├── symbol_lineage.rs
+│   │   │   ├── target.rs
+│   │   │   ├── test_support/
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── text_disassembly.rs
+│   │   │   ├── tests/
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── structural/
+│   │   │   │   │   ├── calls.rs
+│   │   │   │   │   ├── composition.rs
+│   │   │   │   │   ├── control_flow.rs
+│   │   │   │   │   ├── fundamentals.rs
+│   │   │   │   │   └── mod.rs
+│   │   │   │   └── verification.rs
+│   │   │   ├── tui/
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── runtime.rs
+│   │   │   │   ├── state/
+│   │   │   │   │   ├── detail.rs
+│   │   │   │   │   ├── filter.rs
+│   │   │   │   │   └── navigation.rs
+│   │   │   │   ├── state.rs
+│   │   │   │   ├── view/
+│   │   │   │   │   ├── blockers.rs
+│   │   │   │   │   ├── code.rs
+│   │   │   │   │   ├── comparisons.rs
+│   │   │   │   │   ├── functions.rs
+│   │   │   │   │   ├── interfaces.rs
+│   │   │   │   │   ├── policy.rs
+│   │   │   │   │   ├── registers.rs
+│   │   │   │   │   └── scopes.rs
+│   │   │   │   ├── view.rs
+│   │   │   │   └── worker.rs
+│   │   │   └── verification/
+│   │   │       ├── binding_audit.rs
+│   │   │       ├── bindings.rs
+│   │   │       ├── dispositions/
+│   │   │       │   └── model.rs
+│   │   │       ├── dispositions.rs
+│   │   │       ├── engine/
+│   │   │       │   ├── execution_profile.rs
+│   │   │       │   └── model.rs
+│   │   │       ├── engine.rs
+│   │   │       ├── evidence/
+│   │   │       │   ├── baseline.rs
+│   │   │       │   ├── identity.rs
+│   │   │       │   └── report.rs
+│   │   │       ├── evidence.rs
+│   │   │       ├── execution/
+│   │   │       │   ├── diff.rs
+│   │   │       │   └── scenario.rs
+│   │   │       ├── execution.rs
+│   │   │       ├── execution_report.rs
+│   │   │       ├── mod.rs
+│   │   │       ├── policy.rs
+│   │   │       ├── profiles/
+│   │   │       │   └── validation.rs
+│   │   │       ├── profiles.rs
+│   │   │       ├── project_report.rs
+│   │   │       ├── replacement_graph.rs
+│   │   │       ├── report.rs
+│   │   │       ├── rust_component_index/
+│   │   │       │   ├── compiled.rs
+│   │   │       │   ├── mod.rs
+│   │   │       │   └── model.rs
+│   │   │       └── vendor_evidence_index.rs
+│   │   └── tests/
+│   │       ├── application_contract.rs
+│   │       ├── automation_contract.rs
+│   │       ├── cache_contract.rs
+│   │       ├── cli_contract.rs
+│   │       └── fixtures/
+│   │           ├── generic-e2e-rv32.hex
+│   │           ├── generic-project/
+│   │           │   ├── chip.toml
+│   │           │   ├── memory.toml
+│   │           │   ├── target.toml
+│   │           │   └── vendor-project.toml
+│   │           └── symbols-rv32.hex
+│   ├── check-esp32s31-examples.sh
+│   ├── check-network-adapter-boundaries.sh
+│   ├── check_network_adapter_boundaries.py
+│   ├── memory-report/
+│   │   ├── Cargo.toml
+│   │   ├── README.md
+│   │   └── src/
+│   │       ├── analyze.rs
+│   │       ├── lib.rs
+│   │       ├── main.rs
+│   │       ├── policy.rs
+│   │       ├── render.rs
+│   │       └── stack.rs
+│   ├── qualification-check/
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── hil.rs
+│   │       ├── main.rs
+│   │       ├── model.rs
+│   │       └── report.rs
+│   └── tests/
+│       ├── test_audit_cargo_metadata.py
+│       ├── test_network_adapter_boundaries.py
+│       └── test_run_limited.py
+└── verification/
+    ├── README.md
+    └── vendor/
+        ├── chips/
+        │   └── esp32s31/
+        │       ├── blobray-provider/
+        │       │   ├── contracts/
+        │       │   │   ├── Cargo.toml
+        │       │   │   ├── README.md
+        │       │   │   └── src/
+        │       │   │       ├── entry_contract.rs
+        │       │   │       └── lib.rs
+        │       │   ├── knowledge/
+        │       │   │   ├── Cargo.toml
+        │       │   │   ├── README.md
+        │       │   │   └── src/
+        │       │   │       └── lib.rs
+        │       │   └── models/
+        │       │       ├── Cargo.toml
+        │       │       ├── README.md
+        │       │       └── src/
+        │       │           └── lib.rs
+        │       ├── chip.toml
+        │       ├── memory.toml
+        │       └── registers/
+        │           ├── device.toml
+        │           └── peripherals/
+        │               ├── ble-controller-address-slots.toml
+        │               ├── ble-hw-accelerator.toml
+        │               ├── ble-hw-cte-ring-control.toml
+        │               ├── ble-hw-positional-word-1874.toml
+        │               ├── ble-hw-resolving-list.toml
+        │               ├── ble-hw-runtime-control.toml
+        │               ├── ble-iso-scheduler-notify.toml
+        │               ├── ble-phy-init-aux.toml
+        │               ├── ble-scan-control.toml
+        │               ├── ble-sync-publication.toml
+        │               ├── bluetooth-controller-core.toml
+        │               ├── bluetooth-interrupt-bank.toml
+        │               ├── bluetooth-reset-idle-status-0.toml
+        │               ├── bluetooth-scheduler-interrupt-runtime.toml
+        │               ├── bt-v3-2-baseband.toml
+        │               ├── bt-v3-2-cte.toml
+        │               ├── btdm-runtime-control.toml
+        │               ├── btdm-scheduler-table.toml
+        │               ├── btmac-ble-phy-init.toml
+        │               ├── coex-hw-timer.toml
+        │               ├── hp-sys-clkrst-radio.toml
+        │               ├── i2c-ana-mst.toml
+        │               ├── ieee802154-interrupt-route.toml
+        │               ├── ieee802154-mac.toml
+        │               ├── lp-aon-clkrst.toml
+        │               ├── lp-periclkrst.toml
+        │               ├── lp-tsens.toml
+        │               ├── modem-lpcon-phy-tick.toml
+        │               ├── modem-lpcon-shared-clock.toml
+        │               ├── modem-syscon-radio.toml
+        │               ├── phy-agc-oracle.toml
+        │               ├── phy-agc-recovered-gaps.toml
+        │               ├── phy-baseband-config-oracle.toml
+        │               ├── phy-bb-recovered-gaps.toml
+        │               ├── phy-brx-recovered-gaps.toml
+        │               ├── phy-btagc-recovered.toml
+        │               ├── phy-clock-oracle.toml
+        │               ├── phy-cold-deadline-oracle.toml
+        │               ├── phy-fecoex-recovered.toml
+        │               ├── phy-fectrl-recovered.toml
+        │               ├── phy-fedata-recovered.toml
+        │               ├── phy-fedata-wifi-recovered.toml
+        │               ├── phy-frequency-channel-oracle.toml
+        │               ├── phy-i2c-command-ram.toml
+        │               ├── phy-iq-estimator-oracle.toml
+        │               ├── phy-memory.toml
+        │               ├── phy-nrx-recovered-gaps.toml
+        │               ├── phy-pbus.toml
+        │               ├── phy-rx-dco-oracle.toml
+        │               ├── pmu-radio.toml
+        │               ├── shared-baseband-reset-idle-status.toml
+        │               ├── shared-baseband-tx-timing.toml
+        │               ├── shared-radio-init-control.toml
+        │               ├── wifi-mac-antenna-init.toml
+        │               ├── wifi-mac-aux-tsf-control.toml
+        │               ├── wifi-mac-beacon-ie-crc.toml
+        │               ├── wifi-mac-beamforming-feedback-test.toml
+        │               ├── wifi-mac-beamforming-report.toml
+        │               ├── wifi-mac-bssid-policy.toml
+        │               ├── wifi-mac-coex-init.toml
+        │               ├── wifi-mac-coex-runtime.toml
+        │               ├── wifi-mac-cold-handshake.toml
+        │               ├── wifi-mac-control.toml
+        │               ├── wifi-mac-core-enable.toml
+        │               ├── wifi-mac-crypto-control.toml
+        │               ├── wifi-mac-diagnostic-statistics.toml
+        │               ├── wifi-mac-he-buffer-status.toml
+        │               ├── wifi-mac-he-color-collision.toml
+        │               ├── wifi-mac-he-init-prefix.toml
+        │               ├── wifi-mac-he-init-suffix.toml
+        │               ├── wifi-mac-he-mu-edca-timer.toml
+        │               ├── wifi-mac-he-obss-narrow-band-ru.toml
+        │               ├── wifi-mac-he-tb-diagnostics.toml
+        │               ├── wifi-mac-he-tb-statistics.toml
+        │               ├── wifi-mac-he-trigger-rx-diagnostics.toml
+        │               ├── wifi-mac-interface-address.toml
+        │               ├── wifi-mac-internal-tx-block-ack.toml
+        │               ├── wifi-mac-interrupt.toml
+        │               ├── wifi-mac-key-table.toml
+        │               ├── wifi-mac-last-rx-buffer.toml
+        │               ├── wifi-mac-power-interrupt.toml
+        │               ├── wifi-mac-regdma-control.toml
+        │               ├── wifi-mac-rtc-timer-update.toml
+        │               ├── wifi-mac-rx-bssid-list.toml
+        │               ├── wifi-mac-rx-csi-control.toml
+        │               ├── wifi-mac-rx-custom-type.toml
+        │               ├── wifi-mac-rx-dma.toml
+        │               ├── wifi-mac-rx-end-state.toml
+        │               ├── wifi-mac-rx-filter.toml
+        │               ├── wifi-mac-rx-hang-statistics.toml
+        │               ├── wifi-mac-rx-power-save.toml
+        │               ├── wifi-mac-rx-runtime-results.toml
+        │               ├── wifi-mac-rx-statistics.toml
+        │               ├── wifi-mac-sta-beacon-filter.toml
+        │               ├── wifi-mac-sta-tbtt-target.toml
+        │               ├── wifi-mac-sta-tsf-load.toml
+        │               ├── wifi-mac-tsf-status.toml
+        │               ├── wifi-mac-tsf-timer.toml
+        │               ├── wifi-mac-tx-common.toml
+        │               ├── wifi-mac-tx-completion.toml
+        │               ├── wifi-mac-tx-power-init.toml
+        │               ├── wifi-mac-tx-queue-control.toml
+        │               ├── wifi-mac-tx-queue-vector.toml
+        │               ├── wifi-mac-tx-statistics.toml
+        │               ├── wifi-mac-txrx-callbacks.toml
+        │               ├── wifi-mac-txrx-prefix.toml
+        │               ├── wifi-mac-txrx-suffix.toml
+        │               └── zbbb-radio-control.toml
+        ├── knowledge/
+        │   └── espressif/
+        │       ├── capabilities.toml
+        │       ├── esp-idf.toml
+        │       ├── interface-templates.toml
+        │       └── radio.toml
+        └── targets/
+            ├── esp32c5/
+            │   ├── .gitignore
+            │   ├── README.md
+            │   ├── target.toml
+            │   └── vendor-project.toml
+            └── esp32s31/
+                ├── .gitignore
+                ├── README.md
+                ├── analysis/
+                │   ├── bluetooth-controller-boundary.md
+                │   ├── bluetooth-direct-test-mode.md
+                │   ├── bluetooth-interrupt-runtime.md
+                │   ├── bluetooth-legacy-advertising.md
+                │   ├── bluetooth-passive-scanning.md
+                │   ├── bluetooth-peripheral-connection.md
+                │   ├── ieee802154-control.md
+                │   ├── ieee802154-dataplane.md
+                │   └── ieee802154-lifecycle.md
+                ├── baselines/
+                │   ├── ble-interrupt-prefix.toml
+                │   ├── ble-memory-list-selector-one.toml
+                │   ├── ble-memory-list-selector-three.toml
+                │   ├── ble-memory-list-selector-two.toml
+                │   ├── ble-phy-register-init.toml
+                │   ├── ble-scheduler-table-prefix.toml
+                │   ├── btbb-v2-init-arg-one.toml
+                │   ├── coex-core.toml
+                │   ├── coex-timer-set.toml
+                │   ├── coex-timer.toml
+                │   ├── libpp-rx-dma.toml
+                │   ├── libpp-tx-dma.toml
+                │   ├── libpp-tx-retry.toml
+                │   ├── phy-i2c-host-map-bluetooth.toml
+                │   ├── phy.toml
+                │   ├── rom-sta-tsf-snapshot.toml
+                │   ├── wifi-ap-tsf-start.toml
+                │   ├── wifi-ap-tsf-stop.toml
+                │   ├── wifi-interface-context.toml
+                │   ├── wifi-sta-ap-receive.toml
+                │   └── wifi-sta-beacon-filter.toml
+                ├── blobray-host/
+                │   ├── Cargo.toml
+                │   ├── src/
+                │   │   └── main.rs
+                │   └── tests/
+                │       ├── analysis_input_builder/
+                │       │   └── mod.rs
+                │       ├── cli_contract.rs
+                │       ├── repository_contract.rs
+                │       └── support/
+                │           └── mod.rs
+                ├── blobray-provider/
+                │   ├── OWNERSHIP.md
+                │   ├── contracts/
+                │   │   ├── Cargo.toml
+                │   │   ├── README.md
+                │   │   └── src/
+                │   │       ├── entry_contract.rs
+                │   │       ├── external_abi/
+                │   │       │   ├── mod.rs
+                │   │       │   └── tests.rs
+                │   │       └── lib.rs
+                │   ├── knowledge/
+                │   │   ├── Cargo.toml
+                │   │   ├── README.md
+                │   │   └── src/
+                │   │       ├── lib.rs
+                │   │       ├── reviewed_memory_accesses.rs
+                │   │       └── semantic_facts.rs
+                │   └── models/
+                │       ├── Cargo.toml
+                │       ├── README.md
+                │       └── src/
+                │           ├── lib.rs
+                │           ├── reviewed_summaries/
+                │           │   ├── body_identity.rs
+                │           │   ├── direct_semantic.rs
+                │           │   ├── fail_stop.rs
+                │           │   ├── i2c.rs
+                │           │   ├── intrinsics.rs
+                │           │   ├── rf.rs
+                │           │   └── tests.rs
+                │           └── reviewed_summaries.rs
+                ├── build-analysis-inputs
+                ├── code/
+                │   └── boundaries.toml
+                ├── dispositions/
+                │   ├── ble-interrupt-prefix.toml
+                │   ├── ble-memory-list-selector-one.toml
+                │   ├── ble-memory-list-selector-three.toml
+                │   ├── ble-memory-list-selector-two.toml
+                │   ├── ble-phy-register-init.toml
+                │   ├── ble-scheduler-table-prefix.toml
+                │   ├── btbb-v2-init-arg-one.toml
+                │   ├── coex-core.toml
+                │   ├── coex-timer-set.toml
+                │   ├── coex-timer.toml
+                │   ├── ieee802154.toml
+                │   ├── libpp-interrupt.toml
+                │   ├── libpp-power-interrupt.toml
+                │   ├── libpp-rx-dma.toml
+                │   ├── libpp-tx-dma.toml
+                │   ├── libpp-tx-retry.toml
+                │   ├── phy-i2c-host-map-bluetooth.toml
+                │   ├── phy.toml
+                │   ├── rom-sta-tsf-snapshot.toml
+                │   ├── wifi-ap-tsf-start.toml
+                │   ├── wifi-ap-tsf-stop.toml
+                │   ├── wifi-interface-context.toml
+                │   ├── wifi-sta-ap-receive.toml
+                │   └── wifi-sta-beacon-filter.toml
+                ├── evidence/
+                │   └── vendor-evidence.json
+                ├── functions/
+                │   └── reviewed.toml
+                ├── interfaces/
+                │   └── reviewed.toml
+                ├── local.example.toml
+                ├── probes/
+                │   ├── Cargo.lock
+                │   ├── Cargo.toml
+                │   ├── README.md
+                │   ├── bluetooth-elf/
+                │   │   ├── Cargo.toml
+                │   │   ├── build.rs
+                │   │   ├── link.x
+                │   │   └── src/
+                │   │       └── main.rs
+                │   ├── bluetooth-library/
+                │   │   ├── Cargo.toml
+                │   │   └── src/
+                │   │       └── lib.rs
+                │   ├── elf/
+                │   │   ├── Cargo.toml
+                │   │   ├── build.rs
+                │   │   ├── link.x
+                │   │   └── src/
+                │   │       └── main.rs
+                │   ├── library/
+                │   │   ├── Cargo.toml
+                │   │   └── src/
+                │   │       ├── lib.rs
+                │   │       └── production_trace.rs
+                │   ├── register-elf/
+                │   │   ├── Cargo.toml
+                │   │   ├── build.rs
+                │   │   ├── link.x
+                │   │   └── src/
+                │   │       └── main.rs
+                │   └── register-library/
+                │       ├── Cargo.toml
+                │       └── src/
+                │           └── lib.rs
+                ├── profiles/
+                │   ├── ble-interrupt-prefix.toml
+                │   ├── ble-memory-list-selector-one.toml
+                │   ├── ble-memory-list-selector-three.toml
+                │   ├── ble-memory-list-selector-two.toml
+                │   ├── ble-phy-register-init.toml
+                │   ├── ble-scheduler-table-prefix.toml
+                │   ├── btbb-v2-init-arg-one.toml
+                │   ├── coex-core-duration.toml
+                │   ├── coex-core-timer.toml
+                │   ├── coex-core.toml
+                │   ├── coex-timer-set.toml
+                │   ├── coex-timer.toml
+                │   ├── compiled-equivalence.toml
+                │   ├── libpp-rx-dma.toml
+                │   ├── libpp-tx-dma.toml
+                │   ├── libpp-tx-retry.toml
+                │   ├── phy-i2c-host-map-bluetooth.toml
+                │   ├── rom-sta-tsf-snapshot.toml
+                │   ├── wifi-ap-tsf-start.toml
+                │   ├── wifi-ap-tsf-stop.toml
+                │   ├── wifi-interface-context.toml
+                │   ├── wifi-sta-ap-receive.toml
+                │   └── wifi-sta-beacon-filter.toml
+                ├── publication/
+                │   ├── .gitignore
+                │   ├── README.md
+                │   └── vendor-project.toml
+                ├── registers/
+                │   ├── api.toml
+                │   ├── evidence/
+                │   │   ├── hil-open.toml
+                │   │   ├── hil-vendor.toml
+                │   │   ├── platform.toml
+                │   │   ├── policy.toml
+                │   │   ├── promoted-driver-provenance.toml
+                │   │   ├── vendor-libpp.toml
+                │   │   ├── vendor-net80211.toml
+                │   │   ├── vendor-radio-libraries.toml
+                │   │   └── vendor-rom.toml
+                │   └── lints.toml
+                ├── replays/
+                │   ├── lmac-short-retry.toml
+                │   ├── pp-signal-17.toml
+                │   ├── pp-signal-23.toml
+                │   ├── pp-signal-25.toml
+                │   └── wdev-indicate-overload.toml
+                ├── reviewed/
+                │   └── project-facts.toml
+                ├── revisions/
+                │   ├── README.md
+                │   ├── snapshots/
+                │   │   ├── esp32s31-rev0-ble-ext-funcs-2026-08-29.json.gz
+                │   │   └── esp32s31-rev0-vendor-scope-2026-08-29.json.gz
+                │   └── state.blobray
+                ├── target.toml
+                ├── vendor-project.toml
+                ├── verification-addon.toml
+                └── verification-policy.toml

@@ -13,6 +13,10 @@ description = "Project-oriented analysis, reconstruction, publication and Rust c
 name = "blobray-generic"
 path = "src/main.rs"
 
+[[bin]]
+name = "blobray-run"
+path = "src/bin/blobray-run.rs"
+
 [dependencies]
 cargo_metadata = "=0.23.1"
 clap = { version = "=4.5.48", features = ["derive"] }
@@ -47,10 +51,9 @@ tracing = "=0.1.44"
 tracing-indicatif = "=0.3.14"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 
-[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
-libc = "=0.2.189"
-
 [target.'cfg(target_os = "linux")'.dependencies]
+libc = "=0.2.189"
+signal-hook = "=0.3.18"
 nix = { version = "=0.26.4", default-features = false, features = ["fs", "inotify"] }
 
 [lints]

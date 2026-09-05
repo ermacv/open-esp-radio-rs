@@ -1,0 +1,54 @@
+# Source-only register publication. Investigation-specific binary models and
+# reviewed memory-access facts belong to the vendor investigation project.
+schema = 4
+id = "esp32s31-radio-publication"
+target-spec = "../../../verification/vendor/projects/esp32s31/target.toml"
+ecosystem-packs = ["../../../verification/vendor/knowledge/espressif/radio.toml"]
+chip-pack = "../../../verification/vendor/chips/esp32s31/chip.toml"
+
+[applicability]
+artifact-lineages = ["esp32s31-radio"]
+
+[reviewed-knowledge]
+packs = ["../model/reviewed.toml"]
+default-pack = "../model/reviewed.toml"
+
+[registers]
+ownership-policy = "../policy/ownership.toml"
+# Optional observations for this publication workspace only. Unavailable facts
+# leave the checked register model as the publication source.
+facts = "generated/findings/mmio.json"
+
+[registers.svd]
+output = "../published/radio.svd"
+
+[registers.pac-raw]
+output = "../../../driver/chips/esp32s31/pac/raw/src/lib.rs"
+target = "none"
+edition = "2024"
+
+[registers.bindings]
+output = "../published/radio.bindings.toml"
+crate-name = "open_esp_radio_esp32s31_pac_raw"
+
+[registers.api]
+pack = "../policy/api.toml"
+output = "../../../driver/chips/esp32s31/pac/src/generated.rs"
+
+# Explicit shared source policy; these catalogs record reviewed provenance,
+# without selecting or authenticating investigation binary inputs.
+[registers.lints]
+pack = "../policy/lints.toml"
+
+[registers.evidence]
+catalogs = [
+    "../evidence/policy.toml",
+    "../evidence/platform.toml",
+    "../evidence/vendor-rom.toml",
+    "../evidence/vendor-radio-libraries.toml",
+    "../evidence/vendor-libpp.toml",
+    "../evidence/vendor-net80211.toml",
+    "../evidence/hil-open.toml",
+    "../evidence/hil-vendor.toml",
+    "../evidence/promoted-driver-provenance.toml",
+]

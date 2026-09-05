@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "tools/repo",
     "hil/protocol",
     "driver/memory",
     "driver/network/interface",
@@ -45,7 +46,7 @@ members = [
     "driver/adapters/esp-hal/esp32s31/soc",
     "driver/integration/esp32s31/embassy/bluetooth",
     "hil/host/runner",
-    "tools/qualification-check",
+    "qualification/evaluator",
     "tools/memory-report",
     "tools/blobray/crates/register-model",
     "tools/blobray",
@@ -56,20 +57,20 @@ members = [
     "verification/vendor/chips/esp32s31/blobray-provider/contracts",
     "verification/vendor/chips/esp32s31/blobray-provider/knowledge",
     "verification/vendor/chips/esp32s31/blobray-provider/models",
-    "verification/vendor/targets/esp32s31/blobray-provider/contracts",
-    "verification/vendor/targets/esp32s31/blobray-provider/knowledge",
-    "verification/vendor/targets/esp32s31/blobray-provider/models",
+    "verification/vendor/projects/esp32s31/blobray-provider/contracts",
+    "verification/vendor/projects/esp32s31/blobray-provider/knowledge",
+    "verification/vendor/projects/esp32s31/blobray-provider/models",
     "tools/blobray/crates/analysis-model",
     "tools/blobray/crates/semantics",
     "tools/blobray/addons/c",
     "tools/blobray/addons/esp-idf",
-    "verification/vendor/targets/esp32s31/blobray-host",
+    "verification/vendor/projects/esp32s31/blobray-host",
 ]
 exclude = [
     "driver/integration/esp32s31/embassy/ieee80211",
     "examples/esp32s31-station",
     "hil/targets/esp32s31",
-    "verification/vendor/targets/esp32s31/probes",
+    "verification/vendor/projects/esp32s31/probes",
 ]
 resolver = "3"
 

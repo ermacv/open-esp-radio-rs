@@ -110,7 +110,7 @@ fn collect_knowledge_provider(context: &ProjectContext<'_>, report: &mut DoctorR
     };
     report.capability(capability);
     if let Some(provider) = context.target.knowledge_provider.as_deref()
-        && let Ok(models) = crate::harnesses::execution_model_providers(provider)
+        && let Ok(models) = crate::providers::execution_model_providers(provider)
     {
         for model in models {
             report.capability(

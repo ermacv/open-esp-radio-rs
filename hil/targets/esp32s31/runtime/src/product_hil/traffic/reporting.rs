@@ -4,8 +4,6 @@ use core::future::Future;
 
 use embassy_futures::yield_now;
 use embassy_time::Instant;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
@@ -19,6 +17,8 @@ use open_esp_radio_esp32s31_embassy_wifi::{
 use open_esp_radio_esp32s31_embassy_wifi::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
     mac_irq::MacIrqClassificationSnapshot,
@@ -1039,10 +1039,7 @@ pub(in crate::product_hil) async fn log_open_radio_tx_promotion(earlier: TxPerfo
     let (ba_peers, ba_min, ba_max) = crate::product_hil::access_point_tx_block_ack_geometry();
     runtime_log_reliably(format_args!(
         "ONTXQ returns={} ba_peers={} ba_min={} ba_max={}",
-        performance.radio_returns,
-        ba_peers,
-        ba_min,
-        ba_max,
+        performance.radio_returns, ba_peers, ba_min, ba_max,
     ))
     .await;
     yield_now().await;

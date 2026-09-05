@@ -14,14 +14,15 @@ low-level analysis commands before using a project.
 The standalone Blobray build is target-neutral. A product repository may
 link one reviewed compiled-analysis descriptor in a thin host. In this repository,
 `cargo blobray` selects the ESP32-S31 host under
-`verification/vendor/targets/esp32s31/blobray-host`; invoking the generic
+`verification/vendor/projects/esp32s31/blobray-host`; invoking the generic
 package directly installs no chip knowledge. Production comparison remains in
 the generic engine and is configured by data, not target-owned verdict code.
 
-Run `tools/blobray/scripts/check-standalone` from this repository to validate
+Run `cargo xtask check blobray-standalone` from this repository to validate
 the extraction boundary. It copies the generic tool into a temporary workspace,
 checks that local dependencies remain inside that copy, and compiles all its
-targets. This manual portability check is separate from target-host validation.
+targets, including `blobray-run`. This extraction check is separate from
+target-host validation and does not claim native operating-system coverage.
 
 For an existing project:
 
@@ -120,7 +121,9 @@ launcher below skips Cargo entirely.
    review evidence:
 
    ```console
-   tools/blobray/scripts/run-limited \
+   cargo build --profile blobray -p blobray-esp32s31 --bin blobray
+   cargo build --profile blobray -p blobray --bin blobray-run
+   target/blobray/blobray-run \
      project analyze --project radio-project/vendor-project.toml
    ```
 
@@ -154,29 +157,29 @@ blocker:
 
 ```console
 cargo blobray project research next \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 
 cargo blobray inspect function libpp:wDev_AppendRxBlocks \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 
 cargo blobray inspect function libpp:hal_mac_set_bssid \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --project verification/vendor/projects/esp32s31/vendor-project.toml \
   --replacement --case station-bank-preserves-policy
 
 cargo blobray inspect flow ble-controller:r_sym_bt_DPWY0umixzmXEaFuUyCI \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --project verification/vendor/projects/esp32s31/vendor-project.toml \
   --publication register:BLUETOOTH_CONTROLLER_CORE.SCHEDULER_CONTROL
 
 cargo blobray inspect function \
   ble-controller:function:esp-idf/ble/controller/scheduler-run \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 
 cargo blobray inspect object \
   ble-controller:memory-object:esp-idf/ble/controller/scheduler-state \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 
 cargo blobray project browse \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 ```
 
 `project research next` ranks the current blockers and unreviewed register or
@@ -253,20 +256,21 @@ the single-worker path. Build the optimized binary once and use the hard-limit
 wrapper for real vendor inputs:
 
 ```console
-CARGO_BUILD_JOBS=2 cargo build --profile blobray \
-  -p blobray-esp32s31 --bin blobray
+cargo build --profile blobray -p blobray-esp32s31 --bin blobray
+cargo build --profile blobray -p blobray --bin blobray-run
 
-tools/blobray/scripts/run-limited \
+target/blobray/blobray-run \
   project analyze --check --project /path/to/vendor-project.toml
 ```
 
-The wrapper enforces a 1-GiB resident-memory limit and a 15-minute timeout.
+The Linux limiter applies a 1-GiB aggregate-memory policy and a 15-minute timeout.
 Use `--jobs 1` explicitly when working under a tighter memory budget; raise the
 worker count above four only after measuring the target project.
 User-systemd mode also disables swap. When a usable user-systemd scope is not
 available, a Linux watchdog measures the complete spawned process tree and
-enforces the same aggregate RSS and time limits without imposing a misleading
-virtual-address-space cap. Linked-IR bundles
+terminates the session when sampled aggregate RSS or runtime exceeds policy.
+This sampled watchdog is distinct from kernel-enforced cgroup memory limits.
+Other operating systems have no supported limiter backend in this change. Linked-IR bundles
 remain internally sharded as JSONL for bounded streaming; the public console
 format is human or JSON.
 

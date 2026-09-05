@@ -5,7 +5,7 @@ by the application API:
 
 ```console
 cargo blobray project browse \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/projects/esp32s31/vendor-project.toml
 ```
 
 The browser requires interactive stdin and stdout. It accepts only the human

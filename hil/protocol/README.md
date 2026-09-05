@@ -1,4 +1,8 @@
-# HIL protocol v33
+# HIL protocol v77
+
+Version 77 adds distinct RX delivery counters for receive-pool exhaustion and
+an inactive network link. Host and firmware must both use this version; older
+frames are rejected rather than interpreted with missing counters.
 
 Source types are authoritative. A frame is:
 

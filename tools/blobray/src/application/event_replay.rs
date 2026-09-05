@@ -214,7 +214,7 @@ pub(crate) fn execute_prepared(
         image.add_companion(companion)?;
     }
     let diagnostic_contracts =
-        crate::harnesses::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
+        crate::providers::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
     image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;
     validate_tables(project, target, &manifest)?;
 
@@ -676,7 +676,7 @@ fn validate_tables(
     let harness = target
         .knowledge_provider
         .as_deref()
-        .and_then(|harness| crate::harnesses::contracts(harness).ok());
+        .and_then(|harness| crate::providers::contracts(harness).ok());
     let workspace = InterfaceWorkspace::load_with_templates(
         &paths.facts,
         pack,

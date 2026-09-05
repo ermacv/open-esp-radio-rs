@@ -168,6 +168,8 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
         };
         let reason = match error {
             RxEnqueueError::QueueFull => NetworkDropReason::QueueFull,
+            RxEnqueueError::PoolExhausted => NetworkDropReason::PoolExhausted,
+            RxEnqueueError::LinkDown => NetworkDropReason::LinkDown,
             RxEnqueueError::InvalidLength(
                 FrameLengthError::TooShort | FrameLengthError::TooLong,
             ) => NetworkDropReason::InvalidLength,

@@ -17,7 +17,6 @@ mod error;
 mod flow_investigation;
 mod function_investigation;
 mod function_workspace;
-mod harnesses;
 mod interfaces;
 mod linked_ir_export;
 mod memory_map;
@@ -28,6 +27,7 @@ mod progress;
 mod project;
 mod project_analysis;
 mod project_ir;
+mod providers;
 mod register_catalog;
 mod registers;
 mod resource_usage;
@@ -59,20 +59,20 @@ pub use function_investigation::{
     ReplacementProofEvidence, ReviewedPathEvidence, ReviewedPreconditionEvidence,
     SemanticFunctionEvidence, StoredLinkedIrRecord,
 };
-pub use harnesses::{KnowledgeProviderDescriptor, ProviderRegistry};
 use memory_map::MemoryMap;
 use open_radio_vendor_analysis_model::*;
 #[cfg(test)]
 use open_radio_vendor_analysis_model::{MmioRegion, Register};
+pub use open_radio_vendor_analysis_model::{
+    ReviewedMemoryAccessClassification, ReviewedMemoryAccessOccurrence,
+    ReviewedMemoryAccessOperation, ReviewedMemoryAccessRole,
+};
+pub use open_radio_vendor_backend_riscv::RiscvHarnessSpec;
 pub use open_radio_vendor_backend_riscv::artifact::{
     FunctionBasicBlock, FunctionBody, FunctionControlFlow, FunctionControlFlowKind,
     FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
 };
 pub use open_radio_vendor_backend_riscv::execution::Scenario as ExecutionScenario;
-pub use open_radio_vendor_backend_riscv::{
-    ReviewedMemoryAccessClassification, ReviewedMemoryAccessOccurrence,
-    ReviewedMemoryAccessOperation, ReviewedMemoryAccessRole, RiscvHarnessSpec,
-};
 pub(crate) use open_radio_vendor_backend_riscv::{
     Rv32CallArguments, Rv32IntrinsicResult, artifact, codegen, direct_target_audit, execution,
     interface_discovery,
@@ -101,6 +101,7 @@ pub use open_radio_vendor_semantics::{
 pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;
 use project::ProjectSpec;
+pub use providers::{KnowledgeProviderDescriptor, ProviderRegistry};
 use target::TargetSpec;
 #[cfg(test)]
 use test_support::trace_disassembly;
@@ -143,7 +144,7 @@ pub fn main_entry() -> ExitCode {
 /// vocabulary. Product repositories use this entry point from a thin host
 /// binary so target knowledge never becomes a dependency of the generic tool.
 pub fn main_entry_with_providers(registry: &'static ProviderRegistry) -> ExitCode {
-    if let Err(message) = harnesses::install_registry(registry) {
+    if let Err(message) = providers::install_registry(registry) {
         eprintln!("add-on provider initialization failed: {message}");
         return ExitCode::FAILURE;
     }

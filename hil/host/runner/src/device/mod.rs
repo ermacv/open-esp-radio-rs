@@ -8,18 +8,18 @@ const OTA_SELECTOR_OFFSET: u32 = 0xd000;
 const OTA_0_OFFSET: u32 = 0x1_0000;
 const OTA_DATA_SIZE: usize = 0x2000;
 
-pub(crate) fn status(root: &Path, lab: &transport::lab_config::LabConfig) -> Result<()> {
+pub(crate) fn status(root: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
     device_status_at(&root.join("target/hil/esp32s31/device-status"), lab)
 }
 
-fn device_status_at(output: &Path, lab: &transport::lab_config::LabConfig) -> Result<()> {
-    let capture = evidence::traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+fn device_status_at(output: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
+    let capture = crate::session::SerialCapture::start_with_reset(&lab.device.serial);
     let result = (|| -> Result<_> {
         let capabilities = capture.prepare_protocol(lab)?;
         let operation = capture.query_operation_status(std::time::Duration::from_secs(10))?;
         let stack = capture.query_stack_usage(std::time::Duration::from_secs(10))?;
         Ok(serde_json::json!({
-            "schema": reporting::run::RUN_SCHEMA,
+            "schema": crate::evidence::run::RUN_SCHEMA,
             "protocol_version": open_esp_radio_hil_protocol::PROTOCOL_VERSION,
             "capabilities": capabilities,
             "operation": operation,
@@ -39,7 +39,7 @@ pub(crate) fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<(
 
 pub(crate) fn flash_archived(
     root: &Path,
-    firmware: &reporting::verification::ArchivedFirmware,
+    firmware: &crate::evidence::verify::ArchivedFirmware,
     port: &Path,
 ) -> Result<()> {
     flash_replayed(
@@ -55,7 +55,7 @@ pub(crate) fn flash_replayed(
     root: &Path,
     application: &Path,
     run_id: &str,
-    image: crate::qualification::scenario::ImageClass,
+    image: crate::image::ImageClass,
     port: &Path,
 ) -> Result<()> {
     let output = root
@@ -146,18 +146,4 @@ fn crc32_idf(bytes: &[u8]) -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ota0_selector_uses_valid_idf_entry() {
-        let image = ota0_selector_image();
-        assert_eq!(u32::from_le_bytes(image[0..4].try_into().unwrap()), 1);
-        assert_eq!(u32::from_le_bytes(image[24..28].try_into().unwrap()), 2);
-        assert_eq!(
-            u32::from_le_bytes(image[28..32].try_into().unwrap()),
-            crc32_idf(&1_u32.to_le_bytes())
-        );
-        assert!(image[32..].iter().all(|byte| *byte == 0xff));
-    }
-}
+mod tests;

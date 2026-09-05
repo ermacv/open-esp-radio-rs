@@ -88,4 +88,4 @@ The peripheral research note historically treated link-state event-span storage
 and scheduler captured-anchor storage as one location. The current memory codec
 uses distinct objects. The disagreement must be resolved against source evidence
 before qualifying anchor normalization; see the explicit review note in
-[bluetooth-peripheral-connection.md](../../../../verification/vendor/targets/esp32s31/analysis/bluetooth-peripheral-connection.md).
+[bluetooth-peripheral-connection.md](../../../../verification/vendor/projects/esp32s31/analysis/bluetooth-peripheral-connection.md).

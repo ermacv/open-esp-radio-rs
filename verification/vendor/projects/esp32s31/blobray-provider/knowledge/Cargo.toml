@@ -1,0 +1,17 @@
+[package]
+name = "open-radio-vendor-knowledge-esp32s31"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "ESP32-S31 reviewed vendor-code knowledge without production-driver dependencies"
+
+[dependencies]
+open-radio-vendor-analysis-model = { path = "../../../../../../tools/blobray/crates/analysis-model" }
+open-radio-vendor-harness-esp32s31 = { path = "../contracts" }
+open-radio-vendor-semantics = { path = "../../../../../../tools/blobray/crates/semantics" }
+
+[lints]
+workspace = true

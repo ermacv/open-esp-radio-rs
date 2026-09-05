@@ -6,6 +6,7 @@
 
 mod ir;
 mod mmio;
+mod reviewed_memory;
 mod standard_runtime;
 
 pub use ir::*;
@@ -14,6 +15,10 @@ pub use mmio::{
     RegisterCatalog, reject_register_collisions,
 };
 pub use open_radio_vendor_contracts::*;
+pub use reviewed_memory::{
+    ReviewedCompressedPointerEncoding, ReviewedMemoryAccessClassification,
+    ReviewedMemoryAccessOccurrence, ReviewedMemoryAccessOperation, ReviewedMemoryAccessRole,
+};
 pub use standard_runtime::StandardMemoryFunction;
 
 #[derive(Debug, thiserror::Error)]

@@ -1,7 +1,7 @@
 //! Rebuildable history and stability views derived from immutable run bundles.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fmt::Write as _,
     fs,
     path::{Path, PathBuf},
@@ -9,11 +9,11 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::run::{
-    Measurement, MeasurementUnit, MeasurementVerdict, Outcome, RUN_SCHEMA, RunManifest, RunState,
-    SuiteCounts, SuiteResult, Threshold, aggregate_outcome, atomic_json, atomic_write,
-};
 use crate::Result;
+use crate::evidence::run::{
+    Measurement, MeasurementUnit, MeasurementVerdict, Outcome, RUN_SCHEMA, RunManifest, RunState,
+    SuiteCounts, SuiteResult, Threshold, atomic_json, atomic_write,
+};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct HistoryCounts {
@@ -143,7 +143,7 @@ pub(crate) fn rebuild(root: &Path, target: &str) -> Result<HistoryCompletion> {
     rebuild_at(&root.join("target/hil").join(target), target)
 }
 
-pub(super) fn rebuild_at(target_directory: &Path, target: &str) -> Result<HistoryCompletion> {
+pub(crate) fn rebuild_at(target_directory: &Path, target: &str) -> Result<HistoryCompletion> {
     let runs_directory = target_directory.join("runs");
     fs::create_dir_all(&runs_directory)?;
     let mut entries = fs::read_dir(&runs_directory)?.collect::<std::io::Result<Vec<_>>>()?;
@@ -285,194 +285,6 @@ pub(super) fn rebuild_at(target_directory: &Path, target: &str) -> Result<Histor
         history_report,
         html_report,
     })
-}
-
-pub(super) fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    serde_json::from_slice(&fs::read(path)?)
-        .map_err(|error| format!("invalid HIL report `{}`: {error}", path.display()).into())
-}
-
-pub(super) fn validate_manifest(
-    manifest: &RunManifest,
-    target: &str,
-    directory: &Path,
-) -> Result<()> {
-    if manifest.schema != RUN_SCHEMA {
-        return Err(format!(
-            "HIL manifest `{}` has schema {}, expected {RUN_SCHEMA}",
-            directory.display(),
-            manifest.schema
-        )
-        .into());
-    }
-    if manifest.target != target {
-        return Err(format!(
-            "HIL manifest `{}` targets `{}`, expected `{target}`",
-            directory.display(),
-            manifest.target
-        )
-        .into());
-    }
-    let timestamps_are_consistent = match manifest.state {
-        RunState::Running => {
-            manifest.finished_unix_millis.is_none() && manifest.duration_millis.is_none()
-        }
-        RunState::Completed | RunState::Interrupted => {
-            manifest.finished_unix_millis.is_some()
-                && manifest.duration_millis.is_some()
-                && manifest.finished_unix_millis >= Some(manifest.started_unix_millis)
-        }
-    };
-    if !timestamps_are_consistent {
-        return Err(format!(
-            "HIL manifest `{}` has timestamps inconsistent with state {:?}",
-            directory.display(),
-            manifest.state
-        )
-        .into());
-    }
-    let directory_id = directory
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| format!("HIL run directory is not UTF-8: {}", directory.display()))?;
-    if manifest.run_id != directory_id {
-        return Err(format!(
-            "HIL manifest run ID `{}` does not match directory `{directory_id}`",
-            manifest.run_id
-        )
-        .into());
-    }
-    Ok(())
-}
-
-pub(super) fn validate_suite(suite: &SuiteResult, manifest: &RunManifest) -> Result<()> {
-    if suite.schema != RUN_SCHEMA {
-        return Err(format!(
-            "HIL suite `{}` has schema {}, expected {RUN_SCHEMA}",
-            suite.run_id, suite.schema
-        )
-        .into());
-    }
-    if suite.run_id != manifest.run_id
-        || suite.target != manifest.target
-        || suite.started_unix_millis != manifest.started_unix_millis
-        || Some(suite.finished_unix_millis) != manifest.finished_unix_millis
-        || Some(suite.duration_millis) != manifest.duration_millis
-    {
-        return Err(format!(
-            "HIL suite `{}` does not match its manifest",
-            manifest.run_id
-        )
-        .into());
-    }
-    if suite.counts != SuiteCounts::from_results(&suite.scenarios) {
-        return Err(format!("HIL suite `{}` has inconsistent counts", suite.run_id).into());
-    }
-    let expected_outcome = if suite
-        .scenarios
-        .iter()
-        .all(|scenario| scenario.outcome.is_passed())
-    {
-        Outcome::Passed
-    } else {
-        Outcome::Failed
-    };
-    if suite.outcome != expected_outcome {
-        return Err(format!(
-            "HIL suite `{}` has an outcome inconsistent with its scenarios",
-            suite.run_id
-        )
-        .into());
-    }
-    for scenario in &suite.scenarios {
-        if scenario.schema != RUN_SCHEMA {
-            return Err(format!(
-                "HIL scenario `{}` has schema {}, expected {RUN_SCHEMA}",
-                scenario.scenario, scenario.schema
-            )
-            .into());
-        }
-        if scenario.repetitions.is_empty() {
-            if scenario.outcome != Outcome::Blocked || scenario.failure.is_none() {
-                return Err(format!(
-                    "HIL scenario `{}` has no repetitions without a blocking failure",
-                    scenario.scenario
-                )
-                .into());
-            }
-            continue;
-        }
-        if scenario.repetitions.len() != usize::from(scenario.required_repetitions)
-            || scenario.outcome
-                != aggregate_outcome(scenario.repetitions.iter().map(|entry| entry.outcome))
-        {
-            return Err(format!(
-                "HIL scenario `{}` has inconsistent repetition results",
-                scenario.scenario
-            )
-            .into());
-        }
-        for (index, repetition) in scenario.repetitions.iter().enumerate() {
-            if repetition.schema != RUN_SCHEMA {
-                return Err(format!(
-                    "HIL scenario `{}` repetition {} has schema {}, expected {RUN_SCHEMA}",
-                    scenario.scenario, repetition.repetition, repetition.schema
-                )
-                .into());
-            }
-            if usize::from(repetition.repetition) != index + 1 {
-                return Err(format!(
-                    "HIL scenario `{}` has a non-canonical repetition sequence",
-                    scenario.scenario
-                )
-                .into());
-            }
-            if (repetition.outcome == Outcome::Passed && repetition.failure.is_some())
-                || (matches!(
-                    repetition.outcome,
-                    Outcome::Failed | Outcome::Broken | Outcome::Blocked | Outcome::Interrupted
-                ) && repetition.failure.is_none())
-            {
-                return Err(format!(
-                    "HIL scenario `{}` repetition {} has an inconsistent failure record",
-                    scenario.scenario, repetition.repetition
-                )
-                .into());
-            }
-            let mut names = BTreeSet::new();
-            for measurement in &repetition.measurements {
-                if measurement.name.is_empty()
-                    || measurement.name.len() > 128
-                    || !measurement.name.bytes().all(|byte| {
-                        byte.is_ascii_lowercase()
-                            || byte.is_ascii_digit()
-                            || matches!(byte, b'.' | b'-')
-                    })
-                    || !names.insert(&measurement.name)
-                    || !measurement.is_consistent()
-                {
-                    return Err(format!(
-                        "HIL scenario `{}` repetition {} has invalid measurements",
-                        scenario.scenario, repetition.repetition
-                    )
-                    .into());
-                }
-            }
-            if repetition
-                .measurements
-                .iter()
-                .any(|measurement| measurement.verdict == Some(MeasurementVerdict::Failed))
-                && repetition.outcome != Outcome::Failed
-            {
-                return Err(format!(
-                    "HIL scenario `{}` repetition {} passed with a failed measurement verdict",
-                    scenario.scenario, repetition.repetition
-                )
-                .into());
-            }
-        }
-    }
-    Ok(())
 }
 
 fn history_counts(runs: &[RunHistoryEntry]) -> HistoryCounts {
@@ -723,168 +535,6 @@ fn html_escape(value: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        qualification::scenario::ImageClass,
-        reporting::run::{
-            Comparison, Failure, FailureKind, Measurement, MeasurementUnit, RepetitionResult,
-            ScenarioResult,
-        },
-    };
-    use std::sync::atomic::{AtomicU64, Ordering};
+mod tests;
 
-    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn temporary_target(label: &str) -> PathBuf {
-        let target = std::env::temp_dir().join(format!(
-            "open-radio-hil-history-{label}-{}-{}",
-            std::process::id(),
-            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(target.join("runs")).unwrap();
-        target
-    }
-
-    fn write_completed_run(
-        target: &Path,
-        run_id: &str,
-        started_unix_millis: u64,
-        outcome: Outcome,
-    ) {
-        let directory = target.join("runs").join(run_id);
-        fs::create_dir_all(&directory).unwrap();
-        atomic_json(
-            &directory.join("manifest.json"),
-            &serde_json::json!({
-                "schema": RUN_SCHEMA,
-                "run_id": run_id,
-                "target": "esp32s31",
-                "state": "completed",
-                "started_unix_millis": started_unix_millis,
-                "finished_unix_millis": started_unix_millis + 100,
-                "duration_millis": 100,
-                "invocation": ["cargo", "hil"],
-                "repository": {
-                    "commit": "0123456789abcdef",
-                    "dirty": false,
-                    "workspace_sha256": "00"
-                },
-                "runner": {
-                    "package": "runner",
-                    "version": "1",
-                    "protocol_version": 1,
-                    "host_os": "linux",
-                    "host_arch": "x86_64",
-                    "tools": []
-                },
-                "cell": {
-                    "cell_id": "cell-1",
-                    "device_id": "dut-1",
-                    "serial_device": "/dev/ttyACM0"
-                },
-                "firmware": []
-            }),
-        )
-        .unwrap();
-        let scenarios = vec![ScenarioResult::from_repetitions(
-            String::from("udp-rx"),
-            ImageClass::Correctness,
-            1,
-            vec![RepetitionResult {
-                schema: RUN_SCHEMA,
-                repetition: 1,
-                outcome,
-                started_unix_millis,
-                duration_millis: 100,
-                artifact_directory: PathBuf::from("scenarios/udp-rx/repetition-001"),
-                attachments: Vec::new(),
-                measurements: vec![
-                    Measurement::observed(
-                        "icmp.rtt.p95",
-                        if outcome == Outcome::Passed {
-                            900
-                        } else {
-                            1_100
-                        },
-                        MeasurementUnit::Microseconds,
-                    )
-                    .evaluated(Comparison::AtMost, 1_000),
-                ],
-                failure: (outcome != Outcome::Passed)
-                    .then(|| Failure::new(FailureKind::Scenario, "measurement failed")),
-            }],
-        )];
-        let counts = SuiteCounts {
-            scenarios: 1,
-            passed: usize::from(outcome == Outcome::Passed),
-            failed: usize::from(outcome == Outcome::Failed),
-            broken: usize::from(outcome == Outcome::Broken),
-            skipped: usize::from(outcome == Outcome::Skipped),
-            blocked: usize::from(outcome == Outcome::Blocked),
-            interrupted: usize::from(outcome == Outcome::Interrupted),
-        };
-        atomic_json(
-            &directory.join("suite.json"),
-            &SuiteResult {
-                schema: RUN_SCHEMA,
-                run_id: run_id.to_owned(),
-                target: String::from("esp32s31"),
-                outcome: if outcome == Outcome::Passed {
-                    Outcome::Passed
-                } else {
-                    Outcome::Failed
-                },
-                started_unix_millis,
-                finished_unix_millis: started_unix_millis + 100,
-                duration_millis: 100,
-                counts,
-                scenarios,
-            },
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn history_is_rebuilt_from_runs_and_exposes_flakiness() {
-        let target = temporary_target("trends");
-        write_completed_run(&target, "run-a", 1, Outcome::Passed);
-        write_completed_run(&target, "run-b", 2, Outcome::Failed);
-
-        let completion = rebuild_at(&target, "esp32s31").unwrap();
-        let first_json = fs::read(&completion.history_report).unwrap();
-        let first_html = fs::read(&completion.html_report).unwrap();
-        let report: HistoryReport = read_json(&completion.history_report).unwrap();
-        assert_eq!(report.counts.runs, 2);
-        assert_eq!(report.counts.passed, 1);
-        assert_eq!(report.counts.failed, 1);
-        assert_eq!(report.runs[0].run_id, "run-b");
-        assert_eq!(report.scenarios.len(), 1);
-        assert_eq!(report.scenarios[0].pass_rate_basis_points, 5_000);
-        assert!(report.scenarios[0].flaky);
-        assert_eq!(report.scenarios[0].consecutive_non_passed, 1);
-        assert_eq!(report.scenarios[0].last_outcome, Outcome::Failed);
-        assert_eq!(report.measurements.len(), 1);
-        assert_eq!(report.measurements[0].minimum, 900);
-        assert_eq!(report.measurements[0].latest, 1_100);
-        assert_eq!(report.measurements[0].maximum, 1_100);
-        assert_eq!(report.measurements[0].failed_verdicts, 1);
-        let html = fs::read_to_string(completion.html_report).unwrap();
-        assert!(html.contains("Scenario stability"));
-        assert!(html.contains("Measurement trends"));
-        assert!(html.contains("runs/run-b/report.html"));
-        let rebuilt = rebuild_at(&target, "esp32s31").unwrap();
-        assert_eq!(fs::read(rebuilt.history_report).unwrap(), first_json);
-        assert_eq!(fs::read(rebuilt.html_report).unwrap(), first_html);
-        fs::remove_dir_all(target).unwrap();
-    }
-
-    #[test]
-    fn malformed_run_bundle_fails_closed() {
-        let target = temporary_target("invalid");
-        fs::create_dir(target.join("runs/run-without-manifest")).unwrap();
-        let error = rebuild_at(&target, "esp32s31").unwrap_err();
-        assert!(error.to_string().contains("has no manifest"));
-        fs::remove_dir_all(target).unwrap();
-    }
-}
+use crate::evidence::run::validation::{read_json, validate_manifest, validate_suite};

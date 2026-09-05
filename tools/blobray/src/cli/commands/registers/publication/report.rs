@@ -42,6 +42,30 @@ struct BindingPublicationDocument<'a> {
     path: &'a Path,
 }
 
+#[derive(Serialize)]
+struct PacApiPublicationDocument<'a> {
+    schema: u32,
+    command: &'static str,
+    status: &'static str,
+    path: &'a Path,
+}
+
+pub(super) fn emit_pac_api(status: &'static str, path: &Path) {
+    let report = PacApiPublicationDocument {
+        schema: 1,
+        command: "registers generate-pac-api",
+        status,
+        path,
+    };
+    crate::cli::output::render_report(&report, || {
+        outputln!(
+            "Closed PAC API: {} — {}",
+            report.status,
+            report.path.display()
+        );
+    });
+}
+
 pub(super) fn emit_svd(status: &'static str, summary: &SvdExportSummary, path: &Path) {
     let report = SvdPublicationDocument {
         schema: 1,

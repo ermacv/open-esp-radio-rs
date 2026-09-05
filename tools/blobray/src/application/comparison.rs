@@ -112,7 +112,7 @@ pub(super) fn compare_profile(
             transaction_comparison: profile.transaction_comparison,
             effect_policy: None,
             call_equivalences: &profile.call_equivalences,
-            diagnostic_contracts: crate::harnesses::diagnostic_contracts_or_empty(
+            diagnostic_contracts: crate::providers::diagnostic_contracts_or_empty(
                 resolved.target.knowledge_provider.as_deref(),
             )?,
             coverage_domain: &coverage_domain,

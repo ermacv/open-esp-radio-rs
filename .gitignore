@@ -8,3 +8,7 @@ driver/integration/**/Cargo.lock
 /oracle-regression.json
 /hil/local.toml
 /hil/*.local.toml
+
+# Local caches/run bindings retained at the pre-migration vendor project path.
+# Current source-owned projects live under verification/vendor/projects.
+/verification/vendor/targets/

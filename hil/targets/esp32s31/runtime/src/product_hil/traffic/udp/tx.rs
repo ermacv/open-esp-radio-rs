@@ -4,9 +4,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::TX_PERFORMANCE;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::TX_PERFORMANCE;
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"

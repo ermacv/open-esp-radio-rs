@@ -36,7 +36,8 @@ pub(super) use crate::resources::profile::{
 use crate::resources::profile::{
     ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE as RX_BUFFER_STORAGE_SIZE,
     ESP32S31_DEFAULT_RX_STAGE_CAPACITY as RX_STAGE_CAPACITY,
-    ESP32S31_DEFAULT_TX_BUFFER_SIZE as TX_BUFFER_SIZE, Esp32s31DefaultWifiMemory,
+    ESP32S31_DEFAULT_TX_BUFFER_SIZE as TX_BUFFER_SIZE, Esp32s31DefaultScanMemory,
+    Esp32s31DefaultWifiMemory,
 };
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -205,12 +206,9 @@ pub(super) type ProductionStationRuntime<'state> = Esp32s31StationRuntimeResourc
     ProductionStationBoardResources,
     SCAN_RECORD_CAPACITY,
 >;
-// The complete board-independent DMA/scan/control arena is acquired as one
-// owner graph. This keeps large buffers out of the async task stack and avoids
-// partially taking several unrelated global cells. The aggregate currently
-// contains the RX and ordinary-TX allocations addressed directly by the
-// Wi-Fi DMA master, so the entire owner must remain in DMA-visible SRAM until
-// that storage type is split into independently placed sub-owners.
+// Radio buffers remain in DMA-visible SRAM. The CPU-only scan table is a
+// separate ordinary-memory owner, reserved together with these buffers before
+// any cell is taken. Queue depths and diagnostic DMA allocations are unchanged.
 #[allow(
     unsafe_code,
     reason = "the linker must retain the production Wi-Fi DMA owner in DMA-visible SRAM"
@@ -218,6 +216,7 @@ pub(super) type ProductionStationRuntime<'state> = Esp32s31StationRuntimeResourc
 #[unsafe(link_section = ".dma.bss.open_radio_station")]
 static WIFI_MEMORY: Esp32s31DefaultWifiMemory<CriticalSectionRawMutex> =
     Esp32s31DefaultWifiMemory::new();
+static SCAN_MEMORY: Esp32s31DefaultScanMemory = Esp32s31DefaultScanMemory::new();
 // This immutable table binds every descriptor index to the final DMA buffer
 // address. RX service validates it on every ownership transfer, so it is
 // safety-critical hot state rather than bulk DMA storage. Keeping the 256-byte
@@ -852,7 +851,7 @@ pub async fn new(
             .full_calibration_performed
     );
 
-    let memory = match WIFI_MEMORY.claim() {
+    let memory = match WIFI_MEMORY.claim(&SCAN_MEMORY) {
         Ok(memory) => memory,
         Err(_error) => return Err(Esp32s31NewError::StationMemoryInUse),
     };

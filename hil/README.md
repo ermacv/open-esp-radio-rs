@@ -23,9 +23,9 @@ consumed by the qualification evaluator.
 Vendor-linked oracles remain isolated under `verification/vendor`; they are
 not HIL scenarios or runner commands.
 
-The current ownership review, measured module inventory and behavior-neutral
-refactor sequence are recorded in
-[`docs/HIL_ARCHITECTURE_AUDIT.md`](../docs/HIL_ARCHITECTURE_AUDIT.md).
+The current ownership map is in [the host README](host/README.md).
+[`docs/HIL_ARCHITECTURE_AUDIT.md`](../docs/HIL_ARCHITECTURE_AUDIT.md) preserves
+the dated 2026-09-01 audit and implementation history.
 
 Run the host interface through the workspace alias:
 
@@ -57,7 +57,7 @@ Verify the structure and content digests of one bundle with
 `cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
 also runs without a DUT or private lab configuration.
 
-Qualification v3 independently reads the sealed bundles instead of trusting a
+Qualification v4 independently reads the sealed bundles instead of trusting a
 handwritten HIL status. A capability is HIL-qualified only when its declared
 scenario and repetition requirement is satisfied by a completed bundle for
 the exact current commit, and both the producer and evaluator worktrees are

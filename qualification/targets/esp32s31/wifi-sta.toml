@@ -15,8 +15,8 @@ required-capabilities = [
 ]
 
 [verification]
-project = "verification/vendor/targets/esp32s31/vendor-project.toml"
-evidence-index = "verification/vendor/targets/esp32s31/evidence/vendor-evidence.json"
+project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/vendor-evidence.json"
 
 [hil]
 target = "esp32s31"
@@ -86,8 +86,8 @@ host = "covered"
 async = "bounded"
 depends-on = ["interrupt-recovery"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml",
-  "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml",
+  "registers/esp32s31/evidence/vendor-rom.toml",
+  "registers/esp32s31/evidence/vendor-libpp.toml",
 ]
 hil-requirements = [
   { scenario = "udp-bidirectional-ht40-rx-delivery-split", minimum-repetitions = 1 },
@@ -104,7 +104,7 @@ implementation = "complete"
 host = "covered"
 async = "bounded"
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml",
+  "registers/esp32s31/evidence/vendor-libpp.toml",
 ]
 hil-requirements = [
   { scenario = "station-ap-loss", minimum-repetitions = 1 },
@@ -174,7 +174,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "verification/vendor/chips/esp32s31/registers/peripherals/wifi-mac-rtc-timer-update.toml",
+  "registers/esp32s31/model/peripherals/wifi-mac-rtc-timer-update.toml",
   "driver/chips/esp32s31/hal/src/lib.rs",
 ]
 hil-requirements = [
@@ -194,7 +194,7 @@ host = "covered"
 async = "bounded"
 depends-on = ["rx-tx-dma", "radio-cold-start"]
 vendor-anchors = [
-  "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml",
+  "registers/esp32s31/evidence/vendor-libpp.toml",
 ]
 hil-requirements = [
   { scenario = "station-ap-loss", minimum-repetitions = 1 },

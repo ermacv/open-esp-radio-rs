@@ -67,11 +67,11 @@ only opt-in exception.
 | `hil/protocol` | Typed host/HIL command and telemetry protocol |
 | `hil/host/runner` | Host build, flash, traffic and qualification scenario runner |
 | `hil/host/linux-net` | Privileged Linux AP/monitor fixture used only by HIL |
-| [`verification/`](verification/README.md) | Vendor comparison target packs and checked verification inputs |
-| [`qualification/`](qualification/README.md) | Machine-readable readiness claims |
+| [`verification/`](verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects |
+| [`qualification/`](qualification/README.md) | Capability programs and independent readiness evaluator |
 | `tools/blobray` | Blobray: compiled-binary analysis, reviewed models, publication and Rust verification |
-| [`tools/`](tools/README.md) | Qualification checker, register model, Blobray and repository policy audits |
-| `svd` | Published clean ESP32-S31 hardware descriptions and PAC binding indices |
+| [`tools/`](tools/README.md) | Reusable analysis tools and repository policy checks under `tools/repo` |
+| [`registers/`](registers/esp32s31/README.md) | Reviewed hardware models, PAC publication policy and generated SVD/bindings |
 
 Applications own board startup, credentials, `embassy-net::Stack`, DHCP and
 sockets. The driver returns an `embassy-net-driver::Driver`; its eternal runner
@@ -89,14 +89,14 @@ cargo fmt --all -- --check
 cargo test --workspace
 cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
 cargo blobray project configure \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --project verification/vendor/projects/esp32s31/vendor-project.toml \
   --check
 # Artifact-backed: requires local.toml and current generated/findings.
 cargo blobray project publish \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --project verification/vendor/projects/esp32s31/vendor-project.toml \
   --check
 cargo test -p blobray-esp32s31 --test cli_contract -- --ignored
-tools/audit-source-only.sh
+cargo xtask check source-only
 (cd examples/esp32s31-station && cargo check --release)
 ```
 
@@ -104,8 +104,12 @@ All workspaces and generated PAC code use Rust edition 2024, Cargo resolver 3
 and its formatting style. The current ESP32-S31 platform branch sets the
 workspace MSRV to Rust 1.97.1. The repository toolchain is pinned to that
 stable patch release so host, generated-code and embedded checks agree.
+Repository automation lives in `tools/repo` and runs through `cargo xtask`;
+see [its command map](tools/repo/README.md). Linux/OpenWrt fixture operations
+remain under HIL.
 The source-only audit additionally needs the stable embedded target and
-`llvm-nm`. It validates generated PAC reproducibility, the compiled PHY artifact's
+the pinned Rust toolchain’s `llvm-tools` component for LLVM bitcode. It
+validates generated PAC reproducibility, the compiled PHY artifact's
 external symbols and its dependency tree. It deliberately does not inspect
 Rust source text for required or forbidden function names.
 

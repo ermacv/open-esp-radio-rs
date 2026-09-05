@@ -37,7 +37,7 @@ pub(crate) fn verify_source(
     disposition_manifest: Option<&dispositions::Manifest>,
     evidence: &mut EvidenceSet,
 ) -> Result<SourceVerificationReport> {
-    let diagnostic_contracts = crate::harnesses::diagnostic_contracts_or_empty(knowledge_provider)?;
+    let diagnostic_contracts = crate::providers::diagnostic_contracts_or_empty(knowledge_provider)?;
     let vendor_symbols = vendor_symbols(source)?;
     // A reviewed binding names one exact compiled symbol and is independent
     // of the convention-based probe prefix. Keep the filtered inventory only

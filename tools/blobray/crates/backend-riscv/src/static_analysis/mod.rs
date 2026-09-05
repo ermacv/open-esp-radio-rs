@@ -3,7 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rv_asm::{Inst, Reg};
-use serde::Serialize;
+
+// Preserve the backend API while neutral reviewed facts are owned by the model.
+pub use open_radio_vendor_analysis_model::{
+    ReviewedCompressedPointerEncoding, ReviewedMemoryAccessClassification,
+    ReviewedMemoryAccessOccurrence, ReviewedMemoryAccessOperation, ReviewedMemoryAccessRole,
+};
 
 use crate::{
     ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, BranchCondition, BranchOperation,
@@ -31,8 +36,8 @@ mod state;
 use alu::apply_alu_instruction;
 use calls::{StructuralCallControl, apply_call_instruction, apply_relocated_call};
 pub use context::{
-    ReviewedCompressedPointerEncoding, StructuralCallSite, StructuralPointerContext,
-    StructuralProjectedRelocation, StructuralRelocatedCallView, StructuralRelocatedCalls,
+    StructuralCallSite, StructuralPointerContext, StructuralProjectedRelocation,
+    StructuralRelocatedCallView, StructuralRelocatedCalls,
 };
 use memory::*;
 use memory_access::{apply_floating_memory_instruction, apply_memory_instruction};
@@ -167,130 +172,6 @@ impl ReviewedMemoryValueDomain {
             ));
         }
         Ok(())
-    }
-}
-
-/// Operation performed by one exact reviewed vendor-code memory access.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ReviewedMemoryAccessOperation {
-    Load,
-    Store,
-}
-
-/// Whether one exact unresolved RAM access belongs to a hardware-facing
-/// object or to ordinary vendor software state.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ReviewedMemoryAccessRole {
-    HardwareShared,
-    SoftwareOnly,
-}
-
-impl ReviewedMemoryAccessRole {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::HardwareShared => "hardware-shared",
-            Self::SoftwareOnly => "software-only",
-        }
-    }
-}
-
-/// Sparse reviewed classification for one exact artifact-local memory access.
-///
-/// The full linked-IR function identity and instruction site deliberately
-/// make this fail closed when a vendor artifact changes. `object` is a stable
-/// reviewer-owned semantic label; it is never inferred from symbol spelling,
-/// addresses or diagnostic text.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct ReviewedMemoryAccessOccurrence {
-    pub artifact_source: &'static str,
-    pub artifact_sha256: &'static str,
-    pub function: &'static str,
-    pub site: u32,
-    pub operation: ReviewedMemoryAccessOperation,
-}
-
-impl ReviewedMemoryAccessOccurrence {
-    pub const fn new(
-        artifact_source: &'static str,
-        artifact_sha256: &'static str,
-        function: &'static str,
-        site: u32,
-        operation: ReviewedMemoryAccessOperation,
-    ) -> Self {
-        Self {
-            artifact_source,
-            artifact_sha256,
-            function,
-            site,
-            operation,
-        }
-    }
-
-    fn validate(self) -> std::result::Result<(), String> {
-        for (field, value) in [
-            ("artifact source", self.artifact_source),
-            ("function", self.function),
-        ] {
-            if value.is_empty() {
-                return Err(format!("reviewed memory-access {field} is empty"));
-            }
-        }
-        if self.artifact_sha256.len() != 64
-            || !self
-                .artifact_sha256
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(format!(
-                "reviewed memory-access artifact SHA-256 {:?} is not 64 lower-case hex digits",
-                self.artifact_sha256
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct ReviewedMemoryAccessClassification {
-    pub id: &'static str,
-    pub occurrence: ReviewedMemoryAccessOccurrence,
-    pub role: ReviewedMemoryAccessRole,
-    pub object: &'static str,
-    pub evidence: &'static str,
-}
-
-impl ReviewedMemoryAccessClassification {
-    pub const fn new(
-        id: &'static str,
-        occurrence: ReviewedMemoryAccessOccurrence,
-        role: ReviewedMemoryAccessRole,
-        object: &'static str,
-        evidence: &'static str,
-    ) -> Self {
-        Self {
-            id,
-            occurrence,
-            role,
-            object,
-            evidence,
-        }
-    }
-
-    pub fn validate(self) -> std::result::Result<(), String> {
-        for (field, value) in [
-            ("id", self.id),
-            ("object", self.object),
-            ("evidence", self.evidence),
-        ] {
-            if value.is_empty() {
-                return Err(format!("reviewed memory-access {field} is empty"));
-            }
-        }
-        self.occurrence.validate()
     }
 }
 

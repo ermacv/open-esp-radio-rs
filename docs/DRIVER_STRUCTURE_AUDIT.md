@@ -1,5 +1,9 @@
 # Аудит структуры driver
 
+Repository safety gate теперь вызывается как `cargo xtask check safety`;
+[его текущая реализация](../tools/repo/src/checks/safety.rs) заменила shell.
+Имена старых scripts ниже обозначают исходный снимок аудита.
+
 Дата: 2026-09-04. База: `134a75ac6f0eeeb60a76fca22d0bfbf51b1f4013`.
 Статус: исходный снимок аудита. Структурная миграция завершена;
 изменения и проверка отражены в [итоговом документе](DRIVER_STRUCTURE_PLAN.md).
@@ -86,7 +90,7 @@ output посчитаны отдельно: большой generated `lib.rs` н
 `ieee802154_mac_ownership.rs` (1731 строка) и два validation sidecar.
 `registers/api.toml:187` подключает ownership sidecar. Его задача — потребить
 единый MAC owner, выдать отдельные task/ISR handles и затем соединить их.
-При этом `tools/audit-driver-safety.sh:12–16` классифицирует весь raw package как
+При этом `tools/repo/audit-driver-safety.sh:12–16` классифицирует весь raw package как
 сгенерированный, а `pac-raw/Cargo.toml:23` разрешает
 `unsafe_op_in_unsafe_fn` для всего пакета.
 
@@ -98,7 +102,7 @@ crate, если bridge не требует открытия generated-private in
 
 Исходники: [raw manifest](../driver/chips/esp32s31/pac/raw/Cargo.toml),
 [ownership sidecar](../driver/chips/esp32s31/pac/raw/src/ieee802154_mac_ownership.rs),
-[safety audit](../tools/audit-driver-safety.sh).
+`audit-driver-safety.sh` (исторический safety audit).
 
 ### B. platform-pac фактически является SoC HAL и DMA runtime
 
@@ -253,7 +257,7 @@ HIL evidence остаётся в qualification, vendor comparison — в verific
 ```text
 Reviewed target register model + reviewed API pack
   -> Blobray register-model / publisher / svd2rust
-  -> svd/esp32s31-radio.svd + bindings
+  -> registers/esp32s31/published/radio.svd + bindings
   -> custom raw PAC + generated semantic domains
   -> handwritten restricted PAC -> radio HAL -> PHY/MAC
 
@@ -266,14 +270,14 @@ Pinned esp-pacs source
 `pac-gen` — build-time tooling. Сейчас его обязанности уже находятся в
 `tools/blobray/crates/register-model` и `tools/blobray/src/registers/pac.rs`.
 Новый `driver/pac-gen` не нужен. Источник редактирования — reviewed model в
-`verification/vendor/targets/esp32s31/registers`, а SVD является output;
+`verification/vendor/projects/esp32s31/registers`, а SVD является output;
 ручное исправление generated Rust/SVD неправильно для текущего pipeline.
-См. [svd/README.md](../svd/README.md).
+См. [registers/esp32s31/README.md](../registers/esp32s31/README.md).
 
 `vendor-project.toml:366–380` задаёт четыре output: SVD, raw PAC, bindings index
 с именем Rust crate, generated semantic module. Перенос PAC должен обновить
 этот publisher contract. Платформенный
-`svd/esp32s31-platform-radio-deps.svd` используется валидатором; он не создаёт
+`registers/esp32s31/upstream/platform-radio-deps.svd` используется валидатором; он не создаёт
 runtime crate или второй peripheral owner. Сохранить описанный carveout
 общего PHY `MODEM_LPCON::TICK_CONF`, не объединять apertures по похожим именам.
 

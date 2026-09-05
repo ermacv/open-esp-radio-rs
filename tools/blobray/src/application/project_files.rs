@@ -788,6 +788,10 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
             );
         }
         for (role, path) in [
+            (
+                "register-ownership-policy",
+                registers.ownership_policy.as_ref(),
+            ),
             ("register-api-pack", registers.api_pack.as_ref()),
             ("register-lint-pack", registers.lint_pack.as_ref()),
         ] {

@@ -48,6 +48,7 @@ fn command_message(command: &Command) -> Option<&'static str> {
         Command::RegisterReview(_) => "Register review",
         Command::RegisterExportSvd(_) => "SVD export",
         Command::RegisterGeneratePacRaw(_) => "raw PAC generation",
+        Command::RegisterGeneratePacApi(_) => "closed PAC API generation",
         Command::RegisterGenerateBindings(_) => "PAC binding generation",
         Command::SymbolInventory(_) => "Symbol inventory",
         Command::SymbolCorrelate(_) => "Symbol correspondence",

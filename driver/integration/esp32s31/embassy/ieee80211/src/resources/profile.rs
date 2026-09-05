@@ -122,17 +122,41 @@ pub type Esp32s31DefaultRxDmaStorage = Esp32s31RxDmaStorage<
 
 pub type Esp32s31DefaultScanTable = ScanTable<ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY>;
 
-/// One statically placed default Wi-Fi memory arena.
+/// Software scan records, independently placed in ordinary static memory.
 ///
-/// Keeping the unique DMA buffers and role scratch inside this aggregate
-/// makes both placement and single ownership visible at the application boundary.
-/// A board declares one `static` value instead of independently taking a set
-/// of cells which could otherwise be only partially acquired.
+/// These records are parsed by the CPU; they are never submitted to a DMA
+/// master. Keeping their storage separate avoids charging the full scan table
+/// against the internal SRAM budget of the radio buffers.
+pub struct Esp32s31DefaultScanMemory {
+    claimed: AtomicBool,
+    table: StaticCell<Esp32s31DefaultScanTable>,
+}
+
+impl Esp32s31DefaultScanMemory {
+    pub const fn new() -> Self {
+        Self {
+            claimed: AtomicBool::new(false),
+            table: StaticCell::new(),
+        }
+    }
+}
+
+impl Default for Esp32s31DefaultScanMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Statically placed DMA buffers and small role-control resources.
+///
+/// A board places this owner in DMA-visible SRAM and the separate
+/// [`Esp32s31DefaultScanMemory`] in ordinary memory. [`Self::claim`] reserves
+/// both owners before exposing any field, so a conflicting claim cannot
+/// partially consume either arena.
 pub struct Esp32s31DefaultWifiMemory<M: RawMutex> {
     claimed: AtomicBool,
     rx_dma: ConstStaticCell<Esp32s31DefaultRxDmaStorage>,
     tx_dma: ConstStaticCell<TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>>,
-    scan_table: StaticCell<Esp32s31DefaultScanTable>,
     ap_beacon: ConstStaticCell<[u8; WPA2_BEACON_CAPACITY]>,
     scan_frame: ConstStaticCell<[u8; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]>,
     station_control: ConstStaticCell<Esp32s31StationControlResources<M>>,
@@ -144,20 +168,23 @@ impl<M: RawMutex> Esp32s31DefaultWifiMemory<M> {
             claimed: AtomicBool::new(false),
             rx_dma: ConstStaticCell::new(Esp32s31DefaultRxDmaStorage::new()),
             tx_dma: ConstStaticCell::new(TxDmaStorage::new()),
-            scan_table: StaticCell::new(),
             ap_beacon: ConstStaticCell::new([0; WPA2_BEACON_CAPACITY]),
             scan_frame: ConstStaticCell::new([0; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]),
             station_control: ConstStaticCell::new(Esp32s31StationControlResources::new()),
         }
     }
 
-    /// Atomically acquire the complete initial station arena.
+    /// Acquire the complete initial station owner graph exactly once.
+    ///
+    /// If either arena is already claimed, no cell is taken. A failed scan
+    /// reservation releases the radio reservation for a later valid pair.
     #[allow(
         large_assignments,
         reason = "initializes the existing scan table in static storage; the final-image stack audit bounds actual compiler temporaries"
     )]
     pub fn claim(
         &'static self,
+        scan: &'static Esp32s31DefaultScanMemory,
     ) -> Result<Esp32s31DefaultWifiMemoryLease<M>, Esp32s31DefaultWifiMemoryError> {
         if self
             .claimed
@@ -166,10 +193,20 @@ impl<M: RawMutex> Esp32s31DefaultWifiMemory<M> {
         {
             return Err(Esp32s31DefaultWifiMemoryError::InUse);
         }
+        if scan
+            .claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            self.claimed.store(false, Ordering::Release);
+            return Err(Esp32s31DefaultWifiMemoryError::InUse);
+        }
+        // Both reservations are now permanent. Private cells can only be
+        // taken here, and no failed reservation above has consumed a cell.
         Ok(Esp32s31DefaultWifiMemoryLease {
             rx_dma: self.rx_dma.take(),
             tx_dma: self.tx_dma.take(),
-            scan_table: self.scan_table.init_with(ScanTable::new),
+            scan_table: scan.table.init_with(ScanTable::new),
             ap_beacon: self.ap_beacon.take(),
             scan_frame: self.scan_frame.take(),
             station_control: self.station_control.take(),

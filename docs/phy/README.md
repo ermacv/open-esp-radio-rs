@@ -5,8 +5,8 @@ PHY parity is verified from compiled vendor and Rust code by
 report is the inventory and open-work list; this directory does not maintain a
 parallel, hand-written function ledger.
 
-The verifier composes `svd/esp32s31-radio.svd` with the validator-only official
-PAC subset in `svd/esp32s31-platform-radio-deps.svd`. A `MATCH` needs no
+The verifier composes `registers/esp32s31/published/radio.svd` with the validator-only official
+PAC subset in `registers/esp32s31/upstream/platform-radio-deps.svd`. A `MATCH` needs no
 additional per-function document, but its row retains the strength of the
 evidence: `evidence=symbolic` for normalized symbolic equality,
 `evidence=scenario` for declared concrete cases with complete branch outcomes,
@@ -37,5 +37,5 @@ test for any scope outside that rule; it must not be hidden in prose.
 
 The chip/protocol boundary is documented in the
 [driver architecture](../../driver/README.md), structured register evidence is
-under `verification/vendor/targets/esp32s31/registers`, and hardware results under the
+under `verification/vendor/projects/esp32s31/registers`, and hardware results under the
 [ESP32-S31 qualification records](../../qualification/targets/esp32s31/records/README.md).

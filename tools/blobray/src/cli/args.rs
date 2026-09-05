@@ -470,6 +470,8 @@ leaf_commands!(RegisterCommand {
     ExportSvd(RegisterExportArgs) => Command::RegisterExportSvd, RegisterExport,
     /// Generate the internal unsafe raw PAC implementation.
     GeneratePacRaw(RegisterPacRawArgs) => Command::RegisterGeneratePacRaw, RegisterPacRaw,
+    /// Generate or check the reviewed closed-PAC API module.
+    GeneratePacApi(CheckArgs) => Command::RegisterGeneratePacApi, Check,
     /// Generate the restricted public register binding API.
     GenerateBindings(RegisterBindingsArgs) => Command::RegisterGenerateBindings, RegisterBindings,
 });
@@ -621,6 +623,7 @@ pub(crate) enum Command {
     RegisterReview(RegisterReviewArgs),
     RegisterExportSvd(RegisterExportArgs),
     RegisterGeneratePacRaw(RegisterPacRawArgs),
+    RegisterGeneratePacApi(CheckArgs),
     RegisterGenerateBindings(RegisterBindingsArgs),
     AuditImageTargets(ImageAuditArgs),
     DiscoverMmio(MmioDiscoverArgs),

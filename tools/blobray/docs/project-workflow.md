@@ -18,12 +18,13 @@ For named roles, the exact-fact `source` is the role suffix: a
 
 ## The normal loop
 
-For an existing project:
+For an existing project, build the host and limiter as described under
+[resource limits](#resource-limits), then run:
 
 ```console
 cargo blobray project doctor --project path/to/vendor-project.toml
 cargo blobray project files --project path/to/vendor-project.toml
-tools/blobray/scripts/run-limited \
+target/blobray/blobray-run \
   project analyze --project path/to/vendor-project.toml --jobs 1
 cargo blobray project status --project path/to/vendor-project.toml
 cargo blobray project research next --project path/to/vendor-project.toml
@@ -268,6 +269,33 @@ verification-policy requirement makes a production trace a Blobray gate.
 Large JSON outputs are serialized directly against their existing bytes with
 bounded buffers in check mode; verification does not need a second copy in
 `/tmp` and does not write a staging file into the project.
+
+## Source-only register publication
+
+An explicitly selected model-only composition can validate its register model
+and publish individual outputs without artifact review scopes:
+
+```console
+cargo blobray registers validate --project path/to/publication/vendor-project.toml
+cargo blobray registers export-svd --check --project path/to/publication/vendor-project.toml
+cargo blobray registers generate-pac-raw --check --project path/to/publication/vendor-project.toml
+cargo blobray registers generate-pac-api --check --project path/to/publication/vendor-project.toml
+cargo blobray registers generate-bindings --check --project path/to/publication/vendor-project.toml
+```
+
+`generate-pac-api` validates the configured `[registers.api].pack` against the
+reviewed model and generates its configured `output`. Check mode rejects absent
+or stale output without changing it. A missing or unsupported API policy is an
+error. This operation does not weaken `project publish`, which continues to
+require the investigation's structural review scopes.
+
+Projects may select either an inline `[registers].owned-ranges` list or a shared
+`[registers].ownership-policy` path. The latter resolves relative to its selecting
+manifest and loads a strict schema-1 document containing only `owned-ranges`.
+The scope must be nonempty and unique; selecting both forms is rejected. The
+policy is a reviewed project input tracked by cache and in-flight input guards.
+It does not inherit providers, applicability, evidence catalogs or other project
+settings. Those remain explicit selections in each composition.
 
 ## Focused and full analysis
 
@@ -713,7 +741,7 @@ research progress lives in sparse reviewed TOML, generated linked-IR bundles
 and revision snapshots. Never copy the SQLite/WAL directory between machines.
 
 For performance measurements, set `BLOBRAY_REPORT_USAGE=1` when
-calling `scripts/run-limited`. This selects its process-session watchdog and
+calling `blobray-run`. This selects its process-session watchdog and
 prints elapsed time plus peak RSS for the complete Blobray process tree.
 External `/usr/bin/time` otherwise measures only the `systemd-run` wrapper on
 hosts where the systemd limiter is available.
@@ -764,12 +792,12 @@ debugging or a focused low-level experiment.
 
 ## Resource limits
 
-Real binaries must be analyzed through `scripts/run-limited`. The wrapper
+Real binaries must be analyzed through `blobray-run`. The wrapper
 limits aggregate memory and runtime; a large analysis should fail visibly
 rather than make the development machine unusable. Build the optimized host
 once when iterating repeatedly:
 
 ```console
-CARGO_BUILD_JOBS=2 cargo build --profile blobray \
-  -p blobray-esp32s31 --bin blobray
+cargo build --profile blobray -p blobray-esp32s31 --bin blobray
+cargo build --profile blobray -p blobray --bin blobray-run
 ```

@@ -692,6 +692,7 @@ locator = "region-and-name"
         let mut paths = RegisterWorkspacePaths {
             facts,
             model,
+            ownership_policy: None,
             owned_ranges: vec!["radio".to_owned()],
             non_operational_functions: Vec::new(),
             review_output: None,

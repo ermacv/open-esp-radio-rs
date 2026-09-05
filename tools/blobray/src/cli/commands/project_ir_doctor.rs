@@ -6,8 +6,8 @@ use serde::Serialize;
 
 use crate::{
     artifacts::inspect_linked_ir,
-    harnesses,
     project::ProjectSpec,
+    providers,
     run_spec::{InputRole, RunSpec},
     target::TargetSpec,
 };
@@ -167,7 +167,7 @@ pub(super) fn inspect(
             "missing-sources"
         };
         let mut diagnostics = Vec::new();
-        let contract_status = match harnesses::entry_contract_or_neutral(
+        let contract_status = match providers::entry_contract_or_neutral(
             target.knowledge_provider.as_deref(),
             &profile.entry_contract,
         ) {

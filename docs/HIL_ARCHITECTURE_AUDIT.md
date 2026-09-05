@@ -1,5 +1,9 @@
 # HIL architecture audit and refactor plan
 
+Команда repository gate из исходного плана ниже заменена на
+`cargo xtask check source-only`. Перенос repository automation не меняет
+Linux/OpenWrt fixture logic или HIL evidence contracts.
+
 Status: current-state audit and implementation record, 2026-09-01. This document describes the HIL
 implementation after exact firmware replay, build/lab provenance, route
 validation and controlled-OpenWrt epoch isolation were implemented. It is a
@@ -310,7 +314,7 @@ cargo test -p open-esp-radio-hil-protocol
 cargo check --manifest-path hil/targets/esp32s31/runtime/Cargo.toml \
   --target riscv32imafc-unknown-none-elf --features boot-smoke
 cargo fmt --all -- --check
-tools/audit-source-only.sh
+tools/repo/audit-source-only.sh
 ```
 
 Hardware-facing evidence changes additionally require exact-image replay or a

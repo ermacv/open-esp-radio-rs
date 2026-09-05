@@ -229,10 +229,10 @@ fn input_digest(
 ) -> Result<String> {
     let compiled_knowledge_identity = match session.target.knowledge_provider.as_deref() {
         Some(provider) => {
-            crate::harnesses::contracts(provider)?;
-            crate::harnesses::analysis_cache_identity(Some(provider))
+            crate::providers::contracts(provider)?;
+            crate::providers::analysis_cache_identity(Some(provider))
         }
-        None => crate::harnesses::analysis_cache_identity(None),
+        None => crate::providers::analysis_cache_identity(None),
     };
     digest_inputs(
         &session.project.id,

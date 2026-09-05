@@ -133,7 +133,7 @@ pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap, target: &TargetSpec)
         image.add_companion(companion)?;
     }
     let diagnostic_contracts =
-        crate::harnesses::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
+        crate::providers::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
     image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;
     let inventory = if concrete_only {
         execution::CoverageInventory::default()

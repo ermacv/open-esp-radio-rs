@@ -92,7 +92,7 @@ pub(super) fn compare(
                 crate::verification::profiles::TransactionComparison::Observables,
             effect_policy: None,
             call_equivalences: &[],
-            diagnostic_contracts: crate::harnesses::diagnostic_contracts_or_empty(
+            diagnostic_contracts: crate::providers::diagnostic_contracts_or_empty(
                 resolved.target.knowledge_provider.as_deref(),
             )?,
             coverage_domain: &coverage_domain,
@@ -132,7 +132,7 @@ pub(super) fn validate_table_instances(
         .target
         .knowledge_provider
         .as_deref()
-        .and_then(|harness| crate::harnesses::contracts(harness).ok());
+        .and_then(|harness| crate::providers::contracts(harness).ok());
     let workspace = InterfaceWorkspace::load_with_templates(
         &paths.facts,
         pack,

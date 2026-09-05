@@ -3,7 +3,10 @@
 use crate::*;
 use open_esp_radio_hil_protocol::FeatureCapabilities;
 
+mod class;
 mod reproducibility;
+pub(crate) mod stack;
+pub(crate) use class::ImageClass;
 
 pub(crate) use reproducibility::verify_rebuild;
 
@@ -30,7 +33,7 @@ struct ImageCapabilitySignature {
 
 pub(crate) fn classify_flashed_capabilities(
     features: &FeatureCapabilities,
-) -> Option<qualification::scenario::ImageClass> {
+) -> Option<crate::image::ImageClass> {
     classify_image_signature(ImageCapabilitySignature {
         driver_observation: features.driver_observation_evidence,
         task_poll: features.task_poll_evidence,
@@ -46,8 +49,8 @@ pub(crate) fn classify_flashed_capabilities(
 
 fn classify_image_signature(
     signature: ImageCapabilitySignature,
-) -> Option<qualification::scenario::ImageClass> {
-    use qualification::scenario::ImageClass;
+) -> Option<crate::image::ImageClass> {
+    use crate::image::ImageClass;
 
     if signature.tx_architecture_probe {
         let expected = ImageCapabilitySignature {
@@ -194,12 +197,12 @@ struct ArtifactReport<'a> {
 }
 
 pub(crate) fn print_artifacts(
-    class: qualification::scenario::ImageClass,
+    class: crate::image::ImageClass,
     artifacts: &Artifacts,
     flashed: bool,
 ) -> Result<()> {
     let report = ArtifactReport {
-        schema: reporting::run::RUN_SCHEMA,
+        schema: crate::evidence::run::RUN_SCHEMA,
         image_class: class.id(),
         profile: class.runtime_profile(),
         runtime_elf: artifacts.runtime_elf.display().to_string(),
@@ -228,7 +231,7 @@ pub(crate) struct Artifacts {
     pub(crate) application_image: PathBuf,
 }
 
-pub(crate) fn build(root: &Path, class: qualification::scenario::ImageClass) -> Result<Artifacts> {
+pub(crate) fn build(root: &Path, class: crate::image::ImageClass) -> Result<Artifacts> {
     let local_esp_hal = local_esp_hal_override()?;
     let local_embassy = local_embassy_override()?;
     let local_xarxa = local_xarxa_override()?;
@@ -261,7 +264,7 @@ pub(crate) fn build(root: &Path, class: qualification::scenario::ImageClass) -> 
 
 fn build_resolved(
     root: &Path,
-    class: qualification::scenario::ImageClass,
+    class: crate::image::ImageClass,
     local_esp_hal: Option<&Path>,
     local_embassy: Option<&Path>,
     local_xarxa: Option<&Path>,
@@ -316,11 +319,11 @@ fn build_resolved(
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
     enable_experimental_path_trimming(&mut runtime, trim_paths);
-    evidence::stack_audit::enable_stack_checks(&mut runtime, &stack_budget);
+    crate::image::stack::enable_stack_checks(&mut runtime, &stack_budget);
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
 
-    let stack_report = evidence::stack_audit::analyze_elf_stack(&runtime_elf, &stack_budget)?;
+    let stack_report = crate::image::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
     let stack_report_path = output.join("runtime-stack.txt");
     fs::write(
         &stack_report_path,
@@ -355,11 +358,11 @@ fn build_resolved(
     add_local_embassy_patches(&mut bootstrap, local_embassy);
     add_local_xarxa_patches(&mut bootstrap, local_xarxa);
     enable_experimental_path_trimming(&mut bootstrap, trim_paths);
-    evidence::stack_audit::enable_stack_checks(&mut bootstrap, &stack_budget);
+    crate::image::stack::enable_stack_checks(&mut bootstrap, &stack_budget);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&bootstrap_elf, "bootstrap ELF")?;
     let bootstrap_stack_report =
-        evidence::stack_audit::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
+        crate::image::stack::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
     let bootstrap_stack_report_path = output.join("bootstrap-stack.txt");
     fs::write(
         &bootstrap_stack_report_path,
@@ -713,11 +716,7 @@ fn crc32(bytes: &[u8]) -> u32 {
     !crc
 }
 
-fn audit_runtime(
-    elf: &Path,
-    binary: &Path,
-    class: qualification::scenario::ImageClass,
-) -> Result<String> {
+fn audit_runtime(elf: &Path, binary: &Path, class: crate::image::ImageClass) -> Result<String> {
     let output = Command::new(program_from_env("LLVM_NM", "llvm-nm"))
         .args(["--defined-only", "--numeric-sort"])
         .arg(elf)
@@ -762,7 +761,7 @@ fn audit_runtime(
     let stack_bottom = symbol("_stack_end")?;
     let stack_top = symbol("_stack_start")?;
     let binary_bytes = fs::metadata(binary)?.len();
-    let initialized_observers_valid = if class == qualification::scenario::ImageClass::BootSmoke {
+    let initialized_observers_valid = if class == crate::image::ImageClass::BootSmoke {
         true
     } else {
         ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"]
@@ -892,221 +891,4 @@ fn audit_application_image(path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    fn image_signature(
-        driver_observation: bool,
-        task_poll: bool,
-        rx_delivery: bool,
-        mac_irq: bool,
-        ieee802154_event_status: bool,
-        ieee802154_ed_event: bool,
-    ) -> ImageCapabilitySignature {
-        ImageCapabilitySignature {
-            driver_observation,
-            task_poll,
-            tx_architecture_probe: false,
-            core0_rx_cycles: false,
-            rx_delivery,
-            mac_irq,
-            ieee802154_event_status,
-            ieee802154_ed_event,
-            psram_task_stack: true,
-        }
-    }
-
-    fn scratch_directory(name: &str) -> PathBuf {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let path = env::temp_dir().join(format!(
-            "open-esp-radio-hil-runner-{name}-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
-    }
-
-    #[test]
-    fn qualified_profile_name_is_stable() {
-        assert_eq!(QUALIFIED_PROFILE, "psram-code-psram-data");
-        assert_eq!(TARGET, "riscv32imafc-unknown-none-elf");
-    }
-
-    #[test]
-    fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 12);
-        assert!(
-            qualification::scenario::ImageClass::ALL
-                .into_iter()
-                .all(qualification::scenario::ImageClass::uses_psram_task_stack)
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::Performance.id(),
-            "performance"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::Correctness.id(),
-            "correctness"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::Correctness.runtime_features(),
-            "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticMacIrq.runtime_features(),
-            "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticTaskResidence.runtime_features(),
-            "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticTxArchitecture.runtime_features(),
-            "open-radio-hil,psram-task-stack,tx-architecture-probes,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
-            "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticCore0RxCoarse.runtime_features(),
-            "open-radio-hil,psram-task-stack,core0-rx-coarse-telemetry,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
-            "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
-            "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
-            "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            qualification::scenario::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
-            "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
-        );
-    }
-
-    #[test]
-    fn image_capability_classifier_preserves_every_exclusive_class() {
-        use qualification::scenario::ImageClass;
-
-        for (signals, expected) in [
-            (
-                image_signature(false, false, false, false, false, false),
-                ImageClass::Performance,
-            ),
-            (
-                image_signature(true, false, false, false, false, false),
-                ImageClass::Correctness,
-            ),
-            (
-                image_signature(true, false, false, true, false, false),
-                ImageClass::DiagnosticMacIrq,
-            ),
-            (
-                image_signature(false, true, false, false, false, false),
-                ImageClass::DiagnosticTaskResidence,
-            ),
-            (
-                image_signature(true, true, false, false, false, false),
-                ImageClass::DiagnosticTaskPoll,
-            ),
-            (
-                image_signature(true, false, true, false, false, false),
-                ImageClass::DiagnosticRxDelivery,
-            ),
-            (
-                image_signature(false, false, false, false, true, false),
-                ImageClass::DiagnosticIeee802154EventStatus,
-            ),
-            (
-                image_signature(false, false, false, false, false, true),
-                ImageClass::DiagnosticIeee802154EdEvent,
-            ),
-        ] {
-            assert_eq!(classify_image_signature(signals), Some(expected));
-        }
-        let mut tx_architecture = image_signature(false, true, false, false, false, false);
-        tx_architecture.tx_architecture_probe = true;
-        assert_eq!(
-            classify_image_signature(tx_architecture),
-            Some(ImageClass::DiagnosticTxArchitecture),
-        );
-        let mut core0_rx_cycles = image_signature(true, true, false, false, false, false);
-        core0_rx_cycles.core0_rx_cycles = true;
-        assert_eq!(
-            classify_image_signature(core0_rx_cycles),
-            Some(ImageClass::DiagnosticCore0RxCycles),
-        );
-        let mut core0_rx_coarse = image_signature(false, true, false, false, false, false);
-        core0_rx_coarse.core0_rx_cycles = true;
-        assert_eq!(
-            classify_image_signature(core0_rx_coarse),
-            Some(ImageClass::DiagnosticCore0RxCoarse),
-        );
-    }
-
-    #[test]
-    fn image_capability_classifier_rejects_mixed_or_non_psram_images() {
-        assert_eq!(
-            classify_image_signature(image_signature(true, false, false, false, true, false)),
-            None
-        );
-        assert_eq!(
-            classify_image_signature(image_signature(false, true, false, false, true, false)),
-            None
-        );
-        assert_eq!(
-            classify_image_signature(image_signature(false, false, false, false, true, true)),
-            None
-        );
-
-        let mut performance = image_signature(false, false, false, false, false, false);
-        performance.psram_task_stack = false;
-        assert_eq!(classify_image_signature(performance), None);
-    }
-
-    #[test]
-    fn runtime_crc_treats_the_checksum_field_as_zero() {
-        let mut image = vec![0x5a; 128];
-        image[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].fill(0);
-        let expected = crc32(&image);
-        image[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].copy_from_slice(&expected.to_le_bytes());
-        image[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].fill(0);
-        assert_eq!(crc32(&image), expected);
-    }
-
-    #[test]
-    fn tracked_file_snapshot_restores_exact_contents() {
-        let directory = scratch_directory("restore");
-        let lockfile = directory.join("Cargo.lock");
-        let original = b"version = 4\n\n[[package]]\nname = \"fixture\"\n";
-        fs::write(&lockfile, original).unwrap();
-
-        let mut snapshot = TrackedFileSnapshot::capture(lockfile.clone()).unwrap();
-        fs::write(&lockfile, b"rewritten by cargo\n").unwrap();
-        snapshot.restore().unwrap();
-
-        assert_eq!(fs::read(&lockfile).unwrap(), original);
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn tracked_file_snapshot_drop_removes_new_file() {
-        let directory = scratch_directory("drop");
-        let lockfile = directory.join("Cargo.lock");
-        {
-            let _snapshot = TrackedFileSnapshot::capture(lockfile.clone()).unwrap();
-            fs::write(&lockfile, b"generated by cargo\n").unwrap();
-        }
-
-        assert!(!lockfile.exists());
-        fs::remove_dir_all(directory).unwrap();
-    }
-}
+mod tests;

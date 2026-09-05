@@ -9,7 +9,7 @@ publish = false
 description = "Reusable ESP32-S31 rev0 compiled knowledge add-on"
 
 [dependencies]
-open-radio-vendor-backend-riscv = { path = "../../../../../../tools/blobray/crates/backend-riscv" }
+open-radio-vendor-analysis-model = { path = "../../../../../../tools/blobray/crates/analysis-model" }
 open-radio-vendor-chip-contracts-esp32s31-rev0 = { path = "../contracts" }
 open-radio-vendor-semantics = { path = "../../../../../../tools/blobray/crates/semantics" }
 

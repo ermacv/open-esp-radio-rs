@@ -1,6 +1,7 @@
 //! TOML decoding and path resolution for project manifests.
 
 mod helpers;
+mod ownership_policy;
 
 use helpers::*;
 
@@ -232,6 +233,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     "facts",
                     "model",
                     "owned-ranges",
+                    "ownership-policy",
                     "review",
                     "svd",
                     "pac-raw",
@@ -257,12 +259,8 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                         "project registers requires model or chip-pack register-model",
                     )
                 })?;
-            let owned_ranges = required_table_string_array(
-                table,
-                "owned-ranges",
-                "project registers",
-                source,
-            )?;
+            let (ownership_policy, owned_ranges) =
+                ownership_policy::load(table, base, source)?;
             let review_output = nested_output_path(table, base, "review", source)?;
             let review_ir_reports =
                 nested_path_array(table, base, "review", "linked-ir", source)?;
@@ -350,6 +348,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     &table_string(table, "facts", "project registers", source)?,
                 ),
                 model,
+                ownership_policy,
                 owned_ranges,
                 non_operational_functions,
                 review_output,

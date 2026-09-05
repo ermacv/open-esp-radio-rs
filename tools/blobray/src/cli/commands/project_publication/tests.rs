@@ -78,6 +78,26 @@ fn rejects_shared_output_paths_before_publication() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+#[test]
+fn publication_cannot_overwrite_its_shared_ownership_policy() {
+    let (directory, mut project) = fixture_project("ownership-output", true, false, false);
+    let policy = directory.join("ownership.toml");
+    let contents = "schema = 1\nowned-ranges = [\"radio\"]\n";
+    fs::write(&policy, contents).unwrap();
+    let paths = project.registers.as_mut().unwrap();
+    paths.ownership_policy = Some(policy.clone());
+    paths.svd_output = Some(policy.clone());
+
+    let error = run(CheckArgs::default(), &project, None).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("conflicts with register ownership policy")
+    );
+    assert_eq!(fs::read_to_string(policy).unwrap(), contents);
+    fs::remove_dir_all(directory).unwrap();
+}
+
 fn fixture_project(name: &str, svd: bool, pac: bool, bindings: bool) -> (PathBuf, ProjectSpec) {
     let directory = std::env::temp_dir().join(format!(
         "blobray-project-publication-{name}-{}",
@@ -136,6 +156,7 @@ bitWidth = 1
     let paths = RegisterWorkspacePaths {
         facts: directory.join("generated/mmio.json"),
         model: directory.join("registers/device.toml"),
+        ownership_policy: None,
         owned_ranges: vec!["radio".to_owned()],
         non_operational_functions: Vec::new(),
         review_output: None,

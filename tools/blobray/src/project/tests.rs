@@ -484,6 +484,7 @@ locator = "review"
         Some(RegisterWorkspacePaths {
             facts: directory.join("generated/mmio.json"),
             model: directory.join("registers/reviewed.toml"),
+            ownership_policy: None,
             owned_ranges: vec!["radio".to_owned()],
             non_operational_functions: vec!["archive:register_dump".to_owned()],
             review_output: Some(directory.join("generated/register-review.md")),

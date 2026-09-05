@@ -4,7 +4,33 @@ use super::*;
 
 mod report;
 
+#[cfg(test)]
+mod tests;
+
 use report::*;
+
+pub(super) fn generate_pac_api(
+    arguments: CheckArgs,
+    paths: &crate::project::RegisterWorkspacePaths,
+) -> Result<bool> {
+    crate::application::project_publication::validate_output_paths(paths)?;
+    let publication = prepare_project_pac_api(paths)?;
+    crate::application::generated_file::write_or_check(
+        publication.output(),
+        publication.contents(),
+        arguments.check,
+        publication.kind(),
+    )?;
+    emit_pac_api(
+        if arguments.check {
+            "verified"
+        } else {
+            "written"
+        },
+        publication.output(),
+    );
+    Ok(true)
+}
 
 #[tracing::instrument(name = "export_svd", skip_all)]
 pub(super) fn export_svd(

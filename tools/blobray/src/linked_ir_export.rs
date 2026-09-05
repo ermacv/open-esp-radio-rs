@@ -21,8 +21,8 @@ use crate::{
     EntryContractRef, LinkedIrReport, LinkedIrSourceOptions, MmioMap, ReferenceResolver, Result,
     ReviewedExternalCall, ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
     StructuralCallSite, StructuralProjectedRelocation, TargetSpec, artifacts::LinkUnitOriginFact,
-    build_linked_ir_for_source_with_cache, harnesses, interfaces::InterfaceWorkspace,
-    link_project_calls, merge_linked_ir_with_options, project_ir::ProjectIrProfile,
+    build_linked_ir_for_source_with_cache, interfaces::InterfaceWorkspace, link_project_calls,
+    merge_linked_ir_with_options, project_ir::ProjectIrProfile, providers,
 };
 use open_radio_vendor_contracts::{RevisionOccurrenceId, SemanticEntityId};
 
@@ -169,8 +169,8 @@ pub(crate) fn analyze(
         compact_projected_actions,
     } = request;
     let harness = target.knowledge_provider.as_deref();
-    let riscv_harness = harnesses::riscv_or_neutral(harness)?;
-    let entry_contract = harnesses::entry_contract_or_neutral(harness, entry_contract_id)?;
+    let riscv_harness = providers::riscv_or_neutral(harness)?;
+    let entry_contract = providers::entry_contract_or_neutral(harness, entry_contract_id)?;
     validate_artifact_inputs(artifacts, companions)?;
     let mut reports = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
@@ -486,7 +486,7 @@ pub(crate) fn load_project_interfaces(
         target
             .knowledge_provider
             .as_deref()
-            .map(harnesses::contracts)
+            .map(providers::contracts)
             .transpose()?,
     )?))
 }

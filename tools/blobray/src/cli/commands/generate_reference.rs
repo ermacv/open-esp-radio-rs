@@ -29,8 +29,8 @@ struct GeneratedReferenceReport {
 )]
 pub(super) fn run(arguments: ReferenceArgs, svd: &MmioMap, target: &TargetSpec) -> Result<bool> {
     let harness = target.require_available_knowledge_provider()?;
-    let riscv_harness = harnesses::riscv(harness)?;
-    let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
+    let riscv_harness = providers::riscv(harness)?;
+    let entry_contract = providers::entry_contract(harness, &arguments.entry_contract)?;
     let artifact = arguments
         .artifact
         .ok_or("missing --artifact")

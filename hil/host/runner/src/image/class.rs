@@ -17,10 +17,11 @@ pub enum ImageClass {
     DiagnosticRxDelivery,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
+    DiagnosticMemoryBenchmark,
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
@@ -33,6 +34,7 @@ impl ImageClass {
         Self::DiagnosticRxDelivery,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
+        Self::DiagnosticMemoryBenchmark,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -49,6 +51,7 @@ impl ImageClass {
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
+            Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
         }
     }
 
@@ -83,6 +86,9 @@ impl ImageClass {
             Self::DiagnosticIeee802154EventStatus => {
                 "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
             }
+            Self::DiagnosticMemoryBenchmark => {
+                "open-radio-hil,memory-benchmark,psram-task-stack,code-psram,profile-psram-data"
+            }
             Self::DiagnosticIeee802154EdEvent => {
                 "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
             }
@@ -102,6 +108,7 @@ impl ImageClass {
             | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
             | Self::DiagnosticIeee802154EventStatus
+            | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent => "psram-code-psram-data-psram-stack",
         }
     }
@@ -123,6 +130,7 @@ impl ImageClass {
                 | Self::DiagnosticTaskResidence
                 | Self::DiagnosticTxArchitecture
                 | Self::DiagnosticCore0RxCoarse
+                | Self::DiagnosticMemoryBenchmark
         )
     }
 }

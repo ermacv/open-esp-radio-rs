@@ -56,6 +56,30 @@ that a removed capability was unnecessary.
 Known `gaps` declare reviewed blockers rather than override outcomes. The
 evaluator also derives a gap whenever required machine evidence is absent.
 
+## Source contracts
+
+A capability may attach `[[capabilities.source-contracts]]` reference entries
+to describe its hardware-facing implementation paths. The ESP32-S31 Wi-Fi
+manifest keeps SRAM/PSRAM DMA, descriptor chaining, scatter/gather and cache
+handoff boundaries under `rx-tx-dma`.
+
+Each entry has a unique `id`, an explicit `scope`, `limits`, repository-relative
+`source-paths`, and a `composition`:
+
+- `production`: the production owner composes the operation in the stated scope;
+- `diagnostic`: an executable diagnostic composition exists;
+- `unimplemented`: the stated composition has no implementation. This says
+  nothing about whether the hardware could support it.
+
+These declarations describe reviewed source coverage. Unknown hardware
+reachability and ownership limits stay explicit in `limits`; source references
+do not establish hardware support or measured performance. The evaluator checks
+unique IDs, required descriptions and unique regular source files within the
+repository, and preserves the entries in each JSON capability's
+`source_contracts` array. It does not infer implementation from file contents.
+Entries are optional reference metadata and do not change the five readiness
+axes, evidence requirements or capability dependency graph.
+
 ## Evidence ownership
 
 ```text

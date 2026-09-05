@@ -1,6 +1,48 @@
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[test]
+fn radio_observer_placement_remains_required_only_for_radio_compositions() {
+    let symbols = [
+        ("runtime::RX_PIPELINE", 0x2000),
+        ("runtime::AGGREGATE_TX", 0x2100),
+        ("runtime::MAC_IRQ", 0x2200),
+        ("runtime::TASK_POLLS", 0x2300),
+    ];
+    for class in [
+        ImageClass::Performance,
+        ImageClass::Correctness,
+        ImageClass::DiagnosticTaskPoll,
+    ] {
+        assert!(audit_radio_observers(class, Some(0x2000..0x2400), symbols.into_iter()).is_ok());
+        assert!(audit_radio_observers(class, None, symbols.into_iter()).is_err());
+        for index in 0..symbols.len() {
+            let missing = symbols
+                .iter()
+                .enumerate()
+                .filter_map(|(at, value)| (at != index).then_some(*value));
+            let error = audit_radio_observers(class, Some(0x2000..0x2400), missing).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(symbols[index].0.trim_start_matches("runtime::"))
+            );
+            for address in [0x1fff, 0x2400] {
+                let mut misplaced = symbols;
+                misplaced[index].1 = address;
+                assert!(
+                    audit_radio_observers(class, Some(0x2000..0x2400), misplaced.into_iter())
+                        .is_err()
+                );
+            }
+        }
+    }
+    for class in [ImageClass::BootSmoke, ImageClass::DiagnosticMemoryBenchmark] {
+        assert!(audit_radio_observers(class, None, std::iter::empty()).is_ok());
+        assert!(audit_radio_observers(class, Some(0x2000..0x2400), std::iter::empty()).is_ok());
+    }
+}
+
 fn image_signature(
     driver_observation: bool,
     task_poll: bool,
@@ -19,6 +61,7 @@ fn image_signature(
         ieee802154_event_status,
         ieee802154_ed_event,
         psram_task_stack: true,
+        memory_benchmark: false,
     }
 }
 
@@ -40,7 +83,7 @@ fn qualified_profile_name_is_stable() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 12);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 13);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -148,6 +191,23 @@ fn image_capability_classifier_preserves_every_exclusive_class() {
         classify_image_signature(core0_rx_coarse),
         Some(ImageClass::DiagnosticCore0RxCoarse),
     );
+}
+
+#[test]
+fn memory_benchmark_image_is_exclusive_and_has_a_reproducible_recipe() {
+    let mut signature = image_signature(false, false, false, false, false, false);
+    signature.memory_benchmark = true;
+    assert_eq!(
+        classify_image_signature(signature),
+        Some(ImageClass::DiagnosticMemoryBenchmark)
+    );
+    signature.task_poll = true;
+    assert_eq!(classify_image_signature(signature), None);
+    assert_eq!(
+        ImageClass::DiagnosticMemoryBenchmark.runtime_features(),
+        "open-radio-hil,memory-benchmark,psram-task-stack,code-psram,profile-psram-data"
+    );
+    assert!(!ImageClass::DiagnosticMemoryBenchmark.requires_driver_observation());
 }
 
 #[test]

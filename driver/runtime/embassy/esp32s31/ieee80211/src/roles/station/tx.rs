@@ -88,6 +88,19 @@ const HE_TRIGGER_DATA_TID: u8 = 0;
 /// state and therefore never observes aggregate publication or completion.
 pub type StationTxBlockAckStatusSink = fn(tid: u8, operational: bool);
 
+/// Selected-request admission preserves the request until a physical frame
+/// transfers to the STA owner. Radio errors follow that ownership transfer.
+#[derive(Debug, Eq, PartialEq)]
+pub enum RequestTxError<Request> {
+    /// A live or prepared transaction prevents admission; the source was not
+    /// asked to construct a frame.
+    Busy(Request),
+    /// The source could not construct the first frame and returned the request.
+    Unmaterialized(Request),
+    /// Admission transferred a physical frame to the ordinary STA TX path.
+    Radio(AggregateTxError),
+}
+
 /// Peer-independent TX resources returned at the connected-to-disconnected
 /// station boundary.
 pub struct Esp32s31ConnectedTxTeardownParts<R, A> {

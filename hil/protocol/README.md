@@ -1,8 +1,22 @@
-# HIL protocol v77
+# HIL protocol v80
 
-RX delivery evidence has distinct counters for receive-pool exhaustion and
-an inactive network link. Host and firmware must both use version 77; other
-frames are rejected rather than interpreted with missing counters.
+Host and firmware must both use version 80. Other versions are rejected
+before interpreting their command and evidence layouts.
+
+`ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
+GDMA copy from SRAM/PSRAM into SRAM. A request specifies 1..=4096 payload bytes
+per frame, 1..=32 frames and 1..=64 measured iterations. Each iteration copies
+at most 49,152 payload bytes, excluding storage padding and guards. The CPU
+copies frames in a loop; GDMA uses one scatter-gather chain per iteration.
+`MemoryBenchmarkCompleted` echoes the request and retains completed iterations,
+terminal correctness status and separate elapsed/foreground counter scopes.
+Completed iterations account for entire batches whose payloads and guards
+passed verification; a partially completed batch does not add an iteration.
+Foreground means the whole CPU/blocking operation, or async prepare/start,
+poll and cleanup windows. IRQs inside those windows remain included. These
+values do not measure CPU utilization. The host imposes a per-case response
+deadline; a target stalled inside synchronous hardware preparation may need
+reset. Feature discovery identifies images implementing this diagnostic.
 
 Source types are authoritative. A frame is:
 
@@ -32,6 +46,11 @@ never enter scenario files or logs. AP IPv4 configuration is applied by the
 HIL application to its persistent network stack, not by the radio driver.
 Calibration bytes are opaque, chunked and CRC-protected; the host persists
 them, never target NVS/flash.
+
+RX admission follows the compiled sink's ownership contract. A receiver with
+a separate output pool waits for its queue and buffer credits while retaining
+the original staging owner. Initialization cannot override that requirement
+or select direct dispatch for a sink which lacks immediate publication credit.
 
 Traffic uses one state machine for UDP/TCP and RX/TX/bidirectional:
 

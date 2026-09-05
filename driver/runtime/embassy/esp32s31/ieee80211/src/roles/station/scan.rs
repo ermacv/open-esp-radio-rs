@@ -235,6 +235,10 @@ pub struct Esp32s31StationScanReturned<
 
 /// Value-only result of one finite candidate scan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the selected scan record is returned by value without heap allocation"
+)]
 pub enum Esp32s31StationScanDecision<E> {
     Selected {
         candidate: ScanRecord,

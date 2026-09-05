@@ -58,6 +58,7 @@ pub(super) fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 network_scheduler_evidence: false,
                 data_plane_placement: true,
                 timebase_probe: true,
+                memory_benchmark: false,
                 ieee802154_event_status_probe: false,
                 ieee802154_ed_event_probe: false,
             },

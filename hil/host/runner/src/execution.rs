@@ -89,6 +89,21 @@ fn execute_workload_inner(
 
     match &selected.workload {
         Workload::BootSmoke => boot_smoke(output, context),
+        Workload::MemoryBenchmark {
+            boots,
+            iterations,
+            sizes,
+            batch_sizes,
+        } => crate::workload::system::memory_benchmark::run(
+            crate::workload::system::memory_benchmark::Config {
+                boots: *boots,
+                iterations: *iterations,
+                sizes,
+                batch_sizes,
+            },
+            output,
+            context,
+        ),
         Workload::Timebase {
             boots,
             intervals,

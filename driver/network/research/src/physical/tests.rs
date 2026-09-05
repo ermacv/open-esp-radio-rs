@@ -1,5 +1,7 @@
 extern crate std;
 
+mod selected;
+
 use core::num::{NonZeroU16, NonZeroU32};
 use std::{boxed::Box, vec::Vec};
 
@@ -39,9 +41,10 @@ fn research_engine_constructs_directly_in_the_pinned_sram_batch() {
         mac: MacAddress::new([2, 0, 0, 0, 0, 1]),
         ipv4: Ipv4Address::new([192, 168, 1, 1]),
     };
-    let mut engine = ResearchNetworkEngine::<2, 4, 1472>::new(config);
+    let mut payload = *b"final-sram";
+    let mut engine = ResearchNetworkEngine::<2, 4, 32, &mut [u8]>::new(config);
     engine
-        .enqueue_udp(
+        .enqueue_udp_owned(
             1,
             ResolvedIpv4Route {
                 destination_mac: MacAddress::new([2, 0, 0, 0, 0, 3]),
@@ -51,7 +54,7 @@ fn research_engine_constructs_directly_in_the_pinned_sram_batch() {
             1000,
             2000,
             AdmissionClass::Bulk,
-            b"final-sram",
+            &mut payload[..],
         )
         .unwrap();
     let mut demands = Vec::<EgressDemand>::new();
@@ -140,5 +143,79 @@ fn failed_whole_batch_reservation_restores_every_credit() {
     );
     assert_eq!(allocator.free_credits(), 1);
     drop(first);
+    assert_eq!(allocator.free_credits(), 3);
+}
+
+#[test]
+fn oversized_payload_preserves_source_and_physical_reservation() {
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let resources = PinnedBatchResources::<3>::new();
+    let allocator = resources.bind(pool);
+    let config = ResearchNetworkConfig {
+        interface: NetworkInterfaceId::new(1),
+        mac: MacAddress::new([2, 0, 0, 0, 0, 1]),
+        ipv4: Ipv4Address::new([192, 168, 1, 1]),
+    };
+    let mut engine = ResearchNetworkEngine::<2, 4, 8, &[u8]>::new(config);
+    let payload = [0; 1600];
+    engine
+        .enqueue_udp_owned(
+            0,
+            ResolvedIpv4Route {
+                destination_mac: MacAddress::new([2, 0, 0, 0, 0, 3]),
+                destination_ip: Ipv4Address::new([192, 168, 1, 3]),
+                radio: radio_key(),
+            },
+            1,
+            2,
+            AdmissionClass::Bulk,
+            b"small",
+        )
+        .unwrap();
+    engine
+        .enqueue_udp_owned(
+            1,
+            ResolvedIpv4Route {
+                destination_mac: MacAddress::new([2, 0, 0, 0, 0, 3]),
+                destination_ip: Ipv4Address::new([192, 168, 1, 3]),
+                radio: radio_key(),
+            },
+            1,
+            2,
+            AdmissionClass::Bulk,
+            &payload,
+        )
+        .unwrap();
+    let mut batch = allocator.try_reserve::<2>(config.interface, 2).unwrap();
+    let outcome = engine
+        .fill_selected(
+            EgressSelection {
+                key: EgressFlowKey {
+                    radio: radio_key(),
+                    admission: AdmissionClass::Bulk,
+                },
+                max_frames: NonZeroU16::new(2).unwrap(),
+                max_bytes: NonZeroU32::new(3200).unwrap(),
+            },
+            &mut batch,
+        )
+        .unwrap();
+    assert_eq!(
+        outcome.stop,
+        open_esp_radio_wifi_datapath::FillStopReason::FrameTooLong { capacity: 1600 }
+    );
+    assert_eq!(outcome.frames, 1);
+    assert_eq!(outcome.bytes, 47);
+    assert_eq!(outcome.source_remaining, 1);
+    assert_eq!(batch.remaining(), 1);
+    assert_eq!(batch.prepared_len(), 1);
+    // The same reserved slot remains usable; the failed write did not claim it.
+    batch
+        .try_write(14, |frame| {
+            frame.fill(1);
+            Ok::<_, ()>(())
+        })
+        .unwrap();
+    drop(batch);
     assert_eq!(allocator.free_credits(), 3);
 }

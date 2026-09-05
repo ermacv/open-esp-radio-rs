@@ -5,7 +5,6 @@ repetitions = 1
 image = "diagnostic-core0-rx-coarse"
 isolation = "reset"
 data_plane = "split-radio-network"
-rx_dispatch = "direct-immediate-diagnostic"
 rx_continuation = "adaptive-probe-diagnostic"
 tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "rx", "core0"]
 

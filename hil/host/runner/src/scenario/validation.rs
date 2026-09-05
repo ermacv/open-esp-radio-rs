@@ -98,27 +98,6 @@ impl Scenario {
             )
             .into());
         }
-        if self.rx_admission == WifiRxAdmissionPolicy::DeferredReadyDiagnostic
-            && self.image != ImageClass::DiagnosticCore0RxCycles
-        {
-            return Err(format!(
-                "{}: deferred-ready-diagnostic RX admission is restricted to the Core0 RX cycle diagnostic",
-                self.source.display()
-            )
-            .into());
-        }
-        if self.rx_dispatch != WifiRxDispatchPolicy::Asynchronous
-            && (!matches!(
-                self.image,
-                ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
-            ) || !is_rx_only_udp_workload(&self.workload))
-        {
-            return Err(format!(
-                "{}: direct-immediate-diagnostic RX dispatch is restricted to a Core0 UDP RX diagnostic",
-                self.source.display()
-            )
-            .into());
-        }
         if self.rx_continuation != WifiRxContinuationPolicy::ImmediateSoftwareProbe
             && (!matches!(
                 self.image,
@@ -168,6 +147,11 @@ impl Scenario {
             .into());
         }
         let event_status_image = self.image == ImageClass::DiagnosticIeee802154EventStatus;
+        if (self.image == ImageClass::DiagnosticMemoryBenchmark)
+            != matches!(self.workload, Workload::MemoryBenchmark { .. })
+        {
+            return self.criteria_error("memory benchmark requires its exclusive diagnostic image");
+        }
         let event_status_workload = matches!(self.workload, Workload::Ieee802154EventStatus { .. });
         if event_status_image != event_status_workload {
             return Err(format!(
@@ -405,6 +389,50 @@ impl Scenario {
         }
         match &self.workload {
             Workload::BootSmoke => {}
+            Workload::MemoryBenchmark {
+                boots,
+                iterations,
+                sizes,
+                batch_sizes,
+            } => {
+                bounded(*boots, 1, 20, self, "boots")?;
+                bounded(*iterations, 1, 64, self, "iterations")?;
+                if sizes.is_empty() || sizes.len() > 16 {
+                    return self.criteria_error("memory benchmark requires 1..=16 distinct sizes");
+                }
+                for (index, size) in sizes.iter().enumerate() {
+                    bounded(*size, 1, 4096, self, "size")?;
+                    if sizes[..index].contains(size) {
+                        return self.criteria_error("memory benchmark sizes must be distinct");
+                    }
+                }
+                if batch_sizes.is_empty() || batch_sizes.len() > 32 {
+                    return self
+                        .criteria_error("memory benchmark requires 1..=32 distinct batch sizes");
+                }
+                for (index, frames) in batch_sizes.iter().enumerate() {
+                    bounded(*frames, 1, 32, self, "batch size")?;
+                    if batch_sizes[..index].contains(frames) {
+                        return self
+                            .criteria_error("memory benchmark batch sizes must be distinct");
+                    }
+                    for bytes in sizes {
+                        if u32::from(*bytes) * u32::from(*frames) > 49_152 {
+                            return self.criteria_error(
+                                "memory benchmark case exceeds 49152 payload bytes per iteration",
+                            );
+                        }
+                    }
+                }
+                if self.link.is_some()
+                    || self.criteria != Criteria::default()
+                    || self.evidence != EvidenceConfig::default()
+                {
+                    return self.criteria_error(
+                        "memory benchmark does not accept Wi-Fi link, criteria or fixture evidence",
+                    );
+                }
+            }
             Workload::Timebase {
                 boots,
                 intervals,

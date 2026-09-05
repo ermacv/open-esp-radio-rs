@@ -4,9 +4,10 @@
 //! Radio-owned boundary between durable software backlog and physical TX.
 //!
 //! Network integrations may retain packets in different memory and ownership
-//! models. Radio policy sees only affine software frames and synchronous batch
-//! materialization. Selection therefore precedes scarce SRAM admission without
-//! exposing a network stack, executor or adapter queue to STA/AP policy.
+//! models. Radio admission accepts opaque selected requests; packet-oriented
+//! policy additionally uses affine Ethernet owners and batch materialization.
+//! Selection precedes scarce SRAM admission without exposing a network stack,
+//! executor or adapter queue to STA/AP policy.
 
 use open_esp_radio_dma::{
     DmaIndexReturn, PinnedDmaTxRadioLease, ReturningStableDmaBacking, StableDmaBacking,
@@ -15,6 +16,9 @@ use open_esp_radio_dma::{
 use open_esp_radio_network::NetworkInterfaceId;
 
 mod egress;
+mod selected;
+
+pub use selected::{SelectedTxReport, SelectedTxSource};
 
 pub use egress::{
     AdmissionClass, BatchWriteError, DeferredTxWork, EgressDemand, EgressFlowKey, EgressSelection,
@@ -50,6 +54,21 @@ pub trait SoftwareTxFrame {
 
     fn as_slice(&self) -> &[u8] {
         self.ethernet()
+    }
+}
+
+/// A request selected for one logical interface's radio service.
+///
+/// The request may retain a complete Ethernet owner or identify deferred work.
+/// It does not grant DMA ownership or require Ethernet bytes to exist yet.
+/// The source owns validation of deferred request identity and lifetime.
+pub trait TxRequest {
+    fn interface(&self) -> NetworkInterfaceId;
+}
+
+impl<F: SoftwareTxFrame> TxRequest for F {
+    fn interface(&self) -> NetworkInterfaceId {
+        SoftwareTxFrame::interface(self)
     }
 }
 
@@ -132,6 +151,45 @@ impl<M: SelectedBurstMaterializer> PhysicalTxSource for M {
 
     fn try_take_physical(&self) -> Option<Self::Frame> {
         self.try_materialize_next()
+    }
+}
+
+/// Narrow radio admission boundary shared by packet and deferred-work sources.
+///
+/// A failed materialization returns the exact request without consuming its
+/// pending work. A successful operation supplies the first physical frame;
+/// subsequent physical takes stay within the selected source's scope.
+pub trait TxRequestSource: PhysicalTxSource {
+    type Request: TxRequest;
+
+    fn interface(&self) -> NetworkInterfaceId;
+
+    fn try_materialize(&self, request: Self::Request) -> Result<Self::Frame, Self::Request>;
+
+    fn materialization_capacity(&self) -> usize;
+
+    #[cfg(feature = "ownership-telemetry")]
+    fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot;
+}
+
+impl<M: SelectedBurstMaterializer> TxRequestSource for M {
+    type Request = M::SoftwareFrame;
+
+    fn interface(&self) -> NetworkInterfaceId {
+        SelectedBurstMaterializer::interface(self)
+    }
+
+    fn try_materialize(&self, request: Self::Request) -> Result<Self::Frame, Self::Request> {
+        SelectedBurstMaterializer::try_materialize(self, request)
+    }
+
+    fn materialization_capacity(&self) -> usize {
+        SelectedBurstMaterializer::materialization_capacity(self)
+    }
+
+    #[cfg(feature = "ownership-telemetry")]
+    fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
+        SelectedBurstMaterializer::ownership_snapshot(self)
     }
 }
 

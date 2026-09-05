@@ -68,6 +68,7 @@ struct CapabilityReport<'a> {
     dependencies: &'a [String],
     evidence: &'a [String],
     gaps: Vec<GapReport<'a>>,
+    source_contracts: &'a [crate::model::SourceContract],
 }
 
 #[derive(Serialize)]
@@ -151,6 +152,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 ready: qualification.is_ready(&capability.id),
                 dependencies: &capability.dependencies,
                 evidence: &capability.evidence,
+                source_contracts: &capability.source_contracts,
                 gaps: capability
                     .gaps
                     .iter()

@@ -56,6 +56,10 @@ pub struct Esp32s31StationJoinReturned<
 }
 
 /// Finite result of the common channel/authentication/association/WPA2 join.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "successful join transfers peer and security state inline; neither branch may allocate or discard returned resources"
+)]
 pub enum Esp32s31StationJoinOutcome<
     'storage,
     'security,

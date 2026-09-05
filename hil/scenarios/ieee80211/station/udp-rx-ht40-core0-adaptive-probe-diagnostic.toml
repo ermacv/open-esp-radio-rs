@@ -1,0 +1,29 @@
+schema = 4
+id = "udp-rx-ht40-core0-adaptive-probe-diagnostic"
+description = "Same-image HT40 RX with batch-aware masked continuation"
+image = "diagnostic-core0-rx-coarse"
+isolation = "reset"
+data_plane = "split-radio-network"
+rx_continuation = "adaptive-probe-diagnostic"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "adaptive-probe"]
+
+[link]
+phy = "ht40"
+guard_interval = "any"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 12
+rx_rate_bps = 140000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 90000000
+maximum_idle_channel_utilization_255 = 64
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_air_monitor = true

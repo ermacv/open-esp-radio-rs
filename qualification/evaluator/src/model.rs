@@ -12,6 +12,9 @@ use crate::{
     hil::{HilEvidenceIndex, HilEvidenceSummary, HilRequirement, RepositoryState, ScenarioCatalog},
 };
 
+mod source_contract;
+pub(crate) use source_contract::SourceContract;
+
 pub(crate) const QUALIFICATION_SCHEMA: u16 = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
@@ -169,6 +172,7 @@ pub(crate) struct Capability {
     pub(crate) dependencies: Vec<String>,
     pub(crate) gaps: Vec<Gap>,
     pub(crate) evidence: Vec<String>,
+    pub(crate) source_contracts: Vec<SourceContract>,
 }
 
 impl Capability {
@@ -345,6 +349,8 @@ struct CapabilityDocument {
     depends_on: Vec<String>,
     #[serde(default)]
     gaps: Vec<GapDocument>,
+    #[serde(default)]
+    source_contracts: Vec<SourceContract>,
 }
 
 impl ManifestDocument {
@@ -452,6 +458,7 @@ fn evaluate_capability(
     context: &EvaluationContext<'_>,
 ) -> Result<Capability> {
     let id = slug(&document.id, "capability id")?;
+    source_contract::validate(&document.source_contracts, context.root)?;
     if document.title.trim().is_empty() || document.scope.trim().is_empty() {
         return Err(format!("capability {id} needs a non-empty title and scope").into());
     }
@@ -573,6 +580,7 @@ fn evaluate_capability(
         dependencies,
         gaps,
         evidence,
+        source_contracts: document.source_contracts,
     })
 }
 

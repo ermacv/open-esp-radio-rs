@@ -302,3 +302,55 @@ fn icmp_echo_is_queued_and_rechecksummed_as_a_reply() {
     assert_eq!(response[34], 0);
     assert_eq!(internet_checksum(&[&response[34..]]), 0);
 }
+
+mod owned;
+
+#[test]
+fn copied_udp_retains_original_bytes_after_caller_reuses_storage() {
+    let mut engine = ResearchNetworkEngine::<4, 8, 1472>::new(config());
+    let mut payload = *b"original";
+    engine
+        .enqueue_udp(
+            1,
+            ResolvedIpv4Route {
+                destination_mac: MacAddress::new([2, 0, 0, 0, 0, 7]),
+                destination_ip: Ipv4Address::new([192, 168, 7, 7]),
+                radio: unicast_key(7),
+            },
+            1,
+            2,
+            AdmissionClass::Bulk,
+            &payload,
+        )
+        .unwrap();
+    payload.fill(0);
+    let (_, frame) = fill_only_demand(&mut engine);
+    assert_eq!(&frame[42..], b"original");
+}
+
+#[test]
+fn copied_udp_accepts_empty_and_full_payloads_and_rejects_overflow() {
+    let mut engine = ResearchNetworkEngine::<4, 8, 1472>::new(config());
+    for length in [0, 1472, 1473] {
+        let result = engine.enqueue_udp(
+            1,
+            ResolvedIpv4Route {
+                destination_mac: MacAddress::new([2, 0, 0, 0, 0, 7]),
+                destination_ip: Ipv4Address::new([192, 168, 7, 7]),
+                radio: unicast_key(7),
+            },
+            1,
+            2,
+            AdmissionClass::Bulk,
+            &std::vec![7; length],
+        );
+        if length > 1472 {
+            assert_eq!(result, Err(TxEnqueueError::PayloadTooLong));
+        } else {
+            result.unwrap();
+            let (_, frame) = fill_only_demand(&mut engine);
+            assert_eq!(&frame[42..], &std::vec![7; length]);
+        }
+        assert_eq!(engine.queued_work(), 0);
+    }
+}

@@ -31,16 +31,14 @@ where
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
-    fn switch_channel<'a>(
+    async fn switch_channel<'a>(
         &'a mut self,
         hardware: &'a mut CooperativeRadioHardware<'arena>,
         channel_or_frequency: u16,
         cbw: u8,
-    ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a {
-        async move {
-            let access = hardware.register_access();
-            self.switch_published_channel(channel_or_frequency, cbw, access)
-                .await
-        }
+    ) -> Result<(), PhyTargetPortError> {
+        let access = hardware.register_access();
+        self.switch_published_channel(channel_or_frequency, cbw, access)
+            .await
     }
 }

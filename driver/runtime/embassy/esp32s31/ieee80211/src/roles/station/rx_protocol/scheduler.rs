@@ -119,19 +119,18 @@ where
                 .record_protocol_frame_dequeued(crate::diagnostics::core0_rx_cycles::cycle_count());
             actions = actions.saturating_add(1);
             consumed_frames = consumed_frames.saturating_add(1);
-            let frame = if qualified_direct_rx_dispatch_enabled() {
-                match self.processor.try_dispatch_frame_direct(frame) {
-                    Ok(_) => {
-                        #[cfg(feature = "core0-rx-coarse-telemetry")]
-                        let () = {
-                            direct_frames = direct_frames.saturating_add(1);
-                        };
-                        continue;
-                    }
-                    Err(frame) => frame,
+            // The sink's stable ownership capability decides whether direct
+            // publication is possible. Rejection returns this exact staging
+            // owner to the capacity-aware asynchronous path.
+            let frame = match self.processor.try_dispatch_frame_direct(frame) {
+                Ok(_) => {
+                    #[cfg(feature = "core0-rx-coarse-telemetry")]
+                    let () = {
+                        direct_frames = direct_frames.saturating_add(1);
+                    };
+                    continue;
                 }
-            } else {
-                frame
+                Err(frame) => frame,
             };
             #[cfg(feature = "core0-rx-coarse-telemetry")]
             let () = {

@@ -45,6 +45,8 @@ use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage}
 use super::*;
 use crate::datapath::network::{DatapathNetwork, OwnedDatapathNetwork};
 
+mod native;
+
 #[derive(Default)]
 struct RecordingAggregateTxObserver {
     observations: std::sync::Mutex<std::vec::Vec<AggregateTxObservation>>,

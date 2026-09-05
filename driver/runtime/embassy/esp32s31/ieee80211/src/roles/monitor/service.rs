@@ -1,6 +1,9 @@
-#![expect(
-    clippy::result_large_err,
-    reason = "monitor preparation retains the exact RX and IRQ owners on failure"
+#![cfg_attr(
+    not(target_arch = "riscv32"),
+    expect(
+        clippy::result_large_err,
+        reason = "monitor preparation retains the exact RX and IRQ owners on failure"
+    )
 )]
 
 //! Finite standalone-monitor owner over RX DMA and one MAC interrupt epoch.

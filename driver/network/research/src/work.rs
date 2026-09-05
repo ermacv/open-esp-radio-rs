@@ -15,6 +15,7 @@ const ARP_FRAME_LEN: usize = ETHERNET_HEADER_LEN + ARP_PACKET_LEN;
 pub enum FrameWriteError {
     WrongDestinationLength,
     PayloadTooLong,
+    PayloadLengthChanged,
 }
 
 pub(crate) struct Ipv4TxPath {
@@ -27,7 +28,7 @@ pub(crate) struct Ipv4TxPath {
     pub identification: u16,
 }
 
-pub(crate) struct UdpTxWork<const PAYLOAD_CAPACITY: usize> {
+pub(crate) struct UdpTxWork<Payload> {
     key: EgressFlowKey,
     enqueue_micros: u64,
     source_mac: MacAddress,
@@ -36,24 +37,20 @@ pub(crate) struct UdpTxWork<const PAYLOAD_CAPACITY: usize> {
     destination: UdpEndpoint,
     identification: u16,
     payload_length: u16,
-    payload: [u8; PAYLOAD_CAPACITY],
+    payload: Payload,
 }
 
-impl<const PAYLOAD_CAPACITY: usize> UdpTxWork<PAYLOAD_CAPACITY> {
+impl<Payload: AsRef<[u8]>> UdpTxWork<Payload> {
     pub(crate) fn new(
         path: Ipv4TxPath,
         source_port: u16,
         destination_port: u16,
-        payload: &[u8],
-    ) -> Result<Self, FrameWriteError> {
-        if payload.len() > PAYLOAD_CAPACITY
-            || ETHERNET_HEADER_LEN + IPV4_HEADER_LEN + UDP_HEADER_LEN + payload.len()
-                > usize::from(u16::MAX)
-        {
-            return Err(FrameWriteError::PayloadTooLong);
+        payload: Payload,
+    ) -> Result<Self, Payload> {
+        let length = payload.as_ref().len();
+        if length > usize::from(u16::MAX) - ETHERNET_HEADER_LEN - IPV4_HEADER_LEN - UDP_HEADER_LEN {
+            return Err(payload);
         }
-        let mut storage = [0; PAYLOAD_CAPACITY];
-        storage[..payload.len()].copy_from_slice(payload);
         Ok(Self {
             key: path.key,
             enqueue_micros: path.enqueue_micros,
@@ -68,9 +65,13 @@ impl<const PAYLOAD_CAPACITY: usize> UdpTxWork<PAYLOAD_CAPACITY> {
                 port: destination_port,
             },
             identification: path.identification,
-            payload_length: payload.len() as u16,
-            payload: storage,
+            payload_length: length as u16,
+            payload,
         })
+    }
+
+    pub(crate) fn into_payload(self) -> Payload {
+        self.payload
     }
 
     fn frame_length(&self) -> usize {
@@ -80,6 +81,10 @@ impl<const PAYLOAD_CAPACITY: usize> UdpTxWork<PAYLOAD_CAPACITY> {
     fn write(&self, destination: &mut [u8]) -> Result<(), FrameWriteError> {
         if destination.len() != self.frame_length() {
             return Err(FrameWriteError::WrongDestinationLength);
+        }
+        let payload = self.payload.as_ref();
+        if payload.len() != usize::from(self.payload_length) {
+            return Err(FrameWriteError::PayloadLengthChanged);
         }
         write_ethernet_header(destination, self.destination_mac, self.source_mac, 0x0800);
         let ip_total_length = IPV4_HEADER_LEN + UDP_HEADER_LEN + usize::from(self.payload_length);
@@ -93,7 +98,6 @@ impl<const PAYLOAD_CAPACITY: usize> UdpTxWork<PAYLOAD_CAPACITY> {
         );
         let udp_start = ETHERNET_HEADER_LEN + IPV4_HEADER_LEN;
         let payload_start = udp_start + UDP_HEADER_LEN;
-        let payload = &self.payload[..usize::from(self.payload_length)];
         let udp_length = UDP_HEADER_LEN + payload.len();
         destination[udp_start..udp_start + 2].copy_from_slice(&self.source.port.to_be_bytes());
         destination[udp_start + 2..udp_start + 4]
@@ -106,7 +110,7 @@ impl<const PAYLOAD_CAPACITY: usize> UdpTxWork<PAYLOAD_CAPACITY> {
             self.source.address.bytes(),
             self.destination.address.bytes(),
             &destination[udp_start..udp_start + UDP_HEADER_LEN],
-            payload,
+            &destination[payload_start..],
         );
         destination[udp_start + 6..udp_start + 8].copy_from_slice(&checksum.to_be_bytes());
         Ok(())
@@ -247,13 +251,15 @@ impl<const PAYLOAD_CAPACITY: usize> IcmpEchoReplyWork<PAYLOAD_CAPACITY> {
 }
 
 /// Canonical deferred work retained by the research network engine.
-pub(crate) enum ResearchTxWork<const PAYLOAD_CAPACITY: usize> {
-    Udp(UdpTxWork<PAYLOAD_CAPACITY>),
+pub(crate) enum ResearchTxWork<const PAYLOAD_CAPACITY: usize, Payload> {
+    Udp(UdpTxWork<Payload>),
     Arp(ArpTxWork),
     IcmpEchoReply(IcmpEchoReplyWork<PAYLOAD_CAPACITY>),
 }
 
-impl<const PAYLOAD_CAPACITY: usize> DeferredTxWork for ResearchTxWork<PAYLOAD_CAPACITY> {
+impl<const PAYLOAD_CAPACITY: usize, Payload: AsRef<[u8]>> DeferredTxWork
+    for ResearchTxWork<PAYLOAD_CAPACITY, Payload>
+{
     type WriteError = FrameWriteError;
 
     fn egress_key(&self) -> EgressFlowKey {

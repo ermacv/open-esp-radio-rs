@@ -805,12 +805,6 @@ pub async fn new(
     if let Some(hooks) = diagnostics {
         configure_mac_irq_observer(hooks.mac_irq);
     }
-    #[cfg(feature = "diagnostics")]
-    open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_deferred_shared_rx_admission_for_diagnostics(
-        diagnostics.is_some_and(|hooks| {
-            hooks.rx_admission == crate::Esp32s31DiagnosticRxAdmission::DeferredReady
-        }),
-    );
     let owned = Radio::claim(platform).map_err(|_| Esp32s31NewError::RadioAlreadyClaimed)?;
     let mut wifi_start = Esp32s31WifiStartConfig::new(calibration, initial_channel);
     if let Some(maximum) = maximum_tx_power_quarter_dbm {

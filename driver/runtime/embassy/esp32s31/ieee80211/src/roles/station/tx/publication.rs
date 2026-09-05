@@ -22,6 +22,55 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
+    /// Admit a selected request through its source before the ordinary STA
+    /// classifier, BlockAck, retry and DMA ownership transitions.
+    ///
+    /// The request need not own Ethernet bytes. Its source constructs the
+    /// first final frame on admission and supplies any subsequent frames only
+    /// as the existing physical publication path asks for them.
+    ///
+    /// A busy owner or a source unable to construct its first frame returns
+    /// the original request. Once construction succeeds, radio errors follow
+    /// the existing physical-frame ownership contract.
+    pub fn start_request<H, I>(
+        &mut self,
+        hardware: &mut H,
+        request: I::Request,
+        source: &I,
+    ) -> Result<WifiTxProgress, RequestTxError<I::Request>>
+    where
+        H: HtAmpduHardware,
+        I: open_esp_radio_wifi_datapath::TxRequestSource<Frame = B>,
+    {
+        if self.active() || self.has_prepared_network_tx() {
+            return Err(RequestTxError::Busy(request));
+        }
+        let first = source
+            .try_materialize(request)
+            .map_err(RequestTxError::Unmaterialized)?;
+        self.start_network(hardware, first, source)
+            .map_err(RequestTxError::Radio)
+    }
+
+    /// Materialize the first selected request into software-owned standby.
+    /// Unavailable standby storage or failed first-frame construction returns
+    /// the request. DMA publication remains a separate transition.
+    pub fn prepare_request_standby<I>(
+        &mut self,
+        request: I::Request,
+        source: &I,
+    ) -> Result<(), I::Request>
+    where
+        I: open_esp_radio_wifi_datapath::TxRequestSource<Frame = B>,
+    {
+        if !self.can_prepare_network_tx() {
+            return Err(request);
+        }
+        let first = source.try_materialize(request)?;
+        self.prepare_network_standby(first, source);
+        Ok(())
+    }
+
     pub fn start_network<H, I>(
         &mut self,
         hardware: &mut H,

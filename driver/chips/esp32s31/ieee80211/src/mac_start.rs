@@ -126,6 +126,14 @@ impl<P> Esp32s31WifiMacStartFailure<P> {
 }
 
 /// Perform the common MAC transition exactly once after PHY calibration.
+///
+/// Failure returns the powered radio, calibrated PHY and optional calibration
+/// cache together. These affine owners remain inline in both outcomes so the
+/// caller can recover the exact initialization frontier without an allocator.
+#[expect(
+    clippy::result_large_err,
+    reason = "MAC failure returns the unique powered radio, calibrated PHY and calibration cache inline; boxing requires an allocator and dropping them loses the recovery frontier"
+)]
 pub fn start_esp32s31_wifi_mac<P>(
     cold: Esp32s31WifiColdStart<P>,
     config: Esp32s31WifiMacStartConfig,

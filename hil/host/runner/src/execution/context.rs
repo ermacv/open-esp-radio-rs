@@ -3,8 +3,8 @@
 use crate::{Result, evidence::measurements::Recorder, session::SerialCapture};
 use crate::{lab::config::LabConfig, scenario::Scenario};
 use open_esp_radio_hil_protocol::{
-    WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiRxDispatchPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
+    WifiDataPlanePlacement, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiTxBufferPolicy,
+    WifiTxUdpChecksumPolicy,
 };
 use std::path::Path;
 
@@ -54,8 +54,6 @@ pub(crate) struct Settings {
     pub(crate) rx_checksum: WifiRxChecksumPolicy,
     pub(crate) tx_udp_checksum: WifiTxUdpChecksumPolicy,
     pub(crate) tx_buffer: WifiTxBufferPolicy,
-    pub(crate) rx_admission: WifiRxAdmissionPolicy,
-    pub(crate) rx_dispatch: WifiRxDispatchPolicy,
     pub(crate) rx_continuation: WifiRxContinuationPolicy,
     pub(crate) l1_cache_counters: bool,
 }
@@ -67,8 +65,6 @@ impl Default for Settings {
             rx_checksum: WifiRxChecksumPolicy::Software,
             tx_udp_checksum: WifiTxUdpChecksumPolicy::Software,
             tx_buffer: WifiTxBufferPolicy::OwnedSramPromotion,
-            rx_admission: WifiRxAdmissionPolicy::SynchronousShared,
-            rx_dispatch: WifiRxDispatchPolicy::Asynchronous,
             rx_continuation: WifiRxContinuationPolicy::ImmediateSoftwareProbe,
             l1_cache_counters: false,
         }
@@ -82,8 +78,6 @@ impl From<&Scenario> for Settings {
             rx_checksum: scenario.rx_checksum,
             tx_udp_checksum: scenario.tx_udp_checksum,
             tx_buffer: scenario.tx_buffer,
-            rx_admission: scenario.rx_admission,
-            rx_dispatch: scenario.rx_dispatch,
             rx_continuation: scenario.rx_continuation,
             l1_cache_counters: scenario.l1_cache_counters,
         }

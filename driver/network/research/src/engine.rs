@@ -5,7 +5,7 @@ use open_esp_radio_wifi_datapath::{
 };
 
 use crate::{
-    Ipv4Address, MacAddress, ResolvedIpv4Route, UdpEndpoint,
+    InlinePayload, Ipv4Address, MacAddress, ResolvedIpv4Route, UdpEndpoint,
     checksum::{internet_checksum, udp_ipv4_checksum},
     work::{ArpTxWork, FrameWriteError, IcmpEchoReplyWork, Ipv4TxPath, ResearchTxWork, UdpTxWork},
 };
@@ -78,24 +78,38 @@ pub enum TxEnqueueError {
     FlowCapacity,
 }
 
+/// Failed UDP admission returns the original payload, including its pool lease.
+#[derive(Debug)]
+pub struct TxEnqueueFailure<Payload> {
+    pub error: TxEnqueueError,
+    pub payload: Payload,
+}
+
 /// Synchronous Ethernet/ARP/IPv4/ICMP/UDP research engine.
 ///
-/// `PAYLOAD_CAPACITY` and `WORK_CAPACITY` describe general-memory backlog.
+/// `PAYLOAD_CAPACITY` bounds copied UDP payloads and inline ICMP replies.
+/// `Payload` selects UDP storage ownership; `WORK_CAPACITY` bounds the backlog.
 /// Physical SRAM is supplied only to `fill_selected` and is never embedded in
 /// this object, so its size is independent of peer count and queue depth.
 pub struct ResearchNetworkEngine<
     const FLOW_CAPACITY: usize,
     const WORK_CAPACITY: usize,
     const PAYLOAD_CAPACITY: usize,
+    Payload = InlinePayload<PAYLOAD_CAPACITY>,
 > {
     config: ResearchNetworkConfig,
-    queue: FixedEgressQueue<ResearchTxWork<PAYLOAD_CAPACITY>, FLOW_CAPACITY, WORK_CAPACITY>,
+    queue:
+        FixedEgressQueue<ResearchTxWork<PAYLOAD_CAPACITY, Payload>, FLOW_CAPACITY, WORK_CAPACITY>,
     next_ipv4_identification: u16,
     counters: EngineCounters,
 }
 
-impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPACITY: usize>
-    ResearchNetworkEngine<FLOW_CAPACITY, WORK_CAPACITY, PAYLOAD_CAPACITY>
+impl<
+    const FLOW_CAPACITY: usize,
+    const WORK_CAPACITY: usize,
+    const PAYLOAD_CAPACITY: usize,
+    Payload: AsRef<[u8]>,
+> ResearchNetworkEngine<FLOW_CAPACITY, WORK_CAPACITY, PAYLOAD_CAPACITY, Payload>
 {
     pub const fn new(config: ResearchNetworkConfig) -> Self {
         Self {
@@ -127,17 +141,27 @@ impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPAC
         self.queue.len()
     }
 
-    pub fn enqueue_udp(
+    /// Retain a payload owner until final-frame construction succeeds.
+    ///
+    /// No payload bytes are copied at admission. A pool lease keeps its storage
+    /// outside this queue; passing an inline array still moves that array.
+    /// Rejection returns the same owner. Successful materialization releases
+    /// it after copying into the reserved destination, before radio completion.
+    /// The payload must keep its contents and length stable while queued.
+    pub fn enqueue_udp_owned(
         &mut self,
         now_micros: u64,
         route: ResolvedIpv4Route,
         source_port: u16,
         destination_port: u16,
         admission: AdmissionClass,
-        payload: &[u8],
-    ) -> Result<(), TxEnqueueError> {
+        payload: Payload,
+    ) -> Result<(), TxEnqueueFailure<Payload>> {
         if route.radio.interface() != self.config.interface {
-            return Err(TxEnqueueError::InterfaceMismatch);
+            return Err(TxEnqueueFailure {
+                error: TxEnqueueError::InterfaceMismatch,
+                payload,
+            });
         }
         let work = UdpTxWork::new(
             Ipv4TxPath {
@@ -156,8 +180,19 @@ impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPAC
             destination_port,
             payload,
         )
-        .map_err(|_| TxEnqueueError::PayloadTooLong)?;
-        self.try_enqueue(ResearchTxWork::Udp(work))?;
+        .map_err(|payload| TxEnqueueFailure {
+            error: TxEnqueueError::PayloadTooLong,
+            payload,
+        })?;
+        if let Err((error, work)) = self.try_enqueue_owned(ResearchTxWork::Udp(work)) {
+            let ResearchTxWork::Udp(work) = work else {
+                unreachable!("UDP admission returns its exact work owner");
+            };
+            return Err(TxEnqueueFailure {
+                error,
+                payload: work.into_payload(),
+            });
+        }
         self.next_ipv4_identification = self.next_ipv4_identification.wrapping_add(1);
         Ok(())
     }
@@ -200,9 +235,61 @@ impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPAC
         now_micros: u64,
         frame: &[u8],
         classifier: &mut C,
+        udp: impl FnMut(UdpDatagram<'_>),
+    ) -> IngressReport {
+        if frame.len() < ETHERNET_HEADER_LEN {
+            return self.record_ingress(IngressDisposition::Malformed, frame.len());
+        }
+        self.receive_parts(
+            now_micros,
+            MacAddress::new(frame[..6].try_into().unwrap()),
+            MacAddress::new(frame[6..12].try_into().unwrap()),
+            u16::from_be_bytes(frame[12..14].try_into().unwrap()),
+            &frame[ETHERNET_HEADER_LEN..],
+            classifier,
+            udp,
+        )
+    }
+
+    /// Receive separately decoded Ethernet addresses and a borrowed L3 payload.
+    ///
+    /// `ether_type` is in host byte order. No Ethernet frame is assembled and
+    /// UDP delivery borrows directly from `payload` for the synchronous callback.
+    /// The caller retains its receive owner throughout this call and may reuse
+    /// it on return. ARP/ICMP replies retain their own bounded work. EAPOL is
+    /// unsupported here and remains the radio security owner's responsibility.
+    /// Reported frame length includes the conceptual 14-byte Ethernet header.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "decoded Ethernet fields stay separate from caller-owned timing, route policy and delivery"
+    )]
+    pub fn receive_parts<C: RadioRouteClassifier>(
+        &mut self,
+        now_micros: u64,
+        destination: MacAddress,
+        source: MacAddress,
+        ether_type: u16,
+        payload: &[u8],
+        classifier: &mut C,
         mut udp: impl FnMut(UdpDatagram<'_>),
     ) -> IngressReport {
-        let disposition = self.receive_inner(now_micros, frame, classifier, &mut udp);
+        let disposition = if destination != self.config.mac && !destination.is_broadcast() {
+            IngressDisposition::NotForInterface
+        } else {
+            match ether_type {
+                0x0806 => self.receive_arp(now_micros, payload, source, classifier),
+                0x0800 => self.receive_ipv4(now_micros, payload, source, classifier, &mut udp),
+                _ => IngressDisposition::Unsupported,
+            }
+        };
+        self.record_ingress(disposition, ETHERNET_HEADER_LEN + payload.len())
+    }
+
+    fn record_ingress(
+        &mut self,
+        disposition: IngressDisposition,
+        frame_length: usize,
+    ) -> IngressReport {
         match disposition {
             IngressDisposition::UdpDelivered => self.counters.rx_udp_delivered += 1,
             IngressDisposition::ResponseQueued => self.counters.rx_responses_queued += 1,
@@ -214,63 +301,47 @@ impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPAC
         }
         IngressReport {
             disposition,
-            frame_length: frame.len(),
+            frame_length,
         }
     }
 
     fn try_enqueue(
         &mut self,
-        work: ResearchTxWork<PAYLOAD_CAPACITY>,
+        work: ResearchTxWork<PAYLOAD_CAPACITY, Payload>,
     ) -> Result<(), TxEnqueueError> {
+        self.try_enqueue_owned(work).map_err(|(error, _)| error)
+    }
+
+    fn try_enqueue_owned(
+        &mut self,
+        work: ResearchTxWork<PAYLOAD_CAPACITY, Payload>,
+    ) -> Result<(), (TxEnqueueError, ResearchTxWork<PAYLOAD_CAPACITY, Payload>)> {
         match self.queue.try_enqueue(work) {
             Ok(()) => {
                 self.counters.tx_enqueued += 1;
                 Ok(())
             }
-            Err(EnqueueError::WorkCapacity(_)) => {
+            Err(EnqueueError::WorkCapacity(work)) => {
                 self.counters.tx_queue_rejected += 1;
-                Err(TxEnqueueError::WorkCapacity)
+                Err((TxEnqueueError::WorkCapacity, work))
             }
-            Err(EnqueueError::FlowCapacity(_)) => {
+            Err(EnqueueError::FlowCapacity(work)) => {
                 self.counters.tx_queue_rejected += 1;
-                Err(TxEnqueueError::FlowCapacity)
+                Err((TxEnqueueError::FlowCapacity, work))
             }
-        }
-    }
-
-    fn receive_inner<C: RadioRouteClassifier>(
-        &mut self,
-        now_micros: u64,
-        frame: &[u8],
-        classifier: &mut C,
-        udp: &mut impl FnMut(UdpDatagram<'_>),
-    ) -> IngressDisposition {
-        if frame.len() < ETHERNET_HEADER_LEN {
-            return IngressDisposition::Malformed;
-        }
-        let destination_mac = MacAddress::new(frame[..6].try_into().unwrap());
-        if destination_mac != self.config.mac && !destination_mac.is_broadcast() {
-            return IngressDisposition::NotForInterface;
-        }
-        let source_mac = MacAddress::new(frame[6..12].try_into().unwrap());
-        match u16::from_be_bytes(frame[12..14].try_into().unwrap()) {
-            0x0806 => self.receive_arp(now_micros, frame, source_mac, classifier),
-            0x0800 => self.receive_ipv4(now_micros, frame, source_mac, classifier, udp),
-            _ => IngressDisposition::Unsupported,
         }
     }
 
     fn receive_arp<C: RadioRouteClassifier>(
         &mut self,
         now_micros: u64,
-        frame: &[u8],
+        payload: &[u8],
         source_mac: MacAddress,
         classifier: &mut C,
     ) -> IngressDisposition {
-        if frame.len() < ARP_FRAME_LEN {
+        let Some(arp) = payload.get(..ARP_FRAME_LEN - ETHERNET_HEADER_LEN) else {
             return IngressDisposition::Malformed;
-        }
-        let arp = &frame[ETHERNET_HEADER_LEN..ARP_FRAME_LEN];
+        };
         if arp[0..2] != 1u16.to_be_bytes()
             || arp[2..4] != 0x0800u16.to_be_bytes()
             || arp[4] != 6
@@ -317,12 +388,11 @@ impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPAC
     fn receive_ipv4<C: RadioRouteClassifier>(
         &mut self,
         now_micros: u64,
-        frame: &[u8],
+        packet: &[u8],
         source_mac: MacAddress,
         classifier: &mut C,
         udp: &mut impl FnMut(UdpDatagram<'_>),
     ) -> IngressDisposition {
-        let packet = &frame[ETHERNET_HEADER_LEN..];
         if packet.len() < IPV4_MIN_HEADER_LEN || packet[0] >> 4 != 4 {
             return IngressDisposition::Malformed;
         }
@@ -450,5 +520,56 @@ impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPAC
     }
 }
 
+impl<const FLOW_CAPACITY: usize, const WORK_CAPACITY: usize, const PAYLOAD_CAPACITY: usize>
+    ResearchNetworkEngine<FLOW_CAPACITY, WORK_CAPACITY, PAYLOAD_CAPACITY>
+{
+    /// Copy a caller's payload into bounded inline work storage.
+    pub fn enqueue_udp(
+        &mut self,
+        now_micros: u64,
+        route: ResolvedIpv4Route,
+        source_port: u16,
+        destination_port: u16,
+        admission: AdmissionClass,
+        payload: &[u8],
+    ) -> Result<(), TxEnqueueError> {
+        if route.radio.interface() != self.config.interface {
+            return Err(TxEnqueueError::InterfaceMismatch);
+        }
+        let payload =
+            InlinePayload::copy_from_slice(payload).ok_or(TxEnqueueError::PayloadTooLong)?;
+        self.enqueue_udp_owned(
+            now_micros,
+            route,
+            source_port,
+            destination_port,
+            admission,
+            payload,
+        )
+        .map_err(|failure| failure.error)
+    }
+}
+
+impl<const FLOWS: usize, const WORK: usize, const CAPACITY: usize, Payload: AsRef<[u8]>>
+    EgressWorkProvider for ResearchNetworkEngine<FLOWS, WORK, CAPACITY, Payload>
+{
+    type WriteError = FrameWriteError;
+
+    fn visit_demands(&self, visitor: impl FnMut(open_esp_radio_wifi_datapath::EgressDemand)) {
+        self.queue.visit_demands(visitor);
+    }
+
+    fn fill_selected<Batch: ReservedTxBatch>(
+        &mut self,
+        selection: EgressSelection,
+        batch: &mut Batch,
+    ) -> Result<FillOutcome, FillFailure<Self::WriteError>> {
+        self.queue.fill_selected(selection, batch)
+    }
+}
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod receive_parts_tests;

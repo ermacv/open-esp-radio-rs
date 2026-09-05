@@ -318,11 +318,14 @@ where
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = B> + 'a,
     {
         async move {
-            let frame = match network.try_materialize(frame) {
-                Ok(frame) => frame,
-                Err(_) => panic!("station aggregate selected without a free DMA credit"),
-            };
-            self.start_network(hardware, frame, network)
+            match self.start_request(hardware, frame, network) {
+                Ok(progress) => Ok(progress),
+                Err(RequestTxError::Busy(_)) => Err(AggregateTxError::ActiveTransaction),
+                Err(RequestTxError::Unmaterialized(_)) => {
+                    panic!("station aggregate selected without a free DMA credit")
+                }
+                Err(RequestTxError::Radio(error)) => Err(error),
+            }
         }
     }
 
@@ -392,11 +395,11 @@ where
         I: SelectedBurstMaterializer<SoftwareFrame = SoftwareFrame, PhysicalFrame = B> + 'a,
     {
         async move {
-            let frame = match network.try_materialize(frame) {
-                Ok(frame) => frame,
-                Err(_) => panic!("station standby selected without a free DMA credit"),
-            };
-            self.prepare_network_standby(frame, network);
+            if !self.can_prepare_network_tx() {
+                return Ok(());
+            }
+            self.prepare_request_standby(frame, network)
+                .unwrap_or_else(|_| panic!("station standby selected without a free DMA credit"));
             Ok(())
         }
     }

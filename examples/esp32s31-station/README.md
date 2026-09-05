@@ -14,16 +14,18 @@ cd examples/esp32s31-station
 cargo check --release
 ```
 
-The default build uses the optimized owned-packet Xarxa/Embassy fork. The same
-application source can be checked against released Embassy crates and the
-upstream-compatible copied-frame adapter:
+The default build uses the pinned Git Embassy/Xarxa integration with explicit
+packet pools. The same application source can be checked against released
+Embassy/smoltcp network crates and the token-based compatibility adapter:
 
 ```console
 cargo check --release --no-default-features --features compat-network
 ```
 
 The two network integrations are compile-time alternatives and cannot be
-combined in one binary.
+combined in one binary. Both retain the pinned `esp-hal` and `esp-pacs`
+hardware forks. Their stack-facing APIs and source guarantees are described
+in the [network integration contract](../../docs/wifi-egress.md#network-dependency-contracts).
 
 Network credentials are application build configuration. They are deliberately
 absent from reusable driver crates and HIL configuration:

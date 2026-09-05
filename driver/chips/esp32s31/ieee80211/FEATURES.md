@@ -23,6 +23,10 @@ The status terms are:
 
 The [qualification specification](../../../../qualification/targets/esp32s31/wifi-sta.toml)
 controls readiness and required hardware evidence independently.
+Its `rx-tx-dma` capability also carries the machine-readable
+[source contracts](../../../../qualification/README.md#source-contracts) for
+SRAM/PSRAM DMA, descriptor chaining, scatter/gather and cache handoff. Those
+entries distinguish production, diagnostic and unimplemented compositions.
 
 Source ownership follows the [chip STA composition](sta/README.md),
 [AP engine](ap/src/engine.rs), [MAC TX](mac/src/tx.rs) and

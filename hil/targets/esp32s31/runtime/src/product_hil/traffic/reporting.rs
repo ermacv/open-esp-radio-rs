@@ -709,13 +709,10 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "ORC0E dispatch_pre={} capture={} dispatch_post={} observer={} in_place={} shared={} protected_calls={} protected_cycles={}",
+        "ORC0E dispatch_pre={} capture={} dispatch_post={} protected_calls={} protected_cycles={}",
         cycles.protocol_dispatch_pre_publish,
         cycles.protocol_dispatch_capture,
         cycles.protocol_dispatch_post_publish,
-        cycles.protocol_publication_observer,
-        cycles.protocol_publication_in_place,
-        cycles.protocol_publication_shared,
         cycles.protocol_protected_view_calls,
         cycles.protocol_protected_view_cycles,
     ))
@@ -748,7 +745,7 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "ORC0I dma={} runner={} scheduler={} protocol_dequeue={} protocol_entry={} protocol_frame={} data={} publication={}",
+        "ORC0I dma={} runner={} scheduler={} protocol_dequeue={} protocol_entry={} protocol_frame={} data={}",
         cycles.telemetry_dma_record,
         cycles.telemetry_runner_record,
         cycles.telemetry_scheduler_record,
@@ -756,7 +753,6 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
         cycles.telemetry_protocol_entry_record,
         cycles.telemetry_protocol_frame_record,
         cycles.telemetry_data_record,
-        cycles.telemetry_publication_record,
     ))
     .await;
     yield_now().await;

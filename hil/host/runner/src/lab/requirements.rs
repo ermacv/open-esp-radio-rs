@@ -25,6 +25,7 @@ impl Requirements {
         match &scenario.workload {
             Workload::BootSmoke
             | Workload::Timebase { .. }
+            | Workload::MemoryBenchmark { .. }
             | Workload::Ieee802154EventStatus { .. }
             | Workload::Ieee802154EdEvent { .. } => return required,
             Workload::Udp { direction, .. } => {

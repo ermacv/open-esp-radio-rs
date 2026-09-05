@@ -34,6 +34,18 @@ The root Cargo alias selects this package. `--root PATH` selects an explicit
 repository checkout. A nested independent workspace does not acquire the root
 workspace's package membership through `--manifest-path`.
 
+Network dependency checks distinguish three contracts. Compatibility products
+use the official crates.io Embassy network APIs and exclude the owned adapter
+and Xarxa. Owned products use fully revision-pinned network forks, with the
+Embassy stack and driver resolving to the same source. These source rules do
+not prohibit shared platform forks such as ESP-HAL. Research excludes Embassy
+and Xarxa from normal and build dependencies, including optional declarations;
+its default and complete feature selections are resolved independently.
+Development-only dependencies do not define a production ownership boundary.
+Both station example selections are checked in their own locked workspace;
+library profiles use isolated consumers so unrelated workspace features cannot
+hide a dependency leak.
+
 Run the orchestration regressions with:
 
 ```console

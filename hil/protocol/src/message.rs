@@ -1,9 +1,10 @@
+use crate::{MemoryBenchmarkEvidence, MemoryBenchmarkRequest};
 use core::fmt;
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 77;
+pub const PROTOCOL_VERSION: u16 = 80;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -370,6 +371,8 @@ pub struct FeatureCapabilities {
     /// This image can compare Embassy alarm deadlines with the target's
     /// monotonic clock before radio initialization.
     pub timebase_probe: bool,
+    /// This image supports bounded pre-initialization CPU/GDMA copy diagnostics.
+    pub memory_benchmark: bool,
     /// This image can run the bounded IEEE 802.15.4 `EVENT_STATUS` observation
     /// probe and return its typed snapshots.
     pub ieee802154_event_status_probe: bool,
@@ -985,37 +988,6 @@ pub enum WifiTxBufferPolicy {
     PsramDirectDmaDiagnostic,
 }
 
-/// Ordinary shared-RX admission selected before the radio stack starts.
-///
-/// Both variants live in one diagnostic ELF. The deferred variant preserves
-/// the former immediately-ready async edge solely to measure its cost without
-/// changing code layout.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum WifiRxAdmissionPolicy {
-    /// The retained staging slot is the complete network publication credit.
-    #[default]
-    SynchronousShared,
-    /// Poll an immediately-ready future before publishing the same slot.
-    DeferredReadyDiagnostic,
-}
-
-/// Core0 dispatch policy selected before the radio stack starts.
-///
-/// Both variants are linked into one coarse diagnostic image. The direct
-/// variant changes only processing of an already-completed, in-order ordinary
-/// data frame; DMA polling cadence and the outer cooperative budget remain
-/// identical.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum WifiRxDispatchPolicy {
-    /// Preserve the general asynchronous protocol dispatch path.
-    #[default]
-    Asynchronous,
-    /// Use synchronous run-to-completion for the qualified immediate BA case.
-    DirectImmediateDiagnostic,
-}
-
 /// Continuation policy for a masked RX drain epoch in one coarse image.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -1046,8 +1018,6 @@ pub struct InitializationConfiguration {
     pub rx_checksum: WifiRxChecksumPolicy,
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
     pub tx_buffer: WifiTxBufferPolicy,
-    pub rx_admission: WifiRxAdmissionPolicy,
-    pub rx_dispatch: WifiRxDispatchPolicy,
     pub rx_continuation: WifiRxContinuationPolicy,
     pub l1_cache_counters: bool,
 }
@@ -1076,6 +1046,7 @@ pub enum Command {
     /// Compare alarm deadlines with the monotonic clock before initializing
     /// the radio/network runtime.
     ProbeTimebase(TimebaseProbeRequest),
+    ProbeMemoryBenchmark(MemoryBenchmarkRequest),
     /// Run one bounded, observation-only IEEE 802.15.4 `EVENT_STATUS` probe.
     ProbeIeee802154EventStatus(Ieee802154EventStatusProbeRequest),
     /// Run the bounded ED-DONE/TIMER0 selective-write discriminator.
@@ -2204,6 +2175,8 @@ pub enum Event {
     LinkHealth(LinkHealth),
     /// Correlated response to [`Command::ProbeTimebase`].
     TimebaseProbeCompleted(TimebaseProbeEvidence),
+    /// Correlated terminal result for one memory-copy diagnostic case.
+    MemoryBenchmarkCompleted(MemoryBenchmarkEvidence),
     /// Correlated observation from [`Command::ProbeIeee802154EventStatus`].
     ///
     /// This event does not attest to same-bit concurrency, level-triggered

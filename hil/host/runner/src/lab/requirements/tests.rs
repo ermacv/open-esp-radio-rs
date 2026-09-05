@@ -13,6 +13,12 @@ fn scenario(workload: Workload) -> Scenario {
 fn system_and_ieee802154_diagnostics_do_not_need_a_network() {
     for workload in [
         Workload::BootSmoke,
+        Workload::MemoryBenchmark {
+            boots: 2,
+            iterations: 32,
+            sizes: vec![64, 4096],
+            batch_sizes: vec![1],
+        },
         Workload::Timebase {
             boots: 3,
             intervals: 2,

@@ -9,7 +9,7 @@ use open_esp_radio_esp32s31_phy::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const MAX_ENCODED_LEN: usize = 512;
+pub const MAX_ENCODED_LEN: usize = crate::console::STARTUP_ARTIFACT_CAPACITY;
 const MAGIC: [u8; 8] = *b"ORCAL004";
 
 #[derive(Serialize, Deserialize)]

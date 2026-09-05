@@ -2,7 +2,7 @@
 
 use crate::{Context, Result, cargo, graph::Graph, process};
 use cargo_metadata::{DependencyKind, Package};
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 const NETWORK: &str = "open-esp-radio-network";
 const OWNED: &str = "open-esp-radio-embassy-net";
@@ -45,6 +45,36 @@ fn registry(p: &Package) -> bool {
         .as_ref()
         .is_some_and(|source| source.to_string().starts_with("registry+"))
 }
+fn official_registry(p: &Package) -> bool {
+    p.source
+        .as_ref()
+        .is_some_and(|source| source.is_crates_io())
+}
+fn network_api(name: &str) -> bool {
+    name == "embassy-net" || name.starts_with("embassy-net-")
+}
+fn xarxa_api(name: &str) -> bool {
+    name == "xarxa" || name.starts_with("xarxa-")
+}
+fn owned_api(p: &Package) -> bool {
+    network_api(p.name.as_str()) || xarxa_api(p.name.as_str())
+}
+fn pinned_git(p: &Package) -> bool {
+    let Some(source) = p
+        .source
+        .as_ref()
+        .and_then(|source| source.repr.strip_prefix("git+"))
+    else {
+        return false;
+    };
+    let Some((selection, commit)) = source.rsplit_once('#') else {
+        return false;
+    };
+    let Some((_, revision)) = selection.split_once("?rev=") else {
+        return false;
+    };
+    revision == commit && commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
 fn physical(p: &Package, root: &Path) -> bool {
     p.name.starts_with("open-esp-radio-esp32s31")
         || p.manifest_path
@@ -52,13 +82,12 @@ fn physical(p: &Package, root: &Path) -> bool {
             .starts_with(root.join("driver/chips"))
 }
 fn optimized(p: &Package) -> bool {
-    matches!(p.name.as_str(), OWNED | "xarxa" | "xarxa-driver")
-        || (matches!(p.name.as_str(), "embassy-net" | "embassy-net-driver") && !registry(p))
+    p.name == OWNED
+        || xarxa_api(p.name.as_str())
+        || (network_api(p.name.as_str()) && !official_registry(p))
 }
-fn stack(p: &Package) -> bool {
-    p.name.starts_with("embassy-")
-        || p.name.starts_with("open-esp-radio-embassy")
-        || matches!(p.name.as_str(), "xarxa" | "xarxa-driver")
+fn stack(name: &str) -> bool {
+    name.starts_with("embassy-") || name.starts_with("open-esp-radio-embassy") || xarxa_api(name)
 }
 
 pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Path) -> Result<()> {
@@ -74,7 +103,16 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             .is_some_and(|source| source.repr.starts_with("registry+"));
         let forbidden = match boundary {
             Boundary::Neutral => true,
-            Boundary::Compat => !released && name != NETWORK,
+            Boundary::Compat => {
+                (!released && name != NETWORK)
+                    || name == OWNED
+                    || xarxa_api(name)
+                    || (network_api(name)
+                        && !dependency
+                            .source
+                            .as_ref()
+                            .is_some_and(|source| source.is_crates_io()))
+            }
             Boundary::Owned => {
                 name.starts_with("open-esp-radio-esp32s31")
                     || name == "open-esp-radio-dma"
@@ -85,6 +123,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
                             .any(|owner| path.as_std_path().starts_with(repository.join(owner)))
                     })
             }
+            Boundary::Research | Boundary::Datapath => stack(name),
             _ => false,
         };
         if forbidden {
@@ -130,15 +169,26 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
     let released_driver = || -> Result<()> {
         reject(
             &|p| {
-                p.name == "embassy-net-driver" && (!registry(p) || p.version.to_string() != "0.2.0")
+                p.name == "embassy-net-driver"
+                    && (!official_registry(p) || p.version.to_string() != "0.2.0")
             },
             "requires released embassy-net-driver 0.2.0",
         )?;
         required(
-            &|p| p.name == "embassy-net-driver" && registry(p) && p.version.to_string() == "0.2.0",
+            &|p| {
+                p.name == "embassy-net-driver"
+                    && official_registry(p)
+                    && p.version.to_string() == "0.2.0"
+            },
             "released embassy-net-driver 0.2.0",
         )
     };
+    if matches!(boundary, Boundary::Owned | Boundary::OwnedProduct) {
+        reject(
+            &|p| owned_api(p) && !pinned_git(p),
+            "owned network APIs require full Git revision pins",
+        )?;
+    }
     match boundary {
         Boundary::Neutral => reject(
             &|_| true,
@@ -148,6 +198,10 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             reject(
                 &|p| !registry(p) && p.name != NETWORK,
                 "compatibility adapter acquired a non-neutral dependency",
+            )?;
+            reject(
+                &optimized,
+                "compatibility adapter requires official crates.io network APIs without owned contracts",
             )?;
             released_driver()?;
         }
@@ -173,7 +227,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
         }
         Boundary::Research | Boundary::Datapath => {
             reject(
-                &stack,
+                &|p| stack(p.name.as_str()),
                 "portable contract acquired an executor or network stack",
             )?;
             if boundary == Boundary::Datapath {
@@ -193,14 +247,15 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             }
             if boundary == Boundary::CompatProduct {
                 reject(
-                    &|p| {
-                        matches!(p.name.as_str(), "embassy-net" | "embassy-net-driver")
-                            && !registry(p)
-                    },
+                    &|p| network_api(p.name.as_str()) && !official_registry(p),
                     "compatibility product acquired a non-release Embassy network package",
                 )?;
                 required(&|p| p.name == COMPAT, "compatibility network adapter")?;
                 required(&|p| p.name == BRIDGE, "compatibility radio bridge")?;
+                required(
+                    &|p| p.name == "embassy-net" && official_registry(p),
+                    "official crates.io embassy-net stack",
+                )?;
             }
         }
         Boundary::OwnedProduct => {
@@ -210,14 +265,21 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             )?;
             required(&|p| p.name == OWNED, "owned network adapter")?;
             required(
-                &|p| {
-                    p.name == "embassy-net-driver"
-                        && p.source
-                            .as_ref()
-                            .is_some_and(|s| s.to_string().starts_with("git+"))
-                },
+                &|p| p.name == "embassy-net-driver" && pinned_git(p),
                 "owned Embassy driver contract",
             )?;
+            required(
+                &|p| p.name == "embassy-net" && pinned_git(p),
+                "owned Embassy network stack",
+            )?;
+            let embassy_sources = dependencies
+                .iter()
+                .filter(|p| network_api(p.name.as_str()))
+                .filter_map(|p| p.source.as_ref().map(|source| source.repr.as_str()))
+                .collect::<BTreeSet<_>>();
+            if embassy_sources.len() != 1 {
+                return Err("owned-product: Embassy network stack and driver must resolve to the same pinned source".into());
+            }
         }
     }
     let features = &graph.node(&root).features;
@@ -247,7 +309,7 @@ pub struct Profile {
     pub manifest: &'static str,
     pub features: &'static [&'static str],
 }
-pub fn profiles() -> [Profile; 9] {
+pub fn profiles() -> [Profile; 12] {
     use Boundary::*;
     let product = "driver/integration/esp32s31/embassy/ieee80211/Cargo.toml";
     [
@@ -270,6 +332,11 @@ pub fn profiles() -> [Profile; 9] {
             boundary: Research,
             manifest: "driver/network/research/Cargo.toml",
             features: &[],
+        },
+        Profile {
+            boundary: Research,
+            manifest: "driver/network/research/Cargo.toml",
+            features: &["--all-features"],
         },
         Profile {
             boundary: Datapath,
@@ -296,6 +363,16 @@ pub fn profiles() -> [Profile; 9] {
             manifest: product,
             features: &["--no-default-features", "--features", "compat-network"],
         },
+        Profile {
+            boundary: OwnedProduct,
+            manifest: "examples/esp32s31-station/Cargo.toml",
+            features: &[],
+        },
+        Profile {
+            boundary: CompatProduct,
+            manifest: "examples/esp32s31-station/Cargo.toml",
+            features: &["--no-default-features", "--features", "compat-network"],
+        },
     ]
 }
 
@@ -308,9 +385,25 @@ pub fn run(context: &Context, dependencies_only: bool) -> Result<()> {
             .map(|v| (*v).to_owned())
             .collect::<Vec<_>>();
         let target = profile.boundary.product().then_some(TARGET);
-        let graph = cargo::isolated_graph(context, &manifest, &flags, target)?;
+        let graph = if profile.manifest.starts_with("examples/") {
+            // Binary examples cannot become a scratch consumer's dependency.
+            // Their independent workspace already isolates feature resolution.
+            if cargo::workspace_manifest(context, &manifest)? != manifest.canonicalize()? {
+                return Err(
+                    format!("example must own its workspace: {}", manifest.display()).into(),
+                );
+            }
+            cargo::metadata(context, &manifest, &flags, target, true)?
+        } else {
+            cargo::isolated_graph(context, &manifest, &flags, target)?
+        };
         audit(&graph, &manifest, profile.boundary, &context.root)?;
-        println!("network boundary passed: {}", profile.boundary.name());
+        println!(
+            "network boundary passed: {} ({}, {:?})",
+            profile.boundary.name(),
+            profile.manifest,
+            profile.features
+        );
     }
     if !dependencies_only {
         for profile in profiles()

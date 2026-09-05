@@ -1,0 +1,14 @@
+schema = 4
+id = "memory-copy-batch-benchmark"
+description = "CPU frame loops and single-chain blocking/async GDMA batches from SRAM/PSRAM into SRAM"
+image = "diagnostic-memory-benchmark"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "memory", "copy", "gdma", "batch"]
+
+[workload]
+kind = "memory-benchmark"
+boots = 2
+iterations = 32
+sizes = [64, 512, 1514]
+batch_sizes = [1, 2, 8, 32]

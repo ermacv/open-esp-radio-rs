@@ -194,8 +194,6 @@ impl SerialCapture {
                 rx_checksum: context.settings.rx_checksum,
                 tx_udp_checksum: context.settings.tx_udp_checksum,
                 tx_buffer: context.settings.tx_buffer,
-                rx_admission: context.settings.rx_admission,
-                rx_dispatch: context.settings.rx_dispatch,
                 rx_continuation: context.settings.rx_continuation,
                 l1_cache_counters: context.settings.l1_cache_counters,
             }),
@@ -705,6 +703,21 @@ impl SerialCapture {
                 Err(format!("device rejected link-health query: {reason:?}").into())
             }
             _ => Err("device returned an invalid link-health response".into()),
+        }
+    }
+
+    pub(crate) fn probe_memory_benchmark(
+        &self,
+        request: open_esp_radio_hil_protocol::MemoryBenchmarkRequest,
+        timeout: Duration,
+    ) -> Result<open_esp_radio_hil_protocol::MemoryBenchmarkEvidence> {
+        let response = self.send_command(0, Command::ProbeMemoryBenchmark(request), timeout)?;
+        match response.body {
+            Event::MemoryBenchmarkCompleted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected memory benchmark: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid memory-benchmark response".into()),
         }
     }
 

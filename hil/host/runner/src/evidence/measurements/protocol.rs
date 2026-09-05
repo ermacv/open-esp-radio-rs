@@ -44,6 +44,50 @@ pub(super) fn observations(
             Event::Evidence(EvidenceRecord::Link(value)) => link(&mut records, &session, value),
             Event::StackUsage(value) => stack(&mut records, &request, value),
             Event::LinkHealth(value) => link(&mut records, &request, value),
+            Event::MemoryBenchmarkCompleted(value) => {
+                for (name, count) in [
+                    (
+                        "iterations.completed",
+                        u64::from(value.completed_iterations),
+                    ),
+                    ("iterations.requested", u64::from(value.request.iterations)),
+                    ("frames-per-iteration", u64::from(value.request.frames)),
+                    ("elapsed.cycles", value.elapsed_cycles),
+                    ("elapsed.instructions", value.elapsed_instructions),
+                    ("foreground.cycles", value.foreground_cycles),
+                    ("foreground.instructions", value.foreground_instructions),
+                    ("transfer.polls", u64::from(value.polls)),
+                ] {
+                    add(
+                        &mut records,
+                        &request,
+                        &format!("memory.{name}"),
+                        count,
+                        Unit::Count,
+                    );
+                }
+                add(
+                    &mut records,
+                    &request,
+                    "memory.bytes-per-iteration",
+                    u64::from(value.request.bytes) * u64::from(value.request.frames),
+                    Unit::Bytes,
+                );
+                add(
+                    &mut records,
+                    &request,
+                    "memory.bytes-per-frame",
+                    u64::from(value.request.bytes),
+                    Unit::Bytes,
+                );
+                add(
+                    &mut records,
+                    &request,
+                    "memory.elapsed",
+                    value.elapsed_micros,
+                    Unit::Microseconds,
+                );
+            }
             Event::TimebaseProbeCompleted(value) => {
                 for (name, count) in [
                     ("intervals", u64::from(value.intervals)),

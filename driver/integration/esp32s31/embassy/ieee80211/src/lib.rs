@@ -189,9 +189,6 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
     RxNetworkDeliveryEvent, RxNetworkDeliveryObserver, RxObservedEthernetFrame,
     RxQosSequenceObservation,
 };
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-#[cfg(target_arch = "riscv32")]
-pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_direct_immediate_rx_dispatch_for_diagnostics;
 #[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 #[cfg(feature = "tx-psram-dma-probe")]
@@ -346,23 +343,9 @@ impl Esp32s31RadioConfig {
 
 /// Optional value-only observers compiled only into diagnostics firmware.
 #[cfg(feature = "diagnostics")]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[cfg(target_arch = "riscv32")]
-pub enum Esp32s31DiagnosticRxAdmission {
-    /// Publish an ordinary shared staging owner without an async capacity edge.
-    #[default]
-    SynchronousShared,
-    /// Retain the former immediately-ready async edge for same-image HIL A/B.
-    DeferredReady,
-}
-
-/// Optional value-only observers compiled only into diagnostics firmware.
-#[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy)]
 #[cfg(target_arch = "riscv32")]
 pub struct Esp32s31DiagnosticObservers {
-    /// Same-image selector for the ordinary shared RX admission experiment.
-    pub rx_admission: Esp32s31DiagnosticRxAdmission,
     /// Intrusive per-stage timing/counter observer. Correctness images leave
     /// this unset; only dedicated pipeline diagnostics may charge the RX hot
     /// path for these observations.

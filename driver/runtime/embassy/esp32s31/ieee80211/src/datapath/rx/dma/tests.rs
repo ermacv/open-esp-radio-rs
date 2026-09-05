@@ -1574,6 +1574,15 @@ fn critical_frame_consumes_the_reserved_final_staging_credit() {
 
 #[test]
 fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
+    exercise_negotiated_rx_block_ack(false);
+}
+
+#[test]
+fn immediate_sink_dispatches_in_order_frames_directly_and_returns_staging_credits() {
+    exercise_negotiated_rx_block_ack(true);
+}
+
+fn exercise_negotiated_rx_block_ack(in_order: bool) {
     const COUNT: usize = 4;
     const STAGED_DEPTH: usize = 3;
     const STAGE_CAPACITY: usize = 192;
@@ -1586,7 +1595,12 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     let mut hardware = MockRxDma::default();
 
     let mut buffer = [0_u8; ESP32S31_RX_BUFFER_SIZE];
-    for (index, sequence) in [102_u16, 100, 101].into_iter().enumerate() {
+    let sequences = if in_order {
+        [100_u16, 101, 102]
+    } else {
+        [102, 100, 101]
+    };
+    for (index, sequence) in sequences.into_iter().enumerate() {
         buffer.fill(0);
         buffer[0x38..0x3c]
             .copy_from_slice(&(((SIGNAL + 4) as u32) << 16 | SIGNAL as u32).to_le_bytes());
@@ -1674,15 +1688,25 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     );
     assert_eq!(pool.claimed_slots(), 3);
     hardware.next_descriptor_low = (BASE + 3 * DESCRIPTOR_BYTES) & 0x000f_ffff;
-    embassy_futures::block_on(protocol.service_bounded(2));
-    assert_eq!(protocol.sink().0.0, [100]);
-    // Sequence 102 is retained in the cold reorder backing while 100 has
-    // been dispatched. The former implementation retained both staging
-    // leases here and therefore reported two claimed SRAM slots.
+    let first_turn = embassy_futures::block_on(protocol.service_bounded(2));
+    assert_eq!(first_turn.consumed_frames, 2);
+    if in_order {
+        assert_eq!(protocol.sink().0.0, [100, 101]);
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        {
+            assert_eq!(first_turn.direct_frames, 2);
+            assert_eq!(first_turn.asynchronous_frames, 0);
+        }
+    } else {
+        assert_eq!(protocol.sink().0.0, [100]);
+    }
+    // With a gap, sequence 102 lives in cold reorder backing after 100 is
+    // dispatched. In order, both first frames have been delivered directly.
+    // Either way, only the final queued frame still owns a staging slot.
     assert_eq!(pool.claimed_slots(), 1);
     assert_eq!(
         reorder_storage.available_slots(),
-        crate::datapath::rx::reorder::RX_REORDER_BACKING_SLOT_COUNT - 1
+        crate::datapath::rx::reorder::RX_REORDER_BACKING_SLOT_COUNT - usize::from(!in_order)
     );
     embassy_futures::block_on(protocol.service_bounded(1));
     assert_eq!(protocol.sink().0.0, [100, 101, 102]);
@@ -1916,3 +1940,6 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
 }
 
 mod transaction;
+
+#[cfg(feature = "owned-network")]
+mod network_admission;

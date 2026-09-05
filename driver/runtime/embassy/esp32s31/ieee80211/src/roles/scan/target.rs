@@ -27,16 +27,14 @@ where
 {
     type Error = PhyTargetPortError;
 
-    fn switch_channel<'a>(
+    async fn switch_channel<'a>(
         &'a mut self,
         hardware: &'a mut CooperativeRadioHardware<'arena>,
         channel: u8,
-    ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            let access = hardware.register_access();
-            self.switch_published_channel(u16::from(channel), 0, access)
-                .await
-        }
+    ) -> Result<(), Self::Error> {
+        let access = hardware.register_access();
+        self.switch_published_channel(u16::from(channel), 0, access)
+            .await
     }
 }
 
@@ -47,12 +45,12 @@ where
 {
     type Error = PhyTargetPortError;
 
-    fn switch_channel<'a>(
+    async fn switch_channel<'a>(
         &'a mut self,
         hardware: &'a mut RadioRuntimeOwner,
         channel: u8,
-    ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
-        async move { self.switch_channel(u16::from(channel), 0, hardware).await }
+    ) -> Result<(), Self::Error> {
+        self.switch_channel(u16::from(channel), 0, hardware).await
     }
 }
 
@@ -67,11 +65,8 @@ where
         self.prepare_initial_or_retry(hardware)
     }
 
-    fn start<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-    ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
-        async move { Esp32s31ScanRx::start(self, hardware) }
+    async fn start<'a>(&'a mut self, hardware: &'a mut H) -> Result<(), Self::Error> {
+        Esp32s31ScanRx::start(self, hardware)
     }
 
     fn observe_management<O, const RECORDS: usize>(

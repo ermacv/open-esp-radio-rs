@@ -146,6 +146,18 @@ pub fn isolated_graph(
     while let Some(flag) = flags.next() {
         match flag.as_str() {
             "--no-default-features" => defaults = false,
+            "--all-features" => {
+                // Expand the audited package's Cargo feature catalog, not the
+                // scratch consumer's features. Cargo also supplies implicit
+                // optional-dependency features absent from the TOML table.
+                let metadata = metadata_no_deps(context, &manifest)?;
+                let package = metadata
+                    .packages
+                    .iter()
+                    .find(|package| package.manifest_path.as_std_path() == manifest)
+                    .ok_or("audited package missing from Cargo metadata")?;
+                selected.extend(package.features.keys().cloned().map(toml::Value::String));
+            }
             "--features" => selected.extend(
                 flags
                     .next()

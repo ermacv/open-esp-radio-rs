@@ -67,9 +67,9 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
-    Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
-    NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
-    StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
+    Event as HilEvent, NetworkCredentials, NetworkInfo, NetworkIpv4Configuration,
+    StartupArtifactDisposition, StationDisconnectReason, StationEpochEvidence,
+    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
     WifiAccessPointSecurity as HilWifiAccessPointSecurity, WifiChannelWidth as HilWifiChannelWidth,
     WifiDataPlanePlacement, WifiMonitorCaptureRequest, WifiMonitorEvidence,
     WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence,
@@ -113,12 +113,9 @@ use traffic::{
 
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
-pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
-    cfg!(feature = "connected-datapath-poll-telemetry");
-pub(crate) const OPEN_RADIO_MAC_IRQ_TELEMETRY: bool = cfg!(feature = "mac-irq-telemetry");
-pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
-pub(crate) const OPEN_RADIO_DRIVER_OBSERVATION: bool = cfg!(feature = "driver-observation");
-pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
+pub(crate) use crate::capabilities::{
+    OPEN_RADIO_DRIVER_OBSERVATION, OPEN_RADIO_TASK_POLL_TELEMETRY, OPEN_RADIO_TCP_CHUNK_CAPACITY,
+};
 
 struct AppNetworkStart {
     station_device: Esp32s31WifiDevice,
@@ -998,46 +995,6 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
     (DIAGNOSTIC_STAGE.load(Ordering::Acquire), 0)
 }
 
-pub const fn hil_capabilities() -> Capabilities {
-    Capabilities {
-        features: FeatureCapabilities {
-            udp: true,
-            tcp: true,
-            rx: true,
-            tx: true,
-            bidirectional: true,
-            runtime_initialization: true,
-            runtime_configuration: true,
-            structured_evidence: true,
-            udp_multi_flow: true,
-            startup_artifact: true,
-            station_epoch_control: true,
-            wifi_role_control: true,
-            wifi_access_point: true,
-            simultaneous_station_access_point: true,
-            wifi_monitor_capture: true,
-            station_lifecycle_events: true,
-            driver_observation_evidence: OPEN_RADIO_DRIVER_OBSERVATION,
-            rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
-            task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
-            tx_architecture_probe: cfg!(feature = "tx-architecture-probes"),
-            core0_rx_cycle_evidence: cfg!(any(
-                feature = "core0-rx-cycle-telemetry",
-                feature = "core0-rx-coarse-telemetry"
-            )),
-            mac_irq_evidence: OPEN_RADIO_MAC_IRQ_TELEMETRY,
-            psram_task_stack: cfg!(feature = "psram-task-stack"),
-            network_scheduler_evidence: false,
-            data_plane_placement: true,
-            timebase_probe: true,
-            ieee802154_event_status_probe: cfg!(feature = "ieee802154-event-status-probe"),
-            ieee802154_ed_event_probe: cfg!(feature = "ieee802154-ed-event-probe"),
-        },
-        maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
-        maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
-    }
-}
-
 #[embassy_executor::task]
 #[allow(
     large_assignments,
@@ -1547,8 +1504,6 @@ pub async fn run(
         rx_checksum,
         tx_udp_checksum,
         tx_buffer,
-        rx_admission,
-        rx_dispatch,
         rx_continuation,
         l1_cache_counters,
         phy_calibration_artifact,
@@ -1569,13 +1524,6 @@ pub async fn run(
         tx_buffer,
         open_esp_radio_hil_protocol::WifiTxBufferPolicy::PsramDirectDmaDiagnostic
     ));
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
-    open_esp_radio_esp32s31_embassy_wifi::configure_direct_immediate_rx_dispatch_for_diagnostics(
-        matches!(
-            rx_dispatch,
-            open_esp_radio_hil_protocol::WifiRxDispatchPolicy::DirectImmediateDiagnostic
-        ),
-    );
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     open_esp_radio_esp32s31_embassy_wifi::configure_interrupt_driven_recycled_append_for_diagnostics(
         matches!(
@@ -1636,12 +1584,6 @@ pub async fn run(
     );
     #[cfg(feature = "driver-observation")]
     let config = config.with_diagnostic_observers(Esp32s31DiagnosticObservers {
-        rx_admission: match rx_admission {
-            open_esp_radio_hil_protocol::WifiRxAdmissionPolicy::SynchronousShared =>
-                open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxAdmission::SynchronousShared,
-            open_esp_radio_hil_protocol::WifiRxAdmissionPolicy::DeferredReadyDiagnostic =>
-                open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxAdmission::DeferredReady,
-        },
         rx_pipeline: {
             #[cfg(any(
                 feature = "mac-irq-telemetry",
@@ -1816,17 +1758,6 @@ pub async fn run(
     // directly, so reporting the ignored selector default would describe a
     // path which is not executing.
     #[cfg(feature = "core0-rx-coarse-telemetry")]
-    let effective_rx_dispatch = match rx_dispatch {
-        open_esp_radio_hil_protocol::WifiRxDispatchPolicy::Asynchronous => "asynchronous",
-        open_esp_radio_hil_protocol::WifiRxDispatchPolicy::DirectImmediateDiagnostic => {
-            "direct-immediate"
-        }
-    };
-    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
-    let effective_rx_dispatch = "direct-immediate";
-    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
-    let _ = rx_dispatch;
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
     let effective_rx_continuation = match rx_continuation {
         open_esp_radio_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe => {
             "immediate-software-probe"
@@ -1859,7 +1790,6 @@ pub async fn run(
         "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
          protocol_core=0 network_core={data_plane_core} rx_checksum={rx_checksum:?} \
          tx_udp_checksum={tx_udp_checksum:?} tx_buffer={tx_buffer:?} \
-         rx_admission={rx_admission:?} rx_dispatch={effective_rx_dispatch} \
          rx_continuation={effective_rx_continuation} \
          l1_cache_counters={l1_cache_counters}",
     ));

@@ -72,23 +72,21 @@ where
         Self::current_channel(self)
     }
 
-    fn switch_channel<'a>(
+    async fn switch_channel<'a>(
         &'a mut self,
         hardware: &'a mut open_esp_radio_esp32s31_hal::RadioRuntimeOwner,
         platform: &'a mut P,
         channel: WifiChannel,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            open_esp_radio_esp32s31_wifi::switch_esp32s31_wifi_channel::<D, _, _>(
-                self.context.phy_mut(),
-                channel,
-                platform,
-                hardware,
-                self.observer,
-            )
-            .await?;
-            self.context.set_current_channel(channel);
-            Ok(())
-        }
+    ) -> Result<(), Self::Error> {
+        open_esp_radio_esp32s31_wifi::switch_esp32s31_wifi_channel::<D, _, _>(
+            self.context.phy_mut(),
+            channel,
+            platform,
+            hardware,
+            self.observer,
+        )
+        .await?;
+        self.context.set_current_channel(channel);
+        Ok(())
     }
 }

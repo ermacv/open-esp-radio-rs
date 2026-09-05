@@ -1,6 +1,9 @@
-#![expect(
-    clippy::result_large_err,
-    reason = "no-alloc monitor shutdown returns the complete RX frontier"
+#![cfg_attr(
+    not(target_arch = "riscv32"),
+    expect(
+        clippy::result_large_err,
+        reason = "no-alloc monitor shutdown returns the complete RX frontier"
+    )
 )]
 
 //! Standalone ESP32-S31 normalized-monitor RX owner.

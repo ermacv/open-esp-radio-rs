@@ -6,12 +6,17 @@
 //! the firmware adapter and the qualification manifest that selects it.
 
 mod framing;
+mod memory_benchmark;
 mod message;
 mod stream_pattern;
 
 pub use framing::{
     DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
     MAX_WIRE_FRAME_BYTES, evidence_crc32c, startup_artifact_crc32c,
+};
+pub use memory_benchmark::{
+    MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource,
+    MemoryBenchmarkStop,
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
@@ -40,9 +45,9 @@ pub use message::{
     WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorFrameChunkError,
     WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiMonitorRequest,
     WifiNetworkInterface, WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason,
-    WifiRoleOperation, WifiRoleTransitionEvidence, WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
-    WifiRxContinuationPolicy, WifiRxDispatchPolicy, WifiScanEvidence, WifiScanRequest,
-    WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence, WifiTxBufferPolicy,
-    WifiTxUdpChecksumPolicy, WireBody, WireKind,
+    WifiRoleOperation, WifiRoleTransitionEvidence, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
+    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
+    WifiStationAccessPointStopEvidence, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy, WireBody,
+    WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

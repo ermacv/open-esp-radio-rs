@@ -34,9 +34,11 @@ Cargo package identities are independent of this directory hierarchy.
 
 `memory` owns backing stability, range proofs and affine handoff; chip DMA
 modules own hardware descriptors and controller transitions. `network/interface`
-is a dependency-free value boundary. The owned and compatibility adapters
-retain separate external network contracts. `network/research` contains an
-experimental engine and physical materializer; its only external repository
+is a dependency-free value boundary. The compatibility adapter uses the
+released Embassy token contract; the owned adapter uses the pinned Git
+Embassy/Xarxa contract and its maintained packet-pool extensions.
+`network/research` contains an experimental engine and physical materializer;
+its only external repository
 consumer is a host test of the materializer. Product radio policy cannot
 depend on either network adapters or research; the architecture audit follows
 transitive normal/build dependencies across their domain paths.
@@ -164,7 +166,9 @@ terminal completion or proven abort returns that storage. The experimental
 research engine uses the shared egress and DMA contracts; its current
 repository consumer is a driver test.
 See the [egress architecture](../docs/wifi-egress.md) for queue,
-materialization and transport contracts.
+materialization, dependency and transport contracts. The released network
+dependencies of the compatibility profile do not remove the product's
+`esp-hal` and `esp-pacs` hardware forks.
 
 Ordinary code and task stacks may execute from PSRAM. DMA-visible storage,
 interrupt/trap stacks and the audited hot/interrupt call graph remain in

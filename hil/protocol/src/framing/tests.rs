@@ -22,6 +22,96 @@ fn command(sequence: u32) -> Envelope<Command> {
 }
 
 #[test]
+fn memory_benchmark_bounds_and_worst_case_evidence_fit_the_wire() {
+    use crate::{
+        MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest,
+        MemoryBenchmarkSource, MemoryBenchmarkStop,
+    };
+    let request = MemoryBenchmarkRequest {
+        mode: MemoryBenchmarkMode::GdmaAsync,
+        source: MemoryBenchmarkSource::Psram,
+        bytes: 1536,
+        frames: 32,
+        iterations: 64,
+    };
+    assert!(request.validate());
+    for frames in [0, 33, u8::MAX] {
+        assert!(!MemoryBenchmarkRequest { frames, ..request }.validate());
+    }
+    for (bytes, frames) in [(4096, 1), (4096, 12), (1514, 32)] {
+        assert!(
+            MemoryBenchmarkRequest {
+                bytes,
+                frames,
+                ..request
+            }
+            .validate()
+        );
+    }
+    for (bytes, frames) in [(4096, 13), (1537, 32)] {
+        assert!(
+            !MemoryBenchmarkRequest {
+                bytes,
+                frames,
+                ..request
+            }
+            .validate()
+        );
+    }
+    for bytes in [0, 4097, u16::MAX] {
+        assert!(!MemoryBenchmarkRequest { bytes, ..request }.validate());
+    }
+    for iterations in [0, 65, u16::MAX] {
+        assert!(
+            !MemoryBenchmarkRequest {
+                iterations,
+                ..request
+            }
+            .validate()
+        );
+    }
+    assert!(
+        MemoryBenchmarkRequest {
+            bytes: 1,
+            iterations: 1,
+            ..request
+        }
+        .validate()
+    );
+    let command = Envelope::new(7, 3, 0, 2, Command::ProbeMemoryBenchmark(request));
+    let mut encoder = FrameEncoder::new();
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&command).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(command));
+    let event = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Event::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
+            request,
+            completed_iterations: u16::MAX,
+            elapsed_micros: u64::MAX,
+            elapsed_cycles: u64::MAX,
+            elapsed_instructions: u64::MAX,
+            foreground_cycles: u64::MAX,
+            foreground_instructions: u64::MAX,
+            polls: u32::MAX,
+            stop: MemoryBenchmarkStop::GuardCorrupted,
+        }),
+    );
+    let frame = encoder.encode(&event).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(event));
+}
+
+#[test]
 fn command_envelope_remains_small_enough_for_embedded_queues() {
     let size = core::mem::size_of::<Envelope<Command>>();
     // The largest command owns two independent WPA2 credential sets for

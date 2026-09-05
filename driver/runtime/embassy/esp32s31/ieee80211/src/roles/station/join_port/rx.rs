@@ -1,5 +1,3 @@
-use core::future::Future;
-
 use open_esp_radio_esp32s31_wifi_mac::init::MacRuntimeStopHardware;
 use open_esp_radio_esp32s31_wifi_mac::rx::{RxDma, RxIngressConfig, RxSegment, extract_management};
 use open_esp_radio_esp32s31_wifi_sta::join::Esp32s31StaJoinReceive;
@@ -55,21 +53,16 @@ where
 {
     type Error = Esp32s31RxFrontierError;
 
-    fn start<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            let started = if self.owner.phase() == Esp32s31RxFrontierPhase::Live {
-                Ok(())
-            } else {
-                self.owner.start_with_storage(hardware, self.storage).await
-            };
-            if started.is_ok() {
-                hardware.resume_mac_runtime();
-            }
-            started
+    async fn start<'a>(&'a mut self, hardware: &'a mut H) -> Result<(), Self::Error> {
+        let started = if self.owner.phase() == Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            self.owner.start_with_storage(hardware, self.storage).await
+        };
+        if started.is_ok() {
+            hardware.resume_mac_runtime();
         }
+        started
     }
 
     fn stop(&mut self, _hardware: &mut H) -> Result<(), Self::Error> {

@@ -1,6 +1,9 @@
-#![expect(
-    clippy::result_large_err,
-    reason = "no-alloc scan shutdown returns the complete RX frontier"
+#![cfg_attr(
+    not(target_arch = "riscv32"),
+    expect(
+        clippy::result_large_err,
+        reason = "no-alloc scan shutdown returns the complete RX frontier"
+    )
 )]
 
 //! Scan-specific view over the role-neutral ESP32-S31 RX-ring owner.

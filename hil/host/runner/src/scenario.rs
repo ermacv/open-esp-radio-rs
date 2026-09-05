@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use std::{fs, path::Path};
 
 use open_esp_radio_hil_protocol::{
-    WifiAccessPointSecurity, WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
-    WifiRxContinuationPolicy, WifiRxDispatchPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
+    WifiAccessPointSecurity, WifiDataPlanePlacement, WifiRxChecksumPolicy,
+    WifiRxContinuationPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +51,10 @@ pub enum AccessPointClient {
 
 const fn default_access_point_security() -> WifiAccessPointSecurity {
     WifiAccessPointSecurity::Wpa2Personal
+}
+
+fn single_frame_batch() -> Vec<u8> {
+    vec![1]
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -141,6 +145,13 @@ impl PhyExpectation {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Workload {
     BootSmoke,
+    MemoryBenchmark {
+        boots: u8,
+        iterations: u16,
+        sizes: Vec<u16>,
+        #[serde(default = "single_frame_batch")]
+        batch_sizes: Vec<u8>,
+    },
     Timebase {
         boots: u8,
         intervals: u16,
@@ -320,10 +331,6 @@ pub struct Scenario {
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
     #[serde(default)]
     pub tx_buffer: WifiTxBufferPolicy,
-    #[serde(default)]
-    pub rx_admission: WifiRxAdmissionPolicy,
-    #[serde(default)]
-    pub rx_dispatch: WifiRxDispatchPolicy,
     #[serde(default)]
     pub rx_continuation: WifiRxContinuationPolicy,
     #[serde(default)]

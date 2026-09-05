@@ -4,8 +4,6 @@
 //! This module only adapts the concrete retained DMA frontier and control-TX
 //! owner used by the Embassy integration.
 
-use core::future::Future;
-
 use open_esp_radio_esp32s31_wifi_mac::rx::{RxDma, RxIngressConfig, extract_data};
 use open_esp_radio_esp32s31_wifi_sta::wpa2::{
     Esp32s31Wpa2Receive, Esp32s31Wpa2Station, copy_station_eapol,
@@ -102,16 +100,11 @@ where
         })
     }
 
-    fn restart<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            if self.owner.phase() == crate::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live {
-                Ok(())
-            } else {
-                self.owner.start_with_storage(hardware, self.storage).await
-            }
+    async fn restart<'a>(&'a mut self, hardware: &'a mut H) -> Result<(), Self::Error> {
+        if self.owner.phase() == crate::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            self.owner.start_with_storage(hardware, self.storage).await
         }
     }
 

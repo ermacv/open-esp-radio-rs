@@ -13,14 +13,16 @@
 mod address;
 mod checksum;
 mod engine;
+mod payload;
 mod physical;
 mod work;
 
 pub use address::{Ipv4Address, MacAddress, ResolvedIpv4Route, UdpEndpoint};
 pub use engine::{
     EngineCounters, IngressDisposition, IngressReport, RadioRouteClassifier, ResearchNetworkConfig,
-    ResearchNetworkEngine, TxEnqueueError, UdpDatagram,
+    ResearchNetworkEngine, TxEnqueueError, TxEnqueueFailure, UdpDatagram,
 };
+pub use payload::InlinePayload;
 pub use physical::{
     PinnedBatchAllocator, PinnedBatchResources, PinnedResearchTxFrame, PinnedReservedTxBatch,
 };

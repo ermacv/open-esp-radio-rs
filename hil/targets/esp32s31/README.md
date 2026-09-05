@@ -68,10 +68,84 @@ and its persistent observation resources; its `traffic`, `ieee802154` and
 `rx_qualification` children own workload and observation duties. The value-only
 `rx_statistics` child owns RX counter deltas and wire-evidence conversion.
 `console` retains the coupled UART/session admission, logger serialization
-and emergency writer lifecycle. Separating these owners requires an explicit
-state handoff, not a folder or type-name rewrite.
+and emergency writer lifecycle. Its `radio` child supplies the product-facing
+startup, session and Wi-Fi completion endpoints; memory-only images exclude
+that child while retaining the common command admission rules.
+
+The `diagnostic-memory-benchmark` image excludes `product_hil` and its radio
+and network tasks at compile time. It keeps the shared two-core boot,
+executors, stack placement and HIL console; CPU1 publishes its spawner but
+does not start a network task. The memory task alone claims AXI-GDMA and its
+dedicated buffers. Image capability advertisement belongs to `capabilities`,
+so reporting memory support does not retain the product owner graph. Its
+4,096-byte maximum payload describes the per-frame benchmark command policy,
+independently of the product TCP buffer size.
 
 HIL retains its workload-specific `stack.toml` and diagnostic observers.
 Board initialization, relocation and interrupt-stack mechanics belong to the
 shared platform; application images use the same mechanism through `cargo xtask
 build firmware`. A hardware scenario verdict remains a separate HIL responsibility.
+
+## Memory copy measurements
+
+`diagnostic-memory-benchmark` exposes `ProbeMemoryBenchmark` before radio
+initialization. Run the `memory-copy-benchmark` scenario through `cargo hil`;
+normal radio initialization is unsupported in this image. The task owns
+AXI-GDMA channel 0 and dedicated static allocations. This image is separate
+from the startup GDMA/SG probe used by `diagnostic-tx-architecture`.
+
+Each request selects CPU copy, blocking GDMA or asynchronous GDMA, an SRAM or
+PSRAM source, 1–4096 payload bytes per frame, 1–32 frames and 1–64 measured
+iterations. Total payload per iteration is bounded to 49,152 bytes. Four
+verified warmup iterations precede the measurements. All modes use separate
+frame slots with a common stride: `round_up_64(36 + payload_bytes + 1)`.
+Sources start on isolated cache-line boundaries; each internal-SRAM destination
+starts at offset 36 with guards before and after its payload. The extra byte
+ensures a suffix guard even when payload plus offset ends on a cache line.
+
+Each source and destination arena contains 52,352 bytes, covering the maximum
+payload plus bounded per-frame placement overhead. The task owns one source
+arena in SRAM, one in PSRAM and one destination arena in SRAM; it reuses these
+across requests. Two SRAM descriptor arrays retain 64 items each, 2,048 bytes
+in total. GDMA uses the platform's 32-byte burst setting and descriptor builder;
+these are experiment policies, not claimed hardware limits.
+
+Every iteration writes the source, poisons each destination payload with the
+source's complement and fills guards before timing.
+This is a CPU-written source condition, not a cold-cache measurement. The
+CPU mode copies the frame slots in a loop. GDMA mode builds one segment list
+and submits one descriptor chain per iteration. The measured operation includes
+segment-list construction, GDMA preparation, per-segment cache writeback,
+publication, completion and cleanup. Source conditioning, full payload/guard verification,
+between-iteration yields and UART reporting are outside the interval. Each
+reported total sums only measured iterations. The counter boundaries use
+compiler memory barriers and RV32 high/low/high reads of the 64-bit cycle and
+instruction counters. Monotonic elapsed microseconds remain separate from
+cycles; counters do not establish CPU utilization or energy consumption.
+
+A memory fence drains source/destination conditioning before timing starts.
+All modes end their measured operation with the same `fence rw, rw` and
+compiler barriers, so CPU-copy return and GDMA completion share the boundary
+for publishing SRAM data to another memory owner. This final fence is also
+included in asynchronous foreground cleanup. It does not replace the explicit
+PSRAM cache writeback performed by GDMA preparation.
+
+Foreground counters cover the entire synchronous operation. For asynchronous
+GDMA they cover preparation/start, calls to the transfer's `poll`, and cleanup.
+They exclude executor and IRQ work outside those windows, while interrupts
+inside a window remain included. Sampling overhead is included and can matter
+for small copies. The diagnostic does not instrument the DMA ISR separately.
+
+Asynchronous transfer waiting has a 100-ms timeout; the blocking baseline has
+a finite 100,000-poll budget. These do not bound synchronous HAL cache
+preparation: the pinned HAL waits for cache synchronization under its shared
+lock. The host applies a separate 15-second command deadline. A stuck cache
+operation requires board reset; it cannot produce a target timeout response.
+A returned transfer, data or guard failure quarantines the static allocations
+and rejects subsequent benchmark commands until reset. Correctness includes
+all measured iterations, not only descriptor completion.
+
+The single-frame and batch scenarios compare the same image, placement and
+conditioning with different frame counts. The batch measures AXI-GDMA
+scatter/gather staging; it does not measure direct Wi-Fi DMA into PSRAM,
+scatter/gather within a Wi-Fi MPDU or an integrated native radio datapath.

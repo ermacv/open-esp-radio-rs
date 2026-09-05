@@ -1,6 +1,81 @@
 use super::*;
 
 #[test]
+fn memory_batch_catalog_preserves_single_defaults_and_rejects_invalid_cross_products() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let scenario = catalog.get("memory-copy-batch-benchmark").unwrap();
+    let Workload::MemoryBenchmark { batch_sizes, .. } = &scenario.workload else {
+        panic!("memory workload expected")
+    };
+    assert_eq!(batch_sizes, &[1, 2, 8, 32]);
+    let legacy: Workload =
+        toml::from_str("kind='memory-benchmark'\nboots=2\niterations=32\nsizes=[4096]\n").unwrap();
+    let Workload::MemoryBenchmark { batch_sizes, .. } = legacy else {
+        panic!("memory workload expected")
+    };
+    assert_eq!(batch_sizes, [1]);
+    for (sizes, batch_sizes) in [
+        (vec![64], vec![]),
+        (vec![64], vec![0]),
+        (vec![64], vec![33]),
+        (vec![64], vec![1, 1]),
+        (vec![64, 4096], vec![1, 32]),
+        (vec![1537], vec![32]),
+    ] {
+        let mut changed = scenario.clone();
+        changed.workload = Workload::MemoryBenchmark {
+            boots: 2,
+            iterations: 32,
+            sizes,
+            batch_sizes,
+        };
+        assert!(changed.validate().is_err());
+    }
+}
+
+#[test]
+fn memory_benchmark_rejects_wrong_image_network_evidence_and_invalid_sizes() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let catalog = Catalog::load(&root).unwrap();
+    let scenario = catalog.get("memory-copy-benchmark").unwrap();
+    let mut changed = scenario.clone();
+    changed.image = ImageClass::Performance;
+    assert!(changed.validate().is_err());
+    changed = scenario.clone();
+    changed.workload = Workload::Timebase {
+        boots: 1,
+        intervals: 2,
+        period_millis: 10,
+    };
+    assert!(changed.validate().is_err());
+    changed = scenario.clone();
+    changed.evidence.independent_laptop_air_monitor = true;
+    assert!(changed.validate().is_err());
+    changed = scenario.clone();
+    changed.criteria.minimum_rx_bps = Some(1);
+    assert!(changed.validate().is_err());
+    for (boots, iterations, sizes) in [
+        (0, 32, vec![64]),
+        (1, 0, vec![64]),
+        (1, 65, vec![64]),
+        (1, 32, vec![]),
+        (1, 32, vec![0]),
+        (1, 32, vec![4097]),
+        (1, 32, vec![64, 64]),
+    ] {
+        changed = scenario.clone();
+        changed.workload = Workload::MemoryBenchmark {
+            boots,
+            iterations,
+            sizes,
+            batch_sizes: vec![1],
+        };
+        assert!(changed.validate().is_err());
+    }
+}
+
+#[test]
 fn repository_catalog_is_valid_and_unique() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
@@ -337,31 +412,27 @@ fn core0_cycle_image_cannot_overrun_its_u32_accumulators() {
 }
 
 #[test]
-fn deferred_ready_admission_is_a_same_image_core0_control() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
-    let catalog = Catalog::load(&root).unwrap();
-    let deferred = catalog
-        .get("udp-rx-ht40-core0-rx-deferred-ready-diagnostic")
-        .unwrap();
-    let synchronous = catalog
-        .get("udp-rx-ht40-core0-rx-cycles-diagnostic")
-        .unwrap();
-    assert_eq!(deferred.image, synchronous.image);
-    assert_eq!(deferred.workload, synchronous.workload);
-    assert_eq!(deferred.link, synchronous.link);
-    assert_eq!(deferred.evidence, synchronous.evidence);
-    assert_eq!(
-        deferred.rx_admission,
-        WifiRxAdmissionPolicy::DeferredReadyDiagnostic
+fn unsupported_rx_admission_selector_is_rejected_when_loading_scenarios() {
+    let source = include_str!(
+        "../../../../scenarios/ieee80211/station/udp-rx-ht40-core0-rx-cycles-diagnostic.toml"
     );
-    assert_eq!(
-        synchronous.rx_admission,
-        WifiRxAdmissionPolicy::SynchronousShared
-    );
+    for value in ["synchronous-shared", "deferred-ready-diagnostic"] {
+        let source = format!("rx_admission = \"{value}\"\n{source}");
+        let error = toml::from_str::<Scenario>(&source).unwrap_err();
+        assert!(error.to_string().contains("unknown field `rx_admission`"));
+    }
+}
 
-    let mut wrong_image = deferred.clone();
-    wrong_image.image = ImageClass::DiagnosticTaskPoll;
-    assert!(wrong_image.validate().is_err());
+#[test]
+fn unsupported_rx_dispatch_selector_is_rejected_when_loading_scenarios() {
+    let source = include_str!(
+        "../../../../scenarios/ieee80211/station/udp-rx-ht40-core0-coarse-diagnostic.toml"
+    );
+    for value in ["asynchronous", "direct-immediate-diagnostic"] {
+        let source = format!("rx_dispatch = \"{value}\"\n{source}");
+        let error = toml::from_str::<Scenario>(&source).unwrap_err();
+        assert!(error.to_string().contains("unknown field `rx_dispatch`"));
+    }
 }
 
 #[test]
@@ -381,7 +452,6 @@ fn l1_cache_counter_control_is_a_same_image_core0_control() {
     assert_eq!(enabled.isolation, disabled.isolation);
     assert_eq!(enabled.data_plane, disabled.data_plane);
     assert_eq!(enabled.rx_checksum, disabled.rx_checksum);
-    assert_eq!(enabled.rx_admission, disabled.rx_admission);
     assert_eq!(enabled.workload, disabled.workload);
     assert_eq!(enabled.link, disabled.link);
     assert_eq!(enabled.criteria, disabled.criteria);
@@ -411,8 +481,6 @@ fn checksum_control_changes_only_the_runtime_checksum_policy() {
     assert_eq!(software.image, assume_valid.image);
     assert_eq!(software.isolation, assume_valid.isolation);
     assert_eq!(software.data_plane, assume_valid.data_plane);
-    assert_eq!(software.rx_admission, assume_valid.rx_admission);
-    assert_eq!(software.rx_dispatch, assume_valid.rx_dispatch);
     assert_eq!(software.rx_continuation, assume_valid.rx_continuation);
     assert_eq!(software.l1_cache_counters, assume_valid.l1_cache_counters);
     assert_eq!(software.workload, assume_valid.workload);
@@ -440,8 +508,6 @@ fn tx_checksum_control_changes_only_the_runtime_checksum_policy() {
     assert_eq!(software.isolation, omit.isolation);
     assert_eq!(software.data_plane, omit.data_plane);
     assert_eq!(software.rx_checksum, omit.rx_checksum);
-    assert_eq!(software.rx_admission, omit.rx_admission);
-    assert_eq!(software.rx_dispatch, omit.rx_dispatch);
     assert_eq!(software.rx_continuation, omit.rx_continuation);
     assert_eq!(software.l1_cache_counters, omit.l1_cache_counters);
     assert_eq!(software.workload, omit.workload);
@@ -542,7 +608,7 @@ fn ap_ht40_ceiling_separates_performance_from_observed_correctness() {
 }
 
 #[test]
-fn ap_rx_core0_control_uses_the_production_dispatch_and_continuation_policy() {
+fn ap_rx_core0_control_uses_the_production_continuation_policy() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
     let scenario = catalog
@@ -550,10 +616,6 @@ fn ap_rx_core0_control_uses_the_production_dispatch_and_continuation_policy() {
         .unwrap();
 
     assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
-    assert_eq!(
-        scenario.rx_dispatch,
-        WifiRxDispatchPolicy::DirectImmediateDiagnostic
-    );
     assert_eq!(
         scenario.rx_continuation,
         WifiRxContinuationPolicy::AdaptiveProbeDiagnostic
@@ -575,7 +637,6 @@ fn ap_rx_core0_control_uses_the_production_dispatch_and_continuation_policy() {
         .get("access-point-single-client-ceiling-rx-core0-cycles")
         .unwrap();
     assert_eq!(cycles.image, ImageClass::DiagnosticCore0RxCycles);
-    assert_eq!(cycles.rx_dispatch, scenario.rx_dispatch);
     assert_eq!(cycles.rx_continuation, scenario.rx_continuation);
     assert_eq!(cycles.workload, scenario.workload);
 }

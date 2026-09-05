@@ -66,6 +66,7 @@ tx-psram-dma-probe = [
 ]
 # Diagnostic-only PSRAM-to-SRAM promotion benchmark. It claims AXI-GDMA
 # channel 0 before radio startup and releases it before any workload begins.
+memory-benchmark = ["open-radio-hil", "open-esp-radio-esp32s31-platform-pac/psram-dma-diagnostic"]
 gdma-mem2mem-probe = ["open-esp-radio-esp32s31-platform-pac/psram-dma-diagnostic"]
 # General task-poll diagnostic. Driver observation remains available for the
 # existing RX/TX/AP diagnostic scenarios, but Core0 per-phase accounting is

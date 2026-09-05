@@ -36,9 +36,33 @@ fn parses_strict_v4_toml() {
     );
     assert_eq!(manifest.capabilities[0].host, HostProof::Covered);
     assert_eq!(manifest.capabilities[0].async_proof, AsyncProof::Bounded);
+    assert!(manifest.capabilities[0].source_contracts.is_empty());
     assert_eq!(
         manifest.capabilities[0].hil_requirements[0].minimum_repetitions,
         3
+    );
+}
+
+#[test]
+fn source_contracts_attach_to_existing_capability_without_adding_roots() {
+    let input = format!(
+        "{COMPLETE}\n{}",
+        r#"
+[[capabilities.source-contracts]]
+id = "alternative-dma-path"
+composition = "unimplemented"
+scope = "Alternative peripheral backing"
+limits = "Hardware reachability is unknown"
+source-paths = ["Cargo.toml"]
+"#
+    );
+    let manifest: ManifestDocument = toml_edit::de::from_str(&input).unwrap();
+    assert_eq!(manifest.required_capabilities, ["channel-switch"]);
+    assert_eq!(manifest.capabilities.len(), 1);
+    assert_eq!(manifest.capabilities[0].source_contracts.len(), 1);
+    assert_eq!(
+        manifest.capabilities[0].implementation,
+        ImplementationProof::Complete
     );
 }
 
@@ -115,6 +139,7 @@ fn dependency_cycles_fail_closed() {
         dependencies: vec![dependency.to_owned()],
         gaps: Vec::new(),
         evidence: Vec::new(),
+        source_contracts: Vec::new(),
     };
     let capabilities = BTreeMap::from([
         ("a".to_owned(), capability("a", "b")),

@@ -298,6 +298,11 @@ impl<
         length: usize,
         write: impl FnOnce(&mut [u8]) -> Result<(), WriteError>,
     ) -> Result<(), BatchWriteError<WriteError>> {
+        if length > FRAME_CAPACITY {
+            return Err(BatchWriteError::FrameTooLong {
+                capacity: FRAME_CAPACITY,
+            });
+        }
         let Some(position) = self.reserved.iter().position(Option::is_some) else {
             return Err(BatchWriteError::Exhausted);
         };

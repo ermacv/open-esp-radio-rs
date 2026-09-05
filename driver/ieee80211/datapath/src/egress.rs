@@ -137,6 +137,10 @@ pub trait DeferredTxWork {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BatchWriteError<WriteError> {
     Exhausted,
+    /// The frame cannot fit this batch's slots, even after credits return.
+    FrameTooLong {
+        capacity: usize,
+    },
     Write(WriteError),
 }
 
@@ -161,6 +165,11 @@ pub enum FillStopReason {
     SelectionSatisfied,
     SourceDrained,
     DestinationExhausted,
+    /// The current source is retained. Use a larger destination or reject the
+    /// work at its owner; waiting for more identical slots cannot make progress.
+    FrameTooLong {
+        capacity: usize,
+    },
     ByteBudget,
 }
 
@@ -412,6 +421,9 @@ impl<Work: DeferredTxWork, const FLOW_CAPACITY: usize, const WORK_CAPACITY: usiz
             }) {
                 Ok(()) => {}
                 Err(BatchWriteError::Exhausted) => break FillStopReason::DestinationExhausted,
+                Err(BatchWriteError::FrameTooLong { capacity }) => {
+                    break FillStopReason::FrameTooLong { capacity };
+                }
                 Err(BatchWriteError::Write(error)) => {
                     return Err(FillFailure {
                         error,

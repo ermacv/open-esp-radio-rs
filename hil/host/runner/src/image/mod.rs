@@ -26,6 +26,7 @@ struct ImageCapabilitySignature {
     ieee802154_event_status: bool,
     ieee802154_ed_event: bool,
     psram_task_stack: bool,
+    memory_benchmark: bool,
 }
 
 pub(crate) fn classify_flashed_capabilities(
@@ -41,6 +42,7 @@ pub(crate) fn classify_flashed_capabilities(
         ieee802154_event_status: features.ieee802154_event_status_probe,
         ieee802154_ed_event: features.ieee802154_ed_event_probe,
         psram_task_stack: features.psram_task_stack,
+        memory_benchmark: features.memory_benchmark,
     })
 }
 
@@ -48,6 +50,22 @@ fn classify_image_signature(
     signature: ImageCapabilitySignature,
 ) -> Option<crate::image::ImageClass> {
     use crate::image::ImageClass;
+
+    if signature.memory_benchmark {
+        let expected = ImageCapabilitySignature {
+            driver_observation: false,
+            task_poll: false,
+            tx_architecture_probe: false,
+            core0_rx_cycles: false,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            ieee802154_ed_event: false,
+            psram_task_stack: true,
+            memory_benchmark: true,
+        };
+        return (signature == expected).then_some(ImageClass::DiagnosticMemoryBenchmark);
+    }
 
     if signature.tx_architecture_probe {
         let expected = ImageCapabilitySignature {
@@ -60,6 +78,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         };
         return (signature == expected).then_some(ImageClass::DiagnosticTxArchitecture);
     }
@@ -75,6 +94,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::Performance),
         ImageCapabilitySignature {
             driver_observation: true,
@@ -86,6 +106,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::Correctness),
         ImageCapabilitySignature {
             driver_observation: true,
@@ -97,6 +118,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticMacIrq),
         ImageCapabilitySignature {
             driver_observation: true,
@@ -108,6 +130,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticTaskPoll),
         ImageCapabilitySignature {
             driver_observation: false,
@@ -119,6 +142,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticCore0RxCoarse),
         ImageCapabilitySignature {
             driver_observation: true,
@@ -130,6 +154,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticCore0RxCycles),
         ImageCapabilitySignature {
             driver_observation: false,
@@ -141,6 +166,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticTaskResidence),
         ImageCapabilitySignature {
             driver_observation: true,
@@ -152,6 +178,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticRxDelivery),
         ImageCapabilitySignature {
             driver_observation: false,
@@ -163,6 +190,7 @@ fn classify_image_signature(
             ieee802154_event_status: true,
             ieee802154_ed_event: false,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticIeee802154EventStatus),
         ImageCapabilitySignature {
             driver_observation: false,
@@ -174,6 +202,7 @@ fn classify_image_signature(
             ieee802154_event_status: false,
             ieee802154_ed_event: true,
             psram_task_stack: true,
+            memory_benchmark: false,
         } => Some(ImageClass::DiagnosticIeee802154EdEvent),
         _ => None,
     }
@@ -680,24 +709,49 @@ pub(crate) fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
 fn audit_runtime(elf: &Path, binary: &Path, class: crate::image::ImageClass) -> Result<String> {
     let report = oer_firmware::audit_runtime(elf, binary, class.uses_psram_task_stack())
         .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
-    if class != crate::image::ImageClass::BootSmoke {
-        use object::{Object, ObjectSection, ObjectSymbol};
-        let bytes = fs::read(elf)?;
-        let object = object::File::parse(bytes.as_slice())?;
-        let section = object
-            .section_by_name(".critical.data")
-            .ok_or("missing critical data")?;
-        let range = section.address()..section.address() + section.size();
-        for expected in ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"] {
-            if !object.symbols().any(|symbol| {
-                symbol.name().is_ok_and(|name| name.contains(expected))
-                    && range.contains(&symbol.address())
-            }) {
-                return Err(format!("HIL observer {expected} is outside critical data").into());
-            }
+    use object::{Object, ObjectSection, ObjectSymbol};
+    let bytes = fs::read(elf)?;
+    let object = object::File::parse(bytes.as_slice())?;
+    let critical = object
+        .section_by_name(".critical.data")
+        .map(|section| section.address()..section.address() + section.size());
+    audit_radio_observers(
+        class,
+        critical,
+        object
+            .symbols()
+            .filter_map(|symbol| symbol.name().ok().map(|name| (name, symbol.address()))),
+    )?;
+    Ok(report)
+}
+
+/// Radio compositions retain their observer state in critical SRAM. Images
+/// without a radio composition still pass the shared firmware/stack audits,
+/// but have no radio observer storage to require.
+fn audit_radio_observers<'a>(
+    class: ImageClass,
+    critical: Option<std::ops::Range<u64>>,
+    symbols: impl Iterator<Item = (&'a str, u64)>,
+) -> Result<()> {
+    if matches!(
+        class,
+        ImageClass::BootSmoke | ImageClass::DiagnosticMemoryBenchmark
+    ) {
+        return Ok(());
+    }
+    let range = critical.ok_or("missing critical data for HIL radio observers")?;
+    let symbols: Vec<_> = symbols.collect();
+    for expected in ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"] {
+        if !symbols
+            .iter()
+            .any(|(name, address)| name.contains(expected) && range.contains(address))
+        {
+            return Err(
+                format!("HIL observer {expected} is missing or outside critical data").into(),
+            );
         }
     }
-    Ok(report)
+    Ok(())
 }
 
 #[cfg(test)]

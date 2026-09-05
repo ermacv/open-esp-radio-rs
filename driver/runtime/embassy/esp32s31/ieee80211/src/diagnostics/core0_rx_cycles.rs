@@ -77,9 +77,6 @@ pub struct Core0RxCycleSnapshot {
     pub protocol_dispatch_capture: u32,
     pub protocol_dispatch_post_publish: u32,
     pub protocol_frame_publish_tail: u32,
-    pub protocol_publication_observer: u32,
-    pub protocol_publication_in_place: u32,
-    pub protocol_publication_shared: u32,
     pub protocol_protected_view_calls: u32,
     pub protocol_protected_view_cycles: u32,
     pub ccmp_view_calls: u32,
@@ -105,7 +102,6 @@ pub struct Core0RxCycleSnapshot {
     pub telemetry_protocol_entry_record: u32,
     pub telemetry_protocol_frame_record: u32,
     pub telemetry_data_record: u32,
-    pub telemetry_publication_record: u32,
 }
 
 impl Core0RxCycleSnapshot {
@@ -254,15 +250,6 @@ impl Core0RxCycleSnapshot {
             protocol_frame_publish_tail: self
                 .protocol_frame_publish_tail
                 .wrapping_sub(earlier.protocol_frame_publish_tail),
-            protocol_publication_observer: self
-                .protocol_publication_observer
-                .wrapping_sub(earlier.protocol_publication_observer),
-            protocol_publication_in_place: self
-                .protocol_publication_in_place
-                .wrapping_sub(earlier.protocol_publication_in_place),
-            protocol_publication_shared: self
-                .protocol_publication_shared
-                .wrapping_sub(earlier.protocol_publication_shared),
             protocol_protected_view_calls: self
                 .protocol_protected_view_calls
                 .wrapping_sub(earlier.protocol_protected_view_calls),
@@ -316,9 +303,6 @@ impl Core0RxCycleSnapshot {
             telemetry_data_record: self
                 .telemetry_data_record
                 .wrapping_sub(earlier.telemetry_data_record),
-            telemetry_publication_record: self
-                .telemetry_publication_record
-                .wrapping_sub(earlier.telemetry_publication_record),
         }
     }
 }
@@ -389,9 +373,6 @@ pub struct Core0RxCycleCounters {
     protocol_dispatch_capture: AtomicU32,
     protocol_dispatch_post_publish: AtomicU32,
     protocol_frame_publish_tail: AtomicU32,
-    protocol_publication_observer: AtomicU32,
-    protocol_publication_in_place: AtomicU32,
-    protocol_publication_shared: AtomicU32,
     data_calls: AtomicU32,
     data_completed: AtomicU32,
     data_total: AtomicU32,
@@ -408,7 +389,6 @@ pub struct Core0RxCycleCounters {
     telemetry_protocol_entry_record: AtomicU32,
     telemetry_protocol_frame_record: AtomicU32,
     telemetry_data_record: AtomicU32,
-    telemetry_publication_record: AtomicU32,
     active_poll_started: AtomicU32,
     active_poll_generation: AtomicU32,
     active_poll_runner_end: AtomicU32,
@@ -489,9 +469,6 @@ impl Core0RxCycleCounters {
             protocol_dispatch_capture: AtomicU32::new(0),
             protocol_dispatch_post_publish: AtomicU32::new(0),
             protocol_frame_publish_tail: AtomicU32::new(0),
-            protocol_publication_observer: AtomicU32::new(0),
-            protocol_publication_in_place: AtomicU32::new(0),
-            protocol_publication_shared: AtomicU32::new(0),
             data_calls: AtomicU32::new(0),
             data_completed: AtomicU32::new(0),
             data_total: AtomicU32::new(0),
@@ -508,7 +485,6 @@ impl Core0RxCycleCounters {
             telemetry_protocol_entry_record: AtomicU32::new(0),
             telemetry_protocol_frame_record: AtomicU32::new(0),
             telemetry_data_record: AtomicU32::new(0),
-            telemetry_publication_record: AtomicU32::new(0),
             active_poll_started: AtomicU32::new(0),
             active_poll_generation: AtomicU32::new(0),
             active_poll_runner_end: AtomicU32::new(0),
@@ -643,13 +619,6 @@ impl Core0RxCycleCounters {
                 .protocol_dispatch_post_publish
                 .load(Ordering::Relaxed),
             protocol_frame_publish_tail: self.protocol_frame_publish_tail.load(Ordering::Relaxed),
-            protocol_publication_observer: self
-                .protocol_publication_observer
-                .load(Ordering::Relaxed),
-            protocol_publication_in_place: self
-                .protocol_publication_in_place
-                .load(Ordering::Relaxed),
-            protocol_publication_shared: self.protocol_publication_shared.load(Ordering::Relaxed),
             protocol_protected_view_calls,
             protocol_protected_view_cycles,
             ccmp_view_calls: ccmp_view.calls,
@@ -681,7 +650,6 @@ impl Core0RxCycleCounters {
                 .telemetry_protocol_frame_record
                 .load(Ordering::Relaxed),
             telemetry_data_record: self.telemetry_data_record.load(Ordering::Relaxed),
-            telemetry_publication_record: self.telemetry_publication_record.load(Ordering::Relaxed),
         }
     }
 
@@ -898,21 +866,6 @@ impl Core0RxCycleCounters {
         self.protocol_frame_publish_tail
             .fetch_add(profile.publish_tail, Ordering::Relaxed);
         self.telemetry_protocol_frame_record.fetch_add(
-            cycle_count().wrapping_sub(telemetry_started),
-            Ordering::Relaxed,
-        );
-    }
-
-    #[inline(always)]
-    pub(crate) fn record_protocol_publication(&self, observer: u32, in_place: u32, shared: u32) {
-        let telemetry_started = cycle_count();
-        self.protocol_publication_observer
-            .fetch_add(observer, Ordering::Relaxed);
-        self.protocol_publication_in_place
-            .fetch_add(in_place, Ordering::Relaxed);
-        self.protocol_publication_shared
-            .fetch_add(shared, Ordering::Relaxed);
-        self.telemetry_publication_record.fetch_add(
             cycle_count().wrapping_sub(telemetry_started),
             Ordering::Relaxed,
         );

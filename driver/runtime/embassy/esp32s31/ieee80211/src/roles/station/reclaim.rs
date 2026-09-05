@@ -262,6 +262,10 @@ pub enum Esp32s31StationRuntimeReclaimFailure<O> {
 /// context after the logical role returns its phase owners. The physical IRQ
 /// epoch may remain installed and moves unchanged into the next role.
 #[allow(clippy::type_complexity)]
+#[expect(
+    clippy::result_large_err,
+    reason = "recovery returns the unchanged affine phase and its hardware owners without allocation"
+)]
 pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
     phase: Esp32s31StationServicePhase<
         RadioRuntimeOwner,
@@ -433,6 +437,10 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
 /// Republish a role-neutral PAC into the exact arena retained by a stopped
 /// connected phase, or directly restore a scan/join phase.
 #[allow(clippy::type_complexity)]
+#[expect(
+    clippy::result_large_err,
+    reason = "recovery returns the unchanged affine phase and its hardware owners without allocation"
+)]
 pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
     registers: RadioRuntimeOwner,
     resources: Esp32s31StationStoppedPhaseResources<'arena, S, J, N, DN, DR, A, C, E>,
@@ -547,6 +555,10 @@ pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
 /// candidate replaces the old peer before join. No DMA operation is started
 /// or stopped here.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
+#[expect(
+    clippy::result_large_err,
+    reason = "recovery returns the unchanged affine phase and its hardware owners without allocation"
+)]
 pub fn try_rebind_esp32s31_station_phase<
     'arena,
     'storage,
@@ -755,6 +767,10 @@ where
 /// direct or arena-backed PAC owner, and only afterward decomposes persistent
 /// runtime resources. Both failure variants retain the original owner.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
+#[expect(
+    clippy::result_large_err,
+    reason = "recovery returns the unchanged affine phase and its hardware owners without allocation"
+)]
 pub fn try_reclaim_esp32s31_station_runtime<
     'role,
     'storage,

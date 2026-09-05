@@ -96,6 +96,83 @@ gaps = [
   { axis = "vendor", id = "dma-root-contracts-not-executable" },
 ]
 
+# Source-path reference metadata; these entries do not add readiness axes.
+[[capabilities.source-contracts]]
+id = "wifi-sram-dma"
+composition = "production"
+scope = "Wi-Fi MAC RX rings and ordinary TX own descriptors and physical packet storage in internal DMA SRAM"
+limits = "Address admission and storage placement describe the current driver contract, not the full reachability of the silicon; upper network payload storage may use PSRAM after a copy"
+source-paths = [
+  "driver/chips/esp32s31/ieee80211/dma/src/descriptor.rs",
+  "driver/chips/esp32s31/ieee80211/dma/src/rx_storage.rs",
+  "driver/chips/esp32s31/ieee80211/dma/src/tx_storage.rs",
+  "driver/integration/esp32s31/embassy/ieee80211/src/radio_resources.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-ampdu-descriptor-chain"
+composition = "production"
+scope = "Wi-Fi aggregate TX chains MPDU descriptors and retains stable payload backings across completion and selective retry"
+limits = "Each MPDU uses a contiguous backing range; an A-MPDU descriptor chain does not establish scatter/gather within one MPDU. Descriptors remain in SRAM; pool and burst capacities are software policy"
+source-paths = [
+  "driver/chips/esp32s31/ieee80211/dma/src/tx_ampdu_storage.rs",
+  "driver/chips/esp32s31/ieee80211/mac/src/tx.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-psram-tx"
+composition = "diagnostic"
+scope = "The tx-psram-dma-probe feature admits explicitly selected PSRAM TX backings after cache writeback, with descriptors retained in SRAM"
+limits = "AP diagnostic scenarios exercise this path; source composition does not qualify Wi-Fi PSRAM reachability, throughput or retry correctness, and does not extend the production STA DMA scope"
+source-paths = [
+  "driver/chips/esp32s31/ieee80211/dma/src/tx_ampdu_storage.rs",
+  "driver/integration/esp32s31/embassy/ieee80211/src/radio_resources.rs",
+  "hil/scenarios/ieee80211/access-point/diagnostic-ap-single-client-udp-tx-psram-dma.toml",
+  "hil/scenarios/ieee80211/access-point/diagnostic-ap-single-client-udp-tx-sram-control.toml",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-psram-rx"
+composition = "unimplemented"
+scope = "Direct Wi-Fi MAC receive into PSRAM with a cache-coherent handoff to the CPU"
+limits = "The receive owner admits internal DMA SRAM; Wi-Fi PSRAM RX reachability and its cache invalidation/ownership contract are unknown. This is an absent composition, not a hardware impossibility claim"
+source-paths = [
+  "driver/chips/esp32s31/ieee80211/dma/src/rx_storage.rs",
+  "driver/adapters/esp-hal/esp32s31/soc/src/cache/maintenance.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "wifi-mpdu-scatter-gather"
+composition = "unimplemented"
+scope = "A single transmitted MPDU assembled by Wi-Fi DMA from independently owned header and payload segments"
+limits = "The current MPDU publication accepts a contiguous range; segment framing, CCMP, FCS and retry ownership are not composed. AXI-GDMA scatter/gather and A-MPDU chaining do not establish this Wi-Fi hardware operation"
+source-paths = [
+  "driver/chips/esp32s31/ieee80211/dma/src/tx_ampdu_storage.rs",
+  "driver/chips/esp32s31/ieee80211/mac/src/tx.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "axi-gdma-psram-staging"
+composition = "diagnostic"
+scope = "The AXI-GDMA memory-to-memory probe copies SRAM or PSRAM sources into SRAM, including discontiguous source/destination segment chains"
+limits = "AXI-GDMA is a separate engine from Wi-Fi MAC DMA and is not composed into the production network staging path; unsafe start requires owners to retain buffers and descriptors until hardware completion even if the transfer handle is forgotten"
+source-paths = [
+  "driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/transfer.rs",
+  "driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/descriptor.rs",
+  "hil/targets/esp32s31/runtime/src/gdma_mem2mem_probe.rs",
+]
+
+[[capabilities.source-contracts]]
+id = "psram-dma-read-cache-writeback"
+composition = "diagnostic"
+scope = "The platform cache adapter writes CPU-dirty PSRAM data back before peripheral reads in the AXI-GDMA and direct Wi-Fi TX diagnostic compositions"
+limits = "Callers own complete affected cache lines and retain storage without CPU mutation through DMA completion; writeback alone proves neither peripheral PSRAM reachability nor a DMA-write-to-CPU-read invalidation contract"
+source-paths = [
+  "driver/adapters/esp-hal/esp32s31/soc/src/cache/maintenance.rs",
+  "driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/transfer.rs",
+  "driver/integration/esp32s31/embassy/ieee80211/src/radio_resources.rs",
+]
+
 [[capabilities]]
 id = "interrupt-recovery"
 title = "Interrupt acknowledgement and recovery ordering"

@@ -44,14 +44,21 @@ use static_cell::StaticCell;
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
+mod capabilities;
+#[cfg(feature = "open-radio-hil")]
 mod console;
 mod exception;
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
-#[cfg(feature = "open-radio-hil")]
-#[cfg(feature = "open-radio-hil")]
+#[cfg(feature = "memory-benchmark")]
+mod memory_benchmark;
+#[cfg(all(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
+compile_error!(
+    "memory-benchmark and the startup GDMA probe require exclusive DMA channel ownership"
+);
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod phy_calibration_artifact;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod product_hil;
 #[cfg(feature = "psram-task-stack")]
 use oer_esp32s31_runtime::stacks as psram_task_stack;
@@ -121,7 +128,7 @@ static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
 // disable the source while a nested radio future still owns `Trng`.
 #[cfg(feature = "open-radio-hil")]
 static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource<'static>> = StaticCell::new();
-#[cfg(feature = "open-radio-hil")]
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 static L1_CACHE_PERFORMANCE: StaticCell<
     open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters,
 > = StaticCell::new();
@@ -191,10 +198,17 @@ use oer_esp32s31_runtime as _;
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     #[cfg(feature = "open-radio-hil")]
     {
-        let (stage, action) = product_hil::diagnostic_snapshot();
         console::panic_origin(info);
+        #[cfg(not(feature = "memory-benchmark"))]
+        {
+            let (stage, action) = product_hil::diagnostic_snapshot();
+            console::emergency_log(format_args!(
+                "OPEN_RADIO_HIL panic stage={stage} action={action} info={info}"
+            ));
+        }
+        #[cfg(feature = "memory-benchmark")]
         console::emergency_log(format_args!(
-            "OPEN_RADIO_HIL panic stage={stage} action={action} info={info}"
+            "OPEN_RADIO_HIL panic image=memory-benchmark info={info}"
         ));
         let (mcause, mepc, mtval, hart_id): (usize, usize, usize, usize);
         unsafe {
@@ -239,7 +253,7 @@ extern "C" fn runtime_main() -> ! {
     // hardware mapping without reinitializing the PSRAM device or MMU.
     let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
-    #[cfg(feature = "open-radio-hil")]
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let l1_cache = L1_CACHE_PERFORMANCE.init(
         open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters::new(peripherals.CACHE),
     );
@@ -248,7 +262,7 @@ extern "C" fn runtime_main() -> ! {
     open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
 
     #[cfg(feature = "open-radio-hil")]
-    let app_spawner = {
+    let _app_spawner = {
         let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
         let app_interrupt = SoftwareInterrupt::new(peripherals.FROM_CPU_INTR1);
         let guard = cpu_control
@@ -278,6 +292,10 @@ extern "C" fn runtime_main() -> ! {
             if let Some(spawner) = unsafe { pointer.as_ref() } {
                 break *spawner;
             }
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "CPU0 has not entered its executor; this boot handoff waits for the CPU1 spawner publication"
+            )]
             core::hint::spin_loop();
         }
     };
@@ -310,6 +328,7 @@ extern "C" fn runtime_main() -> ! {
         let _trng_source = TRNG_SOURCE.init(trng_source);
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
         console::init_protocol(boot_id);
+        #[cfg(not(feature = "memory-benchmark"))]
         let radio = open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral::new(
             peripherals.WIFI,
             peripherals.MODEM_SYSCON,
@@ -327,22 +346,31 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
             };
             spawner.spawn(logger);
-            let Ok(protocol) = console::protocol_task(product_hil::hil_capabilities()) else {
+            let Ok(protocol) = console::protocol_task(capabilities::hil_capabilities()) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
-            let Ok(hil) = open_radio_hil_task(
-                spawner,
-                app_spawner,
-                radio,
-                trng,
-                l1_cache,
-                #[cfg(feature = "gdma-mem2mem-probe")]
-                peripherals.DMA_AXI_CH0,
-            ) else {
-                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
-            };
-            spawner.spawn(hil);
+            #[cfg(feature = "memory-benchmark")]
+            spawner.spawn(
+                memory_benchmark::task(peripherals.DMA_AXI_CH0).unwrap_or_else(|_| {
+                    fail(c"OPEN_RADIO_HIL runtime=FAIL reason=memory-benchmark-allocation\r\n")
+                }),
+            );
+            #[cfg(not(feature = "memory-benchmark"))]
+            {
+                let Ok(hil) = open_radio_hil_task(
+                    spawner,
+                    _app_spawner,
+                    radio,
+                    trng,
+                    l1_cache,
+                    #[cfg(feature = "gdma-mem2mem-probe")]
+                    peripherals.DMA_AXI_CH0,
+                ) else {
+                    fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
+                };
+                spawner.spawn(hil);
+            }
         })
     }
 }
@@ -361,10 +389,13 @@ fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
     APP_EXECUTOR
         .init(Executor::<1>::new(app_interrupt))
         .run(|spawner| {
-            let Ok(network) = product_hil::secondary_network_task(spawner) else {
-                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-network-allocation\r\n");
-            };
-            spawner.spawn(network);
+            #[cfg(not(feature = "memory-benchmark"))]
+            {
+                let Ok(network) = product_hil::secondary_network_task(spawner) else {
+                    fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-network-allocation\r\n");
+                };
+                spawner.spawn(network);
+            }
             let send_spawner = APP_SEND_SPAWNER.init(spawner.make_send());
             APP_SEND_SPAWNER_PTR.store(send_spawner, Ordering::Release);
         })
@@ -391,7 +422,7 @@ async fn boot_smoke(mut console: boot_smoke_console::BootSmokeConsole) {
     }
 }
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 #[embassy_executor::task]
 #[allow(
     large_assignments,

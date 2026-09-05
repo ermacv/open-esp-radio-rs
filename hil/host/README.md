@@ -34,6 +34,25 @@ later run. Optional monitor tools are checked only when selected evidence uses
 them. AP workloads currently include an initial STA connection, so their
 requirements include the station network.
 
+`cargo hil run memory-copy-benchmark` builds the dedicated memory diagnostic
+image and measures CPU, blocking GDMA and async GDMA copies from SRAM and
+PSRAM into SRAM. It requires the board and serial connection, without an AP
+or network helper. `cargo hil run memory-copy-batch-benchmark` uses the same
+image to compare CPU frame loops with single-chain GDMA batches of 1, 2, 8 and
+32 frames. Scenarios select frame sizes, batch sizes, iterations and repeated
+boots. An omitted `batch_sizes` field means `[1]`; every size/batch combination
+must fit the 49,152-byte payload limit per iteration. Case order is source,
+frame size, batch size, then copy mode.
+
+`memory-benchmark.json` schema 2 preserves each requested case and its typed target
+result, including failed observations. Each case has a 15-second host response
+deadline. The runner checks completeness, data/guard results and counter-scope
+consistency without imposing a throughput or speedup floor. Elapsed and
+foreground cycles/instructions describe their measurement windows, not CPU
+utilization or energy consumption. Measurements distinguish bytes per frame,
+frames per iteration and total payload bytes per iteration; comparisons must
+use the same geometry and source memory.
+
 `device status` attaches to the flashed runtime without reset, provisioning,
 initialization or result acknowledgement. The report includes the boot ID,
 capabilities, operation state, retained session identity, stack snapshot when

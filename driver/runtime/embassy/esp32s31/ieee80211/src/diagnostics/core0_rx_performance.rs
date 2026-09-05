@@ -1317,12 +1317,18 @@ pub static CORE0_PERFORMANCE: Core0PerformanceCounters = Core0PerformanceCounter
 /// Unlike the deep phase profiler this owner performs no intermediate reads.
 /// The terminal update happens before the mandatory cooperative yield, so
 /// sleeping executor time is not charged to the runner.
-#[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(all(
+    feature = "core0-rx-coarse-telemetry",
+    not(feature = "task-poll-telemetry")
+))]
 pub(crate) struct Core0PerformanceRunnerProfile {
     started: Core0PerformanceSample,
 }
 
-#[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(all(
+    feature = "core0-rx-coarse-telemetry",
+    not(feature = "task-poll-telemetry")
+))]
 impl Core0PerformanceRunnerProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {
@@ -1344,12 +1350,18 @@ impl Core0PerformanceRunnerProfile {
 }
 
 /// Low-overhead measurement of one complete DMA service transaction.
-#[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(all(
+    feature = "core0-rx-coarse-telemetry",
+    not(feature = "task-poll-telemetry")
+))]
 pub(crate) struct Core0PerformanceDmaProfile {
     started: Core0PerformanceSample,
 }
 
-#[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(all(
+    feature = "core0-rx-coarse-telemetry",
+    not(feature = "task-poll-telemetry")
+))]
 impl Core0PerformanceDmaProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {

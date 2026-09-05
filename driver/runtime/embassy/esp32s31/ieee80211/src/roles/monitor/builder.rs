@@ -272,6 +272,10 @@ where
 
     /// Return the common live radio owner and every reusable monitor resource
     /// after the logical monitor consumer is parked.
+    #[expect(
+        clippy::result_large_err,
+        reason = "failure retains the exact radio, IRQ and DMA owners without heap allocation"
+    )]
     fn try_into_stopped(
         self,
         control: &'runtime Esp32s31MonitorControlResources<M>,
@@ -393,6 +397,14 @@ where
 
 /// Join a checked standalone-monitor plan, common-MAC owner and runtime
 /// resources without exposing intermediate DMA or interrupt setup tokens.
+#[expect(
+    clippy::result_large_err,
+    reason = "failure retains the exact radio, IRQ and DMA owners without heap allocation"
+)]
+#[expect(
+    clippy::type_complexity,
+    reason = "the return type preserves the concrete radio, sink and DMA resource dimensions"
+)]
 fn prepare_esp32s31_monitor<
     'runtime,
     P,
@@ -917,6 +929,10 @@ where
     /// Success acknowledges `Stopped` to the paired controller and returns
     /// both the common Wi-Fi owner and role-local reusable resources. If IRQ
     /// routing or RX DMA is still active, the complete task is returned.
+    #[expect(
+        clippy::result_large_err,
+        reason = "failure retains the exact radio, IRQ and DMA owners without heap allocation"
+    )]
     pub fn try_into_stopped(
         self,
     ) -> Result<
@@ -952,6 +968,10 @@ where
 /// Materialize one executor-owned task and its hardware-free application
 /// controller in a single transaction.
 #[allow(clippy::type_complexity)]
+#[expect(
+    clippy::result_large_err,
+    reason = "failure retains the exact radio, IRQ and DMA owners without heap allocation"
+)]
 pub fn prepare_esp32s31_monitor_task<
     'runtime,
     P,

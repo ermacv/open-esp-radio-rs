@@ -2,6 +2,68 @@ use super::*;
 use crate::evidence::run::{Comparison, MeasurementUnit};
 use open_esp_radio_hil_protocol::{EvidenceRecord, FlowTransportEvidence, TransportEvidence};
 
+#[test]
+fn memory_counter_scopes_preserve_full_values_without_cpu_percentages() {
+    use open_esp_radio_hil_protocol::{
+        MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest,
+        MemoryBenchmarkSource, MemoryBenchmarkStop,
+    };
+    let cycles = u64::from(u32::MAX) + 100;
+    let events = [Envelope::new(
+        7,
+        3,
+        0,
+        9,
+        Event::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
+            request: MemoryBenchmarkRequest {
+                mode: MemoryBenchmarkMode::GdmaAsync,
+                source: MemoryBenchmarkSource::Psram,
+                bytes: 1514,
+                frames: 32,
+                iterations: 32,
+            },
+            completed_iterations: 32,
+            elapsed_micros: 500,
+            elapsed_cycles: cycles,
+            elapsed_instructions: 1000,
+            foreground_cycles: 200,
+            foreground_instructions: 100,
+            polls: 64,
+            stop: MemoryBenchmarkStop::Completed,
+        }),
+    )];
+    let observations = protocol::observations("boot-001", &events, 100);
+    let elapsed = observations
+        .iter()
+        .find(|value| value.name.ends_with("memory.elapsed.cycles"))
+        .unwrap();
+    assert_eq!(elapsed.value, cycles);
+    assert_eq!(elapsed.unit, MeasurementUnit::Count);
+    assert!(
+        observations
+            .iter()
+            .any(|value| value.name.ends_with("memory.frames-per-iteration") && value.value == 32)
+    );
+    assert!(
+        observations
+            .iter()
+            .any(|value| value.name.ends_with("memory.bytes-per-frame") && value.value == 1514)
+    );
+    assert!(observations.iter().any(
+        |value| value.name.ends_with("memory.bytes-per-iteration") && value.value == 1514 * 32
+    ));
+    assert!(
+        observations
+            .iter()
+            .any(|value| value.name.ends_with("memory.foreground.cycles") && value.value == 200)
+    );
+    assert!(
+        observations
+            .iter()
+            .all(|value| value.unit != MeasurementUnit::BasisPoints)
+    );
+}
+
 fn transport(bytes: u64, elapsed_micros: u64) -> TransportEvidence {
     TransportEvidence {
         rx_bytes: bytes,

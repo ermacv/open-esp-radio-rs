@@ -1,5 +1,6 @@
 //! Concurrent-client UDP execution and per-flow fairness assessment.
 
+use crate::execution::context::Context;
 use std::{
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     thread,
@@ -20,7 +21,6 @@ use crate::workload::ieee80211::access_point::{
 };
 use crate::{
     Result,
-    lab::config::LabConfig,
     scenario::{Criteria, Direction},
     session::{SerialCapture, probe_udp_rx_ready_via},
     transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
@@ -48,7 +48,7 @@ const fn target_transmits(direction: Direction) -> bool {
 }
 
 fn multi_client_host_flows(
-    lab: &LabConfig,
+    context: &Context<'_>,
     clients: &ConnectedClients,
     direction: Direction,
 ) -> Result<[MultiClientHostFlow; SESSION_FLOW_CAPACITY]> {
@@ -59,9 +59,10 @@ fn multi_client_host_flows(
     else {
         return Err("multi-client AP UDP requires the laptop and OpenWrt clients".into());
     };
-    let target = lab.access_point.target_address();
-    let primary_peer = lab.access_point.client_address();
-    let secondary_peer = lab
+    let target = context.lab.access_point.target_address();
+    let primary_peer = context.lab.access_point.client_address();
+    let secondary_peer = context
+        .lab
         .access_point
         .secondary_client_address()
         .ok_or("multi-client AP UDP requires access_point.secondary_client_address")?;
@@ -108,7 +109,7 @@ fn multi_client_host_flows(
 pub(super) fn qualify_multi_client_udp(
     capture: &SerialCapture,
     config: &Config,
-    lab: &LabConfig,
+    context: &Context<'_>,
     clients: &ConnectedClients,
     workload: UdpWorkload,
 ) -> Result<TrafficReport> {
@@ -125,8 +126,8 @@ pub(super) fn qualify_multi_client_udp(
         secondary_tx_pacing_group_datagrams,
         payload_bytes,
     } = workload;
-    let flows = multi_client_host_flows(lab, clients, direction)?;
-    let target = lab.access_point.target_address();
+    let flows = multi_client_host_flows(context, clients, direction)?;
+    let target = context.lab.access_point.target_address();
     if target_receives(direction) {
         for flow in &flows {
             probe_udp_rx_ready_via(

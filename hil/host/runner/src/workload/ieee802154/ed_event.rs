@@ -4,6 +4,7 @@
 //! reset-isolated, route-detached transaction. It does not classify the full
 //! `EVENT_STATUS` register or claim operational PHY/RF/BTBB readiness.
 
+use crate::execution::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -15,7 +16,7 @@ use open_esp_radio_hil_protocol::{
 use open_esp_radio_hil_protocol::{Ieee802154RxAbortObservation, Ieee802154RxAbortReason};
 use serde::Serialize;
 
-use crate::{Result, lab::config::LabConfig, session::SerialCapture};
+use crate::{Result, session::SerialCapture};
 
 const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -34,7 +35,7 @@ struct BootReport {
     target: Ieee802154EdEventProbeEvidence,
 }
 
-pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
+pub(crate) fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     fs::create_dir_all(output)?;
     let request = Ieee802154EdEventProbeRequest {
         poll_limit: config.poll_limit,
@@ -47,25 +48,20 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
     let mut reports = Vec::with_capacity(usize::from(config.boots));
     for boot in 1..=config.boots {
         let boot_output = output.join(format!("boot-{boot:03}"));
-        let capture = SerialCapture::start_with_reset(&lab.device.serial);
-        let probe_result = probe(&capture, request, boot);
-        let capture_result = capture.finish_to(&boot_output);
-
-        let report = match probe_result {
-            Ok(report) => report,
+        let result = context.with_capture(&boot_output, |capture| {
+            probe(capture, request, boot).map(|report| {
+                let target = report.target;
+                reports.push(report);
+                target
+            })
+        });
+        let target = match result {
+            Ok(target) => target,
             Err(error) => {
-                let failure = error.to_string();
-                write_failed_report(output, &reports, &failure)?;
-                capture_result?;
+                write_failed_report(output, &reports, &error.to_string())?;
                 return Err(error);
             }
         };
-        let target = report.target;
-        reports.push(report);
-        if let Err(error) = capture_result {
-            write_failed_report(output, &reports, &error.to_string())?;
-            return Err(error);
-        }
         if let Err(error) = validate(target, config.poll_limit) {
             write_failed_report(output, &reports, &error.to_string())?;
             return Err(error);

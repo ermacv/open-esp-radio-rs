@@ -170,7 +170,7 @@ pub(crate) fn rx_reorder_markdown(reorder: RxReorderEvidence) -> String {
 }
 
 pub(super) struct BidirectionalPerformanceReport<'a> {
-    pub(super) options: &'a Options,
+    pub(super) options: &'a Config,
     pub(super) host_offer: HostTransmission,
     pub(super) host_sink: Burst,
     pub(super) structured: SessionEvidence,
@@ -245,7 +245,7 @@ pub(super) fn write_bidirectional_performance_report(
 
 pub(super) fn write_report(
     output: &Path,
-    options: &Options,
+    options: &Config,
     evidence: BidirectionalEvidence,
     require_exact_delivery: bool,
     failure: Option<&str>,

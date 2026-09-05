@@ -9,11 +9,14 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use clap::{Parser, Subcommand};
+use crate::cli::{Cli, CliCommand, DeviceCommand, ImageCommand, ReportCommand, ScenarioCommand};
+use clap::Parser;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod cli;
 mod device;
+mod error;
 mod evidence;
 mod execution;
 mod fixture;
@@ -25,7 +28,7 @@ mod session;
 mod transport;
 mod workload;
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 static MACHINE_STDOUT: OnceLock<Mutex<Box<dyn std::io::Write + Send>>> = OnceLock::new();
 
 fn reserve_machine_stdout() -> Result<()> {
@@ -77,101 +80,12 @@ pub(crate) fn emit_json(value: &impl Serialize, pretty: bool) -> Result<()> {
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
-        std::process::exit(1);
+        std::process::exit(if oer_process::is_cancelled(&*error) {
+            130
+        } else {
+            1
+        });
     }
-}
-
-#[derive(Debug, Parser)]
-#[command(
-    name = "cargo hil",
-    about = "Open ESP radio hardware-in-the-loop runner"
-)]
-struct Cli {
-    /// Complete local fixture configuration. Secrets never belong to scenarios.
-    #[arg(long, global = true)]
-    lab_config: Option<PathBuf>,
-    #[command(subcommand)]
-    command: CliCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum CliCommand {
-    /// Validate host tools, target device and the configured fixture.
-    Doctor,
-    /// Inspect and validate the host-owned scenario catalog.
-    Scenario {
-        #[command(subcommand)]
-        command: ScenarioCommand,
-    },
-    /// Build or flash one reproducible firmware class.
-    Image {
-        #[command(subcommand)]
-        command: ImageCommand,
-    },
-    /// Inspect the currently flashed target without starting a workload.
-    Device {
-        #[command(subcommand)]
-        command: DeviceCommand,
-    },
-    /// Rebuild derived views from immutable run bundles.
-    Report {
-        #[command(subcommand)]
-        command: ReportCommand,
-    },
-    /// Build, flash and execute one catalog scenario.
-    Run {
-        scenario: String,
-        /// Use the scenario's image class from a sealed earlier HIL run.
-        #[arg(long, value_name = "RUN_ID")]
-        firmware_from: Option<String>,
-    },
-    /// Execute catalog scenarios, flashing once per selected image class.
-    RunAll {
-        /// Select only scenarios carrying this tag. May be repeated.
-        #[arg(long)]
-        tag: Vec<String>,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum ScenarioCommand {
-    List,
-    Validate { scenario: Option<String> },
-}
-
-#[derive(Debug, Subcommand)]
-enum ImageCommand {
-    Build {
-        class: crate::image::ImageClass,
-    },
-    /// Build one clean commit in two different checkout roots and compare every firmware subject.
-    VerifyRebuild {
-        class: crate::image::ImageClass,
-        /// Diagnose Cargo's experimental object-path sanitization without changing normal builds.
-        #[arg(long)]
-        trim_paths: bool,
-    },
-    Flash {
-        class: crate::image::ImageClass,
-    },
-    /// Verify and flash an exact application archived by an earlier HIL run.
-    Replay {
-        run_id: String,
-        class: crate::image::ImageClass,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum DeviceCommand {
-    Status,
-}
-
-#[derive(Debug, Subcommand)]
-enum ReportCommand {
-    /// Rebuild history.json and history.html without attached hardware.
-    Rebuild,
-    /// Verify one run bundle, or every bundle when RUN_ID is omitted.
-    Verify { run_id: Option<String> },
 }
 
 fn run() -> Result<()> {
@@ -179,12 +93,38 @@ fn run() -> Result<()> {
     let invocation = env::args_os().collect::<Vec<_>>();
     let cli = Cli::parse();
     reserve_machine_stdout()?;
+    let _signals = oer_process::install_signal_handlers()?;
     let lab_path = cli
         .lab_config
         .unwrap_or(crate::lab::config::LabConfig::default_path()?);
     let catalog_path = root.join("hil/scenarios");
     match cli.command {
-        CliCommand::Doctor => doctor(&root, &crate::lab::config::LabConfig::load(&lab_path)?),
+        CliCommand::Doctor(selection) => {
+            let catalog = crate::scenario::Catalog::load(&catalog_path)?;
+            let selected = selection.resolve(&catalog)?;
+            crate::lab::doctor::run(
+                &root,
+                &crate::lab::config::LabConfig::load(&lab_path)?,
+                &selected,
+            )
+        }
+        CliCommand::Plan(selection) => {
+            let catalog = crate::scenario::Catalog::load(&catalog_path)?;
+            let selected = selection.resolve(&catalog)?;
+            emit_json(
+                &serde_json::json!({
+                    "schema": 1,
+                    "requirements": crate::lab::requirements::Requirements::union(&selected),
+                    "scenarios": selected.iter().map(|scenario| serde_json::json!({
+                        "scenario": scenario.id,
+                        "image": scenario.image,
+                        "repetitions": scenario.repetitions,
+                        "requirements": crate::lab::requirements::Requirements::for_scenario(scenario),
+                    })).collect::<Vec<_>>(),
+                }),
+                true,
+            )
+        }
         CliCommand::Scenario { command } => {
             let catalog = crate::scenario::Catalog::load(&catalog_path)?;
             match command {
@@ -225,7 +165,7 @@ fn run() -> Result<()> {
             ImageCommand::Flash { class } => {
                 let artifacts = image::build(&root, class)?;
                 let lab = crate::lab::config::LabConfig::load(&lab_path)?;
-                let _fixture = crate::lab::lock::FixtureLock::acquire(&root)?;
+                let _fixture = crate::lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash(&root, &artifacts, &lab.device.serial)?;
                 image::print_artifacts(class, &artifacts, true)
             }
@@ -233,7 +173,7 @@ fn run() -> Result<()> {
                 let firmware =
                     crate::evidence::verify::archived_firmware(&root, "esp32s31", &run_id, class)?;
                 let lab = crate::lab::config::LabConfig::load(&lab_path)?;
-                let _fixture = crate::lab::lock::FixtureLock::acquire(&root)?;
+                let _fixture = crate::lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash_archived(&root, &firmware, &lab.device.serial)?;
                 emit_json(
                     &serde_json::json!({
@@ -252,7 +192,7 @@ fn run() -> Result<()> {
             command: DeviceCommand::Status,
         } => {
             let lab = crate::lab::config::LabConfig::load(&lab_path)?;
-            let _fixture = crate::lab::lock::FixtureLock::acquire(&root)?;
+            let _fixture = crate::lab::lock::FixtureLock::acquire(&lab)?;
             device::status(&root, &lab)
         }
         CliCommand::Report { command } => match command {
@@ -284,13 +224,24 @@ fn run() -> Result<()> {
                 None => RunFirmware::BuildCurrent,
             };
             let lab = crate::lab::config::LabConfig::load(&lab_path)?;
-            let _fixture = crate::lab::lock::FixtureLock::acquire(&root)?;
+            let _fixture = crate::lab::lock::FixtureLock::acquire_for(
+                &lab,
+                crate::lab::requirements::Requirements::for_scenario(&selected),
+            )?;
             run_one(&root, &lab, &catalog, &selected, firmware, invocation)
         }
         CliCommand::RunAll { tag } => {
             let catalog = crate::scenario::Catalog::load(&catalog_path)?;
             let lab = crate::lab::config::LabConfig::load(&lab_path)?;
-            let _fixture = crate::lab::lock::FixtureLock::acquire(&root)?;
+            let selected = crate::cli::Selection {
+                scenario: None,
+                tag: tag.clone(),
+            }
+            .resolve(&catalog)?;
+            let _fixture = crate::lab::lock::FixtureLock::acquire_for(
+                &lab,
+                crate::lab::requirements::Requirements::union(&selected),
+            )?;
             run_all(&root, &lab, &catalog, &tag, invocation)
         }
     }
@@ -324,72 +275,6 @@ fn repository_root() -> Result<PathBuf> {
         .ok_or_else(|| "HIL runner must live inside the repository".into())
 }
 
-fn doctor(root: &std::path::Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
-    let firmware = root.join("hil/targets/esp32s31/Cargo.toml");
-    if !firmware.is_file() {
-        return Err(format!("missing embedded HIL workspace: {}", firmware.display()).into());
-    }
-    eprintln!("repository={}", root.display());
-    eprintln!("firmware_workspace={}", firmware.display());
-    eprintln!("target={}", image::TARGET);
-    eprintln!("qualified_profile={}", image::QUALIFIED_PROFILE);
-    eprintln!("lab_config={}", lab.path().display());
-    if !lab.device.serial.exists() {
-        return Err(format!(
-            "serial device does not exist: {}",
-            lab.device.serial.display()
-        )
-        .into());
-    }
-    eprintln!("serial_device=PASS");
-    let _lab_provenance = crate::lab::provenance::LabProvenance::capture(lab)?;
-    eprintln!("lab_provenance=PASS");
-    match &lab.station_fixture {
-        crate::lab::config::StationFixtureConfig::LocalLinux(_) => {
-            crate::fixture::controlled_ap::doctor_local()?;
-            eprintln!("station_fixture=local-linux status=PASS");
-        }
-        crate::lab::config::StationFixtureConfig::OpenWrt(config) => {
-            crate::fixture::openwrt_fixture::doctor(config)?;
-            crate::fixture::openwrt_tx_monitor::doctor(config)?;
-            crate::fixture::local_air_monitor::doctor(config)?;
-            crate::fixture::controlled_openwrt_client::doctor(&lab.access_point, config)?;
-            eprintln!("station_fixture=openwrt status=PASS");
-        }
-        crate::lab::config::StationFixtureConfig::External(_) => {
-            eprintln!("station_fixture=external status=UNMANAGED");
-        }
-    }
-    crate::fixture::controlled_client::doctor()?;
-    eprintln!("controlled_client=PASS");
-    for program in [
-        "cargo",
-        "llvm-objcopy",
-        "llvm-objdump",
-        "llvm-nm",
-        "espflash",
-    ] {
-        image::require_program(program)?;
-        eprintln!("tool_{program}=PASS");
-    }
-    image::ensure_no_old_application_dependency(root)?;
-    eprintln!("old_application_dependency=ABSENT");
-    image::ensure_vendor_dependencies_absent(root)?;
-    eprintln!("vendor_dependencies=ABSENT");
-    emit_json(
-        &serde_json::json!({
-            "schema": crate::evidence::run::RUN_SCHEMA,
-            "status": "passed",
-            "target": "esp32s31",
-            "cell_id": lab.cell_id(),
-            "device_id": lab.device.id.as_str(),
-            "lab_config": lab.path(),
-        }),
-        false,
-    )?;
-    Ok(())
-}
-
 fn run_all(
     root: &Path,
     lab: &crate::lab::config::LabConfig,
@@ -421,6 +306,7 @@ fn run_all(
     )?;
     let mut results = Vec::with_capacity(selected.len());
     for class in crate::image::ImageClass::ALL {
+        oer_process::check_cancelled()?;
         let class_scenarios = selected
             .iter()
             .copied()
@@ -459,6 +345,7 @@ fn run_all(
             continue;
         }
         for entry in executable {
+            oer_process::check_cancelled()?;
             session.record_event("scenario-started", Some(&entry.id), Some(class), None)?;
             let result = run_scenario(lab, entry, &session)?;
             session.record_event(
@@ -555,6 +442,7 @@ fn prepare_replayed_image(
     let application = match session.record_replayed_firmware(archived) {
         Ok(application) => application,
         Err(error) => {
+            oer_process::check_cancelled()?;
             session.record_event(
                 "image-replay-import-failed",
                 None,
@@ -578,6 +466,7 @@ fn prepare_replayed_image(
         archived.image,
         &lab.device.serial,
     ) {
+        oer_process::check_cancelled()?;
         session.record_event(
             "image-flash-failed",
             None,
@@ -625,6 +514,7 @@ fn prepare_image(
     let mut artifacts = match image::build(root, class) {
         Ok(artifacts) => artifacts,
         Err(error) => {
+            oer_process::check_cancelled()?;
             session.record_event(
                 "image-build-failed",
                 None,
@@ -656,6 +546,7 @@ fn prepare_image(
     )?;
     session.record_event("image-flash-started", None, Some(class), None)?;
     if let Err(error) = device::flash(root, &artifacts, &lab.device.serial) {
+        oer_process::check_cancelled()?;
         session.record_event(
             "image-flash-failed",
             None,
@@ -693,9 +584,6 @@ fn start_run(
         &lab.device.serial,
         invocation,
     )?;
-    let lab_provenance = crate::lab::provenance::LabProvenance::capture(lab)?;
-    session.record_lab_provenance(&lab_provenance)?;
-    session.record_event("lab-provenance-captured", None, None, None)?;
     let entries = catalog
         .all()
         .iter()
@@ -711,6 +599,9 @@ fn start_run(
                     crate::evidence::run::PlanDisposition::Filtered
                 },
                 reason: (!is_selected).then(|| format!("excluded by `{selection}`")),
+                requirements: Some(crate::lab::requirements::Requirements::for_scenario(
+                    scenario,
+                )),
             }
         })
         .collect();
@@ -722,6 +613,15 @@ fn start_run(
         entries,
     })?;
     session.record_event("plan-resolved", None, None, None)?;
+    for scenario in selected {
+        let directory = session.scenario_directory(&scenario.id);
+        fs::create_dir_all(&directory)?;
+        crate::evidence::run::atomic_json(&directory.join("scenario.json"), scenario)?;
+    }
+    let required = crate::lab::requirements::Requirements::union(selected);
+    let lab_provenance = crate::lab::provenance::LabProvenance::capture(lab, required)?;
+    session.record_lab_provenance(&lab_provenance)?;
+    session.record_event("lab-provenance-captured", None, None, None)?;
     Ok(session)
 }
 
@@ -729,8 +629,12 @@ fn finish_run(
     session: crate::evidence::run::RunSession,
     results: Vec<crate::evidence::run::ScenarioResult>,
 ) -> Result<()> {
+    oer_process::check_cancelled()?;
     let (suite, completion) = session.finish(results)?;
     emit_json(&completion, false)?;
+    // Cancellation of a derived history update occurs after the run was
+    // sealed. Publish completion first, then preserve the CLI signal status.
+    oer_process::check_cancelled()?;
     if suite.outcome.is_passed() {
         Ok(())
     } else {
@@ -756,6 +660,7 @@ fn run_scenario(
     crate::evidence::run::atomic_json(&scenario_output.join("scenario.json"), selected)?;
     let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions));
     for number in 1..=selected.repetitions {
+        oer_process::check_cancelled()?;
         let relative = PathBuf::from("scenarios")
             .join(&selected.id)
             .join(format!("repetition-{number:03}"));
@@ -764,6 +669,7 @@ fn run_scenario(
         repetitions.push(run_scenario_repetition(
             lab, selected, number, &relative, &output,
         )?);
+        oer_process::check_cancelled()?;
     }
     let result = crate::evidence::run::ScenarioResult::from_repetitions(
         selected.id.clone(),
@@ -784,35 +690,46 @@ fn run_scenario_repetition(
 ) -> Result<crate::evidence::run::RepetitionResult> {
     let started_unix_millis = crate::evidence::run::unix_millis()?;
     let started = std::time::Instant::now();
-    let (outcome, failure, measurements) = match validate_flashed_image(lab, selected.image, output)
-    {
-        Err(error) => (
-            crate::evidence::run::Outcome::Blocked,
-            Some(crate::evidence::run::Failure::new(
-                crate::evidence::run::FailureKind::Precondition,
-                error.to_string(),
-            )),
-            Vec::new(),
-        ),
-        Ok(()) => {
-            let evidence = execution::execute_workload(lab, selected, output);
-            let failure = evidence.failure.map(|message| {
-                crate::evidence::run::Failure::new(
-                    crate::evidence::run::FailureKind::Scenario,
-                    message,
-                )
-            });
-            (
-                if failure.is_some() {
-                    crate::evidence::run::Outcome::Failed
+    let cleanup = crate::fixture::cleanup::Scope::new(output);
+    let (mut outcome, mut failure, measurements) =
+        match validate_flashed_image(lab, selected.image, output) {
+            Err(error) => {
+                use crate::evidence::run::{FailureKind, Outcome};
+                let mut failure = execution::classify(&*error);
+                let outcome = if oer_process::is_cancelled(&*error)
+                    || oer_process::cancellation_requested()
+                {
+                    Outcome::Interrupted
+                } else if failure.kind == FailureKind::Infrastructure {
+                    Outcome::Broken
                 } else {
-                    crate::evidence::run::Outcome::Passed
-                },
-                failure,
-                evidence.measurements,
-            )
+                    failure.kind = FailureKind::Precondition;
+                    Outcome::Blocked
+                };
+                (outcome, Some(failure), Vec::new())
+            }
+            Ok(()) => {
+                let evidence = execution::execute_workload(lab, selected, output);
+                (evidence.outcome(), evidence.failure, evidence.measurements)
+            }
+        };
+    let cleanup = cleanup.finish()?;
+    let cleanup_failures = cleanup
+        .iter()
+        .filter_map(|record| record.failure.as_deref())
+        .collect::<Vec<_>>();
+    if !cleanup_failures.is_empty() {
+        let message = format!("fixture cleanup failed: {}", cleanup_failures.join("; "));
+        if let Some(failure) = &mut failure {
+            failure.message.push_str(&format!("; {message}"));
+        } else {
+            outcome = crate::evidence::run::Outcome::Broken;
+            failure = Some(crate::evidence::run::Failure::new(
+                crate::evidence::run::FailureKind::Infrastructure,
+                message,
+            ));
         }
-    };
+    }
     let attachments = crate::evidence::run::collect_attachments(output, artifacts)?;
     let result = crate::evidence::run::RepetitionResult {
         schema: crate::evidence::run::RUN_SCHEMA,
@@ -855,11 +772,12 @@ fn validate_flashed_image(
     if expected == crate::image::ImageClass::BootSmoke {
         return Ok(());
     }
-    let capture = crate::session::SerialCapture::start_with_reset(&lab.device.serial);
+    let capture = crate::session::SerialCapture::start_with_reset(
+        &lab.device.serial,
+        &output.join("image-preflight"),
+    )?;
     let capabilities = capture.request_capabilities(std::time::Duration::from_secs(10));
-    let capture_result = capture.finish_to(&output.join("image-preflight"));
-    let capabilities = capabilities?;
-    capture_result?;
+    let capabilities = capture.finish_with(capabilities)?;
 
     let observed = image::classify_flashed_capabilities(&capabilities.features)
         .ok_or("flashed image advertises mutually exclusive diagnostic capabilities")?;
@@ -873,6 +791,3 @@ fn validate_flashed_image(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod cli_tests;

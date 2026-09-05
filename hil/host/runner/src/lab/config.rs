@@ -1,7 +1,6 @@
 //! Typed, host-local description of the physical HIL cell.
 
 use std::{
-    cell::Cell,
     fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
@@ -9,8 +8,6 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointSecurity, WifiChannelWidth,
-    WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiRxDispatchPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -24,14 +21,6 @@ pub(crate) struct LabConfig {
     pub(crate) station: StationConfig,
     pub(crate) access_point: AccessPointConfig,
     pub(crate) station_fixture: StationFixtureConfig,
-    data_plane: Cell<WifiDataPlanePlacement>,
-    rx_checksum: Cell<WifiRxChecksumPolicy>,
-    tx_udp_checksum: Cell<WifiTxUdpChecksumPolicy>,
-    tx_buffer: Cell<WifiTxBufferPolicy>,
-    rx_admission: Cell<WifiRxAdmissionPolicy>,
-    rx_dispatch: Cell<WifiRxDispatchPolicy>,
-    rx_continuation: Cell<WifiRxContinuationPolicy>,
-    l1_cache_counters: Cell<bool>,
 }
 
 #[derive(Deserialize)]
@@ -337,14 +326,6 @@ impl LabConfig {
                     StationFixtureConfig::External(ExternalConfig { phys })
                 }
             },
-            data_plane: Cell::new(WifiDataPlanePlacement::SplitRadioNetwork),
-            rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
-            tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
-            tx_buffer: Cell::new(WifiTxBufferPolicy::OwnedSramPromotion),
-            rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
-            rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
-            rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
-            l1_cache_counters: Cell::new(false),
         })
     }
 
@@ -390,79 +371,7 @@ impl LabConfig {
                 phys: vec![PhyExpectation::Ht40],
                 independent_laptop_monitor: true,
             }),
-            data_plane: Cell::new(WifiDataPlanePlacement::SplitRadioNetwork),
-            rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
-            tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
-            tx_buffer: Cell::new(WifiTxBufferPolicy::OwnedSramPromotion),
-            rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
-            rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
-            rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
-            l1_cache_counters: Cell::new(false),
         }
-    }
-
-    pub(crate) fn set_data_plane(&self, placement: WifiDataPlanePlacement) {
-        self.data_plane.set(placement);
-    }
-
-    pub(crate) fn data_plane(&self) -> WifiDataPlanePlacement {
-        self.data_plane.get()
-    }
-
-    pub(crate) fn set_rx_checksum(&self, policy: WifiRxChecksumPolicy) {
-        self.rx_checksum.set(policy);
-    }
-
-    pub(crate) fn rx_checksum(&self) -> WifiRxChecksumPolicy {
-        self.rx_checksum.get()
-    }
-
-    pub(crate) fn set_tx_udp_checksum(&self, policy: WifiTxUdpChecksumPolicy) {
-        self.tx_udp_checksum.set(policy);
-    }
-
-    pub(crate) fn tx_udp_checksum(&self) -> WifiTxUdpChecksumPolicy {
-        self.tx_udp_checksum.get()
-    }
-
-    pub(crate) fn set_tx_buffer(&self, policy: WifiTxBufferPolicy) {
-        self.tx_buffer.set(policy);
-    }
-
-    pub(crate) fn tx_buffer(&self) -> WifiTxBufferPolicy {
-        self.tx_buffer.get()
-    }
-
-    pub(crate) fn set_rx_admission(&self, policy: WifiRxAdmissionPolicy) {
-        self.rx_admission.set(policy);
-    }
-
-    pub(crate) fn rx_admission(&self) -> WifiRxAdmissionPolicy {
-        self.rx_admission.get()
-    }
-
-    pub(crate) fn set_rx_dispatch(&self, policy: WifiRxDispatchPolicy) {
-        self.rx_dispatch.set(policy);
-    }
-
-    pub(crate) fn rx_dispatch(&self) -> WifiRxDispatchPolicy {
-        self.rx_dispatch.get()
-    }
-
-    pub(crate) fn set_rx_continuation(&self, policy: WifiRxContinuationPolicy) {
-        self.rx_continuation.set(policy);
-    }
-
-    pub(crate) fn rx_continuation(&self) -> WifiRxContinuationPolicy {
-        self.rx_continuation.get()
-    }
-
-    pub(crate) fn set_l1_cache_counters(&self, enabled: bool) {
-        self.l1_cache_counters.set(enabled);
-    }
-
-    pub(crate) fn l1_cache_counters(&self) -> bool {
-        self.l1_cache_counters.get()
     }
 }
 

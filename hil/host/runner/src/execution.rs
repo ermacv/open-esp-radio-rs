@@ -1,11 +1,32 @@
 //! Dispatch from validated scenario workloads to their concrete host owners.
 
+use crate::evidence::run::{Failure, FailureKind, Outcome};
 use crate::*;
+
+pub(crate) mod context;
+mod failure;
+#[cfg(test)]
+mod tests;
+pub(crate) use failure::classify;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
     pub(crate) measurements: Vec<crate::evidence::run::Measurement>,
-    pub(crate) failure: Option<String>,
+    pub(crate) failure: Option<Failure>,
+    pub(crate) interrupted: bool,
+}
+
+impl ExecutionEvidence {
+    pub(crate) fn outcome(&self) -> Outcome {
+        if self.interrupted {
+            return Outcome::Interrupted;
+        }
+        match self.failure.as_ref().map(|failure| failure.kind) {
+            None => Outcome::Passed,
+            Some(FailureKind::Infrastructure) => Outcome::Broken,
+            Some(_) => Outcome::Failed,
+        }
+    }
 }
 
 pub(crate) fn execute_workload(
@@ -13,27 +34,35 @@ pub(crate) fn execute_workload(
     selected: &crate::scenario::Scenario,
     output: &Path,
 ) -> ExecutionEvidence {
-    execute_workload_inner(lab, selected, output).unwrap_or_else(|error| ExecutionEvidence {
-        measurements: Vec::new(),
-        failure: Some(error.to_string()),
-    })
+    let context = context::Context::new(lab, context::Settings::from(selected), output);
+    let result = execute_workload_inner(&context, selected, output);
+    let mut evidence = ExecutionEvidence {
+        measurements: context.measurements.snapshot(),
+        interrupted: result
+            .as_ref()
+            .err()
+            .is_some_and(|error| oer_process::is_cancelled(&**error)),
+        failure: result.err().map(|error| classify(&*error)),
+    };
+    if oer_process::cancellation_requested() {
+        evidence.interrupted = true;
+        evidence.failure.get_or_insert_with(|| {
+            Failure::new(FailureKind::Infrastructure, "run cancelled by signal")
+        });
+    }
+    evidence
 }
 
 fn execute_workload_inner(
-    lab: &crate::lab::config::LabConfig,
+    context: &context::Context<'_>,
     selected: &crate::scenario::Scenario,
     output: &Path,
-) -> Result<ExecutionEvidence> {
+) -> Result<()> {
     use crate::scenario::{Direction, Workload};
+    use crate::workload::{ieee80211, traffic};
+    use std::time::Duration;
 
-    lab.set_data_plane(selected.data_plane);
-    lab.set_rx_checksum(selected.rx_checksum);
-    lab.set_tx_udp_checksum(selected.tx_udp_checksum);
-    lab.set_tx_buffer(selected.tx_buffer);
-    lab.set_rx_admission(selected.rx_admission);
-    lab.set_rx_dispatch(selected.rx_dispatch);
-    lab.set_rx_continuation(selected.rx_continuation);
-    lab.set_l1_cache_counters(selected.l1_cache_counters);
+    let lab = context.lab;
 
     // Ordinary station workloads own their AP fixture for the complete run.
     // Loss/absence and Wi-Fi-role workloads manage that lifetime internally;
@@ -58,8 +87,8 @@ fn execute_workload_inner(
     })
     .transpose()?;
 
-    let result = match &selected.workload {
-        Workload::BootSmoke => boot_smoke(output, lab),
+    match &selected.workload {
+        Workload::BootSmoke => boot_smoke(output, context),
         Workload::Timebase {
             boots,
             intervals,
@@ -71,7 +100,7 @@ fn execute_workload_inner(
                 period_millis: *period_millis,
             },
             output,
-            lab,
+            context,
         ),
         Workload::Ieee802154EventStatus {
             boots,
@@ -84,7 +113,7 @@ fn execute_workload_inner(
                 timer_threshold: *timer_threshold,
             },
             output,
-            lab,
+            context,
         ),
         Workload::Ieee802154EdEvent {
             boots,
@@ -97,7 +126,7 @@ fn execute_workload_inner(
                 timer_threshold: *timer_threshold,
             },
             output,
-            lab,
+            context,
         ),
         Workload::Udp {
             direction,
@@ -106,42 +135,34 @@ fn execute_workload_inner(
             tx_rate_bps,
             payload_bytes,
         } => {
-            let mut arguments = Vec::new();
-            push_option(&mut arguments, "--seconds", duration_seconds);
-            push_option(&mut arguments, "--payload", payload_bytes);
-            push_option(
-                &mut arguments,
-                "--phy",
-                selected
-                    .link
-                    .expect("validated station workload has a link expectation")
-                    .phy
-                    .id(),
-            );
+            let duration = Duration::from_secs(u64::from(*duration_seconds));
+            let payload = usize::from(*payload_bytes);
+            let phy = selected.link.expect("validated station link").phy;
             match direction {
                 Direction::Rx => {
                     let link = selected
                         .link
                         .expect("validated station workload has a link expectation");
-                    push_option(
-                        &mut arguments,
-                        "--rate",
-                        rx_rate_bps.expect("validated RX rate"),
-                    );
-                    if let Some(floor) = selected.criteria.minimum_rx_bps {
-                        push_option(&mut arguments, "--floor", floor);
-                    }
-                    if let Some(maximum) = selected.criteria.maximum_idle_channel_utilization_255 {
-                        push_option(
-                            &mut arguments,
-                            "--max-idle-channel-utilization-255",
-                            maximum,
-                        );
-                    }
+                    let config = traffic::rx_traffic::Config {
+                        duration,
+                        payload,
+                        phy,
+                        expected_rx_format: match phy {
+                            crate::scenario::PhyExpectation::He20 => 4,
+                            crate::scenario::PhyExpectation::Ht20
+                            | crate::scenario::PhyExpectation::Ht40 => 2,
+                        },
+                        rate_bps: rx_rate_bps.expect("validated RX rate"),
+                        minimum_rate_bps: selected.criteria.minimum_rx_bps,
+                        maximum_idle_channel_utilization_255: selected
+                            .criteria
+                            .maximum_idle_channel_utilization_255,
+                        ..Default::default()
+                    };
                     crate::workload::traffic::rx_traffic::run(
-                        arguments,
+                        config,
                         output,
-                        lab,
+                        context,
                         crate::workload::traffic::rx_traffic::EvidencePolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
@@ -161,23 +182,29 @@ fn execute_workload_inner(
                     )
                 }
                 Direction::Tx => {
-                    if let Some(rate) = tx_rate_bps {
-                        push_option(&mut arguments, "--rate", rate);
-                    }
-                    if let Some(floor) = selected.criteria.minimum_tx_bps {
-                        push_option(&mut arguments, "--floor", floor);
-                    }
-                    if let Some(maximum) = selected.criteria.maximum_idle_channel_utilization_255 {
-                        push_option(
-                            &mut arguments,
-                            "--max-idle-channel-utilization-255",
-                            maximum,
-                        );
-                    }
+                    let (bandwidth_mhz, minimum_rate_kbps) = match phy {
+                        crate::scenario::PhyExpectation::He20 => (20, 114_700),
+                        crate::scenario::PhyExpectation::Ht40 => (40, 135_000),
+                        crate::scenario::PhyExpectation::Ht20 => {
+                            return Err("UDP TX requires HE20 or HT40".into());
+                        }
+                    };
+                    let config = traffic::tx_traffic::Config {
+                        duration,
+                        payload,
+                        bandwidth_mhz,
+                        minimum_rate_kbps,
+                        offered_rate_bps: *tx_rate_bps,
+                        throughput_floor_bps: selected.criteria.minimum_tx_bps,
+                        maximum_idle_channel_utilization_255: selected
+                            .criteria
+                            .maximum_idle_channel_utilization_255,
+                        ..Default::default()
+                    };
                     crate::workload::traffic::tx_traffic::run(
-                        arguments,
+                        config,
                         output,
-                        lab,
+                        context,
                         selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
                         selected.image.requires_driver_observation(),
@@ -187,27 +214,28 @@ fn execute_workload_inner(
                     let link = selected
                         .link
                         .expect("validated station workload has a link expectation");
-                    push_option(
-                        &mut arguments,
-                        "--rate",
-                        rx_rate_bps.expect("validated RX rate"),
-                    );
-                    if let Some(rate) = tx_rate_bps {
-                        push_option(&mut arguments, "--tx-rate", rate);
-                    }
-                    if let Some(floor) = selected.criteria.minimum_tx_bps {
-                        push_option(&mut arguments, "--tx-floor", floor);
-                    }
-                    if let Some(floor) = selected.criteria.minimum_rx_bps {
-                        push_option(&mut arguments, "--rx-floor", floor);
-                    }
-                    if let Some(floor) = selected.criteria.minimum_combined_bps {
-                        push_option(&mut arguments, "--combined-floor", floor);
-                    }
+                    let phy = match phy {
+                        crate::scenario::PhyExpectation::He20 => traffic::bidirectional::Phy::He20,
+                        crate::scenario::PhyExpectation::Ht40 => traffic::bidirectional::Phy::Ht40,
+                        crate::scenario::PhyExpectation::Ht20 => {
+                            return Err("bidirectional UDP requires HE20 or HT40".into());
+                        }
+                    };
+                    let config = traffic::bidirectional::Config {
+                        duration,
+                        payload,
+                        phy,
+                        rate_bps: rx_rate_bps.expect("validated RX rate"),
+                        tx_rate_bps: *tx_rate_bps,
+                        rx_floor_bps: selected.criteria.minimum_rx_bps,
+                        tx_floor_bps: selected.criteria.minimum_tx_bps,
+                        combined_floor_bps: selected.criteria.minimum_combined_bps,
+                        ..Default::default()
+                    };
                     crate::workload::traffic::bidirectional::run(
-                        arguments,
+                        config,
                         output,
-                        lab,
+                        context,
                         crate::workload::traffic::bidirectional::RunPolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
@@ -235,43 +263,27 @@ fn execute_workload_inner(
             tx_rate_bps,
             chunk_bytes,
         } => {
-            let mut arguments = Vec::new();
-            push_option(&mut arguments, "--seconds", duration_seconds);
-            push_option(&mut arguments, "--chunk", chunk_bytes);
-            if let Some(rate) = rx_rate_bps {
-                push_option(&mut arguments, "--rx-rate", rate);
-            }
-            if let Some(rate) = tx_rate_bps {
-                push_option(&mut arguments, "--tx-rate", rate);
-            }
-            if let Some(floor) = selected.criteria.minimum_tx_bps {
-                push_option(&mut arguments, "--tx-floor", floor);
-            }
-            if let Some(floor) = selected.criteria.minimum_rx_bps {
-                push_option(&mut arguments, "--rx-floor", floor);
-            }
-            match direction {
-                Direction::Rx => crate::workload::traffic::tcp_traffic::run_rx(
-                    arguments,
-                    output,
-                    lab,
-                    selected.criteria.require_no_beacon_loss,
-                ),
-                Direction::Tx => crate::workload::traffic::tcp_traffic::run_tx(
-                    arguments,
-                    output,
-                    lab,
-                    selected.criteria.require_no_beacon_loss,
-                ),
-                Direction::Bidirectional => {
-                    crate::workload::traffic::tcp_traffic::run_bidirectional(
-                        arguments,
-                        output,
-                        lab,
-                        selected.criteria.require_no_beacon_loss,
-                    )
-                }
-            }
+            let direction = match direction {
+                Direction::Rx => open_esp_radio_hil_protocol::Direction::Rx,
+                Direction::Tx => open_esp_radio_hil_protocol::Direction::Tx,
+                Direction::Bidirectional => open_esp_radio_hil_protocol::Direction::Bidirectional,
+            };
+            let defaults = traffic::tcp_traffic::Config::for_direction(direction);
+            let config = traffic::tcp_traffic::Config {
+                duration: Duration::from_secs(u64::from(*duration_seconds)),
+                chunk_bytes: usize::from(*chunk_bytes),
+                rx_rate_bps: rx_rate_bps.or(defaults.rx_rate_bps),
+                tx_rate_bps: tx_rate_bps.or(defaults.tx_rate_bps),
+                rx_floor_bps: selected.criteria.minimum_rx_bps.or(defaults.rx_floor_bps),
+                tx_floor_bps: selected.criteria.minimum_tx_bps.or(defaults.tx_floor_bps),
+                ..defaults
+            };
+            traffic::tcp_traffic::run(
+                config,
+                output,
+                context,
+                selected.criteria.require_no_beacon_loss,
+            )
         }
         Workload::Icmp {
             count,
@@ -279,51 +291,51 @@ fn execute_workload_inner(
             timeout_ms,
             payload_bytes,
         } => {
-            let mut arguments = Vec::new();
-            push_option(&mut arguments, "--count", count);
-            push_option(&mut arguments, "--interval-ms", interval_ms);
-            push_option(&mut arguments, "--timeout-ms", timeout_ms);
-            push_option(&mut arguments, "--payload", payload_bytes);
-            if let Some(maximum) = selected.criteria.maximum_lost {
-                push_option(&mut arguments, "--max-lost", maximum);
-            }
-            if let Some(maximum) = selected.criteria.maximum_p95_ms {
-                push_option(&mut arguments, "--max-p95-ms", maximum);
-            }
-            let evidence = crate::workload::traffic::icmp_latency::run(
-                arguments,
+            let config = traffic::icmp_latency::Config {
+                count: *count,
+                interval: Duration::from_millis(u64::from(*interval_ms)),
+                timeout: Duration::from_millis(u64::from(*timeout_ms)),
+                payload_bytes: usize::from(*payload_bytes),
+                maximum_lost: selected.criteria.maximum_lost.unwrap_or(0).try_into()?,
+                maximum_p95: selected
+                    .criteria
+                    .maximum_p95_ms
+                    .map(|ms| Duration::from_millis(u64::from(ms))),
+                ..Default::default()
+            };
+            traffic::icmp_latency::run(
+                config,
                 output,
-                lab,
+                context,
                 selected.criteria.require_no_beacon_loss,
-            )?;
-            return Ok(ExecutionEvidence {
-                measurements: evidence.measurements,
-                failure: evidence.acceptance_failure,
-            });
+            )
         }
         Workload::StationReconnect {
             cycles,
             boots,
             timeout_seconds,
         } => {
-            let mut arguments = Vec::new();
-            push_option(&mut arguments, "--cycles", cycles);
-            push_option(&mut arguments, "--boots", boots);
-            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            let config = ieee80211::station_lifecycle::Config {
+                cycles: *cycles,
+                boots: *boots,
+                timeout: Duration::from_secs(u64::from(*timeout_seconds)),
+                ..Default::default()
+            };
             crate::workload::ieee80211::station_lifecycle::run(
-                arguments,
+                config,
                 output,
-                lab,
+                context,
                 selected.criteria.require_no_beacon_loss,
             )
         }
         Workload::StationApLoss { timeout_seconds } => {
-            let mut arguments = Vec::new();
-            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            let config = ieee80211::station_ap_loss::Config {
+                timeout: Duration::from_secs(u64::from(*timeout_seconds)),
+            };
             crate::workload::ieee80211::station_ap_loss::run(
-                arguments,
+                config,
                 output,
-                lab,
+                context,
                 selected
                     .link
                     .expect("validated AP-loss workload has a link expectation")
@@ -331,12 +343,13 @@ fn execute_workload_inner(
             )
         }
         Workload::StationApAbsence { timeout_seconds } => {
-            let mut arguments = Vec::new();
-            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            let config = ieee80211::station_ap_absence::Config {
+                timeout: Duration::from_secs(u64::from(*timeout_seconds)),
+            };
             crate::workload::ieee80211::station_ap_absence::run(
-                arguments,
+                config,
                 output,
-                lab,
+                context,
                 selected
                     .link
                     .expect("validated AP-absence workload has a link expectation")
@@ -350,22 +363,17 @@ fn execute_workload_inner(
             dwell_seconds,
             snapshot_length,
         } => {
-            let mut arguments = Vec::new();
-            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            if let Some(channel) = channel {
-                push_option(&mut arguments, "--channel", channel);
-            }
-            if let Some(seconds) = dwell_seconds {
-                push_option(&mut arguments, "--monitor-seconds", seconds);
-            }
-            if let Some(length) = snapshot_length {
-                push_option(&mut arguments, "--snapshot-length", length);
-            }
+            let config = ieee80211::control::Config {
+                timeout: Duration::from_secs(u64::from(*timeout_seconds)),
+                monitor_channel: *channel,
+                monitor_duration: Duration::from_secs(u64::from(dwell_seconds.unwrap_or(3))),
+                snapshot_length: snapshot_length.unwrap_or(256),
+            };
             crate::workload::ieee80211::control::run(
-                operation.id(),
-                arguments,
+                *operation,
+                config,
                 output,
-                lab,
+                context,
                 selected
                     .link
                     .expect("validated Wi-Fi role has a link expectation")
@@ -378,22 +386,17 @@ fn execute_workload_inner(
             channel,
             snapshot_length,
         } => {
-            let mut arguments = Vec::new();
-            push_option(
-                &mut arguments,
-                "--output",
-                output.join("capture.pcapng").display(),
-            );
-            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            push_option(&mut arguments, "--seconds", duration_seconds);
-            if let Some(channel) = channel {
-                push_option(&mut arguments, "--channel", channel);
-            }
-            push_option(&mut arguments, "--snapshot-length", snapshot_length);
+            let config = ieee80211::capture::Config {
+                timeout: Duration::from_secs(u64::from(*timeout_seconds)),
+                duration: Duration::from_secs(u64::from(*duration_seconds)),
+                output: output.join("capture.pcapng"),
+                channel: *channel,
+                snapshot_length: *snapshot_length,
+            };
             crate::workload::ieee80211::capture::run(
-                arguments,
+                config,
                 output,
-                lab,
+                context,
                 selected
                     .link
                     .expect("validated monitor capture has a link expectation")
@@ -429,7 +432,7 @@ fn execute_workload_inner(
                     .openwrt_client_fixed_guard_interval,
             },
             output,
-            lab,
+            context,
         ),
         Workload::StationAccessPoint {
             timeout_seconds,
@@ -454,32 +457,24 @@ fn execute_workload_inner(
                     .independent_laptop_air_monitor,
             },
             output,
-            lab,
+            context,
         ),
         Workload::StationAccessPointReconnect { timeout_seconds } => {
             crate::workload::ieee80211::station_access_point_reconnect::run(
                 std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 output,
-                lab,
+                context,
                 selected
                     .link
                     .expect("validated paired reconnect has a link expectation")
                     .phy,
             )
         }
-    };
-    result?;
-    Ok(ExecutionEvidence::default())
+    }
 }
 
-fn boot_smoke(output: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
-    let capture = crate::session::SerialCapture::start_with_reset(&lab.device.serial);
-    let result = capture.wait_for_boot_smoke(std::time::Duration::from_secs(10));
-    capture.finish_to(output)?;
-    result
-}
-
-fn push_option(arguments: &mut Vec<String>, name: &str, value: impl ToString) {
-    arguments.push(name.to_owned());
-    arguments.push(value.to_string());
+fn boot_smoke(output: &Path, context: &context::Context<'_>) -> Result<()> {
+    context.with_capture(output, |capture| {
+        capture.wait_for_boot_smoke(std::time::Duration::from_secs(10))
+    })
 }

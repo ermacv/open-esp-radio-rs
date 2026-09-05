@@ -149,6 +149,28 @@ fn history_is_rebuilt_from_runs_and_exposes_flakiness() {
 }
 
 #[test]
+fn concurrent_history_publication_waits_for_the_previous_snapshot() {
+    use std::{sync::mpsc, time::Duration};
+    let target = temporary_target("publication-lock");
+    let guard = crate::evidence::run::IndexGuard::acquire(&target).unwrap();
+    let (entered, entering) = mpsc::channel();
+    let (finished, completion) = mpsc::channel();
+    let other_target = target.clone();
+    let worker = std::thread::spawn(move || {
+        entered.send(()).unwrap();
+        let update = crate::evidence::run::IndexGuard::acquire(&other_target).unwrap();
+        finished.send(()).unwrap();
+        drop(update);
+    });
+    entering.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert!(completion.recv_timeout(Duration::from_millis(50)).is_err());
+    drop(guard);
+    completion.recv_timeout(Duration::from_secs(2)).unwrap();
+    worker.join().unwrap();
+    fs::remove_dir_all(target).unwrap();
+}
+
+#[test]
 fn malformed_run_bundle_fails_closed() {
     let target = temporary_target("invalid");
     fs::create_dir(target.join("runs/run-without-manifest")).unwrap();

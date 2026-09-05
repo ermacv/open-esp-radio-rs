@@ -33,6 +33,23 @@ pub struct Envelope<T> {
     pub body: T,
 }
 
+impl Envelope<Command> {
+    /// Bind every operation to one boot. Only a session-free capability query
+    /// may discover an unknown boot; it cannot initialize or mutate the radio.
+    pub fn validate_target(&self, target_boot_id: u64) -> Result<(), RejectReason> {
+        if self.protocol_version != PROTOCOL_VERSION {
+            return Err(RejectReason::ProtocolVersion);
+        }
+        let discovery = self.boot_id == 0
+            && self.session_id == 0
+            && matches!(self.body, Command::GetCapabilities);
+        if target_boot_id == 0 || (self.boot_id != target_boot_id && !discovery) {
+            return Err(RejectReason::BootId);
+        }
+        Ok(())
+    }
+}
+
 /// Message direction encoded in the fixed wire header.
 ///
 /// Keeping this outside the postcard body lets a decoder reject a frame sent

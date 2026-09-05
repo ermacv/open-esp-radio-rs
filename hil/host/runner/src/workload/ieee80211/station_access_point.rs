@@ -1,5 +1,6 @@
 //! Simultaneous same-channel STA+AP data-plane and beacon qualification.
 
+use crate::execution::context::Context;
 use std::{
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
@@ -22,7 +23,6 @@ use crate::{
         controlled_client::ControlledClient,
         local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
     },
-    lab::config::LabConfig,
     session::{SerialCapture, SessionEvidence, probe_udp_rx_ready_via},
     transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
     workload::{
@@ -105,38 +105,37 @@ const fn target_transmits(direction: crate::scenario::Direction) -> bool {
     )
 }
 
-pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
+pub(crate) fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     fs::create_dir_all(output)?;
-    let capture = SerialCapture::start_with_reset(&lab.device.serial);
-    let result = qualify(&capture, config, lab, output).and_then(|outcome| {
+    let capture = context.capture(output)?;
+    let result = qualify(&capture, config, context, output).and_then(|outcome| {
         fs::write(
             output.join("station-access-point-report.json"),
             serde_json::to_vec_pretty(&outcome.report)?,
         )?;
         outcome.verdict
     });
-    let capture_result = capture.finish_to(output);
-    result?;
-    capture_result.map(|_| ())
+    capture.finish_with(result)
 }
 
 fn qualify(
     capture: &SerialCapture,
     config: Config,
-    lab: &LabConfig,
+    context: &Context<'_>,
     output: &Path,
 ) -> Result<QualificationOutcome> {
-    let capabilities = capture.prepare_station(lab, config.timeout)?;
+    let capabilities = capture.prepare_station(context, config.timeout)?;
     if !capabilities.features.simultaneous_station_access_point {
         return Err("firmware does not advertise simultaneous STA+AP".into());
     }
     let _ = stop_station(capture, config.timeout)?;
 
-    let access_point_request = lab
+    let access_point_request = context
+        .lab
         .access_point
         .protocol_request(open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
     let request = WifiStationAccessPointRequest {
-        station_credentials: lab.station.protocol_credentials()?,
+        station_credentials: context.lab.station.protocol_credentials()?,
         access_point: access_point_request.clone(),
     };
     let started = capture.wait_wifi_role_transition(
@@ -146,7 +145,7 @@ fn qualify(
     require_transition(started, WifiRole::Idle, WifiRole::StationAccessPoint)?;
 
     let (station_target, access_point_target) = wait_for_endpoints(capture, config.timeout)?;
-    let client = ControlledClient::connect(&lab.access_point)?;
+    let client = ControlledClient::connect(&context.lab.access_point)?;
     let readiness = probe_udp_rx_ready_via(
         capture,
         WifiNetworkInterface::Station,
@@ -186,7 +185,7 @@ fn qualify(
 
     let station_flow = reverse_flow(Ipv4Addr::UNSPECIFIED, STATION_HOST_PORT, station_target)?;
     let access_point_flow = reverse_flow(
-        lab.access_point.client_address(),
+        context.lab.access_point.client_address(),
         ACCESS_POINT_HOST_PORT,
         access_point_target,
     )?;
@@ -271,7 +270,7 @@ fn qualify(
                 config.maximum_fairness_skew_percent,
             )?;
         }
-        Ok::<(), Box<dyn std::error::Error>>(())
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     })();
 
     let stopped = capture.wait_station_access_point_stop(
@@ -324,13 +323,14 @@ pub(crate) fn wait_for_endpoints(
 ) -> Result<(Ipv4Addr, Ipv4Addr)> {
     let deadline = std::time::Instant::now() + timeout;
     while std::time::Instant::now() < deadline {
+        oer_process::check_cancelled()?;
         if let (Some(station), Some(access_point)) = (
             capture.observed_protocol_ipv4(WifiNetworkInterface::Station),
             capture.observed_protocol_ipv4(WifiNetworkInterface::AccessPoint),
         ) {
             return Ok((station, access_point));
         }
-        thread::sleep(Duration::from_millis(20));
+        oer_process::sleep(Duration::from_millis(20))?;
     }
     Err("paired role did not publish both network endpoints".into())
 }

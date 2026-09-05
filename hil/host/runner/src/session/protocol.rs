@@ -1,154 +1,54 @@
 use super::*;
+use crate::execution::context::Context;
+
+#[derive(serde::Serialize)]
+pub(crate) struct Observation {
+    boot_id: u64,
+    capabilities: Capabilities,
+    operation: OperationStatus,
+    /// None means the current target state cannot safely snapshot the stacks.
+    stack: Option<StackUsage>,
+    link: LinkHealth,
+}
 
 impl SerialCapture {
-    /// Open the diagnostics owner before resetting the USB-Serial/JTAG target.
-    ///
-    /// Traffic qualification needs the DHCP and UDP-ready records from the
-    /// current boot. Resetting through a second process after opening this
-    /// handle is impossible because `serialport` owns the device exclusively.
-    pub(crate) fn start_with_reset(port: &Path) -> Self {
-        Self::start_inner(port, true)
+    pub(crate) fn observe(&self, timeout: Duration) -> Result<Observation> {
+        let capabilities = self.discover(timeout)?;
+        let boot_id = self
+            .latest_boot_id()
+            .ok_or("discovery omitted the target boot identity")?;
+        let operation = self.query_operation_status(timeout)?;
+        let stack = self.inspect_stack_usage(timeout)?;
+        let link = self.query_link_health(timeout)?;
+        Ok(Observation {
+            boot_id,
+            capabilities,
+            operation,
+            stack,
+            link,
+        })
     }
 
-    /// Boot-smoke deliberately runs before the full radio/protocol runtime.
-    /// Its only contract is that the relocated Embassy timer executes once.
-    pub(crate) fn wait_for_boot_smoke(&self, timeout: Duration) -> Result<()> {
-        const PASS: &[u8] = b"OPEN_RADIO_HIL boot-smoke=PASS timer=PASS";
-        const PANIC: &[u8] = b"OPEN_RADIO_HIL runtime=PANIC";
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            let bytes = self
-                .bytes
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if bytes
-                .windows(PANIC.len())
-                .any(|candidate| candidate == PANIC)
-            {
-                return Err("boot-smoke runtime panicked".into());
-            }
-            if bytes.windows(PASS.len()).any(|candidate| candidate == PASS) {
-                return Ok(());
-            }
-            drop(bytes);
-            thread::sleep(Duration::from_millis(10));
+    pub(crate) fn discover(&self, timeout: Duration) -> Result<Capabilities> {
+        let response = self.exchange(0, 0, Command::GetCapabilities, timeout)?;
+        match response.body {
+            Event::Hello(capabilities) if response.boot_id != 0 => Ok(capabilities),
+            Event::Rejected(reason) => Err(format!("device rejected read-only discovery: {reason:?}; firmware must support boot discovery").into()),
+            _ => Err("device returned an invalid boot discovery response".into()),
         }
-        Err("boot-smoke timer completion was not observed".into())
     }
 
-    fn start_inner(port: &Path, reset_target: bool) -> Self {
-        let stop = Arc::new(AtomicBool::new(false));
-        let bytes = Arc::new(Mutex::new(Vec::new()));
-        let protocol = Arc::new(ProtocolEvents {
-            messages: Mutex::new(Vec::new()),
-            health: Mutex::new(ProtocolHealth::default()),
-            changed: Condvar::new(),
-        });
-        let (outbound, outbound_rx) = mpsc::channel::<Zeroizing<Vec<u8>>>();
-        let worker_stop = Arc::clone(&stop);
-        let worker_bytes = Arc::clone(&bytes);
-        let worker_protocol = Arc::clone(&protocol);
-        let port = port.to_owned();
-        let worker = thread::spawn(move || {
-            let mut serial = match open_serial_after_busy_release(&port) {
-                Ok(serial) => serial,
-                Err(error) => {
-                    append(
-                        &worker_bytes,
-                        format!("serial capture failed for {}: {error}\n", port.display())
-                            .as_bytes(),
-                    );
-                    return;
-                }
-            };
-            if reset_target {
-                let _ = serial.clear(serialport::ClearBuffer::Input);
+    pub(crate) fn inspect_stack_usage(&self, timeout: Duration) -> Result<Option<StackUsage>> {
+        match self
+            .send_command(0, Command::QueryStackUsage, timeout)?
+            .body
+        {
+            Event::StackUsage(stack) => Ok(Some(stack)),
+            Event::Rejected(open_esp_radio_hil_protocol::RejectReason::InvalidState) => Ok(None),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected stack observation: {reason:?}").into())
             }
-            if reset_target && let Err(error) = reset_usb_serial_jtag(&mut *serial) {
-                append(
-                    &worker_bytes,
-                    format!(
-                        "serial target reset failed for {}: {error}\n",
-                        port.display()
-                    )
-                    .as_bytes(),
-                );
-                return;
-            }
-            let mut decoder = FrameDecoder::new();
-            let mut buffer = [0_u8; 2_048];
-            while !worker_stop.load(Ordering::Acquire) {
-                while let Ok(frame) = outbound_rx.try_recv() {
-                    if let Err(error) = serial.write_all(frame.as_slice()) {
-                        append(
-                            &worker_bytes,
-                            format!("\nserial write failed: {error}\n").as_bytes(),
-                        );
-                        return;
-                    }
-                }
-                match serial.read(&mut buffer) {
-                    Ok(length) => {
-                        append(&worker_bytes, &buffer[..length]);
-                        let decoder_counters_before_read = decoder.counters();
-                        decoder.feed::<Event>(&buffer[..length], |message| match message {
-                            Ok(message) => {
-                                worker_protocol
-                                    .health
-                                    .lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                    .observe(&message, decoder_counters_before_read);
-                                let mut messages = worker_protocol
-                                    .messages
-                                    .lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                let capacity_exhausted = messages.len() == PROTOCOL_EVENT_CAPACITY;
-                                if !capacity_exhausted {
-                                    messages.push(message);
-                                }
-                                drop(messages);
-                                if capacity_exhausted {
-                                    worker_protocol
-                                        .health
-                                        .lock()
-                                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                        .fail(format!(
-                                            "host protocol event capacity {PROTOCOL_EVENT_CAPACITY} exhausted"
-                                        ));
-                                }
-                                worker_protocol.changed.notify_all();
-                            }
-                            Err(error) => worker_protocol
-                                .health
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .decode_error(error),
-                        });
-                        worker_protocol
-                            .health
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .update_decoder_counters(decoder.counters());
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
-                    Err(error) => {
-                        append(
-                            &worker_bytes,
-                            format!("\nserial read failed: {error}\n").as_bytes(),
-                        );
-                        break;
-                    }
-                }
-            }
-        });
-        Self {
-            stop,
-            bytes,
-            protocol,
-            outbound,
-            next_host_sequence: AtomicU32::new(1),
-            next_session_id: AtomicU64::new(1),
-            worker: Some(worker),
+            _ => Err("device returned an invalid stack observation".into()),
         }
     }
 
@@ -158,10 +58,8 @@ impl SerialCapture {
         let _hello = self
             .wait_for_protocol_after(0, timeout, |message| {
                 matches!(message.body, Event::Hello(_))
-            })
-            .ok_or_else(|| {
-                self.protocol_failure_or("device did not publish a HIL protocol hello")
-            })?;
+            })?
+            .ok_or("device did not publish a HIL protocol hello")?;
         let response = self.send_command(0, Command::GetCapabilities, timeout)?;
         match response.body {
             Event::Hello(capabilities) => Ok(capabilities),
@@ -175,9 +73,9 @@ impl SerialCapture {
     /// Establishes the typed link and provisions this boot from host-owned
     /// local configuration. The passphrase is never echoed by the target or
     /// appended to the UART capture.
-    pub(crate) fn prepare_protocol(&self, lab: &LabConfig) -> Result<Capabilities> {
+    pub(crate) fn prepare_protocol(&self, context: &Context<'_>) -> Result<Capabilities> {
         let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
-        let artifact_path = lab.device.startup_artifact.as_deref();
+        let artifact_path = context.lab.device.startup_artifact.as_deref();
         if artifact_path.is_some() && !capabilities.features.startup_artifact {
             return Err("firmware does not support a host-owned startup artifact".into());
         }
@@ -192,7 +90,7 @@ impl SerialCapture {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
         }
         if capabilities.features.runtime_initialization {
-            self.initialize(lab, PROTOCOL_READY_TIMEOUT)?;
+            self.initialize(context, PROTOCOL_READY_TIMEOUT)?;
         }
         if capabilities.features.startup_artifact
             && let Some(path) = artifact_path
@@ -231,7 +129,7 @@ impl SerialCapture {
         let event = self
             .wait_for_protocol_after(start, timeout, |message| {
                 matches!(&message.body, Event::StartupArtifactReady(_))
-            })
+            })?
             .ok_or("device did not report startup artifact initialization status")?;
         match event.body {
             Event::StartupArtifactReady(status) => Ok(status),
@@ -261,7 +159,7 @@ impl SerialCapture {
         let mut assembler = crate::session::startup_artifact::Assembler::new();
         loop {
             let chunk = self
-                .wait_for_startup_artifact_chunk(&mut cursor, deadline)
+                .wait_for_startup_artifact_chunk(&mut cursor, deadline)?
                 .ok_or("device did not return its startup artifact")?;
             if let Some(bytes) = assembler.push(&chunk)? {
                 return Ok(bytes);
@@ -273,57 +171,33 @@ impl SerialCapture {
         &self,
         cursor: &mut usize,
         deadline: Instant,
-    ) -> Option<StartupArtifactChunk> {
-        let mut messages = self
-            .protocol
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        loop {
-            if let Some((relative, chunk)) = messages
-                .get(*cursor..)
-                .unwrap_or_default()
-                .iter()
-                .enumerate()
-                .find_map(|(relative, message)| match &message.body {
-                    Event::StartupArtifact(chunk) => Some((relative, chunk.clone())),
-                    _ => None,
-                })
-            {
-                *cursor += relative + 1;
-                return Some(chunk);
-            }
-            *cursor = messages.len();
-            let now = Instant::now();
-            if now >= deadline {
-                return None;
-            }
-            let (next, result) = self
-                .protocol
-                .changed
-                .wait_timeout(messages, deadline - now)
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            messages = next;
-            if result.timed_out() {
-                return None;
-            }
-        }
+    ) -> Result<Option<StartupArtifactChunk>> {
+        Ok(self
+            .wait_for_protocol_cursor(
+                cursor,
+                deadline.saturating_duration_since(Instant::now()),
+                |message| matches!(message.body, Event::StartupArtifact(_)),
+            )?
+            .map(|message| match message.body {
+                Event::StartupArtifact(chunk) => chunk,
+                _ => unreachable!("artifact predicate accepted only artifact chunks"),
+            }))
     }
 
-    fn initialize(&self, lab: &LabConfig, timeout: Duration) -> Result<()> {
+    fn initialize(&self, context: &Context<'_>, timeout: Duration) -> Result<()> {
         let first_event = self.protocol_event_count();
         let response = self.send_command(
             0,
             Command::Initialize(open_esp_radio_hil_protocol::InitializationConfiguration {
-                ipv4: lab.station.ipv4(),
-                data_plane: lab.data_plane(),
-                rx_checksum: lab.rx_checksum(),
-                tx_udp_checksum: lab.tx_udp_checksum(),
-                tx_buffer: lab.tx_buffer(),
-                rx_admission: lab.rx_admission(),
-                rx_dispatch: lab.rx_dispatch(),
-                rx_continuation: lab.rx_continuation(),
-                l1_cache_counters: lab.l1_cache_counters(),
+                ipv4: context.lab.station.ipv4(),
+                data_plane: context.settings.data_plane,
+                rx_checksum: context.settings.rx_checksum,
+                tx_udp_checksum: context.settings.tx_udp_checksum,
+                tx_buffer: context.settings.tx_buffer,
+                rx_admission: context.settings.rx_admission,
+                rx_dispatch: context.settings.rx_dispatch,
+                rx_continuation: context.settings.rx_continuation,
+                l1_cache_counters: context.settings.l1_cache_counters,
             }),
             timeout,
         )?;
@@ -342,19 +216,19 @@ impl SerialCapture {
         }
         self.wait_for_protocol_after(first_event, timeout, |message| {
             message.request_id == request_id && matches!(message.body, Event::Initialized)
-        })
+        })?
         .ok_or_else(|| "device did not complete role-neutral initialization".into())
         .map(|_| ())
     }
 
     pub(crate) fn prepare_station(
         &self,
-        lab: &LabConfig,
+        context: &Context<'_>,
         timeout: Duration,
     ) -> Result<Capabilities> {
-        let capabilities = self.prepare_protocol(lab)?;
+        let capabilities = self.prepare_protocol(context)?;
         let lifecycle_cursor = self.station_lifecycle_cursor();
-        let handle = self.request_station_start(lab)?;
+        let handle = self.request_station_start(context)?;
         self.wait_wifi_role_transition(handle, timeout)?;
         self.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
         Ok(capabilities)
@@ -376,9 +250,21 @@ impl SerialCapture {
         body: Command,
         timeout: Duration,
     ) -> Result<Envelope<Event>> {
+        self.check_link()?;
         let boot_id = self
             .latest_boot_id()
             .ok_or("HIL protocol hello disappeared before command")?;
+        self.exchange(boot_id, session_id, body, timeout)
+    }
+
+    fn exchange(
+        &self,
+        boot_id: u64,
+        session_id: u64,
+        body: Command,
+        timeout: Duration,
+    ) -> Result<Envelope<Event>> {
+        self.check_link()?;
         let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
         let event_count = self.protocol_event_count();
         let command = Envelope::new(boot_id, request_id, session_id, request_id, body);
@@ -389,11 +275,20 @@ impl SerialCapture {
             .to_vec();
         self.outbound
             .send(Zeroizing::new(frame))
-            .map_err(|_| "serial worker stopped before HIL command")?;
+            .map_err(|_| LinkError::transport("serial worker stopped before HIL command"))?;
         self.wait_for_protocol_after(event_count, timeout, |message| {
-            command_response_matches(message, boot_id, session_id, request_id)
-        })
-        .ok_or_else(|| self.protocol_failure_or("device did not answer HIL command"))
+            command_response_matches(
+                message,
+                if boot_id == 0 {
+                    message.boot_id
+                } else {
+                    boot_id
+                },
+                session_id,
+                request_id,
+            )
+        })?
+        .ok_or_else(|| "device did not answer HIL command".into())
     }
 
     fn expect_accepted(
@@ -405,7 +300,9 @@ impl SerialCapture {
     ) -> Result<()> {
         let response = self
             .send_command(session_id, command, PROTOCOL_READY_TIMEOUT)
-            .map_err(|error| format!("session {operation} command failed: {error}"))?;
+            .map_err(|error| {
+                crate::error::context(format!("session {operation} command failed"), error)
+            })?;
         match response.body {
             Event::Accepted => Ok(()),
             Event::State(StateChange { current, .. }) if current == expected_state => Ok(()),
@@ -422,6 +319,11 @@ impl SerialCapture {
         let direction = config.direction;
         let link_requirements = config.link_requirements;
         let flow_ids = config.flows.map(|flow| flow.map(|flow| flow.flow_id));
+        let handle = SessionHandle {
+            session_id,
+            first_event,
+            flow_ids,
+        };
         self.expect_accepted(
             session_id,
             Command::Configure(config),
@@ -436,7 +338,7 @@ impl SerialCapture {
             Direction::Bidirectional => &[Direction::Rx, Direction::Tx],
         };
         for expected in expected_directions {
-            self.wait_for_protocol_after(first_event, PROTOCOL_READY_TIMEOUT, |message| {
+            self.wait_for_session_event(handle, PROTOCOL_READY_TIMEOUT, |message| {
                 message.session_id == session_id
                     && matches!(
                         message.body,
@@ -448,7 +350,7 @@ impl SerialCapture {
                                 link_requirements,
                             )
                     )
-            })
+            })?
             .ok_or_else(|| {
                 format!(
                     "device did not publish {expected:?} data-plane readiness for session \
@@ -457,11 +359,27 @@ impl SerialCapture {
                 )
             })?;
         }
-        Ok(SessionHandle {
-            session_id,
-            first_event,
-            flow_ids,
-        })
+        Ok(handle)
+    }
+
+    fn wait_for_session_event(
+        &self,
+        session: SessionHandle,
+        timeout: Duration,
+        predicate: impl Fn(&Envelope<Event>) -> bool,
+    ) -> Result<Option<Envelope<Event>>> {
+        let event = self.wait_for_protocol_after(session.first_event, timeout, |message| {
+            message.session_id == session.session_id
+                && (predicate(message) || matches!(message.body, Event::Failed(_)))
+        })?;
+        if let Some(Envelope {
+            body: Event::Failed(reason),
+            ..
+        }) = event
+        {
+            return Err(format!("target session {} failed: {reason:?}", session.session_id).into());
+        }
+        Ok(event)
     }
 
     pub(crate) fn wait_for_session(
@@ -471,10 +389,14 @@ impl SerialCapture {
     ) -> Result<SessionEvidence> {
         let deadline = Instant::now() + timeout;
         let evidence = self
-            .wait_for_protocol_after(session.first_event, timeout, |message| {
-                message.session_id == session.session_id
-                    && matches!(message.body, Event::Evidence(EvidenceRecord::Transport(_)))
-            })
+            .wait_for_session_event(
+                session,
+                deadline.saturating_duration_since(Instant::now()),
+                |message| {
+                    message.session_id == session.session_id
+                        && matches!(message.body, Event::Evidence(EvidenceRecord::Transport(_)))
+                },
+            )?
             .ok_or("device did not publish structured session evidence")?;
         let transport = match evidence.body {
             Event::Evidence(EvidenceRecord::Transport(transport)) => transport,
@@ -487,14 +409,14 @@ impl SerialCapture {
             };
             let remaining = deadline.saturating_duration_since(Instant::now());
             let flow_evidence = self
-                .wait_for_protocol_after(session.first_event, remaining, |message| {
+                .wait_for_session_event(session, remaining, |message| {
                     message.session_id == session.session_id
                         && matches!(
                             message.body,
                             Event::Evidence(EvidenceRecord::FlowTransport(flow))
                                 if flow.flow_id == flow_id
                         )
-                })
+                })?
                 .ok_or_else(|| {
                     format!("device did not publish transport evidence for flow {flow_id}")
                 })?;
@@ -511,10 +433,14 @@ impl SerialCapture {
             .into());
         }
         let link_evidence = self
-            .wait_for_protocol_after(session.first_event, timeout, |message| {
-                message.session_id == session.session_id
-                    && matches!(message.body, Event::Evidence(EvidenceRecord::Link(_)))
-            })
+            .wait_for_session_event(
+                session,
+                deadline.saturating_duration_since(Instant::now()),
+                |message| {
+                    message.session_id == session.session_id
+                        && matches!(message.body, Event::Evidence(EvidenceRecord::Link(_)))
+                },
+            )?
             .ok_or("device did not publish structured protocol-link evidence")?;
         let link = match link_evidence.body {
             Event::Evidence(EvidenceRecord::Link(link)) => link,
@@ -526,13 +452,20 @@ impl SerialCapture {
             || link.rx_overflows != 0
             || link.tx_dropped != 0
         {
-            return Err(format!("device protocol link is unhealthy: {link:?}").into());
+            return Err(LinkError::protocol(format!(
+                "device protocol link is unhealthy: {link:?}"
+            ))
+            .into());
         }
         let stack_evidence = self
-            .wait_for_protocol_after(session.first_event, timeout, |message| {
-                message.session_id == session.session_id
-                    && matches!(message.body, Event::Evidence(EvidenceRecord::Stack(_)))
-            })
+            .wait_for_session_event(
+                session,
+                deadline.saturating_duration_since(Instant::now()),
+                |message| {
+                    message.session_id == session.session_id
+                        && matches!(message.body, Event::Evidence(EvidenceRecord::Stack(_)))
+                },
+            )?
             .ok_or("device did not publish structured stack evidence")?;
         let stack = match stack_evidence.body {
             Event::Evidence(EvidenceRecord::Stack(stack)) => stack,
@@ -541,53 +474,53 @@ impl SerialCapture {
         validate_stack_usage(stack)?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         let finished = self
-            .wait_for_protocol_after(session.first_event, remaining, |message| {
+            .wait_for_session_event(session, remaining, |message| {
                 message.session_id == session.session_id
                     && matches!(message.body, Event::Finished(_))
-            })
+            })?
             .ok_or("device did not finish the structured HIL session")?;
         let finished = match finished.body {
             Event::Finished(finished) => finished,
             _ => unreachable!("session completion predicate accepted only Finished"),
         };
         let radio = self
-            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+            .wait_for_session_event(session, Duration::ZERO, |message| {
                 message.session_id == session.session_id
                     && matches!(message.body, Event::Evidence(EvidenceRecord::Radio(_)))
-            })
+            })?
             .map(|event| match event.body {
                 Event::Evidence(EvidenceRecord::Radio(radio)) => radio,
                 _ => unreachable!("radio predicate accepted only radio evidence"),
             });
         let tx_timing = self
-            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+            .wait_for_session_event(session, Duration::ZERO, |message| {
                 message.session_id == session.session_id
                     && matches!(
                         message.body,
                         Event::Evidence(EvidenceRecord::TxAggregateTiming(_))
                     )
-            })
+            })?
             .map(|event| match event.body {
                 Event::Evidence(EvidenceRecord::TxAggregateTiming(timing)) => timing,
                 _ => unreachable!("TX timing predicate accepted only aggregate timing evidence"),
             });
         let rx_delivery = self
-            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+            .wait_for_session_event(session, Duration::ZERO, |message| {
                 message.session_id == session.session_id
                     && matches!(message.body, Event::Evidence(EvidenceRecord::RxDelivery(_)))
-            })
+            })?
             .map(|event| match event.body {
                 Event::Evidence(EvidenceRecord::RxDelivery(delivery)) => delivery,
                 _ => unreachable!("RX delivery predicate accepted only delivery evidence"),
             });
         let network_scheduler = self
-            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+            .wait_for_session_event(session, Duration::ZERO, |message| {
                 message.session_id == session.session_id
                     && matches!(
                         message.body,
                         Event::Evidence(EvidenceRecord::NetworkScheduler(_))
                     )
-            })
+            })?
             .map(|event| match event.body {
                 Event::Evidence(EvidenceRecord::NetworkScheduler(evidence)) => evidence,
                 _ => unreachable!("scheduler predicate accepted only scheduler evidence"),
@@ -641,6 +574,7 @@ impl SerialCapture {
             rx_delivery,
             network_scheduler,
             stack,
+            link,
             finished,
         };
         if session_evidence.flow_transport.iter().flatten().count()
@@ -651,7 +585,37 @@ impl SerialCapture {
         Ok(session_evidence)
     }
 
+    /// Verify that the target retained the complete immutable result before
+    /// authorizing its removal. This happens after the measured traffic.
     pub(crate) fn acknowledge_session(&self, session: SessionHandle) -> Result<()> {
+        let original = self.wait_for_session(session, Duration::ZERO)?;
+        let first_event = self.protocol_event_count();
+        let response = self.send_command(
+            session.session_id,
+            Command::ReplayResult,
+            PROTOCOL_READY_TIMEOUT,
+        )?;
+        if let Event::Rejected(reason) = response.body {
+            return Err(LinkError::protocol(format!(
+                "target cannot replay completed session {}: {reason:?}",
+                session.session_id
+            ))
+            .into());
+        }
+        let replay = self.wait_for_session(
+            SessionHandle {
+                first_event,
+                ..session
+            },
+            PROTOCOL_READY_TIMEOUT,
+        )?;
+        if replay != original {
+            return Err(LinkError::protocol(format!(
+                "target changed the retained result for session {}",
+                session.session_id
+            ))
+            .into());
+        }
         self.expect_accepted(
             session.session_id,
             Command::AcknowledgeResult,
@@ -679,12 +643,13 @@ impl SerialCapture {
         &self,
         handle: StationEpochHandle,
     ) -> Option<StationEpochEvidence> {
-        let messages = self
+        let state = self
             .protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        messages
+        state
+            .messages
             .get(handle.first_event..)
             .unwrap_or_default()
             .iter()
@@ -791,9 +756,9 @@ impl SerialCapture {
         }
     }
 
-    pub(crate) fn request_station_start(&self, lab: &LabConfig) -> Result<WifiCommandHandle> {
+    pub(crate) fn request_station_start(&self, context: &Context<'_>) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
-            Command::StartStation(lab.station.protocol_credentials()?),
+            Command::StartStation(context.lab.station.protocol_credentials()?),
             "station start",
         )
     }
@@ -845,19 +810,52 @@ impl SerialCapture {
         self.request_wifi_command(Command::CaptureMonitor(request), "finite monitor capture")
     }
 
+    fn wait_for_wifi_event(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+        predicate: impl Fn(&Envelope<Event>) -> bool,
+    ) -> Result<Option<Envelope<Event>>> {
+        let event = self.wait_for_protocol_after(handle.first_event, timeout, |message| {
+            message.request_id == handle.request_id
+                && (predicate(message)
+                    || matches!(message.body, Event::WifiRoleFailed(_) | Event::Failed(_)))
+        })?;
+        if let Some(message) = &event {
+            match message.body {
+                Event::WifiRoleFailed(reason) => {
+                    return Err(format!(
+                        "Wi-Fi operation {} failed: {reason:?}",
+                        handle.request_id
+                    )
+                    .into());
+                }
+                Event::Failed(reason) => {
+                    return Err(format!(
+                        "target operation {} failed: {reason:?}",
+                        handle.request_id
+                    )
+                    .into());
+                }
+                _ => {}
+            }
+        }
+        Ok(event)
+    }
+
     pub(crate) fn wait_wifi_role_transition(
         &self,
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<WifiRoleTransitionEvidence> {
         let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(
                         message.body,
                         Event::WifiRoleTransitioned(_) | Event::WifiRoleFailed(_)
                     )
-            })
+            })?
             .ok_or("device did not complete the Wi-Fi role transition")?;
         match event.body {
             Event::WifiRoleTransitioned(evidence) => Ok(evidence),
@@ -874,10 +872,10 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<WifiScanEvidence> {
         let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(message.body, Event::WifiScanCompleted(_))
-            })
+            })?
             .ok_or("device did not complete the standalone Wi-Fi scan")?;
         match event.body {
             Event::WifiScanCompleted(evidence) => Ok(evidence),
@@ -891,10 +889,10 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<WifiRoleTransitionEvidence> {
         let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(message.body, Event::WifiMonitorStarted(_))
-            })
+            })?
             .ok_or("device did not complete monitor start")?;
         match event.body {
             Event::WifiMonitorStarted(evidence) => Ok(evidence),
@@ -908,13 +906,13 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<WifiRoleTransitionEvidence> {
         let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(
                         message.body,
                         Event::WifiAccessPointStarted(_) | Event::WifiRoleFailed(_)
                     )
-            })
+            })?
             .ok_or("device did not complete the access-point start")?;
         match event.body {
             Event::WifiAccessPointStarted(evidence) => Ok(evidence),
@@ -931,13 +929,13 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointEvidence> {
         let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(
                         message.body,
                         Event::WifiAccessPointStopped(_) | Event::WifiRoleFailed(_)
                     )
-            })
+            })?
             .ok_or("device did not complete the access-point stop")?;
         match event.body {
             Event::WifiAccessPointStopped(evidence) => Ok(evidence),
@@ -954,13 +952,13 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<open_esp_radio_hil_protocol::WifiStationAccessPointStopEvidence> {
         let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(
                         message.body,
                         Event::WifiStationAccessPointStopped(_) | Event::WifiRoleFailed(_)
                     )
-            })
+            })?
             .ok_or("device did not complete the station-access-point stop")?;
         match event.body {
             Event::WifiStationAccessPointStopped(evidence) => Ok(evidence),
@@ -977,10 +975,10 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<WifiMonitorEvidence> {
         let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(message.body, Event::WifiMonitorStopped(_))
-            })
+            })?
             .ok_or("device did not complete monitor stop")?;
         match event.body {
             Event::WifiMonitorStopped(evidence) => Ok(evidence),
@@ -994,21 +992,22 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<MonitorCaptureEvidence> {
         let completion = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+            .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
                     && matches!(message.body, Event::WifiMonitorCaptureCompleted(_))
-            })
+            })?
             .ok_or("device did not complete finite monitor capture")?;
         let summary = match completion.body {
             Event::WifiMonitorCaptureCompleted(evidence) => evidence,
             _ => unreachable!("capture predicate accepted only terminal capture evidence"),
         };
-        let messages = self
+        let state = self
             .protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let chunks = messages
+        let chunks = state
+            .messages
             .get(handle.first_event..)
             .unwrap_or_default()
             .iter()
@@ -1051,7 +1050,7 @@ impl SerialCapture {
                         message.body,
                         Event::StationLifecycle(StationLifecycleEvent::Connected { .. })
                     )
-            })
+            })?
             .ok_or("device did not publish connected station readiness")?;
         match event.body {
             Event::StationLifecycle(StationLifecycleEvent::Connected { generation }) => {
@@ -1084,52 +1083,36 @@ impl SerialCapture {
         let boot_id = self
             .latest_boot_id()
             .ok_or("device did not publish a current HIL boot identity")?;
-        let deadline = Instant::now() + timeout;
-        let mut messages = self
-            .protocol
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        loop {
-            if let Some(event) = next_station_lifecycle_event(&messages, cursor, boot_id) {
-                return Ok(Some(event));
-            }
-            *cursor = messages.len();
-            let now = Instant::now();
-            if now >= deadline {
-                return Ok(None);
-            }
-            let (next, result) = self
-                .protocol
-                .changed
-                .wait_timeout(messages, deadline - now)
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            messages = next;
-            if result.timed_out() {
-                return Ok(None);
-            }
-        }
+        Ok(self
+            .wait_for_protocol_cursor(cursor, timeout, |message| {
+                message.boot_id == boot_id && matches!(message.body, Event::StationLifecycle(_))
+            })?
+            .map(|message| match message.body {
+                Event::StationLifecycle(event) => event,
+                _ => unreachable!("lifecycle predicate accepted only lifecycle events"),
+            }))
     }
 
     pub(super) fn latest_boot_id(&self) -> Option<u64> {
-        let messages = self
+        let state = self
             .protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        latest_boot_id_in(&messages)
+        latest_boot_id_in(&state.messages)
     }
 
     pub(crate) fn observed_protocol_ipv4(
         &self,
         network_interface: WifiNetworkInterface,
     ) -> Option<Ipv4Addr> {
-        let messages = self
+        let state = self
             .protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let boot_id = latest_boot_id_in(&messages)?;
+        let messages = &state.messages;
+        let boot_id = latest_boot_id_in(messages)?;
         messages
             .iter()
             .rev()
@@ -1145,12 +1128,12 @@ impl SerialCapture {
     }
 
     pub(crate) fn beacon_loss_count(&self) -> usize {
-        let messages = self
+        let state = self
             .protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        beacon_loss_count_in(&messages)
+        beacon_loss_count_in(&state.messages)
     }
 
     pub(crate) fn require_no_beacon_loss(&self) -> Result<()> {
@@ -1178,12 +1161,13 @@ impl SerialCapture {
         direction: Direction,
         port: u16,
     ) -> bool {
-        let messages = self
+        let state = self
             .protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(boot_id) = latest_boot_id_in(&messages) else {
+        let messages = &state.messages;
+        let Some(boot_id) = latest_boot_id_in(messages) else {
             return false;
         };
         messages.iter().any(|message| match message.body {
@@ -1200,21 +1184,20 @@ impl SerialCapture {
 
     pub(super) fn protocol_event_count(&self) -> usize {
         self.protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .messages
             .len()
     }
 
-    fn protocol_failure_or(&self, fallback: &str) -> Box<dyn std::error::Error> {
+    pub(super) fn check_link(&self) -> Result<()> {
+        oer_process::check_cancelled()?;
         self.protocol
-            .health
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .failure
-            .clone()
-            .unwrap_or_else(|| fallback.to_owned())
-            .into()
+            .check()
     }
 
     pub(super) fn wait_for_protocol_after(
@@ -1222,122 +1205,48 @@ impl SerialCapture {
         start: usize,
         timeout: Duration,
         predicate: impl Fn(&Envelope<Event>) -> bool,
-    ) -> Option<Envelope<Event>> {
+    ) -> Result<Option<Envelope<Event>>> {
+        let mut cursor = start;
+        self.wait_for_protocol_cursor(&mut cursor, timeout, predicate)
+    }
+
+    fn wait_for_protocol_cursor(
+        &self,
+        cursor: &mut usize,
+        timeout: Duration,
+        predicate: impl Fn(&Envelope<Event>) -> bool,
+    ) -> Result<Option<Envelope<Event>>> {
         let deadline = Instant::now() + timeout;
-        let mut messages = self
+        let mut state = self
             .protocol
-            .messages
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         loop {
-            if let Some(message) = messages
-                .get(start..)
+            oer_process::check_cancelled()?;
+            state.check()?;
+            if let Some((relative, message)) = state
+                .messages
+                .get(*cursor..)
                 .unwrap_or_default()
                 .iter()
-                .find(|message| predicate(message))
+                .enumerate()
+                .find(|(_, message)| predicate(message))
             {
-                return Some(message.clone());
+                *cursor += relative + 1;
+                return Ok(Some(message.clone()));
             }
-            let now = Instant::now();
-            if now >= deadline {
-                return None;
+            *cursor = state.messages.len();
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(None);
             }
-            let (next, result) = self
+            let (next, _) = self
                 .protocol
                 .changed
-                .wait_timeout(messages, deadline - now)
+                .wait_timeout(state, remaining.min(Duration::from_millis(20)))
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            messages = next;
-            if result.timed_out() {
-                return None;
-            }
-        }
-    }
-
-    /// Stops capture and persists both the byte-exact diagnostic transcript
-    /// and the decoded target event stream. Host commands are deliberately not
-    /// logged because station/AP commands can contain credentials.
-    pub(crate) fn finish_to(mut self, output: &Path) -> Result<String> {
-        let protocol_active = self
-            .protocol
-            .health
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .active;
-        let target_health = protocol_active
-            .then(|| {
-                self.query_link_health(PROTOCOL_READY_TIMEOUT)
-                    .map_err(|error| error.to_string())
-            })
-            .transpose();
-        self.stop_and_join();
-        let bytes = self
-            .bytes
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let uart = String::from_utf8_lossy(&bytes).into_owned();
-        let messages = self
-            .protocol
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let health = self
-            .protocol
-            .health
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-
-        fs::create_dir_all(output)?;
-        fs::write(output.join("uart.log"), &uart)?;
-        let mut protocol_log = Vec::new();
-        for message in messages.iter() {
-            serde_json::to_writer(
-                &mut protocol_log,
-                &serde_json::json!({"record": "target-event", "envelope": message}),
-            )?;
-            protocol_log.push(b'\n');
-        }
-        serde_json::to_writer(
-            &mut protocol_log,
-            &serde_json::json!({"record": "link-health", "health": &health}),
-        )?;
-        protocol_log.push(b'\n');
-        serde_json::to_writer(
-            &mut protocol_log,
-            &serde_json::json!({"record": "target-link-health", "health": &target_health}),
-        )?;
-        protocol_log.push(b'\n');
-        fs::write(output.join("protocol.jsonl"), protocol_log)?;
-        if !decode_counters_are_clean(health.counters) {
-            return Err(format!(
-                "host reported unhealthy HIL frame decoding: {:?}",
-                health.counters
-            )
-            .into());
-        }
-        if let Some(failure) = health.failure {
-            return Err(format!("HIL protocol health failed: {failure}").into());
-        }
-        if protocol_active {
-            let target_health = target_health
-                .map_err(|error| format!("target link-health query failed: {error}"))?
-                .ok_or("target link-health query returned no result")?;
-            validate_target_link_health(target_health)?;
-            if target_health.text_dropped != 0 || target_health.text_truncated != 0 {
-                eprintln!(
-                    "diagnostic_text_loss=dropped:{} truncated:{}",
-                    target_health.text_dropped, target_health.text_truncated,
-                );
-            }
-        }
-        Ok(uart)
-    }
-
-    pub(super) fn stop_and_join(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+            state = next;
         }
     }
 }
@@ -1368,30 +1277,7 @@ pub(super) fn beacon_loss_count_in(messages: &[Envelope<Event>]) -> usize {
         .count()
 }
 
-pub(super) fn next_station_lifecycle_event(
-    messages: &[Envelope<Event>],
-    cursor: &mut usize,
-    boot_id: u64,
-) -> Option<StationLifecycleEvent> {
-    let (relative, event) = messages
-        .get(*cursor..)
-        .unwrap_or_default()
-        .iter()
-        .enumerate()
-        .find_map(|(relative, message)| {
-            if message.boot_id != boot_id {
-                return None;
-            }
-            match &message.body {
-                Event::StationLifecycle(event) => Some((relative, *event)),
-                _ => None,
-            }
-        })?;
-    *cursor += relative + 1;
-    Some(event)
-}
-
-fn decode_counters_are_clean(counters: DecodeCounters) -> bool {
+pub(super) fn decode_counters_are_clean(counters: DecodeCounters) -> bool {
     counters.cobs_errors == 0
         && counters.too_short == 0
         && counters.header_errors == 0
@@ -1404,16 +1290,17 @@ fn decode_counters_are_clean(counters: DecodeCounters) -> bool {
         && counters.overflows == 0
 }
 
-fn validate_target_link_health(health: LinkHealth) -> Result<()> {
+pub(super) fn validate_target_link_health(health: LinkHealth) -> Result<()> {
     if health.rx_cobs_errors != 0
         || health.rx_checksum_errors != 0
         || health.rx_decode_errors != 0
         || health.rx_overflows != 0
         || health.tx_dropped != 0
     {
-        return Err(
-            format!("target reported unhealthy serialized console transport: {health:?}").into(),
-        );
+        return Err(LinkError::protocol(format!(
+            "target reported unhealthy serialized console transport: {health:?}"
+        ))
+        .into());
     }
     Ok(())
 }

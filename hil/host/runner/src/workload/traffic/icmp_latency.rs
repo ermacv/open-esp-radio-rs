@@ -1,5 +1,6 @@
 //! ICMP latency and loss qualification for an already connected target.
 
+use crate::execution::context::Context;
 use std::{
     fs, io,
     net::Ipv4Addr,
@@ -11,8 +12,7 @@ use std::{
 use crate::Result;
 use crate::{
     evidence::run::{Comparison, Measurement, MeasurementUnit},
-    lab::config::LabConfig,
-    session::{SerialCapture, await_network_ready},
+    session::await_network_ready,
 };
 
 const DEFAULT_COUNT: u16 = 100;
@@ -23,14 +23,14 @@ const MAX_PAYLOAD_BYTES: usize = 1_400;
 const NETWORK_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Options {
-    device: Ipv4Addr,
-    count: u16,
-    interval: Duration,
-    timeout: Duration,
-    payload_bytes: usize,
-    maximum_lost: u16,
-    maximum_p95: Option<Duration>,
+pub(crate) struct Config {
+    pub(crate) device: Ipv4Addr,
+    pub(crate) count: u16,
+    pub(crate) interval: Duration,
+    pub(crate) timeout: Duration,
+    pub(crate) payload_bytes: usize,
+    pub(crate) maximum_lost: u16,
+    pub(crate) maximum_p95: Option<Duration>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,36 +53,30 @@ impl LatencySummary {
     }
 }
 
-pub(crate) struct RunEvidence {
-    pub(crate) measurements: Vec<Measurement>,
-    pub(crate) acceptance_failure: Option<String>,
-}
-
 pub(crate) fn run(
-    arguments: Vec<String>,
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     require_no_beacon_loss: bool,
-) -> Result<RunEvidence> {
-    let mut options = parse_options(&arguments)?;
-    let capture = SerialCapture::start_with_reset(&lab.device.serial);
-    options.device = match await_network_ready(&capture, lab, NETWORK_READY_TIMEOUT) {
+) -> Result<()> {
+    let mut options = options.validate()?;
+    let capture = context.capture(output)?;
+    options.device = match await_network_ready(&capture, context, NETWORK_READY_TIMEOUT) {
         Ok(address) => address,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     let socket = IcmpSocket::connect(options.device)?;
     let summary = match measure(&socket, options) {
         Ok(summary) => summary,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
+    context.measurements.record(measurements(options, &summary));
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
-    capture.finish_to(output)?;
+    capture.finish()?;
     if let Some(result) = beacon_loss {
         result?;
     }
@@ -127,14 +121,13 @@ pub(crate) fn run(
             report_path.display(),
         );
     }
-    Ok(RunEvidence {
-        measurements: measurements(options, &summary),
-        acceptance_failure: acceptance_failure
-            .map(|failure| format!("{failure}; report={}", report_path.display())),
-    })
+    match acceptance_failure {
+        Some(failure) => Err(format!("{failure}; report={}", report_path.display()).into()),
+        None => Ok(()),
+    }
 }
 
-fn measurements(options: Options, summary: &LatencySummary) -> Vec<Measurement> {
+fn measurements(options: Config, summary: &LatencySummary) -> Vec<Measurement> {
     let lost = u64::from(summary.transmitted - summary.received);
     let minimum_received = u64::from(options.count - options.maximum_lost);
     let loss_basis_points = lost
@@ -203,7 +196,7 @@ fn measurements(options: Options, summary: &LatencySummary) -> Vec<Measurement> 
     measurements
 }
 
-fn measure(socket: &IcmpSocket, options: Options) -> Result<LatencySummary> {
+fn measure(socket: &IcmpSocket, options: Config) -> Result<LatencySummary> {
     let readiness_attempts = wait_until_reachable(socket, options.payload_bytes, options.timeout)?;
     let mut samples = Vec::with_capacity(usize::from(options.count));
     let mut lost_sequences = Vec::new();
@@ -211,7 +204,7 @@ fn measure(socket: &IcmpSocket, options: Options) -> Result<LatencySummary> {
     for sequence in 0..options.count {
         let now = Instant::now();
         if now < next_send {
-            std::thread::sleep(next_send - now);
+            oer_process::sleep(next_send - now)?;
         }
         let started = Instant::now();
         socket.send_echo(sequence, options.payload_bytes)?;
@@ -265,7 +258,7 @@ fn wait_until_reachable(
     )
 }
 
-fn report(options: Options, summary: &LatencySummary, acceptance_failure: Option<&str>) -> String {
+fn report(options: Config, summary: &LatencySummary, acceptance_failure: Option<&str>) -> String {
     let result = if acceptance_failure.is_some() {
         "FAIL"
     } else {
@@ -304,44 +297,36 @@ fn report(options: Options, summary: &LatencySummary, acceptance_failure: Option
     )
 }
 
-fn parse_options(arguments: &[String]) -> Result<Options> {
-    let mut arguments = arguments.iter();
-    let mut options = Options {
-        device: Ipv4Addr::UNSPECIFIED,
-        count: DEFAULT_COUNT,
-        interval: DEFAULT_INTERVAL,
-        timeout: DEFAULT_TIMEOUT,
-        payload_bytes: DEFAULT_PAYLOAD_BYTES,
-        maximum_lost: 0,
-        maximum_p95: None,
-    };
-    while let Some(argument) = arguments.next() {
-        let value = arguments
-            .next()
-            .ok_or_else(|| format!("missing value for `{argument}`"))?;
-        match argument.as_str() {
-            "--count" => options.count = value.parse()?,
-            "--interval-ms" => options.interval = Duration::from_millis(value.parse()?),
-            "--timeout-ms" => options.timeout = Duration::from_millis(value.parse()?),
-            "--payload" => options.payload_bytes = value.parse()?,
-            "--max-lost" => options.maximum_lost = value.parse()?,
-            "--max-p95-ms" => options.maximum_p95 = Some(Duration::from_millis(value.parse()?)),
-            _ => return Err(format!("unknown ICMP option `{argument}`").into()),
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            device: Ipv4Addr::UNSPECIFIED,
+            count: DEFAULT_COUNT,
+            interval: DEFAULT_INTERVAL,
+            timeout: DEFAULT_TIMEOUT,
+            payload_bytes: DEFAULT_PAYLOAD_BYTES,
+            maximum_lost: 0,
+            maximum_p95: None,
         }
     }
-    if options.count == 0 {
-        return Err("ICMP count must be nonzero".into());
+}
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if self.count == 0 {
+            return Err("ICMP count must be nonzero".into());
+        }
+        if self.maximum_lost >= self.count {
+            return Err("ICMP maximum lost replies must be below the request count".into());
+        }
+        if self.interval.is_zero() || self.timeout.is_zero() {
+            return Err("ICMP interval and timeout must be nonzero".into());
+        }
+        if self.payload_bytes > MAX_PAYLOAD_BYTES {
+            return Err(format!("ICMP payload must be 0..={MAX_PAYLOAD_BYTES} bytes").into());
+        }
+
+        Ok(self)
     }
-    if options.maximum_lost >= options.count {
-        return Err("ICMP maximum lost replies must be below the request count".into());
-    }
-    if options.interval.is_zero() || options.timeout.is_zero() {
-        return Err("ICMP interval and timeout must be nonzero".into());
-    }
-    if options.payload_bytes > MAX_PAYLOAD_BYTES {
-        return Err(format!("ICMP payload must be 0..={MAX_PAYLOAD_BYTES} bytes").into());
-    }
-    Ok(options)
 }
 
 struct IcmpSocket {
@@ -421,6 +406,7 @@ impl IcmpSocket {
     fn wait_for_echo(&self, sequence: u16, timeout: Duration) -> Result<bool> {
         let deadline = Instant::now() + timeout;
         loop {
+            oer_process::check_cancelled()?;
             let now = Instant::now();
             if now >= deadline {
                 return Ok(false);
@@ -434,7 +420,7 @@ impl IcmpSocket {
             };
             // SAFETY: `descriptor` is one initialized pollfd and remains live
             // and writable for the complete call.
-            let ready = unsafe { libc::poll(&raw mut descriptor, 1, remaining_ms) };
+            let ready = unsafe { libc::poll(&raw mut descriptor, 1, remaining_ms.min(20)) };
             if ready < 0 {
                 let error = io::Error::last_os_error();
                 if error.kind() == io::ErrorKind::Interrupted {
@@ -443,7 +429,7 @@ impl IcmpSocket {
                 return Err(error.into());
             }
             if ready == 0 {
-                return Ok(false);
+                continue;
             }
             let mut packet = [0_u8; 1_500];
             // SAFETY: `packet` is a live writable byte array and the owned

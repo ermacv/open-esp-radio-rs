@@ -1,5 +1,6 @@
 //! Controlled upstream loss and explicit same-channel STA+AP restart.
 
+use crate::execution::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -10,7 +11,6 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     fixture::{controlled_ap::ControlledAp, controlled_client::ControlledClient},
-    lab::config::LabConfig,
     scenario::PhyExpectation,
     session::{SerialCapture, probe_udp_rx_ready_via},
     workload::ieee80211::{
@@ -25,16 +25,15 @@ const BEACON_LOSS_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) fn run(
     timeout: Duration,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     phy: PhyExpectation,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
-    let mut upstream = ControlledAp::start(&lab.station, &lab.station_fixture, phy)?;
-    let capture = SerialCapture::start_with_reset(&lab.device.serial);
-    let result = qualify(&capture, timeout, lab, &mut upstream);
-    let capture_result = capture.finish_to(output);
-    result?;
-    capture_result?;
+    let mut upstream =
+        ControlledAp::start(&context.lab.station, &context.lab.station_fixture, phy)?;
+    context.with_capture(output, |capture| {
+        qualify(capture, timeout, context, &mut upstream)
+    })?;
     eprintln!("wifi_sta_ap_reconnect=PASS");
     eprintln!("uart_log={}", output.join("uart.log").display());
     Ok(())
@@ -43,11 +42,11 @@ pub(crate) fn run(
 fn qualify(
     capture: &SerialCapture,
     timeout: Duration,
-    lab: &LabConfig,
+    context: &Context<'_>,
     upstream: &mut ControlledAp,
 ) -> Result<()> {
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
-    let capabilities = capture.prepare_station(lab, timeout)?;
+    let capabilities = capture.prepare_station(context, timeout)?;
     if !capabilities.features.simultaneous_station_access_point
         || !capabilities.features.station_lifecycle_events
     {
@@ -66,9 +65,9 @@ fn qualify(
         "initial station stop",
     )?;
 
-    let first = start_pair(capture, timeout, lab)?;
+    let first = start_pair(capture, timeout, context)?;
     let first_generation = expect_connected(capture, &mut lifecycle_cursor, timeout)?;
-    let first_client = ControlledClient::connect(&lab.access_point)?;
+    let first_client = ControlledClient::connect(&context.lab.access_point)?;
     require_both_endpoints(capture, timeout)?;
 
     upstream.stop()?;
@@ -112,7 +111,7 @@ fn qualify(
     first_client.restore()?;
 
     upstream.restart()?;
-    let second = start_pair(capture, timeout, lab)?;
+    let second = start_pair(capture, timeout, context)?;
     if second.generation == first.generation {
         return Err("explicit paired restart reused the previous generation".into());
     }
@@ -123,7 +122,7 @@ fn qualify(
         )
         .into());
     }
-    let second_client = ControlledClient::connect(&lab.access_point)?;
+    let second_client = ControlledClient::connect(&context.lab.access_point)?;
     require_both_endpoints(capture, timeout)?;
 
     let second_stopped = capture
@@ -144,12 +143,12 @@ fn qualify(
 fn start_pair(
     capture: &SerialCapture,
     timeout: Duration,
-    lab: &LabConfig,
+    context: &Context<'_>,
 ) -> Result<open_esp_radio_hil_protocol::WifiRoleTransitionEvidence> {
     let transition = capture.wait_wifi_role_transition(
         capture.request_station_access_point_start(WifiStationAccessPointRequest {
-            station_credentials: lab.station.protocol_credentials()?,
-            access_point: lab.access_point.protocol_request(
+            station_credentials: context.lab.station.protocol_credentials()?,
+            access_point: context.lab.access_point.protocol_request(
                 open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal,
             )?,
         })?,

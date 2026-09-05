@@ -1,4 +1,6 @@
 //! Host construction and validation of staged ESP32-S31 firmware.
+#[cfg(feature = "device")]
+pub mod device;
 #[cfg(feature = "image")]
 pub mod flash;
 #[cfg(feature = "image")]

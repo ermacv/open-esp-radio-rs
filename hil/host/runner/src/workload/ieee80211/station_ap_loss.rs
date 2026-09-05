@@ -1,41 +1,39 @@
 //! Controlled real-AP disappearance and station recovery qualification.
 
+use crate::execution::context::Context;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     time::{Duration, Instant},
 };
 
 use open_esp_radio_hil_protocol::{StationDisconnectReason, StationLifecycleEvent};
 
 use crate::{
-    Result, fixture::controlled_ap::ControlledAp, lab::config::LabConfig, scenario::PhyExpectation,
-    session::SerialCapture,
+    Result, fixture::controlled_ap::ControlledAp, scenario::PhyExpectation, session::SerialCapture,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
-struct Options {
-    serial: PathBuf,
-    timeout: Duration,
+pub(crate) struct Config {
+    pub(crate) timeout: Duration,
 }
 
 pub(crate) fn run(
-    arguments: Vec<String>,
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     phy: PhyExpectation,
 ) -> Result<()> {
-    let options = parse_options(&arguments, lab)?;
+    let options = options.validate()?;
     fs::create_dir_all(output)?;
 
-    let mut ap = ControlledAp::start(&lab.station, &lab.station_fixture, phy)?;
-    let capture = SerialCapture::start_with_reset(&options.serial);
-    let mut cursor = capture.station_lifecycle_cursor();
-    let result = qualify(&capture, lab, &mut cursor, &mut ap, options.timeout);
-    capture.finish_to(output)?;
+    let mut ap = ControlledAp::start(&context.lab.station, &context.lab.station_fixture, phy)?;
+    let result = context.with_capture(output, |capture| {
+        let mut cursor = capture.station_lifecycle_cursor();
+        qualify(capture, context, &mut cursor, &mut ap, options.timeout)
+    });
     drop(ap);
-
     result?;
     eprintln!("station_ap_loss=PASS");
     eprintln!("uart_log={}", output.join("uart.log").display());
@@ -44,12 +42,12 @@ pub(crate) fn run(
 
 fn qualify(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     cursor: &mut usize,
     ap: &mut ControlledAp,
     timeout: Duration,
 ) -> Result<()> {
-    let capabilities = capture.prepare_station(lab, timeout)?;
+    let capabilities = capture.prepare_station(context, timeout)?;
     if !capabilities.features.station_lifecycle_events {
         return Err("firmware does not advertise reliable station lifecycle events".into());
     }
@@ -126,31 +124,22 @@ fn validate_event(
     Ok(())
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
-    let mut options = Options {
-        serial: lab.device.serial.clone(),
-        timeout: DEFAULT_TIMEOUT,
-    };
-    let mut index = 0;
-    while index < arguments.len() {
-        match arguments[index].as_str() {
-            "--timeout-seconds" => {
-                index += 1;
-                let seconds = arguments
-                    .get(index)
-                    .ok_or("--timeout-seconds requires a value")?
-                    .parse::<u64>()?;
-                if !(30..=300).contains(&seconds) {
-                    return Err("--timeout-seconds must be in 30..=300".into());
-                }
-                options.timeout = Duration::from_secs(seconds);
-            }
-            argument => return Err(format!("unknown station AP-loss option `{argument}`").into()),
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            timeout: DEFAULT_TIMEOUT,
         }
-        index += 1;
     }
-    Ok(options)
 }
 
 #[cfg(test)]
 mod tests;
+
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(30)..=Duration::from_secs(300)).contains(&self.timeout) {
+            return Err("AP timeout must be in 30..=300 seconds".into());
+        }
+        Ok(self)
+    }
+}

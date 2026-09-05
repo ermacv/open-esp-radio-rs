@@ -482,7 +482,7 @@ pub(crate) fn assess_rx_log(log: &str, expected_format: u8) -> Result<RxAssessme
 
 #[cfg(test)]
 pub(super) fn qualify(
-    options: &Options,
+    options: &Config,
     host: HostTransmission,
     report: &DeviceReport,
 ) -> Result<RxQualification> {

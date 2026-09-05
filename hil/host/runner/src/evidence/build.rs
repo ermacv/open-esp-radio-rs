@@ -1,5 +1,6 @@
 //! Firmware subjects, source materials and build provenance.
 
+use oer_process::CommandExt as _;
 use std::{
     env,
     fs::{self, File, OpenOptions},
@@ -600,7 +601,7 @@ fn git_output_bytes(root: &Path, arguments: &[&str]) -> Result<Vec<u8>> {
         .arg("-C")
         .arg(root)
         .args(arguments)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "git {} failed with status {}",
@@ -613,7 +614,10 @@ fn git_output_bytes(root: &Path, arguments: &[&str]) -> Result<Vec<u8>> {
 }
 
 fn command_version(program: &str, arguments: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(arguments).output().ok()?;
+    let output = Command::new(program)
+        .args(arguments)
+        .supervised_output()
+        .ok()?;
     output
         .status
         .success()

@@ -5,12 +5,13 @@
 //! based on device-side RX, TX-vector, placement and DMA-health evidence; a
 //! successful host `send` alone is not evidence that the radio received it.
 
+use crate::execution::context::Context;
 use std::{
     collections::BTreeMap,
     fmt::Write as _,
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
-    path::{Path, PathBuf},
+    path::Path,
     thread,
     time::Duration,
 };
@@ -30,8 +31,8 @@ use crate::{
         openwrt_tx_monitor::{MacFrameKey, OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
         station_fixture::{RxCapture, RxEvidence},
     },
-    lab::config::{LabConfig, StationFixtureConfig},
-    session::{SerialCapture, SessionEvidence, await_udp_rx_ready},
+    lab::config::StationFixtureConfig,
+    session::{SessionEvidence, await_udp_rx_ready},
     transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
     workload::traffic::{
         host_network::BenchmarkIpv4Route,
@@ -70,7 +71,7 @@ fn project_mac_units(units: &BTreeMap<MacFrameKey, u32>) -> BTreeMap<(u16, u8), 
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Phy {
+pub(crate) enum Phy {
     Ht40,
     He20,
 }
@@ -101,20 +102,19 @@ impl Phy {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct Options {
-    address: Ipv4Addr,
-    port: u16,
-    rate_bps: u64,
-    rx_floor_bps: Option<u64>,
-    duration: Duration,
-    payload: usize,
-    tx_port: u16,
-    tx_payload: usize,
-    tx_rate_bps: Option<u64>,
-    tx_floor_bps: Option<u64>,
-    combined_floor_bps: Option<u64>,
-    serial: PathBuf,
-    phy: Phy,
+pub(crate) struct Config {
+    pub(crate) address: Ipv4Addr,
+    pub(crate) port: u16,
+    pub(crate) rate_bps: u64,
+    pub(crate) rx_floor_bps: Option<u64>,
+    pub(crate) duration: Duration,
+    pub(crate) payload: usize,
+    pub(crate) tx_port: u16,
+    pub(crate) tx_payload: usize,
+    pub(crate) tx_rate_bps: Option<u64>,
+    pub(crate) tx_floor_bps: Option<u64>,
+    pub(crate) combined_floor_bps: Option<u64>,
+    pub(crate) phy: Phy,
 }
 
 #[derive(Debug)]
@@ -144,9 +144,9 @@ pub(crate) struct RunPolicy {
 }
 
 pub(crate) fn run(
-    arguments: Vec<String>,
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     policy: RunPolicy,
 ) -> Result<()> {
     let RunPolicy {
@@ -159,33 +159,32 @@ pub(crate) fn run(
         guard_interval,
         fixture_guard_interval,
     } = policy;
-    let mut options = parse_options(&arguments, lab)?;
+    let mut options = options.validate()?;
     fs::create_dir_all(output)?;
     let tx_sink = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.tx_port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&tx_sink)?;
     tx_sink.set_read_timeout(Some(Duration::from_millis(100)))?;
-    let capture = SerialCapture::start_with_reset(&options.serial);
+    let capture = context.capture(output)?;
     let discovered_address = match await_udp_rx_ready(
         &capture,
-        lab,
+        context,
         options.address,
         options.port,
         DEVICE_READY_TIMEOUT,
     ) {
         Ok(address) => address,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     options.address = discovered_address.address;
-    let host_route = match BenchmarkIpv4Route::discover(options.address, &lab.station_fixture) {
-        Ok(route) => route,
-        Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
-        }
-    };
+    let host_route =
+        match BenchmarkIpv4Route::discover(options.address, &context.lab.station_fixture) {
+            Ok(route) => route,
+            Err(error) => {
+                return capture.finish_with(Err(error));
+            }
+        };
     tx_sink.connect(SocketAddrV4::new(options.address, DEVICE_TX_SOURCE_PORT))?;
     let host_address = match tx_sink.local_addr()? {
         SocketAddr::V4(address) => *address.ip(),
@@ -195,11 +194,10 @@ pub(crate) fn run(
     host_route.record(output, options.address, host_address)?;
     // Admit the reverse flow through stateful host firewalls before `Start`.
     if let Err(error) = open_reverse_flow(&tx_sink) {
-        capture.finish_to(output)?;
-        return Err(error.into());
+        return capture.finish_with(Err(error.into()));
     }
     let fixture_capture = RxCapture::start(
-        &lab.station_fixture,
+        &context.lab.station_fixture,
         options.address,
         options.port,
         options.duration,
@@ -210,7 +208,7 @@ pub(crate) fn run(
         fixture_guard_interval,
         None,
     )?;
-    let fixture_tx_capture = match &lab.station_fixture {
+    let fixture_tx_capture = match &context.lab.station_fixture {
         StationFixtureConfig::LocalLinux(config) => Some(LocalLinuxTxCapture::start(
             config,
             options.address,
@@ -225,7 +223,7 @@ pub(crate) fn run(
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,
     };
     let tx_monitor_capture = if capture_openwrt_tx_monitor_rx {
-        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+        let StationFixtureConfig::OpenWrt(config) = &context.lab.station_fixture else {
             return Err("OpenWrt TX-monitor evidence requires an OpenWrt station fixture".into());
         };
         Some(OpenWrtTxMonitorCapture::start(
@@ -239,7 +237,7 @@ pub(crate) fn run(
         None
     };
     let independent_air_capture = if capture_independent_laptop_air_monitor {
-        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+        let StationFixtureConfig::OpenWrt(config) = &context.lab.station_fixture else {
             return Err("independent laptop evidence requires an OpenWrt station fixture".into());
         };
         Some(LocalAirMonitorCapture::start(
@@ -296,13 +294,11 @@ pub(crate) fn run(
     let structured = match capture.wait_for_session(session, Duration::from_secs(5)) {
         Ok(evidence) => evidence,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     if let Err(error) = capture.acknowledge_session(session) {
-        capture.finish_to(output)?;
-        return Err(error);
+        return capture.finish_with(Err(error));
     }
     let fixture_rx = fixture_capture.map(RxCapture::finish).transpose()?;
     let fixture_tx = fixture_tx_capture
@@ -327,7 +323,7 @@ pub(crate) fn run(
         )?;
     }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
-    let log = capture.finish_to(output)?;
+    let log = capture.finish()?;
     if let Some(result) = beacon_loss {
         result?;
     }
@@ -702,110 +698,76 @@ pub(crate) fn post_block_ack_delivery_loss_lower_bound(
     Some(ampdu.acknowledged.saturating_sub(unique_host_datagrams))
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
-    let mut options = Options {
-        address: Ipv4Addr::UNSPECIFIED,
-        port: DEFAULT_PORT,
-        rate_bps: DEFAULT_RATE_BPS,
-        rx_floor_bps: None,
-        duration: DEFAULT_DURATION,
-        payload: DEFAULT_PAYLOAD,
-        tx_port: DEFAULT_TX_PORT,
-        tx_payload: DEFAULT_TX_PAYLOAD,
-        tx_rate_bps: None,
-        tx_floor_bps: None,
-        combined_floor_bps: None,
-        serial: lab.device.serial.clone(),
-        phy: Phy::He20,
-    };
-    let mut index = 0;
-    while index < arguments.len() {
-        let value = arguments
-            .get(index + 1)
-            .ok_or("bidirectional option requires a value")?;
-        match arguments[index].as_str() {
-            "--rate" => options.rate_bps = parse_rate(value)?,
-            "--rx-floor" => options.rx_floor_bps = Some(parse_rate(value)?),
-            "--seconds" => {
-                let seconds = value.parse::<u64>()?;
-                if !(5..=300).contains(&seconds) {
-                    return Err("--seconds must be in 5..=300".into());
-                }
-                options.duration = Duration::from_secs(seconds);
-            }
-            "--payload" => {
-                options.payload = value.parse::<usize>()?;
-                if !(64..=1_472).contains(&options.payload) {
-                    return Err("--payload must be in 64..=1472".into());
-                }
-            }
-            "--port" => options.port = value.parse::<u16>()?,
-            "--tx-payload" => {
-                options.tx_payload = value.parse::<usize>()?;
-                if !(64..=1_472).contains(&options.tx_payload) {
-                    return Err("--tx-payload must be in 64..=1472".into());
-                }
-            }
-            "--tx-port" => options.tx_port = value.parse::<u16>()?,
-            "--tx-rate" => options.tx_rate_bps = Some(parse_rate(value)?),
-            "--tx-floor" => options.tx_floor_bps = Some(parse_rate(value)?),
-            "--combined-floor" => options.combined_floor_bps = Some(parse_rate(value)?),
-            "--phy" => {
-                options.phy = match value.as_str() {
-                    "ht40" => Phy::Ht40,
-                    "he20" => Phy::He20,
-                    _ => return Err("--phy must be ht40 or he20".into()),
-                };
-            }
-            other => return Err(format!("unknown bidirectional option `{other}`").into()),
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            address: Ipv4Addr::UNSPECIFIED,
+            port: DEFAULT_PORT,
+            rate_bps: DEFAULT_RATE_BPS,
+            rx_floor_bps: None,
+            duration: DEFAULT_DURATION,
+            payload: DEFAULT_PAYLOAD,
+            tx_port: DEFAULT_TX_PORT,
+            tx_payload: DEFAULT_TX_PAYLOAD,
+            tx_rate_bps: None,
+            tx_floor_bps: None,
+            combined_floor_bps: None,
+            phy: Phy::He20,
         }
-        index += 2;
     }
-    if options.port == 0 || options.tx_port == 0 {
-        return Err("--port and --tx-port must be nonzero".into());
-    }
-    if options
-        .rx_floor_bps
-        .is_some_and(|floor| floor > options.rate_bps)
-    {
-        return Err("--rx-floor cannot exceed --rate".into());
-    }
-    if options.tx_floor_bps.is_none() {
-        options.tx_floor_bps = options.tx_rate_bps.map(|rate| rate.saturating_mul(9) / 10);
-    }
-    if options
-        .tx_rate_bps
-        .zip(options.tx_floor_bps)
-        .is_some_and(|(rate, floor)| floor > rate)
-    {
-        return Err("--tx-floor cannot exceed --tx-rate".into());
-    }
-    if options.combined_floor_bps.is_some_and(|floor| {
-        options
-            .tx_rate_bps
-            .and_then(|tx| options.rate_bps.checked_add(tx))
-            .is_none_or(|offered| floor > offered)
-    }) {
-        return Err("--combined-floor requires --tx-rate and cannot exceed the offered sum".into());
-    }
-    Ok(options)
 }
+impl Config {
+    fn validate(mut self) -> Result<Self> {
+        if !(Duration::from_secs(5)..=Duration::from_secs(300)).contains(&self.duration) {
+            return Err("traffic duration must be in 5..=300 seconds".into());
+        }
+        if !(64..=1472).contains(&self.payload) {
+            return Err("UDP payload must be in 64..=1472 bytes".into());
+        }
+        if !(64..=1472).contains(&self.tx_payload) {
+            return Err("UDP TX payload must be in 64..=1472 bytes".into());
+        }
+        if [
+            Some(self.rate_bps),
+            self.rx_floor_bps,
+            self.tx_rate_bps,
+            self.tx_floor_bps,
+            self.combined_floor_bps,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|rate| !(100_000..=500_000_000).contains(&rate))
+        {
+            return Err("traffic rate is outside the supported range".into());
+        }
+        if self.port == 0 || self.tx_port == 0 {
+            return Err("RX and TX ports must be nonzero".into());
+        }
+        if self.rx_floor_bps.is_some_and(|floor| floor > self.rate_bps) {
+            return Err("RX floor cannot exceed offered rate".into());
+        }
+        if self.tx_floor_bps.is_none() {
+            self.tx_floor_bps = self.tx_rate_bps.map(|rate| rate.saturating_mul(9) / 10);
+        }
+        if self
+            .tx_rate_bps
+            .zip(self.tx_floor_bps)
+            .is_some_and(|(rate, floor)| floor > rate)
+        {
+            return Err("TX floor cannot exceed TX offered rate".into());
+        }
+        if self.combined_floor_bps.is_some_and(|floor| {
+            self.tx_rate_bps
+                .and_then(|tx| self.rate_bps.checked_add(tx))
+                .is_none_or(|offered| floor > offered)
+        }) {
+            return Err(
+                "combined floor requires TX offered rate and cannot exceed the offered sum".into(),
+            );
+        }
 
-fn parse_rate(value: &str) -> Result<u64> {
-    let (digits, multiplier) = match value.as_bytes().last().copied() {
-        Some(b'k' | b'K') => (&value[..value.len() - 1], 1_000_u64),
-        Some(b'm' | b'M') => (&value[..value.len() - 1], 1_000_000_u64),
-        Some(b'g' | b'G') => (&value[..value.len() - 1], 1_000_000_000_u64),
-        _ => (value, 1),
-    };
-    let rate = digits
-        .parse::<u64>()?
-        .checked_mul(multiplier)
-        .ok_or("rate overflow")?;
-    if !(100_000..=500_000_000).contains(&rate) {
-        return Err("--rate must be in 100K..=500M".into());
+        Ok(self)
     }
-    Ok(rate)
 }
 
 mod model;

@@ -213,31 +213,10 @@ pub(crate) fn html(suite: &SuiteResult, manifest: &RunManifest) -> String {
         let measurements = scenario
             .repetitions
             .iter()
-            .flat_map(|repetition| {
-                repetition.measurements.iter().map(move |measurement| {
-                    let threshold = measurement.threshold.map_or_else(String::new, |threshold| {
-                        format!(
-                            " ({} {} {})",
-                            threshold.comparison.symbol(),
-                            threshold.value,
-                            measurement.unit.id(),
-                        )
-                    });
-                    let class = if measurement.verdict == Some(MeasurementVerdict::Failed) {
-                        "fail"
-                    } else {
-                        ""
-                    };
-                    format!(
-                        "<span class=\"{class}\"><code>{}</code>={} {}{threshold}</span>",
-                        html_escape(&measurement.name),
-                        measurement.value,
-                        measurement.unit.id(),
-                    )
-                })
-            })
+            .filter(|repetition| !repetition.measurements.is_empty())
+            .map(measurement_details)
             .collect::<Vec<_>>()
-            .join("<br>");
+            .join("");
         let _ = writeln!(
             rows,
             "<tr><td>{}</td><td>{}</td><td class=\"{}\">{:?}</td><td>{}/{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
@@ -297,6 +276,40 @@ pub(crate) fn html(suite: &SuiteResult, manifest: &RunManifest) -> String {
         passed = suite.counts.passed,
         total = suite.counts.scenarios,
         duration = suite.duration_millis as f64 / 1_000.0,
+    )
+}
+
+fn measurement_details(repetition: &RepetitionResult) -> String {
+    let mut rows = String::new();
+    let mut failed = 0;
+    for measurement in &repetition.measurements {
+        let threshold = measurement.threshold.map_or_else(String::new, |threshold| {
+            format!(
+                " ({} {} {})",
+                threshold.comparison.symbol(),
+                threshold.value,
+                measurement.unit.id()
+            )
+        });
+        let class = if measurement.verdict == Some(MeasurementVerdict::Failed) {
+            failed += 1;
+            "fail"
+        } else {
+            ""
+        };
+        let _ = write!(
+            rows,
+            "<span class=\"{class}\"><code>{}</code>={} {}{threshold}</span><br>",
+            html_escape(&measurement.name),
+            measurement.value,
+            measurement.unit.id()
+        );
+    }
+    format!(
+        "<details><summary>Repetition {}: {:?} · {} measurements · {failed} failed criteria</summary>{rows}</details>",
+        repetition.repetition,
+        repetition.outcome,
+        repetition.measurements.len()
     )
 }
 

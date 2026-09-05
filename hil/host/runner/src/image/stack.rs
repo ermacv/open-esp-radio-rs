@@ -18,5 +18,5 @@ pub(crate) fn analyze_elf_stack(
     budget: &open_esp_radio_memory_report::StackBudget,
 ) -> crate::Result<open_esp_radio_memory_report::StackReport> {
     oer_firmware::stack::analyze_elf_stack(elf, budget)
-        .map_err(|error| -> Box<dyn std::error::Error> { error })
+        .map_err(|error| -> Box<dyn std::error::Error + Send + Sync> { error })
 }

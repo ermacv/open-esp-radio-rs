@@ -6,10 +6,25 @@ use open_esp_radio_hil_protocol::{
 
 use crate::session::{
     ProtocolHealth, SessionEvidence, beacon_loss_count_in, command_response_matches,
-    next_station_lifecycle_event, session_ready_covers, validate_stack_usage,
+    session_ready_covers, validate_stack_usage,
 };
 
-fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
+#[test]
+fn attachment_accepts_an_existing_sequence_but_still_detects_a_gap() {
+    let mut boot = ProtocolHealth::default();
+    boot.observe(&hello(7, 87), DecodeCounters::default());
+    assert!(boot.failure.is_some());
+    let mut attached = ProtocolHealth {
+        origin: super::CaptureOrigin::Attachment,
+        ..Default::default()
+    };
+    attached.observe(&hello(7, 87), DecodeCounters::default());
+    assert!(attached.failure.is_none());
+    attached.observe(&hello(7, 89), DecodeCounters::default());
+    assert!(attached.failure.unwrap().contains("discontinuity"));
+}
+
+pub(super) fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
     Envelope::new(
         boot_id,
         message_sequence,
@@ -96,6 +111,17 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
                 used_bytes: 0,
                 minimum_free_bytes: 1,
             },
+        },
+        link: open_esp_radio_hil_protocol::LinkHealth {
+            rx_frames: 1,
+            rx_cobs_errors: 0,
+            rx_checksum_errors: 0,
+            rx_decode_errors: 0,
+            rx_overflows: 0,
+            tx_frames: 1,
+            tx_dropped: 0,
+            text_dropped: 0,
+            text_truncated: 0,
         },
         finished: Finished {
             summary: ResultSummary {
@@ -281,37 +307,6 @@ fn a_valid_new_boot_clears_previous_boot_failure() {
     health.observe(&hello(8, 0), DecodeCounters::default());
     assert_eq!(health.boot_id, Some(8));
     assert_eq!(health.failure, None);
-}
-
-#[test]
-fn lifecycle_cursor_ignores_events_from_the_previous_boot() {
-    let messages = [
-        Envelope::new(
-            7,
-            1,
-            0,
-            0,
-            Event::StationLifecycle(StationLifecycleEvent::RetryExhausted {
-                generation: 1,
-                attempts: 3,
-                stage: open_esp_radio_hil_protocol::StationFailureStage::CandidateSelection,
-                reason: open_esp_radio_hil_protocol::StationAttemptFailureReason::NoCandidate,
-            }),
-        ),
-        Envelope::new(
-            8,
-            1,
-            0,
-            0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected { generation: 0 }),
-        ),
-    ];
-    let mut cursor = 0;
-    assert_eq!(
-        next_station_lifecycle_event(&messages, &mut cursor, 8),
-        Some(StationLifecycleEvent::Connected { generation: 0 })
-    );
-    assert_eq!(cursor, 2);
 }
 
 #[test]

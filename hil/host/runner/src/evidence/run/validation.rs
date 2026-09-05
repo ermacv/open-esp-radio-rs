@@ -183,10 +183,13 @@ pub(crate) fn validate_suite(suite: &SuiteResult, manifest: &RunManifest) -> Res
                 .measurements
                 .iter()
                 .any(|measurement| measurement.verdict == Some(MeasurementVerdict::Failed))
-                && repetition.outcome != Outcome::Failed
+                && !matches!(
+                    repetition.outcome,
+                    Outcome::Failed | Outcome::Broken | Outcome::Interrupted
+                )
             {
                 return Err(format!(
-                    "HIL scenario `{}` repetition {} passed with a failed measurement verdict",
+                    "HIL scenario `{}` repetition {} has a failed measurement verdict inconsistent with its outcome",
                     scenario.scenario, repetition.repetition
                 )
                 .into());

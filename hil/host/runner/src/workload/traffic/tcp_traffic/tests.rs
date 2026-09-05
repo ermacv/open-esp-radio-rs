@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn tcp_tx_defaults_separate_offer_from_acceptance_floor() {
-    let options = parse_options(&[], &LabConfig::for_test(), Direction::Tx).unwrap();
+    let options = Config::for_direction(Direction::Tx).validate().unwrap();
 
     assert_eq!(options.chunk_bytes, 32_768);
     assert_eq!(options.tx_rate_bps, Some(60_000_000));
@@ -11,13 +11,10 @@ fn tcp_tx_defaults_separate_offer_from_acceptance_floor() {
 }
 
 #[test]
-fn direction_rejects_an_inapplicable_flow_option() {
-    assert!(
-        parse_options(
-            &["--tx-rate".into(), "1000000".into(),],
-            &LabConfig::for_test(),
-            Direction::Rx,
-        )
-        .is_err()
-    );
+fn direction_rejects_an_inapplicable_flow() {
+    let options = Config {
+        tx_rate_bps: Some(1_000_000),
+        ..Config::for_direction(Direction::Rx)
+    };
+    assert!(options.validate().is_err());
 }

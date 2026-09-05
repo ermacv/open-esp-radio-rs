@@ -1,6 +1,7 @@
 //! Lifetime-safe access to the repository-controlled HIL access point.
 
-use std::{fs, process::Command, thread, time::Duration};
+use oer_process::CommandExt as _;
+use std::{fs, process::Command, time::Duration};
 
 use zeroize::Zeroizing;
 
@@ -45,11 +46,9 @@ impl ControlledAp {
                         return Err("the local fixture has no qualified HT20 profile".into());
                     }
                 };
-                if let Err(error) = helper_action(action) {
-                    let _ = helper_action("managed");
-                    return Err(error);
-                }
-                Ok(Self::Local(phy))
+                let owner = Self::Local(phy);
+                helper_action(action)?;
+                Ok(owner)
             }
             StationFixtureConfig::OpenWrt(openwrt) => {
                 let radio = require_openwrt_ap_credentials(station, openwrt)?;
@@ -80,9 +79,10 @@ impl ControlledAp {
         match self {
             Self::Local(_) => helper_action("stop"),
             Self::OpenWrt(ap) => {
+                // A failed command may already have stopped the radio.
+                ap.stopped = true;
                 openwrt_action(&ap.config, &ap.radio, "down")?;
                 wait_for_openwrt_interface_down(&ap.config)?;
-                ap.stopped = true;
                 Ok(())
             }
             Self::External => Err("an external station fixture cannot be stopped by HIL".into()),
@@ -111,16 +111,20 @@ impl ControlledAp {
 
 impl Drop for ControlledAp {
     fn drop(&mut self) {
-        match self {
+        oer_process::cleanup(|| match self {
             Self::Local(_) => {
-                let _ = helper_action("managed");
+                crate::fixture::cleanup::record("restore managed Wi-Fi", || {
+                    helper_action("managed")
+                });
             }
             Self::OpenWrt(ap) if ap.stopped => {
-                let _ = openwrt_action(&ap.config, &ap.radio, "up");
-                let _ = wait_for_openwrt_interface(&ap.config, ap.phy);
+                crate::fixture::cleanup::record("restore OpenWrt access point", || {
+                    openwrt_action(&ap.config, &ap.radio, "up")?;
+                    wait_for_openwrt_interface(&ap.config, ap.phy)
+                });
             }
             Self::OpenWrt(_) | Self::External => {}
-        }
+        });
     }
 }
 
@@ -223,7 +227,7 @@ fn wait_for_openwrt_interface(config: &OpenWrtConfig, phy: PhyExpectation) -> Re
         if openwrt_interface_ready(config, phy)? {
             return Ok(());
         }
-        thread::sleep(Duration::from_millis(100));
+        oer_process::sleep(Duration::from_millis(100))?;
     }
     let expected_width = expected_width(phy);
     Err(format!(
@@ -264,17 +268,17 @@ fn wait_for_openwrt_interface_down(config: &OpenWrtConfig) -> Result<()> {
         if !output.status.success() {
             return Ok(());
         }
-        thread::sleep(Duration::from_millis(100));
+        oer_process::sleep(Duration::from_millis(100))?;
     }
     Err("controlled OpenWrt AP interface remained present after radio shutdown".into())
 }
 
 fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
-    Ok(Command::new("ssh")
+    Command::new("ssh")
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(script)
-        .output()?)
+        .supervised_output()
 }
 
 fn required_profile_value<'a>(profile: &'a str, key: &str) -> Result<&'a str> {
@@ -302,7 +306,7 @@ fn required_profile_value<'a>(profile: &'a str, key: &str) -> Result<&'a str> {
 fn helper_action(action: &str) -> Result<()> {
     let status = Command::new("sudo")
         .args(["-n", crate::fixture::network_helper::PATH, action])
-        .status()?;
+        .supervised_status()?;
     if !status.success() {
         return Err(format!("controlled AP helper `{action}` failed with {status}").into());
     }

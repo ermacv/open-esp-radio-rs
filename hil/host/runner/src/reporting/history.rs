@@ -146,6 +146,7 @@ pub(crate) fn rebuild(root: &Path, target: &str) -> Result<HistoryCompletion> {
 pub(crate) fn rebuild_at(target_directory: &Path, target: &str) -> Result<HistoryCompletion> {
     let runs_directory = target_directory.join("runs");
     fs::create_dir_all(&runs_directory)?;
+    let _publication = crate::evidence::run::IndexGuard::acquire(target_directory)?;
     let mut entries = fs::read_dir(&runs_directory)?.collect::<std::io::Result<Vec<_>>>()?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
 
@@ -515,8 +516,9 @@ fn render_html(report: &HistoryReport) -> String {
          <tbody>{run_rows}</tbody></table><h2>Scenario stability</h2>\
          <table><thead><tr><th>Scenario</th><th>Runs</th><th>Pass rate</th><th>Flaky</th><th>Consecutive non-passed</th><th>Last outcome</th></tr></thead>\
          <tbody>{scenario_rows}</tbody></table><h2>Measurement trends</h2>\
-         <table><thead><tr><th>Scenario</th><th>Measurement</th><th>Observations</th><th>Min / latest / max</th><th>Threshold</th><th>Failed verdicts</th></tr></thead>\
-         <tbody>{measurement_rows}</tbody></table><script>for(const e of document.querySelectorAll('[data-unix-ms]')){{e.textContent=new Date(Number(e.dataset.unixMs)).toLocaleString()}}</script></body></html>\n",
+         <label>Filter measurements <input id=\"measurement-filter\" type=\"search\" placeholder=\"scenario or measurement name\"></label>\
+         <table id=\"measurement-trends\"><thead><tr><th>Scenario</th><th>Measurement</th><th>Observations</th><th>Min / latest / max</th><th>Threshold</th><th>Failed verdicts</th></tr></thead>\
+         <tbody>{measurement_rows}</tbody></table><script>for(const e of document.querySelectorAll('[data-unix-ms]')){{e.textContent=new Date(Number(e.dataset.unixMs)).toLocaleString()}};document.getElementById('measurement-filter').addEventListener('input',event=>{{const query=event.target.value.toLowerCase();for(const row of document.querySelectorAll('#measurement-trends tbody tr')){{row.hidden=!row.textContent.toLowerCase().includes(query)}}}})</script></body></html>\n",
         target = html_escape(&report.target),
         passed = report.counts.passed,
         completed = report.counts.completed,

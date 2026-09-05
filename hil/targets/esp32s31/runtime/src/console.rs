@@ -32,7 +32,7 @@ use open_esp_radio_hil_protocol::Ieee802154EventStatusProbeRequest;
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, FailureCode, Finished,
     FlowTransportEvidence, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials,
-    NetworkIpv4Configuration, PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
+    NetworkIpv4Configuration, RejectReason, ResultSummary, RxDeliveryEvidence,
     SESSION_FLOW_CAPACITY, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
     StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
     StationEpochEvidence, StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest,
@@ -302,6 +302,15 @@ struct SessionResult {
     passed: bool,
 }
 
+/// Frozen before publication. Replaying a result must not sample live
+/// counters or stack watermarks again.
+#[derive(Clone, Copy)]
+struct RetainedSessionResult {
+    measurement: SessionResult,
+    link: LinkHealth,
+    stack: open_esp_radio_hil_protocol::StackUsage,
+}
+
 #[derive(Clone, Copy)]
 struct ProtocolSession {
     active: ActiveSession,
@@ -310,21 +319,21 @@ struct ProtocolSession {
 
 static RETAINED_SESSION_RESULTS: Mutex<
     CriticalSectionRawMutex,
-    RefCell<[Option<SessionResult>; 2]>,
+    RefCell<[Option<RetainedSessionResult>; 2]>,
 > = Mutex::new(RefCell::new([None; 2]));
 
-fn retained_session_result(session_id: u64) -> Option<SessionResult> {
+fn retained_session_result(session_id: u64) -> Option<RetainedSessionResult> {
     RETAINED_SESSION_RESULTS.lock(|results| {
         results
             .borrow()
             .iter()
             .flatten()
             .copied()
-            .find(|result| result.session_id == session_id)
+            .find(|result| result.measurement.session_id == session_id)
     })
 }
 
-fn retain_session_result(result: SessionResult) -> bool {
+fn retain_session_result(result: RetainedSessionResult) -> bool {
     RETAINED_SESSION_RESULTS.lock(|results| {
         let mut results = results.borrow_mut();
         let Some(slot) = results.iter_mut().find(|slot| slot.is_none()) else {
@@ -340,7 +349,7 @@ fn discard_session_result(session_id: u64) -> bool {
         let mut results = results.borrow_mut();
         let Some(slot) = results
             .iter_mut()
-            .find(|slot| slot.is_some_and(|result| result.session_id == session_id))
+            .find(|slot| slot.is_some_and(|result| result.measurement.session_id == session_id))
         else {
             return false;
         };
@@ -1458,7 +1467,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                     .and_then(|session| {
                                         retained_session_result(session.active.session_id)
                                     })
-                                    .map(|result| result.session_id),
+                                    .map(|result| result.measurement.session_id),
                             }),
                         )
                         .await;
@@ -1852,8 +1861,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         0,
                     )
                     .await;
-                    publish_result(result, 0).await;
-                    if !retain_session_result(result) {
+                    let retained = RetainedSessionResult {
+                        measurement: result,
+                        link: link_health_snapshot(),
+                        stack: crate::stack_usage_snapshot(),
+                    };
+                    if !retain_session_result(retained) {
                         publish_event_reliably(
                             result.session_id,
                             0,
@@ -1872,6 +1885,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         .await;
                         continue;
                     }
+                    publish_result(retained, 0).await;
                     transition_state(
                         &mut sessions[index]
                             .as_mut()
@@ -1933,7 +1947,12 @@ async fn transition_state(
     .await;
 }
 
-async fn publish_result(result: SessionResult, request_id: u32) {
+async fn publish_result(retained: RetainedSessionResult, request_id: u32) {
+    let RetainedSessionResult {
+        measurement: result,
+        link,
+        stack,
+    } = retained;
     let mut evidence = heapless::Vec::<EvidenceRecord, 8>::new();
     evidence
         .push(EvidenceRecord::Transport(result.evidence))
@@ -1958,12 +1977,11 @@ async fn publish_result(result: SessionResult, request_id: u32) {
             .push(EvidenceRecord::RxDelivery(rx_delivery))
             .expect("session evidence has fixed capacity");
     }
-    let link = link_health_snapshot();
     evidence
         .push(EvidenceRecord::Link(link))
         .expect("session evidence has fixed capacity");
     evidence
-        .push(EvidenceRecord::Stack(crate::stack_usage_snapshot()))
+        .push(EvidenceRecord::Stack(stack))
         .expect("session evidence has fixed capacity");
     let checksum = evidence_crc32c(evidence.as_slice())
         .expect("transport and stack evidence fit the protocol digest buffer");
@@ -2096,14 +2114,7 @@ pub async fn logger_task(usb_device: USB_DEVICE<'static>) {
 fn receive_command(command: Envelope<Command>) {
     let session_id = command.session_id;
     let request_id = command.request_id;
-    let rejection = if command.protocol_version != PROTOCOL_VERSION {
-        Some(RejectReason::ProtocolVersion)
-    } else if command.boot_id != boot_id() {
-        Some(RejectReason::BootId)
-    } else {
-        None
-    };
-    if let Some(reason) = rejection {
+    if let Err(reason) = command.validate_target(boot_id()) {
         publish_event(session_id, request_id, Event::Rejected(reason));
     } else if COMMANDS.try_send(command).is_err() {
         publish_event(session_id, request_id, Event::Rejected(RejectReason::Busy));

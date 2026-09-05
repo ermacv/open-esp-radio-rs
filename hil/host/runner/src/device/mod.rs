@@ -8,28 +8,44 @@ use oer_firmware::flash::{
 };
 
 pub(crate) fn status(root: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
-    device_status_at(&root.join("target/hil/esp32s31/device-status"), lab)
+    let parent = root.join("target/hil/esp32s31/device-status");
+    fs::create_dir_all(&parent)?;
+    let output = parent.join(format!(
+        "{}-{:08x}",
+        crate::evidence::run::unix_millis()?,
+        std::process::id()
+    ));
+    fs::create_dir(&output)?;
+    device_status_at(&output, lab)
 }
 
 fn device_status_at(output: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
-    let capture = crate::session::SerialCapture::start_with_reset(&lab.device.serial);
+    let capture = crate::session::SerialCapture::attach(&lab.device.serial, output)?;
     let result = (|| -> Result<_> {
-        let capabilities = capture.prepare_protocol(lab)?;
-        let operation = capture.query_operation_status(std::time::Duration::from_secs(10))?;
-        let stack = capture.query_stack_usage(std::time::Duration::from_secs(10))?;
+        let observation = capture.observe(std::time::Duration::from_secs(10))?;
         Ok(serde_json::json!({
-            "schema": crate::evidence::run::RUN_SCHEMA,
+            "schema": 1,
             "protocol_version": open_esp_radio_hil_protocol::PROTOCOL_VERSION,
-            "capabilities": capabilities,
-            "operation": operation,
-            "stack": stack,
+            "observation": observation,
             "uart_log": output.join("uart.log"),
         }))
     })();
-    let capture_result = capture.finish_to(output);
-    let report = result?;
-    capture_result?;
-    crate::emit_json(&report, true)
+    match capture.finish_observation_with(result) {
+        Ok(report) => {
+            crate::evidence::run::atomic_json(&output.join("status.json"), &report)?;
+            crate::emit_json(&report, true)
+        }
+        Err(error) => {
+            let report = serde_json::json!({
+                "schema": 1, "failure": error.to_string(),
+                "uart_log": output.join("uart.log"),
+                "protocol_log": output.join("protocol.jsonl"),
+            });
+            crate::evidence::run::atomic_json(&output.join("status.json"), &report)?;
+            crate::emit_json(&report, true)?;
+            Err(error)
+        }
+    }
 }
 
 pub(crate) fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {

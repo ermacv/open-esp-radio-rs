@@ -1,67 +1,6 @@
 use super::*;
 
 #[test]
-fn parses_bounded_station_reconnect_options() {
-    let options = parse_options(
-        &[
-            "--timeout-seconds".into(),
-            "120".into(),
-            "--cycles".into(),
-            "3".into(),
-        ],
-        &LabConfig::for_test(),
-    )
-    .unwrap();
-    assert_eq!(options.serial, PathBuf::from("/dev/ttyACM0"));
-    assert_eq!(options.timeout, Duration::from_secs(120));
-    assert_eq!(options.cycles, 3);
-    assert_eq!(options.boots, 1);
-    assert_eq!(options.initial_hold, Duration::ZERO);
-}
-
-#[test]
-fn rejects_unbounded_station_reconnect_timeout() {
-    assert!(
-        parse_options(
-            &["--timeout-seconds".into(), "301".into()],
-            &LabConfig::for_test()
-        )
-        .is_err()
-    );
-}
-
-#[test]
-fn rejects_unbounded_station_reconnect_cycles() {
-    assert!(parse_options(&["--cycles".into(), "0".into()], &LabConfig::for_test()).is_err());
-    assert!(parse_options(&["--cycles".into(), "9".into()], &LabConfig::for_test()).is_err());
-}
-
-#[test]
-fn parses_and_bounds_reset_separated_boots() {
-    let options = parse_options(&["--boots".into(), "30".into()], &LabConfig::for_test()).unwrap();
-    assert_eq!(options.boots, 30);
-    assert!(parse_options(&["--boots".into(), "0".into()], &LabConfig::for_test()).is_err());
-    assert!(parse_options(&["--boots".into(), "101".into()], &LabConfig::for_test()).is_err());
-}
-
-#[test]
-fn parses_and_bounds_initial_connected_hold() {
-    let options = parse_options(
-        &["--initial-hold-seconds".into(), "10".into()],
-        &LabConfig::for_test(),
-    )
-    .unwrap();
-    assert_eq!(options.initial_hold, Duration::from_secs(10));
-    assert!(
-        parse_options(
-            &["--initial-hold-seconds".into(), "31".into()],
-            &LabConfig::for_test()
-        )
-        .is_err()
-    );
-}
-
-#[test]
 fn missing_typed_completion_cannot_qualify_a_cycle() {
     assert!(!validate_cycle_completion(None, 2).unwrap());
 }
@@ -128,4 +67,40 @@ fn cycle_requires_ordered_disconnect_and_next_generation_connect() {
     assert!(!progress.complete());
     progress.owners_complete = true;
     assert!(progress.complete());
+}
+
+#[test]
+fn typed_configuration_preserves_workload_bounds() {
+    assert!(
+        Config {
+            cycles: 0,
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        Config {
+            boots: 101,
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        Config {
+            initial_hold: Duration::from_secs(31),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        Config {
+            timeout: Duration::from_secs(301),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
 }

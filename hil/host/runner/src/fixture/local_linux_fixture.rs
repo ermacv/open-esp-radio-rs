@@ -1,9 +1,10 @@
 //! Session-bounded evidence from the laptop-owned nl80211 AP.
 
+use oer_process::CommandExt as _;
+use oer_process::owned::Child;
 use std::{
     net::Ipv4Addr,
-    process::{Child, Command, Stdio},
-    thread,
+    process::{Command, Stdio},
     time::Duration,
 };
 
@@ -173,9 +174,10 @@ impl LocalPacketCapture {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| format!("cannot start local AP packet capture: {error}"))?;
-        thread::sleep(Duration::from_millis(500));
+            .spawn_owned()
+            .map_err(|error| crate::error::context("start packet capture", error))?
+            .with_timeout(timeout.saturating_add(Duration::from_secs(10)));
+        oer_process::sleep(Duration::from_millis(500))?;
         if child.try_wait()?.is_some() {
             return Err("local AP packet capture exited before the HIL session started".into());
         }
@@ -208,10 +210,12 @@ impl LocalPacketCapture {
 
 impl Drop for LocalPacketCapture {
     fn drop(&mut self) {
-        if let Some(capture) = &mut self.child {
-            let _ = capture.kill();
-            let _ = capture.wait();
-        }
+        oer_process::cleanup(|| {
+            if let Some(capture) = &mut self.child {
+                let _ = capture.kill();
+                let _ = capture.wait();
+            }
+        });
     }
 }
 
@@ -252,7 +256,7 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
             "dev",
             &config.interface,
         ])
-        .output()?;
+        .supervised_output()?;
     if !neighbor.status.success() {
         return Err("cannot resolve the local-AP station neighbor".into());
     }
@@ -265,7 +269,7 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
         .ok_or("local AP has no resolved station MAC")?;
     let output = Command::new("iw")
         .args(["dev", &config.interface, "station", "get", mac])
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot snapshot local AP station counters: {}",
@@ -276,7 +280,7 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
     let station = String::from_utf8(output.stdout)?;
     let interface = Command::new("iw")
         .args(["dev", &config.interface, "info"])
-        .output()?;
+        .supervised_output()?;
     if !interface.status.success() {
         return Err("cannot read the local AP channel width".into());
     }

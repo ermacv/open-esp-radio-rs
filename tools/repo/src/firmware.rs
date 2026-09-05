@@ -142,6 +142,8 @@ pub fn flash(ctx: &Context, output: &Path, port: Option<&Path>, monitor: bool) -
     use oer_firmware::flash::{
         BOOTLOADER_OFFSET, OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET,
     };
+    let lease = oer_firmware::device::DeviceLease::select(port)?;
+    let port = Some(lease.port());
     for (address, filename, reset) in [
         (BOOTLOADER_OFFSET, "bootloader.bin", "no-reset"),
         (PARTITION_TABLE_OFFSET, "partitions.bin", "no-reset"),

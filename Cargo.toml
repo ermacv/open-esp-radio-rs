@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "tools/repo",
+    "tools/process",
     "tools/firmware",
     "hil/protocol",
     "driver/memory",

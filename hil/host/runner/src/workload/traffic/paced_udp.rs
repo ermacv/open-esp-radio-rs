@@ -92,7 +92,8 @@ fn send_with(
     let mut deadline_resets = 0_u64;
 
     while Instant::now() < deadline {
-        wait_until(next);
+        oer_process::check_cancelled()?;
+        wait_until(next)?;
         let now = Instant::now();
         let lateness = now.saturating_duration_since(next);
         maximum_lateness = maximum_lateness.max(lateness);
@@ -163,14 +164,15 @@ fn packet_interval(payload: usize, rate_bps: u64) -> Result<Duration> {
     clippy::disallowed_methods,
     reason = "host traffic pacing uses a bounded 30 us final spin outside production radio code"
 )]
-fn wait_until(deadline: Instant) {
+fn wait_until(deadline: Instant) -> Result<()> {
     loop {
+        oer_process::check_cancelled()?;
         let now = Instant::now();
         let Some(remaining) = deadline.checked_duration_since(now) else {
-            return;
+            return Ok(());
         };
         if remaining > FINAL_SPIN {
-            thread::sleep(remaining - FINAL_SPIN);
+            oer_process::sleep(remaining - FINAL_SPIN)?;
         } else {
             hint::spin_loop();
         }

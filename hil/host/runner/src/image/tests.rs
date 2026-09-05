@@ -35,7 +35,6 @@ fn scratch_directory(name: &str) -> PathBuf {
 
 #[test]
 fn qualified_profile_name_is_stable() {
-    assert_eq!(QUALIFIED_PROFILE, "psram-code-psram-data");
     assert_eq!(TARGET, "riscv32imafc-unknown-none-elf");
 }
 

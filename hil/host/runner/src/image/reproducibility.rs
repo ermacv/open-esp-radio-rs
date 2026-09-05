@@ -1,5 +1,6 @@
 //! Opt-in, two-checkout firmware reproducibility verification.
 
+use oer_process::CommandExt as _;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -135,7 +136,10 @@ impl DetachedWorktree {
             .args(["worktree", "add", "--detach"])
             .arg(&path)
             .arg(commit);
-        require_success(command.output()?, "create detached rebuild worktree")?;
+        require_success(
+            command.supervised_output()?,
+            "create detached rebuild worktree",
+        )?;
         Ok(Self {
             repository: repository.to_owned(),
             path,
@@ -152,7 +156,7 @@ impl Drop for DetachedWorktree {
             .arg(&self.path)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
+            .supervised_status();
     }
 }
 
@@ -265,13 +269,13 @@ fn reject_local_overrides() -> Result<()> {
 fn require_clean_commit(root: &Path) -> Result<String> {
     let mut revision = Command::new("git");
     revision.args(["-C"]).arg(root).args(["rev-parse", "HEAD"]);
-    let commit = require_stdout(revision.output()?, "resolve rebuild commit")?;
+    let commit = require_stdout(revision.supervised_output()?, "resolve rebuild commit")?;
     let mut status = Command::new("git");
     status
         .args(["-C"])
         .arg(root)
         .args(["status", "--porcelain=v1", "--untracked-files=all"]);
-    let status = require_stdout(status.output()?, "inspect rebuild source state")?;
+    let status = require_stdout(status.supervised_output()?, "inspect rebuild source state")?;
     if !status.is_empty() {
         return Err(
             "two-root rebuild verification requires a clean source repository; commit or stash every tracked and untracked change"
@@ -429,7 +433,7 @@ fn elf_sections(path: &Path) -> Result<ElfSections> {
     command
         .args(["--elf-output-style=JSON", "--sections"])
         .arg(path);
-    let stdout = require_output(command.output()?, "inspect ELF section layout")?;
+    let stdout = require_output(command.supervised_output()?, "inspect ELF section layout")?;
     let document: serde_json::Value = serde_json::from_slice(&stdout)?;
     let sections = document
         .as_array()

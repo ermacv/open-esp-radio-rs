@@ -2,7 +2,7 @@ use std::{net::Ipv4Addr, time::Duration};
 
 use crate::evidence::run::MeasurementVerdict;
 
-use super::{LatencySummary, Options, checksum, measurements, parse_options};
+use super::{Config, LatencySummary, checksum, measurements};
 
 #[test]
 fn checksum_matches_an_even_and_odd_reference_packet() {
@@ -11,26 +11,8 @@ fn checksum_matches_an_even_and_odd_reference_packet() {
 }
 
 #[test]
-fn parses_bounded_latency_options() {
-    let arguments = [
-        "--count",
-        "20",
-        "--interval-ms",
-        "5",
-        "--timeout-ms",
-        "100",
-        "--payload",
-        "32",
-    ]
-    .map(String::from);
-    let options = parse_options(&arguments).unwrap();
-    assert_eq!(options.count, 20);
-    assert_eq!(options.payload_bytes, 32);
-}
-
-#[test]
 fn measurements_preserve_each_acceptance_verdict() {
-    let options = Options {
+    let options = Config {
         device: Ipv4Addr::LOCALHOST,
         count: 10,
         interval: Duration::from_millis(1),

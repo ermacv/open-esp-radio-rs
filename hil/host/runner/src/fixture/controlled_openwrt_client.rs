@@ -1,5 +1,6 @@
 //! Scoped controlled AP client on the laboratory OpenWrt radio.
 
+use oer_process::CommandExt as _;
 use std::{
     io::Write as _,
     net::Ipv4Addr,
@@ -88,7 +89,7 @@ pub(crate) struct OpenWrtClientLinkObservation {
 pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> Result<()> {
     let status = Command::new("sh")
         .args(["-c", "command -v wpa_passphrase >/dev/null"])
-        .status()?;
+        .supervised_status()?;
     if !status.success() {
         return Err("wpa_passphrase is required for the controlled OpenWrt AP client".into());
     }
@@ -136,15 +137,32 @@ impl ControlledOpenWrtClient {
         fixture: &OpenWrtConfig,
     ) -> Result<OpenWrtClientFixturePreparation> {
         let started = Instant::now();
+        oer_process::check_cancelled()?;
+        let recovery = crate::fixture::cleanup::Rollback::new(
+            "restore OpenWrt wireless after preparation",
+            || {
+                let output = ssh(fixture, "wifi up")?;
+                if !output.status.success() {
+                    return Err(format!(
+                        "cannot restore OpenWrt wireless: {}",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    )
+                    .into());
+                }
+                Ok(())
+            },
+        );
         let script = prepare_fixture_script(access_point, fixture);
         let output = ssh(fixture, &script)?;
         if !output.status.success() {
-            return Err(format!(
-                "cannot establish a fresh OpenWrt AP-client radio epoch: {}",
+            return Err(crate::fixture::Error::new(format!(
+                "cannot establish a fresh OpenWrt AP-client radio epoch ({}): {}",
+                output.status,
                 String::from_utf8_lossy(&output.stderr).trim(),
-            )
+            ))
             .into());
         }
+        recovery.disarm();
         Ok(OpenWrtClientFixturePreparation {
             wireless_restarted: true,
             elapsed_millis: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
@@ -248,9 +266,14 @@ impl ControlledOpenWrtClient {
              exit 1",
             security_config = security_config.as_str(),
         ));
+        // Own rollback before the first remote mutation, including partial setup.
+        let mut owner = Self {
+            fixture: fixture.clone(),
+            forward_address: None,
+            restored: false,
+        };
         let output = ssh(fixture, script.as_str())?;
         if !output.status.success() {
-            let _ = restore(fixture);
             return Err(format!(
                 "OpenWrt AP client did not associate: status={} stdout={} stderr={}",
                 output.status,
@@ -271,7 +294,6 @@ impl ControlledOpenWrtClient {
             }
             let output = ssh(fixture, &rate_mask)?;
             if !output.status.success() {
-                let _ = restore(fixture);
                 return Err(format!(
                     "cannot apply the controlled OpenWrt AP-client HT rate mask `{rate_mask}`: {}",
                     String::from_utf8_lossy(&output.stderr).trim(),
@@ -282,26 +304,13 @@ impl ControlledOpenWrtClient {
         // Association is visible before all bridge/driver counters settle.
         // Keep this outside the measured workload and give the target time to
         // publish its controlled-port state.
-        thread::sleep(Duration::from_millis(250));
-        let forward_address =
-            match install_forwarding(fixture, access_point.target_address(), client_address) {
-                Ok(address) => Some(address),
-                Err(error) => {
-                    let restore_error = restore(fixture).err();
-                    return Err(match restore_error {
-                        Some(restore_error) => {
-                            format!("{error}; OpenWrt client cleanup also failed: {restore_error}")
-                                .into()
-                        }
-                        None => error,
-                    });
-                }
-            };
-        Ok(Self {
-            fixture: fixture.clone(),
-            forward_address,
-            restored: false,
-        })
+        oer_process::sleep(Duration::from_millis(250))?;
+        owner.forward_address = Some(install_forwarding(
+            fixture,
+            access_point.target_address(),
+            client_address,
+        )?);
+        Ok(owner)
     }
 
     /// Address reached by the wired host while OpenWrt owns the Wi-Fi peer.
@@ -349,22 +358,30 @@ fn prepare_fixture_script(access_point: &AccessPointConfig, fixture: &OpenWrtCon
          if test -f {PID_FILE}; then kill $(cat {PID_FILE}) 2>/dev/null || true; fi; \
          iw dev {INTERFACE} del 2>/dev/null || true; \
          rm -f {PID_FILE} {CONFIG_FILE}; \
+         restore_wireless() {{ status=$?; trap - EXIT; wifi up || exit 1; exit "$status"; }}; \
+         trap restore_wireless EXIT; \
+         trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
          wifi down; \
          sleep 2; \
          wifi up; \
+         trap - EXIT HUP INT TERM; \
          ready=0; \
          for attempt in $(seq 1 20); do \
              if iw dev {} info >/dev/null 2>&1; then ready=1; break; fi; \
              sleep 1; \
          done; \
-         test "$ready" = 1; \
+         if test "$ready" != 1; then echo 'OpenWrt AP interface did not become ready after wireless restart' >&2; exit 1; fi; \
          info=$(iw dev {} info); \
-         printf '%s\n' "$info" | grep -q 'channel {} '; \
-         printf '%s\n' "$info" | grep -q 'width: {} MHz'"#,
+         if ! printf '%s\n' "$info" | grep -q 'channel {channel} ' || \
+            ! printf '%s\n' "$info" | grep -q 'width: {width} MHz'; then \
+             echo 'OpenWrt AP-client radio mismatch: expected channel {channel}, width {width} MHz' >&2; \
+             printf '%s\n' "$info" | awk '$1 == "channel" {{print "observed: " $0}}' >&2; \
+             exit 1; \
+         fi"#,
         fixture.wireless_interface,
         fixture.wireless_interface,
-        access_point.channel(),
-        access_point.bandwidth_mhz(),
+        channel = access_point.channel(),
+        width = access_point.bandwidth_mhz(),
     )
 }
 
@@ -401,9 +418,13 @@ impl OpenWrtClientLinkObservation {
 
 impl Drop for ControlledOpenWrtClient {
     fn drop(&mut self) {
-        if !self.restored {
-            let _ = restore(&self.fixture);
-        }
+        oer_process::cleanup(|| {
+            if !self.restored {
+                crate::fixture::cleanup::record("restore OpenWrt client", || {
+                    restore(&self.fixture)
+                });
+            }
+        });
     }
 }
 
@@ -574,7 +595,8 @@ fn derive_psk(ssid: &str, passphrase: &str) -> Result<Zeroizing<String>> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
+        .spawn_owned()?
+        .with_timeout(Duration::from_secs(120));
     child
         .stdin
         .take()
@@ -628,7 +650,12 @@ fn probe(
     let deadline = duration.as_secs().saturating_add(5).max(5);
     let script =
         format!("ping -4 -q -I {INTERFACE} -c {packets} -i 1 -W 2 -w {deadline} {target}",);
-    let output = ssh(fixture, &script).map_err(|error| error.to_string())?;
+    let output = ssh_with_timeout(
+        fixture,
+        &script,
+        Duration::from_secs(deadline.saturating_add(5)),
+    )
+    .map_err(|error| error.to_string())?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let evidence = parse_ping_summary(&stdout).ok_or_else(|| {
         format!(
@@ -661,11 +688,21 @@ fn parse_ping_summary(output: &str) -> Option<SecondaryClientProbeEvidence> {
 }
 
 fn ssh(fixture: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
-    Ok(Command::new("ssh")
-        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
-        .arg(&fixture.ssh_target)
-        .arg(script)
-        .output()?)
+    ssh_with_timeout(fixture, script, Duration::from_secs(120))
+}
+
+fn ssh_with_timeout(
+    fixture: &OpenWrtConfig,
+    script: &str,
+    timeout: Duration,
+) -> Result<std::process::Output> {
+    oer_process::output(
+        Command::new("ssh")
+            .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+            .arg(&fixture.ssh_target)
+            .arg(script),
+        Some(timeout),
+    )
 }
 
 fn encode_hex(bytes: &[u8]) -> String {

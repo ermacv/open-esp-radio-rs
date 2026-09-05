@@ -1,10 +1,11 @@
 //! Host receiver and report writer for the production UDP TX qualification.
 
+use crate::execution::context::Context;
 use std::{
     collections::HashSet,
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
-    path::{Path, PathBuf},
+    path::Path,
     time::{Duration, Instant},
 };
 
@@ -23,9 +24,9 @@ use crate::{
         },
         station_fixture::require_ht40_mcs7,
     },
-    lab::config::{LabConfig, StationFixtureConfig},
+    lab::config::StationFixtureConfig,
     scenario::PhyExpectation,
-    session::{SerialCapture, await_udp_tx_ready},
+    session::await_udp_tx_ready,
     transport::udp::{configure_qualification_receive_buffer, open_reverse_flow},
     workload::traffic::{
         bidirectional::{
@@ -44,17 +45,16 @@ const MIN_BURST_DATAGRAMS: u64 = 1_000;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
-struct Options {
-    device: Ipv4Addr,
-    port: u16,
-    duration: Duration,
-    payload: usize,
-    offered_rate_bps: Option<u64>,
-    throughput_floor_bps: Option<u64>,
-    serial: PathBuf,
-    bandwidth_mhz: u16,
-    minimum_rate_kbps: u64,
-    maximum_idle_channel_utilization_255: Option<u8>,
+pub(crate) struct Config {
+    pub(crate) device: Ipv4Addr,
+    pub(crate) port: u16,
+    pub(crate) duration: Duration,
+    pub(crate) payload: usize,
+    pub(crate) offered_rate_bps: Option<u64>,
+    pub(crate) throughput_floor_bps: Option<u64>,
+    pub(crate) bandwidth_mhz: u16,
+    pub(crate) minimum_rate_kbps: u64,
+    pub(crate) maximum_idle_channel_utilization_255: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -187,35 +187,34 @@ impl ActiveBurst {
 }
 
 pub(crate) fn run(
-    arguments: Vec<String>,
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     require_exact_delivery: bool,
     require_no_beacon_loss: bool,
     require_driver_observation: bool,
 ) -> Result<()> {
-    let mut options = parse_options(&arguments, lab)?;
+    let mut options = options.validate()?;
     fs::create_dir_all(output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
-    let capture = SerialCapture::start_with_reset(&options.serial);
+    let capture = context.capture(output)?;
     let discovered_address =
-        match await_udp_tx_ready(&capture, lab, options.device, DEVICE_READY_TIMEOUT) {
+        match await_udp_tx_ready(&capture, context, options.device, DEVICE_READY_TIMEOUT) {
             Ok(address) => address,
             Err(error) => {
-                capture.finish_to(output)?;
-                return Err(error);
+                return capture.finish_with(Err(error));
             }
         };
     options.device = discovered_address.address;
-    let host_route = match BenchmarkIpv4Route::discover(options.device, &lab.station_fixture) {
-        Ok(route) => route,
-        Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
-        }
-    };
+    let host_route =
+        match BenchmarkIpv4Route::discover(options.device, &context.lab.station_fixture) {
+            Ok(route) => route,
+            Err(error) => {
+                return capture.finish_with(Err(error));
+            }
+        };
     socket.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
     let host_address = match socket.local_addr()? {
         SocketAddr::V4(address) => *address.ip(),
@@ -228,29 +227,28 @@ pub(crate) fn run(
     // one-packet RX queue on this port, so the probe cannot grow unbounded or
     // enter the measured radio TX accounting.
     if let Err(error) = open_reverse_flow(&socket) {
-        capture.finish_to(output)?;
-        return Err(error.into());
+        return capture.finish_with(Err(error.into()));
     }
     let pre_workload_channel_utilization = match (
         options.maximum_idle_channel_utilization_255,
-        &lab.station_fixture,
+        &context.lab.station_fixture,
     ) {
         (Some(maximum), StationFixtureConfig::OpenWrt(config)) => {
             match require_idle_channel_utilization(config, maximum) {
                 Ok(utilization) => Some(utilization),
                 Err(error) => {
-                    capture.finish_to(output)?;
-                    return Err(error);
+                    return capture.finish_with(Err(error));
                 }
             }
         }
         (Some(_), StationFixtureConfig::LocalLinux(_) | StationFixtureConfig::External(_)) => {
-            capture.finish_to(output)?;
-            return Err("TX idle-channel evidence requires a managed OpenWrt fixture".into());
+            return capture.finish_with(Err(
+                "TX idle-channel evidence requires a managed OpenWrt fixture".into(),
+            ));
         }
         (None, _) => None,
     };
-    let local_ingress_capture = match &lab.station_fixture {
+    let local_ingress_capture = match &context.lab.station_fixture {
         StationFixtureConfig::LocalLinux(config) => Some(LocalLinuxTxCapture::start(
             config,
             options.device,
@@ -291,8 +289,7 @@ pub(crate) fn run(
     }) {
         Ok(session) => session,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     let receive_duration = options.duration.saturating_add(Duration::from_secs(2));
@@ -300,18 +297,16 @@ pub(crate) fn run(
     let structured = match capture.wait_for_session(session, Duration::from_secs(5)) {
         Ok(evidence) => evidence,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     if let Err(error) = capture.acknowledge_session(session) {
-        capture.finish_to(output)?;
-        return Err(error);
+        return capture.finish_with(Err(error));
     }
     let local_ingress = local_ingress_capture
         .map(LocalLinuxTxCapture::finish)
         .transpose()?;
-    let openwrt_link = match &lab.station_fixture {
+    let openwrt_link = match &context.lab.station_fixture {
         StationFixtureConfig::OpenWrt(config) => Some(station_link(config, options.device)?),
         StationFixtureConfig::LocalLinux(_) | StationFixtureConfig::External(_) => None,
     };
@@ -319,7 +314,7 @@ pub(crate) fn run(
         write_local_ingress_evidence(output, evidence)?;
     }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
-    let log = capture.finish_to(output)?;
+    let log = capture.finish()?;
     if let Some(result) = beacon_loss {
         result?;
     }
@@ -353,8 +348,18 @@ pub(crate) fn run(
         .map(|burst| burst.throughput_kbps())
         .min()
         .expect("at least one qualified burst");
+    context.measurements.rate(
+        "udp.tx.host-rate",
+        host_floor.saturating_mul(1_000),
+        options.throughput_floor_bps,
+    );
+    context.measurements.rate(
+        "udp.tx.target-rate",
+        device_floor_kbps.saturating_mul(1_000),
+        options.throughput_floor_bps,
+    );
     let link_report = require_performance_link(
-        &lab.station_fixture,
+        &context.lab.station_fixture,
         options.bandwidth_mhz,
         local_ingress.as_ref(),
         openwrt_link.as_ref(),
@@ -636,84 +641,46 @@ fn require_performance_link(
     }
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
-    let mut options = Options {
-        device: Ipv4Addr::UNSPECIFIED,
-        port: DEFAULT_PORT,
-        duration: DEFAULT_DURATION,
-        payload: DEFAULT_PAYLOAD,
-        offered_rate_bps: None,
-        throughput_floor_bps: None,
-        serial: lab.device.serial.clone(),
-        bandwidth_mhz: 20,
-        minimum_rate_kbps: 114_700,
-        maximum_idle_channel_utilization_255: None,
-    };
-    let mut index = 0;
-    while index < arguments.len() {
-        let value = arguments
-            .get(index + 1)
-            .ok_or("TX option requires a value")?;
-        match arguments[index].as_str() {
-            "--seconds" => {
-                let seconds = value.parse::<u64>()?;
-                if !(8..=300).contains(&seconds) {
-                    return Err("--seconds must be in 8..=300".into());
-                }
-                options.duration = Duration::from_secs(seconds);
-            }
-            "--port" => options.port = value.parse::<u16>()?,
-            "--payload" => {
-                options.payload = value.parse::<usize>()?;
-                if !(64..=1_472).contains(&options.payload) {
-                    return Err("--payload must be in 64..=1472".into());
-                }
-            }
-            "--rate" => options.offered_rate_bps = Some(parse_rate(value)?),
-            "--floor" => options.throughput_floor_bps = Some(parse_rate(value)?),
-            "--max-idle-channel-utilization-255" => {
-                let maximum = value.parse::<u8>()?;
-                if maximum == 0 {
-                    return Err("--max-idle-channel-utilization-255 must be nonzero".into());
-                }
-                options.maximum_idle_channel_utilization_255 = Some(maximum);
-            }
-            "--phy" => match value.as_str() {
-                "he20" => {
-                    options.bandwidth_mhz = 20;
-                    options.minimum_rate_kbps = 114_700;
-                }
-                "ht40" => {
-                    options.bandwidth_mhz = 40;
-                    options.minimum_rate_kbps = 135_000;
-                }
-                _ => return Err("--phy must be he20 or ht40".into()),
-            },
-            other => return Err(format!("unknown TX option `{other}`").into()),
-        }
-        index += 2;
-    }
-    if options.port == 0 {
-        return Err("--port must be nonzero".into());
-    }
-    Ok(options)
-}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            device: Ipv4Addr::UNSPECIFIED,
+            port: DEFAULT_PORT,
+            duration: DEFAULT_DURATION,
+            payload: DEFAULT_PAYLOAD,
+            offered_rate_bps: None,
+            throughput_floor_bps: None,
 
-fn parse_rate(value: &str) -> Result<u64> {
-    let (digits, multiplier) = match value.as_bytes().last().copied() {
-        Some(b'k' | b'K') => (&value[..value.len() - 1], 1_000_u64),
-        Some(b'm' | b'M') => (&value[..value.len() - 1], 1_000_000_u64),
-        Some(b'g' | b'G') => (&value[..value.len() - 1], 1_000_000_000_u64),
-        _ => (value, 1),
-    };
-    let rate = digits
-        .parse::<u64>()?
-        .checked_mul(multiplier)
-        .ok_or("rate overflow")?;
-    if !(100_000..=1_000_000_000).contains(&rate) {
-        return Err("--rate must be in 100K..=1G".into());
+            bandwidth_mhz: 20,
+            minimum_rate_kbps: 114_700,
+            maximum_idle_channel_utilization_255: None,
+        }
     }
-    Ok(rate)
+}
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(8)..=Duration::from_secs(300)).contains(&self.duration) {
+            return Err("traffic duration must be in 8..=300 seconds".into());
+        }
+        if !(64..=1472).contains(&self.payload) {
+            return Err("UDP payload must be in 64..=1472 bytes".into());
+        }
+        if self.maximum_idle_channel_utilization_255 == Some(0) {
+            return Err("maximum idle channel utilization must be nonzero".into());
+        }
+        if [self.offered_rate_bps, self.throughput_floor_bps]
+            .into_iter()
+            .flatten()
+            .any(|rate| !(100_000..=1_000_000_000).contains(&rate))
+        {
+            return Err("traffic rate is outside the supported range".into());
+        }
+        if self.port == 0 {
+            return Err("port must be nonzero".into());
+        }
+
+        Ok(self)
+    }
 }
 
 pub(crate) fn receive_bursts(
@@ -727,6 +694,7 @@ pub(crate) fn receive_bursts(
     let mut bursts = Vec::new();
     let mut ignored_reverse_probe_error = false;
     while Instant::now() < deadline {
+        oer_process::check_cancelled().map_err(std::io::Error::other)?;
         match socket.recv_from(&mut packet) {
             Ok((length, source)) => {
                 if !matches!(source, SocketAddr::V4(source) if *source.ip() == expected_device) {
@@ -779,7 +747,7 @@ pub(crate) fn describe_bursts(bursts: &[Burst]) -> String {
 }
 
 struct TxPerformanceReport<'a> {
-    options: &'a Options,
+    options: &'a Config,
     host_address: Ipv4Addr,
     bursts: &'a [Burst],
     host_floor_kbps: u64,
@@ -1072,7 +1040,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
 }
 
 struct TxReport<'a> {
-    options: &'a Options,
+    options: &'a Config,
     host_address: Ipv4Addr,
     bursts: &'a [Burst],
     host_floor_kbps: u64,

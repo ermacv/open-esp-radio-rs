@@ -1,5 +1,6 @@
 //! Finite normalized 802.11 capture exported through the typed HIL protocol.
 
+use crate::execution::context::Context;
 mod assembly;
 mod pcapng;
 
@@ -14,34 +15,29 @@ use open_esp_radio_hil_protocol::WifiMonitorCaptureRequest;
 use crate::{
     Result,
     fixture::controlled_ap::ControlledAp,
-    lab::config::LabConfig,
     scenario::PhyExpectation,
     session::{MonitorCaptureEvidence, SerialCapture},
     workload::ieee80211::control::{scan, start_station, stop_station},
 };
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
-const DEFAULT_CAPTURE_DURATION: Duration = Duration::from_secs(3);
-
-struct Options {
-    serial: PathBuf,
-    output: PathBuf,
-    timeout: Duration,
-    duration: Duration,
-    channel: Option<u8>,
-    snapshot_length: u16,
+pub(crate) struct Config {
+    pub(crate) output: PathBuf,
+    pub(crate) timeout: Duration,
+    pub(crate) duration: Duration,
+    pub(crate) channel: Option<u8>,
+    pub(crate) snapshot_length: u16,
 }
 
 pub(crate) fn run(
-    arguments: Vec<String>,
+    options: Config,
     artifact_dir: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     phy: PhyExpectation,
 ) -> Result<()> {
-    let options = parse_options(&arguments, lab)?;
+    let options = options.validate()?;
     let _access_point = Some(ControlledAp::start(
-        &lab.station,
-        &lab.station_fixture,
+        &context.lab.station,
+        &context.lab.station_fixture,
         phy,
     )?);
     fs::create_dir_all(artifact_dir)?;
@@ -51,10 +47,7 @@ pub(crate) fn run(
         fs::create_dir_all(parent)?;
     }
 
-    let serial = SerialCapture::start_with_reset(&options.serial);
-    let result = qualify(&serial, lab, &options);
-    serial.finish_to(artifact_dir)?;
-    let result = result?;
+    let result = context.with_capture(artifact_dir, |serial| qualify(serial, context, &options))?;
     pcapng::write_capture(
         &options.output,
         &result.assembly.packets,
@@ -92,8 +85,12 @@ struct CaptureResult {
     host_anchor_micros: u64,
 }
 
-fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result<CaptureResult> {
-    let capabilities = serial.prepare_station(lab, options.timeout)?;
+fn qualify(
+    serial: &SerialCapture,
+    context: &Context<'_>,
+    options: &Config,
+) -> Result<CaptureResult> {
+    let capabilities = serial.prepare_station(context, options.timeout)?;
     if !capabilities.features.wifi_monitor_capture {
         return Err("firmware does not advertise typed monitor capture".into());
     }
@@ -103,7 +100,7 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
         None => {
             let evidence = scan(serial, options.timeout)?;
             if !(1..=13).contains(&evidence.configured_ssid_channel) {
-                start_station(serial, lab, options.timeout)?;
+                start_station(serial, context, options.timeout)?;
                 return Err("scan did not provide a capture channel".into());
             }
             evidence.configured_ssid_channel
@@ -122,7 +119,7 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
         duration_millis,
     })?;
     let capture = serial.wait_monitor_capture(handle, options.timeout + options.duration);
-    let restart = start_station(serial, lab, options.timeout);
+    let restart = start_station(serial, context, options.timeout);
     let capture = match (capture, restart) {
         (Ok(capture), Ok(())) => capture,
         (Err(capture), Ok(())) => return Err(capture),
@@ -201,77 +198,28 @@ fn validate_summary(
     Ok(())
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
-    let serial = lab.device.serial.clone();
-    let mut output = None;
-    let mut timeout = DEFAULT_TIMEOUT;
-    let mut duration = DEFAULT_CAPTURE_DURATION;
-    let mut channel = None;
-    let mut snapshot_length = 256_u16;
-    let mut index = 0;
-    while index < arguments.len() {
-        match arguments[index].as_str() {
-            "--output" => {
-                index += 1;
-                output = Some(PathBuf::from(
-                    arguments.get(index).ok_or("--output requires a path")?,
-                ));
-            }
-            "--timeout-seconds" => {
-                index += 1;
-                let seconds = arguments
-                    .get(index)
-                    .ok_or("--timeout-seconds requires a value")?
-                    .parse::<u64>()?;
-                if !(10..=180).contains(&seconds) {
-                    return Err("--timeout-seconds must be in 10..=180".into());
-                }
-                timeout = Duration::from_secs(seconds);
-            }
-            "--seconds" => {
-                index += 1;
-                let seconds = arguments
-                    .get(index)
-                    .ok_or("--seconds requires a value")?
-                    .parse::<u64>()?;
-                if !(1..=30).contains(&seconds) {
-                    return Err("--seconds must be in 1..=30".into());
-                }
-                duration = Duration::from_secs(seconds);
-            }
-            "--channel" => {
-                index += 1;
-                let selected = arguments
-                    .get(index)
-                    .ok_or("--channel requires a value")?
-                    .parse::<u8>()?;
-                if !(1..=13).contains(&selected) {
-                    return Err("--channel must be in 1..=13".into());
-                }
-                channel = Some(selected);
-            }
-            "--snapshot-length" => {
-                index += 1;
-                snapshot_length = arguments
-                    .get(index)
-                    .ok_or("--snapshot-length requires a value")?
-                    .parse::<u16>()?;
-                if snapshot_length > 2_304 {
-                    return Err("--snapshot-length must be in 0..=2304".into());
-                }
-            }
-            argument => return Err(format!("unknown Wi-Fi capture option `{argument}`").into()),
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(10)..=Duration::from_secs(180)).contains(&self.timeout) {
+            return Err("capture timeout must be in 10..=180 seconds".into());
         }
-        index += 1;
+        if !(Duration::from_secs(1)..=Duration::from_secs(30)).contains(&self.duration) {
+            return Err("capture duration must be in 1..=30 seconds".into());
+        }
+        if self
+            .channel
+            .is_some_and(|channel| !(1..=13).contains(&channel))
+        {
+            return Err("capture channel must be in 1..=13".into());
+        }
+        if self.snapshot_length > 2304 {
+            return Err("snapshot length must be at most 2304".into());
+        }
+        if self.output.as_os_str().is_empty() {
+            return Err("capture output is required".into());
+        }
+        Ok(self)
     }
-    Ok(Options {
-        serial,
-        output: output.ok_or("--output is required")?,
-        timeout,
-        duration,
-        channel,
-        snapshot_length,
-    })
 }
 
 #[cfg(test)]

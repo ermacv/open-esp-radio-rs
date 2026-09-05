@@ -14,6 +14,17 @@ fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> Sessi
         transport_errors: 0,
     };
     SessionEvidence {
+        link: open_esp_radio_hil_protocol::LinkHealth {
+            rx_frames: 1,
+            rx_cobs_errors: 0,
+            rx_checksum_errors: 0,
+            rx_decode_errors: 0,
+            rx_overflows: 0,
+            tx_frames: 1,
+            tx_dropped: 0,
+            text_dropped: 0,
+            text_truncated: 0,
+        },
         finished: Finished {
             summary: ResultSummary {
                 passed: true,

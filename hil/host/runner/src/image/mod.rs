@@ -1,6 +1,7 @@
 //! Reproducible HIL firmware construction and image auditing.
 
 use crate::*;
+use oer_process::CommandExt as _;
 use open_esp_radio_hil_protocol::FeatureCapabilities;
 
 mod class;
@@ -10,7 +11,6 @@ pub(crate) use class::ImageClass;
 
 pub(crate) use reproducibility::verify_rebuild;
 
-pub(crate) const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 pub(crate) const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
 use oer_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
@@ -343,7 +343,8 @@ fn build_resolved(
         .arg(&runtime_elf)
         .arg(&runtime_bin);
     run_command(&mut objcopy, "flatten stage-two runtime")?;
-    let crc = pack_runtime(&runtime_bin).map_err(|error| -> Box<dyn Error> { error })?;
+    let crc =
+        pack_runtime(&runtime_bin).map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
     let placement = audit_runtime(&runtime_elf, &runtime_bin, class)?;
     fs::write(output.join("placement.txt"), placement)?;
 
@@ -380,7 +381,8 @@ fn build_resolved(
     let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
     oer_firmware::save_image_command(&mut save_image, root, &bootstrap_elf, &application_image);
     run_command(&mut save_image, "encode ESP application image")?;
-    audit_application_image(&application_image).map_err(|error| -> Box<dyn Error> { error })?;
+    audit_application_image(&application_image)
+        .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
     fs::copy(
         root.join("hil/targets/esp32s31/Cargo.lock"),
         &effective_embedded_lock,
@@ -593,7 +595,8 @@ fn enable_experimental_path_trimming(command: &mut Command, enabled: bool) {
 
 pub(crate) fn run_command(command: &mut Command, description: &str) -> Result<()> {
     eprintln!("==> {description}");
-    let status = command.status()?;
+    let status = oer_process::owned::Child::spawn(command)?
+        .wait_timeout(Some(std::time::Duration::from_secs(30 * 60)))?;
     if !status.success() {
         return Err(format!("{description} failed with {status}").into());
     }
@@ -616,16 +619,20 @@ fn require_file(path: &Path, description: &str) -> Result<()> {
     }
 }
 
-pub(crate) fn require_program(program: &str) -> Result<()> {
+pub(crate) fn require_program(program: &std::ffi::OsStr) -> Result<()> {
     let status = Command::new(program)
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()?;
+        .supervised_status()?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!("required program `{program}` is unavailable").into())
+        Err(format!(
+            "required program `{}` is unavailable",
+            program.to_string_lossy()
+        )
+        .into())
     }
 }
 
@@ -672,7 +679,7 @@ pub(crate) fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
 
 fn audit_runtime(elf: &Path, binary: &Path, class: crate::image::ImageClass) -> Result<String> {
     let report = oer_firmware::audit_runtime(elf, binary, class.uses_psram_task_stack())
-        .map_err(|error| -> Box<dyn Error> { error })?;
+        .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
     if class != crate::image::ImageClass::BootSmoke {
         use object::{Object, ObjectSection, ObjectSymbol};
         let bytes = fs::read(elf)?;

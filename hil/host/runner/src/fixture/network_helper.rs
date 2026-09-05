@@ -1,5 +1,6 @@
 //! One versioned contract for the root-owned laptop radio helper.
 
+use oer_process::CommandExt as _;
 use std::process::Command;
 
 use crate::Result;
@@ -11,7 +12,7 @@ const REQUIRED_CAPABILITIES: &str =
 pub(crate) fn doctor() -> Result<()> {
     let output = Command::new("sudo")
         .args(["-n", PATH, "capabilities"])
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "laptop radio helper is unavailable through non-interactive sudo: {}",

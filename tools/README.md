@@ -8,6 +8,8 @@ checks. A utility does not need its own Cargo package.
 | --- | --- |
 | [blobray](blobray/README.md) | Generic compiled-binary analysis, reviewed models, comparison and register publication; callers select projects/providers |
 | [memory-report](memory-report/README.md) | Generic ELF memory and stack analysis; the consumer supplies placement policy |
+| [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup shared by xtask and HIL |
+| [firmware](firmware/README.md) | Firmware image operations and shared serial-device leases |
 | [repo](repo/README.md) | Cargo/source/architecture checks and their regression tests |
 
 The [qualification evaluator](../qualification/README.md) belongs to its

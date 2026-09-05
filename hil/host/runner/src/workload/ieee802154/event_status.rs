@@ -6,6 +6,7 @@
 //! prove full W1C semantics, concurrent arrival of the same bit, or active
 //! level-triggered interrupt-route behavior.
 
+use crate::execution::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -15,7 +16,7 @@ use open_esp_radio_hil_protocol::{
 };
 use serde::Serialize;
 
-use crate::{Result, lab::config::LabConfig, session::SerialCapture};
+use crate::{Result, session::SerialCapture};
 
 const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -33,7 +34,7 @@ struct BootReport {
     target: Ieee802154EventStatusProbeEvidence,
 }
 
-pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
+pub(crate) fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     fs::create_dir_all(output)?;
     let request = Ieee802154EventStatusProbeRequest {
         poll_limit: config.poll_limit,
@@ -46,16 +47,20 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
     let mut reports = Vec::with_capacity(usize::from(config.boots));
     for boot in 1..=config.boots {
         let boot_output = output.join(format!("boot-{boot:03}"));
-        let capture = SerialCapture::start_with_reset(&lab.device.serial);
-        let result = probe(&capture, request, boot);
-        let capture_result = capture.finish_to(&boot_output);
-        let report = result?;
-        let target = report.target;
-        reports.push(report);
-        if let Err(error) = capture_result {
-            write_failed_report(output, &reports, &error.to_string())?;
-            return Err(error);
-        }
+        let result = context.with_capture(&boot_output, |capture| {
+            probe(capture, request, boot).map(|report| {
+                let target = report.target;
+                reports.push(report);
+                target
+            })
+        });
+        let target = match result {
+            Ok(target) => target,
+            Err(error) => {
+                write_failed_report(output, &reports, &error.to_string())?;
+                return Err(error);
+            }
+        };
         if let Err(error) = validate(target) {
             write_failed_report(output, &reports, &error.to_string())?;
             return Err(error);

@@ -226,6 +226,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
     atomic_json(
         &run.join(path),
         &LabProvenance {
+            scope: Default::default(),
             schema: crate::lab::provenance::LAB_PROVENANCE_SCHEMA,
             captured_unix_millis: 150,
             definition: LabDefinition {
@@ -290,6 +291,58 @@ fn verifies_typed_lab_provenance_and_rejects_wrong_device_binding() {
     let error = verify(&root, "esp32s31", Some("run-1"))
         .expect_err("reject lab snapshot for another device");
     assert!(error.to_string().contains("not bound"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn system_provenance_cannot_hide_a_network_workload() {
+    let (root, run) = fixture();
+    add_lab_provenance(&run, "dut-1");
+    let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
+    provenance.scope = crate::lab::provenance::ObservationScope::System;
+    provenance.fixture = FixtureObservation::NotUsed;
+    atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
+    let mut scenario: crate::scenario::Scenario = toml::from_str(include_str!(
+        "../../../../../scenarios/system/timebase.toml"
+    ))
+    .unwrap();
+    let snapshot = run
+        .join("scenarios")
+        .join(&scenario.id)
+        .join("scenario.json");
+    fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
+    atomic_json(&snapshot, &scenario).unwrap();
+    let plan = crate::evidence::run::RunPlan {
+        schema: RUN_SCHEMA,
+        run_id: "run-1".into(),
+        selection: "timebase".into(),
+        firmware: None,
+        entries: vec![crate::evidence::run::PlanEntry {
+            scenario: scenario.id.clone(),
+            image: scenario.image,
+            repetitions: scenario.repetitions,
+            disposition: crate::evidence::run::PlanDisposition::Selected,
+            reason: None,
+            requirements: Some(crate::lab::requirements::Requirements::default()),
+        }],
+    };
+    atomic_json(&run.join("plan.json"), &plan).unwrap();
+    let manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
+    validate_lab_provenance(&run, &manifest).unwrap();
+    scenario.workload = crate::scenario::Workload::StationReconnect {
+        cycles: 1,
+        boots: 1,
+        timeout_seconds: 30,
+    };
+    atomic_json(&snapshot, &scenario).unwrap();
+    assert!(
+        validate_lab_provenance(&run, &manifest)
+            .unwrap_err()
+            .to_string()
+            .contains("disagrees")
+    );
+    fs::remove_file(snapshot).unwrap();
+    assert!(validate_lab_provenance(&run, &manifest).is_err());
     fs::remove_dir_all(root).unwrap();
 }
 

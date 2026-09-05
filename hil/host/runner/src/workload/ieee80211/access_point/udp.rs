@@ -48,7 +48,7 @@ pub(super) struct UdpEvidencePolicy {
 pub(super) fn qualify_udp(
     capture: &SerialCapture,
     config: &Config,
-    lab: &crate::lab::config::LabConfig,
+    context: &crate::execution::context::Context<'_>,
     clients: &ConnectedClients,
     workload: UdpWorkload,
 ) -> Result<TrafficReport> {
@@ -61,9 +61,9 @@ pub(super) fn qualify_udp(
         ..
     } = workload;
     let protocol_direction = protocol_direction(direction);
-    let target = lab.access_point.target_address();
+    let target = context.lab.access_point.target_address();
     let traffic_target = clients.traffic_target(target)?;
-    let host = lab.access_point.client_address();
+    let host = context.lab.access_point.client_address();
     if rx_rate_bps.is_some() {
         probe_udp_rx_ready_via(
             capture,

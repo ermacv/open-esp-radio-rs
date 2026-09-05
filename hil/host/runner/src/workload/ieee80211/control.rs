@@ -1,11 +1,7 @@
 //! Host qualification for explicit Wi-Fi role ownership transitions.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    thread,
-    time::Duration,
-};
+use crate::execution::context::Context;
+use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
     WifiMonitorRequest, WifiNetworkInterface, WifiRole, WifiRoleTransitionEvidence,
@@ -15,8 +11,7 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     fixture::controlled_ap::{ControlledAp, require_station_credentials},
-    lab::config::LabConfig,
-    scenario::PhyExpectation,
+    scenario::{PhyExpectation, WifiOperation as Operation},
     session::SerialCapture,
 };
 
@@ -24,88 +19,48 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_MONITOR_DURATION: Duration = Duration::from_secs(3);
 const DEFAULT_SCAN_DWELL_MILLIS: u16 = 200;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Operation {
-    Stop,
-    Start,
-    Scan,
-    Monitor,
-    AccessPoint,
-    StationAccessPoint,
-    Roundtrip,
-}
-
-impl Operation {
-    fn parse(value: &str) -> Result<Self> {
-        match value {
-            "stop" => Ok(Self::Stop),
-            "start" => Ok(Self::Start),
-            "scan" => Ok(Self::Scan),
-            "monitor" => Ok(Self::Monitor),
-            "ap" => Ok(Self::AccessPoint),
-            "sta-ap" => Ok(Self::StationAccessPoint),
-            "roundtrip" => Ok(Self::Roundtrip),
-            _ => Err(format!("unknown Wi-Fi lifecycle operation `{value}`").into()),
-        }
-    }
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Stop => "stop",
-            Self::Start => "start",
-            Self::Scan => "scan",
-            Self::Monitor => "monitor",
-            Self::AccessPoint => "ap",
-            Self::StationAccessPoint => "sta-ap",
-            Self::Roundtrip => "roundtrip",
-        }
-    }
-}
-
-struct Options {
-    serial: PathBuf,
-    timeout: Duration,
-    monitor_duration: Duration,
-    monitor_channel: Option<u8>,
-    snapshot_length: u16,
+pub(crate) struct Config {
+    pub(crate) timeout: Duration,
+    pub(crate) monitor_duration: Duration,
+    pub(crate) monitor_channel: Option<u8>,
+    pub(crate) snapshot_length: u16,
 }
 
 pub(crate) fn run(
-    operation: &str,
-    arguments: Vec<String>,
+    operation: Operation,
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     phy: PhyExpectation,
 ) -> Result<()> {
-    let operation = Operation::parse(operation)?;
-    let options = parse_options(&arguments, lab)?;
+    let options = options.validate()?;
+
     let _access_point = if operation == Operation::AccessPoint {
-        require_station_credentials(&lab.station)?;
+        require_station_credentials(&context.lab.station)?;
         None
     } else {
         Some(ControlledAp::start(
-            &lab.station,
-            &lab.station_fixture,
+            &context.lab.station,
+            &context.lab.station_fixture,
             phy,
         )?)
     };
     fs::create_dir_all(output)?;
-    let capture = SerialCapture::start_with_reset(&options.serial);
-    let result = qualify(&capture, lab, operation, &options);
-    capture.finish_to(output)?;
-    result?;
-    eprintln!("wifi_{}=PASS", operation.name());
+    context.with_capture(output, |capture| {
+        qualify(capture, context, operation, &options)
+    })?;
+    eprintln!("wifi_{}=PASS", operation.id());
     eprintln!("uart_log={}", output.join("uart.log").display());
     Ok(())
 }
 
 fn qualify(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     operation: Operation,
-    options: &Options,
+    options: &Config,
 ) -> Result<()> {
-    let capabilities = capture.prepare_station(lab, options.timeout)?;
+    let capabilities = capture.prepare_station(context, options.timeout)?;
     if !capabilities.features.wifi_role_control {
         return Err("firmware does not advertise explicit Wi-Fi role control".into());
     }
@@ -118,7 +73,7 @@ fn qualify(
         return Ok(());
     }
     if operation == Operation::Start {
-        start_station(capture, lab, options.timeout)?;
+        start_station(capture, context, options.timeout)?;
         report_stack(capture, options.timeout, "station-started")?;
         return Ok(());
     }
@@ -127,7 +82,8 @@ fn qualify(
         if !capabilities.features.wifi_access_point {
             return Err("firmware does not advertise the access-point role".into());
         }
-        let mut request = lab
+        let mut request = context
+            .lab
             .access_point
             .protocol_request(open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
         if let Some(channel) = options.monitor_channel {
@@ -141,7 +97,7 @@ fn qualify(
         )?;
         require_transition(started, WifiRole::Idle, WifiRole::AccessPoint)?;
         report_stack(capture, options.timeout, "access-point-started")?;
-        thread::sleep(options.monitor_duration);
+        oer_process::sleep(options.monitor_duration)?;
         let stopped = capture
             .wait_access_point_stop(capture.request_access_point_stop()?, options.timeout)?;
         if stopped.generation != started.generation
@@ -204,7 +160,7 @@ fn qualify(
             stopped.tx_collision_limits,
             stopped.tx_last_hardware_status,
         );
-        start_station(capture, lab, options.timeout)?;
+        start_station(capture, context, options.timeout)?;
         report_stack(capture, options.timeout, "station-restarted")?;
         return Ok(());
     }
@@ -213,14 +169,15 @@ fn qualify(
         if !capabilities.features.simultaneous_station_access_point {
             return Err("firmware does not advertise simultaneous STA+AP".into());
         }
-        let mut access_point = lab
+        let mut access_point = context
+            .lab
             .access_point
             .protocol_request(open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
         if let Some(channel) = options.monitor_channel {
             access_point.channel = channel;
         }
         let request = WifiStationAccessPointRequest {
-            station_credentials: lab.station.protocol_credentials()?,
+            station_credentials: context.lab.station.protocol_credentials()?,
             access_point,
         };
         let started = capture.wait_wifi_role_transition(
@@ -230,6 +187,7 @@ fn qualify(
         require_transition(started, WifiRole::Idle, WifiRole::StationAccessPoint)?;
         let deadline = std::time::Instant::now() + options.timeout;
         while std::time::Instant::now() < deadline {
+            oer_process::check_cancelled()?;
             let station = capture.observed_protocol_ipv4(WifiNetworkInterface::Station);
             let access_point = capture.observed_protocol_ipv4(WifiNetworkInterface::AccessPoint);
             if let (Some(station), Some(access_point)) = (station, access_point) {
@@ -237,7 +195,7 @@ fn qualify(
                 eprintln!("wifi_sta_ap_access_point_ipv4={access_point}");
                 break;
             }
-            thread::sleep(Duration::from_millis(20));
+            oer_process::sleep(Duration::from_millis(20))?;
         }
         if capture
             .observed_protocol_ipv4(WifiNetworkInterface::Station)
@@ -248,7 +206,7 @@ fn qualify(
         {
             return Err("paired role did not publish both network endpoints".into());
         }
-        thread::sleep(options.monitor_duration);
+        oer_process::sleep(options.monitor_duration)?;
         let stopped = capture.wait_station_access_point_stop(
             capture.request_station_access_point_stop()?,
             options.timeout,
@@ -284,7 +242,7 @@ fn qualify(
         scan.configured_ssid_rssi_dbm,
     );
     if operation == Operation::Scan {
-        start_station(capture, lab, options.timeout)?;
+        start_station(capture, context, options.timeout)?;
         report_stack(capture, options.timeout, "station-restarted")?;
         return Ok(());
     }
@@ -303,7 +261,7 @@ fn qualify(
         options.timeout,
     )?;
     require_transition(started, WifiRole::Idle, WifiRole::Monitor)?;
-    thread::sleep(options.monitor_duration);
+    oer_process::sleep(options.monitor_duration)?;
     let stopped = capture.wait_monitor_stop(capture.request_monitor_stop()?, options.timeout)?;
     report_stack(capture, options.timeout, "monitor-stopped")?;
     if stopped.generation != started.generation
@@ -332,7 +290,7 @@ fn qualify(
         stopped.channel_unavailable,
         stopped.last_observed_channel,
     );
-    start_station(capture, lab, options.timeout)?;
+    start_station(capture, context, options.timeout)?;
     report_stack(capture, options.timeout, "station-restarted")?;
     Ok(())
 }
@@ -362,11 +320,11 @@ pub(crate) fn stop_station(
 
 pub(crate) fn start_station(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     timeout: Duration,
 ) -> Result<()> {
     let evidence =
-        capture.wait_wifi_role_transition(capture.request_station_start(lab)?, timeout)?;
+        capture.wait_wifi_role_transition(capture.request_station_start(context)?, timeout)?;
     require_transition(evidence, WifiRole::Idle, WifiRole::Station)?;
     Ok(())
 }
@@ -419,67 +377,37 @@ pub(crate) fn require_transition(
     Ok(())
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
-    let mut options = Options {
-        serial: lab.device.serial.clone(),
-        timeout: DEFAULT_TIMEOUT,
-        monitor_duration: DEFAULT_MONITOR_DURATION,
-        monitor_channel: None,
-        snapshot_length: 256,
-    };
-    let mut index = 0;
-    while index < arguments.len() {
-        match arguments[index].as_str() {
-            "--timeout-seconds" => {
-                index += 1;
-                let seconds = arguments
-                    .get(index)
-                    .ok_or("--timeout-seconds requires a value")?
-                    .parse::<u64>()?;
-                if !(10..=180).contains(&seconds) {
-                    return Err("--timeout-seconds must be in 10..=180".into());
-                }
-                options.timeout = Duration::from_secs(seconds);
-            }
-            "--monitor-seconds" => {
-                index += 1;
-                let seconds = arguments
-                    .get(index)
-                    .ok_or("--monitor-seconds requires a value")?
-                    .parse::<u64>()?;
-                if !(1..=30).contains(&seconds) {
-                    return Err("--monitor-seconds must be in 1..=30".into());
-                }
-                options.monitor_duration = Duration::from_secs(seconds);
-            }
-            "--channel" => {
-                index += 1;
-                let channel = arguments
-                    .get(index)
-                    .ok_or("--channel requires a value")?
-                    .parse::<u8>()?;
-                if !(1..=13).contains(&channel) {
-                    return Err("--channel must be in 1..=13".into());
-                }
-                options.monitor_channel = Some(channel);
-            }
-            "--snapshot-length" => {
-                index += 1;
-                let length = arguments
-                    .get(index)
-                    .ok_or("--snapshot-length requires a value")?
-                    .parse::<u16>()?;
-                if length > 2_304 {
-                    return Err("--snapshot-length must be in 0..=2304".into());
-                }
-                options.snapshot_length = length;
-            }
-            argument => return Err(format!("unknown Wi-Fi lifecycle option `{argument}`").into()),
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            timeout: DEFAULT_TIMEOUT,
+            monitor_duration: DEFAULT_MONITOR_DURATION,
+            monitor_channel: None,
+            snapshot_length: 256,
         }
-        index += 1;
     }
-    Ok(options)
 }
 
 #[cfg(test)]
 mod tests;
+
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(10)..=Duration::from_secs(180)).contains(&self.timeout) {
+            return Err("role timeout must be in 10..=180 seconds".into());
+        }
+        if !(Duration::from_secs(1)..=Duration::from_secs(30)).contains(&self.monitor_duration) {
+            return Err("monitor duration must be in 1..=30 seconds".into());
+        }
+        if self
+            .monitor_channel
+            .is_some_and(|channel| !(1..=13).contains(&channel))
+        {
+            return Err("monitor channel must be in 1..=13".into());
+        }
+        if self.snapshot_length > 2304 {
+            return Err("snapshot length must be at most 2304".into());
+        }
+        Ok(self)
+    }
+}

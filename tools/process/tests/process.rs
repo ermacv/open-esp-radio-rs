@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-use oer_xtask::process::{self, owned};
+use oer_process::{self as process, owned};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -95,8 +95,15 @@ fn cancellation_harness() {
     };
     let marker = std::env::var_os("OER_PROCESS_TEST_MARKER").unwrap();
     let _signals = process::install_signal_handlers().unwrap();
-    let error = process::capture(Command::new(executable).arg("tree").arg(marker)).unwrap_err();
+    let error = process::capture(Command::new(&executable).arg("tree").arg(marker)).unwrap_err();
     assert!(error.to_string().contains("cancelled by signal"), "{error}");
+    assert!(process::is_cancelled(&*error));
+    assert!(process::capture(Command::new(&executable).arg("input")).is_err());
+    process::cleanup(|| process::capture(Command::new(&executable).arg("input"))).unwrap();
+    assert!(
+        process::check_cancelled().is_err(),
+        "cleanup policy escaped its scope"
+    );
     if let Some(marker) = std::env::var_os("OER_PROCESS_SUPERVISOR_STOPPED") {
         // Model a supervisor finishing bounded cleanup after its child stops.
         std::thread::sleep(Duration::from_millis(1200));
@@ -181,4 +188,36 @@ fn capture_closes_stdin_for_noninteractive_probes() {
     )
     .unwrap();
     assert_eq!(output.stdout, b"stdin EOF\n");
+}
+
+#[test]
+fn deadline_stops_descendants_and_releases_output_readers() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("pids");
+    let started = Instant::now();
+    let error = process::output(
+        Command::new(&fixture().executable).arg("tree").arg(&marker),
+        Some(Duration::from_millis(300)),
+    )
+    .unwrap_err();
+    assert!(error.is::<owned::DeadlineExceeded>());
+    assert!(started.elapsed() < Duration::from_secs(4));
+    assert_stopped(&wait_for_pids(&marker));
+}
+
+#[test]
+fn background_deadline_includes_time_before_waiting() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("pids");
+    let mut child = owned::Child::spawn_with_shutdown_grace(
+        Command::new(&fixture().executable).arg("tree").arg(&marker),
+        Duration::from_millis(20),
+    )
+    .unwrap()
+    .with_timeout(Duration::from_millis(150));
+    let pids = wait_for_pids(&marker);
+    std::thread::sleep(Duration::from_millis(200));
+    let error = child.wait().unwrap_err();
+    assert!(error.is::<owned::DeadlineExceeded>());
+    assert_stopped(&pids);
 }

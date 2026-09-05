@@ -1,4 +1,5 @@
 use super::*;
+use crate::execution::context::Context;
 
 pub(super) fn session_ready_covers(
     configured: Direction,
@@ -20,13 +21,13 @@ pub(super) fn session_ready_covers(
 /// measured host connection is the sole stream owned by that session.
 pub(crate) fn await_tcp_ready(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     address_hint: Ipv4Addr,
     port: u16,
     direction: Direction,
     timeout: Duration,
 ) -> Result<TcpReady> {
-    let capabilities = capture.prepare_station(lab, timeout)?;
+    let capabilities = capture.prepare_station(context, timeout)?;
     let direction_supported = match direction {
         Direction::Rx => capabilities.features.rx,
         Direction::Tx => capabilities.features.tx,
@@ -40,6 +41,7 @@ pub(crate) fn await_tcp_ready(
     }
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
+        capture.check_link()?;
         let address = capture.observed_protocol_ipv4(WifiNetworkInterface::Station);
         if capture.observed_service(
             WifiNetworkInterface::Station,
@@ -62,12 +64,13 @@ pub(crate) fn await_tcp_ready(
 /// Provisions the station and returns only the typed `NetworkReady` address.
 pub(crate) fn await_network_ready(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     timeout: Duration,
 ) -> Result<Ipv4Addr> {
-    capture.prepare_station(lab, timeout)?;
+    capture.prepare_station(context, timeout)?;
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
+        capture.check_link()?;
         if let Some(address) = capture.observed_protocol_ipv4(WifiNetworkInterface::Station) {
             return Ok(address);
         }
@@ -86,12 +89,12 @@ pub(crate) fn await_network_ready(
 /// provide measured synchronization.
 pub(crate) fn await_udp_rx_ready(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     address_hint: Ipv4Addr,
     port: u16,
     timeout: Duration,
 ) -> Result<UdpRxReady> {
-    let capabilities = capture.prepare_station(lab, timeout)?;
+    let capabilities = capture.prepare_station(context, timeout)?;
     if !capabilities.features.udp || !capabilities.features.rx {
         return Err("firmware does not advertise UDP RX capability".into());
     }
@@ -150,6 +153,7 @@ pub(crate) fn probe_udp_rx_ready_via(
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
+        capture.check_link()?;
         if let Some(discovered) = capture.observed_protocol_ipv4(network_interface)
             && discovered != address
         {
@@ -186,7 +190,7 @@ pub(crate) fn probe_udp_rx_ready_via(
                                 && service.direction == Direction::Rx
                                 && service.local_port == port
                     )
-            })
+            })?
             .is_some()
         {
             return Ok(UdpRxReady { address });
@@ -202,11 +206,11 @@ pub(crate) fn probe_udp_rx_ready_via(
 
 pub(crate) fn await_udp_tx_ready(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     address_hint: Ipv4Addr,
     timeout: Duration,
 ) -> Result<UdpTxReady> {
-    let capabilities = capture.prepare_station(lab, timeout)?;
+    let capabilities = capture.prepare_station(context, timeout)?;
     if !capabilities.features.udp || !capabilities.features.tx {
         return Err("firmware does not advertise UDP TX capability".into());
     }
@@ -217,6 +221,7 @@ pub(crate) fn await_udp_tx_ready(
     }
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
+        capture.check_link()?;
         if capture.observed_udp_service(WifiNetworkInterface::Station, Direction::Tx, 4_324) {
             let discovery_deadline = Instant::now() + DHCP_DISCOVERY_GRACE;
             while Instant::now() < discovery_deadline {

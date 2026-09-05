@@ -1,12 +1,13 @@
 //! Host control for bounded connected-STA lifecycle qualification.
 
+use crate::execution::context::Context;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     time::{Duration, Instant},
 };
 
-use crate::{Result, lab::config::LabConfig, session::SerialCapture};
+use crate::{Result, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
     StationAttemptFailureReason, StationEpochEvidence, StationLifecycleEvent,
 };
@@ -17,40 +18,42 @@ const MAX_CYCLES: u8 = 8;
 const DEFAULT_BOOTS: u8 = 1;
 const MAX_BOOTS: u8 = 100;
 const MAX_INITIAL_HOLD: Duration = Duration::from_secs(30);
-struct Options {
-    serial: PathBuf,
-    timeout: Duration,
-    cycles: u8,
-    boots: u8,
-    initial_hold: Duration,
+pub(crate) struct Config {
+    pub(crate) timeout: Duration,
+    pub(crate) cycles: u8,
+    pub(crate) boots: u8,
+    pub(crate) initial_hold: Duration,
 }
 
 pub(crate) fn run(
-    arguments: Vec<String>,
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     require_no_beacon_loss: bool,
 ) -> Result<()> {
-    let options = parse_options(&arguments, lab)?;
+    let options = options.validate()?;
     fs::create_dir_all(output)?;
     for boot in 1..=options.boots {
-        let capture = SerialCapture::start_with_reset(&options.serial);
+        let boot_output = output.join(format!("boot-{boot:03}"));
+        let capture = context.capture(&boot_output)?;
         let result = qualify(
             &capture,
-            lab,
+            context,
             options.timeout,
             options.cycles,
             options.initial_hold,
         );
         let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
-        let boot_output = output.join(format!("boot-{boot:03}"));
-        capture.finish_to(&boot_output)?;
+        let result = capture.finish_with(result);
         let boot_log = boot_output.join("uart.log");
         result.map_err(|error| {
-            format!(
-                "station cold boot {boot}/{} failed; UART evidence: {}: {error}",
-                options.boots,
-                boot_log.display(),
+            crate::error::context(
+                format!(
+                    "station cold boot {boot}/{} failed; UART evidence: {}",
+                    options.boots,
+                    boot_log.display(),
+                ),
+                error,
             )
         })?;
         if let Some(result) = beacon_loss {
@@ -65,7 +68,7 @@ pub(crate) fn run(
 
 fn qualify(
     capture: &SerialCapture,
-    lab: &LabConfig,
+    context: &Context<'_>,
     timeout: Duration,
     cycles: u8,
     initial_hold: Duration,
@@ -76,7 +79,7 @@ fn qualify(
     // the cursor afterwards skips that already-published Connected edge and
     // waits forever for a second one.
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
-    let capabilities = capture.prepare_station(lab, timeout)?;
+    let capabilities = capture.prepare_station(context, timeout)?;
     if !capabilities.features.station_epoch_control {
         return Err("firmware does not advertise station epoch control".into());
     }
@@ -215,6 +218,7 @@ fn qualify_cycle(
     let mut progress = CycleProgress::default();
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
+        oer_process::check_cancelled()?;
         let wait = deadline
             .saturating_duration_since(Instant::now())
             .min(Duration::from_millis(20));
@@ -273,68 +277,34 @@ fn validate_cycle_completion(completion: Option<StationEpochEvidence>, cycle: u8
     Ok(true)
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
-    let mut options = Options {
-        serial: lab.device.serial.clone(),
-        timeout: DEFAULT_TIMEOUT,
-        cycles: DEFAULT_CYCLES,
-        boots: DEFAULT_BOOTS,
-        initial_hold: Duration::ZERO,
-    };
-    let mut index = 0;
-    while index < arguments.len() {
-        match arguments[index].as_str() {
-            "--timeout-seconds" => {
-                index += 1;
-                let seconds = arguments
-                    .get(index)
-                    .ok_or("--timeout-seconds requires a value")?
-                    .parse::<u64>()?;
-                if !(10..=300).contains(&seconds) {
-                    return Err("--timeout-seconds must be in 10..=300".into());
-                }
-                options.timeout = Duration::from_secs(seconds);
-            }
-            "--cycles" => {
-                index += 1;
-                let cycles = arguments
-                    .get(index)
-                    .ok_or("--cycles requires a value")?
-                    .parse::<u8>()?;
-                if !(1..=MAX_CYCLES).contains(&cycles) {
-                    return Err(format!("--cycles must be in 1..={MAX_CYCLES}").into());
-                }
-                options.cycles = cycles;
-            }
-            "--boots" => {
-                index += 1;
-                let boots = arguments
-                    .get(index)
-                    .ok_or("--boots requires a value")?
-                    .parse::<u8>()?;
-                if !(1..=MAX_BOOTS).contains(&boots) {
-                    return Err(format!("--boots must be in 1..={MAX_BOOTS}").into());
-                }
-                options.boots = boots;
-            }
-            "--initial-hold-seconds" => {
-                index += 1;
-                let seconds = arguments
-                    .get(index)
-                    .ok_or("--initial-hold-seconds requires a value")?
-                    .parse::<u64>()?;
-                let duration = Duration::from_secs(seconds);
-                if duration > MAX_INITIAL_HOLD {
-                    return Err("--initial-hold-seconds must be in 0..=30".into());
-                }
-                options.initial_hold = duration;
-            }
-            argument => return Err(format!("unknown station reconnect option `{argument}`").into()),
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            timeout: DEFAULT_TIMEOUT,
+            cycles: DEFAULT_CYCLES,
+            boots: DEFAULT_BOOTS,
+            initial_hold: Duration::ZERO,
         }
-        index += 1;
     }
-    Ok(options)
 }
 
 #[cfg(test)]
 mod tests;
+
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(10)..=Duration::from_secs(300)).contains(&self.timeout) {
+            return Err("reconnect timeout must be in 10..=300 seconds".into());
+        }
+        if !(1..=MAX_CYCLES).contains(&self.cycles) {
+            return Err("reconnect cycles must be in 1..=8".into());
+        }
+        if !(1..=MAX_BOOTS).contains(&self.boots) {
+            return Err("reconnect boots must be in 1..=100".into());
+        }
+        if self.initial_hold > MAX_INITIAL_HOLD {
+            return Err("initial hold must be at most 30 seconds".into());
+        }
+        Ok(self)
+    }
+}

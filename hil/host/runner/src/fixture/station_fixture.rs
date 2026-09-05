@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub(crate) enum RxCapture {
-    LocalLinux(LocalLinuxRxCapture),
+    LocalLinux(Box<LocalLinuxRxCapture>),
     OpenWrt(Box<OpenWrtRxCapture>),
 }
 
@@ -45,9 +45,9 @@ impl RxCapture {
                         "idle channel utilization requires an OpenWrt station fixture".into(),
                     );
                 }
-                Ok(Some(Self::LocalLinux(LocalLinuxRxCapture::start(
-                    config, target, port, duration, phy,
-                )?)))
+                Ok(Some(Self::LocalLinux(Box::new(
+                    LocalLinuxRxCapture::start(config, target, port, duration, phy)?,
+                ))))
             }
             StationFixtureConfig::OpenWrt(config) => {
                 Ok(Some(Self::OpenWrt(Box::new(OpenWrtRxCapture::start(

@@ -1,5 +1,6 @@
 //! Scoped ownership of the laptop Wi-Fi interface as one AP test client.
 
+use oer_process::CommandExt as _;
 use std::{
     io::Write as _,
     process::{Command, Stdio},
@@ -33,27 +34,29 @@ impl ControlledClient {
         input.extend_from_slice(frequency_mhz.to_string().as_bytes());
         input.push(b'\n');
 
+        let owner = Self { restored: false };
         let mut child = Command::new("sudo")
             .args(["-n", crate::fixture::network_helper::PATH, "client"])
             .stdin(Stdio::piped())
-            .spawn()?;
+            .spawn_owned()?;
         child
             .stdin
             .take()
             .ok_or("controlled-client helper has no stdin")?
             .write_all(&input)?;
-        let status = child.wait()?;
+        let status = child.wait_timeout(Some(std::time::Duration::from_secs(120)))?;
         if !status.success() {
-            let _ = restore_managed();
             return Err(format!("controlled-client helper failed with {status}").into());
         }
-        Ok(Self { restored: false })
+        Ok(owner)
     }
 
     /// Return the BSSID owned by the AP under test without changing the
     /// controlled client's managed-mode lifetime.
     pub(crate) fn bssid(&self) -> Result<String> {
-        let output = Command::new("iw").args(["dev", "wlan0", "link"]).output()?;
+        let output = Command::new("iw")
+            .args(["dev", "wlan0", "link"])
+            .supervised_output()?;
         if !output.status.success() {
             return Err(format!(
                 "cannot query controlled-client BSSID: {}",
@@ -92,16 +95,18 @@ fn parse_bssid(link: &str) -> Result<String> {
 
 impl Drop for ControlledClient {
     fn drop(&mut self) {
-        if !self.restored {
-            let _ = restore_managed();
-        }
+        oer_process::cleanup(|| {
+            if !self.restored {
+                crate::fixture::cleanup::record("restore managed Wi-Fi", restore_managed);
+            }
+        });
     }
 }
 
 fn restore_managed() -> Result<()> {
     let status = Command::new("sudo")
         .args(["-n", crate::fixture::network_helper::PATH, "managed"])
-        .status()?;
+        .supervised_status()?;
     if !status.success() {
         return Err(format!("controlled-client restore failed with {status}").into());
     }

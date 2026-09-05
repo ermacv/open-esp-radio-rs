@@ -332,6 +332,8 @@ pub(crate) struct PlanEntry {
     pub(crate) repetitions: u8,
     pub(crate) disposition: PlanDisposition,
     pub(crate) reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) requirements: Option<crate::lab::requirements::Requirements>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -476,6 +478,7 @@ pub(crate) struct CompletionReport {
     pub(crate) junit_report: PathBuf,
     pub(crate) html_report: PathBuf,
     pub(crate) integrity_report: PathBuf,
-    pub(crate) history_report: PathBuf,
-    pub(crate) history_html: PathBuf,
+    pub(crate) history_report: Option<PathBuf>,
+    pub(crate) history_html: Option<PathBuf>,
+    pub(crate) history_failure: Option<String>,
 }

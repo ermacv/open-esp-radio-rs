@@ -1,19 +1,88 @@
 //! Opt-in packet evidence from the OpenWrt AP's own TX monitor tap.
 
+use oer_process::CommandExt as _;
+use oer_process::owned::Child;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    thread,
+    process::{Command, Stdio},
     time::Duration,
 };
 
 use crate::{Result, fixture::openwrt_fixture::resolve_station_mac, lab::config::OpenWrtConfig};
 
-const REMOTE_CAPTURE: &str = "/tmp/open-radio-ap-tx-monitor.pcap";
 const MAX_CAPTURE_BYTES: u64 = 64 * 1024 * 1024;
+
+struct RemoteMonitor {
+    interface: String,
+    directory: String,
+}
+
+impl RemoteMonitor {
+    fn new(interface: String) -> Result<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        Ok(Self {
+            interface,
+            directory: format!(
+                "/tmp/oer-tx-monitor-{}-{epoch}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ),
+        })
+    }
+
+    fn capture(&self) -> String {
+        format!("{}/capture.pcap", self.directory)
+    }
+
+    fn start_script(
+        &self,
+        config: &OpenWrtConfig,
+        station_mac: &str,
+        duration: Duration,
+    ) -> String {
+        let monitor = &self.interface;
+        let directory = &self.directory;
+        let remote = self.capture();
+        let seconds = duration.saturating_add(Duration::from_secs(3)).as_secs();
+        format!(
+            "set -eu; \
+             if iw dev {monitor} info >/dev/null 2>&1; then echo 'monitor interface already exists' >&2; exit 1; fi; \
+             wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
+             mac='{station_mac}'; \
+             test -n \"$wiphy\"; test -n \"$mac\"; \
+             umask 077; mkdir {directory}; \
+             cleanup() {{ iw dev {monitor} del >/dev/null 2>&1 || true; }}; \
+             trap cleanup EXIT; \
+             trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+             iw phy \"$wiphy\" interface add {monitor} type monitor; \
+             ip link set {monitor} up; \
+             set +e; timeout -s INT {seconds} tcpdump -i {monitor} -n -s 128 -U \
+                 -w {remote} \"wlan host $mac\"; status=$?; set -e; \
+             test \"$status\" -eq 0 -o \"$status\" -eq 124",
+            wireless = config.wireless_interface,
+        )
+    }
+
+    fn cleanup_script(&self) -> String {
+        // The private directory is acquired only after rejecting an existing
+        // interface. A failed preflight/spawn therefore cannot delete it.
+        format!(
+            "set -eu; if test -d {directory}; then \
+             if iw dev {monitor} info >/dev/null 2>&1; then iw dev {monitor} del; fi; \
+             rm -f {capture}; rmdir {directory}; fi",
+            directory = self.directory,
+            monitor = self.interface,
+            capture = self.capture(),
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct MacFrameKey {
@@ -43,7 +112,7 @@ pub(crate) struct OpenWrtTxMonitorEvidence {
 
 pub(crate) struct OpenWrtTxMonitorCapture {
     config: OpenWrtConfig,
-    monitor: String,
+    remote: RemoteMonitor,
     target: Ipv4Addr,
     port: u16,
     output: PathBuf,
@@ -63,47 +132,46 @@ impl OpenWrtTxMonitorCapture {
             .clone()
             .ok_or("OpenWrt TX-monitor evidence requires `station_fixture.monitor_interface`")?;
         let station_mac = resolve_station_mac(config, target)?;
-        let seconds = duration.saturating_add(Duration::from_secs(3)).as_secs();
-        let script = format!(
-            "set -eu; \
-             ! iw dev {monitor} info >/dev/null 2>&1; \
-             wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
-             mac='{station_mac}'; \
-             test -n \"$wiphy\"; test -n \"$mac\"; \
-             rm -f {remote}; \
-             iw phy \"$wiphy\" interface add {monitor} type monitor; \
-             cleanup() {{ iw dev {monitor} del >/dev/null 2>&1 || true; }}; \
-             trap cleanup EXIT HUP INT TERM; \
-             ip link set {monitor} up; \
-             set +e; timeout -s INT {seconds} tcpdump -i {monitor} -n -s 128 -U \
-                 -w {remote} \"wlan host $mac\"; status=$?; set -e; \
-             test \"$status\" -eq 0 -o \"$status\" -eq 124",
-            wireless = config.wireless_interface,
-            remote = REMOTE_CAPTURE,
-        );
-        let mut child = ssh(config, &script)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| format!("cannot start OpenWrt TX-monitor capture: {error}"))?;
-        thread::sleep(Duration::from_secs(1));
-        if let Some(status) = child.try_wait()? {
-            let output = child.wait_with_output()?;
-            return Err(format!(
-                "OpenWrt TX-monitor capture exited before the session started: {status}: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )
-            .into());
-        }
-        Ok(Self {
+        oer_process::check_cancelled()?;
+        let remote = RemoteMonitor::new(monitor)?;
+        let script = remote.start_script(config, &station_mac, duration);
+        // Own remote recovery before spawn, readiness checks or cancellation.
+        let mut owner = Self {
             config: config.clone(),
-            monitor,
+            remote,
             target,
             port,
             output: output.join("ap-tx-monitor.pcap"),
-            child: Some(child),
-        })
+            child: None,
+        };
+        owner.child = Some(
+            ssh(config, &script)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn_owned()
+                .map_err(|error| crate::error::context("start OpenWrt TX monitor", error))?
+                .with_timeout(duration.saturating_add(Duration::from_secs(15))),
+        );
+        oer_process::sleep(Duration::from_secs(1))?;
+        if let Some(status) = owner
+            .child
+            .as_mut()
+            .expect("monitor child was started")
+            .try_wait()?
+        {
+            let output = owner
+                .child
+                .take()
+                .expect("monitor child was started")
+                .wait_with_output()?;
+            return Err(crate::fixture::Error::new(format!(
+                "OpenWrt TX-monitor capture exited before the session started: {status}: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))
+            .into());
+        }
+        Ok(owner)
     }
 
     pub(crate) fn finish(mut self, expected_units: u64) -> Result<OpenWrtTxMonitorEvidence> {
@@ -113,11 +181,11 @@ impl OpenWrtTxMonitorCapture {
             .expect("TX-monitor capture owns its child");
         let output = child.wait_with_output()?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "OpenWrt TX-monitor capture failed with {}: {}",
                 output.status,
                 String::from_utf8_lossy(&output.stderr).trim()
-            )
+            ))
             .into());
         }
         let summary = String::from_utf8(output.stderr)?;
@@ -130,8 +198,7 @@ impl OpenWrtTxMonitorCapture {
             )
             .into());
         }
-        copy_remote(&self.config, &self.output)?;
-        remove_remote(&self.config);
+        copy_remote(&self.config, &self.remote.capture(), &self.output)?;
         let size = fs::metadata(&self.output)?.len();
         if size == 0 || size > MAX_CAPTURE_BYTES {
             return Err(format!(
@@ -148,15 +215,17 @@ impl OpenWrtTxMonitorCapture {
 
 impl Drop for OpenWrtTxMonitorCapture {
     fn drop(&mut self) {
-        if let Some(child) = &mut self.child {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        let cleanup = format!(
-            "iw dev {} del >/dev/null 2>&1 || true; rm -f {}",
-            self.monitor, REMOTE_CAPTURE
-        );
-        let _ = ssh(&self.config, &cleanup).status();
+        oer_process::cleanup(|| {
+            if let Some(child) = &mut self.child {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            let cleanup = self.remote.cleanup_script();
+            crate::fixture::cleanup::command(
+                "remove OpenWrt monitor",
+                &mut ssh(&self.config, &cleanup),
+            );
+        });
     }
 }
 
@@ -173,7 +242,7 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
             config.wireless_interface
         ),
     )
-    .output()?;
+    .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "OpenWrt monitor evidence is unavailable or `{monitor}` already exists: {}",
@@ -185,7 +254,7 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()?;
+        .supervised_status()?;
     if !status.success() {
         return Err("local tshark is required for OpenWrt TX-monitor evidence".into());
     }
@@ -221,7 +290,7 @@ fn parse_capture(
             "-e",
             "data.data",
         ])
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot decode OpenWrt TX-monitor capture: {}",
@@ -359,19 +428,15 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn copy_remote(config: &OpenWrtConfig, local: &Path) -> Result<()> {
+fn copy_remote(config: &OpenWrtConfig, remote: &str, local: &Path) -> Result<()> {
     let file = File::create(local)?;
-    let status = ssh(config, &format!("cat {REMOTE_CAPTURE}"))
+    let status = ssh(config, &format!("cat {remote}"))
         .stdout(Stdio::from(file))
-        .status()?;
+        .supervised_status()?;
     if !status.success() {
         return Err("cannot copy OpenWrt TX-monitor capture to the run directory".into());
     }
     Ok(())
-}
-
-fn remove_remote(config: &OpenWrtConfig) {
-    let _ = ssh(config, &format!("rm -f {REMOTE_CAPTURE}")).status();
 }
 
 fn ssh(config: &OpenWrtConfig, script: &str) -> Command {

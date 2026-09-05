@@ -27,31 +27,6 @@ fn forwarding_address_is_typed() {
 }
 
 #[test]
-fn fixture_preparation_rebuilds_and_revalidates_the_radio_epoch() {
-    let lab = crate::lab::config::LabConfig::for_test();
-    let crate::lab::config::StationFixtureConfig::OpenWrt(fixture) = &lab.station_fixture else {
-        panic!("test lab must use the OpenWrt fixture");
-    };
-    let script = prepare_fixture_script(&lab.access_point, fixture);
-
-    let cleanup = script
-        .find("delete table inet open_radio_hil")
-        .expect("fixture forwarding must be removed");
-    let down = script
-        .find("wifi down")
-        .expect("the old wireless epoch must be stopped");
-    let up = script
-        .find("wifi up")
-        .expect("a new wireless epoch must be started");
-    let ready = script
-        .find("iw dev phy0-ap0 info")
-        .expect("the configured interface must become ready");
-    assert!(cleanup < down && down < up && up < ready);
-    assert!(script.contains("grep -q 'channel 6 '"));
-    assert!(script.contains("grep -q 'width: 40 MHz'"));
-}
-
-#[test]
 fn link_snapshot_parser_and_counter_delta_are_strict() {
     let output = "rx_bytes=200\nrx_packets=30\nrx_duration=88\nrx_bitrate=150.0 MBit/s MCS 7 40MHz short GI\ntx_bytes=100\ntx_packets=20\ntx_bitrate=135.0 MBit/s MCS 6 40MHz short GI\ntx_retries=3\ntx_failed=1\ntx_duration=77\ntid0_aqm_drops=0\n";
     assert_eq!(tagged_u64(output, "rx_packets").unwrap(), 30);

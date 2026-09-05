@@ -1,5 +1,6 @@
 //! Independent agreement check between target alarms and its monotonic clock.
 
+use crate::execution::context::Context;
 use std::{
     fs,
     path::Path,
@@ -9,7 +10,7 @@ use std::{
 use open_esp_radio_hil_protocol::{TimebaseProbeEvidence, TimebaseProbeRequest};
 use serde::Serialize;
 
-use crate::{Result, lab::config::LabConfig, session::SerialCapture};
+use crate::{Result, session::SerialCapture};
 
 const COMMAND_SLACK: Duration = Duration::from_secs(5);
 
@@ -26,16 +27,12 @@ struct BootReport {
     target: TimebaseProbeEvidence,
 }
 
-pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
+pub(crate) fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     fs::create_dir_all(output)?;
     let mut reports = Vec::with_capacity(usize::from(config.boots));
     for boot in 1..=config.boots {
         let boot_output = output.join(format!("boot-{boot:03}"));
-        let capture = SerialCapture::start_with_reset(&lab.device.serial);
-        let result = probe(&capture, &config, boot);
-        let capture_result = capture.finish_to(&boot_output);
-        let report = result?;
-        capture_result?;
+        let report = context.with_capture(&boot_output, |capture| probe(capture, &config, boot))?;
         reports.push(report);
     }
     fs::write(

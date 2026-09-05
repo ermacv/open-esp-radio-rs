@@ -1,5 +1,6 @@
 //! Secret-free, pre-run observations of the physical HIL cell.
 
+use oer_process::CommandExt as _;
 use std::{collections::BTreeMap, fs, net::Ipv4Addr, path::Path, process::Command};
 
 use open_esp_radio_hil_protocol::{NetworkIpv4Configuration, WifiChannelWidth};
@@ -22,6 +23,17 @@ pub(crate) struct LabProvenance {
     pub(crate) definition: LabDefinition,
     pub(crate) host: HostObservation,
     pub(crate) fixture: FixtureObservation,
+    /// Older bundles always collected network observations.
+    #[serde(default)]
+    pub(crate) scope: ObservationScope,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ObservationScope {
+    System,
+    #[default]
+    Network,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -127,6 +139,7 @@ pub(crate) struct HostIpv4Route {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum FixtureObservation {
+    NotUsed,
     LocalLinux,
     OpenWrt(Box<OpenWrtObservation>),
     External { managed: bool },
@@ -166,15 +179,29 @@ pub(crate) struct OpenWrtInterface {
 }
 
 impl LabProvenance {
-    pub(crate) fn capture(lab: &LabConfig) -> Result<Self> {
+    pub(crate) fn capture(
+        lab: &LabConfig,
+        required: super::requirements::Requirements,
+    ) -> Result<Self> {
         let definition = LabDefinition::from_config(lab);
-        let host = capture_host()?;
-        let fixture = match &lab.station_fixture {
-            StationFixtureConfig::LocalLinux(_) => FixtureObservation::LocalLinux,
-            StationFixtureConfig::OpenWrt(config) => {
-                FixtureObservation::OpenWrt(Box::new(capture_openwrt(config)?))
+        let scope = if required.station_network {
+            ObservationScope::Network
+        } else {
+            ObservationScope::System
+        };
+        let host = capture_host(scope)?;
+        let fixture = if scope == ObservationScope::System {
+            FixtureObservation::NotUsed
+        } else {
+            match &lab.station_fixture {
+                StationFixtureConfig::LocalLinux(_) => FixtureObservation::LocalLinux,
+                StationFixtureConfig::OpenWrt(config) => {
+                    FixtureObservation::OpenWrt(Box::new(capture_openwrt(config)?))
+                }
+                StationFixtureConfig::External(_) => {
+                    FixtureObservation::External { managed: false }
+                }
             }
-            StationFixtureConfig::External(_) => FixtureObservation::External { managed: false },
         };
         Ok(Self {
             schema: LAB_PROVENANCE_SCHEMA,
@@ -182,6 +209,7 @@ impl LabProvenance {
             definition,
             host,
             fixture,
+            scope,
         })
     }
 
@@ -215,6 +243,7 @@ impl LabProvenance {
             return Err("lab provenance has an invalid host observation".into());
         }
         match (&self.definition.station_fixture, &self.fixture) {
+            (_, FixtureObservation::NotUsed) if self.scope == ObservationScope::System => {}
             (
                 StationFixtureDefinition::LocalLinux { interface, .. },
                 FixtureObservation::LocalLinux,
@@ -251,6 +280,11 @@ impl LabProvenance {
                 FixtureObservation::External { managed: false },
             ) => {}
             _ => return Err("lab provenance fixture definition and observation disagree".into()),
+        }
+        if (self.scope == ObservationScope::System)
+            != matches!(self.fixture, FixtureObservation::NotUsed)
+        {
+            return Err("lab provenance scope and fixture observation disagree".into());
         }
         Ok(())
     }
@@ -304,8 +338,13 @@ impl LabDefinition {
     }
 }
 
-fn capture_host() -> Result<HostObservation> {
-    let addresses = host_ipv4_addresses()?;
+fn capture_host(scope: ObservationScope) -> Result<HostObservation> {
+    let network = scope == ObservationScope::Network;
+    let addresses = if network {
+        host_ipv4_addresses()?
+    } else {
+        BTreeMap::new()
+    };
     let mut interfaces = Vec::new();
     let mut entries = fs::read_dir("/sys/class/net")?.collect::<std::io::Result<Vec<_>>>()?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
@@ -322,7 +361,7 @@ fn capture_host() -> Result<HostObservation> {
                     .map(|name| name.to_string_lossy().into_owned())
             }),
             ipv4_addresses: addresses.get(&name).cloned().unwrap_or_default(),
-            wireless_link: wireless
+            wireless_link: (wireless && network)
                 .then(|| capture_host_wireless_link(&name))
                 .transpose()?,
             wireless,
@@ -335,7 +374,11 @@ fn capture_host() -> Result<HostObservation> {
         os_release: os_release(),
         boot_id: read_trimmed("/proc/sys/kernel/random/boot_id")?,
         interfaces,
-        ipv4_routes: host_ipv4_routes()?,
+        ipv4_routes: if network {
+            host_ipv4_routes()?
+        } else {
+            Vec::new()
+        },
     })
 }
 
@@ -393,7 +436,7 @@ fn parse_host_ipv4_routes(output: &str) -> Result<Vec<HostIpv4Route>> {
 fn capture_host_wireless_link(interface: &str) -> Result<HostWirelessLink> {
     let info = Command::new("iw")
         .args(["dev", interface, "info"])
-        .output()?;
+        .supervised_output()?;
     let interface_type = info
         .status
         .success()
@@ -404,7 +447,7 @@ fn capture_host_wireless_link(interface: &str) -> Result<HostWirelessLink> {
         .flatten();
     let link = Command::new("iw")
         .args(["dev", interface, "link"])
-        .output()?;
+        .supervised_output()?;
     if !link.status.success() {
         return Err(format!("cannot inspect wireless link `{interface}`").into());
     }
@@ -453,7 +496,7 @@ fn capture_openwrt(config: &OpenWrtConfig) -> Result<OpenWrtObservation> {
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(script)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot capture secret-free OpenWrt lab provenance: {}",
@@ -572,7 +615,7 @@ fn command_stdout(program: &str, arguments: &[&str]) -> Result<String> {
 }
 
 fn command_output(program: &str, arguments: &[&str]) -> Result<String> {
-    let output = Command::new(program).args(arguments).output()?;
+    let output = Command::new(program).args(arguments).supervised_output()?;
     if !output.status.success() {
         return Err(format!("cannot capture host provenance with `{program}`").into());
     }

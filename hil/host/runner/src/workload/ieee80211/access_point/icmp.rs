@@ -1,5 +1,6 @@
 //! ICMP workload execution and assessment.
 
+use oer_process::CommandExt as _;
 use std::{net::Ipv4Addr, process::Command};
 
 use crate::workload::ieee80211::access_point::report::TrafficReport;
@@ -27,7 +28,7 @@ pub(super) fn qualify_icmp(
         .args(["-i", &interval_seconds, "-W", &timeout_seconds, "-s"])
         .arg(payload_bytes.to_string())
         .arg(target.to_string())
-        .output()?;
+        .supervised_output()?;
     let stdout = String::from_utf8(output.stdout)?;
     let mut samples_micros = stdout
         .lines()

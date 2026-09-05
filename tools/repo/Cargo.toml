@@ -8,6 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+oer-process = { path = "../process" }
 serialport = { version = "4.8.1", default-features = false }
 oer-firmware = { path = "../firmware" }
 open-esp-radio-memory-report = { path = "../memory-report" }
@@ -20,7 +21,6 @@ tempfile = "=3.27.0"
 toml = "=1.1.4"
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "=0.3.18"
 libc = "=0.2.189"
 
 [lints]

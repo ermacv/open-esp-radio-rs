@@ -49,64 +49,6 @@ fn extracts_tx_task_polls_without_an_rx_interval_marker() {
 }
 
 #[test]
-fn parses_rates_and_options() {
-    let lab = LabConfig::for_test();
-    assert_eq!(parse_rate("10M").unwrap(), 10_000_000);
-    assert_eq!(parse_rate("2500K").unwrap(), 2_500_000);
-    let options = parse_options(
-        &[
-            "--rate".into(),
-            "55M".into(),
-            "--phy".into(),
-            "he20".into(),
-            "--seconds".into(),
-            "5".into(),
-            "--tx-payload".into(),
-            "1300".into(),
-            "--tx-rate".into(),
-            "50M".into(),
-            "--combined-floor".into(),
-            "90M".into(),
-            "--tx-port".into(),
-            "9100".into(),
-        ],
-        &lab,
-    )
-    .unwrap();
-    assert_eq!(options.phy, Phy::He20);
-    assert_eq!(options.duration, Duration::from_secs(5));
-    assert_eq!(options.tx_payload, 1_300);
-    assert_eq!(options.tx_rate_bps, Some(50_000_000));
-    assert_eq!(options.tx_floor_bps, Some(45_000_000));
-    assert_eq!(options.combined_floor_bps, Some(90_000_000));
-    assert_eq!(options.tx_port, 9_100);
-
-    let explicit_floor = parse_options(
-        &[
-            "--tx-rate".into(),
-            "50M".into(),
-            "--tx-floor".into(),
-            "40M".into(),
-        ],
-        &lab,
-    )
-    .unwrap();
-    assert_eq!(explicit_floor.tx_floor_bps, Some(40_000_000));
-    assert!(
-        parse_options(
-            &[
-                "--tx-rate".into(),
-                "40M".into(),
-                "--tx-floor".into(),
-                "41M".into(),
-            ],
-            &lab
-        )
-        .is_err()
-    );
-}
-
-#[test]
 fn ht40_tx_accepts_mcs7_long_or_short_gi_but_not_a_lower_vector() {
     let mut report = DeviceReport {
         tx: vec![TxSample {
@@ -328,7 +270,7 @@ fn qualifies_complete_he20_evidence() {
              ORTP task=tcp polls=0 poll_us=0 poll_boot_max_us=0 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
     );
-    let options = parse_options(&[], &LabConfig::for_test()).unwrap();
+    let options = Config::default().validate().unwrap();
     let host = HostTransmission {
         source: Ipv4Addr::LOCALHOST,
         bytes: 6_250_000,
@@ -527,5 +469,46 @@ fn parses_current_production_rx_benchmark_evidence() {
     assert_eq!(
         assessment.failure.as_deref(),
         Some("RX DMA starvation: buffer_full=2 fifo_overflow=0")
+    );
+}
+
+#[test]
+fn offered_rate_only_supplies_a_missing_tx_floor() {
+    let implicit = Config {
+        tx_rate_bps: Some(50_000_000),
+        ..Default::default()
+    }
+    .validate()
+    .unwrap();
+    assert_eq!(implicit.tx_floor_bps, Some(45_000_000));
+    let explicit = Config {
+        tx_rate_bps: Some(50_000_000),
+        tx_floor_bps: Some(40_000_000),
+        ..Default::default()
+    }
+    .validate()
+    .unwrap();
+    assert_eq!(explicit.tx_floor_bps, Some(40_000_000));
+}
+
+#[test]
+fn combined_floor_requires_sufficient_offered_traffic() {
+    assert!(
+        Config {
+            rate_bps: 10_000_000,
+            tx_rate_bps: Some(20_000_000),
+            combined_floor_bps: Some(31_000_000),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        Config {
+            combined_floor_bps: Some(10_000_000),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
     );
 }

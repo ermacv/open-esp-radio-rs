@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn system_observation_does_not_contact_the_configured_access_point() {
+    let mut lab = LabConfig::for_test();
+    let StationFixtureConfig::OpenWrt(config) = &mut lab.station_fixture else {
+        unreachable!()
+    };
+    config.ssh_target = "unused-fixture.invalid".into();
+    let provenance = LabProvenance::capture(&lab, Default::default()).unwrap();
+    assert_eq!(provenance.scope, ObservationScope::System);
+    assert_eq!(provenance.fixture, FixtureObservation::NotUsed);
+    assert!(provenance.host.ipv4_routes.is_empty());
+    assert!(
+        provenance
+            .host
+            .interfaces
+            .iter()
+            .all(|entry| entry.wireless_link.is_none() && entry.ipv4_addresses.is_empty())
+    );
+    provenance
+        .validate_binding(lab.cell_id(), &lab.device.id, 0, None)
+        .unwrap();
+}
+
+#[test]
 fn definition_omits_credentials_and_transport_endpoint() {
     let definition = LabDefinition::from_config(&LabConfig::for_test());
     let json = serde_json::to_string(&definition).unwrap();

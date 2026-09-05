@@ -4,7 +4,7 @@ use std::{
     fs,
     io::{Read, Write},
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -29,7 +29,7 @@ use open_esp_radio_hil_protocol::{
 };
 use zeroize::Zeroizing;
 
-use crate::{Result, lab::config::LabConfig};
+use crate::Result;
 
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -40,14 +40,54 @@ const SERIAL_OPEN_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const SERIAL_OPEN_BUSY_RETRY: Duration = Duration::from_millis(50);
 const PROTOCOL_EVENT_CAPACITY: usize = 16_384;
 
+#[derive(Default)]
 struct ProtocolEvents {
-    messages: Mutex<Vec<Envelope<Event>>>,
-    health: Mutex<ProtocolHealth>,
+    state: Mutex<ProtocolState>,
     changed: Condvar,
+}
+
+#[derive(Default)]
+struct ProtocolState {
+    messages: Vec<Envelope<Event>>,
+    health: ProtocolHealth,
+    failure: Option<LinkError>,
+    closed: bool,
+}
+
+impl ProtocolState {
+    fn check(&self) -> Result<()> {
+        if let Some(error) = &self.failure {
+            return Err(error.clone().into());
+        }
+        if self.closed {
+            return Err(LinkError::transport("serial capture is closed").into());
+        }
+        Ok(())
+    }
+
+    fn fail(&mut self, error: LinkError) {
+        // A later reset or teardown must not replace the original cause.
+        self.failure.get_or_insert(error);
+    }
+}
+
+impl ProtocolEvents {
+    fn close(&self, error: Option<LinkError>) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(error) = error {
+            state.fail(error);
+        }
+        state.closed = true;
+        self.changed.notify_all();
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
 struct ProtocolHealth {
+    origin: CaptureOrigin,
     active: bool,
     boot_id: Option<u64>,
     next_sequence: u32,
@@ -55,6 +95,14 @@ struct ProtocolHealth {
     #[serde(skip)]
     decoder_baseline: DecodeCounters,
     failure: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum CaptureOrigin {
+    #[default]
+    Boot,
+    Attachment,
 }
 
 impl ProtocolHealth {
@@ -85,7 +133,11 @@ impl ProtocolHealth {
         self.decoder_baseline = decoder_counters;
         self.counters = DecodeCounters::default();
         self.failure = None;
-        if message.message_sequence != 0 || !matches!(message.body, Event::Hello(_)) {
+        if message.boot_id == 0 {
+            self.fail("target published a reserved zero boot identity".into());
+        } else if self.origin == CaptureOrigin::Boot
+            && (message.message_sequence != 0 || !matches!(message.body, Event::Hello(_)))
+        {
             self.fail(format!(
                 "boot {} began with {:?} at target message sequence {}, expected Hello at 0",
                 message.boot_id, message.body, message.message_sequence
@@ -149,6 +201,9 @@ pub(crate) struct SerialCapture {
     next_host_sequence: AtomicU32,
     next_session_id: AtomicU64,
     worker: Option<thread::JoinHandle<()>>,
+    output: PathBuf,
+    persisted: bool,
+    measurements: Option<crate::evidence::measurements::CaptureRecorder>,
 }
 
 fn command_response_matches(
@@ -196,7 +251,7 @@ pub(crate) struct WifiCommandHandle {
     first_event: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SessionEvidence {
     pub(crate) transport: TransportEvidence,
     pub(crate) flow_transport: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
@@ -205,6 +260,7 @@ pub(crate) struct SessionEvidence {
     pub(crate) rx_delivery: Option<RxDeliveryEvidence>,
     pub(crate) network_scheduler: Option<NetworkSchedulerEvidence>,
     pub(crate) stack: StackUsage,
+    pub(crate) link: LinkHealth,
     pub(crate) finished: Finished,
 }
 
@@ -220,6 +276,7 @@ fn open_serial_after_busy_release(
     loop {
         match serialport::new(port.to_string_lossy(), 115_200)
             .timeout(Duration::from_millis(20))
+            .preserve_dtr_on_open()
             .open()
         {
             Ok(serial) => return Ok(serial),
@@ -253,6 +310,11 @@ fn reset_usb_serial_jtag(serial: &mut dyn serialport::SerialPort) -> serialport:
 impl Drop for SerialCapture {
     fn drop(&mut self) {
         self.stop_and_join();
+        if !self.persisted
+            && let Err(error) = self.persist(None, false)
+        {
+            eprintln!("cannot preserve partial serial capture: {error}");
+        }
     }
 }
 
@@ -263,6 +325,9 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
         .extend_from_slice(chunk);
 }
 
+mod capture;
+pub(crate) mod error;
+use error::LinkError;
 mod protocol;
 mod readiness;
 #[cfg(test)]
@@ -270,7 +335,7 @@ mod tests;
 mod validation;
 
 #[cfg(test)]
-use protocol::{beacon_loss_count_in, next_station_lifecycle_event};
+use protocol::beacon_loss_count_in;
 use readiness::session_ready_covers;
 pub(crate) use readiness::{
     await_network_ready, await_tcp_ready, await_udp_rx_ready, await_udp_tx_ready,

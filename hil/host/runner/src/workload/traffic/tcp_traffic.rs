@@ -1,11 +1,7 @@
 //! Typed TCP RX, TX and full-duplex qualification over one runtime image.
 
-use std::{
-    fs,
-    net::Ipv4Addr,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use crate::execution::context::Context;
+use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
     Completion, Direction, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements,
@@ -14,8 +10,7 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result,
-    lab::config::LabConfig,
-    session::{SerialCapture, SessionEvidence, await_tcp_ready},
+    session::{SessionEvidence, await_tcp_ready},
     workload::traffic::{
         host_network::reject_overlapping_ipv4_links,
         paced_tcp::{
@@ -37,78 +32,32 @@ const MAXIMUM_CHUNK_BYTES: usize = 32_768;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug)]
-struct Options {
-    device: Ipv4Addr,
-    direction: Direction,
-    port: u16,
-    duration: Duration,
-    chunk_bytes: usize,
-    rx_rate_bps: Option<u64>,
-    rx_floor_bps: Option<u64>,
-    tx_rate_bps: Option<u64>,
-    tx_floor_bps: Option<u64>,
-    serial: PathBuf,
+pub(crate) struct Config {
+    pub(crate) device: Ipv4Addr,
+    pub(crate) direction: Direction,
+    pub(crate) port: u16,
+    pub(crate) duration: Duration,
+    pub(crate) chunk_bytes: usize,
+    pub(crate) rx_rate_bps: Option<u64>,
+    pub(crate) rx_floor_bps: Option<u64>,
+    pub(crate) tx_rate_bps: Option<u64>,
+    pub(crate) tx_floor_bps: Option<u64>,
 }
 
-pub(crate) fn run_rx(
-    arguments: Vec<String>,
+pub(crate) fn run(
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     require_no_beacon_loss: bool,
 ) -> Result<()> {
-    run(
-        arguments,
-        output,
-        lab,
-        Direction::Rx,
-        require_no_beacon_loss,
-    )
-}
-
-pub(crate) fn run_tx(
-    arguments: Vec<String>,
-    output: &Path,
-    lab: &LabConfig,
-    require_no_beacon_loss: bool,
-) -> Result<()> {
-    run(
-        arguments,
-        output,
-        lab,
-        Direction::Tx,
-        require_no_beacon_loss,
-    )
-}
-
-pub(crate) fn run_bidirectional(
-    arguments: Vec<String>,
-    output: &Path,
-    lab: &LabConfig,
-    require_no_beacon_loss: bool,
-) -> Result<()> {
-    run(
-        arguments,
-        output,
-        lab,
-        Direction::Bidirectional,
-        require_no_beacon_loss,
-    )
-}
-
-fn run(
-    arguments: Vec<String>,
-    output: &Path,
-    lab: &LabConfig,
-    direction: Direction,
-    require_no_beacon_loss: bool,
-) -> Result<()> {
-    let mut options = parse_options(&arguments, lab, direction)?;
+    let mut options = options.validate()?;
+    let direction = options.direction;
     let mode = direction_name(direction);
     fs::create_dir_all(output)?;
-    let capture = SerialCapture::start_with_reset(&options.serial);
+    let capture = context.capture(output)?;
     let ready = match await_tcp_ready(
         &capture,
-        lab,
+        context,
         options.device,
         options.port,
         direction,
@@ -116,8 +65,7 @@ fn run(
     ) {
         Ok(ready) => ready,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     options.device = ready.address;
@@ -169,6 +117,23 @@ fn run(
         Direction::Bidirectional => exchange(config).map(|(tx, rx)| (Some(tx), Some(rx))),
     };
 
+    if let Ok((host_tx, host_rx)) = &data_plane {
+        if let Some(host) = host_tx {
+            context.measurements.rate(
+                "tcp.rx.host-rate",
+                host.throughput_bps(),
+                options.rx_floor_bps,
+            );
+        }
+        if let Some(host) = host_rx {
+            context.measurements.rate(
+                "tcp.tx.host-rate",
+                host.throughput_bps(),
+                options.tx_floor_bps,
+            );
+        }
+    }
+
     // Always collect the target's typed result after a data-plane failure.
     // Otherwise a reset/timeout hides precisely the evidence needed to
     // distinguish a host socket problem from a target transport failure.
@@ -178,7 +143,7 @@ fn run(
         .map(|_| capture.acknowledge_session(session))
         .unwrap_or(Ok(()));
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
-    capture.finish_to(output)?;
+    capture.finish()?;
     if let Some(result) = beacon_loss {
         result?;
     }
@@ -215,7 +180,7 @@ fn run(
 }
 
 fn validate(
-    options: &Options,
+    options: &Config,
     host_tx: Option<HostTransmission>,
     host_rx: Option<HostReception>,
     structured: SessionEvidence,
@@ -281,7 +246,7 @@ fn validate(
 
 fn write_report(
     output: &Path,
-    options: &Options,
+    options: &Config,
     host_tx: Option<HostTransmission>,
     host_rx: Option<HostReception>,
     structured: SessionEvidence,
@@ -345,102 +310,91 @@ fn write_report(
     Ok(())
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig, direction: Direction) -> Result<Options> {
-    let mut options = Options {
-        device: Ipv4Addr::UNSPECIFIED,
-        direction,
-        port: DEFAULT_PORT,
-        duration: DEFAULT_DURATION,
-        chunk_bytes: DEFAULT_CHUNK_BYTES,
-        rx_rate_bps: match direction {
-            Direction::Rx => Some(DEFAULT_RX_RATE_BPS),
-            Direction::Tx => None,
-            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_RX_RATE_BPS),
-        },
-        rx_floor_bps: match direction {
-            Direction::Rx => Some(DEFAULT_RX_RATE_BPS * 9 / 10),
-            Direction::Tx => None,
-            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_RX_RATE_BPS * 9 / 10),
-        },
-        tx_rate_bps: match direction {
-            Direction::Rx => None,
-            Direction::Tx => Some(DEFAULT_TX_RATE_BPS),
-            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_TX_RATE_BPS),
-        },
-        tx_floor_bps: match direction {
-            Direction::Rx => None,
-            Direction::Tx => Some(DEFAULT_TX_FLOOR_BPS),
-            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_TX_FLOOR_BPS),
-        },
-        serial: lab.device.serial.clone(),
-    };
-    let mut index = 0;
-    while index < arguments.len() {
-        let value = arguments
-            .get(index + 1)
-            .ok_or("TCP option requires a value")?;
-        match arguments[index].as_str() {
-            "--rx-rate" => options.rx_rate_bps = Some(parse_rate(value)?),
-            "--rx-floor" => options.rx_floor_bps = Some(parse_rate(value)?),
-            "--tx-rate" => options.tx_rate_bps = Some(parse_rate(value)?),
-            "--tx-floor" => options.tx_floor_bps = Some(parse_rate(value)?),
-            "--seconds" => {
-                let seconds = value.parse::<u64>()?;
-                if !(5..=300).contains(&seconds) {
-                    return Err("TCP duration must be between 5 and 300 seconds".into());
-                }
-                options.duration = Duration::from_secs(seconds);
-            }
-            "--chunk" => {
-                options.chunk_bytes = value.parse()?;
-                if !(64..=MAXIMUM_CHUNK_BYTES).contains(&options.chunk_bytes) {
-                    return Err("TCP chunk must be between 64 and 32768 bytes".into());
-                }
-            }
-            "--port" => options.port = value.parse()?,
-            option => return Err(format!("unsupported TCP option `{option}`").into()),
+impl Config {
+    pub(crate) fn for_direction(direction: Direction) -> Self {
+        Self {
+            device: Ipv4Addr::UNSPECIFIED,
+            direction,
+            port: DEFAULT_PORT,
+            duration: DEFAULT_DURATION,
+            chunk_bytes: DEFAULT_CHUNK_BYTES,
+            rx_rate_bps: match direction {
+                Direction::Rx => Some(DEFAULT_RX_RATE_BPS),
+                Direction::Tx => None,
+                Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_RX_RATE_BPS),
+            },
+            rx_floor_bps: match direction {
+                Direction::Rx => Some(DEFAULT_RX_RATE_BPS * 9 / 10),
+                Direction::Tx => None,
+                Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_RX_RATE_BPS * 9 / 10),
+            },
+            tx_rate_bps: match direction {
+                Direction::Rx => None,
+                Direction::Tx => Some(DEFAULT_TX_RATE_BPS),
+                Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_TX_RATE_BPS),
+            },
+            tx_floor_bps: match direction {
+                Direction::Rx => None,
+                Direction::Tx => Some(DEFAULT_TX_FLOOR_BPS),
+                Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_TX_FLOOR_BPS),
+            },
         }
-        index += 2;
     }
-    let shape_valid = match direction {
-        Direction::Rx => {
-            options.rx_rate_bps.is_some()
-                && options.rx_floor_bps.is_some()
-                && options.tx_rate_bps.is_none()
-                && options.tx_floor_bps.is_none()
-        }
-        Direction::Tx => {
-            options.rx_rate_bps.is_none()
-                && options.rx_floor_bps.is_none()
-                && options.tx_rate_bps.is_some()
-                && options.tx_floor_bps.is_some()
-        }
-        Direction::Bidirectional => {
-            options.rx_rate_bps.is_some()
-                && options.rx_floor_bps.is_some()
-                && options.tx_rate_bps.is_some()
-                && options.tx_floor_bps.is_some()
-        }
-    };
-    if !shape_valid {
-        return Err("TCP rate options do not match the selected direction".into());
-    }
-    if options
-        .rx_rate_bps
-        .zip(options.rx_floor_bps)
-        .is_some_and(|(rate, floor)| floor > rate)
-    {
-        return Err("TCP RX floor cannot exceed the offered rate".into());
-    }
-    Ok(options)
 }
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(5)..=Duration::from_secs(300)).contains(&self.duration) {
+            return Err("traffic duration must be in 5..=300 seconds".into());
+        }
+        if !(64..=MAXIMUM_CHUNK_BYTES).contains(&self.chunk_bytes) {
+            return Err("TCP chunk must be in 64..=32768 bytes".into());
+        }
+        if [
+            self.rx_rate_bps,
+            self.tx_rate_bps,
+            self.rx_floor_bps,
+            self.tx_floor_bps,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|rate| !(100_000..=1_000_000_000).contains(&rate))
+        {
+            return Err("traffic rate is outside the supported range".into());
+        }
 
-fn parse_rate(value: &str) -> Result<u64> {
-    let rate = value.parse::<u64>()?;
-    if !(100_000..=1_000_000_000).contains(&rate) {
-        return Err("TCP rate must be between 100 kbit/s and 1 Gbit/s".into());
+        let shape_valid = match self.direction {
+            Direction::Rx => {
+                self.rx_rate_bps.is_some()
+                    && self.rx_floor_bps.is_some()
+                    && self.tx_rate_bps.is_none()
+                    && self.tx_floor_bps.is_none()
+            }
+            Direction::Tx => {
+                self.rx_rate_bps.is_none()
+                    && self.rx_floor_bps.is_none()
+                    && self.tx_rate_bps.is_some()
+                    && self.tx_floor_bps.is_some()
+            }
+            Direction::Bidirectional => {
+                self.rx_rate_bps.is_some()
+                    && self.rx_floor_bps.is_some()
+                    && self.tx_rate_bps.is_some()
+                    && self.tx_floor_bps.is_some()
+            }
+        };
+        if !shape_valid {
+            return Err("TCP rate self do not match the selected direction".into());
+        }
+        if self
+            .rx_rate_bps
+            .zip(self.rx_floor_bps)
+            .is_some_and(|(rate, floor)| floor > rate)
+        {
+            return Err("TCP RX floor cannot exceed the offered rate".into());
+        }
+
+        Ok(self)
     }
-    Ok(rate)
 }
 
 const fn direction_name(direction: Direction) -> &'static str {

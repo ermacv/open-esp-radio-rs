@@ -532,10 +532,12 @@ fn finish_writes_all_views_and_completes_manifest() {
     assert!(completion.junit_report.is_file());
     assert!(completion.html_report.is_file());
     assert!(completion.integrity_report.is_file());
-    assert!(completion.history_report.is_file());
-    assert!(completion.history_html.is_file());
+    assert!(completion.history_report.as_ref().unwrap().is_file());
+    assert!(completion.history_html.as_ref().unwrap().is_file());
+    assert!(completion.history_failure.is_none());
     let history: crate::reporting::history::HistoryReport =
-        serde_json::from_slice(&fs::read(&completion.history_report).unwrap()).unwrap();
+        serde_json::from_slice(&fs::read(completion.history_report.as_ref().unwrap()).unwrap())
+            .unwrap();
     assert_eq!(history.counts.runs, 1);
     let final_manifest: RunManifest =
         serde_json::from_slice(&fs::read(completion.run_directory.join("manifest.json")).unwrap())
@@ -555,4 +557,55 @@ fn dropped_session_marks_manifest_interrupted() {
     assert!(final_manifest.finished_unix_millis.is_some());
     assert!(root.join("integrity.json").is_file());
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unrelated_history_failure_cannot_revoke_a_sealed_run() {
+    for failed in [false, true] {
+        let root = temporary_directory("history-failure");
+        let session = integrated_session(&root);
+        let unrelated = root.join("runs/unrelated-incomplete-bundle");
+        fs::create_dir_all(&unrelated).unwrap();
+        let scenarios = if failed {
+            failed_suite().scenarios
+        } else {
+            Vec::new()
+        };
+        let (suite, completion) = session.finish(scenarios).unwrap();
+        assert_eq!(
+            suite.outcome,
+            if failed {
+                Outcome::Failed
+            } else {
+                Outcome::Passed
+            }
+        );
+        assert_eq!(suite.outcome, completion.outcome);
+        assert!(completion.history_report.is_none() && completion.history_html.is_none());
+        assert!(completion.history_failure.unwrap().contains("no manifest"));
+        let manifest: RunManifest = serde_json::from_slice(
+            &fs::read(completion.run_directory.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest.state, RunState::Completed);
+        let sealed = fs::read(&completion.integrity_report).unwrap();
+        fs::remove_dir(unrelated).unwrap();
+        crate::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
+        assert_eq!(fs::read(completion.integrity_report).unwrap(), sealed);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn broken_or_interrupted_repetitions_can_retain_failed_measurements() {
+    for outcome in [Outcome::Broken, Outcome::Interrupted] {
+        let mut suite = failed_suite();
+        suite.scenarios[0].repetitions[0].outcome = outcome;
+        suite.scenarios[0].outcome = outcome;
+        suite.counts = SuiteCounts::from_results(&suite.scenarios);
+        let mut manifest = manifest();
+        manifest.finished_unix_millis = Some(suite.finished_unix_millis);
+        manifest.duration_millis = Some(suite.duration_millis);
+        validation::validate_suite(&suite, &manifest).unwrap();
+    }
 }

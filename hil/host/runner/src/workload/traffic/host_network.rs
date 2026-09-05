@@ -1,5 +1,6 @@
 //! Qualification preflights for the host-side IP topology.
 
+use oer_process::CommandExt as _;
 use std::{
     net::Ipv4Addr,
     path::{Path, PathBuf},
@@ -43,7 +44,7 @@ impl BenchmarkIpv4Route {
         reject_overlapping_ipv4_links(device)?;
         let output = Command::new("ip")
             .args(["-4", "route", "get", &device.to_string()])
-            .output()
+            .supervised_output()
             .map_err(|error| format!("cannot inspect the host route to {device}: {error}"))?;
         if !output.status.success() {
             return Err(format!(
@@ -159,7 +160,7 @@ fn parse_ipv4_route(output: &str, device: Ipv4Addr) -> Result<BenchmarkIpv4Route
 pub(crate) fn reject_overlapping_ipv4_links(device: Ipv4Addr) -> Result<()> {
     let output = match Command::new("ip")
         .args(["-o", "-4", "addr", "show", "up", "scope", "global"])
-        .output()
+        .supervised_output()
     {
         Ok(output) if output.status.success() => output.stdout,
         // The runner remains usable on non-Linux hosts. Linux qualification

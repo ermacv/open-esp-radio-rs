@@ -1,5 +1,6 @@
 //! Canonical, immutable records for one host HIL invocation.
 
+use oer_process::CommandExt as _;
 use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
@@ -18,6 +19,8 @@ use crate::{Result, image::ImageClass};
 
 mod archive;
 mod integrity;
+mod lock;
+pub(crate) use lock::IndexGuard;
 mod model;
 pub(crate) mod validation;
 use crate::reporting::render;
@@ -91,6 +94,7 @@ impl RunSession {
         let target_directory = root.join("target/hil").join(target);
         let runs = target_directory.join("runs");
         fs::create_dir_all(&runs)?;
+        let _publication = IndexGuard::acquire(&target_directory)?;
         let directory = create_unique_directory(&runs, &run_id)?;
         let mut unpublished_directory = UnpublishedRunDirectory::new(directory.clone());
         let run_id = directory
@@ -235,8 +239,21 @@ impl RunSession {
         atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
         let integrity_report = write_integrity_index(&self.directory, &self.manifest.run_id)?;
         self.finished = true;
+        // The sealed run is authoritative. A derived view of other bundles
+        // cannot revoke its completion or suppress its machine-readable result.
         let history =
-            crate::reporting::history::rebuild_at(&self.target_directory, &self.manifest.target)?;
+            crate::reporting::history::rebuild_at(&self.target_directory, &self.manifest.target);
+        let (history_report, history_html, history_failure) = match history {
+            Ok(history) => (
+                Some(history.history_report),
+                Some(history.html_report),
+                None,
+            ),
+            Err(error) => {
+                eprintln!("run sealed; history rebuild failed: {error}");
+                (None, None, Some(error.to_string()))
+            }
+        };
         let completion = CompletionReport {
             schema: RUN_SCHEMA,
             run_id: self.manifest.run_id.clone(),
@@ -246,8 +263,9 @@ impl RunSession {
             junit_report: self.directory.join("junit.xml"),
             html_report: self.directory.join("report.html"),
             integrity_report,
-            history_report: history.history_report,
-            history_html: history.html_report,
+            history_report,
+            history_html,
+            history_failure,
         };
         Ok((suite, completion))
     }
@@ -263,7 +281,19 @@ impl Drop for RunSession {
         self.manifest.finished_unix_millis = unix_millis().ok();
         self.manifest.duration_millis = Some(duration_millis(self.started.elapsed()));
         let _ = atomic_json(&self.directory.join("manifest.json"), &self.manifest);
-        let _ = write_integrity_index(&self.directory, &self.manifest.run_id);
+        match write_integrity_index(&self.directory, &self.manifest.run_id) {
+            Ok(integrity) => {
+                let _ = crate::emit_json(
+                    &serde_json::json!({
+                        "schema": RUN_SCHEMA, "run_id": self.manifest.run_id,
+                        "outcome": "interrupted", "run_directory": self.directory,
+                        "integrity_report": integrity,
+                    }),
+                    false,
+                );
+            }
+            Err(error) => eprintln!("cannot seal interrupted HIL run: {error}"),
+        }
     }
 }
 
@@ -315,7 +345,10 @@ fn runner_provenance() -> RunnerProvenance {
 }
 
 fn command_version(program: &str) -> Option<String> {
-    let output = Command::new(program).arg("--version").output().ok()?;
+    let output = Command::new(program)
+        .arg("--version")
+        .supervised_output()
+        .ok()?;
     output
         .status
         .success()

@@ -1,32 +1,6 @@
 use super::*;
 
 #[test]
-fn parses_tx_options() {
-    let options = parse_options(
-        &[
-            "--seconds".into(),
-            "8".into(),
-            "--payload".into(),
-            "1200".into(),
-            "--rate".into(),
-            "80M".into(),
-            "--phy".into(),
-            "ht40".into(),
-            "--max-idle-channel-utilization-255".into(),
-            "64".into(),
-        ],
-        &LabConfig::for_test(),
-    )
-    .unwrap();
-    assert_eq!(options.duration, Duration::from_secs(8));
-    assert_eq!(options.payload, 1_200);
-    assert_eq!(options.offered_rate_bps, Some(80_000_000));
-    assert_eq!(options.bandwidth_mhz, 40);
-    assert_eq!(options.minimum_rate_kbps, 135_000);
-    assert_eq!(options.maximum_idle_channel_utilization_255, Some(64));
-}
-
-#[test]
 fn channel_utilization_report_preserves_the_measured_interval() {
     assert_eq!(
         format_channel_utilization(Some(ChannelUtilization {
@@ -151,5 +125,25 @@ fn incomplete_burst_summary_distinguishes_missing_sequence_zero_from_no_traffic(
     assert_eq!(
         describe_bursts(&[]),
         "observed_bursts=0 observed_datagrams=0 zero_started=0 sequence_range=None..=None"
+    );
+}
+
+#[test]
+fn typed_configuration_preserves_workload_bounds() {
+    assert!(
+        Config {
+            duration: Duration::from_secs(7),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        Config {
+            maximum_idle_channel_utilization_255: Some(0),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
     );
 }

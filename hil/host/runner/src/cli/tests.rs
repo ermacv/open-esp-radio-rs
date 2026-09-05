@@ -1,6 +1,17 @@
 use super::*;
 
 #[test]
+fn preflight_selection_is_unambiguous() {
+    for command in ["plan", "doctor"] {
+        assert!(Cli::try_parse_from(["cargo-hil", command, "timebase"]).is_ok());
+        assert!(Cli::try_parse_from(["cargo-hil", command, "--tag", "system"]).is_ok());
+        assert!(
+            Cli::try_parse_from(["cargo-hil", command, "timebase", "--tag", "system"]).is_err()
+        );
+    }
+}
+
+#[test]
 fn run_firmware_from_is_an_explicit_single_scenario_input() {
     let cli = Cli::try_parse_from([
         "cargo-hil",

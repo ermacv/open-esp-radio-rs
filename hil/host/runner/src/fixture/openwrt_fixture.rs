@@ -1,10 +1,11 @@
 //! Session-bounded, read-only evidence from the laboratory OpenWrt AP.
 
+use oer_process::CommandExt as _;
+use oer_process::owned::Child;
 use std::{
     io::Read as _,
     net::Ipv4Addr,
-    process::{Child, Command, Stdio},
-    thread,
+    process::{Command, Stdio},
     time::Duration,
 };
 
@@ -89,6 +90,10 @@ impl OpenWrtRateMask {
             "set -eu; iw dev {} set bitrates {interval}",
             config.wireless_interface
         );
+        let owner = Self {
+            config: config.clone(),
+            active: true,
+        };
         let output = openwrt_command(config, &script)?;
         if !output.status.success() {
             return Err(format!(
@@ -98,10 +103,7 @@ impl OpenWrtRateMask {
             )
             .into());
         }
-        Ok(Some(Self {
-            config: config.clone(),
-            active: true,
-        }))
+        Ok(Some(owner))
     }
 
     fn clear(&mut self) -> Result<()> {
@@ -127,7 +129,9 @@ impl OpenWrtRateMask {
 
 impl Drop for OpenWrtRateMask {
     fn drop(&mut self) {
-        let _ = self.clear();
+        oer_process::cleanup(|| {
+            crate::fixture::cleanup::record("restore automatic rate mask", || self.clear());
+        });
     }
 }
 
@@ -198,7 +202,7 @@ impl OpenWrtRxCapture {
         // tcpdump opens the packet socket before entering its capture loop.
         // This guard is outside the measured session and avoids admitting a
         // prefix before both independently owned sockets exist.
-        thread::sleep(Duration::from_secs(1));
+        oer_process::sleep(Duration::from_secs(1))?;
         let early_exit = capture_early_exit(&mut ingress)?.or(capture_early_exit(&mut wireless)?);
         if let Some(error) = early_exit {
             let _ = ingress.child.kill();
@@ -292,11 +296,11 @@ impl OpenWrtRxCapture {
 }
 
 fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
-    Ok(Command::new("ssh")
+    Command::new("ssh")
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(script)
-        .output()?)
+        .supervised_output()
 }
 
 /// Snapshot the final AP/STA link vector after one measured workload.
@@ -359,7 +363,7 @@ fn snapshot(
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(script)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot snapshot OpenWrt station counters: {}",
@@ -432,7 +436,7 @@ pub(crate) fn resolve_station_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> R
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(script)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot resolve the sole associated OpenWrt station: {}",
@@ -500,7 +504,7 @@ fn measure_channel_utilization(config: &OpenWrtConfig) -> Result<ChannelUtilizat
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(script)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot measure OpenWrt pre-workload channel utilization: {}",
@@ -555,13 +559,15 @@ fn delta(name: &str, before: u64, after: u64) -> Result<u64> {
 
 impl Drop for OpenWrtRxCapture {
     fn drop(&mut self) {
-        for capture in [&mut self.ingress, &mut self.wireless]
-            .into_iter()
-            .flatten()
-        {
-            let _ = capture.child.kill();
-            let _ = capture.child.wait();
-        }
+        oer_process::cleanup(|| {
+            for capture in [&mut self.ingress, &mut self.wireless]
+                .into_iter()
+                .flatten()
+            {
+                let _ = capture.child.kill();
+                let _ = capture.child.wait();
+            }
+        });
     }
 }
 
@@ -581,7 +587,7 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(script)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "OpenWrt fixture doctor failed over noninteractive SSH: {}",
@@ -627,8 +633,9 @@ fn spawn_capture(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("cannot start {name}: {error}"))?;
+        .spawn_owned()
+        .map_err(|error| crate::error::context("start packet capture", error))?
+        .with_timeout(timeout.saturating_add(Duration::from_secs(10)));
     Ok(Capture { name, child })
 }
 

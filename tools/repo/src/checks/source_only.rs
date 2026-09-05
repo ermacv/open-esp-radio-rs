@@ -230,10 +230,17 @@ fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
 }
 
 pub fn run(ctx: &Context) -> Result<()> {
-    process::run(
-        ctx.cargo()
-            .args(["test", "--locked", "--offline", "-p", "oer-xtask"]),
-    )?;
+    process::run(ctx.cargo().args([
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "oer-xtask",
+        "-p",
+        "oer-process",
+        "-p",
+        "oer-firmware",
+    ]))?;
     process::run(ctx.cargo().args([
         "test",
         "--locked",
@@ -271,12 +278,13 @@ pub fn run(ctx: &Context) -> Result<()> {
     let temporary = tempfile::tempdir()?;
     let log = temporary.path().join("image-build.log");
     let output = temporary.path().join("image-build.json");
-    let mut image = owned::Child::spawn(
+    let mut image = owned::Child::spawn_with_shutdown_grace(
         ctx.command(ctx.root.join("target/debug/open-esp-radio-hil-runner"))
             .env_remove("ESP_HAL_ROOT")
             .args(["image", "build", "performance"])
             .stdout(Stdio::from(File::create(&output)?))
             .stderr(Stdio::from(File::create(&log)?)),
+        std::time::Duration::from_secs(40),
     )?;
     println!("source-only: final HIL image build running concurrently");
 

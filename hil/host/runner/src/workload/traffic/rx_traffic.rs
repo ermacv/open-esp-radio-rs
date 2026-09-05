@@ -1,11 +1,7 @@
 //! Host sender and report writer for production RX-only qualification.
 
-use std::{
-    env, fs,
-    net::Ipv4Addr,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use crate::execution::context::Context;
+use std::{env, fs, net::Ipv4Addr, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
     Completion, Direction, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements,
@@ -19,9 +15,9 @@ use crate::{
         openwrt_tx_monitor::{OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
         station_fixture::RxCapture,
     },
-    lab::config::{LabConfig, StationFixtureConfig},
+    lab::config::StationFixtureConfig,
     scenario::{HtGuardIntervalExpectation, PhyExpectation},
-    session::{SerialCapture, await_udp_rx_ready},
+    session::await_udp_rx_ready,
     workload::traffic::{
         bidirectional::{
             RxQualification, assess_rx_log, rx_order_markdown, rx_reorder_markdown,
@@ -39,17 +35,16 @@ const DEFAULT_PAYLOAD: usize = 1_200;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Eq, PartialEq)]
-struct Options {
-    address: Ipv4Addr,
-    port: u16,
-    rate_bps: u64,
-    minimum_rate_bps: Option<u64>,
-    duration: Duration,
-    payload: usize,
-    serial: PathBuf,
-    expected_rx_format: u8,
-    phy: PhyExpectation,
-    maximum_idle_channel_utilization_255: Option<u8>,
+pub(crate) struct Config {
+    pub(crate) address: Ipv4Addr,
+    pub(crate) port: u16,
+    pub(crate) rate_bps: u64,
+    pub(crate) minimum_rate_bps: Option<u64>,
+    pub(crate) duration: Duration,
+    pub(crate) payload: usize,
+    pub(crate) expected_rx_format: u8,
+    pub(crate) phy: PhyExpectation,
+    pub(crate) maximum_idle_channel_utilization_255: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -65,43 +60,42 @@ pub(crate) struct EvidencePolicy {
 }
 
 pub(crate) fn run(
-    arguments: Vec<String>,
+    options: Config,
     output: &Path,
-    lab: &LabConfig,
+    context: &Context<'_>,
     evidence_policy: EvidencePolicy,
 ) -> Result<()> {
-    let mut options = parse_options(&arguments, lab)?;
+    let mut options = options.validate()?;
     let require_exact_delivery = evidence_policy.require_exact_delivery;
     fs::create_dir_all(output)?;
-    let capture = SerialCapture::start_with_reset(&options.serial);
+    let capture = context.capture(output)?;
     let discovered_address = match await_udp_rx_ready(
         &capture,
-        lab,
+        context,
         options.address,
         options.port,
         DEVICE_READY_TIMEOUT,
     ) {
         Ok(address) => address,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     options.address = discovered_address.address;
-    let host_route = match BenchmarkIpv4Route::discover(options.address, &lab.station_fixture) {
-        Ok(route) => route,
-        Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
-        }
-    };
+    let host_route =
+        match BenchmarkIpv4Route::discover(options.address, &context.lab.station_fixture) {
+            Ok(route) => route,
+            Err(error) => {
+                return capture.finish_with(Err(error));
+            }
+        };
     let same_boot_probes = env::var("OPEN_RADIO_RX_SAME_BOOT_PROBES")
         .ok()
         .and_then(|value| value.parse::<u8>().ok())
         .unwrap_or(0);
     for probe in 1..=same_boot_probes {
         let fixture_capture = RxCapture::start(
-            &lab.station_fixture,
+            &context.lab.station_fixture,
             options.address,
             options.port,
             options.duration,
@@ -163,7 +157,7 @@ pub(crate) fn run(
         }
     }
     let fixture_capture = RxCapture::start(
-        &lab.station_fixture,
+        &context.lab.station_fixture,
         options.address,
         options.port,
         options.duration,
@@ -172,7 +166,7 @@ pub(crate) fn run(
         options.maximum_idle_channel_utilization_255,
     )?;
     let tx_monitor_capture = if evidence_policy.capture_openwrt_tx_monitor {
-        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+        let StationFixtureConfig::OpenWrt(config) = &context.lab.station_fixture else {
             return Err("OpenWrt TX-monitor evidence requires an OpenWrt station fixture".into());
         };
         Some(OpenWrtTxMonitorCapture::start(
@@ -186,7 +180,7 @@ pub(crate) fn run(
         None
     };
     let independent_air_capture = if evidence_policy.capture_independent_laptop_monitor {
-        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+        let StationFixtureConfig::OpenWrt(config) = &context.lab.station_fixture else {
             return Err("independent laptop evidence requires an OpenWrt station fixture".into());
         };
         Some(LocalAirMonitorCapture::start(
@@ -234,13 +228,11 @@ pub(crate) fn run(
     ) {
         Ok(evidence) => evidence,
         Err(error) => {
-            capture.finish_to(output)?;
-            return Err(error);
+            return capture.finish_with(Err(error));
         }
     };
     if let Err(error) = capture.acknowledge_session(session) {
-        capture.finish_to(output)?;
-        return Err(error);
+        return capture.finish_with(Err(error));
     }
     let fixture = fixture_capture.map(RxCapture::finish).transpose()?;
     let tx_monitor_rx = tx_monitor_capture
@@ -252,7 +244,7 @@ pub(crate) fn run(
     let beacon_loss = evidence_policy
         .require_no_beacon_loss
         .then(|| capture.require_no_beacon_loss());
-    let log = capture.finish_to(output)?;
+    let log = capture.finish()?;
     if let Some(result) = beacon_loss {
         result?;
     }
@@ -266,6 +258,12 @@ pub(crate) fn run(
         .saturating_mul(1_000)
         .checked_div(structured.transport.elapsed_micros.max(1))
         .unwrap_or(0);
+    record_rates(
+        &context.measurements,
+        typed_rx_kbps,
+        host.throughput_bps(),
+        minimum_bps,
+    );
     if !evidence_policy.require_driver_observation {
         if structured.radio.is_some()
             || structured.tx_timing.is_some()
@@ -776,94 +774,67 @@ fn rx_air_evidence_markdown(
     format!("{ap}{observer}")
 }
 
-fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
-    let mut options = Options {
-        address: Ipv4Addr::UNSPECIFIED,
-        port: DEFAULT_PORT,
-        rate_bps: DEFAULT_RATE_BPS,
-        minimum_rate_bps: None,
-        duration: DEFAULT_DURATION,
-        payload: DEFAULT_PAYLOAD,
-        serial: lab.device.serial.clone(),
-        expected_rx_format: 4,
-        phy: PhyExpectation::He20,
-        maximum_idle_channel_utilization_255: None,
-    };
-    let mut index = 0;
-    while index < arguments.len() {
-        let value = arguments
-            .get(index + 1)
-            .ok_or("RX option requires a value")?;
-        match arguments[index].as_str() {
-            "--rate" => options.rate_bps = parse_rate(value)?,
-            "--floor" => options.minimum_rate_bps = Some(parse_rate(value)?),
-            "--seconds" => {
-                let seconds = value.parse::<u64>()?;
-                if !(5..=300).contains(&seconds) {
-                    return Err("--seconds must be in 5..=300".into());
-                }
-                options.duration = Duration::from_secs(seconds);
-            }
-            "--payload" => {
-                options.payload = value.parse::<usize>()?;
-                if !(64..=1_472).contains(&options.payload) {
-                    return Err("--payload must be in 64..=1472".into());
-                }
-            }
-            "--port" => options.port = value.parse::<u16>()?,
-            "--max-idle-channel-utilization-255" => {
-                let maximum = value.parse::<u8>()?;
-                if maximum == 0 {
-                    return Err("--max-idle-channel-utilization-255 must be nonzero".into());
-                }
-                options.maximum_idle_channel_utilization_255 = Some(maximum);
-            }
-            "--phy" => match value.as_str() {
-                "he20" => {
-                    options.expected_rx_format = 4;
-                    options.phy = PhyExpectation::He20;
-                }
-                "ht20" => {
-                    options.expected_rx_format = 2;
-                    options.phy = PhyExpectation::Ht20;
-                }
-                "ht40" => {
-                    options.expected_rx_format = 2;
-                    options.phy = PhyExpectation::Ht40;
-                }
-                _ => return Err("--phy must be he20, ht20 or ht40".into()),
-            },
-            other => return Err(format!("unknown RX option `{other}`").into()),
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            address: Ipv4Addr::UNSPECIFIED,
+            port: DEFAULT_PORT,
+            rate_bps: DEFAULT_RATE_BPS,
+            minimum_rate_bps: None,
+            duration: DEFAULT_DURATION,
+            payload: DEFAULT_PAYLOAD,
+            expected_rx_format: 4,
+            phy: PhyExpectation::He20,
+            maximum_idle_channel_utilization_255: None,
         }
-        index += 2;
     }
-    if options.port == 0 {
-        return Err("--port must be nonzero".into());
+}
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(5)..=Duration::from_secs(300)).contains(&self.duration) {
+            return Err("traffic duration must be in 5..=300 seconds".into());
+        }
+        if !(64..=1472).contains(&self.payload) {
+            return Err("UDP payload must be in 64..=1472 bytes".into());
+        }
+        if self.maximum_idle_channel_utilization_255 == Some(0) {
+            return Err("maximum idle channel utilization must be nonzero".into());
+        }
+        if [Some(self.rate_bps), self.minimum_rate_bps]
+            .into_iter()
+            .flatten()
+            .any(|rate| !(100_000..=500_000_000).contains(&rate))
+        {
+            return Err("traffic rate is outside the supported range".into());
+        }
+        if self.port == 0 {
+            return Err("port must be nonzero".into());
+        }
+        if self
+            .minimum_rate_bps
+            .is_some_and(|floor| floor > self.rate_bps)
+        {
+            return Err("throughput floor cannot exceed offered rate".into());
+        }
+
+        Ok(self)
     }
-    if options
-        .minimum_rate_bps
-        .is_some_and(|floor| floor > options.rate_bps)
-    {
-        return Err("--floor cannot exceed --rate".into());
-    }
-    Ok(options)
 }
 
-fn parse_rate(value: &str) -> Result<u64> {
-    let (digits, multiplier) = match value.as_bytes().last().copied() {
-        Some(b'k' | b'K') => (&value[..value.len() - 1], 1_000_u64),
-        Some(b'm' | b'M') => (&value[..value.len() - 1], 1_000_000_u64),
-        Some(b'g' | b'G') => (&value[..value.len() - 1], 1_000_000_000_u64),
-        _ => (value, 1),
-    };
-    let rate = digits
-        .parse::<u64>()?
-        .checked_mul(multiplier)
-        .ok_or("rate overflow")?;
-    if !(100_000..=500_000_000).contains(&rate) {
-        return Err("--rate must be in 100K..=500M".into());
-    }
-    Ok(rate)
+fn record_rates(
+    recorder: &crate::evidence::measurements::Recorder,
+    target_kbps: u64,
+    host_bps: u64,
+    minimum_bps: u64,
+) {
+    // The existing target gate compares integer kbit/s, while the host gate
+    // compares bit/s. Preserve both resolutions in the reported thresholds.
+    recorder.rate(
+        "udp.rx.target-rate",
+        target_kbps.saturating_mul(1_000),
+        Some(minimum_bps / 1_000 * 1_000),
+    );
+    recorder.rate("udp.rx.host-offer-rate", host_bps, Some(minimum_bps));
 }
 
 #[cfg(test)]

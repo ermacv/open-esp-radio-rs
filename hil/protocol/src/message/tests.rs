@@ -1,5 +1,34 @@
 use super::*;
 
+#[test]
+fn unknown_boot_allows_only_session_free_capability_discovery() {
+    let mut discovery = Envelope::new(0, 1, 0, 1, Command::GetCapabilities);
+    assert_eq!(discovery.validate_target(42), Ok(()));
+    discovery.session_id = 9;
+    assert_eq!(discovery.validate_target(42), Err(RejectReason::BootId));
+    discovery.session_id = 0;
+    discovery.protocol_version = PROTOCOL_VERSION + 1;
+    assert_eq!(
+        discovery.validate_target(42),
+        Err(RejectReason::ProtocolVersion)
+    );
+    discovery.protocol_version = PROTOCOL_VERSION;
+    for command in [
+        Command::StopStation,
+        Command::GetStatus,
+        Command::QueryStackUsage,
+        Command::AcknowledgeResult,
+    ] {
+        let mut request = Envelope::new(0, 1, 0, 1, command);
+        assert_eq!(request.validate_target(42), Err(RejectReason::BootId));
+        request.boot_id = 41;
+        assert_eq!(request.validate_target(42), Err(RejectReason::BootId));
+        request.boot_id = 42;
+        assert_eq!(request.validate_target(42), Ok(()));
+    }
+    assert_eq!(discovery.validate_target(0), Err(RejectReason::BootId));
+}
+
 fn flow(flow_id: u8, address: [u8; 4], port: u16) -> SessionFlowConfig {
     let traffic = FlowConfig {
         payload_bytes: 1_472,

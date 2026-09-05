@@ -1,5 +1,6 @@
 //! Scoped ownership of AP client fixtures.
 
+use crate::execution::context::Context;
 use std::net::Ipv4Addr;
 
 use open_esp_radio_hil_protocol::WifiAccessPointSecurity;
@@ -11,7 +12,7 @@ use crate::{
         controlled_client::ControlledClient,
         controlled_openwrt_client::{ControlledOpenWrtClient, OpenWrtClientLinkObservation},
     },
-    lab::config::{LabConfig, StationFixtureConfig},
+    lab::config::StationFixtureConfig,
     scenario::{AccessPointClient, HtGuardIntervalExpectation},
 };
 
@@ -72,10 +73,10 @@ pub(super) fn connect_clients(
     minimum_clients: u8,
     openwrt_client_fixed_ht_mcs: Option<u8>,
     openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
-    lab: &LabConfig,
+    context: &Context<'_>,
 ) -> Result<ConnectedClients> {
     let openwrt_fixture = || -> Result<&crate::lab::config::OpenWrtConfig> {
-        match &lab.station_fixture {
+        match &context.lab.station_fixture {
             StationFixtureConfig::OpenWrt(fixture) => Ok(fixture),
             _ => Err("AP OpenWrt client requires the OpenWrt station fixture".into()),
         }
@@ -83,7 +84,7 @@ pub(super) fn connect_clients(
     match client {
         AccessPointClient::OpenWrt => Ok(ConnectedClients::OpenWrt {
             primary: ControlledOpenWrtClient::connect_primary(
-                &lab.access_point,
+                &context.lab.access_point,
                 openwrt_fixture()?,
                 security,
                 openwrt_client_fixed_ht_mcs,
@@ -96,7 +97,7 @@ pub(super) fn connect_clients(
             // the laptop on the next independently allocated peer slot.
             let secondary = if minimum_clients >= 2 {
                 Some(ControlledOpenWrtClient::connect(
-                    &lab.access_point,
+                    &context.lab.access_point,
                     openwrt_fixture()?,
                     security,
                     openwrt_client_fixed_ht_mcs,
@@ -108,7 +109,7 @@ pub(super) fn connect_clients(
             if security == WifiAccessPointSecurity::Open {
                 return Err("open AP qualification requires the controlled OpenWrt client".into());
             }
-            let primary = match ControlledClient::connect(&lab.access_point) {
+            let primary = match ControlledClient::connect(&context.lab.access_point) {
                 Ok(primary) => primary,
                 Err(error) => {
                     let restore = secondary

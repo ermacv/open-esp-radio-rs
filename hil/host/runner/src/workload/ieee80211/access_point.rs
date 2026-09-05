@@ -1,5 +1,6 @@
 //! WPA2 AP lifecycle, exact data-plane and concurrent-client qualification.
 
+use crate::execution::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -12,7 +13,7 @@ use crate::{
         controlled_openwrt_client::{ControlledOpenWrtClient, OpenWrtClientLinkObservation},
         local_air_monitor::LocalAirMonitorCapture,
     },
-    lab::config::{LabConfig, StationFixtureConfig},
+    lab::config::StationFixtureConfig,
     scenario::{
         AccessPointClient, AccessPointTraffic, Criteria, Direction, HtGuardIntervalExpectation,
         LinkExpectation, PhyExpectation,
@@ -81,7 +82,7 @@ pub(crate) struct Config {
     pub(crate) openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
 }
 
-pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
+pub(crate) fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     if let Some(expected_phy) = config.expected_link.map(|link| link.phy) {
         let expected_bandwidth_mhz = match expected_phy {
             PhyExpectation::Ht40 => 40,
@@ -90,12 +91,12 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
                 return Err("AP qualification does not claim an HE20 PHY".into());
             }
         };
-        if lab.access_point.bandwidth_mhz() != expected_bandwidth_mhz {
+        if context.lab.access_point.bandwidth_mhz() != expected_bandwidth_mhz {
             return Err(format!(
-                "AP scenario requires {} ({} MHz), but the lab AP request is {} MHz",
+                "AP scenario requires {} ({} MHz), but the context AP request is {} MHz",
                 expected_phy.id(),
                 expected_bandwidth_mhz,
-                lab.access_point.bandwidth_mhz(),
+                context.lab.access_point.bandwidth_mhz(),
             )
             .into());
         }
@@ -104,11 +105,11 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
     let minimum_clients = config.criteria.minimum_concurrent_ap_clients.unwrap_or(1);
     let fixture_preparation = if config.client == AccessPointClient::OpenWrt || minimum_clients >= 2
     {
-        let StationFixtureConfig::OpenWrt(fixture) = &lab.station_fixture else {
+        let StationFixtureConfig::OpenWrt(fixture) = &context.lab.station_fixture else {
             return Err("AP controlled OpenWrt client requires the OpenWrt station fixture".into());
         };
         Some(ControlledOpenWrtClient::prepare_fixture(
-            &lab.access_point,
+            &context.lab.access_point,
             fixture,
         )?)
     } else {
@@ -126,11 +127,9 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
             output.join(format!("boot-{boot:02}"))
         };
         fs::create_dir_all(&boot_output)?;
-        let capture = SerialCapture::start_with_reset(&lab.device.serial);
-        let cycles = qualify(&capture, &config, lab, &boot_output);
-        let capture_result = capture.finish_to(&boot_output);
-        let cycles = cycles?;
-        capture_result?;
+        let cycles = context.with_capture(&boot_output, |capture| {
+            qualify(capture, &config, context, &boot_output)
+        })?;
         report.boots.push(BootReport { boot, cycles });
     }
     fs::write(
@@ -143,19 +142,19 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
 fn qualify(
     capture: &SerialCapture,
     config: &Config,
-    lab: &LabConfig,
+    context: &Context<'_>,
     output: &Path,
 ) -> Result<Vec<CycleReport>> {
-    let capabilities = capture.prepare_station(lab, config.timeout)?;
+    let capabilities = capture.prepare_station(context, config.timeout)?;
     if !capabilities.features.wifi_role_control || !capabilities.features.wifi_access_point {
         return Err("firmware does not advertise AP role control".into());
     }
     report_stack(capture, config.timeout, "ap-initial-station-connected")?;
     let minimum_clients = config.criteria.minimum_concurrent_ap_clients.unwrap_or(1);
-    if lab.access_point.client_limit() < minimum_clients {
+    if context.lab.access_point.client_limit() < minimum_clients {
         return Err(format!(
             "AP client_limit={} is below scenario minimum_concurrent_ap_clients={minimum_clients}",
-            lab.access_point.client_limit(),
+            context.lab.access_point.client_limit(),
         )
         .into());
     }
@@ -164,16 +163,16 @@ fn qualify(
     for cycle in 0..config.cycles {
         // Validate all host-owned inputs before releasing the connected STA.
         // An invalid AP request must not strand the target in Idle.
-        let request = lab.access_point.protocol_request(config.security)?;
+        let request = context.lab.access_point.protocol_request(config.security)?;
         let _ = stop_station(capture, config.timeout)?;
         if let Err(error) = report_stack(capture, config.timeout, "ap-station-stopped") {
-            let restart = restore_connected_station(capture, config.timeout, lab).err();
+            let restart = restore_connected_station(capture, config.timeout, context).err();
             return Err(with_cleanup_errors(error, None, None, None, restart));
         }
         let start = match capture.request_access_point_start(request) {
             Ok(start) => start,
             Err(error) => {
-                let restart = restore_connected_station(capture, config.timeout, lab).err();
+                let restart = restore_connected_station(capture, config.timeout, context).err();
                 return Err(with_cleanup_errors(error, None, None, None, restart));
             }
         };
@@ -181,7 +180,7 @@ fn qualify(
         let started = match started {
             Ok(started) => started,
             Err(error) => {
-                let restart = restore_connected_station(capture, config.timeout, lab).err();
+                let restart = restore_connected_station(capture, config.timeout, context).err();
                 return Err(with_cleanup_errors(error, None, None, None, restart));
             }
         };
@@ -190,7 +189,7 @@ fn qualify(
                 capture,
                 config.timeout,
                 started.generation,
-                lab,
+                context,
                 error,
             ));
         }
@@ -199,7 +198,7 @@ fn qualify(
                 capture,
                 config.timeout,
                 started.generation,
-                lab,
+                context,
                 error,
             ));
         }
@@ -210,7 +209,7 @@ fn qualify(
             minimum_clients,
             config.openwrt_client_fixed_ht_mcs,
             config.openwrt_client_fixed_guard_interval,
-            lab,
+            context,
         ) {
             Ok(clients) => clients,
             Err(error) => {
@@ -218,7 +217,7 @@ fn qualify(
                     capture,
                     config.timeout,
                     started.generation,
-                    lab,
+                    context,
                     error,
                 ));
             }
@@ -233,7 +232,7 @@ fn qualify(
                 .flatten()
                 .map(|client| {
                     client.spawn_probe(
-                        lab.access_point.target_address(),
+                        context.lab.access_point.target_address(),
                         traffic_duration(&config.traffic),
                     )
                 });
@@ -242,12 +241,12 @@ fn qualify(
         let air_output = output.join(format!("cycle-{cycle:02}"));
         let independent_air_capture = if config.capture_independent_laptop_air_monitor {
             fs::create_dir_all(&air_output)?;
-            let StationFixtureConfig::OpenWrt(openwrt) = &lab.station_fixture else {
+            let StationFixtureConfig::OpenWrt(openwrt) = &context.lab.station_fixture else {
                 unreachable!("scenario validation constrains independent AP air evidence")
             };
             LocalAirMonitorCapture::start(
                 openwrt,
-                lab.access_point.target_address(),
+                context.lab.access_point.target_address(),
                 traffic_duration(&config.traffic),
                 &air_output,
             )
@@ -256,7 +255,7 @@ fn qualify(
             Ok(None)
         };
         let data_result = match independent_air_capture.as_ref() {
-            Ok(_) => qualify_data_plane(capture, config, lab, &clients),
+            Ok(_) => qualify_data_plane(capture, config, context, &clients),
             Err(error) => Err(error.to_string().into()),
         };
         let independent_air_result = independent_air_capture
@@ -280,7 +279,7 @@ fn qualify(
         // AP stop transaction. Otherwise the clients deauthenticate first and
         // the qualification never exercises the driver's ordered
         // disassociation/deauthentication teardown.
-        let stop_result = stop_access_point(capture, config.timeout, started.generation, lab);
+        let stop_result = stop_access_point(capture, config.timeout, started.generation, context);
         let client_restore = restore_clients(clients);
         let stop_stack_result = if stop_result.is_ok() {
             report_stack(capture, config.timeout, "ap-stopped")
@@ -288,7 +287,7 @@ fn qualify(
             Ok(())
         };
         let restart_result = if stop_result.is_ok() {
-            restore_connected_station(capture, config.timeout, lab)
+            restore_connected_station(capture, config.timeout, context)
         } else {
             Ok(())
         };
@@ -632,10 +631,10 @@ fn traffic_duration(traffic: &AccessPointTraffic) -> Duration {
 fn qualify_data_plane(
     capture: &SerialCapture,
     config: &Config,
-    lab: &LabConfig,
+    context: &Context<'_>,
     clients: &ConnectedClients,
 ) -> Result<TrafficReport> {
-    let target = lab.access_point.target_address();
+    let target = context.lab.access_point.target_address();
     let traffic_target = clients.traffic_target(target)?;
     match &config.traffic {
         AccessPointTraffic::None => Ok(TrafficReport::None),
@@ -662,7 +661,7 @@ fn qualify_data_plane(
         } => qualify_udp(
             capture,
             config,
-            lab,
+            context,
             clients,
             UdpWorkload {
                 direction: *direction,
@@ -687,7 +686,7 @@ fn qualify_data_plane(
         } => qualify_multi_client_udp(
             capture,
             config,
-            lab,
+            context,
             clients,
             UdpWorkload {
                 direction: *direction,
@@ -709,7 +708,7 @@ fn qualify_data_plane(
         } => qualify_tcp(
             capture,
             config,
-            lab.access_point.target_address(),
+            context.lab.access_point.target_address(),
             TcpWorkload {
                 direction: *direction,
                 duration: Duration::from_secs(u64::from(*duration_seconds)),
@@ -775,17 +774,17 @@ fn cleanup_after_client_failure(
     capture: &SerialCapture,
     timeout: Duration,
     generation: u32,
-    lab: &LabConfig,
-    primary: Box<dyn std::error::Error>,
-) -> Box<dyn std::error::Error> {
-    let stop = stop_access_point(capture, timeout, generation, lab);
+    context: &Context<'_>,
+    primary: Box<dyn std::error::Error + Send + Sync>,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    let stop = stop_access_point(capture, timeout, generation, context);
     let stop_stack = if stop.is_ok() {
         report_stack(capture, timeout, "ap-stopped")
     } else {
         Ok(())
     };
     let restart = if stop.is_ok() {
-        restore_connected_station(capture, timeout, lab)
+        restore_connected_station(capture, timeout, context)
     } else {
         Ok(())
     };
@@ -801,21 +800,21 @@ fn cleanup_after_client_failure(
 fn restore_connected_station(
     capture: &SerialCapture,
     timeout: Duration,
-    lab: &LabConfig,
+    context: &Context<'_>,
 ) -> Result<()> {
     let lifecycle_cursor = capture.station_lifecycle_cursor();
-    start_station(capture, lab, timeout)?;
+    start_station(capture, context, timeout)?;
     capture.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
     report_stack(capture, timeout, "ap-station-reconnected")
 }
 
 fn with_cleanup_errors(
     primary: impl std::fmt::Display,
-    client: Option<Box<dyn std::error::Error>>,
-    stop: Option<&dyn std::error::Error>,
-    stop_stack: Option<Box<dyn std::error::Error>>,
-    restart: Option<Box<dyn std::error::Error>>,
-) -> Box<dyn std::error::Error> {
+    client: Option<Box<dyn std::error::Error + Send + Sync>>,
+    stop: Option<&(dyn std::error::Error + Send + Sync)>,
+    stop_stack: Option<Box<dyn std::error::Error + Send + Sync>>,
+    restart: Option<Box<dyn std::error::Error + Send + Sync>>,
+) -> Box<dyn std::error::Error + Send + Sync> {
     let mut message = primary.to_string();
     if let Some(error) = client {
         message.push_str(&format!("; client restore failed: {error}"));
@@ -836,12 +835,12 @@ fn stop_access_point(
     capture: &SerialCapture,
     timeout: Duration,
     generation: u32,
-    lab: &LabConfig,
+    context: &Context<'_>,
 ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointEvidence> {
     let evidence = capture.wait_access_point_stop(capture.request_access_point_stop()?, timeout)?;
     if evidence.generation != generation
-        || evidence.channel != lab.access_point.channel()
-        || evidence.bandwidth_mhz != lab.access_point.bandwidth_mhz()
+        || evidence.channel != context.lab.access_point.channel()
+        || evidence.bandwidth_mhz != context.lab.access_point.bandwidth_mhz()
     {
         return Err(format!("AP returned inconsistent stop evidence: {evidence:?}").into());
     }

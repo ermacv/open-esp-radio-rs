@@ -1,12 +1,13 @@
 //! Independent passive 802.11 evidence from the laptop radio.
 
+use oer_process::CommandExt as _;
+use oer_process::owned::Child;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    thread,
+    process::{Command, Stdio},
     time::Duration,
 };
 
@@ -117,47 +118,43 @@ impl LocalAirMonitorCapture {
         observer_action: &str,
         restore_managed: bool,
     ) -> Result<Self> {
-        helper_action(observer_action)?;
-        let capture_path = output.join("independent-air.pcapng");
-        let timeout = duration.saturating_add(Duration::from_secs(3));
-        let child = Command::new("dumpcap")
-            // libpcap's `wlan host` capture filter drops the target's HT40
-            // A-MPDU records on this radiotap interface. Capture the bounded
-            // channel view and apply the exact target-MAC display filter in
-            // `parse_capture` instead.
-            .args(["-q", "-i", MONITOR_INTERFACE, "-s", "512"])
-            .args(["-a", &format!("duration:{}", timeout.as_secs().max(1))])
-            .arg("-w")
-            .arg(&capture_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn();
-        let mut child = match child {
-            Ok(child) => child,
-            Err(error) => {
-                if restore_managed {
-                    let _ = helper_action("managed");
-                }
-                return Err(format!("cannot start independent laptop capture: {error}").into());
-            }
+        let mut owner = Self {
+            output: output.join("independent-air.pcapng"),
+            target_mac,
+            child: None,
+            owns_monitor: restore_managed,
         };
-        thread::sleep(Duration::from_millis(500));
-        if let Some(status) = child.try_wait()? {
-            if restore_managed {
-                let _ = helper_action("managed");
-            }
+        helper_action(observer_action)?;
+        let timeout = duration.saturating_add(Duration::from_secs(3));
+        owner.child = Some(
+            Command::new("dumpcap")
+                // libpcap's `wlan host` capture filter drops the target's HT40
+                // A-MPDU records on this radiotap interface. Capture the bounded
+                // channel view and apply the exact target-MAC display filter in
+                // `parse_capture` instead.
+                .args(["-q", "-i", MONITOR_INTERFACE, "-s", "512"])
+                .args(["-a", &format!("duration:{}", timeout.as_secs().max(1))])
+                .arg("-w")
+                .arg(&owner.output)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn_owned()?
+                .with_timeout(timeout.saturating_add(Duration::from_secs(10))),
+        );
+        oer_process::sleep(Duration::from_millis(500))?;
+        if let Some(status) = owner
+            .child
+            .as_mut()
+            .expect("capture owns its child")
+            .try_wait()?
+        {
             return Err(format!(
                 "independent laptop capture exited before the session started: {status}"
             )
             .into());
         }
-        Ok(Self {
-            output: capture_path,
-            target_mac,
-            child: Some(child),
-            owns_monitor: restore_managed,
-        })
+        Ok(owner)
     }
 
     pub(crate) fn finish(mut self) -> Result<LocalAirMonitorEvidence> {
@@ -213,7 +210,7 @@ fn resolve_observer_action(config: &OpenWrtConfig) -> Result<&'static str> {
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
         .arg(format!("iw dev {} info", config.wireless_interface))
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot query OpenWrt channel for independent monitor: {}",
@@ -248,25 +245,24 @@ fn resolve_observer_action_from_iw(info: &str) -> Result<&'static str> {
 
 impl Drop for LocalAirMonitorCapture {
     fn drop(&mut self) {
-        if let Some(child) = &mut self.child {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        let _ = self.restore_managed();
+        oer_process::cleanup(|| {
+            if let Some(child) = &mut self.child {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            crate::fixture::cleanup::record("restore monitor interface", || self.restore_managed());
+        });
     }
 }
 
-pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
-    if !config.independent_laptop_monitor {
-        return Ok(());
-    }
+pub(crate) fn doctor() -> Result<()> {
     crate::fixture::network_helper::doctor()?;
     for tool in ["dumpcap", "tshark"] {
         let status = Command::new(tool)
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()?;
+            .supervised_status()?;
         if !status.success() {
             return Err(format!("`{tool}` is required for independent air evidence").into());
         }
@@ -296,7 +292,7 @@ fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidenc
             "-e",
             "wlan.fc.retry",
         ])
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot decode independent laptop capture: {}",
@@ -369,7 +365,7 @@ fn parse_target_egress_capture(
             "-e",
             "wlan.fc.subtype",
         ])
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot decode target-egress air timing: {}",
@@ -519,7 +515,7 @@ fn parse_block_ack_capture(
             "-e",
             "wlan.ba.bm",
         ])
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot decode independent BlockAck capture: {}",
@@ -635,7 +631,7 @@ fn parse_retry_flag(value: &str) -> bool {
 fn helper_action(action: &str) -> Result<()> {
     let status = Command::new("sudo")
         .args(["-n", crate::fixture::network_helper::PATH, action])
-        .status()?;
+        .supervised_status()?;
     if !status.success() {
         return Err(format!("laptop radio helper `{action}` failed with {status}").into());
     }

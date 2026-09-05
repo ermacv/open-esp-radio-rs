@@ -2234,8 +2234,19 @@ dependencies = [
 name = "oer-firmware"
 version = "0.1.0"
 dependencies = [
+ "fs2",
  "open-esp-radio-memory-report",
+ "serialport",
  "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "oer-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "signal-hook",
  "tempfile",
 ]
 
@@ -2248,11 +2259,11 @@ dependencies = [
  "libc",
  "object 0.39.1",
  "oer-firmware",
+ "oer-process",
  "open-esp-radio-memory-report",
  "rustc-demangle",
  "serde_json",
  "serialport",
- "signal-hook",
  "tempfile",
  "toml",
 ]
@@ -2666,6 +2677,7 @@ dependencies = [
  "libc",
  "object 0.39.1",
  "oer-firmware",
+ "oer-process",
  "open-esp-radio-hil-protocol",
  "open-esp-radio-ieee80211",
  "open-esp-radio-memory-report",

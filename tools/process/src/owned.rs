@@ -5,12 +5,17 @@
 
 use crate::Result;
 use std::{
-    process::{ChildStderr, ChildStdout, Command, ExitStatus},
+    process::{ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Output},
     time::{Duration, Instant},
 };
 
 pub struct Child {
     child: std::process::Child,
+    pub stdin: Option<ChildStdin>,
+    pub stdout: Option<ChildStdout>,
+    pub stderr: Option<ChildStderr>,
+    interruptible: bool,
+    deadline: Option<Instant>,
     group: i32,
     finished: bool,
     shutdown_grace: Duration,
@@ -23,19 +28,20 @@ impl Child {
         command: &mut Command,
         shutdown_grace: Duration,
     ) -> Result<Self> {
-        if super::cancellation_requested() {
-            return Err("command cancelled before start".into());
-        }
+        super::check_cancelled()?;
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
-            let child = command
-                .spawn()
-                .map_err(|error| format!("cannot start {command:?}: {error}"))?;
+            let mut child = command.spawn()?;
             let group = i32::try_from(child.id()).expect("Unix PID fits pid_t");
             Ok(Self {
+                stdin: child.stdin.take(),
+                stdout: child.stdout.take(),
+                stderr: child.stderr.take(),
                 child,
+                interruptible: !super::cancellation::in_cleanup(),
+                deadline: super::cancellation::cleanup_deadline(),
                 group,
                 finished: false,
                 shutdown_grace,
@@ -44,20 +50,42 @@ impl Child {
         #[cfg(not(unix))]
         {
             let _ = command;
-            Err("xtask process-group ownership is unsupported on this host".into())
+            Err("host process-group ownership is unsupported on this host".into())
         }
     }
+    /// Bound the remaining lifetime, including work before the caller waits.
+    /// A cleanup scope's earlier deadline always takes precedence.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.deadline = self
+            .deadline
+            .into_iter()
+            .chain(Some(Instant::now() + timeout))
+            .min();
+        self
+    }
     pub fn take_stdout(&mut self) -> Option<ChildStdout> {
-        self.child.stdout.take()
+        self.stdout.take()
     }
     pub fn take_stderr(&mut self) -> Option<ChildStderr> {
-        self.child.stderr.take()
+        self.stderr.take()
     }
     pub fn wait(&mut self) -> Result<ExitStatus> {
+        self.wait_timeout(None)
+    }
+    pub fn wait_timeout(&mut self, timeout: Option<Duration>) -> Result<ExitStatus> {
+        let deadline = timeout
+            .map(|timeout| Instant::now() + timeout)
+            .into_iter()
+            .chain(self.deadline)
+            .min();
         loop {
-            if super::cancellation_requested() {
+            if self.interruptible && super::cancellation_requested() {
                 self.cleanup();
-                return Err("command cancelled by signal".into());
+                return Err(super::Cancelled.into());
+            }
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                self.cleanup();
+                return Err(DeadlineExceeded.into());
             }
             match self.child.try_wait() {
                 Ok(Some(status)) => {
@@ -71,6 +99,19 @@ impl Child {
                 }
             }
         }
+    }
+    pub fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+        self.child.try_wait()
+    }
+    pub fn kill(&mut self) -> std::io::Result<()> {
+        self.cleanup();
+        Ok(())
+    }
+    pub fn wait_with_output(self) -> Result<Output> {
+        self.wait_with_output_timeout(None)
+    }
+    pub fn wait_with_output_timeout(self, timeout: Option<Duration>) -> Result<Output> {
+        super::collect_output(self, timeout)
     }
     #[cfg(unix)]
     fn signal(&self, signal: i32) {
@@ -108,3 +149,12 @@ impl Drop for Child {
         self.cleanup();
     }
 }
+
+#[derive(Debug)]
+pub struct DeadlineExceeded;
+impl std::fmt::Display for DeadlineExceeded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("subprocess exceeded its deadline")
+    }
+}
+impl std::error::Error for DeadlineExceeded {}

@@ -7,6 +7,8 @@ Public commands:
 
 ```console
 cargo hil doctor
+cargo hil doctor timebase
+cargo hil plan udp-rx-ht40-ceiling
 cargo hil scenario list
 cargo hil scenario validate [id]
 cargo hil image build|flash <image-class>
@@ -21,9 +23,39 @@ cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all [--tag qualification]
 ```
 
+`plan [scenario] [--tag ...]` resolves requirements from the catalog offline;
+it does not read `hil/local.toml`, inspect tools or contact hardware. `doctor`
+accepts the same selection and reports all independent environment checks as
+JSON, returning nonzero if any fail. With no selection it checks the whole
+catalog. It checks build/flash tools, scenario preconditions, required fixture
+services and current cooperative resource availability; it neither flashes nor
+resets the target. Availability is an observation, not a reservation for a
+later run. Optional monitor tools are checked only when selected evidence uses
+them. AP workloads currently include an initial STA connection, so their
+requirements include the station network.
+
+`device status` attaches to the flashed runtime without reset, provisioning,
+initialization or result acknowledgement. The report includes the boot ID,
+capabilities, operation state, retained session identity, stack snapshot when
+available, and cumulative target link counters. A null stack means the target
+cannot safely snapshot it in its current state. Existing link errors are
+reported as observations. Every invocation gets its own directory under
+`target/hil/esp32s31/device-status/`, containing `status.json` and UART evidence,
+including on failure. Firmware must implement read-only boot discovery; there
+is no reset fallback. Serial-driver line behavior remains platform-dependent;
+the runner issues no reset-line sequence when attaching.
+
 Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain workload,
 isolation and acceptance criteria, never serial paths or secrets. Machine-local
 device, STA/AP and OpenWrt values live only in mode-0600 `hil/local.toml`.
+`LabConfig` is immutable. Each workload receives its own execution context:
+borrowed laboratory inputs and the selected scenario's initialization settings.
+Experiment policies are never written back to the shared laboratory object.
+The CLI grammar lives in `runner/src/cli.rs`. Scenario dispatch passes typed
+workload configurations directly; workloads neither rebuild CLI arguments nor
+parse private command-line dialects. Serial ownership comes from the execution
+context, independently of traffic configuration. Workload limits and acceptance
+policy remain enforced when constructing a running workload.
 
 By default, `run` builds and flashes the scenario's exact image before
 executing it. An explicit `--firmware-from` selects exact artifact replay
@@ -71,11 +103,17 @@ scenarios/<id>/
 └── repetition-NNN/
     ├── result.json
     ├── host-route.json
+    ├── cleanup.json
+    ├── measurements.json
     └── workload evidence
 ```
 
 `lab-provenance.json` is collected while the fixture lock is held and before a
-firmware build or flash. It deliberately omits both network credentials and
+firmware build or flash. Its explicit `system` scope collects OS facts and sysfs
+interface identity without calling `ip`, `iw` or SSH; network fields are not
+observed and the fixture is `not-used`. Network workloads use `network` scope.
+Offline verification requires a matching archived plan and scenario snapshots
+before accepting system-only provenance. It deliberately omits both network credentials and
 transport endpoints. For a managed OpenWrt fixture it records the actual
 release/kernel/boot identity, driver and firmware, country, TX power, channel,
 frequency, width, associated-station count and concurrent VIFs. Host interface
@@ -88,10 +126,108 @@ Repetition records index every evidence attachment with its relative path,
 media type, byte length and SHA-256 digest. Schema 2 repetition records also
 carry typed measurements: a stable name, integer value, unit and, where the
 scenario has a gate, its comparator, threshold and independently computed
-verdict. ICMP latency/loss uses these typed measurements; rendering does not
-parse Markdown reports to decide scenario outcomes.
+verdict. Every workload family receives one repetition-owned recorder through
+its execution context. Captures project decoded protocol values into numeric
+observations and save a `measurements.json` beside `protocol.jsonl`, including
+on error or unwinding. Repetition results include the same observations.
+Names distinguish boot/capture paths, sessions, requests and individual flows;
+`ReplayResult` cannot duplicate or replace the first traffic observation.
+Transport rates use the target's reported elapsed time; zero elapsed time
+produces no rate. Link counters are explicitly named as lifetime observations.
+The projection includes transport, link/stack, timer, scan, monitor, AP peer
+and ED polling measurements; other typed facts remain in `protocol.jsonl`.
+
+Workload-owned ICMP loss/latency, station UDP RX/TX and TCP rate measurements
+also expose their existing acceptance floors. The UDP RX target gate retains
+its integer kbit/s resolution; the host offer gate retains bit/s resolution.
+These are the resolved predicates, not new criteria. Target observations have
+no implicit verdict, and numerical observations alone do not qualify a radio
+feature. Broken or interrupted repetitions can retain failed measurements;
+a passed repetition cannot. Rendering never parses Markdown to decide an
+outcome. Host ICMP and TCP measurements are recorded before UART finalization,
+so a later link failure does not discard completed host observations.
+The HTML run report groups measurements by repetition in expandable sections;
+the history page filters measurement trends by scenario or metric name.
+
+The context owns the shared capture lifecycle: cancellation check, output-scope
+validation, reset, observation collection and finalization. Bounded control
+and probe operations use `with_capture`; concurrent traffic owners can keep an
+explicit capture handle. Both paths retain primary and teardown errors, and
+ordinary unwinding saves partial observations. Concrete fixtures still own
+restoration of their AP/client/monitor state.
+
+SIGINT and SIGTERM cancel protocol waits, paced traffic and supervised host
+commands. The active repetition is saved as `interrupted`; execution does not
+start another repetition or fabricate results for unexecuted scenarios. The
+manifest and integrity index retain the partial run, and stdout reports its
+location. An interrupted run does not require a completed suite.
+
+Fixture owners restore partially configured resources on errors and cancellation.
+`cleanup.json` records restoration attempts, elapsed time and failures separately
+from the primary workload failure. Restoration runs within a bounded cleanup
+scope (30 seconds, shared by nested operations). A cleanup failure alone makes
+the repetition `broken`; it cannot turn a failed workload into a pass.
+OpenWrt client preparation installs host recovery before restarting wireless;
+the remote restart also restores wireless on ordinary shell exit or signals.
+TX-monitor ownership starts before spawning SSH or waiting for readiness. A
+private remote directory identifies that capture's resources, so a rejected
+pre-existing monitor is left intact. Remote traps remove the owned interface;
+host cleanup retries removal and deletes the capture directory, with failures
+recorded in `cleanup.json`. Loss of SSH connectivity can prevent restoration;
+the runner reports that failure rather than claiming the fixture was restored.
+Wireless preparation and TX-monitor process failures carry a typed fixture
+error and produce `broken/infrastructure`. A radio configuration mismatch
+reports the required channel/width and the observed channel line without
+including network credentials. These failures do not change scenario criteria.
+
+`oer-process` owns local child process groups, drains captured stdout/stderr
+concurrently and stops descendants on cancellation, deadlines or owner drop.
+Routine commands have a 120-second deadline; image commands allow 30 minutes;
+packet captures use their configured duration plus shutdown allowance. Remote
+process lifetimes additionally depend on the OpenWrt scripts' timeouts and traps.
+
+HIL cell leases and serial-device leases live in the user's host cache, outside
+individual checkouts. Serial leases are shared with `cargo xtask build firmware <example> --flash`
+and use USB identity when available, otherwise the canonical device path.
+A run additionally leases every required local wiphy and the managed OpenWrt
+host boot. Local client/monitor interfaces sharing a radio conflict even across
+cell IDs. The remote boot identity makes different SSH aliases and radio
+interfaces on one OpenWrt host conflict; the whole host is reserved because
+client setup also changes firewall state. A remote reboot invalidates that
+fixture epoch. These are cooperative locks between runners on this host and
+user account, not distributed reservations across separate laboratory hosts.
+External unmanaged APs have no discovered physical identity and rely on a
+consistent cell ID. Build/flash-only commands and device inspection acquire no
+AP or laptop-radio resources.
+
 A session unwound by a runner error is marked interrupted in the manifest.
-Reconnect stores UART/protocol pairs per boot. The command emits one completion
+Each UART capture owns its output directory before opening or resetting the
+serial device. `uart.bin` is the exact received stream, written as bytes arrive;
+`uart.log` is its lossy UTF-8 view for diagnostics. `protocol.jsonl` contains
+received target events, decoder counters, a `capture-end` record with the first
+typed link failure, and the final target-health query when available. Host
+commands and host error messages are never inserted into the received stream.
+
+Serial open, reset, read, write and worker failures wake protocol waits. Decode
+errors, receive overflow, sequence gaps and an unexpected new boot invalidate
+the capture. A later boot cannot erase an earlier failure: each intentional
+reset starts a new capture. Optional event waits distinguish a healthy timeout
+from a broken link. A traffic result has one collection deadline; target
+session and Wi-Fi operation failures terminate their corresponding waits.
+Before acknowledging a completed traffic session, the host requests its
+retained result again and requires identical evidence and completion digest.
+These protocol exchanges run after the measured traffic interval.
+
+Host I/O and typed link failures produce `broken/infrastructure`; scenario
+assertions produce `failed/scenario`. Operation context preserves the typed
+cause. Capture finalization saves partial evidence before returning a link
+failure; when both the scenario and finalization fail, the report retains both
+messages and classifies the primary cause. Ordinary early returns also save
+the decoded transcript through the capture's destructor. Abrupt process
+termination can leave only the incrementally written raw bytes; it does not
+run Rust destructors or seal a completed run.
+
+Reconnect stores captures per boot. The command emits one completion
 JSON object on stdout; diagnostics, progress and inherited child-process output
 belong on stderr.
 
@@ -104,6 +240,15 @@ flakiness and the current consecutive non-passed count. Measurement series are
 kept separate by scenario, name, unit and threshold contract, and expose
 minimum/latest/maximum values plus failed-verdict counts. A malformed or
 inconsistent run bundle makes rebuilding fail closed.
+
+Publication of a new run directory and history snapshots share a short-lived
+index lock. History writers hold it through snapshot and publication, so a
+slower writer cannot overwrite a newer snapshot. Firmware builds and hardware
+workloads run outside that lock. A malformed unrelated bundle still makes
+`report rebuild` fail explicitly. It cannot revoke a completed run: the run's
+completion JSON retains its outcome and artifact paths, sets `history_report`
+and `history_html` to null, and reports `history_failure`. Retrying the derived
+view does not change the sealed bundle.
 
 `cargo hil report verify [run-id]` performs a read-only offline integrity
 check. With no run ID it checks every bundle. It validates manifest/suite

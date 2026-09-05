@@ -64,7 +64,7 @@ implementation = "complete"
 host = "covered"
 async = "not-applicable"
 vendor-anchors = [
-  "driver/adapters/esp-hal/esp32s31-radio-platform/README.md",
+  "driver/adapters/esp-hal/esp32s31/radio/README.md",
 ]
 async-not-applicable = "no-asynchronous-runtime-boundary"
 gaps = [

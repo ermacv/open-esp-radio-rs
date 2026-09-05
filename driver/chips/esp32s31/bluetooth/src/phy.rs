@@ -14,8 +14,8 @@ use open_esp_radio_esp32s31_phy::{
     run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_register,
 };
 use open_esp_radio_esp32s31_phy::{
-    phy_client::{PhyClientAcquireError, PhyClientAcquireOrdering, PhyPllTrackClock},
-    phy_param_tracking::PhyParamTrackRequest,
+    state::client::{PhyClientAcquireError, PhyClientAcquireOrdering, PhyPllTrackClock},
+    tracking::parameters::PhyParamTrackRequest,
 };
 
 use crate::{

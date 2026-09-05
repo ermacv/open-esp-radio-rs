@@ -18,7 +18,7 @@ cargo blobray project publish \
 
 This materializes the SVD from the project model, validates the reviewed
 `registers/api.toml` transaction pack, and generates the internal
-`driver/chips/esp32s31/pac-raw/src/lib.rs`, plus the reviewed public domains in
+`driver/chips/esp32s31/pac/raw/src/lib.rs`, plus the reviewed public domains in
 `driver/chips/esp32s31/pac/src/generated.rs`. Blobray `project publish
 --check` verifies the SVD, raw PAC, closed-PAC module and binding index and
 rejects invalid or stale reviewed API references. A direct edit of a generated

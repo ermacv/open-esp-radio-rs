@@ -33,14 +33,14 @@ use crate::{
     connectable_advertising::{
         BluetoothLegacyConnectableAdvertisingSetError, prepare_legacy_connectable_advertising_set,
     },
-    controller_start::connectable_advertising::{
+    controller::boot::connectable_advertising::{
         BluetoothLegacyConnectableAdvertisingControllerFailStopCause,
         BluetoothLegacyConnectableAdvertisingControllerPreparationError,
         BluetoothLegacyConnectableAdvertisingControllerPreparationFailStop,
         BluetoothLegacyConnectableAdvertisingControllerPreparationPending,
         BluetoothLegacyConnectableAdvertisingRollbackInvariantKind,
     },
-    controller_start::{
+    controller::boot::{
         BluetoothLegacyConnectableAdvertisingSchedulerFailStop,
         BluetoothLegacyConnectableAdvertisingSchedulerFailStopCause,
         BluetoothLegacyConnectableAdvertisingSchedulerStartRetry,
@@ -54,7 +54,7 @@ use crate::{
         BluetoothLegacyConnectableAdvertisingActiveResponsePublication,
         BluetoothLegacyConnectableAdvertisingHciActiveSession,
     },
-    scheduler::{
+    scheduler::core::{
         BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared,
         BluetoothSingleItemSchedulerRunning,
     },
@@ -901,13 +901,13 @@ where
             }
             BluetoothLegacyConnectableAdvertisingControllerPreparationError::Event(error) => {
                 match error {
-                    crate::scheduler::BluetoothLegacyConnectableAdvertisingEventPreparationError::Timeline(error) => {
+                    crate::scheduler::core::BluetoothLegacyConnectableAdvertisingEventPreparationError::Timeline(error) => {
                         BluetoothLegacyConnectableAdvertisingFirstRunnerRecoveredError::Timeline(error)
                     }
-                    crate::scheduler::BluetoothLegacyConnectableAdvertisingEventPreparationError::Sequence(error) => {
+                    crate::scheduler::core::BluetoothLegacyConnectableAdvertisingEventPreparationError::Sequence(error) => {
                         BluetoothLegacyConnectableAdvertisingFirstRunnerRecoveredError::Sequence(error)
                     }
-                    crate::scheduler::BluetoothLegacyConnectableAdvertisingEventPreparationError::EventFields(error) => {
+                    crate::scheduler::core::BluetoothLegacyConnectableAdvertisingEventPreparationError::EventFields(error) => {
                         BluetoothLegacyConnectableAdvertisingFirstRunnerRecoveredError::EventFields(error)
                     }
                 }

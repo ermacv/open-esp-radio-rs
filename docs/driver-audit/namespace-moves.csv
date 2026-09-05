@@ -1,0 +1,173 @@
+before,after,operation
+driver/adapters/embassy/esp32s31/bluetooth/src/controller_command_task.rs,driver/adapters/embassy/esp32s31/bluetooth/src/controller/dispatch.rs,extract controller responsibility
+driver/adapters/embassy/esp32s31/bluetooth/src/controller_command_task.rs,driver/adapters/embassy/esp32s31/bluetooth/src/controller/owner.rs,extract controller responsibility
+driver/adapters/embassy/esp32s31/bluetooth/src/controller_command_task.rs,driver/adapters/embassy/esp32s31/bluetooth/src/controller/reset.rs,extract controller responsibility
+driver/adapters/embassy/esp32s31/bluetooth/src/controller_command_task.rs,driver/adapters/embassy/esp32s31/bluetooth/src/controller/response.rs,extract controller responsibility
+driver/adapters/embassy/esp32s31/bluetooth/src/controller_time_recheck.rs,driver/adapters/embassy/esp32s31/bluetooth/src/controller/time_recheck.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/dtm_active.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/dtm/active.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/dtm_first.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/dtm/first.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/dtm_session_task.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/dtm/task.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/dtm_stopping.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/dtm/stopping.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/legacy_advertising_active.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/advertising/active.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/legacy_advertising_first.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/advertising/first.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/legacy_connectable_advertising_active.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/advertising/connectable/active.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/legacy_connectable_advertising_first.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/advertising/connectable/first.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/legacy_connectable_advertising_recurring.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/advertising/connectable/recurring.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/legacy_connectable_peripheral_first.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/peripheral/first.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/modem_timer_task.rs,driver/adapters/embassy/esp32s31/bluetooth/src/controller/modem_timer.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/passive_scanning_active.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/scan/active.rs,move module and descendants
+driver/adapters/embassy/esp32s31/bluetooth/src/passive_scanning_first.rs,driver/adapters/embassy/esp32s31/bluetooth/src/session/scan/first.rs,move module and descendants
+driver/chips/esp32s31/bluetooth/src/controller_hal.rs,driver/chips/esp32s31/bluetooth/src/controller/hal.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start.rs,driver/chips/esp32s31/bluetooth/src/controller/boot.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/connectable_advertising.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/connectable_advertising.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/peripheral_connection.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/peripheral_connection.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/scheduler_service.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/scheduler_service.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/scheduler_service/connectable_advertising.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/scheduler_service/connectable_advertising.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/scheduler_service/connection.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/scheduler_service/connection.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/scheduler_service/dtm.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/scheduler_service/dtm.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/scheduler_service/single_item.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/scheduler_service/single_item.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/tests.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/timed_preparation.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/timed_preparation.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_start/timed_preparation/tests.rs,driver/chips/esp32s31/bluetooth/src/controller/boot/timed_preparation/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_time.rs,driver/chips/esp32s31/bluetooth/src/controller/time.rs,move source file
+driver/chips/esp32s31/bluetooth/src/controller_time/tests.rs,driver/chips/esp32s31/bluetooth/src/controller/time/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/interrupt.rs,driver/chips/esp32s31/bluetooth/src/interrupt/route.rs,move source file
+driver/chips/esp32s31/bluetooth/src/interrupt/tests.rs,driver/chips/esp32s31/bluetooth/src/interrupt/route/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs,driver/chips/esp32s31/bluetooth/src/interrupt/classifier.rs,move source file
+driver/chips/esp32s31/bluetooth/src/interrupt_classifier/tests.rs,driver/chips/esp32s31/bluetooth/src/interrupt/classifier/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs,driver/chips/esp32s31/bluetooth/src/interrupt/wake.rs,move source file
+driver/chips/esp32s31/bluetooth/src/interrupt_wake/tests.rs,driver/chips/esp32s31/bluetooth/src/interrupt/wake/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/nrt_interrupt.rs,driver/chips/esp32s31/bluetooth/src/interrupt/nrt.rs,move source file
+driver/chips/esp32s31/bluetooth/src/nrt_interrupt/tests.rs,driver/chips/esp32s31/bluetooth/src/interrupt/nrt/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs,driver/chips/esp32s31/bluetooth/src/interrupt/primary.rs,move source file
+driver/chips/esp32s31/bluetooth/src/primary_interrupt/tests.rs,driver/chips/esp32s31/bluetooth/src/interrupt/primary/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/connectable_advertising.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/connectable_advertising.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/connectable_advertising/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/connectable_advertising/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/dtm.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/dtm.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/dtm/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/dtm/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/peripheral_connection.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/peripheral_connection.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/peripheral_connection/recurring.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/peripheral_connection/recurring.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/peripheral_connection/recurring/transaction.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/peripheral_connection/recurring/transaction.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/peripheral_connection/recurring/transaction/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/peripheral_connection/recurring/transaction/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/single_item.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/single_item.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/core/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_config.rs,driver/chips/esp32s31/bluetooth/src/scheduler/config.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_finished_lists.rs,driver/chips/esp32s31/bluetooth/src/scheduler/finished_lists.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_finished_lists/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/finished_lists/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_insertion.rs,driver/chips/esp32s31/bluetooth/src/scheduler/insertion.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_insertion/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/insertion/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs,driver/chips/esp32s31/bluetooth/src/scheduler/lock_modify.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/lock_modify/tests.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_time.rs,driver/chips/esp32s31/bluetooth/src/scheduler/time.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_timeline.rs,driver/chips/esp32s31/bluetooth/src/scheduler/timeline.rs,move source file
+driver/chips/esp32s31/bluetooth/src/scheduler_timeline/tests.rs,driver/chips/esp32s31/bluetooth/src/scheduler/timeline/tests.rs,move source file
+driver/chips/esp32s31/hal/src/analog_i2c.rs,driver/chips/esp32s31/hal/src/phy/analog_i2c.rs,move module and descendants
+driver/chips/esp32s31/hal/src/channel.rs,driver/chips/esp32s31/hal/src/wifi/channel.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154.rs,driver/chips/esp32s31/hal/src/ieee802154/backend.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154_ed_event_probe.rs,driver/chips/esp32s31/hal/src/ieee802154/validation/ed_event.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154_event_status_probe.rs,driver/chips/esp32s31/hal/src/ieee802154/validation/event_status.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154_lifecycle.rs,driver/chips/esp32s31/hal/src/ieee802154/lifecycle.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154_operation.rs,driver/chips/esp32s31/hal/src/ieee802154/operation.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154_policy.rs,driver/chips/esp32s31/hal/src/ieee802154/policy.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154_role.rs,driver/chips/esp32s31/hal/src/ieee802154/role.rs,move module and descendants
+driver/chips/esp32s31/hal/src/ieee802154_tx_power.rs,driver/chips/esp32s31/hal/src/ieee802154/tx_power.rs,move module and descendants
+driver/chips/esp32s31/hal/src/lib.rs,driver/chips/esp32s31/hal/src/owner.rs,extract ownership definitions
+driver/chips/esp32s31/hal/src/modem_clock_planner.rs,driver/chips/esp32s31/hal/src/power/clock.rs,move module and descendants
+driver/chips/esp32s31/hal/src/pbus.rs,driver/chips/esp32s31/hal/src/phy/pbus.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_agc.rs,driver/chips/esp32s31/hal/src/phy/agc.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_baseband.rs,driver/chips/esp32s31/hal/src/phy/baseband.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_clock.rs,driver/chips/esp32s31/hal/src/phy/clock.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_frequency.rs,driver/chips/esp32s31/hal/src/phy/frequency.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_i2c.rs,driver/chips/esp32s31/hal/src/phy/i2c.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_iq_estimator.rs,driver/chips/esp32s31/hal/src/phy/iq_estimator.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_memory.rs,driver/chips/esp32s31/hal/src/phy/memory.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_power_detector.rs,driver/chips/esp32s31/hal/src/phy/power_detector.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_prelude.rs,driver/chips/esp32s31/hal/src/phy/prelude.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_rx_dco.rs,driver/chips/esp32s31/hal/src/phy/rx_dco.rs,move module and descendants
+driver/chips/esp32s31/hal/src/phy_temperature.rs,driver/chips/esp32s31/hal/src/phy/temperature.rs,move module and descendants
+driver/chips/esp32s31/hal/src/power_detector_platform.rs,driver/chips/esp32s31/hal/src/phy/power_detector/platform.rs,move module and descendants
+driver/chips/esp32s31/hal/src/radio_arena.rs,driver/chips/esp32s31/hal/src/wifi/arena.rs,move module and descendants
+driver/chips/esp32s31/hal/src/wifi_bb.rs,driver/chips/esp32s31/hal/src/wifi/baseband.rs,move module and descendants
+driver/chips/esp32s31/hal/src/wifi_mac.rs,driver/chips/esp32s31/hal/src/wifi/mac.rs,move module and descendants
+driver/chips/esp32s31/pac/src/agc.rs,driver/chips/esp32s31/pac/src/phy/agc.rs,move module and descendants
+driver/chips/esp32s31/pac/src/agc_runtime.rs,driver/chips/esp32s31/pac/src/phy/agc/runtime.rs,move module and descendants
+driver/chips/esp32s31/pac/src/baseband.rs,driver/chips/esp32s31/pac/src/phy/baseband.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_baseband.rs,driver/chips/esp32s31/pac/src/bluetooth/baseband.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_controller_address.rs,driver/chips/esp32s31/pac/src/bluetooth/controller/address.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs,driver/chips/esp32s31/pac/src/bluetooth/controller/init.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_controller_time.rs,driver/chips/esp32s31/pac/src/bluetooth/controller/time.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_direction_finding.rs,driver/chips/esp32s31/pac/src/bluetooth/direction_finding.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs,driver/chips/esp32s31/pac/src/bluetooth/interrupt.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs,driver/chips/esp32s31/pac/src/bluetooth/memory_lists.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs,driver/chips/esp32s31/pac/src/bluetooth/modem_timer.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_phy_init.rs,driver/chips/esp32s31/pac/src/bluetooth/phy.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_scan.rs,driver/chips/esp32s31/pac/src/bluetooth/scan.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_scheduler.rs,driver/chips/esp32s31/pac/src/bluetooth/scheduler.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_scheduler_insertion.rs,driver/chips/esp32s31/pac/src/bluetooth/scheduler/insertion.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs,driver/chips/esp32s31/pac/src/bluetooth/scheduler/lock_modify.rs,move module and descendants
+driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs,driver/chips/esp32s31/pac/src/bluetooth/scheduler/runtime.rs,move module and descendants
+driver/chips/esp32s31/pac/src/cfr.rs,driver/chips/esp32s31/pac/src/phy/cfr.rs,move module and descendants
+driver/chips/esp32s31/pac/src/clock.rs,driver/chips/esp32s31/pac/src/phy/clock.rs,move module and descendants
+driver/chips/esp32s31/pac/src/coex.rs,driver/chips/esp32s31/pac/src/modem/coex.rs,move module and descendants
+driver/chips/esp32s31/pac/src/frequency.rs,driver/chips/esp32s31/pac/src/phy/frequency.rs,move module and descendants
+driver/chips/esp32s31/pac/src/ieee802154.rs,driver/chips/esp32s31/pac/src/ieee802154/mac.rs,move module and descendants
+driver/chips/esp32s31/pac/src/ieee802154_timing.rs,driver/chips/esp32s31/pac/src/ieee802154/timing.rs,move module and descendants
+driver/chips/esp32s31/pac/src/iq_estimator.rs,driver/chips/esp32s31/pac/src/phy/iq_estimator.rs,move module and descendants
+driver/chips/esp32s31/pac/src/lib.rs,driver/chips/esp32s31/pac/src/ownership.rs,extract ownership definitions
+driver/chips/esp32s31/pac/src/lp_phy_aux.rs,driver/chips/esp32s31/pac/src/phy/low_power.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_antenna_init.rs,driver/chips/esp32s31/pac/src/wifi/mac/antenna_init.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_block_ack.rs,driver/chips/esp32s31/pac/src/wifi/mac/block_ack.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_channel.rs,driver/chips/esp32s31/pac/src/wifi/mac/channel.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_coex_init.rs,driver/chips/esp32s31/pac/src/wifi/mac/coex/init.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_coex_runtime.rs,driver/chips/esp32s31/pac/src/wifi/mac/coex/runtime.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_cold_start.rs,driver/chips/esp32s31/pac/src/wifi/mac/cold_start.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_crypto.rs,driver/chips/esp32s31/pac/src/wifi/mac/crypto.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_enable.rs,driver/chips/esp32s31/pac/src/wifi/mac/enable.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_hal_init_tail.rs,driver/chips/esp32s31/pac/src/wifi/mac/hal_init_tail.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_he_beamforming.rs,driver/chips/esp32s31/pac/src/wifi/mac/he/beamforming.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_he_init.rs,driver/chips/esp32s31/pac/src/wifi/mac/he/init.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_he_init_suffix.rs,driver/chips/esp32s31/pac/src/wifi/mac/he/init_suffix.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_he_ofdma.rs,driver/chips/esp32s31/pac/src/wifi/mac/he/ofdma.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_he_peer.rs,driver/chips/esp32s31/pac/src/wifi/mac/he/peer.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_he_tb.rs,driver/chips/esp32s31/pac/src/wifi/mac/he/tb.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_interface_address.rs,driver/chips/esp32s31/pac/src/wifi/mac/interface_address.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_interrupt.rs,driver/chips/esp32s31/pac/src/wifi/mac/interrupt.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_last_rx_buffer.rs,driver/chips/esp32s31/pac/src/wifi/mac/last_rx_buffer.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_modem_wakeup.rs,driver/chips/esp32s31/pac/src/wifi/mac/modem_wakeup.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_rx_dma.rs,driver/chips/esp32s31/pac/src/wifi/mac/rx/dma.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_rx_policy.rs,driver/chips/esp32s31/pac/src/wifi/mac/rx/policy.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_rx_statistics.rs,driver/chips/esp32s31/pac/src/wifi/mac/rx/statistics.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_sniffer.rs,driver/chips/esp32s31/pac/src/wifi/mac/sniffer.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_softap_tsf.rs,driver/chips/esp32s31/pac/src/wifi/mac/softap_tsf.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_tsf.rs,driver/chips/esp32s31/pac/src/wifi/mac/tsf.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_tx.rs,driver/chips/esp32s31/pac/src/wifi/mac/tx.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_tx_power_init.rs,driver/chips/esp32s31/pac/src/wifi/mac/tx/power_init.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_tx_queue.rs,driver/chips/esp32s31/pac/src/wifi/mac/tx/queue.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_tx_statistics.rs,driver/chips/esp32s31/pac/src/wifi/mac/tx/statistics.rs,move module and descendants
+driver/chips/esp32s31/pac/src/mac_txrx_init.rs,driver/chips/esp32s31/pac/src/wifi/mac/txrx_init.rs,move module and descendants
+driver/chips/esp32s31/pac/src/modem_lpcon_phy.rs,driver/chips/esp32s31/pac/src/modem/low_power_phy.rs,move module and descendants
+driver/chips/esp32s31/pac/src/modem_shared_clock.rs,driver/chips/esp32s31/pac/src/modem/shared_clock.rs,move module and descendants
+driver/chips/esp32s31/pac/src/modem_syscon.rs,driver/chips/esp32s31/pac/src/modem/syscon.rs,move module and descendants
+driver/chips/esp32s31/pac/src/pbus.rs,driver/chips/esp32s31/pac/src/phy/pbus.rs,move module and descendants
+driver/chips/esp32s31/pac/src/phy_i2c.rs,driver/chips/esp32s31/pac/src/phy/i2c.rs,move module and descendants
+driver/chips/esp32s31/pac/src/platform_clock_power.rs,driver/chips/esp32s31/pac/src/modem/platform.rs,move module and descendants
+driver/chips/esp32s31/pac/src/table_memory.rs,driver/chips/esp32s31/pac/src/phy/table_memory.rs,move module and descendants
+driver/chips/esp32s31/pac/src/validation_transactions.rs,driver/chips/esp32s31/pac/src/validation/transactions.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/low_rate.rs,driver/chips/esp32s31/wifi/mac/src/rate/low.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/rate_control.rs,driver/chips/esp32s31/wifi/mac/src/rate/control.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/rate_rx.rs,driver/chips/esp32s31/wifi/mac/src/rate/rx.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/rate_schedule.rs,driver/chips/esp32s31/wifi/mac/src/rate/schedule.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/rx_ampdu.rs,driver/chips/esp32s31/wifi/mac/src/rx/ampdu.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/rx_ampdu_hw.rs,driver/chips/esp32s31/wifi/mac/src/rx/hardware.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/rx_pool.rs,driver/chips/esp32s31/wifi/mac/src/rx/pool.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/tx_ampdu.rs,driver/chips/esp32s31/wifi/mac/src/tx/ampdu.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/tx_metadata.rs,driver/chips/esp32s31/wifi/mac/src/tx/metadata.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/tx_policy.rs,driver/chips/esp32s31/wifi/mac/src/tx/policy.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/tx_protection.rs,driver/chips/esp32s31/wifi/mac/src/tx/protection.rs,move module and descendants
+driver/chips/esp32s31/wifi/mac/src/tx_runtime.rs,driver/chips/esp32s31/wifi/mac/src/tx/runtime.rs,move module and descendants
+driver/radio/src/config.rs,driver/radio/src/wifi/config.rs,move module and descendants
+driver/radio/src/embassy_supervisor.rs,driver/radio/src/runtime/embassy.rs,move module and descendants
+driver/radio/src/requests.rs,driver/radio/src/wifi/requests.rs,move module and descendants
+driver/radio/src/supervisor.rs,driver/radio/src/wifi/supervisor.rs,move module and descendants
+driver/wifi/ieee80211/src/data.rs,driver/chips/esp32s31/wifi/mac/src/tx/metadata.rs,extract chip encoding; portable plan becomes typed

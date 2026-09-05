@@ -1,0 +1,65 @@
+use super::{
+    CommandBoundaryAction, CommandBoundaryClass, HardwareRunnerSchedule, ModemTimerTransitionClass,
+    modem_timer_requires_quarantine, reduce_command_boundary,
+};
+
+#[test]
+fn only_idle_completion_continues_and_retry_arms_a_gate() {
+    assert_eq!(
+        reduce_command_boundary(CommandBoundaryClass::Progress),
+        CommandBoundaryAction::Continue
+    );
+    assert_eq!(
+        reduce_command_boundary(CommandBoundaryClass::IdleRestored),
+        CommandBoundaryAction::Continue
+    );
+    assert_eq!(
+        reduce_command_boundary(CommandBoundaryClass::Retryable),
+        CommandBoundaryAction::GateRetry
+    );
+    assert_eq!(
+        reduce_command_boundary(CommandBoundaryClass::UnownedFinishedList),
+        CommandBoundaryAction::Quarantine
+    );
+    assert_eq!(
+        reduce_command_boundary(CommandBoundaryClass::Terminal),
+        CommandBoundaryAction::Quarantine
+    );
+}
+
+#[test]
+fn source_127_policy_keeps_only_the_empty_rearm_path_live() {
+    for class in [
+        ModemTimerTransitionClass::BeginNotReady,
+        ModemTimerTransitionClass::BeginStarted,
+        ModemTimerTransitionClass::StepRecheck,
+        ModemTimerTransitionClass::StepRearmPending,
+        ModemTimerTransitionClass::Rearmed,
+    ] {
+        assert!(!modem_timer_requires_quarantine(class));
+    }
+    for class in [
+        ModemTimerTransitionClass::BeginRejected,
+        ModemTimerTransitionClass::StepUnsupported,
+        ModemTimerTransitionClass::RearmRejected,
+    ] {
+        assert!(modem_timer_requires_quarantine(class));
+    }
+}
+
+#[test]
+fn retry_gate_survives_rotation_until_a_completed_recheck() {
+    let mut schedule = HardwareRunnerSchedule::new();
+    assert!(!schedule.retry_gate());
+    assert!(schedule.begin_iteration());
+    assert!(!schedule.begin_iteration());
+
+    schedule.arm_retry();
+    assert!(schedule.retry_gate());
+    assert!(schedule.begin_iteration());
+    assert!(schedule.retry_gate());
+
+    schedule.complete_recheck();
+    assert!(!schedule.retry_gate());
+    assert!(!schedule.begin_iteration());
+}

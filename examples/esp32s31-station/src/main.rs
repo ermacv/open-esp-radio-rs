@@ -32,7 +32,7 @@ use open_esp_radio::{
     Pmk, StaAssociationPreference, StaReconnectPolicy, StationRequest, StationScanChannels,
     StationScanPolicy, StationSecurity, WifiChannel, WifiMacAddress, WifiScanRequest, WifiSsid,
 };
-use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version};
+use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 

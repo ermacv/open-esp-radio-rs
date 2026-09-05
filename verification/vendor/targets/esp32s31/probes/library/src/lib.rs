@@ -68,13 +68,13 @@ pub extern "C" fn ets_delay_us(micros: u32) {
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_bt_index_to_bb(index: u32) -> u32 {
-    open_esp_radio_esp32s31_phy::phy_bluetooth::bluetooth_gain_index_to_baseband(index)
+    open_esp_radio_esp32s31_phy::calibration::bluetooth::bluetooth_gain_index_to_baseband(index)
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_bt_bb_to_index(baseband: u32) -> u32 {
-    open_esp_radio_esp32s31_phy::phy_bluetooth::bluetooth_baseband_to_gain_index(baseband)
+    open_esp_radio_esp32s31_phy::calibration::bluetooth::bluetooth_baseband_to_gain_index(baseband)
 }
 
 #[unsafe(no_mangle)]
@@ -523,10 +523,7 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_set_ppdu(
         },
     )
     .expect("verification HT parameters are in the reviewed PAC domain");
-    open_esp_radio_esp32s31_hal::validation::hal_mac_tx_set_ppdu(
-        parameters.queue as u8,
-        program,
-    )
+    open_esp_radio_esp32s31_hal::validation::hal_mac_tx_set_ppdu(parameters.queue as u8, program)
 }
 
 #[repr(C)]
@@ -1250,10 +1247,7 @@ pub extern "C" fn open_phy_trace_phy_set_rx_comp_new(registers: &mut RadioPhyReg
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(
-    input: u32,
-    registers: &mut RadioPhyRegisters,
-) {
+pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_tx_power_tracking(
         registers,
         input & 1 != 0,
@@ -1298,9 +1292,7 @@ pub extern "C" fn open_phy_trace_phy_config_hccfr(
     registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_hccfr_from_vendor_arguments(
-        registers,
-        enabled,
-        value,
+        registers, enabled, value,
     );
 }
 
@@ -1326,13 +1318,13 @@ pub extern "C" fn open_phy_trace_phy_force_iccfr(
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_pwdet_always_en() {
-    open_esp_radio_esp32s31_phy::phy_pwdet::phy_pwdet_always_en();
+    open_esp_radio_esp32s31_phy::tx::power_detector::phy_pwdet_always_en();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_pwdet_onetime_en() {
-    open_esp_radio_esp32s31_phy::phy_pwdet::phy_pwdet_onetime_en();
+    open_esp_radio_esp32s31_phy::tx::power_detector::phy_pwdet_onetime_en();
 }
 
 #[unsafe(no_mangle)]
@@ -1343,7 +1335,7 @@ pub extern "C" fn open_phy_trace_phy_11p_set(
     output: &mut CanonicalDot11pState,
 ) {
     let initial = *output;
-    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
+    let mut state = open_esp_radio_esp32s31_phy::state::PhyState::default();
     state.set_dot11p_configuration(initial.enabled, initial.configuration);
     state.set_dot11p_configuration(enabled as u8, configuration as u8);
     let projected = state.dot11p_configuration();
@@ -1360,7 +1352,7 @@ pub extern "C" fn open_phy_trace_phy_current_level_set(
     output: &mut CanonicalCurrentLevelState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
+    let mut state = open_esp_radio_esp32s31_phy::state::PhyState::default();
     state.set_current_level(initial);
     state.set_current_level(value as u8);
     output.value = state.current_level();
@@ -1373,7 +1365,7 @@ pub extern "C" fn open_phy_trace_phy_bt_power_track(
     output: &mut CanonicalBtPowerTrackingState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
+    let mut state = open_esp_radio_esp32s31_phy::state::PhyState::default();
     state.set_bt_power_tracking(initial);
     state.set_bt_power_tracking(value as u8);
     output.value = state.bt_power_tracking();
@@ -1386,7 +1378,7 @@ pub extern "C" fn open_phy_trace_phy_ble_set_chan_base(
     output: &mut CanonicalBleChannelBaseState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
+    let mut state = open_esp_radio_esp32s31_phy::state::PhyState::default();
     state.set_ble_channel_base(initial);
     state.set_ble_channel_base(value as u8);
     output.value = state.ble_channel_base();
@@ -1399,7 +1391,7 @@ pub extern "C" fn open_phy_trace_phy_init_param_set(
     output: &mut CanonicalInitializationParameterState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
+    let mut state = open_esp_radio_esp32s31_phy::state::PhyState::default();
     state.set_initialization_parameter(u32::from(initial != 0));
     state.set_initialization_parameter(value);
     output.value = u8::from(state.initialization_parameter());
@@ -1413,7 +1405,7 @@ pub extern "C" fn open_phy_trace_phy_track_temp_debug(
     output: &mut CanonicalTemperatureTrackingState,
 ) {
     let initial = *output;
-    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
+    let mut state = open_esp_radio_esp32s31_phy::state::PhyState::default();
     state.set_temperature_tracking_debug(initial.first, initial.second);
     state.set_temperature_tracking_debug(first as u8, second as u8);
     let projected = state.temperature_tracking_debug();
@@ -1426,85 +1418,85 @@ pub extern "C" fn open_phy_trace_phy_track_temp_debug(
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_noise_check_loop() {
-    open_esp_radio_esp32s31_phy::phy_signal_power::noise_check_loop();
+    open_esp_radio_esp32s31_phy::rx::signal_power::noise_check_loop();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_bbpll_en_usb() {
-    open_esp_radio_esp32s31_phy::phy_rfpll::phy_bbpll_en_usb();
+    open_esp_radio_esp32s31_phy::analog::rfpll::phy_bbpll_en_usb();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_freq_mem_backup() {
-    open_esp_radio_esp32s31_phy::phy_frequency::phy_freq_mem_backup();
+    open_esp_radio_esp32s31_phy::analog::frequency::phy_freq_mem_backup();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_freq_offset_set() {
-    open_esp_radio_esp32s31_phy::phy_frequency::phy_freq_offset_set();
+    open_esp_radio_esp32s31_phy::analog::frequency::phy_freq_offset_set();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_get_i2c_data() {
-    open_esp_radio_esp32s31_phy::phy_i2c::phy_get_i2c_data();
+    open_esp_radio_esp32s31_phy::analog::i2c::phy_get_i2c_data();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_archive_set_bb_wdg() {
-    open_esp_radio_esp32s31_phy::phy_bb::set_bb_wdg();
+    open_esp_radio_esp32s31_phy::calibration::baseband::set_bb_wdg();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_phy_get_rf_cal_version() -> u32 {
-    open_esp_radio_esp32s31_phy::phy_rfpll::phy_get_rf_cal_version()
+    open_esp_radio_esp32s31_phy::analog::rfpll::phy_get_rf_cal_version()
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_phy_get_rfdata_num() -> u32 {
-    open_esp_radio_esp32s31_phy::phy_cold::phy_get_rfdata_num()
+    open_esp_radio_esp32s31_phy::calibration::cold::phy_get_rfdata_num()
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_get_bias_ref_code() -> u32 {
-    open_esp_radio_esp32s31_phy::phy_tx_cal::get_bias_ref_code()
+    open_esp_radio_esp32s31_phy::tx::calibration::get_bias_ref_code()
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_phy_internal_delay() -> u32 {
-    open_esp_radio_esp32s31_phy::phy_cold::phy_internal_delay()
+    open_esp_radio_esp32s31_phy::calibration::cold::phy_internal_delay()
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_i2c_enter_critical() {
-    open_esp_radio_esp32s31_phy::phy_i2c::phy_i2c_enter_critical();
+    open_esp_radio_esp32s31_phy::analog::i2c::phy_i2c_enter_critical();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_i2c_exit_critical() {
-    open_esp_radio_esp32s31_phy::phy_i2c::phy_i2c_exit_critical();
+    open_esp_radio_esp32s31_phy::analog::i2c::phy_i2c_exit_critical();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_get_dc_value(output: &mut [u16; 2], value: u32) {
-    open_esp_radio_esp32s31_phy::phy_dc_iq::get_dc_value(output, value);
+    open_esp_radio_esp32s31_phy::calibration::estimator::get_dc_value(output, value);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_i2c_master_mem_cfg(configuration: &mut [u8; 6]) {
-    open_esp_radio_esp32s31_phy::phy_i2c::phy_i2c_master_mem_cfg(configuration);
+    open_esp_radio_esp32s31_phy::analog::i2c::phy_i2c_master_mem_cfg(configuration);
 }
 
 #[unsafe(no_mangle)]
@@ -1513,13 +1505,13 @@ pub extern "C" fn open_phy_trace_phy_i2c_master_command_mem_cfg(
     configuration: &mut [u8; 8],
     mode: &mut u32,
 ) {
-    open_esp_radio_esp32s31_phy::phy_i2c::phy_i2c_master_command_mem_cfg(configuration, mode);
+    open_esp_radio_esp32s31_phy::analog::i2c::phy_i2c_master_command_mem_cfg(configuration, mode);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_tx_atten_comp(values: &mut [u8; 3]) {
-    open_esp_radio_esp32s31_phy::phy_tx_cal::phy_tx_atten_comp(values);
+    open_esp_radio_esp32s31_phy::tx::calibration::phy_tx_atten_comp(values);
 }
 
 #[unsafe(no_mangle)]
@@ -1613,7 +1605,7 @@ pub extern "C" fn open_phy_trace_sifs_reg_init(registers: &mut RadioPhyRegisters
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_abs_temp(input: u32) -> u32 {
-    open_esp_radio_esp32s31_phy::phy_math::absolute_temperature(input as i32)
+    open_esp_radio_esp32s31_phy::calibration::math::absolute_temperature(input as i32)
 }
 
 #[unsafe(no_mangle)]
@@ -1625,7 +1617,7 @@ pub extern "C" fn open_phy_trace_ret_get_freq_mem_addr(
     offset: u32,
 ) -> u32 {
     u32::from(
-        open_esp_radio_esp32s31_phy::phy_frequency::phy_get_freq_mem_addr(
+        open_esp_radio_esp32s31_phy::analog::frequency::phy_get_freq_mem_addr(
             base, stride, index, offset,
         ),
     )
@@ -1638,7 +1630,7 @@ pub extern "C" fn open_phy_trace_txpwr_track_slow(
     output: &mut CanonicalSlowTxPowerTrackingState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
+    let mut state = open_esp_radio_esp32s31_phy::state::PhyState::default();
     state.set_tx_power_tracking_slow(initial);
     state.set_tx_power_tracking_slow(value as u8);
     output.value = state.tx_power_tracking_slow();

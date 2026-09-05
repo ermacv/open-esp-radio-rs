@@ -18,18 +18,18 @@ use crate::{
         BluetoothLegacyConnectableAdvertisingPostRunOutcome,
         BluetoothLegacyConnectableAdvertisingRunning,
     },
-    scheduler_timeline::{BluetoothSchedulerSequenceReady, BluetoothSchedulerWindowReservation},
+    scheduler::timeline::{BluetoothSchedulerSequenceReady, BluetoothSchedulerWindowReservation},
 };
 
 pub(crate) struct BluetoothLegacyConnectableAdvertisingCompletionRole;
 
-impl crate::scheduler::BluetoothSingleItemSchedulerRole
+impl crate::scheduler::core::BluetoothSingleItemSchedulerRole
     for BluetoothLegacyConnectableAdvertisingCompletionRole
 {
     type RunningItem = BluetoothLegacyConnectableAdvertisingRunning;
     type CompletionObservedItem = BluetoothLegacyConnectableAdvertisingCompletionObserved;
-    type Retained = crate::scheduler_timeline::BluetoothSchedulerWindowReservation<
-        crate::scheduler_timeline::BluetoothSchedulerSequenceReady,
+    type Retained = crate::scheduler::timeline::BluetoothSchedulerWindowReservation<
+        crate::scheduler::timeline::BluetoothSchedulerSequenceReady,
     >;
 
     fn running_item_address(
@@ -41,13 +41,13 @@ impl crate::scheduler::BluetoothSingleItemSchedulerRole
     fn observe_completion(
         item: Self::RunningItem,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
-    ) -> crate::scheduler::BluetoothSingleItemRoleCompletionObservation<Self> {
+    ) -> crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation<Self> {
         let (memory, remainder) = item.into_memory_completion();
         match memory.observe_completion(observed) {
             BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::ListMismatch {
                 running,
                 observed,
-            } => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
+            } => crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
                 running: BluetoothLegacyConnectableAdvertisingRunning::from_memory_completion(
                     running, remainder,
                 ),
@@ -55,14 +55,14 @@ impl crate::scheduler::BluetoothSingleItemSchedulerRole
             },
             BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::StillInFlight(
                 running,
-            ) => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::StillInFlight(
+            ) => crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::StillInFlight(
                 BluetoothLegacyConnectableAdvertisingRunning::from_memory_completion(
                     running, remainder,
                 ),
             ),
             BluetoothLegacyConnectableAdvertisingMemoryGraphCompletionObservation::CompletionObserved(
                 completed,
-            ) => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(
+            ) => crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(
                 BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
                     completed, remainder,
                 ),

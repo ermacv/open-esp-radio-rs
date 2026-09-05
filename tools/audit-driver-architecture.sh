@@ -290,7 +290,7 @@ fi
 
 # Composition owns the complete ESP32-S31 Wi-Fi stack directly. This is a
 # graph contract, not a source-spelling assertion.
-integration_manifest="driver/integration/esp32s31/embassy-wifi/Cargo.toml"
+integration_manifest="driver/integration/esp32s31/embassy/ieee80211/Cargo.toml"
 integration_graph="$audit_dir/integration-direct.json"
 metadata_for "$integration_manifest" "$integration_graph" --no-deps
 integration_manifest_absolute="$(realpath "$integration_manifest")"

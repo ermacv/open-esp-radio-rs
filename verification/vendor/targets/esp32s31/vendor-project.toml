@@ -367,7 +367,7 @@ non-operational-functions = [
 output = "../../../../svd/esp32s31-radio.svd"
 
 [registers.pac-raw]
-output = "../../../../driver/chips/esp32s31/pac-raw/src/lib.rs"
+output = "../../../../driver/chips/esp32s31/pac/raw/src/lib.rs"
 target = "none"
 edition = "2024"
 

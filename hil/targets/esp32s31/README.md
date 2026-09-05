@@ -21,9 +21,11 @@ placements and retains the ordinary 16-KiB CPU1 owner stack in either case.
 Large socket buffers, task arenas and ordinary task stacks live in PSRAM.
 DMA-visible storage, dedicated trap/interrupt stacks, critical data and ISR
 text remain in internal SRAM. Every build audits
-placement, compiler stack frames (warning above 8 KiB, rejection above 32 KiB)
-and reviewed owner futures. Runtime evidence enforces the absolute per-core
-headroom declared in `stack.toml`.
+placement and compiler stack frames: frames above 8 KiB require an explicit
+reviewed allowance, and every frame is rejected above the 50-KiB hard limit.
+The separate compiler move limit is 4 KiB. These are the existing limits in
+`stack.toml`; runtime evidence independently enforces its absolute per-core
+headroom.
 
 `data_plane` is selected by the startup command, not by rebuilding. Every
 repository scenario selects the production `split-radio-network` topology: it

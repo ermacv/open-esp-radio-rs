@@ -14,91 +14,33 @@ use open_esp_radio_esp32s31_hal::{
 use crate::{
     HARDWARE_EDGE_LIMIT, PhyCalibrationTrackingPort, PhyParamTrackingPort,
     PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError,
-    phy_bb::{PhyBbExternalBinding, PhyBbInitCompletion},
-    phy_bluetooth::{
-        PhyBluetoothTxGainInitCompletion, PhyBluetoothTxGainInitExternalBinding,
-        PhyBluetoothTxPowerCompletion, PhyBluetoothTxPowerExternalBinding,
-    },
-    phy_cal_tracking::{
-        PhyCalibrationChannelTransition, PhyCalibrationDcodeTransition,
-        PhyCalibrationForceTxRxTransition, PhyCalibrationPbusClearTransition,
-        PhyCalibrationRxGainTransition, PhyCalibrationTrackingAction,
-        PhyCalibrationTrackingCompletion, PhyCalibrationTrackingExternalBinding,
-        PhyCalibrationTxDcPwdetTransition,
-    },
-    phy_channel::{
-        PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
-        PhyChipChannelFailure, PhyChipChannelOutcome, PhyChipChannelRequest,
-        PhyChipChannelTransition, PhyWifiTxGainImage, PhyWifiTxGainRequest,
-    },
-    phy_client::PhyPendingTracking,
-    phy_cold::{
-        PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
-        PhyColdObservationRequest, PhyColdPbusObservation,
-    },
-    phy_dc_iq::{PhyDcIqCompletion, PhyDcIqExternalBinding},
-    phy_dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
-    phy_i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
-    phy_i2c_tracking::PhyWifiI2cTrackingCompletion,
-    phy_param_tracking::{
-        PhyParamTrackingAction, PhyParamTrackingCalibrationTransition, PhyParamTrackingCompletion,
-        PhyParamTrackingOutcome, PhyParamTrackingRfpllTransition,
-        PhyParamTrackingTemperatureTransition, PhyParamTrackingTxPowerTransition,
-        PhyParamTrackingWifiI2cTransition,
-    },
-    phy_pbus::{PhyForceTxRxExternalBinding, PhyPbusHardwareObservation},
-    phy_pwdet::{PhyPwdetCompletion, PhyPwdetExternalBinding, PhyPwdetPbusObservation},
-    phy_register::{
-        PhyCalibrationIdentity, PhyRegisterCompletion, PhyRegisterExternalBinding,
-        PhyRegisterOutcome, PhyRegisterTransition,
-    },
-    phy_rfpll::{
+    analog::dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
+    analog::i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
+    analog::pbus::{PhyForceTxRxExternalBinding, PhyPbusHardwareObservation},
+    analog::rfpll::{
         RfpllCapCorrectionCompletion, RfpllCapCorrectionExternalBinding,
         RfpllCapTrackingCompletion, RfpllCapTrackingExternalBinding, RfpllFrequencyAction,
         RfpllFrequencyCompletion, RfpllFrequencyExternalBinding,
     },
-    phy_rx_dco::{
-        PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
-        PhyRxDcoExternalBinding,
+    analog::temperature::{PhyTemperatureCompletion, PhyTemperatureExternalBinding},
+    calibration::baseband::{PhyBbExternalBinding, PhyBbInitCompletion},
+    calibration::bluetooth::{
+        PhyBluetoothTxGainInitCompletion, PhyBluetoothTxGainInitExternalBinding,
+        PhyBluetoothTxPowerCompletion, PhyBluetoothTxPowerExternalBinding,
     },
-    phy_rx_gain::{
-        PhyRxGainInitCompletion, PhyRxGainInitExternalBinding, PhyRxGainPublishCompletion,
-        PhyRxGainPublishExternalBinding,
+    calibration::cold::{
+        PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
+        PhyColdObservationRequest, PhyColdPbusObservation,
     },
-    phy_rx_gain_cal::{
-        PhyRxDcCalibrationCompletion, PhyRxDcCalibrationExternalBinding, PhyRxGainDcCompletion,
-        PhyRxGainDcExternalBinding,
+    calibration::estimator::{PhyDcIqCompletion, PhyDcIqExternalBinding},
+    calibration::registration::{
+        PhyCalibrationIdentity, PhyRegisterCompletion, PhyRegisterExternalBinding,
+        PhyRegisterOutcome, PhyRegisterTransition,
     },
-    phy_rx_saturation::{PhyRxSaturationCompletion, PhyRxSaturationExternalBinding},
-    phy_rxiq::{
-        PhyRxIqCoverCompletion, PhyRxIqCoverExternalBinding, PhyRxIqDataCompletion,
-        PhyRxIqDataExternalBinding, PhyRxIqEstimatorCompletion, PhyRxIqEstimatorExternalBinding,
-        PhyRxIqGainCompletion, PhyRxIqGainExternalBinding, PhyRxIqInitCompletion,
-        PhyRxIqInitExternalBinding, PhyRxIqRfCalibrationCompletion,
-        PhyRxIqRfCalibrationExternalBinding,
-    },
-    phy_state::{PhyCalibrationCache, PhyState},
-    phy_temperature::{PhyTemperatureCompletion, PhyTemperatureExternalBinding},
-    phy_tx_cal::{
-        PhyPowerAttenuationCompletion, PhyPowerAttenuationExternalBinding, PhyToneSarCompletion,
-        PhyToneSarExternalBinding, PhyTxCalibrationEnvironmentCompletion,
-        PhyTxCalibrationEnvironmentExternalBinding, PhyTxCapCompletion, PhyTxCapExternalBinding,
-        PhyTxCapSearchCompletion, PhyTxCapSearchExternalBinding,
-    },
-    phy_tx_power::{
-        PhyPowerControlPointCompletion, PhyPowerControlPointExternalBinding, PhyTxPowerCompletion,
-        PhyTxPowerExternalBinding,
-    },
-    phy_txdc::{PhyTxDcAction, PhyTxDcCompletion, PhyTxDcExternalBinding},
-    phy_txdc_pwdet::{
-        PhyTxDcPwdetCompletion, PhyTxDcPwdetExternalBinding, PhyTxDcPwdetSearchCompletion,
-        PhyTxDcPwdetSearchExternalBinding,
-    },
-    phy_txiq::{
-        PhyTxIqCalibrationCompletion, PhyTxIqCalibrationExternalBinding, PhyTxIqCoverCompletion,
-        PhyTxIqCoverExternalBinding, PhyTxIqInitCompletion, PhyTxIqInitExternalBinding,
-        PhyTxIqLinearPowerCompletion, PhyTxIqLinearPowerExternalBinding, PhyTxIqLoopbackCompletion,
-        PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
+    channel::{
+        PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
+        PhyChipChannelFailure, PhyChipChannelOutcome, PhyChipChannelRequest,
+        PhyChipChannelTransition, PhyWifiTxGainImage, PhyWifiTxGainRequest,
     },
     registered_bluetooth::{
         RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
@@ -111,6 +53,28 @@ use crate::{
         TargetRegisteredPhyEpoch,
     },
     run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
+    rx::dc_offset::{
+        PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
+        PhyRxDcoExternalBinding,
+    },
+    rx::gain::{
+        PhyRxGainInitCompletion, PhyRxGainInitExternalBinding, PhyRxGainPublishCompletion,
+        PhyRxGainPublishExternalBinding,
+    },
+    rx::gain_calibration::{
+        PhyRxDcCalibrationCompletion, PhyRxDcCalibrationExternalBinding, PhyRxGainDcCompletion,
+        PhyRxGainDcExternalBinding,
+    },
+    rx::iq::{
+        PhyRxIqCoverCompletion, PhyRxIqCoverExternalBinding, PhyRxIqDataCompletion,
+        PhyRxIqDataExternalBinding, PhyRxIqEstimatorCompletion, PhyRxIqEstimatorExternalBinding,
+        PhyRxIqGainCompletion, PhyRxIqGainExternalBinding, PhyRxIqInitCompletion,
+        PhyRxIqInitExternalBinding, PhyRxIqRfCalibrationCompletion,
+        PhyRxIqRfCalibrationExternalBinding,
+    },
+    rx::saturation::{PhyRxSaturationCompletion, PhyRxSaturationExternalBinding},
+    state::client::PhyPendingTracking,
+    state::{PhyCalibrationCache, PhyState},
     target_executor::{
         PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
         complete_channel_i2c, complete_dcode_i2c, complete_final_i2c, complete_i2c_configuration,
@@ -122,6 +86,42 @@ use crate::{
         complete_tx_dc_pwdet_pbus, complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c,
         complete_txiq_init_i2c, complete_txiq_pbus,
     },
+    tracking::calibration::{
+        PhyCalibrationChannelTransition, PhyCalibrationDcodeTransition,
+        PhyCalibrationForceTxRxTransition, PhyCalibrationPbusClearTransition,
+        PhyCalibrationRxGainTransition, PhyCalibrationTrackingAction,
+        PhyCalibrationTrackingCompletion, PhyCalibrationTrackingExternalBinding,
+        PhyCalibrationTxDcPwdetTransition,
+    },
+    tracking::i2c::PhyWifiI2cTrackingCompletion,
+    tracking::parameters::{
+        PhyParamTrackingAction, PhyParamTrackingCalibrationTransition, PhyParamTrackingCompletion,
+        PhyParamTrackingOutcome, PhyParamTrackingRfpllTransition,
+        PhyParamTrackingTemperatureTransition, PhyParamTrackingTxPowerTransition,
+        PhyParamTrackingWifiI2cTransition,
+    },
+    tx::calibration::{
+        PhyPowerAttenuationCompletion, PhyPowerAttenuationExternalBinding, PhyToneSarCompletion,
+        PhyToneSarExternalBinding, PhyTxCalibrationEnvironmentCompletion,
+        PhyTxCalibrationEnvironmentExternalBinding, PhyTxCapCompletion, PhyTxCapExternalBinding,
+        PhyTxCapSearchCompletion, PhyTxCapSearchExternalBinding,
+    },
+    tx::dc_offset::{PhyTxDcAction, PhyTxDcCompletion, PhyTxDcExternalBinding},
+    tx::dc_power_detector::{
+        PhyTxDcPwdetCompletion, PhyTxDcPwdetExternalBinding, PhyTxDcPwdetSearchCompletion,
+        PhyTxDcPwdetSearchExternalBinding,
+    },
+    tx::iq::{
+        PhyTxIqCalibrationCompletion, PhyTxIqCalibrationExternalBinding, PhyTxIqCoverCompletion,
+        PhyTxIqCoverExternalBinding, PhyTxIqInitCompletion, PhyTxIqInitExternalBinding,
+        PhyTxIqLinearPowerCompletion, PhyTxIqLinearPowerExternalBinding, PhyTxIqLoopbackCompletion,
+        PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
+    },
+    tx::power::{
+        PhyPowerControlPointCompletion, PhyPowerControlPointExternalBinding, PhyTxPowerCompletion,
+        PhyTxPowerExternalBinding,
+    },
+    tx::power_detector::{PhyPwdetCompletion, PhyPwdetExternalBinding, PhyPwdetPbusObservation},
 };
 
 const CHANNEL_READY_SAMPLE_LIMIT: u32 = 10_000;
@@ -1928,7 +1928,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                         Some(PhyRfBoundary::BeforeTxPowerControlBackgroundInit)
                     }
                     PhyRfInitPrefixAction::ChannelFrequency(
-                        crate::phy_frequency::PhyChannelFrequencyInitAction::ConfigureFrequencyRegisters {
+                        crate::analog::frequency::PhyChannelFrequencyInitAction::ConfigureFrequencyRegisters {
                             ..
                         },
                     ) => Some(PhyRfBoundary::BeforeChannelFrequencyInit),
@@ -1940,7 +1940,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 binding
                     .execute_target(registers)
                     .map_err(|error| match error {
-                        crate::phy_cold::PhyColdLoweringError::HardwareRestoreInvariant => {
+                        crate::calibration::cold::PhyColdLoweringError::HardwareRestoreInvariant => {
                             PhyTargetPortError::HardwareInvariant
                         }
                         _ => PhyTargetPortError::UnexpectedBinding,

@@ -1,302 +1,159 @@
 # Driver architecture
 
-The driver is an Embassy-only, source-owned radio stack. Applications provide
-board identity, credentials and peripherals; HIL, traffic generators, UART
-protocols, vendor artifacts and qualification policy stay outside `driver/`.
+`driver/` contains the source-owned radio implementation, its protocol code
+and production integrations. Applications supply board identity, credentials
+and peripherals. HIL scenarios, traffic generators, UART test protocols,
+vendor artifacts and qualification policy live outside this tree. See the
+[source policy](../docs/SOURCE_POLICY.md).
 
-## Boundaries
+## Source map
 
-```text
-application (embassy-net Stack, DHCP, sockets)
-    │
-    ├── open-esp-radio public lifecycle and policy
-    └── Esp32s31WifiDevice: embassy-net-driver::Driver
-            │
-            ▼
-ESP32-S31 Embassy Wi-Fi runner (sole PAC/DMA/ISR owner)
-            │
-    ┌───────┴────────┐
-    │ Wi-Fi HMAC     │ portable STA/AP frame, MLME and Open/WPA2 logic
-    │ S31 LMAC/DMA   │ queues, IRQ, descriptors and time-critical MAC work
-    │ S31 RF/PHY     │ calibration, clocks, channel and baseband transitions
-    │ registers/PAC  │ typed transactions and generated MMIO access
-    └────────────────┘
-```
+Paths describe responsibilities; a directory need not be a Cargo crate.
+Existing package names remain independent of this directory hierarchy.
+The [complete current tree](../docs/driver-audit/current-tree.txt) also lists
+the child test files and internal module directories.
 
-The independent Bluetooth LE direction uses a Host/Controller boundary rather
-than embedding Host protocols in the chip crate:
+| Path | Responsibility |
+| --- | --- |
+| `radio/` | `wifi/` owns public requests and affine role lifecycle; `runtime/embassy` drives local control epochs |
+| `common/dma/` | Audited stable-memory proofs and affine buffer/queue handoff |
+| `common/network/` | Stack-neutral interface, link and error values |
+| `ieee80211/{mac,softmac,sta,ap,security/wpa2}/` | Frame/protocol code, MAC contracts, role policy and security |
+| `ieee80211/datapath/` | Software egress ownership, flow demand and physical materialization contracts |
+| `bluetooth/le/ll/` | Portable LE PDU codecs and protocol-role state |
+| `bluetooth/hci/` | Host/Controller transport and resources; `command/` owns codecs, classification and response ordering |
+| `ieee802154/` | Portable frames, metadata and finite command/event contracts |
+| `chips/esp32s31/{pac,hal,phy}/` | PAC `ownership` and HAL `owner` retain hardware authority; domain modules hold register operations, transactions and RF algorithms |
+| `chips/esp32s31/ieee80211/{dma,mac,sta,ap}/` | S31 descriptor ownership, MAC `rx/tx/rate`, and chip role composition; `mac/tx/metadata` lowers portable traffic intent |
+| `chips/esp32s31/{bluetooth,coex,ieee802154}/` | Chip radio actors; Bluetooth `memory/` and IEEE 802.15.4 `{dma,irq,mac,runtime}/` hold their lower ownership boundaries |
+| `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
+| `adapters/embassy/ieee80211/` | Generic Embassy Wi-Fi service contracts |
+| `adapters/embassy/esp32s31/` | Concrete runtimes, wakeups and timers; Bluetooth separates `controller` and role `session` modules; `runtime/` holds platform ABI and placement |
+| `adapters/network/embassy/{owned,compat}/` | Owned-packet and released-interface network adapters |
+| `adapters/network/research/` | Experimental synchronous network engine; currently consumed only by a driver test |
+| `integration/esp32s31/embassy/{ieee80211,bluetooth}/` | Static resources, one-time claims, final bindings and the concrete whole-radio lifecycle runners |
 
-```text
-application -> Trouble Host -> bt-hci -> portable LE Controller
-                                      -> ESP32-S31 LLL
-                                      -> controller memory -> HAL -> PAC
-```
+The [structure audit](../docs/DRIVER_STRUCTURE_AUDIT.md) records the original
+mixed responsibilities. The [work plan](../docs/DRIVER_STRUCTURE_PLAN.md)
+tracks completed namespace changes, moves across ownership boundaries and
+the remaining separate lifecycle work.
+The [boundary review](../docs/DRIVER_STRUCTURE_PLAN.md#уточнение-границ-adapters-common-и-integration)
+records remaining mixed responsibilities: adapter code still selects production
+resource profiles, and integration executes whole-radio lifecycles. Folder names
+alone do not enforce these boundaries.
+The [protocol naming convention](../docs/DRIVER_PROTOCOL_NAMING.md) defines
+`ieee80211`, `ieee802154` and `bluetooth` as technical family namespaces.
+Wi-Fi remains the application-facing technology name; portable LE Link Layer
+code lives in `bluetooth/le/ll`, beside the family-wide HCI boundary.
 
-Only the bounded bidirectional HCI transport, conservative Host-bootstrap
-state and affine Host/raw-Controller/bootstrap endpoint split plus the
-hardware-foundation pieces exist today. A real Trouble Runner crosses that
-same transport and bootstrap state in host tests, but no ESP32-S31 operational
-session runner or on-air operation exists. The first Wi-Fi-style split is now
-physical in the workspace:
-positional MMIO stays in the restricted PAC, while
-`chips/esp32s31/bluetooth/memory` owns the no-heap DTM controller-memory
-geometry, physical-SRAM binding, allocation-time private links and result
-parsing. A sealed `BluetoothControllerHal<'_>` now carries the first task-side
-scheduler transaction and the bounded cancellation-safe controller-time latch;
-its generation-scoped worker is retained beside the unique task owner without
-exposing the PAC partition.
-Bluetooth lifecycle and S31 LLL code are still co-located in the parent chip
-crate. A separate Embassy adapter now preserves classified scheduler wakes and
-accepts a caller-owned bounded recheck future; the next structural boundary is
-composing it with the powered task/IRQ owner, then extending HAL ownership
-across memory before an independent LLL backend and portable Controller. The
-exact live, partial, fail-closed and absent scopes are recorded in the
-[ESP32-S31 Bluetooth LE feature frontier](chips/esp32s31/bluetooth/FEATURES.md).
+Portable IEEE 802.11 encoders accept explicit local capabilities. Chip STA/AP
+`profile` modules select the existing advertisements; STA profile also lowers
+channel selection to S31 encodings. Authentication and association retry epochs
+belong to `ieee80211/sta/join`, while `ieee80211/ap/limits` owns the fixed software peer
+budget. Chip AP composition checks that hardware key slots cover that budget.
+WPA2 retains secret bytes and zeroization; register-word conversion stays in
+the PAC and does not require another key copy.
+Chip STA `connected/security` retains the association-scoped supplicant, GTK
+and replay owners together, including replacement, rollback and quarantine.
+Embassy delivers classified EAPOL and drives the existing TX completion port.
+The chip `startup` module performs common PHY/MAC initialization through an
+abstract delay; integration chooses the concrete bindings and resource profile.
+Its supervisor separates shared `physical` owners and `role_transition`
+frontiers from AP execution and observation.
 
-The source tree follows the ownership boundary above. There is no compatibility
-module for the former vendor-derived `wdev` naming.
+The chip Wi-Fi `rx/frontier` owns finite physical-ring transitions and borrows
+an abstract delay. Its `rx/transaction` synchronously borrows the live ring,
+storage and staging pool for one bounded completion/recycle pass. Publication
+accepts the unique frame or returns that same lease on rejection. Embassy
+retains queue endpoints, VIF routing, clocks, observation bindings and the
+stopped/prepared/live composition owners. No chip dependency points back to an
+adapter. Integration `interrupts` owns the ISR bindings and routes both
+handlers and role epochs through the same static interrupt resources. See the
+[RX ownership contract](adapters/embassy/esp32s31/ieee80211/src/datapath/rx/README.md).
 
-- `radio`: public requests and typed role lifecycle.
-- `bluetooth/hci`: portable allocation-free async typed HCI transport, closed
-  pre-Link-Layer Host bootstrap and affine Host/raw-Controller/bootstrap split.
-- `ieee802154`: portable allocation-free frames, normalized metadata,
-  capabilities and finite command/event state transitions.
-- `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
-- `wifi/datapath`: executor- and stack-neutral radio egress ownership,
-  demand and physical materialization contracts.
-- `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
-- `chips/esp32s31/bluetooth/memory`: statically bound CPU-owned controller-SRAM
-  layout and the future packet/list ownership boundary below the S31 LLL and
-  above positional PAC transactions.
-- `chips/esp32s31/ieee802154/{dma,irq,mac,runtime}`: non-operational
-  fixed-frame ownership, quiesced interrupt semantics, pure control
-  transitions and an affine executor-neutral composition boundary for the
-  source-reviewed S31 MAC.
-- `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
-- `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
-- `adapters/embassy-net-compat`: copied-frame adapter for the unchanged
-  released Embassy driver interface; payload arenas are separate from hot
-  lease queues, and it has no fork or radio dependency.
-- `adapters/embassy/esp32s31-wifi-compat`: narrow bridge from that unchanged
-  driver to the shared ESP32-S31 selected-burst and fixed-SRAM materializer;
-  it has no Xarxa or owned-network dependency.
-- `adapters/embassy-net`: owned-packet adapter for the optimized Xarxa/Embassy
-  integration; it has no physical SRAM, DMA or Wi-Fi policy.
-- `adapters/research`: synchronous hardware-first Ethernet/ARP/IPv4/ICMP/UDP
-  engine. It has no Xarxa, Embassy, PAC or executor dependency and constructs
-  radio-selected work directly in a reserved physical batch.
-- `integration/esp32s31/bluetooth`: one-time production placement and claim of
-  the statically bound ESP32-S31 controller-memory graph.
-- `integration/esp32s31/embassy-wifi`: production composition and the only
-  place applications enter the current ESP32-S31 station/AP/monitor service
-  or its explicit ESP-NOW composition hooks. It selects exactly one of the
-  optimized owned or released compatibility network leaves at compile time.
-- `common/network`: adapter-neutral interface/link/error values with no stack,
-  driver, executor, queue or packet-allocation policy.
-- `common/dma`: audited generic pinned-memory foundation.
+## Register and execution boundaries
 
-`embassy-net::Stack`, DHCP, sockets and network tasks are application-owned.
-The driver exposes a persistent `embassy-net-driver::Driver`; it publishes
-link down while Wi-Fi is idle/scanning/monitoring/disconnected and flushes
-stale queue state at role boundaries.
+The radio-register direction is reviewed SVD → `pac/raw` accessors → semantic
+`pac` → `hal` → chip driver. The raw package also contains handwritten trusted
+sidecars; generated provenance does not extend to those files. The separate
+upstream chain is `esp-pacs` through `esp-hal`, bound in
+`adapters/esp-hal/esp32s31/`. Its `soc/` adapter contains non-radio SoC
+transactions, cache/MMU access and GDMA ownership; it is not generated PAC
+code. See [unsafe boundaries](UNSAFE.md) for the enforced exceptions.
 
-## Ownership and lifecycle
+PAC operations describe register-local fields and access. HAL operations own
+multi-register order, polling, delays, lifecycle and recovery. Handwritten
+code outside the restricted PAC uses typed accessors; missing fields must be
+reviewed and published through the SVD/PAC. A Rust ownership proof does not
+establish the meaning of a recovered register.
 
-One eternal runner owns the physical radio, PAC, DMA and interrupt routes.
-Public handles carry commands only. Dropping a handle never destroys or resets
-hardware.
+PHY borrows an opaque `PhyHal`; role code uses finite HAL/MAC capabilities.
+Do not expose PAC callbacks, `Deref` escapes or owner re-exports above these
+boundaries. Shared task-side handles remain tied to the HAL arena's explicit
+serialization; a copyable handle grants no unsynchronized cross-thread MMIO
+access. Existing Bluetooth/IEEE 802.15.4 PAC dependencies are explicit audit
+exceptions, not a general route around HAL.
 
-```text
-Radio runner: Starting -> Ready -> Faulted
-Wi-Fi:        Idle -> Station -> Idle
-              Idle -> Scan -> Idle
-              Idle -> AccessPoint -> Idle
-              Idle -> Station+AccessPoint -> Idle
-              Idle -> Monitor -> Idle
-              Idle -> Standalone ESP-NOW -> Idle  (explicit composition hook)
-```
+The current Wi-Fi execution domain has one Core0 supervisor and controlled
+child execution. A station task may receive the exact affine owner through a
+rendezvous while the supervisor waits for its return. This does not create a
+second physical radio owner. ISR bindings record pending work and wake the
+responsible runtime; network tasks and cross-core handoffs receive bounded
+packet authority, not independent PAC ownership.
 
-`WifiIdle`, `WifiStation`, `WifiAccessPoint` and `WifiMonitor` are affine.
-Starting consumes idle; stopping consumes the role and returns idle only after
-the runner has masked the source, drained pending IRQ work, completed or
-quarantined TX, stopped RX, detached queues and published link down. If
-quiescence cannot be proved, the runner enters a terminal fault and no reusable
-idle owner is fabricated.
+## Lifecycle and network ownership
 
-`WifiIdle::scan` is a finite operation: it consumes idle, actively scans the
-requested channels, returns a bounded value-only report and restores idle.
-It cannot associate. Station owns its separate candidate scan plus
-authentication, association, security, connected and reconnect policy.
-STA and AP each select exactly Open or WPA2-Personal security. Open requires a
-non-privacy BSS with no RSN or legacy WPA element and never installs or uses
-keys; WPA2 requires the matching privacy/RSN contract and protected data. A
-mode mismatch fails closed rather than downgrading. WPA3, OWE, Enterprise WPA
-and PMF are not implemented.
+Public handles carry commands. Dropping a handle never resets or destroys the
+hardware. Starting consumes an idle owner; stopping returns idle only after
+masking interrupt sources, draining pending IRQ work, completing or
+quarantining TX, stopping RX, detaching queues and publishing link down.
+Failure to prove quiescence retains a terminal fault owner instead of
+fabricating reusable idle. Cancellation, abnormal drop and `mem::forget` must
+not release storage still owned by hardware.
 
-Monitor is an exclusive capture role. Station defaults to `AlwaysAwake`; its
-optional legacy power-save policy owns listen-interval negotiation, PM
-transitions, TIM/DTIM wake decisions and PS-Poll. AP owns dynamic TIM
-publication, strict associated-peer PM Null admission, sleeping-peer unicast
-queues, PS-Poll delivery and DTIM-gated group traffic. The reviewed station
-path reaches the TBTT wake-programming prefix, but actual ESP32-S31 RF/PHY
-modem-sleep entry remains fail-closed before the unreviewed WDEVPWR binding.
+STA and AP own separate peer, security, Block-Ack, rate and lifecycle policy.
+They share mechanisms below that policy. Their combined role has one physical
+RX producer, TX owner and IRQ epoch on one channel; loss of the owning station
+association tears down the pair before reuse. Monitor and standalone ESP-NOW
+use explicit role composition rather than borrowing an unrelated active role.
 
-AP owns one validated HT20 or HT40 ERP/HT BSS and a bounded peer table. Open
-peers use plaintext ordinary Ethernet; WPA2-PSK/CCMP peers additionally own
-per-peer Block Ack and pairwise HT A-MPDU unicast Ethernet.
-Each aggregate width and guard interval is bounded by the BSS geometry and the
-associated peer's observed HT capabilities. The combined STA+AP role owns one
-same-channel physical RX producer, one physical TX owner and one IRQ epoch;
-the station association owns the channel and its loss tears down the complete
-pair before either role can be reused. AP does not claim HE operation.
+Applications own `embassy-net::Stack`, DHCP, sockets and network tasks. The
+Wi-Fi integration exposes a persistent network driver and selects the owned
+or compatibility leaf at compile time. Idle, scanning, monitor and disconnected
+states publish link down; role boundaries flush stale queue state. Network
+adapters do not acquire radio policy or physical DMA ownership.
 
-ESP-NOW v1 and v2 plaintext have strict portable framing with respective
-250-byte and 1470-byte payload limits, fixed-capacity peers, connected
-normal-RX/TX ownership and an explicit standalone role hook. Fixed-home
-operation is implemented; standalone mode also admits a bounded off-channel
-excursion for one transmission and restores the home channel before reporting
-completion. Standard P2P OFDM/HT20 rates are selectable. Long Range executes
-and restores only the reviewed low-rate PHY gate, then rejects the missing LR
-PLCP/queue-vector contract. Encrypted-peer PMK/LMK, PN, replay and secret
-zeroization ownership exist as source logic, while on-air encryption remains
-fail-closed because the S31 ESP-NOW key selector and Action-frame AAD are not
-reviewed.
+Radio scheduling selects a flow before reserving scarce internal SRAM.
+Materialization transfers selected software work into a finite physical pool;
+terminal completion or proven abort returns that storage. The experimental
+research engine uses the shared egress and DMA contracts; its current
+repository consumer is a driver test.
+See the [egress architecture](../docs/WIFI_EGRESS_ARCHITECTURE.md) for queue,
+materialization and transport contracts.
 
-Monitor capture supports a bounded hopping plan. Injection has portable frame,
-rate, channel-epoch and bounded-mailbox admission, but ESP32-S31 physical TX
-fails closed with `UnassignedMacInterface` before DMA or queue publication
-because the raw interface route is not reviewed.
+Ordinary code and task stacks may execute from PSRAM. DMA-visible storage,
+interrupt/trap stacks and the audited hot/interrupt call graph remain in
+internal SRAM; placement checks enforce this boundary.
 
-The portable requester owns implicit Individual TWT agreement state and wake
-planning. ESP32-S31 hardware admission remains fail-closed at its reviewed
-boundary, and explicit TWT agreements are rejected until TWT Information
-support exists.
+## Feature scope and verification
 
-Ordinary station HE20 SU S-MPDU publication is live. Trigger and NDPA events
-reach typed bounded handoffs but reject the unreviewed HE-TB vector and
-feedback formatter before physical publication. MCS32 is modeled separately
-as HT duplicate mode and flows through peer parsing, STA/AP selection and
-geometry-aware RX diagnostics. It cannot masquerade as an ordinary HT rate or
-enter that formatter. S31 hardware encoding remains fail-closed with separate
-diagnostics for missing formatter fields and on-air qualification; local STA
-and AP HT capability elements keep the MCS32 receive bit clear until controlled
-RX evidence exists. All capabilities in this section describe source behavior
-only; they are not qualification or HIL claims without the required
-machine-readable evidence.
+Protocol limits, security modes and live/partial/fail-closed boundaries belong
+in the [Wi-Fi feature frontier](chips/esp32s31/ieee80211/FEATURES.md) and
+[Bluetooth LE feature frontier](chips/esp32s31/bluetooth/FEATURES.md). A parser,
+register setter, descriptor or host test alone does not establish an
+operational radio feature. Do not infer concurrent-radio support or new
+capabilities from structural reuse.
 
-Bluetooth/BLE and IEEE 802.15.4 are not operational public runtime features.
-The IEEE 802.15.4 HAL exposes finite whole-radio typestates only through an
-interrupt-masked static MAC policy; it cannot construct an operational radio.
-Its isolated DMA and IRQ leaves likewise own storage and pure semantics, not a
-live hardware route. The isolated MAC leaf describes start intents and
-validates already sampled event batches. Its executor-neutral runtime can
-execute those intents only through a sealed semantic backend; no ESP32-S31
-production backend can yet construct that capability, issue a command or
-acknowledge hardware status. Bluetooth/BLE likewise have no operational
-runtime service. Its source-owned affine HCI transport provides bounded async
-Host/Controller handoff. Its closed bootstrap table handles only non-radio Host
-configuration and rejects Link-Layer commands; neither is ESP32-S31 Controller
-or Link Layer readiness.
+[Qualification](../qualification/README.md) is the readiness authority. Its
+[Wi-Fi](../qualification/targets/esp32s31/wifi-sta.toml),
+[Bluetooth](../qualification/targets/esp32s31/bluetooth-le.toml) and
+[IEEE 802.15.4](../qualification/targets/esp32s31/ieee802154.toml) manifests
+connect production owners to host, vendor and dated HIL evidence. Validation
+of a manifest is not a passing hardware qualification.
 
-Internal typed PAC/HAL/LMAC transactions exist for the reviewed Wi-Fi-side
-PTI/request leaves and COEX hardware timers; they deliberately remain below the
-public capability boundary until scheduler/lifecycle ownership and joint-radio
-hardware evidence exist.
-
-ISR handlers are private backend details: they record pending work and wake the
-runner. Examples contain no ISR, PAC, DMA or register assembly.
-
-The production profile executes ordinary code and task stacks from PSRAM.
-DMA-visible buffers, interrupt/trap stacks, critical data and the explicitly
-audited hot/interrupt call graph remain in internal SRAM. The placement audit
-fails if a DMA or interrupt owner crosses that boundary.
-
-## Safety
-
-Safe code above the generated PAC, DMA leaves and minimal platform runtime
-cannot manufacture register, descriptor or interrupt ownership. See
-[`UNSAFE.md`](UNSAFE.md). No public software-reset escape hatch exists.
-
-### Register authority
-
-The intended production direction is:
-
-```text
-reviewed register model -> generated/register-local PAC -> narrow HAL -> driver
-```
-
-The PAC owns register-local fields, masks, encodings and indivisible access.
-The HAL owns polling, delays, multi-register order, lifecycle transitions,
-recovery and runtime MMIO serialization. Wi-Fi role and protocol policy stays
-in the driver. Rust ownership expresses who may perform an operation; it does
-not by itself prove that a reverse-engineered register meaning is correct.
-
-Capabilities are shaped by real exclusivity and sharing requirements. A
-borrowed `RadioChannelHal` is the current channel-switch capability, not a
-requirement to mechanically `split()` every peripheral. Copyable runtime
-handles remain tied to the HAL-owned register arena, whose `RefCell` is the
-explicit same-task serialization owner. A shared handle must not imply
-unsynchronized cross-thread MMIO access.
-
-Runtime and cold-MAC ownership is held by an opaque `RadioRuntimeOwner` in the
-HAL arena. Its access handles provide finite serialized HAL transactions,
-never a PAC callback. The cooperative STA facade reaches HE peer setup,
-beamforming, TX/A-MPDU, RX DMA and connected control only through a guarded
-`WifiMacHal`.
-
-Powered PHY setup borrows an opaque `PhyHal`. It has no `Deref`, generic
-register callback, conversion to a PAC owner, or compatibility alias. PHY has
-no PAC Cargo dependency and may pass this capability only to named HAL
-operations. `Radio::phy_hal_parts` exists where one lifecycle operation also
-needs the platform singleton; `Radio::phy_hal_mut` borrows only the PHY
-capability. These are ownership APIs, not mechanical peripheral `split()`.
-
-Repository contracts reject direct production dependencies on the PAC above
-HAL, PAC-owner re-exports, the removed broad PHY APIs and reintroduction of a
-`Deref` escape. Further PAC-to-HAL movement is semantic: when a reviewed PAC
-leaf contains polling, delay, recovery, lifecycle policy or a composition of
-separately meaningful hardware operations, migrate that complete sequence to
-HAL and compare the compiled production entry before changing evidence.
-
-AP and STA share mechanisms only below their role policy. Common protected
-data validation/decapsulation lives in the chip Wi-Fi crate. The Embassy
-adapter's role-neutral `datapath` owns scheduling, network queues, IRQ, DMA RX
-and physical TX; `StationRoleRuntime` and `AccessPointRoleRuntime` own their
-separate protocol states. `SingleRoleServices` and `ConcurrentRoleServices`
-only compose these owners. AP/STA peer state, security, Block-Ack negotiation,
-rate policy and lifecycle remain separate.
-
-The optimized network integration transfers general-memory packet owners into
-driver-owned per-VIF/peer-generation/TID software queues. Core0 selects a flow,
-reserves a complete batch from one finite internal-SRAM execution pool, and
-only then copies the selected owners into DMA-visible storage. The physical
-pool is independent of peer count and returns only on terminal radio
-completion.
-
-Public Xarxa/Embassy demand/grant scheduling is not part of the design. The
-repository instead maintains separate compatibility, owned and research
-integration boundaries around one radio-native scheduler. See the
-[Wi-Fi egress architecture](../docs/WIFI_EGRESS_ARCHITECTURE.md) and
-[cutover plan](../docs/WIFI_EGRESS_CUTOVER_PLAN.md). The current round-robin
-flow selector is a work-conserving foundation, not yet an airtime-fairness
-claim.
-
-## Extension rules
-
-- Extend AP only through its peer Wi-Fi role; never place AP policy inside STA.
-- Add ESP32-C5 as a peer chip backend. Extract shared code only after both
-  chips demonstrate the same semantic operation; matching offsets are not an
-  abstraction.
-- Add BLE/802.15.4/coexistence only with a real owner graph and scheduler.
-- Keep protocol decisions above LMAC; keep deadlines, DMA and hardware status
-  below it.
-- Keep `embassy-net-driver` in the driver and full `embassy-net` in apps/HIL.
-
-## Acceptance
-
-- host unit tests cover protocol and mailbox/lifecycle transitions;
-- target checks build station, monitor and HIL with the pinned toolchain;
-- examples contain no unsafe/ISR/PAC/DMA code;
-- driver safety audit finds unsafe only in listed leaves;
-- observer-free performance HIL measures UDP/TCP/ICMP transport independently
-  from correctness images and explicitly named diagnostics images.
+Unit tests live in separate child files beside the modules whose private
+contracts they exercise; public integration tests live in crate `tests/`
+directories. Preserve feature gating and ownership assertions when moving
+code. Vendor comparison must exercise compiled production entries and fail
+closed. Examples and HIL may compose or observe the driver, but must not own
+another implementation of its protocol or hardware behavior.

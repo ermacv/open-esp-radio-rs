@@ -1,0 +1,40 @@
+before,after,operation
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma.rs,driver/chips/esp32s31/wifi/src/rx/storage.rs,move existing default storage profile and aliases
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/frontier/lifecycle.rs,driver/chips/esp32s31/wifi/src/rx/frontier/lifecycle.rs,move executor-neutral RX frontier
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/frontier/state.rs,driver/chips/esp32s31/wifi/src/rx/frontier/state.rs,move executor-neutral RX frontier
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/frontier/tests.rs,driver/chips/esp32s31/wifi/src/rx/frontier/tests.rs,move executor-neutral RX frontier
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/frontier/time.rs,driver/chips/esp32s31/wifi/src/rx/time.rs,extract abstract delay; Embassy Timer stays in adapter
+driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem.rs,driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/completion.rs,extract DMA responsibility
+driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem.rs,driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/descriptor.rs,extract DMA responsibility
+driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem.rs,driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/registers.rs,extract DMA responsibility
+driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem.rs,driver/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/transfer.rs,extract DMA responsibility
+driver/bluetooth/hci/src/bootstrap.rs,driver/bluetooth/hci/src/bootstrap/command.rs,extract bootstrap responsibility
+driver/bluetooth/hci/src/bootstrap.rs,driver/bluetooth/hci/src/bootstrap/config.rs,extract bootstrap responsibility
+driver/bluetooth/hci/src/bootstrap.rs,driver/bluetooth/hci/src/bootstrap/response.rs,extract bootstrap responsibility
+driver/bluetooth/hci/src/bootstrap.rs,driver/bluetooth/hci/src/bootstrap/state.rs,extract bootstrap responsibility
+driver/bluetooth/hci/src/channel.rs,driver/bluetooth/hci/src/transport/channel.rs,move async channel; codec and queue extracted
+driver/bluetooth/hci/src/channel.rs,driver/bluetooth/hci/src/transport/channel/codec.rs,extract channel responsibility
+driver/bluetooth/hci/src/channel.rs,driver/bluetooth/hci/src/transport/channel/queue.rs,extract channel responsibility
+driver/bluetooth/hci/src/lib.rs,driver/bluetooth/hci/src/transport/packet.rs,extract transport responsibility
+driver/bluetooth/hci/src/lib.rs,driver/bluetooth/hci/src/transport/queue.rs,extract transport responsibility
+driver/bluetooth/hci/src/resources.rs,driver/bluetooth/hci/src/controller.rs,move joint controller resource owner
+driver/bluetooth/hci/src/resources.rs,driver/bluetooth/hci/src/controller/endpoint.rs,extract affine controller endpoint
+driver/integration/esp32s31/embassy/wifi/src/supervisor/station.rs,driver/integration/esp32s31/embassy/wifi/src/interrupts.rs,extract ISR bindings and shared interrupt owner route
+driver/wifi/ap/src/service.rs,driver/wifi/ap/src/limits.rs,extract software allocation budget and validated client limit
+driver/wifi/ieee80211/src/ht.rs,driver/chips/esp32s31/wifi/ap/src/profile.rs,extract local HT profile; portable encoders accept explicit profile
+driver/wifi/ieee80211/src/station.rs,driver/chips/esp32s31/wifi/sta/src/profile.rs,extract exact local capability profile and hardware channel selection
+driver/wifi/ieee80211/src/station.rs,driver/wifi/sta/src/join/association.rs,move role retry/deadline state
+driver/wifi/ieee80211/src/station.rs,driver/wifi/sta/src/join/authentication.rs,move role retry/deadline state
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma/service.rs,driver/chips/esp32s31/wifi/src/rx/transaction/service.rs,extract synchronous borrowed physical RX transaction
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma.rs,driver/chips/esp32s31/wifi/src/rx/transaction/admission.rs,move value-only admission contracts; retain adapter aliases
+driver/adapters/embassy/esp32s31/wifi/src/diagnostics/rx_pipeline.rs,driver/chips/esp32s31/wifi/src/rx/transaction/observation.rs,move physical service value schemas; retain diagnostic aliases
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma/service.rs,driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma/service/observation.rs,isolate adapter clocks and telemetry implementations
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma.rs,driver/chips/esp32s31/wifi/src/rx/transaction/publisher.rs,define affine publication port implemented by existing adapter
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma/service.rs,driver/chips/esp32s31/wifi/src/rx/transaction/hooks.rs,define statically dispatched observation edges
+driver/adapters/embassy/esp32s31/wifi/src/datapath/rx/dma/service.rs,driver/chips/esp32s31/wifi/src/rx/transaction.rs,borrow existing counters and expose chip transaction namespace
+driver/integration/esp32s31/embassy/ieee80211/src/supervisor/access_point.rs,driver/integration/esp32s31/embassy/ieee80211/src/supervisor/physical.rs,wave 6: extract shared physical owners; preserve fields and transitions
+driver/integration/esp32s31/embassy/ieee80211/src/supervisor/access_point.rs,driver/integration/esp32s31/embassy/ieee80211/src/supervisor/role_transition.rs,wave 6: extract complete parked station phases and split/join operations
+driver/integration/esp32s31/embassy/ieee80211/src/supervisor/access_point.rs,driver/integration/esp32s31/embassy/ieee80211/src/supervisor/access_point_observation.rs,wave 6: extract AP diagnostics with unchanged cfg and storage
+driver/integration/esp32s31/embassy/ieee80211/src/composition/start.rs,driver/chips/esp32s31/ieee80211/src/startup.rs,wave 6: move executor-neutral cold PHY/MAC transaction; retain composition import
+driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/control.rs,driver/chips/esp32s31/ieee80211/sta/src/connected/security.rs,wave 6: move GTK/replay/supplicant owner intact; retain adapter exports
+driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/control_mailbox.rs,driver/chips/esp32s31/ieee80211/sta/src/connected/security.rs,wave 6: move classified EAPOL value contract; retain mailbox alias

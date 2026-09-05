@@ -18,13 +18,13 @@ use crate::{
         BluetoothLegacyConnectableAdvertisingPostRunFailStopCause,
         BluetoothLegacyConnectableAdvertisingPostRunOutcome,
     },
-    controller_start::BluetoothSingleItemSchedulerCompletionFaultOwner,
+    controller::boot::BluetoothSingleItemSchedulerCompletionFaultOwner,
     legacy_connectable_advertising_completion::{
         BluetoothLegacyConnectableAdvertisingCompletionRole,
         BluetoothLegacyConnectableAdvertisingRecycleStep,
     },
     peripheral_connection::BluetoothPeripheralConnectionAcceptedResetCancellationError,
-    scheduler::{
+    scheduler::core::{
         BluetoothSingleItemSchedulerRunning, BluetoothSingleItemSchedulerSoftwareListRemovalReady,
     },
     single_item_completion::{

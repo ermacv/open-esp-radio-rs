@@ -12,7 +12,7 @@ use open_esp_radio_bluetooth_hci::{
 use open_esp_radio_bluetooth_ll::advertising::AdvertisingDelay;
 use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 
-use crate::controller_start::{
+use crate::controller::boot::{
     BluetoothLegacyAdvertisingRecurringCandidateFailure,
     BluetoothLegacyAdvertisingRecurringSequenceCompletion,
 };

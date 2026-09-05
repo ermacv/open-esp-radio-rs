@@ -197,3 +197,6 @@ pub unsafe fn initialize_bluetooth_phy_registers(
     let _powered_owners = (task, interrupts);
     true
 }
+
+#[cfg(feature = "validation-probes")]
+pub(crate) mod transactions;

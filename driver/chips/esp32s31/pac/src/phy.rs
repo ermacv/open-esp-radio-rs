@@ -39,3 +39,23 @@ impl RadioPhyRegisters {
         )
     }
 }
+
+pub(crate) mod agc;
+
+pub(crate) mod baseband;
+
+pub(crate) mod cfr;
+
+pub mod clock;
+
+pub(crate) mod frequency;
+
+pub mod i2c;
+
+pub(crate) mod iq_estimator;
+
+pub(crate) mod low_power;
+
+pub mod pbus;
+
+pub(crate) mod table_memory;

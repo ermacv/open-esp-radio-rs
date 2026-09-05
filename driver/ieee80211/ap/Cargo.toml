@@ -1,0 +1,15 @@
+[package]
+name = "open-esp-radio-wifi-ap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Executor- and chip-independent single-peer Wi-Fi access-point MLME"
+
+[dependencies]
+open-esp-radio-ieee80211 = { path = "../mac" }
+open-esp-radio-wpa2 = { path = "../security/wpa2" }
+
+[lints]
+workspace = true

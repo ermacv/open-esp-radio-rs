@@ -6,14 +6,14 @@ use crate::BluetoothSchedulerFinishedHardwareListObserved;
 
 pub(crate) struct BluetoothLegacyAdvertisingCompletionRole<'a>(core::marker::PhantomData<&'a ()>);
 
-impl<'a> crate::scheduler::BluetoothSingleItemSchedulerRole
+impl<'a> crate::scheduler::core::BluetoothSingleItemSchedulerRole
     for BluetoothLegacyAdvertisingCompletionRole<'a>
 {
     type RunningItem = crate::legacy_advertising::BluetoothLegacyAdvertisingRunningEvent<'a>;
     type CompletionObservedItem =
         crate::legacy_advertising::BluetoothLegacyAdvertisingCompletionObservedEvent<'a>;
-    type Retained = crate::scheduler_timeline::BluetoothSchedulerWindowReservation<
-        crate::scheduler_timeline::BluetoothSchedulerSequenceReady,
+    type Retained = crate::scheduler::timeline::BluetoothSchedulerWindowReservation<
+        crate::scheduler::timeline::BluetoothSchedulerSequenceReady,
     >;
 
     fn running_item_address(
@@ -25,20 +25,20 @@ impl<'a> crate::scheduler::BluetoothSingleItemSchedulerRole
     fn observe_completion(
         item: Self::RunningItem,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
-    ) -> crate::scheduler::BluetoothSingleItemRoleCompletionObservation<Self> {
+    ) -> crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation<Self> {
         match item.observe_completion(observed) {
             crate::legacy_advertising::BluetoothLegacyAdvertisingRunningEventCompletionObservation::ListMismatch {
                 item,
                 observed,
-            } => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
+            } => crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
                 running: item,
                 observed,
             },
             crate::legacy_advertising::BluetoothLegacyAdvertisingRunningEventCompletionObservation::StillInFlight(item) => {
-                crate::scheduler::BluetoothSingleItemRoleCompletionObservation::StillInFlight(item)
+                crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::StillInFlight(item)
             }
             crate::legacy_advertising::BluetoothLegacyAdvertisingRunningEventCompletionObservation::CompletionObserved(item) => {
-                crate::scheduler::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(item)
+                crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(item)
             }
         }
     }

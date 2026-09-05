@@ -27,12 +27,12 @@ wifi-embassy = [
 [dependencies]
 embassy-futures = { version = "0.1.2", optional = true }
 embassy-sync = { version = "0.8.0", optional = true }
-open-esp-radio-ieee80211 = { path = "../wifi/ieee80211", optional = true }
-open-esp-radio-wifi-ap = { path = "../wifi/ap", optional = true }
-open-esp-radio-wifi-softmac = { path = "../wifi/softmac", optional = true }
-open-esp-radio-wifi-sta = { path = "../wifi/sta", optional = true }
-open-esp-radio-wpa2 = { path = "../wifi/wpa2", optional = true }
-open-esp-radio-wifi-embassy = { path = "../adapters/embassy/wifi", optional = true }
+open-esp-radio-ieee80211 = { path = "../ieee80211/mac", optional = true }
+open-esp-radio-wifi-ap = { path = "../ieee80211/ap", optional = true }
+open-esp-radio-wifi-softmac = { path = "../ieee80211/softmac", optional = true }
+open-esp-radio-wifi-sta = { path = "../ieee80211/sta", optional = true }
+open-esp-radio-wpa2 = { path = "../ieee80211/security/wpa2", optional = true }
+open-esp-radio-wifi-embassy = { path = "../adapters/embassy/ieee80211", optional = true }
 
 [lints]
 workspace = true

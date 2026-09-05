@@ -50,7 +50,7 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31ConnectedDatapathPollBatch, Esp32s31ConnectedDatapathPollObserver,
 };
 use open_esp_radio_esp32s31_phy::{
-    PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
+    PhyCalibrationIdentity, PhyCalibrationPath, analog::rfpll::phy_get_rf_cal_version,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 #[cfg(all(

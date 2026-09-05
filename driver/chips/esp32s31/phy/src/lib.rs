@@ -15,62 +15,32 @@ pub mod target_executor;
 #[cfg(target_arch = "riscv32")]
 pub mod target_port;
 
+pub mod analog;
+pub mod calibration;
+pub mod channel;
+mod hardware;
 mod ieee802154_timing_boundary;
-pub mod phy_bb;
-pub mod phy_bluetooth;
-pub mod phy_cal_tracking;
-pub mod phy_channel;
-pub mod phy_client;
-pub mod phy_cold;
-pub mod phy_dc_iq;
-pub mod phy_dcode;
-pub mod phy_frequency;
-mod phy_hardware;
-pub mod phy_i2c;
-pub mod phy_i2c_tracking;
-pub mod phy_math;
-pub mod phy_param_tracking;
-pub mod phy_pbus;
-pub mod phy_pbus_memory;
-pub mod phy_power_tracking;
-pub mod phy_pwdet;
-pub mod phy_register;
-pub mod phy_rfpll;
-pub mod phy_rx_dco;
-pub mod phy_rx_gain;
-pub mod phy_rx_gain_cal;
-pub mod phy_rx_saturation;
-pub mod phy_rxiq;
-pub mod phy_signal_power;
-pub mod phy_state;
-pub mod phy_temperature;
-pub mod phy_tx_cal;
-pub mod phy_tx_power;
-pub mod phy_txdc;
-pub mod phy_txdc_pwdet;
-pub mod phy_txiq;
-pub mod phy_xtal_duty;
+pub mod rx;
+pub mod state;
+pub mod tracking;
+pub mod tx;
+
 mod registered_bluetooth;
 mod registered_radio;
 mod size_limits;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
 
+pub use calibration::registration::{
+    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterAction, PhyRegisterCompletion,
+    PhyRegisterExternalBinding, PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome,
+    PhyRegisterTransition, RegisteredPhyState,
+};
 pub use executor::{
     PhyCalibrationTrackingPort, PhyCalibrationTrackingRunError, PhyParamTrackingPort,
     PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError, run_phy_calibration_tracking,
     run_phy_param_tracking, run_phy_register,
 };
-pub use phy_register::{
-    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterAction, PhyRegisterCompletion,
-    PhyRegisterExternalBinding, PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome,
-    PhyRegisterTransition, RegisteredPhyState,
-};
-pub use phy_state::{
-    PHY_CALIBRATION_SNAPSHOT_SCHEMA, PhyBluetoothCalibration, PhyCalibrationCache,
-    PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
-};
-pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
 pub use registered_bluetooth::{
     RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
     RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyPendingTrack,
@@ -91,6 +61,11 @@ pub use registered_radio::{
     RegisteredPhyRadio, RegisteredPhyTrackEvaluation, RegisteredPhyTrackEvaluationFailure,
     RegisteredPhyTrackPoisoned,
 };
+pub use state::{
+    PHY_CALIBRATION_SNAPSHOT_SCHEMA, PhyBluetoothCalibration, PhyCalibrationCache,
+    PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
+};
+pub use tx::power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
 /// Shared one-microsecond sampling bound used by every target executor and by
 /// host-side qualification of the same typed timeout contract.
 pub const HARDWARE_EDGE_LIMIT: u16 = 10_000;

@@ -11,42 +11,44 @@ use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 
 use crate::{
     HARDWARE_EDGE_LIMIT,
-    phy_bluetooth::{
+    analog::dcode::{PhyDcodeCompletion, PhyDcodeI2cBinding},
+    analog::i2c::{MaskedI2cWriteBinding, MaskedI2cWriteCompletion},
+    analog::pbus::PhyPbusHardwareObservation,
+    analog::rfpll::{RfpllFrequencyCompletion, RfpllFrequencyI2cBinding},
+    analog::temperature::{PhyTemperatureCompletion, PhyTemperatureI2cBinding},
+    calibration::bluetooth::{
         PhyBluetoothI2cAction, PhyBluetoothI2cBinding, PhyBluetoothPbusBinding,
         PhyBluetoothTxPowerCompletion,
     },
-    phy_channel::{PhyChipChannelCompletion, PhyChipChannelI2cBinding},
-    phy_cold::{
+    calibration::cold::{
         PhyColdI2cAction, PhyColdI2cConfigurationBinding, PhyColdI2cError, PhyColdI2cObservation,
     },
-    phy_dcode::{PhyDcodeCompletion, PhyDcodeI2cBinding},
-    phy_i2c::{MaskedI2cWriteBinding, MaskedI2cWriteCompletion},
-    phy_pbus::PhyPbusHardwareObservation,
-    phy_register::{PhyRegisterCompletion, PhyRegisterFinalI2cBinding},
-    phy_rfpll::{RfpllFrequencyCompletion, RfpllFrequencyI2cBinding},
-    phy_rx_dco::{PhyRxDcoCompletion, PhyRxDcoPbusBinding},
-    phy_rx_gain::{PhyRxGainPublishCompletion, PhyRxGainPublishPbusBinding},
-    phy_rx_gain_cal::{
+    calibration::registration::{PhyRegisterCompletion, PhyRegisterFinalI2cBinding},
+    channel::{PhyChipChannelCompletion, PhyChipChannelI2cBinding},
+    rx::dc_offset::{PhyRxDcoCompletion, PhyRxDcoPbusBinding},
+    rx::gain::{PhyRxGainPublishCompletion, PhyRxGainPublishPbusBinding},
+    rx::gain_calibration::{
         PhyRxDcCalibrationCompletion, PhyRxDcCalibrationPbusBinding, PhyRxGainDcCompletion,
         PhyRxGainDcPbusBinding,
     },
-    phy_rx_saturation::{PhyRxSaturationCompletion, PhyRxSaturationPbusBinding},
-    phy_rxiq::{
+    rx::iq::{
         PhyRxIqAdjustedTxCompletion, PhyRxIqAdjustedTxI2cBinding, PhyRxIqGainCompletion,
         PhyRxIqGainI2cBinding, PhyRxIqGainPbusBinding, PhyRxIqInitCompletion,
         PhyRxIqInitI2cBinding, PhyRxIqInitPbusBinding,
     },
-    phy_temperature::{PhyTemperatureCompletion, PhyTemperatureI2cBinding},
-    phy_tx_cal::{PhyTxCalibrationEnvironmentCompletion, PhyTxCalibrationEnvironmentPbusBinding},
-    phy_tx_power::{PhyTxPowerCompletion, PhyTxPowerI2cBinding},
-    phy_txdc_pwdet::{
+    rx::saturation::{PhyRxSaturationCompletion, PhyRxSaturationPbusBinding},
+    tx::calibration::{
+        PhyTxCalibrationEnvironmentCompletion, PhyTxCalibrationEnvironmentPbusBinding,
+    },
+    tx::dc_power_detector::{
         PhyTxDcPwdetCompletion, PhyTxDcPwdetPbusBinding, PhyTxDcPwdetSearchCompletion,
         PhyTxDcPwdetSearchPbusBinding,
     },
-    phy_txiq::{
+    tx::iq::{
         PhyTxIqCalibrationCompletion, PhyTxIqInitCompletion, PhyTxIqInitI2cBinding,
         PhyTxIqPbusBinding,
     },
+    tx::power::{PhyTxPowerCompletion, PhyTxPowerI2cBinding},
 };
 
 /// Executor-independent asynchronous delay used by target PHY operations.
@@ -277,7 +279,7 @@ pub async fn complete_bluetooth_i2c<D: PhyAsyncDelay>(
 pub async fn complete_i2c_configuration<D: PhyAsyncDelay>(
     mut binding: PhyColdI2cConfigurationBinding,
     registers: &mut impl SharedPhyAccess,
-) -> Result<crate::phy_i2c::PhyRfInitPrefixCompletion, PhyTargetPortError> {
+) -> Result<crate::analog::i2c::PhyRfInitPrefixCompletion, PhyTargetPortError> {
     for _ in 0..HARDWARE_EDGE_LIMIT {
         match binding.action() {
             open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationAction::StartCommand => {

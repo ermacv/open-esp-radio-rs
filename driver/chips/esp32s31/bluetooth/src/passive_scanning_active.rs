@@ -11,8 +11,8 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothLeReceivedBatch, BluetoothPassiveScanSchedulerItemCompletionStatus,
 };
 
-use crate::controller_start::BluetoothSingleItemSchedulerCompletionFaultOwner;
-use crate::scheduler::BluetoothPassiveScanSchedulerRecycleStep;
+use crate::controller::boot::BluetoothSingleItemSchedulerCompletionFaultOwner;
+use crate::scheduler::core::BluetoothPassiveScanSchedulerRecycleStep;
 use crate::single_item_completion::{
     BluetoothSingleItemCompletion, BluetoothSingleItemCompletionFault,
     BluetoothSingleItemCompletionFaultCause, BluetoothSingleItemCompletionStep,
@@ -24,7 +24,7 @@ use crate::{
     BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
 };
 
-type RemovalReady = crate::scheduler::BluetoothSingleItemSchedulerSoftwareListRemovalReady<
+type RemovalReady = crate::scheduler::core::BluetoothSingleItemSchedulerSoftwareListRemovalReady<
     BluetoothPassiveScanCompletionRole,
 >;
 
@@ -41,13 +41,15 @@ enum BluetoothPassiveScanActivePhase {
 
 pub(crate) struct BluetoothPassiveScanCompletionRole;
 
-impl crate::scheduler::BluetoothSingleItemSchedulerRole for BluetoothPassiveScanCompletionRole {
+impl crate::scheduler::core::BluetoothSingleItemSchedulerRole
+    for BluetoothPassiveScanCompletionRole
+{
     type RunningItem =
         open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphRunning;
     type CompletionObservedItem =
         open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObserved;
-    type Retained = crate::scheduler_timeline::BluetoothSchedulerWindowReservation<
-        crate::scheduler_timeline::BluetoothSchedulerSequenceReady,
+    type Retained = crate::scheduler::timeline::BluetoothSchedulerWindowReservation<
+        crate::scheduler::timeline::BluetoothSchedulerSequenceReady,
     >;
 
     fn running_item_address(
@@ -59,20 +61,20 @@ impl crate::scheduler::BluetoothSingleItemSchedulerRole for BluetoothPassiveScan
     fn observe_completion(
         item: Self::RunningItem,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
-    ) -> crate::scheduler::BluetoothSingleItemRoleCompletionObservation<Self> {
+    ) -> crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation<Self> {
         match item.observe_completion(observed) {
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObservation::ListMismatch {
                 running,
                 observed,
-            } => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
+            } => crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
                 running,
                 observed,
             },
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObservation::StillInFlight(running) => {
-                crate::scheduler::BluetoothSingleItemRoleCompletionObservation::StillInFlight(running)
+                crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::StillInFlight(running)
             }
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanMemoryGraphCompletionObservation::CompletionObserved(completed) => {
-                crate::scheduler::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(completed)
+                crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(completed)
             }
         }
     }

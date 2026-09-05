@@ -49,7 +49,7 @@ struct CoexClockHal<'registers, 'owner> {
 
 impl CoexClockHardware for CoexClockHal<'_, '_> {
     fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        crate::wifi_mac::coex_timer_clock_for_chip(
+        crate::wifi::mac::coex_timer_clock_for_chip(
             self.owner
                 .registers
                 .borrow()

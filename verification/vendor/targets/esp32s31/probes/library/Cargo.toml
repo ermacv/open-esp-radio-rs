@@ -21,7 +21,7 @@ open-esp-radio-esp32s31-wifi.workspace = true
 open-esp-radio-esp32s31-wifi-dma.workspace = true
 open-esp-radio-esp32s31-wifi-embassy.workspace = true
 open-esp-radio-wifi-softmac.workspace = true
-open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../../../../driver/adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
+open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../../../../driver/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
 
 [lib]
 crate-type = ["rlib", "staticlib"]

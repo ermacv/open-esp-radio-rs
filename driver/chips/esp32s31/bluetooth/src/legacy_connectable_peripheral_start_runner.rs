@@ -29,7 +29,7 @@ use crate::{
     BluetoothPeripheralConnectionSchedulerRecycled, BluetoothSchedulerHeadPublicationError,
     BluetoothSchedulerRunInterruptStorage,
     connectable_advertising::BluetoothLegacyConnectableAdvertisingConnectionTransfer,
-    controller_start::peripheral_connection::{
+    controller::boot::peripheral_connection::{
         BluetoothPeripheralConnectionControllerPreparationFailStop,
         BluetoothPeripheralConnectionControllerPreparationPending,
         BluetoothPeripheralConnectionControllerPreparationStep,
@@ -41,7 +41,7 @@ use crate::{
         BluetoothPeripheralConnectionCompletionRole, BluetoothPeripheralConnectionRecycleFailure,
         BluetoothPeripheralConnectionRecycleFailureCause,
     },
-    scheduler::BluetoothSingleItemSchedulerSoftwareListRemovalReady,
+    scheduler::core::BluetoothSingleItemSchedulerSoftwareListRemovalReady,
     single_item_completion::{
         BluetoothSingleItemCompletion, BluetoothSingleItemCompletionFault,
         BluetoothSingleItemCompletionFaultCause, BluetoothSingleItemCompletionStep,
@@ -413,7 +413,7 @@ pub struct BluetoothLegacyConnectablePeripheralFirstCompletionFailStop<
     _event_counter: u16,
     _evidence: BluetoothLegacyConnectablePeripheralFirstRunningEvidence,
     _fault: BluetoothSingleItemCompletionFault<
-        crate::controller_start::BluetoothSingleItemSchedulerCompletionFaultOwner<
+        crate::controller::boot::BluetoothSingleItemSchedulerCompletionFaultOwner<
             BluetoothPeripheralConnectionCompletionRole,
         >,
     >,
@@ -1501,10 +1501,10 @@ where
                 ),
                 BluetoothPeripheralConnectionControllerPreparationTerminal::FailStop(failure) => {
                     let cause = match failure.cause() {
-                        crate::controller_start::peripheral_connection::BluetoothPeripheralConnectionControllerPreparationFailStopCause::ControllerTime(error) => {
+                        crate::controller::boot::peripheral_connection::BluetoothPeripheralConnectionControllerPreparationFailStopCause::ControllerTime(error) => {
                             BluetoothLegacyConnectablePeripheralFirstFailStopCause::PreparationControllerTime(error)
                         }
-                        crate::controller_start::peripheral_connection::BluetoothPeripheralConnectionControllerPreparationFailStopCause::PhaseOwnership => {
+                        crate::controller::boot::peripheral_connection::BluetoothPeripheralConnectionControllerPreparationFailStopCause::PhaseOwnership => {
                             BluetoothLegacyConnectablePeripheralFirstFailStopCause::PreparationPhaseOwnership
                         }
                     };

@@ -12,10 +12,10 @@ validation-probes = ["open-esp-radio-esp32s31-pac-raw/validation-probes"]
 
 [dependencies]
 open-esp-radio-dma = { path = "../../../common/dma" }
-open-esp-radio-esp32s31-pac-raw = { path = "../pac-raw", features = ["critical-section"] }
+open-esp-radio-esp32s31-pac-raw = { path = "raw", features = ["critical-section"] }
 
 [dev-dependencies]
-open-esp-radio-esp32s31-pac-raw = { path = "../pac-raw", features = ["validation-probes"] }
+open-esp-radio-esp32s31-pac-raw = { path = "raw", features = ["validation-probes"] }
 
 [lints]
 workspace = true

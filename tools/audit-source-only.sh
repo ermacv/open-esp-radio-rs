@@ -21,10 +21,11 @@ command -v llvm-nm >/dev/null
 command -v llvm-cxxfilt >/dev/null
 command -v setsid >/dev/null
 
-# Every tracked Cargo package must resolve through a checked-in lockfile at its
+# Every source Cargo package must resolve through a checked-in lockfile at its
 # actual workspace boundary. This also covers the independently buildable HIL,
 # example, product-integration, and probe workspaces without reading local or
 # private vendor inputs.
+python3 -B -m unittest discover -s tools/tests -p 'test_audit_cargo_metadata.py'
 tools/audit-cargo-metadata.sh
 
 # The public ESP32-S31 examples are independent workspaces so the root

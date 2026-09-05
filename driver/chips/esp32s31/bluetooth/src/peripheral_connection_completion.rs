@@ -19,12 +19,12 @@ use crate::{
         BluetoothPeripheralConnectionFirstEventCompletionObserved,
         BluetoothPeripheralConnectionFirstEventRunning,
     },
-    scheduler_timeline::{BluetoothSchedulerSequenceReady, BluetoothSchedulerWindowReservation},
+    scheduler::timeline::{BluetoothSchedulerSequenceReady, BluetoothSchedulerWindowReservation},
 };
 
 pub(crate) struct BluetoothPeripheralConnectionCompletionRole;
 
-impl crate::scheduler::BluetoothSingleItemSchedulerRole
+impl crate::scheduler::core::BluetoothSingleItemSchedulerRole
     for BluetoothPeripheralConnectionCompletionRole
 {
     type RunningItem = BluetoothPeripheralConnectionFirstEventRunning;
@@ -38,24 +38,24 @@ impl crate::scheduler::BluetoothSingleItemSchedulerRole
     fn observe_completion(
         item: Self::RunningItem,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
-    ) -> crate::scheduler::BluetoothSingleItemRoleCompletionObservation<Self> {
+    ) -> crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation<Self> {
         match item.observe_completion(observed) {
             BluetoothPeripheralConnectionFirstEventCompletionObservation::ListMismatch {
                 running,
                 observed,
-            } => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
+            } => crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::ListMismatch {
                 running,
                 observed,
             },
             BluetoothPeripheralConnectionFirstEventCompletionObservation::StillInFlight(
                 running,
-            ) => crate::scheduler::BluetoothSingleItemRoleCompletionObservation::StillInFlight(
+            ) => crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::StillInFlight(
                 running,
             ),
             BluetoothPeripheralConnectionFirstEventCompletionObservation::CompletionObserved(
                 completed,
             ) => {
-                crate::scheduler::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(
+                crate::scheduler::core::BluetoothSingleItemRoleCompletionObservation::CompletionObserved(
                     completed,
                 )
             }
@@ -144,5 +144,5 @@ impl BluetoothPeripheralConnectionRecycleFailure {
 
 pub(crate) type BluetoothPeripheralConnectionRecycleOutcome = ControlFlow<
     BluetoothPeripheralConnectionRecycleFailure,
-    crate::scheduler::BluetoothPeripheralConnectionSchedulerRecycled,
+    crate::scheduler::core::BluetoothPeripheralConnectionSchedulerRecycled,
 >;

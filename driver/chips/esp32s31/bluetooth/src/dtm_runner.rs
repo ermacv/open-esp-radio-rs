@@ -13,7 +13,7 @@ use open_esp_radio_bluetooth_hci::{
     LeControllerDeferredTransmitterStart, LeControllerResponsePending,
 };
 
-use crate::scheduler::{
+use crate::scheduler::core::{
     BluetoothDtmFirstPreparationCompletionClass, classify_dtm_first_preparation_completion,
 };
 

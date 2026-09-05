@@ -10,7 +10,7 @@ use crate::{
         BluetoothLegacyConnectableAdvertisingNextEventPortable,
         BluetoothLegacyConnectableAdvertisingRecurrenceStopped,
     },
-    controller_start::timed_preparation::{
+    controller::boot::timed_preparation::{
         BluetoothTimedPreparationCancellationPending, BluetoothTimedPreparationCancellationStep,
     },
     legacy_connectable_advertising_active::BluetoothLegacyConnectableAdvertisingAwaitingRecurrence,

@@ -32,10 +32,7 @@ mod clock;
 #[cfg(target_arch = "riscv32")]
 mod common_phy_state;
 mod connectable_advertising;
-#[cfg(any(target_arch = "riscv32", test))]
-mod controller_hal;
-mod controller_start;
-mod controller_time;
+mod controller;
 #[cfg(target_arch = "riscv32")]
 mod dtm_active;
 #[cfg(target_arch = "riscv32")]
@@ -71,8 +68,6 @@ mod dtm_tx_packet;
 #[cfg(any(target_arch = "riscv32", test))]
 mod hci;
 mod interrupt;
-mod interrupt_classifier;
-mod interrupt_wake;
 mod legacy_advertising;
 #[cfg(target_arch = "riscv32")]
 mod legacy_advertising_active;
@@ -105,7 +100,6 @@ mod legacy_connectable_peripheral_start_runner;
 #[cfg(any(target_arch = "riscv32", test))]
 mod low_power;
 mod modem_lp_timer_queue;
-mod nrt_interrupt;
 mod passive_scanning;
 #[cfg(target_arch = "riscv32")]
 mod passive_scanning_active;
@@ -120,18 +114,9 @@ mod peripheral_connection;
 mod peripheral_connection_completion;
 #[cfg(target_arch = "riscv32")]
 mod phy;
-mod primary_interrupt;
 mod resources;
 mod runtime_resources;
-#[cfg(any(target_arch = "riscv32", test))]
 mod scheduler;
-mod scheduler_config;
-mod scheduler_finished_lists;
-mod scheduler_insertion;
-mod scheduler_lock_modify;
-mod scheduler_time;
-#[cfg(any(target_arch = "riscv32", test))]
-mod scheduler_timeline;
 #[cfg(any(test, target_arch = "riscv32"))]
 mod single_item_completion;
 #[cfg(feature = "validation-probes")]
@@ -156,9 +141,7 @@ pub use common_phy_state::{
 };
 pub use connectable_advertising::BluetoothLegacyConnectableAdvertisingRuntimeResources;
 #[cfg(target_arch = "riscv32")]
-pub use controller_hal::BluetoothControllerHalInitialized;
-#[cfg(target_arch = "riscv32")]
-pub use controller_start::peripheral_connection::{
+pub use controller::boot::peripheral_connection::{
     BluetoothPeripheralConnectionCompletionStep,
     BluetoothPeripheralConnectionControllerPreparationError,
     BluetoothPeripheralConnectionRecurringCandidateStep,
@@ -166,7 +149,7 @@ pub use controller_start::peripheral_connection::{
     BluetoothPeripheralConnectionRecurringSequenceCompletion,
 };
 #[cfg(target_arch = "riscv32")]
-pub use controller_start::{
+pub use controller::boot::{
     BluetoothAlwaysAwakePostEnableTimeBeginError, BluetoothAlwaysAwakePostEnableTimeBeginFailure,
     BluetoothAlwaysAwakePostEnableTimeError, BluetoothAlwaysAwakePostEnableTimeFailure,
     BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep, BluetoothAlwaysAwakePostEnableTimePending,
@@ -213,8 +196,10 @@ pub use controller_start::{
     BluetoothPeripheralConnectionSchedulerStartFailure, BluetoothSchedulerRunInterruptStorage,
     BluetoothSharedInterruptDispatchStorage,
 };
+#[cfg(target_arch = "riscv32")]
+pub use controller::hal::BluetoothControllerHalInitialized;
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use controller_time::{
+pub(crate) use controller::time::{
     BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
 };
 #[cfg(target_arch = "riscv32")]
@@ -328,18 +313,23 @@ pub use dtm_tx_packet::{
 pub use hci::{
     BluetoothControllerHciBindError, BluetoothControllerHciBindFailure, BluetoothControllerHciBound,
 };
-pub use interrupt::{
-    BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,
-    BluetoothInterruptHandlerResidency,
-};
-pub use interrupt_classifier::{
+pub use interrupt::classifier::{
     BluetoothPrimaryControllerFault, BluetoothPrimaryInterruptClassification,
     BluetoothPrimarySchedulerTrigger, BluetoothSchedulerReferenceAction,
     BluetoothSchedulerReferenceGate, BluetoothSchedulerReferenceGateObservation,
     BluetoothSchedulerWorkClassifier, BluetoothSchedulerWorkObservation,
     BluetoothSchedulerWorkerWake, BluetoothSchedulerWorkerWakeClass,
 };
-pub use interrupt_wake::{
+pub use interrupt::nrt::{BluetoothNrtDefaultInterruptEpoch, step_nrt_default_interrupt};
+pub use interrupt::primary::{
+    BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
+    BluetoothPrimaryPublishedInterruptStep, BluetoothPrimarySchedulerEvent, step_primary_interrupt,
+};
+pub use interrupt::route::{
+    BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,
+    BluetoothInterruptHandlerResidency,
+};
+pub use interrupt::wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
 };
 #[cfg(target_arch = "riscv32")]
@@ -567,7 +557,6 @@ pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerWorkerWakeCell, BluetoothModemLpTimerWorkerWakePublication,
     step_modem_lp_timer_interrupt,
 };
-pub use nrt_interrupt::{BluetoothNrtDefaultInterruptEpoch, step_nrt_default_interrupt};
 #[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 #[cfg(not(target_arch = "riscv32"))]
@@ -639,10 +628,6 @@ pub use phy::{
     BluetoothControllerPhyPendingTracking, BluetoothControllerPhyTrackingFailure,
     BluetoothPhyInitializationConfig,
 };
-pub use primary_interrupt::{
-    BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
-    BluetoothPrimaryPublishedInterruptStep, BluetoothPrimarySchedulerEvent, step_primary_interrupt,
-};
 pub use resources::{BluetoothRadioHardware, BluetoothStopped, BluetoothStoppedReleaseFailure};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime_resources::BluetoothControllerPoweredTaskRuntime;
@@ -650,8 +635,9 @@ pub use runtime_resources::{
     BluetoothControllerInterruptRuntime, BluetoothControllerModemTimerRuntime,
     BluetoothControllerRuntimeResources, BluetoothControllerTaskRuntime,
 };
+pub use scheduler::config::BluetoothSchedulerSoftwareConfig;
 #[cfg(any(target_arch = "riscv32", test))]
-pub use scheduler::{
+pub use scheduler::core::{
     BluetoothControllerTimeAcquisitionError, BluetoothDtmControllerEventPreparationError,
     BluetoothDtmEmptySchedulerMergePrepared, BluetoothDtmInitialSchedulerItemPhase,
     BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmSchedulerHeadPublicationFailure,
@@ -665,7 +651,7 @@ pub use scheduler::{
     BluetoothSchedulerHeadPublicationError, BluetoothSchedulerInitialized,
 };
 #[cfg(target_arch = "riscv32")]
-pub use scheduler::{
+pub use scheduler::core::{
     BluetoothDtmControllerRxPreparationFailure,
     BluetoothDtmControllerRxRecurringPreparationFailure,
     BluetoothDtmControllerTxPreparationFailure,
@@ -692,7 +678,7 @@ pub use scheduler::{
     BluetoothPeripheralConnectionSchedulerRecycled,
 };
 #[cfg(target_arch = "riscv32")]
-pub use scheduler::{
+pub use scheduler::core::{
     BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
     BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerRunningDrainStep,
     BluetoothLegacyAdvertisingRecurringEventPreparationError,
@@ -701,7 +687,7 @@ pub use scheduler::{
     BluetoothSchedulerFinishedListDrainState,
 };
 #[cfg(any(target_arch = "riscv32", test))]
-pub use scheduler::{
+pub use scheduler::core::{
     BluetoothLegacyAdvertisingAdmissionObservation, BluetoothLegacyAdvertisingEventPrepared,
     BluetoothLegacyAdvertisingFirstEventPreparationError,
     BluetoothLegacyAdvertisingFirstEventPreparationFailure,
@@ -711,28 +697,27 @@ pub use scheduler::{
     BluetoothPassiveScanFirstEventPreparationFailure, BluetoothPassiveScanFirstPreSequence,
     BluetoothPassiveScanSequenceObservation,
 };
-pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
-pub use scheduler_finished_lists::{
+pub use scheduler::finished_lists::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListCaptureError,
     BluetoothSchedulerFinishedListWorker, BluetoothSchedulerFinishedListWorkerStep,
     BluetoothSchedulerHardwareListIndex,
 };
-pub use scheduler_insertion::{
+pub use scheduler::insertion::{
     BluetoothSchedulerInsertionBeginOutcome, BluetoothSchedulerInsertionBusyDecision,
     BluetoothSchedulerInsertionEndPrelude, BluetoothSchedulerInsertionFinalAction,
     BluetoothSchedulerInsertionItemStatusGate, BluetoothSchedulerInsertionLockModifyGate,
     BluetoothSchedulerInsertionSleepDecision, BluetoothSchedulerInsertionSleepGate,
 };
-pub use scheduler_lock_modify::{
+pub use scheduler::lock_modify::{
     BluetoothSchedulerLockModifyBeginError, BluetoothSchedulerLockModifyEvent,
     BluetoothSchedulerLockModifyEventCell, BluetoothSchedulerLockModifyEventPublication,
     BluetoothSchedulerLockModifyInterruptObservation,
     BluetoothSchedulerLockModifyPublicationResult, BluetoothSchedulerLockModifyWorker,
     BluetoothSchedulerLockModifyWorkerStep,
 };
-pub(crate) use scheduler_time::BluetoothSchedulerInstant;
+pub(crate) use scheduler::time::BluetoothSchedulerInstant;
 #[cfg(any(target_arch = "riscv32", test))]
-pub use scheduler_timeline::{
+pub use scheduler::timeline::{
     BluetoothSchedulerRawWindow, BluetoothSchedulerReservationError,
     BluetoothSchedulerReservationReleaseError, BluetoothSchedulerReservationReleaseFailure,
     BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,

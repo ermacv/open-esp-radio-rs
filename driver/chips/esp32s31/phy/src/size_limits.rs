@@ -4,8 +4,8 @@ use core::mem::size_of;
 
 use crate::{
     PhyCalibrationCache, PhyRegisterTransition, PhyState, RegisteredPhyRadio, RegisteredPhyState,
-    phy_bb::PhyBbInitTransition,
-    phy_rx_gain::{PhyRxGainInitTransition, PhyRxGainPublishTransition},
+    calibration::baseband::PhyBbInitTransition,
+    rx::gain::{PhyRxGainInitTransition, PhyRxGainPublishTransition},
 };
 
 // These are reviewed RV32 budgets, rounded above the 1.97.1 layouts rather

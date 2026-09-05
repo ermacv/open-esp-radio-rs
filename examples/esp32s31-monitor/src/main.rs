@@ -10,12 +10,10 @@ use esp_hal::{
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
-use open_esp_radio::{
-    MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig,
-};
-use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version};
+use open_esp_radio::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use open_esp_radio_esp32s31_embassy_wifi::{Esp32s31RadioConfig, new};
+use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
 

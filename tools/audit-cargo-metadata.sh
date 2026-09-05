@@ -11,8 +11,9 @@ fi
 cd "$repo_root"
 
 # Discover workspace roots through Cargo instead of maintaining a second list
-# beside the manifests. Restrict discovery to tracked manifests so private or
-# local-only trees (in particular `_oracles/`) can never enter the audit.
+# beside the manifests. Include non-ignored additions so a moved independent
+# workspace is checked before staging. Git ignores exclude local build trees;
+# the explicit private-input exclusion applies even if a file was force-added.
 declare -A workspace_manifests=()
 while IFS= read -r -d '' manifest; do
     # A local removal remains in the index until commit; audit the manifests
@@ -32,10 +33,11 @@ while IFS= read -r -d '' manifest; do
             ;;
     esac
     workspace_manifests["$workspace_manifest"]=1
-done < <(git ls-files -z -- 'Cargo.toml' '**/Cargo.toml')
+done < <(git ls-files --cached --others --exclude-standard -z -- \
+    'Cargo.toml' '**/Cargo.toml' ':(exclude)_oracles/**')
 
 if ((${#workspace_manifests[@]} == 0)); then
-    echo "no tracked Cargo manifests found" >&2
+    echo "no source Cargo manifests found" >&2
     exit 1
 fi
 

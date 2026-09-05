@@ -5,7 +5,7 @@
 This Rust 2024 workspace separates shipping code from evidence and tooling:
 
 - `driver/` contains production radio code. Cross-chip protocols live in
-  `driver/wifi/`; ESP32-S31 PAC, HAL, PHY, DMA, and MAC implementations live
+  `driver/ieee80211/`; ESP32-S31 PAC, HAL, PHY, DMA, and MAC implementations live
   under `driver/chips/esp32s31/`; executor and board bindings live in
   `driver/adapters/` and `driver/integration/`.
 - `hil/` contains the typed HIL protocol, host runner, targets, and scenarios.

@@ -11,7 +11,7 @@ use open_esp_radio_bluetooth_hci::{
     LeControllerDeferredLegacyNonconnectableAdvertisingStart, LeControllerResponsePending,
 };
 
-use crate::controller_start::{
+use crate::controller::boot::{
     BluetoothLegacyAdvertisingControllerInitialPreparationFailure,
     BluetoothLegacyAdvertisingControllerPreparationFailStop,
 };
@@ -120,7 +120,7 @@ where
 {
     command: BluetoothLegacyAdvertisingDeferredStart<'runtime>,
     task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    running: crate::scheduler::BluetoothSingleItemSchedulerRunning<
+    running: crate::scheduler::core::BluetoothSingleItemSchedulerRunning<
         crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole<'static>,
     >,
 }

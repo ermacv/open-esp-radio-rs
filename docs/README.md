@@ -18,6 +18,12 @@
   Blobray workflow and canonical documentation.
 - [`BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md`](BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md):
   Bluetooth layer boundaries, monolith findings and refactor order.
+- [`DRIVER_STRUCTURE_AUDIT.md`](DRIVER_STRUCTURE_AUDIT.md): complete driver
+  inventory, ownership findings and proposed module/package boundaries.
+- [`DRIVER_STRUCTURE_PLAN.md`](DRIVER_STRUCTURE_PLAN.md): staged structural
+  migration with validation gates and unchanged-behavior constraints.
+- [`DRIVER_PROTOCOL_NAMING.md`](DRIVER_PROTOCOL_NAMING.md): technical protocol
+  terminology, recommended family namespaces and concrete boundary findings.
 - [`../qualification/`](../qualification/README.md): machine-readable claims
   and dated hardware evidence.
 - [`../verification/`](../verification/README.md): structured vendor evidence,

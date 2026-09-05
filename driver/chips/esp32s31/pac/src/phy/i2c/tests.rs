@@ -1,0 +1,365 @@
+use std::{cell::RefCell, collections::VecDeque, vec::Vec};
+
+use super::{
+    BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
+    BluetoothTxPowerControlI2cAccess, BluetoothTxPowerControlObservation,
+    BluetoothTxPowerControlOperation, BluetoothTxPowerControlPrepareError,
+    BluetoothTxPowerControlRegister, BluetoothTxPowerControlRestoreError,
+    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cConfigurationAccess,
+    PhyI2cConfigurationAction, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
+    PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
+    PhyI2cInitializationStageOneInputs,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Operation {
+    Read(BluetoothTxPowerControlRegister),
+    Write(BluetoothTxPowerControlRegister, u8),
+}
+
+struct FakeI2c {
+    restore: Option<(u8, u8)>,
+    reads: RefCell<VecDeque<u8>>,
+    operations: Vec<Operation>,
+    busy_starts: u8,
+}
+
+impl FakeI2c {
+    fn new(reads: impl IntoIterator<Item = u8>) -> Self {
+        Self {
+            restore: None,
+            reads: RefCell::new(reads.into_iter().collect()),
+            operations: Vec::new(),
+            busy_starts: 0,
+        }
+    }
+
+    fn accept_start(&mut self) -> Result<(), ()> {
+        if self.busy_starts == 0 {
+            Ok(())
+        } else {
+            self.busy_starts -= 1;
+            Err(())
+        }
+    }
+}
+
+impl BluetoothTxPowerControlI2cAccess for FakeI2c {
+    fn reserve_restore(&mut self) -> Result<(), BluetoothTxPowerControlPrepareError> {
+        if self.restore.is_some() {
+            Err(BluetoothTxPowerControlPrepareError::RestorePending)
+        } else {
+            self.restore = Some((0, 0));
+            Ok(())
+        }
+    }
+
+    fn capture_low(&mut self, value: u8) -> Result<(), BluetoothTxPowerControlRestoreError> {
+        let Some((_, high)) = self.restore else {
+            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
+        };
+        self.restore = Some((value, high));
+        Ok(())
+    }
+
+    fn capture_high(&mut self, value: u8) -> Result<(), BluetoothTxPowerControlRestoreError> {
+        let Some((low, _)) = self.restore else {
+            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
+        };
+        self.restore = Some((low, value));
+        Ok(())
+    }
+
+    fn restore_values(&self) -> Result<(u8, u8), BluetoothTxPowerControlRestoreError> {
+        self.restore
+            .ok_or(BluetoothTxPowerControlRestoreError::RestoreNotPending)
+    }
+
+    fn finish_restore(&mut self) -> Result<(), BluetoothTxPowerControlRestoreError> {
+        self.restore_values()?;
+        self.restore = None;
+        Ok(())
+    }
+
+    fn start_read(&mut self, register: BluetoothTxPowerControlRegister) -> Result<(), ()> {
+        self.accept_start()?;
+        self.operations.push(Operation::Read(register));
+        Ok(())
+    }
+
+    fn start_write(
+        &mut self,
+        register: BluetoothTxPowerControlRegister,
+        value: u8,
+    ) -> Result<(), ()> {
+        self.accept_start()?;
+        self.operations.push(Operation::Write(register, value));
+        Ok(())
+    }
+
+    fn observe_read(&self) -> Result<u8, ()> {
+        self.reads.borrow_mut().pop_front().ok_or(())
+    }
+
+    fn observe_write(&self) -> Result<(), ()> {
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct FakeConfigurationI2c {
+    accepted_commands: u8,
+    busy_starts: u8,
+    pending_observations: u8,
+}
+
+impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
+    fn start_read(&mut self, _block: u8, _register: u8) -> Result<(), ()> {
+        if self.busy_starts != 0 {
+            self.busy_starts -= 1;
+            return Err(());
+        }
+        self.accepted_commands += 1;
+        Ok(())
+    }
+
+    fn start_write(&mut self, _block: u8, _register: u8, _value: u8) -> Result<(), ()> {
+        if self.busy_starts != 0 {
+            self.busy_starts -= 1;
+            return Err(());
+        }
+        self.accepted_commands += 1;
+        Ok(())
+    }
+
+    fn observe_read(&self) -> Result<u8, ()> {
+        if self.pending_observations == 0 {
+            Ok(0xa0)
+        } else {
+            Err(())
+        }
+    }
+
+    fn observe_write(&self) -> Result<(), ()> {
+        if self.pending_observations == 0 {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+fn drive_configuration(
+    transaction: &mut PhyI2cConfigurationTransaction,
+    access: &mut FakeConfigurationI2c,
+) {
+    for _ in 0..64 {
+        match transaction.action() {
+            PhyI2cConfigurationAction::StartCommand => {
+                transaction.start_with(access).unwrap();
+            }
+            PhyI2cConfigurationAction::AwaitCompletionEdge => {
+                assert_eq!(
+                    transaction.observe_with(access).unwrap(),
+                    PhyI2cConfigurationObservation::EdgeConsumed
+                );
+            }
+            PhyI2cConfigurationAction::Complete => return,
+        }
+    }
+    panic!("PHY-I2C configuration exceeded its finite plan")
+}
+
+#[test]
+fn configuration_operations_are_finite_and_retry_a_busy_start() {
+    let mut access = FakeConfigurationI2c {
+        busy_starts: 1,
+        ..FakeConfigurationI2c::default()
+    };
+    let mut bias = PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::BiasRegisters);
+
+    assert_eq!(
+        bias.start_with(&mut access),
+        Err(PhyI2cConfigurationError::BusyAtStart)
+    );
+    assert_eq!(bias.action(), PhyI2cConfigurationAction::StartCommand);
+    drive_configuration(&mut bias, &mut access);
+    assert_eq!(bias.action(), PhyI2cConfigurationAction::Complete);
+    assert_eq!(access.accepted_commands, 2);
+
+    let mut adc_rate = PhyI2cConfigurationTransaction::new(
+        PhyI2cConfigurationOperation::ConfigureAdcRate(PhyAdcRate::High),
+    );
+    drive_configuration(&mut adc_rate, &mut access);
+    assert_eq!(adc_rate.action(), PhyI2cConfigurationAction::Complete);
+
+    let mut bbpll =
+        PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::EnableBbpllCalibration);
+    drive_configuration(&mut bbpll, &mut access);
+    assert_eq!(bbpll.action(), PhyI2cConfigurationAction::Complete);
+
+    access.accepted_commands = 0;
+    let mut filter_dcap =
+        PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::FilterDcap(
+            PhyFilterDcapInputs::new(0x12, 0x34, 0x3a, 0x56, 0x87),
+        ));
+
+    drive_configuration(&mut filter_dcap, &mut access);
+    assert_eq!(filter_dcap.action(), PhyI2cConfigurationAction::Complete);
+    assert_eq!(access.accepted_commands, 18);
+    assert_eq!(
+        filter_dcap.observe_with(&access),
+        Err(PhyI2cConfigurationError::AlreadyComplete)
+    );
+
+    access.accepted_commands = 0;
+    let mut initialization =
+        PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::InitializationStageOne(
+            PhyI2cInitializationStageOneInputs::new(0x55, 0xfe),
+        ));
+    drive_configuration(&mut initialization, &mut access);
+    assert_eq!(initialization.action(), PhyI2cConfigurationAction::Complete);
+    assert_eq!(access.accepted_commands, 26);
+
+    access.accepted_commands = 0;
+    let mut sar2 =
+        PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::Sar2Initialization);
+    access.busy_starts = 1;
+    assert_eq!(
+        sar2.start_with(&mut access),
+        Err(PhyI2cConfigurationError::BusyAtStart)
+    );
+    sar2.start_with(&mut access).unwrap();
+    access.pending_observations = 1;
+    assert_eq!(
+        sar2.observe_with(&access),
+        Ok(PhyI2cConfigurationObservation::StillPending)
+    );
+    assert_eq!(
+        sar2.action(),
+        PhyI2cConfigurationAction::AwaitCompletionEdge
+    );
+    access.pending_observations = 0;
+    drive_configuration(&mut sar2, &mut access);
+    assert_eq!(sar2.action(), PhyI2cConfigurationAction::Complete);
+    assert_eq!(access.accepted_commands, 3);
+
+    access.accepted_commands = 0;
+    let mut rc_calibration =
+        PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::RcCalibrationSettings);
+    drive_configuration(&mut rc_calibration, &mut access);
+    assert_eq!(rc_calibration.action(), PhyI2cConfigurationAction::Complete);
+    assert_eq!(access.accepted_commands, 6);
+}
+
+fn drive(
+    transaction: &mut BluetoothTxPowerControlTransaction,
+    access: &mut FakeI2c,
+) -> BluetoothTxPowerControlCompletion {
+    for _ in 0..32 {
+        match transaction.action() {
+            BluetoothTxPowerControlAction::StartCommand => {
+                transaction.start_with(access).unwrap();
+            }
+            BluetoothTxPowerControlAction::AwaitCompletionEdge => {
+                assert_eq!(
+                    transaction.observe_with(access).unwrap(),
+                    BluetoothTxPowerControlObservation::EdgeConsumed
+                );
+            }
+            BluetoothTxPowerControlAction::Complete(completion) => return completion,
+        }
+    }
+    panic!("Bluetooth TX-power control transaction exceeded its finite plan")
+}
+
+#[test]
+fn prepare_configure_and_restore_keep_analog_geometry_and_snapshot_in_pac() {
+    let mut access = FakeI2c::new([0xa5, 0xd5]);
+    let mut prepare =
+        BluetoothTxPowerControlTransaction::new(BluetoothTxPowerControlOperation::PrepareRestore);
+    assert_eq!(
+        drive(&mut prepare, &mut access),
+        BluetoothTxPowerControlCompletion::RestorePrepared
+    );
+    assert_eq!(access.restore, Some((0xa5, 0x15)));
+
+    access.operations.clear();
+    *access.reads.borrow_mut() = [0xc0, 0x80].into_iter().collect();
+    let mut configure = BluetoothTxPowerControlTransaction::new(
+        BluetoothTxPowerControlOperation::ConfigureCalibration,
+    );
+    assert_eq!(
+        drive(&mut configure, &mut access),
+        BluetoothTxPowerControlCompletion::CalibrationConfigured
+    );
+    assert_eq!(
+        access.operations,
+        [
+            Operation::Write(BluetoothTxPowerControlRegister::Low0, 2),
+            Operation::Write(BluetoothTxPowerControlRegister::Low1, 2),
+            Operation::Read(BluetoothTxPowerControlRegister::High0),
+            Operation::Write(BluetoothTxPowerControlRegister::High0, 0xc2),
+            Operation::Read(BluetoothTxPowerControlRegister::High1),
+            Operation::Write(BluetoothTxPowerControlRegister::High1, 0x82),
+        ]
+    );
+
+    access.operations.clear();
+    *access.reads.borrow_mut() = [0xc0, 0x80].into_iter().collect();
+    let mut restore =
+        BluetoothTxPowerControlTransaction::new(BluetoothTxPowerControlOperation::Restore);
+    assert_eq!(
+        drive(&mut restore, &mut access),
+        BluetoothTxPowerControlCompletion::Restored
+    );
+    assert_eq!(
+        access.operations,
+        [
+            Operation::Write(BluetoothTxPowerControlRegister::Low0, 0xa5),
+            Operation::Write(BluetoothTxPowerControlRegister::Low1, 0xa5),
+            Operation::Read(BluetoothTxPowerControlRegister::High0),
+            Operation::Write(BluetoothTxPowerControlRegister::High0, 0xd5),
+            Operation::Read(BluetoothTxPowerControlRegister::High1),
+            Operation::Write(BluetoothTxPowerControlRegister::High1, 0x95),
+        ]
+    );
+    assert_eq!(access.restore, None);
+}
+
+#[test]
+fn prepare_rejects_an_owned_restore_before_starting_i2c() {
+    let mut access = FakeI2c::new([]);
+    access.restore = Some((0, 0));
+    let mut transaction =
+        BluetoothTxPowerControlTransaction::new(BluetoothTxPowerControlOperation::PrepareRestore);
+    assert_eq!(
+        transaction.start_with(&mut access),
+        Err(BluetoothTxPowerControlError::RestorePending)
+    );
+    assert!(access.operations.is_empty());
+}
+
+#[test]
+fn prepare_retries_a_busy_first_command_without_reserving_restore_twice() {
+    let mut access = FakeI2c::new([0xa5, 0xd5]);
+    access.busy_starts = 1;
+    let mut transaction =
+        BluetoothTxPowerControlTransaction::new(BluetoothTxPowerControlOperation::PrepareRestore);
+
+    assert_eq!(
+        transaction.start_with(&mut access),
+        Err(BluetoothTxPowerControlError::BusyAtStart)
+    );
+    assert_eq!(
+        transaction.action(),
+        BluetoothTxPowerControlAction::StartCommand
+    );
+    assert!(access.operations.is_empty());
+
+    assert_eq!(
+        drive(&mut transaction, &mut access),
+        BluetoothTxPowerControlCompletion::RestorePrepared
+    );
+    assert_eq!(access.restore, Some((0xa5, 0x15)));
+}

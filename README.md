@@ -38,15 +38,15 @@ only opt-in exception.
 | `driver/radio` | Public requests and typed radio/Wi-Fi lifecycle |
 | `driver/bluetooth/hci` | Portable allocation-free async `bt-hci` transport, fail-closed Host bootstrap and affine Controller endpoints |
 | `driver/common/dma` | Shared audited DMA ownership primitives |
-| `driver/wifi/` | Chip-independent Wi-Fi protocols and policy |
-| `driver/wifi/softmac` | Executor-independent SoftMAC service, VIF and status contract |
-| `driver/wifi/sta` | Chip/executor-independent STA MLME, scan/reconnect, beacon-loss and power-save policy |
-| `driver/adapters/embassy-net` | Internal persistent `embassy-net-driver` frame ownership |
-| `driver/adapters/embassy/esp32s31-platform` | ESP32-S31 Embassy executor/time platform binding |
-| `driver/adapters/embassy/esp32s31-wifi` | Internal ESP32-S31 Wi-Fi Embassy implementation |
-| `driver/adapters/esp-hal/esp32s31-wifi` | ESP32-S31 `esp-hal` peripheral binding |
-| `driver/integration/esp32s31/embassy-wifi` | Production station/AP/monitor composition and explicit ESP-NOW hooks |
-| `driver/chips/esp32s31/pac-raw` | Internal generated svd2rust backend |
+| `driver/ieee80211/` | Chip-independent Wi-Fi protocols and policy |
+| `driver/ieee80211/softmac` | Executor-independent SoftMAC service, VIF and status contract |
+| `driver/ieee80211/sta` | Chip/executor-independent STA MLME, scan/reconnect, beacon-loss and power-save policy |
+| `driver/adapters/network/embassy/owned` | Internal persistent `embassy-net-driver` frame ownership |
+| `driver/adapters/embassy/esp32s31/runtime` | ESP32-S31 Embassy executor/time platform binding |
+| `driver/adapters/embassy/esp32s31/ieee80211` | Internal ESP32-S31 Wi-Fi Embassy implementation |
+| `driver/adapters/esp-hal/esp32s31/ieee80211` | ESP32-S31 `esp-hal` peripheral binding |
+| `driver/integration/esp32s31/embassy/ieee80211` | Production station/AP/monitor composition and explicit ESP-NOW hooks |
+| `driver/chips/esp32s31/pac/raw` | Internal generated svd2rust backend |
 | `driver/chips/esp32s31/pac` | Closed typed radio peripheral-access API |
 | `driver/chips/esp32s31/hal` | Finite hardware operations and async boundaries |
 | `driver/chips/esp32s31/phy` | PHY initialization and calibration state machines |
@@ -55,10 +55,10 @@ only opt-in exception.
 | `driver/chips/esp32s31/ieee802154/mac` | Pure fail-closed operation plans and sampled-event state transitions |
 | `driver/chips/esp32s31/ieee802154/runtime` | Executor-neutral affine owner that executes typed MAC plans through a sealed hardware boundary |
 | `driver/ieee802154` | Allocation-free, chip-independent IEEE 802.15.4 frame, command, event and capability contracts |
-| `driver/chips/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
-| `driver/chips/esp32s31/wifi/mac` | Safe ESP32-S31 Wi-Fi MAC backend, IRQ, RX/TX policy and rate control |
-| `driver/chips/esp32s31/wifi` | Role-neutral ESP32-S31 Wi-Fi cold start and device composition |
-| `driver/chips/esp32s31/wifi/sta` | Executor-independent ESP32-S31 station composition |
+| `driver/chips/esp32s31/ieee80211/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
+| `driver/chips/esp32s31/ieee80211/mac` | Safe ESP32-S31 Wi-Fi MAC backend, IRQ, RX/TX policy and rate control |
+| `driver/chips/esp32s31/ieee80211` | Role-neutral ESP32-S31 Wi-Fi cold start and device composition |
+| `driver/chips/esp32s31/ieee80211/sta` | Executor-independent ESP32-S31 station composition |
 | [`hil/`](hil/README.md) | Hardware target/host infrastructure and typed HIL protocol |
 | `hil/targets/esp32s31` | Test-only board, bootstrap, memory placement and end-to-end scenarios |
 | `hil/targets/esp32s31/telemetry` | ESP32-S31 HIL counter and report implementations for production observation events |

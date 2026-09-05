@@ -12,9 +12,9 @@ use open_esp_radio_bluetooth_hci::{
 };
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyAdvertisingEventCompletionStatuses;
 
-use crate::controller_start::BluetoothSingleItemSchedulerCompletionFaultOwner;
+use crate::controller::boot::BluetoothSingleItemSchedulerCompletionFaultOwner;
 use crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole;
-use crate::scheduler::BluetoothLegacyAdvertisingSchedulerRecycleStep;
+use crate::scheduler::core::BluetoothLegacyAdvertisingSchedulerRecycleStep;
 use crate::single_item_completion::{
     BluetoothSingleItemCompletion, BluetoothSingleItemCompletionFault,
     BluetoothSingleItemCompletionFaultCause, BluetoothSingleItemCompletionStep,
@@ -32,9 +32,9 @@ type Task<'runtime, S, const CAPACITY: usize> =
     BluetoothControllerPublishedTaskService<'runtime, S, CAPACITY>;
 type Order<'runtime> = open_esp_radio_bluetooth_hci::LeControllerCommandReady<'runtime, ()>;
 type CompletionRole = BluetoothLegacyAdvertisingCompletionRole<'static>;
-type SchedulerRunning = crate::scheduler::BluetoothSingleItemSchedulerRunning<CompletionRole>;
+type SchedulerRunning = crate::scheduler::core::BluetoothSingleItemSchedulerRunning<CompletionRole>;
 type RemovalReady =
-    crate::scheduler::BluetoothSingleItemSchedulerSoftwareListRemovalReady<CompletionRole>;
+    crate::scheduler::core::BluetoothSingleItemSchedulerSoftwareListRemovalReady<CompletionRole>;
 
 enum BluetoothLegacyAdvertisingOrder<'runtime> {
     Ready(Order<'runtime>),

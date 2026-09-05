@@ -10,7 +10,7 @@ use open_esp_radio_bluetooth_ll::scanning::{
     LegacyPassiveScanWindowInFlight, LegacyPassiveScannerEnabled,
 };
 
-use crate::controller_start::{
+use crate::controller::boot::{
     BluetoothPassiveScanControllerInitialPreparationFailure,
     BluetoothPassiveScanControllerPreparationFailStop,
 };
@@ -126,7 +126,7 @@ where
     window: LegacyPassiveScanWindowInFlight,
     phase: BluetoothPassiveScanEventPhase,
     task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-    running: crate::scheduler::BluetoothSingleItemSchedulerRunning<
+    running: crate::scheduler::core::BluetoothSingleItemSchedulerRunning<
         crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
     >,
 }
@@ -142,7 +142,7 @@ where
         BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         LegacyPassiveScanWindowInFlight,
         BluetoothPassiveScanEventPhase,
-        crate::scheduler::BluetoothSingleItemSchedulerRunning<
+        crate::scheduler::core::BluetoothSingleItemSchedulerRunning<
             crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
         >,
     ) {

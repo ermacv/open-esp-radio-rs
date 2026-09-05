@@ -9,15 +9,15 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 1
 fi
 
-cargo check --manifest-path driver/adapters/embassy-net-compat/Cargo.toml --all-targets
+cargo check --manifest-path driver/adapters/network/embassy/compat/Cargo.toml --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy-compat --all-targets
-cargo check --manifest-path driver/adapters/embassy-net/Cargo.toml --all-targets
+cargo check --manifest-path driver/adapters/network/embassy/owned/Cargo.toml --all-targets
 cargo check -p open-esp-radio-wifi-datapath --all-targets
 cargo check -p open-esp-radio-research-datapath --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy --all-targets
 cargo check -p open-esp-radio-esp32s31-wifi-embassy --no-default-features --all-targets
 
-product_manifest="driver/integration/esp32s31/embassy-wifi/Cargo.toml"
+product_manifest="driver/integration/esp32s31/embassy/ieee80211/Cargo.toml"
 target_triple="riscv32imafc-unknown-none-elf"
 cargo check \
     --manifest-path "${product_manifest}" \
@@ -77,7 +77,7 @@ if [[ -n "${owned_official_driver}" ]]; then
     exit 1
 fi
 
-if rg -q 'open-esp-radio-(dma|esp32s31)' driver/adapters/embassy-net/Cargo.toml; then
+if rg -q 'open-esp-radio-(dma|esp32s31)' driver/adapters/network/embassy/owned/Cargo.toml; then
     echo "optimized owned adapter acquired a physical radio dependency" >&2
     exit 1
 fi
@@ -172,7 +172,7 @@ if [[ -n "${compatibility_product_nonrelease_embassy}" ]]; then
     exit 1
 fi
 
-radio_policy_root="driver/adapters/embassy/esp32s31-wifi/src/roles"
+radio_policy_root="driver/adapters/embassy/esp32s31/ieee80211/src/roles"
 if rg -n \
     --glob '!**/tests.rs' \
     'OwnedNetworkTxFrame|DatapathTxConsumer' \

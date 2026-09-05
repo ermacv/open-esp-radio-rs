@@ -89,7 +89,7 @@ source = "rom"
 symbol = "phy_disable_agc"
 disposition = "direct"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_hal::phy_agc::set_enabled"
+rust-component = "open_esp_radio_esp32s31_hal::phy::agc::set_enabled"
 binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_phy_trace_disable_agc"
@@ -111,13 +111,13 @@ source = "rom"
 symbol = "phy_iq_est_enable"
 disposition = "generation-candidate"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_dc_iq::PhyDcIqEstimateTransition"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::estimator::PhyDcIqEstimateTransition"
 [[functions]]
 source = "archive"
 symbol = "register_chipv7_phy"
 disposition = "replaced-by-composition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_register::PhyRegisterTransition"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::registration::PhyRegisterTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
@@ -125,7 +125,7 @@ source = "archive"
 symbol = "phy_rf_init"
 disposition = "state-transition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_cold::PhyRfColdInit"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::cold::PhyRfColdInit"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
@@ -133,7 +133,7 @@ source = "archive"
 symbol = "phy_bb_init"
 disposition = "state-transition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_bb::PhyBbInitTransition"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::baseband::PhyBbInitTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
@@ -141,14 +141,14 @@ source = "archive"
 symbol = "phy_bt_tx_gain_init"
 disposition = "replaced-by-composition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxGainInitTransition"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::bluetooth::PhyBluetoothTxGainInitTransition"
 
 [[functions]]
 source = "archive"
 symbol = "phy_chip_set_chan"
 disposition = "state-transition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_channel::PhyChipChannelTransition"
+rust-component = "open_esp_radio_esp32s31_phy::channel::PhyChipChannelTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
 
 [[functions]]
@@ -156,60 +156,60 @@ source = "archive"
 symbol = "phy_param_track_tot"
 disposition = "replaced-by-composition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_param_tracking::PhyParamTrackingTransition"
+rust-component = "open_esp_radio_esp32s31_phy::tracking::parameters::PhyParamTrackingTransition"
 
 [[functions]]
 source = "archive"
 symbol = "phy_txpwr_cal_track_new"
 disposition = "replaced-by-composition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_power_tracking::PhyTxPowerTrackingTransition"
+rust-component = "open_esp_radio_esp32s31_phy::tracking::power::PhyTxPowerTrackingTransition"
 
 [[functions]]
 source = "archive"
 symbol = "phy_bt_track_tx_power_new"
 disposition = "replaced-by-composition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_power_tracking::PhyTxPowerTrackingTransition"
+rust-component = "open_esp_radio_esp32s31_phy::tracking::power::PhyTxPowerTrackingTransition"
 
 [[functions]]
 source = "rom"
 symbol = "phy_temp_to_power"
 disposition = "direct"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_param_tracking::temperature_to_tracking_power"
+rust-component = "open_esp_radio_esp32s31_phy::tracking::parameters::temperature_to_tracking_power"
 
 [[functions]]
 source = "rom"
 symbol = "phy_abs_temp"
 disposition = "direct"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_math::absolute_temperature"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::math::absolute_temperature"
 
 [[functions]]
 source = "rom"
 symbol = "phy_get_data_sat"
 disposition = "direct"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_math::saturate_signed"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::math::saturate_signed"
 
 [[functions]]
 source = "archive"
 symbol = "phy_bt_txdc_cal_new"
 disposition = "state-transition"
 protocol = "bluetooth"
-rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxDcTransition"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::bluetooth::PhyBluetoothTxDcTransition"
 
 [[functions]]
 source = "archive"
 symbol = "phy_bt_tx_pwctrl_init"
 disposition = "state-transition"
 protocol = "bluetooth"
-rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxPowerTransition"
+rust-component = "open_esp_radio_esp32s31_phy::calibration::bluetooth::PhyBluetoothTxPowerTransition"
 
 [[functions]]
 source = "archive"
 symbol = "phy_txdc_cal_pwdet_init"
 disposition = "state-transition"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_txdc_pwdet::PhyTxDcPwdetTransition"
+rust-component = "open_esp_radio_esp32s31_phy::tx::dc_power_detector::PhyTxDcPwdetTransition"

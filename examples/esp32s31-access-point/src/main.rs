@@ -16,11 +16,11 @@ use open_esp_radio::{
     AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, Pmk, WifiChannel,
     WifiMacAddress, WifiSsid,
 };
-use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version};
 use open_esp_radio_esp32s31_access_point::{dhcp, services};
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
-use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiStackResources;
+use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
+use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -177,11 +177,8 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         let (_ap, _status, _dhcp, _echoes) =
             embassy_futures::join::join4(access_point, status, dhcp::run(stack), echoes).await;
     };
-    let (_application, hardware_never, _network_never) = embassy_futures::join::join3(
-        application,
-        radio_runner.run(spawner),
-        network_runner.run(),
-    )
-    .await;
+    let (_application, hardware_never, _network_never) =
+        embassy_futures::join::join3(application, radio_runner.run(spawner), network_runner.run())
+            .await;
     match hardware_never {}
 }

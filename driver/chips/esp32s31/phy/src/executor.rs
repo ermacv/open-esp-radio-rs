@@ -7,7 +7,7 @@
 
 use core::future::Future;
 
-use crate::phy_register::{
+use crate::calibration::registration::{
     PhyRegisterBindingError, PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterFailure,
     PhyRegisterLocalStep, PhyRegisterOutcome, PhyRegisterTransition, PhyRegisterTransitionError,
 };
@@ -44,11 +44,14 @@ pub trait PhyCalibrationTrackingPort {
 
     fn complete<'port, 'state>(
         &'port mut self,
-        transition: &'port mut crate::phy_param_tracking::PhyParamTrackingCalibrationTransition<
+        transition: &'port mut crate::tracking::parameters::PhyParamTrackingCalibrationTransition<
             'state,
         >,
     ) -> impl Future<
-        Output = Result<crate::phy_cal_tracking::PhyCalibrationTrackingCompletion, Self::Error>,
+        Output = Result<
+            crate::tracking::calibration::PhyCalibrationTrackingCompletion,
+            Self::Error,
+        >,
     > + 'port;
 }
 
@@ -58,10 +61,10 @@ pub trait PhyParamTrackingPort {
 
     fn complete<'port>(
         &'port mut self,
-        pending: &'port mut crate::phy_client::PhyPendingTracking,
+        pending: &'port mut crate::state::client::PhyPendingTracking,
         state: &'port mut crate::PhyState,
     ) -> impl Future<
-        Output = Result<crate::phy_param_tracking::PhyParamTrackingCompletion, Self::Error>,
+        Output = Result<crate::tracking::parameters::PhyParamTrackingCompletion, Self::Error>,
     > + 'port;
 }
 
@@ -90,8 +93,8 @@ pub enum PhyRegisterRunError<E> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackingRunError<E> {
     Port(E),
-    Transition(crate::phy_cal_tracking::PhyCalibrationTrackingTransitionError),
-    Radio(crate::phy_cal_tracking::PhyCalibrationTrackingFailure),
+    Transition(crate::tracking::calibration::PhyCalibrationTrackingTransitionError),
+    Radio(crate::tracking::calibration::PhyCalibrationTrackingFailure),
     ParentEdgeLimit,
 }
 
@@ -99,7 +102,7 @@ pub enum PhyCalibrationTrackingRunError<E> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyParamTrackingRunError<E> {
     Port(E),
-    Transition(crate::phy_param_tracking::PhyParamTrackingTransitionError),
+    Transition(crate::tracking::parameters::PhyParamTrackingTransitionError),
     ParentEdgeLimit,
 }
 
@@ -147,13 +150,15 @@ pub async fn run_phy_register<P: PhyRegisterPort>(
 /// Every error leaves the exact transition and state borrow with the caller;
 /// the surrounding PHY-client owner must then enter its fail-stop state.
 pub async fn run_phy_calibration_tracking<P: PhyCalibrationTrackingPort>(
-    transition: &mut crate::phy_param_tracking::PhyParamTrackingCalibrationTransition<'_>,
+    transition: &mut crate::tracking::parameters::PhyParamTrackingCalibrationTransition<'_>,
     port: &mut P,
 ) -> Result<(), PhyCalibrationTrackingRunError<P::Error>> {
     for _ in 0..CALIBRATION_TRACKING_PARENT_EDGE_LIMIT {
         match transition.action() {
-            crate::phy_cal_tracking::PhyCalibrationTrackingAction::Complete(_) => return Ok(()),
-            crate::phy_cal_tracking::PhyCalibrationTrackingAction::Failed(failure) => {
+            crate::tracking::calibration::PhyCalibrationTrackingAction::Complete(_) => {
+                return Ok(());
+            }
+            crate::tracking::calibration::PhyCalibrationTrackingAction::Failed(failure) => {
                 return Err(PhyCalibrationTrackingRunError::Radio(failure));
             }
             _ => {
@@ -173,21 +178,21 @@ pub async fn run_phy_calibration_tracking<P: PhyCalibrationTrackingPort>(
 /// Drive every selected child of one unique pending PHY-client request.
 ///
 /// `EnterCritical`/`ExitCritical` are ownership boundaries rather than CPU
-/// interrupt masking: the affine [`crate::phy_client::PhyPendingTracking`]
+/// interrupt masking: the affine [`crate::state::client::PhyPendingTracking`]
 /// owner excludes a concurrent radio transition while asynchronous hardware
 /// timers and interrupts remain able to make progress.
 ///
 /// On error, callers must consume `pending` through its fail-stop path. A
 /// terminal success leaves it ready for `into_owner`.
 pub async fn run_phy_param_tracking<P: PhyParamTrackingPort>(
-    pending: &mut crate::phy_client::PhyPendingTracking,
+    pending: &mut crate::state::client::PhyPendingTracking,
     state: &mut crate::PhyState,
     port: &mut P,
-) -> Result<crate::phy_param_tracking::PhyParamTrackingOutcome, PhyParamTrackingRunError<P::Error>>
+) -> Result<crate::tracking::parameters::PhyParamTrackingOutcome, PhyParamTrackingRunError<P::Error>>
 {
     for _ in 0..PARAM_TRACKING_PARENT_EDGE_LIMIT {
         match pending.action() {
-            crate::phy_param_tracking::PhyParamTrackingAction::Complete(outcome) => {
+            crate::tracking::parameters::PhyParamTrackingAction::Complete(outcome) => {
                 return Ok(outcome);
             }
             _ => {
@@ -205,242 +210,4 @@ pub async fn run_phy_param_tracking<P: PhyParamTrackingPort>(
 }
 
 #[cfg(test)]
-mod tests {
-    use core::{
-        future::{Future, ready},
-        task::{Context, Poll, Waker},
-    };
-
-    use super::{
-        PhyCalibrationTrackingPort, PhyParamTrackingPort, PhyRegisterPort, PhyRegisterRunError,
-        run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
-    };
-    use crate::{
-        PhyRegisterAction,
-        phy_register::{
-            PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterMmioCompletion,
-            PhyRegisterTransition,
-        },
-    };
-
-    fn run_ready<F: Future>(future: F) -> F::Output {
-        let mut context = Context::from_waker(Waker::noop());
-        let mut future = std::pin::pin!(future);
-        match future.as_mut().poll(&mut context) {
-            Poll::Ready(output) => output,
-            Poll::Pending => panic!("test port unexpectedly waited"),
-        }
-    }
-
-    struct StopAfterFirstMmio {
-        calls: u8,
-    }
-
-    impl PhyRegisterPort for StopAfterFirstMmio {
-        type Error = u8;
-
-        fn complete(
-            &mut self,
-            binding: PhyRegisterExternalBinding,
-        ) -> impl Future<Output = Result<PhyRegisterCompletion, Self::Error>> + '_ {
-            self.calls += 1;
-            if self.calls != 1 {
-                return ready(Err(self.calls));
-            }
-            let PhyRegisterExternalBinding::Mmio(binding) = binding else {
-                return ready(Err(0xff));
-            };
-            ready(Ok(PhyRegisterCompletion::Mmio(PhyRegisterMmioCompletion {
-                action: binding.action(),
-            })))
-        }
-    }
-
-    #[test]
-    fn executor_awaits_only_lowered_identity_bound_operations() {
-        let mut transition = PhyRegisterTransition::with_production_config();
-        let mut port = StopAfterFirstMmio { calls: 0 };
-
-        assert_eq!(
-            run_ready(run_phy_register(&mut transition, &mut port)),
-            Err(PhyRegisterRunError::Port(2))
-        );
-        assert_eq!(port.calls, 2);
-        assert!(transition.state().is_some());
-        assert!(matches!(
-            transition.step_local(),
-            Ok(crate::phy_register::PhyRegisterLocalStep::External(
-                PhyRegisterAction::Mmio(_)
-            ))
-        ));
-    }
-
-    struct RestoreOnlyCalibrationPort {
-        calls: u8,
-    }
-
-    impl PhyCalibrationTrackingPort for RestoreOnlyCalibrationPort {
-        type Error = ();
-
-        fn complete<'port, 'state>(
-            &'port mut self,
-            transition: &'port mut crate::phy_param_tracking::PhyParamTrackingCalibrationTransition<
-                'state,
-            >,
-        ) -> impl Future<
-            Output = Result<crate::phy_cal_tracking::PhyCalibrationTrackingCompletion, Self::Error>,
-        > + 'port {
-            self.calls += 1;
-            ready(match transition.action() {
-                crate::phy_cal_tracking::PhyCalibrationTrackingAction::RestoreTxGainCompensation => {
-                    Ok(crate::phy_cal_tracking::PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
-                }
-                _ => Err(()),
-            })
-        }
-    }
-
-    #[test]
-    fn calibration_executor_retains_live_state_until_terminal_child_commit() {
-        let policy = crate::phy_param_tracking::PhyParamTrackingPolicy {
-            tracking_inhibited: false,
-            rfpll_cap_tracking_enabled: false,
-            rfpll_cap_tracking_threshold: None,
-            calibration_tracking_threshold: None,
-            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
-            bluetooth_ieee802154_power_tracking_enabled: true,
-            calibration_tracking_enabled: true,
-            relaxed_power_tracking_threshold: false,
-        };
-        let mut outer = crate::phy_param_tracking::PhyParamTrackingTransition::new(
-            crate::phy_param_tracking::PhyParamTrackRequest::new(false, true),
-            policy,
-        );
-        outer
-            .advance(crate::phy_param_tracking::PhyParamTrackingCompletion::EnteredCritical)
-            .unwrap();
-        outer
-            .advance(
-                crate::phy_param_tracking::PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
-                    enabled: true,
-                },
-            )
-            .unwrap();
-
-        let mut state = crate::PhyState::new(crate::PhyConfig::production());
-        let mut child = outer.begin_calibration_tracking(&mut state).unwrap();
-        let mut port = RestoreOnlyCalibrationPort { calls: 0 };
-        assert_eq!(
-            run_ready(run_phy_calibration_tracking(&mut child, &mut port)),
-            Ok(())
-        );
-        assert_eq!(port.calls, 1);
-        assert!(matches!(
-            child.action(),
-            crate::phy_cal_tracking::PhyCalibrationTrackingAction::Complete(_)
-        ));
-        let completion = child.commit().unwrap();
-        outer.advance(completion).unwrap();
-        assert_eq!(
-            outer.action(),
-            crate::phy_param_tracking::PhyParamTrackingAction::TemperatureRead
-        );
-    }
-
-    struct CriticalOnlyTrackingPort {
-        calls: u8,
-    }
-
-    impl PhyParamTrackingPort for CriticalOnlyTrackingPort {
-        type Error = ();
-
-        fn complete<'port>(
-            &'port mut self,
-            pending: &'port mut crate::phy_client::PhyPendingTracking,
-            _state: &'port mut crate::PhyState,
-        ) -> impl Future<
-            Output = Result<crate::phy_param_tracking::PhyParamTrackingCompletion, Self::Error>,
-        > + 'port {
-            self.calls += 1;
-            ready(match pending.action() {
-                crate::phy_param_tracking::PhyParamTrackingAction::EnterCritical => {
-                    Ok(crate::phy_param_tracking::PhyParamTrackingCompletion::EnteredCritical)
-                }
-                crate::phy_param_tracking::PhyParamTrackingAction::ExitCritical => {
-                    Ok(crate::phy_param_tracking::PhyParamTrackingCompletion::ExitedCritical)
-                }
-                _ => Err(()),
-            })
-        }
-    }
-
-    #[test]
-    fn outer_executor_holds_affine_client_owner_across_software_critical_section() {
-        let request = crate::phy_param_tracking::PhyParamTrackRequest::new(true, false);
-        let policy = crate::phy_param_tracking::PhyParamTrackingPolicy {
-            tracking_inhibited: true,
-            rfpll_cap_tracking_enabled: true,
-            rfpll_cap_tracking_threshold: None,
-            calibration_tracking_threshold: None,
-            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
-            bluetooth_ieee802154_power_tracking_enabled: true,
-            calibration_tracking_enabled: true,
-            relaxed_power_tracking_threshold: false,
-        };
-        let mut pending = crate::phy_client::PhyPendingTracking::for_test(request, policy);
-        let mut state = crate::PhyState::new(crate::PhyConfig::production());
-        let mut port = CriticalOnlyTrackingPort { calls: 0 };
-        let outcome =
-            run_ready(run_phy_param_tracking(&mut pending, &mut state, &mut port)).unwrap();
-        assert_eq!(outcome.clients, request);
-        assert!(outcome.tracking_inhibited);
-        assert_eq!(port.calls, 2);
-        assert!(pending.into_owner().is_ok());
-    }
-
-    struct FailingTrackingPort;
-
-    impl PhyParamTrackingPort for FailingTrackingPort {
-        type Error = u8;
-
-        fn complete<'port>(
-            &'port mut self,
-            _pending: &'port mut crate::phy_client::PhyPendingTracking,
-            _state: &'port mut crate::PhyState,
-        ) -> impl Future<
-            Output = Result<crate::phy_param_tracking::PhyParamTrackingCompletion, Self::Error>,
-        > + 'port {
-            ready(Err(9))
-        }
-    }
-
-    #[test]
-    fn outer_executor_error_preserves_pending_owner_for_explicit_poisoning() {
-        let request = crate::phy_param_tracking::PhyParamTrackRequest::new(false, true);
-        let policy = crate::phy_param_tracking::PhyParamTrackingPolicy {
-            tracking_inhibited: false,
-            rfpll_cap_tracking_enabled: false,
-            rfpll_cap_tracking_threshold: None,
-            calibration_tracking_threshold: None,
-            diagnostics: crate::phy_param_tracking::PhyTrackingDiagnostics::Enabled,
-            bluetooth_ieee802154_power_tracking_enabled: true,
-            calibration_tracking_enabled: true,
-            relaxed_power_tracking_threshold: false,
-        };
-        let mut pending = crate::phy_client::PhyPendingTracking::for_test(request, policy);
-        let mut state = crate::PhyState::new(crate::PhyConfig::production());
-        assert_eq!(
-            run_ready(run_phy_param_tracking(
-                &mut pending,
-                &mut state,
-                &mut FailingTrackingPort,
-            )),
-            Err(super::PhyParamTrackingRunError::Port(9))
-        );
-        assert_eq!(
-            pending.action(),
-            crate::phy_param_tracking::PhyParamTrackingAction::EnterCritical
-        );
-        assert_eq!(pending.fail().request(), &request);
-    }
-}
+mod tests;

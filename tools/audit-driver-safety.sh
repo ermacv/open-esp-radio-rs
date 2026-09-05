@@ -11,8 +11,10 @@ command -v jq >/dev/null
 
 # Unsafe is an implementation detail of these audited foundations. Clippy
 # enforces the boundary on compiled Rust; handwritten leaves may reopen unsafe
-# only at an explicitly allowed operation. The raw PAC is generated and is
-# validated by its generator/publisher pipeline, so this audit only compiles it.
+# only at an explicitly allowed operation. The raw PAC backend is validated by
+# its generator/publisher pipeline. Its handwritten sidecars enforce their own
+# deny(unsafe_code, unsafe_op_in_unsafe_fn), with operation-scoped exceptions,
+# during compilation; they do not inherit the generated backend's lint policy.
 generated_unsafe_package="open-esp-radio-esp32s31-pac-raw"
 audited_unsafe_packages=(
     open-esp-radio-dma

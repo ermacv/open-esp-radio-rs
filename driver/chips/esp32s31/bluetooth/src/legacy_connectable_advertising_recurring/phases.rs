@@ -9,7 +9,7 @@ use crate::{
         BluetoothLegacyConnectableAdvertisingNextEventPortable,
         BluetoothLegacyConnectableAdvertisingPrepared,
     },
-    controller_start::{
+    controller::boot::{
         BluetoothLegacyConnectableAdvertisingSchedulerFailStopCause,
         BluetoothLegacyConnectableAdvertisingSchedulerStartRetryError,
         BluetoothLegacyConnectableAdvertisingSchedulerStartStep,
@@ -19,7 +19,7 @@ use crate::{
         },
     },
     legacy_connectable_advertising_active::BluetoothLegacyConnectableAdvertisingActiveSession,
-    scheduler::{
+    scheduler::core::{
         BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared,
         BluetoothLegacyConnectableAdvertisingEventPrepared,
         BluetoothLegacyConnectableAdvertisingPreSequence,

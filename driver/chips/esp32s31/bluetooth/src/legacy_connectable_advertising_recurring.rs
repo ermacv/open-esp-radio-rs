@@ -48,7 +48,7 @@ use crate::{
         BluetoothLegacyConnectableAdvertisingRuntimeBeginFailure,
         BluetoothLegacyConnectableAdvertisingSetPrepared,
     },
-    controller_start::{
+    controller::boot::{
         BluetoothLegacyConnectableAdvertisingSchedulerFailStop,
         connectable_advertising::BluetoothLegacyConnectableAdvertisingRollbackFailure,
         timed_preparation::{
@@ -56,13 +56,13 @@ use crate::{
             BluetoothTimedPreparationFailStopCause,
         },
     },
-    controller_time::{
+    controller::time::{
         BluetoothControllerTimeEventError, BluetoothControllerTimePendingOrphanStep,
         BluetoothControllerTimePendingOwner, BluetoothControllerTimePendingOwnerStep,
         BluetoothControllerTimeRequest,
     },
     legacy_connectable_advertising_active::BluetoothLegacyConnectableAdvertisingAwaitingRecurrence,
-    scheduler::{
+    scheduler::core::{
         BluetoothLegacyConnectableAdvertisingEmptySchedulerCancelFailure,
         BluetoothLegacyConnectableAdvertisingEventPreparationError,
     },

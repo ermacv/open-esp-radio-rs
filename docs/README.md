@@ -17,11 +17,13 @@
 - [`../tools/blobray/README.md`](../tools/blobray/README.md):
   Blobray workflow and canonical documentation.
 - [`BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md`](BLUETOOTH_CODE_ARCHITECTURE_AUDIT.md):
-  Bluetooth layer boundaries, monolith findings and refactor order.
+  dated Bluetooth baseline and original refactor findings.
 - [`DRIVER_STRUCTURE_AUDIT.md`](DRIVER_STRUCTURE_AUDIT.md): complete driver
   inventory, ownership findings and proposed module/package boundaries.
-- [`DRIVER_STRUCTURE_PLAN.md`](DRIVER_STRUCTURE_PLAN.md): staged structural
-  migration with validation gates and unchanged-behavior constraints.
+- [`DRIVER_STRUCTURE_PLAN.md`](DRIVER_STRUCTURE_PLAN.md): completed structural
+  migration, validation and ownership decisions.
+- [`driver-audit/migration-history.md`](driver-audit/migration-history.md):
+  dated driver migration stages and their original evidence.
 - [`DRIVER_PROTOCOL_NAMING.md`](DRIVER_PROTOCOL_NAMING.md): technical protocol
   terminology, recommended family namespaces and concrete boundary findings.
 - [`../qualification/`](../qualification/README.md): machine-readable claims
@@ -29,6 +31,6 @@
 - [`../verification/`](../verification/README.md): structured vendor evidence,
   reviewed function packs and register models.
 
-Historical migration narratives are intentionally not retained in the current
-tree. Git history and HIL artifacts are the archive; current contracts live in
-code, tests and the four purpose-specific Wi-Fi documents above.
+The driver audit archive preserves the dated migration rationale. Current
+contracts live in code, tests, the driver map and the purpose-specific Wi-Fi
+documents above; historical stage descriptions are not a current backlog.

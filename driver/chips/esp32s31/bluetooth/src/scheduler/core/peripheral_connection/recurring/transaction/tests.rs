@@ -10,7 +10,7 @@ use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 use super::{
     BluetoothPeripheralConnectionRecurringCandidateError, prepare_recurring_protocol_proposal,
 };
-use crate::peripheral_connection::{
+use crate::le::peripheral::connection::{
     BluetoothPeripheralConnectionLocalSleepClockAccuracy,
     BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecurringPhase,
     BluetoothPeripheralConnectionRecurringTimingError,

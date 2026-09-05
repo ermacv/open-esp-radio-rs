@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
 };
 use open_esp_radio_ieee80211::{
+    extensions::wmm::WmmParameterSet,
     he::{
         He20Capabilities, He20PeerState, HeDcmConstellation, HeElementError, HeMcsNssSupport,
         parse_he20_capabilities, parse_he20_operation, parse_he20_peer_state,
@@ -19,7 +20,6 @@ use open_esp_radio_ieee80211::{
     ht::HtPeerCapabilities,
     scan::ScanRecord,
     station::{AssociationResponse, StaAssociationPhy},
-    wmm::WmmParameterSet,
 };
 
 /// Origin of the active WMM parameters for one station link.

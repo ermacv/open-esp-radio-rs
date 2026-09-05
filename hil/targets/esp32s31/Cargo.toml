@@ -32,7 +32,7 @@ esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d07
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_info"] }
 heapless = "0.9.3"
 open-esp-radio = { path = "../../../driver/radio", default-features = false, features = ["wifi"] }
-open-esp-radio-embassy-net = { path = "../../../driver/adapters/network/embassy/owned" }
+open-esp-radio-embassy-net = { path = "../../../driver/network/adapters/embassy/owned" }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../driver/adapters/esp-hal/esp32s31/ieee80211" }
 open-esp-radio-esp32s31-hal = { path = "../../../driver/chips/esp32s31/hal" }
 open-esp-radio-esp32s31-embassy-runtime = { path = "../../../driver/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
@@ -41,7 +41,7 @@ open-esp-radio-esp32s31-pac = { path = "../../../driver/chips/esp32s31/pac", fea
 open-esp-radio-esp32s31-platform-pac = { path = "../../../driver/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 open-esp-radio-esp32s31-phy = { path = "../../../driver/chips/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../driver/chips/esp32s31/ieee80211/mac" }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../../../driver/adapters/embassy/esp32s31/ieee80211" }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../driver/runtime/embassy/esp32s31/ieee80211" }
 open-esp-radio-ieee80211 = { path = "../../../driver/ieee80211/mac" }
 open-esp-radio-wifi-sta = { path = "../../../driver/ieee80211/sta" }
 open-esp-radio-wifi-embassy = { path = "../../../driver/adapters/embassy/ieee80211" }

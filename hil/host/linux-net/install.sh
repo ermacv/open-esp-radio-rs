@@ -14,8 +14,8 @@ case "$operator" in
         ;;
 esac
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repository_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+repository_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd)
 hostapd_source=/tmp/open-radio-hostap-src/hostapd/hostapd
 hostapd_installed=/usr/local/libexec/open-radio-hostapd
 hil_runner_source="$repository_root/target/debug/open-esp-radio-hil-runner"

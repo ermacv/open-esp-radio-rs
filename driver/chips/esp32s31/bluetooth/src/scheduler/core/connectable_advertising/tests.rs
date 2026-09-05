@@ -32,7 +32,7 @@ use crate::{
     BluetoothPeripheralConnectionRuntimeConfig, BluetoothPeripheralConnectionRuntimeResources,
     BluetoothRadioHardware, BluetoothSchedulerInitialized, BluetoothSchedulerInstant,
     BluetoothSchedulerReservationError, BluetoothStopped,
-    connectable_advertising::{
+    le::advertising::connectable::{
         BluetoothLegacyConnectableAdvertisingEventCandidate,
         BluetoothLegacyConnectableAdvertisingSetPrepared, refine_portable_set,
     },
@@ -126,7 +126,7 @@ fn candidate<const CAPACITY: usize>(
 }
 
 fn restore(
-    cancelled: crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCancelled,
+    cancelled: crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCancelled,
     connectable: &mut BluetoothLegacyConnectableAdvertisingRuntimeResources,
     peripheral: &mut BluetoothPeripheralConnectionRuntimeResources,
 ) {
@@ -165,7 +165,7 @@ fn prepare<const CAPACITY: usize>(
 fn cancel_merge<const CAPACITY: usize>(
     task: &mut crate::BluetoothControllerPoweredTaskRuntime<'_, CAPACITY>,
     merged: BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared,
-) -> crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCancelled {
+) -> crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCancelled {
     match task.cancel_legacy_connectable_advertising_empty_list_merge(merged) {
         Ok(cancelled) => cancelled,
         Err(_) => panic!("the originating list and receive pool must release"),

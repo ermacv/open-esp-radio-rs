@@ -35,7 +35,13 @@ use super::BluetoothSchedulerHeadPublicationError;
 
 use crate::BluetoothControllerPoweredTaskRuntime;
 #[cfg(target_arch = "riscv32")]
-use crate::peripheral_connection::{
+use crate::le::peripheral::completion::{
+    BluetoothPeripheralConnectionCompletionRole, BluetoothPeripheralConnectionRecycleFailure,
+    BluetoothPeripheralConnectionRecycleFailureCause, BluetoothPeripheralConnectionRecycleOutcome,
+    BluetoothPeripheralConnectionRecycleReady,
+};
+#[cfg(target_arch = "riscv32")]
+use crate::le::peripheral::connection::{
     BluetoothPeripheralConnectionCompletedEvent,
     BluetoothPeripheralConnectionCompletionClassification,
     BluetoothPeripheralConnectionFirstEventPublicationRemainder,
@@ -43,16 +49,10 @@ use crate::peripheral_connection::{
     BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecycledEvent,
 };
 #[cfg(any(target_arch = "riscv32", test))]
-use crate::peripheral_connection::{
+use crate::le::peripheral::connection::{
     BluetoothPeripheralConnectionFirstEventCandidate,
     BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared,
     BluetoothPeripheralConnectionFirstEventSchedulerAdmissionPrepared,
-};
-#[cfg(target_arch = "riscv32")]
-use crate::peripheral_connection_completion::{
-    BluetoothPeripheralConnectionCompletionRole, BluetoothPeripheralConnectionRecycleFailure,
-    BluetoothPeripheralConnectionRecycleFailureCause, BluetoothPeripheralConnectionRecycleOutcome,
-    BluetoothPeripheralConnectionRecycleReady,
 };
 #[cfg(target_arch = "riscv32")]
 use crate::scheduler::core::BluetoothSingleItemSchedulerSoftwareListRemovalReady;
@@ -545,6 +545,13 @@ impl<const SCHEDULER_CAPACITY: usize>
     #[allow(
         clippy::result_large_err,
         reason = "the no-alloc cancellation failure retains the complete affine merge"
+    )]
+    #[cfg_attr(
+        all(target_arch = "riscv32", not(test)),
+        expect(
+            dead_code,
+            reason = "host ownership tests exercise pre-publication merge recovery; the current first-event actor publishes the merge directly"
+        )
     )]
     pub(crate) fn cancel_peripheral_connection_empty_list_merge(
         &mut self,

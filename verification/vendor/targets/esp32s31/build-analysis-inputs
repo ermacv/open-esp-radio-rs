@@ -4,7 +4,6 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd -- "${script_dir}/../../../.." && pwd)
 rust_target="riscv32imafc-unknown-none-elf"
-build_jobs=${OPEN_RADIO_ANALYSIS_BUILD_JOBS:-1}
 
 produced_roles=(
     rust-artifact
@@ -21,9 +20,13 @@ if [[ $# -ne 0 ]]; then
     exit 2
 fi
 
-if [[ ! "${build_jobs}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "OPEN_RADIO_ANALYSIS_BUILD_JOBS must be a positive integer" >&2
-    exit 2
+build_options=(--locked)
+if [[ -n ${OPEN_RADIO_ANALYSIS_BUILD_JOBS+set} ]]; then
+    if [[ ! "${OPEN_RADIO_ANALYSIS_BUILD_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "OPEN_RADIO_ANALYSIS_BUILD_JOBS must be a positive integer" >&2
+        exit 2
+    fi
+    build_options+=(--jobs "${OPEN_RADIO_ANALYSIS_BUILD_JOBS}")
 fi
 
 echo "Building ESP32-S31 Rust comparison probes" >&2
@@ -33,7 +36,7 @@ CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-probes" \
         --package open-esp-radio-verification-esp32s31-probes-elf \
         --target "${rust_target}" \
         --release \
-        --jobs "${build_jobs}"
+        "${build_options[@]}"
 
 echo "Building ESP32-S31 register comparison probes" >&2
 CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-register-probes" \
@@ -42,7 +45,7 @@ CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-register-probe
         --package open-esp-radio-verification-esp32s31-register-probes-elf \
         --target "${rust_target}" \
         --release \
-        --jobs "${build_jobs}"
+        "${build_options[@]}"
 
 echo "Building ESP32-S31 Bluetooth comparison probes" >&2
 CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-bluetooth-probes" \
@@ -51,7 +54,7 @@ CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-bluetooth-prob
         --package open-esp-radio-verification-esp32s31-bluetooth-probes-elf \
         --target "${rust_target}" \
         --release \
-        --jobs "${build_jobs}"
+        "${build_options[@]}"
 
 echo "Rust analysis inputs are ready. Bind caller-owned source artifacts, then run:" >&2
 echo "  cargo blobray --project ${script_dir}/vendor-project.toml --run-spec ${script_dir}/local.toml project status" >&2

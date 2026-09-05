@@ -159,7 +159,7 @@ assert_graph_lacks_features() {
 # modes. Every non-development local dependency declaration must stay under
 # `driver/`; this feature-independent rule is stricter than inspecting only the
 # dependencies selected by one resolved feature graph.
-mapfile -t production_manifests < <(find driver -name Cargo.toml -print | sort)
+mapfile -t production_manifests < <(find driver -name target -type d -prune -o -name Cargo.toml -print | sort)
 test "${#production_manifests[@]}" -gt 0
 
 workspace_packages="$audit_dir/workspace-packages.json"
@@ -241,7 +241,7 @@ workspace_graph="$audit_dir/workspace.json"
 metadata_for Cargo.toml "$workspace_graph"
 
 # Protocol and chip policy cannot depend upwards on executors, board
-# composition, HIL, esp-hal, or Embassy.
+# composition, network backends, HIL, esp-hal, or Embassy.
 for package in \
     open-esp-radio-wifi-ap \
     open-esp-radio-wifi-sta \
@@ -254,6 +254,9 @@ do
         "$workspace_graph" \
         "$root_id" \
         "$repo_root/driver/adapters/" \
+        "$repo_root/driver/runtime/" \
+        "$repo_root/driver/network/adapters/" \
+        "$repo_root/driver/network/research/" \
         "$repo_root/driver/integration/" \
         "$repo_root/hil/")"
     if [[ -n "$violations" ]]; then
@@ -281,6 +284,7 @@ violations="$(resolved_packages_with_forbidden_roots \
     "$radio_root_id" \
     "$repo_root/driver/chips/esp32s31/" \
     "$repo_root/driver/adapters/esp-hal/" \
+    "$repo_root/driver/runtime/embassy/esp32s31/" \
     "$repo_root/driver/integration/esp32s31/")"
 if [[ -n "$violations" ]]; then
     echo "generic radio facade depends on a concrete platform:" >&2
@@ -391,5 +395,15 @@ cargo test \
     --locked \
     --offline \
     --package open-esp-radio-esp32s31-wifi-embassy
+
+# This integration is an excluded workspace because its firmware dependencies
+# select a concrete chip. Its product resource ownership must still be exercised
+# on the host, where no network backend or hardware binding is required.
+cargo test \
+    --quiet \
+    --locked \
+    --offline \
+    --manifest-path "$integration_manifest" \
+    --no-default-features
 
 echo "driver architecture audit passed (${#production_manifests[@]} production packages)"

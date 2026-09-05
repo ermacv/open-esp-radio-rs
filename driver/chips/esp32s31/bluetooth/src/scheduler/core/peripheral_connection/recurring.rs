@@ -20,7 +20,7 @@ use super::{
     BluetoothPeripheralConnectionSchedulerCompleted,
     BluetoothPeripheralConnectionSequenceObservation,
 };
-use crate::peripheral_connection::{
+use crate::le::peripheral::connection::{
     BluetoothPeripheralConnectionCompletedEventRecurringRemainder,
     BluetoothPeripheralConnectionRecurringTimingPolicy,
 };
@@ -187,14 +187,14 @@ impl BluetoothPeripheralConnectionRecurringSchedulerTransaction {
 pub(super) struct BluetoothPeripheralConnectionRecurringSchedulerCommittedRemainder {
     event: LePeripheralConnectionEventPrepared,
     remainder: BluetoothPeripheralConnectionCompletedEventRecurringRemainder,
-    phase: crate::peripheral_connection::BluetoothPeripheralConnectionRecurringPhase,
+    phase: crate::le::peripheral::connection::BluetoothPeripheralConnectionRecurringPhase,
 }
 
 impl BluetoothPeripheralConnectionRecurringSchedulerCommittedRemainder {
     fn join_rx_publication(
         self,
         graph: open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionMemoryGraphRxPublished,
-    ) -> crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventRxPublished {
+    ) -> crate::le::peripheral::connection::BluetoothPeripheralConnectionFirstEventRxPublished {
         self.remainder
             .join_recurring_rx_publication(graph, self.event, self.phase)
     }
@@ -280,10 +280,18 @@ pub(crate) struct BluetoothPeripheralConnectionRecurringSchedulerValidationFailu
 }
 
 impl BluetoothPeripheralConnectionRecurringSchedulerValidationFailure {
+    #[expect(
+        dead_code,
+        reason = "the active peripheral actor does not yet inspect recurring scheduler validation failures"
+    )]
     pub(crate) const fn error(&self) -> BluetoothSchedulerHeadPublicationError {
         self.error
     }
 
+    #[expect(
+        dead_code,
+        reason = "the active peripheral actor does not yet recover rejected recurring scheduler merges"
+    )]
     pub(crate) fn into_merged(
         self,
     ) -> BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared {
@@ -344,6 +352,10 @@ pub(crate) struct BluetoothPeripheralConnectionRecurringSchedulerPublicationFail
 }
 
 impl BluetoothPeripheralConnectionRecurringSchedulerPublicationFailStop {
+    #[expect(
+        dead_code,
+        reason = "the active peripheral actor does not yet inspect recurring publication fail-stop diagnostics"
+    )]
     pub(crate) const fn error(
         &self,
     ) -> open_esp_radio_esp32s31_bluetooth_memory::BluetoothPeripheralConnectionMemoryGraphPublicationError

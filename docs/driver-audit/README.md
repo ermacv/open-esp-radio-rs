@@ -2,7 +2,8 @@
 
 Снимок tracked tree на `134a75ac6f0eeeb60a76fca22d0bfbf51b1f4013`, 2026-09-04.
 Основной документ: [аудит](../DRIVER_STRUCTURE_AUDIT.md);
-следующие действия: [план](../DRIVER_STRUCTURE_PLAN.md).
+результат: [завершённая миграция](../DRIVER_STRUCTURE_PLAN.md);
+ход работы: [история](migration-history.md).
 
 [Текущее дерево после структурной миграции](current-tree.txt) дополняет
 исходный снимок ниже; оно отражает новые пути и отдельные тестовые модули.
@@ -17,6 +18,21 @@ STA role policy и affine publication/observation ports.
 пути в старых снимках обозначают состояние соответствующей волны.
 Шестая волна дополняет responsibility map: shared physical/role-transition
 owners, AP observation, chip startup и connected GTK/replay transaction.
+Седьмая волна — product resource profile в integration и PHY time bindings
+в предметных модулях существующих Embassy adapters, вместе с их тестами.
+Восьмая волна дополняет [container-moves.csv](container-moves.csv): пять
+существующих крейтов памяти и сети сгруппированы по предметным областям.
+Десятая волна дополняет обе карты: concrete Wi-Fi/Bluetooth Embassy runtime
+перенесён в `driver/runtime/embassy/esp32s31/`; AP TX и Bluetooth system
+разделены по обязанностям внутри прежних владельцев. Девятая волна исправляла
+Bluetooth Clippy без перемещения контейнеров.
+Одиннадцатая волна дополняет responsibility map: MAC parsing/state,
+QoS/WMM, ESP-NOW codec/peer/security, HCI wire/controller/transport и
+IEEE 802.15.4 mac/radio modules. Cargo containers и package identities прежние.
+Финальный этап дополняет responsibility map: явный AP advertisement и chip
+profile, AP service/engine, STA codecs, WPA2 и Bluetooth LE hierarchy.
+Приватные PAC/HAL aliases удалены; происхождение generated и upstream кода
+уточнено в PAC/adapter README. Текущее дерево отражает эти конечные пути.
 
 - [tree.txt](tree.txt): все 767 файлов и 148 каталогов с отслеживаемыми потомками.
 - [files.csv](files.csv): одна строка на файл; текущий owning package определяется

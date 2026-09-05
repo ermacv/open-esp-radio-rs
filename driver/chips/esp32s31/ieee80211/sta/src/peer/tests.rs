@@ -12,8 +12,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelWidth},
+    extensions::wmm::parse_wmm_parameter_element,
     ht::{HtDuplicateMcs32, ht_capability_ie, ht_operation_ie},
-    wmm::parse_wmm_parameter_element,
 };
 
 const HE20_MCS9_CAPABILITY: [u8; 24] = [

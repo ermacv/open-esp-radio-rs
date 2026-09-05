@@ -162,7 +162,8 @@ pub(crate) struct BluetoothPeripheralConnectionControllerPreparationFailStop<
 > {
     cause: BluetoothPeripheralConnectionControllerPreparationFailStopCause,
     _controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
-    _accepted: Option<crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest>,
+    _accepted:
+        Option<crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest>,
 }
 
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
@@ -189,7 +190,7 @@ pub(crate) enum BluetoothPeripheralConnectionControllerPreparationTerminal<
     Recovered {
         controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothPeripheralConnectionControllerPreparationError,
-        accepted: crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest,
+        accepted: crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest,
     },
     FailStop(
         BluetoothPeripheralConnectionControllerPreparationFailStop<'runtime, S, SCHEDULER_CAPACITY>,
@@ -230,7 +231,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     fn recovered(
         controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         error: BluetoothPeripheralConnectionControllerPreparationError,
-        accepted: crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest,
+        accepted: crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest,
     ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
     {
         BluetoothPeripheralConnectionControllerPreparationStep::Terminal(
@@ -246,7 +247,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         cause: BluetoothPeripheralConnectionControllerPreparationFailStopCause,
         accepted: Option<
-            crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest,
+            crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest,
         >,
     ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
     {
@@ -323,7 +324,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                         return Self::recovered(
                             controller,
                             BluetoothPeripheralConnectionControllerPreparationError::Event(error),
-                            crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest::new(
+                            crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest::new(
                                 allocation,
                                 connection,
                                 packet,
@@ -349,7 +350,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                             BluetoothPeripheralConnectionControllerPreparationError::EmptyList(
                                 error,
                             ),
-                            crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest::new(
+                            crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest::new(
                                 allocation,
                                 connection,
                                 packet,
@@ -398,7 +399,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     fn cancel_peripheral_connection_preparation_phase(
         &mut self,
         phase: BluetoothPeripheralConnectionControllerPreparationPhase,
-    ) -> crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest {
+    ) -> crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest {
         let (allocation, connection, packet) = match phase {
             BluetoothPeripheralConnectionControllerPreparationPhase::Sequence {
                 admitted,
@@ -410,7 +411,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 (allocation, connection, packet)
             }
         };
-        crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest::new(
+        crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest::new(
             allocation, connection, packet,
         )
     }
@@ -459,8 +460,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub(crate) fn install_peripheral_connection_direction_finding_workspace(
         &self,
-        prepared: crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventFieldsPrepared,
-    ) -> crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared
+        prepared: crate::le::peripheral::connection::BluetoothPeripheralConnectionFirstEventFieldsPrepared,
+    ) -> crate::le::peripheral::connection::BluetoothPeripheralConnectionFirstEventDirectionFindingPrepared
     {
         prepared.install_direction_finding_workspace(self.direction_finding_workspace)
     }
@@ -679,7 +680,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// it with the causal `CONNECT_IND` packet.
     pub(crate) fn begin_peripheral_connection_first_event(
         self,
-        accepted: crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest,
+        accepted: crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest,
         packet_start: crate::BluetoothLe1MPacketStartTiming,
     ) -> BluetoothPeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
     {
@@ -699,7 +700,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     BluetoothPeripheralConnectionControllerPreparationTerminal::Recovered {
                         controller: BluetoothControllerSchedulerEpochRetained { controller },
                         error: BluetoothPeripheralConnectionControllerPreparationError::TimingWindow,
-                        accepted: crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest::new(
+                        accepted: crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest::new(
                             allocation,
                             connection,
                             packet,
@@ -722,7 +723,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                         error: BluetoothPeripheralConnectionControllerPreparationError::Event(
                             error,
                         ),
-                        accepted: crate::peripheral_connection::BluetoothPeripheralConnectionAcceptedRequest::new(
+                        accepted: crate::le::peripheral::connection::BluetoothPeripheralConnectionAcceptedRequest::new(
                             allocation,
                             connection,
                             packet,

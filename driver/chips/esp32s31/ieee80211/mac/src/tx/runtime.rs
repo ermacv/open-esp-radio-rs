@@ -5,8 +5,9 @@
 //! wait for interrupts, access MMIO, mutate DMA storage or produce entropy;
 //! those remain separate hardware/executor boundaries.
 
-use open_esp_radio_ieee80211::wmm::{
-    WmmAccessCategory, WmmParameterSet, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
+use open_esp_radio_ieee80211::extensions::wmm::WmmParameterSet;
+use open_esp_radio_ieee80211::qos::{
+    WmmAccessCategory, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
 };
 
 use crate::{

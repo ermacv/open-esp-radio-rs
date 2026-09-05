@@ -16,7 +16,7 @@ validation-raw-dma = ["open-esp-radio-esp32s31-wifi-dma/validation-raw-dma"]
 validation-probes = ["open-esp-radio-esp32s31-hal/validation-probes"]
 
 [dependencies]
-open-esp-radio-dma = { path = "../../../../common/dma" }
+open-esp-radio-dma = { path = "../../../../memory" }
 open-esp-radio-esp32s31-hal = { path = "../../hal" }
 open-esp-radio-esp32s31-wifi-dma = { path = "../dma" }
 open-esp-radio-ieee80211 = { path = "../../../../ieee80211/mac" }

@@ -12,13 +12,19 @@ use esp_hal::{
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
-use open_esp_radio::{
+use oer::wifi::{
     AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, Pmk, WifiChannel,
     WifiMacAddress, WifiSsid,
 };
+use open_esp_radio as oer;
 use open_esp_radio_esp32s31_access_point::{dhcp, services};
-use open_esp_radio_esp32s31_embassy_runtime::Executor;
-use open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiStackResources;
+use open_esp_radio_esp32s31_embassy_runtime::{self as platform_executor, Executor};
+use open_esp_radio_esp32s31_embassy_wifi::{
+    self as integration, Esp32s31RadioConfig as RadioConfig, Esp32s31RadioParts as RadioParts,
+    Esp32s31RadioRunners as RadioRunners, Esp32s31RadioSystem as RadioSystem,
+    Esp32s31WifiNetworkRunner as NetworkRunner, Esp32s31WifiParts as WifiParts,
+    Esp32s31WifiStackResources as StackResources,
+};
 use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
@@ -29,7 +35,7 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 // Network socket state is application-owned and static so it never inflates
 // the executor task frame.
-static NETWORK_RESOURCES: StaticCell<Esp32s31WifiStackResources> = StaticCell::new();
+static NETWORK_RESOURCES: StaticCell<StackResources> = StaticCell::new();
 
 const AP_SSID: &str = match option_env!("ESP32S31_AP_SSID") {
     Some(value) => value,
@@ -48,7 +54,7 @@ fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
+    platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
     let radio = EspHalRadioPeripheral::new(
@@ -94,7 +100,7 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         AccessPointClientLimit::new(AP_CLIENT_LIMIT).expect("AP client limit must be valid"),
     )
     .expect("AP request must be supported");
-    let config = open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioConfig::new(
+    let config = RadioConfig::new(
         station_mac,
         access_point_mac,
         PhyCalibrationIdentity {
@@ -104,18 +110,17 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         },
         WifiChannel::mhz20(AP_CHANNEL).expect("initial channel must be valid"),
     );
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioSystem { radio, runners } =
-        open_esp_radio_esp32s31_embassy_wifi::new(radio, trng, config)
-            .await
-            .expect("radio initialization must succeed once");
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
+    let RadioSystem { radio, runners } = integration::new(radio, trng, config)
+        .await
+        .expect("radio initialization must succeed once");
+    let RadioRunners {
         hardware: radio_runner,
     } = runners;
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
+    let RadioParts {
         wifi,
         initialization: _,
     } = radio.into_parts();
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiParts {
+    let WifiParts {
         control: wifi,
         station_device: _,
         access_point_device,
@@ -128,22 +133,21 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         gateway: None,
         dns_servers: Default::default(),
     });
-    let (stack, network_runner) =
-        open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiNetworkRunner::new(
-            access_point_device,
-            network_config,
-            NETWORK_RESOURCES.init(Esp32s31WifiStackResources::new()),
-            u64::from_le_bytes([
-                access_point_address[0],
-                access_point_address[1],
-                access_point_address[2],
-                access_point_address[3],
-                access_point_address[4],
-                access_point_address[5],
-                0xa5,
-                0x31,
-            ]),
-        );
+    let (stack, network_runner) = NetworkRunner::new(
+        access_point_device,
+        network_config,
+        NETWORK_RESOURCES.init(StackResources::new()),
+        u64::from_le_bytes([
+            access_point_address[0],
+            access_point_address[1],
+            access_point_address[2],
+            access_point_address[3],
+            access_point_address[4],
+            access_point_address[5],
+            0xa5,
+            0x31,
+        ]),
+    );
     let application = async move {
         let access_point = async move {
             let active = wifi

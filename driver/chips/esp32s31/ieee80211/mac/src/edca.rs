@@ -1,6 +1,7 @@
 //! Owned EDCA contention state for the four ordinary TX queues.
 
-use open_esp_radio_ieee80211::wmm::{WmmAcParameters, WmmAccessCategory, WmmParameterSet};
+use open_esp_radio_ieee80211::extensions::wmm::{WmmAcParameters, WmmParameterSet};
+use open_esp_radio_ieee80211::qos::WmmAccessCategory;
 
 use crate::tx::LegacyTxQueue;
 

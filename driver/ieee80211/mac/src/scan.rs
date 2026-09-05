@@ -257,8 +257,8 @@ impl ScanRecord {
         &self.wmm_ie[..usize::from(self.wmm_ie_len)]
     }
 
-    pub fn wmm_parameters(&self) -> Option<crate::wmm::WmmParameterSet> {
-        crate::wmm::parse_wmm_parameter_element(self.wmm_ie_bytes())
+    pub fn wmm_parameters(&self) -> Option<crate::extensions::wmm::WmmParameterSet> {
+        crate::extensions::wmm::parse_wmm_parameter_element(self.wmm_ie_bytes())
     }
 
     pub fn rsn_ie_bytes(&self) -> &[u8] {

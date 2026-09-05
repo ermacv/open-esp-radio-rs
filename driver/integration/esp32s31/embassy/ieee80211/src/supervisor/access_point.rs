@@ -1,8 +1,4 @@
 #![expect(
-    clippy::large_enum_variant,
-    reason = "no-alloc role-resume state retains the concrete returned station owner"
-)]
-#![expect(
     clippy::result_large_err,
     reason = "AP teardown returns the exact physical and role owners on failure"
 )]
@@ -54,9 +50,7 @@ type ProductionAccessPointAmpdu =
     open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointAmpdu<
         'static,
         RadioTxBacking,
-        {
-            open_esp_radio_esp32s31_wifi_embassy::composition::resources::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
-        },
+        { crate::resources::profile::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT },
         0,
     >;
 type ProductionAccessPointRxBlockAck =

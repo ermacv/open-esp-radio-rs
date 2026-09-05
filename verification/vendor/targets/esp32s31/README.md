@@ -40,6 +40,13 @@ cargo blobray project inputs init \
 Never commit vendor binaries, extracted tables, disassembly dumps or private
 paths. `project files` lists every required role.
 
+Build the three Rust comparison inputs with
+`verification/vendor/targets/esp32s31/build-analysis-inputs`. Its `--list-roles`
+option lists the declared roles without building. Normal builds use Cargo's
+parallelism; set `OPEN_RADIO_ANALYSIS_BUILD_JOBS` only to impose an explicit
+local resource limit. Bind the resulting ELF files in `local.toml`; declaring
+a role does not authenticate an artifact or produce a comparison verdict.
+
 ## Normal workflow
 
 ```console

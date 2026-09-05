@@ -41,7 +41,7 @@ pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::{
     EspNowTxTerminal, EspNowTxTicket, EspNowTxTrySendError, EspNowV2TxTrySendError,
     attach_esp_now_tx,
 };
-pub use open_esp_radio_ieee80211::esp_now::{
+pub use open_esp_radio_ieee80211::extensions::espressif::esp_now::{
     ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_V1_MAX_PAYLOAD_LEN,
     ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN, ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
     ESP_NOW_V2_ACTION_PREFIX_LEN, ESP_NOW_V2_MAX_ACTION_LEN, ESP_NOW_V2_MAX_ELEMENT_COUNT,

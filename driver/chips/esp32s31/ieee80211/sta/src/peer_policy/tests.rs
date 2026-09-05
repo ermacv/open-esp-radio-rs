@@ -1,6 +1,6 @@
 use super::*;
 use open_esp_radio_esp32s31_wifi_mac::rate_schedule::RateScheduleKind;
-use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
+use open_esp_radio_ieee80211::extensions::wmm::parse_wmm_parameter_element;
 
 const HE20_MCS9_CAPABILITY: [u8; 24] = [
     255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,

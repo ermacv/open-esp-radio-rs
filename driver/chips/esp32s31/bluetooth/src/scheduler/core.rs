@@ -92,7 +92,7 @@ pub use peripheral_connection::{
 
 use crate::BluetoothSchedulerSoftwareConfig;
 #[cfg(target_arch = "riscv32")]
-use crate::legacy_advertising::{
+use crate::le::advertising::legacy::{
     BluetoothLegacyAdvertisingCompletionObservedEvent,
     BluetoothLegacyAdvertisingRecurringEventCandidate,
 };
@@ -224,7 +224,7 @@ impl<'a> BluetoothLegacyAdvertisingRecurringEventPreparationFailure<'a> {
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the prepared event must be published, cancelled through its controller, or retained"]
 pub struct BluetoothLegacyAdvertisingEventPrepared<'a> {
-    image: crate::legacy_advertising::BluetoothLegacyAdvertisingEventImagePrepared<'a>,
+    image: crate::le::advertising::legacy::BluetoothLegacyAdvertisingEventImagePrepared<'a>,
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
@@ -269,7 +269,7 @@ impl<'a> BluetoothLegacyAdvertisingEmptySchedulerMergeFailure<'a> {
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the merged advertising event must be published or cancelled"]
 pub struct BluetoothLegacyAdvertisingEmptySchedulerMergePrepared<'a> {
-    item: crate::legacy_advertising::BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a>,
+    item: crate::le::advertising::legacy::BluetoothLegacyAdvertisingEmptyListLinkPrepared<'a>,
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
@@ -635,7 +635,7 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerHeadPublicationFailure<'a> {
 #[cfg(target_arch = "riscv32")]
 #[must_use = "the published advertising head must advance through the RUN suffix"]
 pub struct BluetoothLegacyAdvertisingSchedulerHeadPublished<'a> {
-    item: crate::legacy_advertising::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
+    item: crate::le::advertising::legacy::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
     publication: BluetoothSchedulerHardwareListHeadPublished,
     _reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
@@ -653,7 +653,7 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerHeadPublished<'a> {
     pub(crate) fn into_parts(
         self,
     ) -> (
-        crate::legacy_advertising::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
+        crate::le::advertising::legacy::BluetoothLegacyAdvertisingHeadPublishedEvent<'a>,
         BluetoothSchedulerHardwareListHeadPublished,
         BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
     ) {
@@ -664,7 +664,7 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerHeadPublished<'a> {
 #[cfg(target_arch = "riscv32")]
 #[must_use = "the completed event must advance the LL owner exactly once"]
 pub(crate) struct BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
-    item: crate::legacy_advertising::BluetoothLegacyAdvertisingRecycledEvent<'a>,
+    item: crate::le::advertising::legacy::BluetoothLegacyAdvertisingRecycledEvent<'a>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -672,7 +672,7 @@ impl<'a> BluetoothLegacyAdvertisingSchedulerRecycled<'a> {
     /// Advance the exact LL event while retaining S31 diagnostic statuses.
     pub fn complete_event(
         self,
-    ) -> crate::legacy_advertising::BluetoothLegacyAdvertisingEventCompleted<'a> {
+    ) -> crate::le::advertising::legacy::BluetoothLegacyAdvertisingEventCompleted<'a> {
         self.item.complete_event()
     }
 }
@@ -1163,12 +1163,9 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Admit one already projected first advertising event into the common timeline.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure returns the exact affine candidate"
-        )
+    #[expect(
+        clippy::result_large_err,
+        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
     )]
     pub fn admit_legacy_advertising_first_event<'a>(
         &mut self,
@@ -1203,12 +1200,9 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Authorize the second deadline and encode the overlap-resolved event image.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure returns the exact affine candidate"
-        )
+    #[expect(
+        clippy::result_large_err,
+        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
     )]
     pub fn prepare_legacy_advertising_first_event<'a>(
         &mut self,
@@ -1458,12 +1452,9 @@ impl<const SCHEDULER_CAPACITY: usize>
 
     /// Join one prepared advertising item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc failure retains the complete affine event"
-        )
+    #[expect(
+        clippy::result_large_err,
+        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
     )]
     pub fn prepare_legacy_advertising_empty_list_merge<'a>(
         &mut self,
@@ -1717,7 +1708,9 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn recycle_legacy_advertising_completed<'a>(
         &mut self,
         ready: BluetoothSingleItemSchedulerSoftwareListRemovalReady<
-            crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole<'a>,
+            crate::le::advertising::legacy::completion::BluetoothLegacyAdvertisingCompletionRole<
+                'a,
+            >,
         >,
     ) -> BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
         let (item, removal, reservation) = ready.into_parts();
@@ -1792,7 +1785,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn recycle_passive_scan_completed(
         &mut self,
         ready: BluetoothSingleItemSchedulerSoftwareListRemovalReady<
-            crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
+            crate::le::scanning::passive::active::BluetoothPassiveScanCompletionRole,
         >,
     ) -> BluetoothPassiveScanSchedulerRecycleStep {
         let (graph, removal, reservation) = ready.into_parts();
@@ -1882,11 +1875,11 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) fn recycle_legacy_connectable_advertising_completed(
         &mut self,
         ready: BluetoothSingleItemSchedulerSoftwareListRemovalReady<
-            crate::legacy_connectable_advertising_completion::BluetoothLegacyConnectableAdvertisingCompletionRole,
+            crate::le::advertising::connectable::completion::BluetoothLegacyConnectableAdvertisingCompletionRole,
         >,
-    ) -> crate::legacy_connectable_advertising_completion::BluetoothLegacyConnectableAdvertisingRecycleStep
+    ) -> crate::le::advertising::connectable::completion::BluetoothLegacyConnectableAdvertisingRecycleStep
     {
-        use crate::legacy_connectable_advertising_completion::{
+        use crate::le::advertising::connectable::completion::{
             BluetoothLegacyConnectableAdvertisingRecycleReady,
             BluetoothLegacyConnectableAdvertisingRecycleStep,
         };
@@ -1919,7 +1912,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 let (memory, removal) = failure.into_parts();
                 return BluetoothLegacyConnectableAdvertisingRecycleStep::MemoryIdentityMismatch {
                     _ready: BluetoothLegacyConnectableAdvertisingRecycleReady::new(
-                        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
+                        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
                             memory, remainder,
                         ),
                         removal,
@@ -1936,7 +1929,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 let (memory, removal) = failure.into_prepared().into_parts();
                 return BluetoothLegacyConnectableAdvertisingRecycleStep::ReceiveInvalid {
                     _ready: BluetoothLegacyConnectableAdvertisingRecycleReady::new(
-                        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
+                        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
                             memory, remainder,
                         ),
                         removal,
@@ -1957,7 +1950,7 @@ impl<const SCHEDULER_CAPACITY: usize>
                 let (memory, removal) = extracted.into_prepared().into_parts();
                 return BluetoothLegacyConnectableAdvertisingRecycleStep::ReservationIdentityMismatch {
                     _ready: BluetoothLegacyConnectableAdvertisingRecycleReady::new(
-                        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
+                        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCompletionObserved::new(
                             memory, remainder,
                         ),
                         removal,

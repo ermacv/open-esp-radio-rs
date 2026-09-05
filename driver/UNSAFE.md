@@ -21,7 +21,10 @@ pipeline. Handwritten sidecars must carry their own safety proofs, deny unsafe
 operations in unsafe functions and permit unsafe code only at documented
 scoped exceptions. Do not classify the whole package as generated source.
 
-`chips/esp32s31/pac/` is the handwritten semantic radio PAC. Non-radio register
+`chips/esp32s31/pac/` contains the handwritten semantic radio PAC and its
+generated capability catalog in `src/generated.rs`. The
+[PAC provenance map](chips/esp32s31/pac/README.md) distinguishes both generated
+Rust outputs from ownership modules and raw sidecars. Non-radio register
 access through upstream `esp-hal`/`esp-pacs` belongs to
 `adapters/esp-hal/esp32s31/soc/`, which also contains cache/MMU and GDMA
 transactions. Its retained Cargo name ends in `platform-pac`; that name does
@@ -32,7 +35,7 @@ packages. Prefixes below omit `open-esp-radio-` only to keep the mapping readabl
 
 | Package suffix | Source path |
 | --- | --- |
-| `dma` | `common/dma/` |
+| `dma` | `memory/` |
 | `esp32s31-bluetooth` | `chips/esp32s31/bluetooth/` |
 | `esp32s31-hal` | `chips/esp32s31/hal/` |
 | `esp32s31-pac` | `chips/esp32s31/pac/` |

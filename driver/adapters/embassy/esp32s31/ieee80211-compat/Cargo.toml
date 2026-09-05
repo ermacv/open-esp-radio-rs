@@ -10,9 +10,9 @@ description = "Upstream-compatible Embassy network bridge for the ESP32-S31 Wi-F
 [dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
-open-esp-radio-embassy-net-compat = { path = "../../../network/embassy/compat" }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../ieee80211", default-features = false }
-open-esp-radio-network = { path = "../../../../common/network" }
+open-esp-radio-embassy-net-compat = { path = "../../../../network/adapters/embassy/compat" }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../runtime/embassy/esp32s31/ieee80211", default-features = false }
+open-esp-radio-network = { path = "../../../../network/interface" }
 open-esp-radio-wifi-embassy = { path = "../../ieee80211" }
 
 [features]

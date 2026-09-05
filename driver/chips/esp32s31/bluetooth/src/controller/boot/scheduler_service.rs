@@ -19,6 +19,10 @@ use super::{
 };
 
 #[cfg(target_arch = "riscv32")]
+#[expect(
+    clippy::result_large_err,
+    reason = "scheduler service transitions return exact role graphs, reservations, and HCI continuation owners on failure"
+)]
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
@@ -29,8 +33,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         >,
     ) -> Result<
         (),
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingDisabledRestoreFailure,
-    > {
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingDisabledRestoreFailure,
+    >{
         self.legacy_connectable_advertising_resources
             .restore_disabled_advertiser(configured)
     }
@@ -79,12 +83,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Check out both static role graphs for one portable scheduled successor.
     pub(crate) fn begin_legacy_connectable_advertising_scheduled_event(
         &mut self,
-        definition: crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingSetPrepared,
+        definition: crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingSetPrepared,
         event: open_esp_radio_bluetooth_ll::connectable_advertising::LegacyConnectableAdvertisingEvent<'static>,
     ) -> Result<
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingPrepared,
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingRuntimeBeginFailure,
-    > {
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingPrepared,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingRuntimeBeginFailure,
+    >{
         self.legacy_connectable_advertising_resources
             .begin_scheduled_event(definition, event, self.peripheral_connection_resources)
     }
@@ -92,7 +96,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Reserve one exact phase-locked connectable successor.
     pub(crate) fn admit_legacy_connectable_advertising_recurring_event(
         &mut self,
-        candidate: crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingEventCandidate,
+        candidate: crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingEventCandidate,
     ) -> Result<
         crate::scheduler::core::BluetoothLegacyConnectableAdvertisingPreSequence,
         crate::scheduler::core::BluetoothLegacyConnectableAdvertisingEventPreparationFailure,
@@ -106,9 +110,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         admitted: crate::scheduler::core::BluetoothLegacyConnectableAdvertisingPreSequence,
     ) -> Result<
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCancelled,
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCancellationInvariant,
-    > {
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCancelled,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCancellationInvariant,
+    >{
         self.runtime
             .cancel_legacy_connectable_advertising_pre_sequence(admitted)
     }
@@ -147,9 +151,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         prepared: crate::scheduler::core::BluetoothLegacyConnectableAdvertisingEventPrepared,
     ) -> Result<
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCancelled,
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCancellationInvariant,
-    > {
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCancelled,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCancellationInvariant,
+    >{
         self.runtime
             .cancel_legacy_connectable_advertising_event(prepared)
     }
@@ -159,7 +163,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         merged: crate::scheduler::core::BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared,
     ) -> Result<
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingCancelled,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingCancelled,
         crate::scheduler::core::BluetoothLegacyConnectableAdvertisingEmptySchedulerCancelFailure,
     > {
         self.runtime
@@ -305,16 +309,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     }
 
     /// Admit one published advertising graph through the common RUN suffix.
-    #[expect(
-        clippy::result_large_err,
-        reason = "a start rejection returns the complete published advertising graph"
-    )]
     pub(crate) fn start_legacy_advertising_scheduler<'a>(
         &mut self,
         head: crate::BluetoothLegacyAdvertisingSchedulerHeadPublished<'a>,
     ) -> Result<
         crate::scheduler::core::BluetoothSingleItemSchedulerRunning<
-            crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole<'a>,
+            crate::le::advertising::legacy::completion::BluetoothLegacyAdvertisingCompletionRole<
+                'a,
+            >,
         >,
         BluetoothLegacyAdvertisingSchedulerStartFailure<'a, S::Error>,
     >
@@ -346,7 +348,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         head: crate::BluetoothPassiveScanSchedulerHeadPublished,
     ) -> Result<
         crate::scheduler::core::BluetoothSingleItemSchedulerRunning<
-            crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
+            crate::le::scanning::passive::active::BluetoothPassiveScanCompletionRole,
         >,
         BluetoothPassiveScanSchedulerStartFailure<S::Error>,
     >
@@ -388,7 +390,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub(crate) fn recycle_legacy_advertising_completed<'a>(
         &mut self,
         ready: crate::scheduler::core::BluetoothSingleItemSchedulerSoftwareListRemovalReady<
-            crate::legacy_advertising_completion::BluetoothLegacyAdvertisingCompletionRole<'a>,
+            crate::le::advertising::legacy::completion::BluetoothLegacyAdvertisingCompletionRole<
+                'a,
+            >,
         >,
     ) -> crate::scheduler::core::BluetoothLegacyAdvertisingSchedulerRecycleStep<'a> {
         self.runtime.recycle_legacy_advertising_completed(ready)
@@ -398,7 +402,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub(crate) fn recycle_passive_scan_completed(
         &mut self,
         ready: crate::scheduler::core::BluetoothSingleItemSchedulerSoftwareListRemovalReady<
-            crate::passive_scanning_active::BluetoothPassiveScanCompletionRole,
+            crate::le::scanning::passive::active::BluetoothPassiveScanCompletionRole,
         >,
     ) -> crate::scheduler::core::BluetoothPassiveScanSchedulerRecycleStep {
         self.runtime.recycle_passive_scan_completed(ready)
@@ -412,7 +416,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothLeReceivedBatch,
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothPassiveScanSchedulerItemCompletionStatus,
         ),
-        crate::passive_scanning::BluetoothPassiveScanRuntimeRestoreFailure,
+        crate::le::scanning::passive::BluetoothPassiveScanRuntimeRestoreFailure,
     >{
         self.passive_scan_resources.restore_recycled(recycled)
     }
@@ -421,9 +425,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub(crate) fn recycle_legacy_connectable_advertising_completed(
         &mut self,
         ready: crate::scheduler::core::BluetoothSingleItemSchedulerSoftwareListRemovalReady<
-            crate::legacy_connectable_advertising_completion::BluetoothLegacyConnectableAdvertisingCompletionRole,
+            crate::le::advertising::connectable::completion::BluetoothLegacyConnectableAdvertisingCompletionRole,
         >,
-    ) -> crate::legacy_connectable_advertising_completion::BluetoothLegacyConnectableAdvertisingRecycleStep
+    ) -> crate::le::advertising::connectable::completion::BluetoothLegacyConnectableAdvertisingRecycleStep
     {
         self.runtime
             .recycle_legacy_connectable_advertising_completed(ready)
@@ -432,11 +436,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Restore both reusable runtime slots after an event accepted no connection.
     pub(crate) fn restore_legacy_connectable_advertising_no_connection(
         &mut self,
-        outcome: crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingNoConnection,
+        outcome: crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingNoConnection,
     ) -> Result<
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingNoConnectionRestored,
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingNoConnection,
-    > {
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingNoConnectionRestored,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingNoConnection,
+    >{
         self.legacy_connectable_advertising_resources
             .restore_no_connection(outcome, self.peripheral_connection_resources)
     }
@@ -444,11 +448,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Restore advertising SRAM while retaining the accepted peripheral allocation.
     pub(crate) fn restore_legacy_connectable_advertising_connection(
         &mut self,
-        outcome: crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingConnectionAccepted,
+        outcome: crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingConnectionAccepted,
     ) -> Result<
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingConnectionTransfer,
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingConnectionAccepted,
-    > {
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingConnectionTransfer,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingConnectionAccepted,
+    >{
         self.legacy_connectable_advertising_resources
             .restore_connection_accepted(outcome)
     }
@@ -456,10 +460,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Cancel an accepted connection only at the explicit pre-publication Reset boundary.
     pub(crate) fn cancel_legacy_connectable_advertising_connection_for_reset(
         &mut self,
-        transfer: crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingConnectionTransfer,
+        transfer: crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingConnectionTransfer,
     ) -> Result<
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingPeripheralResetEvidence,
-        crate::connectable_advertising::BluetoothLegacyConnectableAdvertisingPeripheralResetCancellationFailure,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingPeripheralResetEvidence,
+        crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingPeripheralResetCancellationFailure,
     >{
         transfer.cancel_peripheral_for_reset(self.peripheral_connection_resources)
     }

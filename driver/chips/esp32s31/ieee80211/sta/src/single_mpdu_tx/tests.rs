@@ -19,7 +19,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{
     channel::WifiChannel,
-    esp_now::{EspNowDestination, EspNowRandomValue, EspNowUnicastAddress},
+    extensions::espressif::esp_now::{EspNowDestination, EspNowRandomValue, EspNowUnicastAddress},
 };
 use open_esp_radio_wifi_softmac::{
     EspNowConfig, EspNowPeerConfig, EspNowPhyMode, EspNowProtocol, MacTxResult,

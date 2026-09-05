@@ -18,15 +18,6 @@ pub use wifi::channel;
 pub mod coex;
 
 pub use ieee802154::lifecycle as ieee802154_lifecycle;
-pub(crate) use ieee802154::operation as ieee802154_operation;
-pub(crate) use ieee802154::policy as ieee802154_policy;
-pub(crate) use ieee802154::role as ieee802154_role;
-pub(crate) use ieee802154::tx_power as ieee802154_tx_power;
-#[cfg(any(test, feature = "validation-probes"))]
-#[cfg(feature = "validation-probes")]
-pub(crate) use ieee802154::validation::ed_event as ieee802154_ed_event_probe;
-#[cfg(any(test, feature = "validation-probes"))]
-pub(crate) use ieee802154::validation::event_status as ieee802154_event_status_probe;
 pub use phy::agc as phy_agc;
 pub use phy::baseband as phy_baseband;
 pub use phy::clock as phy_clock;
@@ -81,34 +72,19 @@ pub use bluetooth::{
     BluetoothSchedulerWorkObservation, BluetoothTaskOwner, BluetoothTaskOwnerReuniteError,
     BluetoothTaskOwnerReuniteFailure,
 };
-#[cfg(feature = "validation-probes")]
-pub use ieee802154_ed_event_probe::{
-    Ieee802154EdEventProbeConfig, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeIsolation,
-    Ieee802154EdEventProbeStop,
-};
-#[cfg(feature = "validation-probes")]
-pub use ieee802154_event_status_probe::{
-    Ieee802154EventStatusProbeConfig, Ieee802154EventStatusProbeEvidence,
-    Ieee802154EventStatusProbeIsolation, Ieee802154EventStatusProbeStop,
-};
-pub use ieee802154_lifecycle::{
-    IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
-    Ieee802154ClockCheckpoint, Ieee802154ClockReadback, Ieee802154FoundationCheckpoint,
-    Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetReadback,
-};
-pub use ieee802154_operation::{
+pub use ieee802154::operation::{
     Ieee802154OperationEventMaskState, Ieee802154OperationEventObservation,
     Ieee802154OperationPollBudget, Ieee802154OperationRxAbortMaskState, Ieee802154OperationStage,
     Ieee802154PolledOperation, Ieee802154PolledOperationAbortEvidence,
     Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
     Ieee802154PolledOperationResult,
 };
-pub use ieee802154_policy::{
+pub use ieee802154::policy::{
     IEEE802154_ACK_TIMEOUT_QUANTUM_MICROSECONDS, IEEE802154_MAX_ACK_TIMEOUT_MICROSECONDS,
     Ieee802154AckTimeout, Ieee802154AckTimeoutError, Ieee802154CcaMode, Ieee802154MacControl,
     Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint, Ieee802154PanIdentity,
 };
-pub use ieee802154_role::{
+pub use ieee802154::role::{
     Ieee802154ClockTransitionFailure, Ieee802154Clocked, Ieee802154FoundationConfigured,
     Ieee802154FoundationTransitionFailure, Ieee802154MacPolicyConfigured,
     Ieee802154MacPolicyRecovery, Ieee802154MacPolicyTransitionFailure,
@@ -118,9 +94,24 @@ pub use ieee802154_role::{
 };
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
-pub use ieee802154_role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinished};
-pub use ieee802154_tx_power::{
+pub use ieee802154::role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinished};
+pub use ieee802154::tx_power::{
     Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels, Ieee802154TxPowerLevelsError,
+};
+#[cfg(feature = "validation-probes")]
+pub use ieee802154::validation::ed_event::{
+    Ieee802154EdEventProbeConfig, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeIsolation,
+    Ieee802154EdEventProbeStop,
+};
+#[cfg(feature = "validation-probes")]
+pub use ieee802154::validation::event_status::{
+    Ieee802154EventStatusProbeConfig, Ieee802154EventStatusProbeEvidence,
+    Ieee802154EventStatusProbeIsolation, Ieee802154EventStatusProbeStop,
+};
+pub use ieee802154_lifecycle::{
+    IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
+    Ieee802154ClockCheckpoint, Ieee802154ClockReadback, Ieee802154FoundationCheckpoint,
+    Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetReadback,
 };
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,

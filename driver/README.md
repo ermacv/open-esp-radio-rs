@@ -16,35 +16,54 @@ the child test files and internal module directories.
 | Path | Responsibility |
 | --- | --- |
 | `radio/` | `wifi/` owns public requests and affine role lifecycle; `runtime/embassy` drives local control epochs |
-| `common/dma/` | Audited stable-memory proofs and affine buffer/queue handoff |
-| `common/network/` | Stack-neutral interface, link and error values |
+| `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
+| `network/interface/` | Stack-neutral interface, link and error values |
 | `ieee80211/{mac,softmac,sta,ap,security/wpa2}/` | Frame/protocol code, MAC contracts, role policy and security |
 | `ieee80211/datapath/` | Software egress ownership, flow demand and physical materialization contracts |
 | `bluetooth/le/ll/` | Portable LE PDU codecs and protocol-role state |
-| `bluetooth/hci/` | Host/Controller transport and resources; `command/` owns codecs, classification and response ordering |
-| `ieee802154/` | Portable frames, metadata and finite command/event contracts |
+| `bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` retains bootstrap, command/response authority and `le` policies |
+| `ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
 | `chips/esp32s31/{pac,hal,phy}/` | PAC `ownership` and HAL `owner` retain hardware authority; domain modules hold register operations, transactions and RF algorithms |
 | `chips/esp32s31/ieee80211/{dma,mac,sta,ap}/` | S31 descriptor ownership, MAC `rx/tx/rate`, and chip role composition; `mac/tx/metadata` lowers portable traffic intent |
 | `chips/esp32s31/{bluetooth,coex,ieee802154}/` | Chip radio actors; Bluetooth `memory/` and IEEE 802.15.4 `{dma,irq,mac,runtime}/` hold their lower ownership boundaries |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/ieee80211/` | Generic Embassy Wi-Fi service contracts |
-| `adapters/embassy/esp32s31/` | Concrete runtimes, wakeups and timers; Bluetooth separates `controller` and role `session` modules; `runtime/` holds platform ABI and placement |
-| `adapters/network/embassy/{owned,compat}/` | Owned-packet and released-interface network adapters |
-| `adapters/network/research/` | Experimental synchronous network engine; currently consumed only by a driver test |
+| `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox, acknowledged IEEE 802.15.4 IRQ handoff and compatibility network binding |
+| `runtime/embassy/esp32s31/{ieee80211,bluetooth}/` | Concrete radio execution; Wi-Fi role/datapath owners and Bluetooth controller/session owners, with their embedded time bindings |
+| `network/adapters/embassy/{owned,compat}/` | Owned-packet and released-interface network adapters |
+| `network/research/` | Experimental synchronous network engine; currently consumed only by a driver test |
 | `integration/esp32s31/embassy/{ieee80211,bluetooth}/` | Static resources, one-time claims, final bindings and the concrete whole-radio lifecycle runners |
 
+`memory` owns backing stability, range proofs and affine handoff; chip DMA
+modules own hardware descriptors and controller transitions. `network/interface`
+is a dependency-free value boundary. The owned and compatibility adapters
+retain separate external network contracts. `network/research` contains an
+experimental engine and physical materializer; its only external repository
+consumer is a host test of the materializer. Product radio policy cannot
+depend on either network adapters or research; the architecture audit follows
+transitive normal/build dependencies across their domain paths.
+
 The [structure audit](../docs/DRIVER_STRUCTURE_AUDIT.md) records the original
-mixed responsibilities. The [work plan](../docs/DRIVER_STRUCTURE_PLAN.md)
-tracks completed namespace changes, moves across ownership boundaries and
-the remaining separate lifecycle work.
-The [boundary review](../docs/DRIVER_STRUCTURE_PLAN.md#уточнение-границ-adapters-common-и-integration)
-records remaining mixed responsibilities: adapter code still selects production
-resource profiles, and integration executes whole-radio lifecycles. Folder names
-alone do not enforce these boundaries.
+mixed responsibilities. The [migration result](../docs/DRIVER_STRUCTURE_PLAN.md)
+records the completed namespace and ownership changes, their validation and
+the scope of the structural work.
+The [boundary review](../docs/driver-audit/migration-history.md#уточнение-границ-adapters-common-и-integration)
+records the original mixed responsibilities and their staged resolution. Product
+resource profiles now live in integration, which also executes whole-radio
+lifecycles. The [Embassy map](adapters/embassy/README.md) distinguishes external
+bindings from the [radio execution domain](runtime/README.md). Folder names alone
+do not enforce these boundaries.
 The [protocol naming convention](../docs/DRIVER_PROTOCOL_NAMING.md) defines
 `ieee80211`, `ieee802154` and `bluetooth` as technical family namespaces.
 Wi-Fi remains the application-facing technology name; portable LE Link Layer
 code lives in `bluetooth/le/ll`, beside the family-wide HCI boundary.
+
+The [IEEE 802.11 module map](ieee80211/README.md) separates format parsing from
+retained state inside each protocol domain. Block Ack has `frame/session`,
+fragmentation has `parsing/reassembly`, and sequence/duplicate history has
+explicit owners beside its STA/data consumers. QoS values are distinct from
+WMM element parsing; ESP-NOW wire formats remain below SoftMAC peer/security
+owners. These boundaries use modules within the existing packages.
 
 Portable IEEE 802.11 encoders accept explicit local capabilities. Chip STA/AP
 `profile` modules select the existing advertisements; STA profile also lowers
@@ -61,6 +80,28 @@ abstract delay; integration chooses the concrete bindings and resource profile.
 Its supervisor separates shared `physical` owners and `role_transition`
 frontiers from AP execution and observation.
 
+The product's fixed memory profile and single static-arena claim live in
+`integration/esp32s31/embassy/ieee80211/src/resources/profile.rs`. The reusable
+adapter supplies storage types; integration selects dimensions and acquires
+one complete owner graph. Profile tests run on the host from that production
+module, with hardware dependencies restricted to the ESP32-S31 target.
+
+Both chip Embassy radio runtimes expose their PHY bindings under `time::phy`.
+The Wi-Fi binding supplies a direct Embassy delay; the Bluetooth binding
+retains its microsecond timebase validation, overflow handling and PLL clock.
+These distinct contracts remain separate implementations. Chip PHY stays
+executor-independent, and the executor/time ABI backend owns no PHY policy.
+
+AP `roles/access_point/network_tx` retains one TX owner. Its `queue`,
+`power_save`, `aggregate` and `completion` modules operate on that same arena
+and state; publication and cancellation remain at the owner boundary.
+Bluetooth integration `system` keeps public aggregates and separates final
+`construction`, the sole hardware `runner`, and terminal `quarantine`.
+Neither separation creates another owner or changes an async cancellation point.
+The [chip Bluetooth map](chips/esp32s31/bluetooth/README.md) places LE DTM,
+advertising, scanning and peripheral modules below their protocol namespaces.
+Shared controller, IRQ and scheduler ownership remains outside the LE roles.
+
 The chip Wi-Fi `rx/frontier` owns finite physical-ring transitions and borrows
 an abstract delay. Its `rx/transaction` synchronously borrows the live ring,
 storage and staging pool for one bounded completion/recycle pass. Publication
@@ -69,7 +110,7 @@ retains queue endpoints, VIF routing, clocks, observation bindings and the
 stopped/prepared/live composition owners. No chip dependency points back to an
 adapter. Integration `interrupts` owns the ISR bindings and routes both
 handlers and role epochs through the same static interrupt resources. See the
-[RX ownership contract](adapters/embassy/esp32s31/ieee80211/src/datapath/rx/README.md).
+[RX ownership contract](runtime/embassy/esp32s31/ieee80211/src/datapath/rx/README.md).
 
 ## Register and execution boundaries
 
@@ -79,7 +120,9 @@ sidecars; generated provenance does not extend to those files. The separate
 upstream chain is `esp-pacs` through `esp-hal`, bound in
 `adapters/esp-hal/esp32s31/`. Its `soc/` adapter contains non-radio SoC
 transactions, cache/MMU access and GDMA ownership; it is not generated PAC
-code. See [unsafe boundaries](UNSAFE.md) for the enforced exceptions.
+code. The [PAC provenance map](chips/esp32s31/pac/README.md) identifies both
+generated outputs, the publisher and the separate upstream bindings.
+See [unsafe boundaries](UNSAFE.md) for the enforced exceptions.
 
 PAC operations describe register-local fields and access. HAL operations own
 multi-register order, polling, delays, lifecycle and recovery. Handwritten
@@ -154,6 +197,10 @@ of a manifest is not a passing hardware qualification.
 Unit tests live in separate child files beside the modules whose private
 contracts they exercise; public integration tests live in crate `tests/`
 directories. Preserve feature gating and ownership assertions when moving
-code. Vendor comparison must exercise compiled production entries and fail
+code. Large-error lint expectations stay with ownership transitions that must
+return exact inline owners without allocation. An uncomposed hardware path
+must identify its missing caller at the entry boundary; broad module-level
+warning suppression does not document that lifecycle limitation.
+Vendor comparison must exercise compiled production entries and fail
 closed. Examples and HIL may compose or observe the driver, but must not own
 another implementation of its protocol or hardware behavior.

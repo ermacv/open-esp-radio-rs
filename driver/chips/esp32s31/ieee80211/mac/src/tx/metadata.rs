@@ -6,7 +6,7 @@
 
 use open_esp_radio_ieee80211::{
     data::{DataEncapPlan, DataInterfaceRole, IEEE80211_QOS_DATA_HEADER_LEN},
-    wmm::{WmmAccessCategory, WmmUserPriority},
+    qos::{WmmAccessCategory, WmmUserPriority},
 };
 
 const ETHER_TYPE_EAPOL: u16 = 0x888e;

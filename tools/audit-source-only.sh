@@ -25,11 +25,15 @@ command -v setsid >/dev/null
 # actual workspace boundary. This also covers the independently buildable HIL,
 # example, product-integration, and probe workspaces without reading local or
 # private vendor inputs.
-python3 -B -m unittest discover -s tools/tests -p 'test_audit_cargo_metadata.py'
+python3 -B -m unittest discover -s tools/tests -p 'test_*.py'
 tools/audit-cargo-metadata.sh
 
+# Resolve network ownership by package IDs and production/build edges. The
+# architecture matrix below already compiles the corresponding feature sets.
+tools/check-network-adapter-boundaries.sh --check-dependencies-only
+
 # The public ESP32-S31 examples are independent workspaces so the root
-# workspace check cannot detect a stale composition API. Build every shipping
+# workspace check cannot detect a stale composition API. Type-check every shipping
 # example against the real target before accepting a source-only checkout.
 tools/check-esp32s31-examples.sh
 
@@ -58,7 +62,7 @@ cargo clippy --workspace --all-targets -- -D warnings -A clippy::disallowed-meth
 # Production radio code must yield through its executor/platform instead of
 # burning a CPU in spin_loop. Clippy resolves the actual called method, so this
 # does not depend on source spelling or aliases.
-mapfile -t production_manifests < <(find driver -name Cargo.toml -print | sort)
+mapfile -t production_manifests < <(find driver -name target -type d -prune -o -name Cargo.toml -print | sort)
 test "${#production_manifests[@]}" -gt 0
 workspace_packages="$audit_dir/workspace-packages.json"
 cargo metadata \
@@ -369,7 +373,13 @@ test -f "$runtime_elf"
 # executable sections and reject statically resolved jumps/calls into the
 # pinned radio API table or the contiguous radio implementation body. System
 # ROM outside these ranges (for example ets_printf) remains permitted.
-cargo blobray advanced image audit-targets \
+# Build the exact host used below, then apply the same process-tree limits as
+# other real Blobray analyses. An external launcher override cannot select an
+# unrelated or stale binary for this source-only gate.
+CARGO_TARGET_DIR="$repo_root/target" cargo build \
+    --locked --offline --profile blobray -p blobray-esp32s31 --bin blobray
+BLOBRAY_BINARY="$repo_root/target/blobray/blobray" \
+    tools/blobray/scripts/run-limited advanced image audit-targets \
     --target-spec verification/vendor/targets/esp32s31/target.toml \
     --artifact "$runtime_elf" \
     --forbid 'esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc' \

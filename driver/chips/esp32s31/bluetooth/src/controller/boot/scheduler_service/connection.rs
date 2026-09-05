@@ -6,7 +6,7 @@ use super::super::{
     BluetoothControllerPublishedTaskService, BluetoothPeripheralConnectionSchedulerStartFailure,
     BluetoothSchedulerRunInterruptStorage,
 };
-use crate::peripheral_connection_completion::{
+use crate::le::peripheral::completion::{
     BluetoothPeripheralConnectionCompletionRole, BluetoothPeripheralConnectionRecycleOutcome,
 };
 use crate::scheduler::core::{
@@ -36,6 +36,13 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// the LL successor and phase commit. An RX proof mismatch after that
     /// commit is a sealed fail-stop; only a validated RX join continues
     /// through head/event/RUN publication.
+    ///
+    /// The active peripheral actor currently stops at the first-event path;
+    /// it does not yet drive completed events through this recurrence entry.
+    #[expect(
+        dead_code,
+        reason = "the active peripheral actor does not yet compose recurring scheduler publication"
+    )]
     pub(crate) fn start_peripheral_connection_recurring_scheduler(
         &mut self,
         merged: crate::scheduler::core::BluetoothPeripheralConnectionRecurringEmptySchedulerMergePrepared,

@@ -13,7 +13,7 @@ default = []
 [dependencies]
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
-open-esp-radio-dma = { path = "../../../common/dma" }
+open-esp-radio-dma = { path = "../../../memory" }
 open-esp-radio-wifi-softmac = { path = "../../../ieee80211/softmac" }
 
 [dev-dependencies]

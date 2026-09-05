@@ -4,20 +4,7 @@
 #[cfg(test)]
 extern crate std;
 
-pub(crate) use bluetooth::controller::init as bluetooth_controller_hal_init;
-pub(crate) use bluetooth::controller::time as bluetooth_controller_time;
-pub(crate) use bluetooth::direction_finding as bluetooth_direction_finding;
-pub(crate) use bluetooth::interrupt as bluetooth_interrupt;
-pub(crate) use bluetooth::memory_lists as bluetooth_memory_lists;
-pub(crate) use bluetooth::modem_timer as bluetooth_modem_lp_timer;
-pub(crate) use bluetooth::phy as bluetooth_phy_init;
-pub(crate) use bluetooth::scan as bluetooth_scan;
-pub(crate) use bluetooth::scheduler as bluetooth_scheduler;
-pub(crate) use bluetooth::scheduler::insertion as bluetooth_scheduler_insertion;
-pub(crate) use bluetooth::scheduler::lock_modify as bluetooth_scheduler_lock_modify;
-pub(crate) use bluetooth::scheduler::runtime as bluetooth_scheduler_runtime;
 pub(crate) use modem::coex;
-pub(crate) use phy::agc::runtime as agc_runtime;
 pub(crate) use phy::baseband;
 pub(crate) use phy::cfr;
 pub use phy::clock;
@@ -32,61 +19,38 @@ pub(crate) use phy::frequency;
 )]
 mod generated;
 
-pub(crate) use ieee802154::timing as ieee802154_timing;
-pub(crate) use modem::shared_clock as modem_shared_clock;
-pub(crate) use modem::syscon as modem_syscon;
 pub use phy::pbus;
-pub(crate) use wifi::mac::block_ack as mac_block_ack;
-pub(crate) use wifi::mac::coex::init as mac_coex_init;
-pub(crate) use wifi::mac::crypto as mac_crypto;
-pub(crate) use wifi::mac::he::beamforming as mac_he_beamforming;
-pub(crate) use wifi::mac::he::init_suffix as mac_he_init_suffix;
-pub(crate) use wifi::mac::he::ofdma as mac_he_ofdma;
-pub(crate) use wifi::mac::he::peer as mac_he_peer;
-pub(crate) use wifi::mac::he::tb as mac_he_tb;
-pub(crate) use wifi::mac::interrupt as mac_interrupt;
-pub(crate) use wifi::mac::modem_wakeup as mac_modem_wakeup;
-pub(crate) use wifi::mac::rx::dma as mac_rx_dma;
-pub(crate) use wifi::mac::rx::policy as mac_rx_policy;
-pub(crate) use wifi::mac::rx::statistics as mac_rx_statistics;
-pub(crate) use wifi::mac::tsf as mac_tsf;
-pub(crate) use wifi::mac::tx as mac_tx;
-pub(crate) use wifi::mac::tx::power_init as mac_tx_power_init;
-pub(crate) use wifi::mac::tx::queue as mac_tx_queue;
-pub(crate) use wifi::mac::tx::statistics as mac_tx_statistics;
 pub mod phy;
-pub(crate) use modem::platform as platform_clock_power;
 pub use phy::i2c as phy_i2c;
 pub(crate) use phy::table_memory;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
-pub use agc_runtime::ForcedRxGain;
 pub use baseband::{
     BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRestoreError,
     RxDcoControlPrepareError, RxDcoControlRestoreError, TxDcPwdetLifecycleError,
     TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxIqToneControlPrepareError,
     TxIqToneControlRestoreError,
 };
-pub use bluetooth_controller_hal_init::{
+pub use bluetooth::controller::init::{
     BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
     BluetoothHalInitScale, BluetoothRawTickDeltaProjection,
 };
-pub use bluetooth_controller_time::{
+pub use bluetooth::controller::time::{
     BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
     BluetoothControllerTimeLatchRequest, BluetoothControllerTimeLatchStep,
     BluetoothControllerTimeLatchStepError,
 };
-pub use bluetooth_direction_finding::BluetoothDirectionFindingDisabledBaselinePrepared;
-pub use bluetooth_interrupt::{
+pub use bluetooth::direction_finding::BluetoothDirectionFindingDisabledBaselinePrepared;
+pub use bluetooth::interrupt::{
     BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
     BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
     BluetoothSchedulerRunInterruptsPrepared,
 };
-pub use bluetooth_memory_lists::{
+pub use bluetooth::memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
-pub use bluetooth_modem_lp_timer::{
+pub use bluetooth::modem_timer::{
     BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
     BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStarted,
     BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPending,
@@ -97,36 +61,36 @@ pub use bluetooth_modem_lp_timer::{
     BluetoothModemLpTimerRegisters, BluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending,
 };
-pub use bluetooth_phy_init::{
+pub use bluetooth::phy::{
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
     BluetoothPhyRegisterInitInputs,
 };
-pub use bluetooth_scan::BluetoothScanStartPublished;
-pub use bluetooth_scheduler::{
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
-    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListHeadRetirementObservation,
-    BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
-    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
-    BluetoothSchedulerRunEventPublished,
-};
-pub use bluetooth_scheduler_insertion::{
+pub use bluetooth::scan::BluetoothScanStartPublished;
+pub use bluetooth::scheduler::insertion::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
     BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
     BluetoothSchedulerExecutionModifyPublished,
 };
-pub use bluetooth_scheduler_lock_modify::{
+pub use bluetooth::scheduler::lock_modify::{
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation,
 };
-pub use bluetooth_scheduler_runtime::{
+pub use bluetooth::scheduler::runtime::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerReferenceCleared, BluetoothSchedulerReferenceGateObservation,
     BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalInterruptStep,
     BluetoothSchedulerSoftwareListRemovalJoin, BluetoothSchedulerSoftwareListRemovalReady,
     BluetoothSchedulerWorkObservation,
+};
+pub use bluetooth::scheduler::{
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListHeadRetirementObservation,
+    BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerRunEventPublished,
 };
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
@@ -168,74 +132,20 @@ pub use ieee802154::mac::{
 };
 #[doc(hidden)]
 pub use ieee802154::mac::{Ieee802154PolledRegisterLease, Ieee802154RegisterLease};
-pub use ieee802154_timing::{Ieee802154TimingPrerequisite, Ieee802154TimingReady};
-pub use mac_block_ack::{
-    ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
-    TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
-};
-pub use mac_coex_init::MacCoexPrioritySnapshot;
-pub use mac_crypto::MacCcmpKeyIdentity;
-pub use mac_crypto::MacKeyInstallOutcome;
-pub use mac_he_beamforming::{
-    MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
-};
-pub use mac_he_init_suffix::MacHeTxMpduLengthLink;
-pub use mac_he_ofdma::{
-    MacBeamformingAverageSnr, MacHeBeamformingConfigurationSnapshot, MacHeBeamformingDiagnostics,
-    MacHeBufferStatusSnapshot, MacHeCustomReceiveType, MacHeEdcaQueueConfiguration,
-    MacHeMuEdcaTimerSnapshot, MacHeQueueSchedulingSnapshot, MacHeReceiveConfigurationSnapshot,
-    MacHeRxPowerSaveSnapshot, MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit,
-    MacHeTid, MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics,
-    MacHeTriggerTxQueueSnapshot,
-};
-pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
-pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
-pub use mac_interrupt::{
-    ConnectedStaWithoutPowerSavePrepared, MacInterruptEnableState, MacInterruptRegisters,
-    MacInterruptSetup, MacPowerInterruptRegisters, MacPowerWakeCause, MacTsfTimerIndex,
-};
-pub use mac_modem_wakeup::{
-    StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig,
-    StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreError,
-    StaModemWakeRestoreFailure, StaTbttAutoPeriod, StaWakeProtectEarlyTimeRaw,
-};
-pub use mac_rx_dma::{MacRxDmaSnapshot, MacRxNextDescriptorObservation};
-pub use mac_rx_policy::{
-    MacApReceivePolicySnapshot, MacRoleReceivePolicy, MacStaApReceivePlan, MacStaPolicyMode,
-    MacStaReceivePolicySnapshot,
-};
-pub use mac_rx_statistics::{
-    MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta,
-    MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics,
-    MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
-};
-pub use mac_tsf::{
-    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
-};
-pub use mac_tx::{
-    MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTxFormat,
-    MacHeTxParameters, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtChannelWidth,
-    MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat,
-    MacHtTxParameters, MacHtTxProgram, MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram,
-    MacOrdinaryTxQueueSnapshot, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
-    MacTxPtiProgram, MacTxQueueDetached,
-};
-pub use mac_tx_power_init::{
-    MAC_TX_POWER_RATE_COUNT, MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair,
-    MacTxPowerTable,
-};
-pub use mac_tx_statistics::MacTxStatisticsSnapshot;
-pub use modem_shared_clock::{
+pub use ieee802154::timing::{Ieee802154TimingPrerequisite, Ieee802154TimingReady};
+pub use modem::platform::PlatformClockPowerObservation;
+pub use modem::shared_clock::{
     BluetoothLowPowerClockObservation, CoexistenceLowPowerClockObservation,
     CoexistenceLowPowerClockSource, ModemLowPowerClockSource, SharedModemClockObservation,
 };
-use modem_shared_clock::{BluetoothLowPowerTimerLease, SharedModemClock, SharedModemClockLease};
-use modem_syscon::BluetoothModemSysconClockState;
-pub use modem_syscon::{
+use modem::shared_clock::{BluetoothLowPowerTimerLease, SharedModemClock, SharedModemClockLease};
+use modem::syscon::BluetoothModemSysconClockState;
+pub use modem::syscon::{
     ModemSysconBluetoothObservation, ModemSysconIeee802154ClockObservation,
     ModemSysconIeee802154ResetObservation, ModemSysconPowerObservation, WifiBasebandAgcUpdate,
 };
 use open_esp_radio_esp32s31_pac_raw as svd;
+pub use phy::agc::runtime::ForcedRxGain;
 pub use phy_i2c::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
@@ -245,8 +155,63 @@ pub use phy_i2c::{
     PhyI2cConfigurationTransaction, PhyI2cField, PhyI2cHost, PhyI2cInitializationStageOneInputs,
     analog_registers,
 };
-pub use platform_clock_power::PlatformClockPowerObservation;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError};
+pub use wifi::mac::block_ack::{
+    ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
+    TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
+};
+pub use wifi::mac::coex::init::MacCoexPrioritySnapshot;
+pub use wifi::mac::crypto::MacCcmpKeyIdentity;
+pub use wifi::mac::crypto::MacKeyInstallOutcome;
+pub use wifi::mac::he::beamforming::{
+    MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
+};
+pub use wifi::mac::he::init_suffix::MacHeTxMpduLengthLink;
+pub use wifi::mac::he::ofdma::{
+    MacBeamformingAverageSnr, MacHeBeamformingConfigurationSnapshot, MacHeBeamformingDiagnostics,
+    MacHeBufferStatusSnapshot, MacHeCustomReceiveType, MacHeEdcaQueueConfiguration,
+    MacHeMuEdcaTimerSnapshot, MacHeQueueSchedulingSnapshot, MacHeReceiveConfigurationSnapshot,
+    MacHeRxPowerSaveSnapshot, MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit,
+    MacHeTid, MacHeTriggerQueueConfiguration, MacHeTriggerRxDiagnostics,
+    MacHeTriggerTxQueueSnapshot,
+};
+pub use wifi::mac::he::peer::{MacHe20PeerConfig, MacHe20PeerError};
+pub use wifi::mac::he::tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
+pub use wifi::mac::interrupt::{
+    ConnectedStaWithoutPowerSavePrepared, MacInterruptEnableState, MacInterruptRegisters,
+    MacInterruptSetup, MacPowerInterruptRegisters, MacPowerWakeCause, MacTsfTimerIndex,
+};
+pub use wifi::mac::modem_wakeup::{
+    StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig,
+    StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreError,
+    StaModemWakeRestoreFailure, StaTbttAutoPeriod, StaWakeProtectEarlyTimeRaw,
+};
+pub use wifi::mac::rx::dma::{MacRxDmaSnapshot, MacRxNextDescriptorObservation};
+pub use wifi::mac::rx::policy::{
+    MacApReceivePolicySnapshot, MacRoleReceivePolicy, MacStaApReceivePlan, MacStaPolicyMode,
+    MacStaReceivePolicySnapshot,
+};
+pub use wifi::mac::rx::statistics::{
+    MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta,
+    MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics,
+    MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
+};
+pub use wifi::mac::tsf::{
+    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
+};
+pub use wifi::mac::tx::power_init::{
+    MAC_TX_POWER_RATE_COUNT, MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair,
+    MacTxPowerTable,
+};
+pub use wifi::mac::tx::statistics::MacTxStatisticsSnapshot;
+pub use wifi::mac::tx::{
+    MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTxFormat,
+    MacHeTxParameters, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtChannelWidth,
+    MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat,
+    MacHtTxParameters, MacHtTxProgram, MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram,
+    MacOrdinaryTxQueueSnapshot, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
+    MacTxPtiProgram, MacTxQueueDetached,
+};
 pub mod ownership;
 pub(crate) use ownership::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER;
 pub use ownership::BluetoothColdRegisters;

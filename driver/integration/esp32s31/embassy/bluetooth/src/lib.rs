@@ -20,7 +20,7 @@ mod cold_start;
 mod interrupt_fault;
 #[cfg(target_arch = "riscv32")]
 mod interrupt_runtime;
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(target_arch = "riscv32")]
 mod phy_time;
 #[cfg(any(test, target_arch = "riscv32"))]
 mod runner_policy;

@@ -1,12 +1,19 @@
 //! Statically bounded resources and the sole combined Controller epoch.
+//!
+//! Bootstrap, LE configuration and command/response order belong to this same
+//! owner boundary. The endpoint cannot release its raw transport or mutable state.
+
+pub(super) mod bootstrap;
+pub(super) mod classification;
+pub(super) mod le;
+pub(super) mod order;
+pub(super) mod response;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use crate::command::advertising::LeLegacyAdvertisingConfiguration;
+use self::le::advertising::LeLegacyAdvertisingConfiguration;
 
-use crate::command::scanning::{
-    LeLegacyScanningConfiguration, LeLegacyScanningIdleEnableDisposition,
-};
+use self::le::scanning::{LeLegacyScanningConfiguration, LeLegacyScanningIdleEnableDisposition};
 
 use crate::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,

@@ -39,7 +39,7 @@ use crate::controller::time::{
     BluetoothControllerTimeRequestError, drain_controller_time_orphan,
 };
 #[cfg(target_arch = "riscv32")]
-use crate::dtm_post_unlink::{
+use crate::le::dtm::post_unlink::{
     BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkMailbox, BluetoothPostUnlinkRearm,
     BluetoothPostUnlinkTake,
 };
@@ -2701,6 +2701,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     }
 
     /// Cancel the exact unpublished phase and restore the advertising runtime.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
+    )]
     pub fn cancel(
         self,
     ) -> Result<
@@ -2846,7 +2850,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     .complete_always_awake(epoch, sample)
                     .into_scheduler_instant();
                 let timing =
-                    crate::passive_scanning_timing::BluetoothPassiveScanTimingObservation {
+                    crate::le::scanning::passive::timing::BluetoothPassiveScanTimingObservation {
                         current: crate::BluetoothSchedulerInstant::from_image(now.micros()),
                         radio_ready,
                         epoch,
@@ -2953,6 +2957,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     }
 
     /// Cancel the unpublished phase and return the graph to its sole runtime.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
+    )]
     pub fn cancel(
         self,
     ) -> Result<
@@ -4051,7 +4059,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .begin_passive_scan_preparation_time(
                 BluetoothPassiveScanControllerPreparationPhase::AlwaysAwakeTiming {
                     graph,
-                    channel: crate::passive_scanning::lower_primary_channel(channel),
+                    channel: crate::le::scanning::passive::lower_primary_channel(channel),
                     parameters,
                     previous_phase,
                     now,

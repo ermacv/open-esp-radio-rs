@@ -19,6 +19,10 @@ use core::future::ready;
 use embassy_time::Timer;
 
 use super::*;
+use crate::resources::profile::{
+    ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
+    ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
+};
 use open_esp_radio::{
     StationAccessPointRequest, StationRequest, StationScanChannels, StationScanPolicy,
 };
@@ -28,10 +32,6 @@ use open_esp_radio_esp32s31_wifi::datapath::lifecycle::{
 use open_esp_radio_esp32s31_wifi_ap::protocol::AccessPointServiceStatus;
 use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaGroupSecurity;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    composition::resources::{
-        ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
-        ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
-    },
     datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxEpoch},
     datapath::rx::hardware::EmbassyEsp32s31RxDmaObservationDelay,
     datapath::{

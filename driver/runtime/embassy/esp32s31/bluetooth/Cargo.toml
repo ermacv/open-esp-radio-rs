@@ -1,0 +1,25 @@
+[package]
+name = "open-esp-radio-esp32s31-bluetooth-embassy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Durable Embassy wake adapter for ESP32-S31 Bluetooth controller work"
+
+[dependencies]
+embassy-futures = "0.1.2"
+embassy-sync = "0.8.0"
+embassy-time = "0.5.1"
+open-esp-radio-bluetooth-hci = { path = "../../../../bluetooth/hci" }
+open-esp-radio-bluetooth-ll = { path = "../../../../bluetooth/le/ll" }
+open-esp-radio-esp32s31-bluetooth = { path = "../../../../chips/esp32s31/bluetooth" }
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+open-esp-radio-esp32s31-phy = { path = "../../../../chips/esp32s31/phy" }
+
+[dev-dependencies]
+bt-hci = "=0.10.1"
+
+[lints]
+workspace = true

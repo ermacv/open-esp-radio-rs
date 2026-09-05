@@ -7,6 +7,12 @@ use super::super::{
     BluetoothPostUnlinkRearm, BluetoothPostUnlinkTake, BluetoothPrimaryPublishedInterruptStep,
     BluetoothSchedulerRunInterruptStorage,
 };
+use crate::scheduler::completion::{
+    BluetoothSingleItemCompletedDrainProgress, BluetoothSingleItemCompletionBackend,
+    BluetoothSingleItemCompletionFault, BluetoothSingleItemCompletionFaultCause,
+    BluetoothSingleItemPostUnlinkDisposition, BluetoothSingleItemPostUnlinkProgress,
+    BluetoothSingleItemRunningProgress,
+};
 use crate::scheduler::core::{
     BluetoothSingleItemSchedulerCompletionObserved,
     BluetoothSingleItemSchedulerCompletionObservedDrainStep,
@@ -20,12 +26,6 @@ use crate::scheduler::core::{
     BluetoothSingleItemSchedulerSoftwareListRemovalRecheck,
     BluetoothSingleItemSchedulerSoftwareListUnlinkStep,
     BluetoothSingleItemSchedulerSoftwareListUnlinked,
-};
-use crate::single_item_completion::{
-    BluetoothSingleItemCompletedDrainProgress, BluetoothSingleItemCompletionBackend,
-    BluetoothSingleItemCompletionFault, BluetoothSingleItemCompletionFaultCause,
-    BluetoothSingleItemPostUnlinkDisposition, BluetoothSingleItemPostUnlinkProgress,
-    BluetoothSingleItemRunningProgress,
 };
 use crate::{
     BluetoothPostUnlinkAwaiting, BluetoothPrimaryControllerFault, BluetoothPrimaryNoSchedulerWork,

@@ -26,12 +26,12 @@ pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
+use open_esp_radio_ieee80211::qos::WmmAccessCategory;
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
     TriggerCommonInfo, TriggerFrame, TriggerGiLtf, TriggerParseError, TriggerRuAllocation,
     TriggerType, TriggerUserSpatialStreamInfo, parse_trigger_user_spatial_stream,
 };
-use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 use open_esp_radio_ieee80211::{he::HeDcmConstellation, ht::HtDuplicateMcs32};
 
 use crate::{

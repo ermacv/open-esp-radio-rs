@@ -58,13 +58,13 @@ reason = "one-time target PHY registration retains the unique powered radio, com
 
 [[reviewed_frames]]
 function_contains = "::station::composer::Esp32s31StationEngine<"
-source_ends_with = ["driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/composer.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/composer.rs"]
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/composer.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/composer.rs"]
 max_bytes = 22528
 reason = "station attempt future retains every recoverable phase owner, including typed RX overload disposition, low-power and ESP-NOW state, until disposition on the PSRAM task stack"
 
 [[reviewed_frames]]
 function_contains = "::roles::station::connected::port::Esp32s31ConnectedStaPort>::compose::<"
-source_ends_with = ["driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/connected/port/composition.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/port/composition.rs"]
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/port/composition.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/port/composition.rs"]
 max_bytes = 8448
 reason = "atomic connected composition retains the validated plan and complete success-or-failure graph while transferring the affine pairwise replay endpoint; the separate 4-KiB move limit still rejects hidden owner copies"
 
@@ -166,7 +166,7 @@ reason = "standalone scan retains the role-neutral owner, continuous live RX rin
 
 [[reviewed_frames]]
 function_contains = "::station::lifecycle::Esp32s31StationTask<"
-source_ends_with = ["driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/lifecycle.rs"]
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/lifecycle.rs"]
 max_bytes = 13312
 reason = "station task future retains lifecycle command and returned owner state, including connected rate control, low-power/ESP-NOW and interface-scoped BlockAck state"
 
@@ -184,7 +184,7 @@ reason = "generic terminal transaction retains the exact expanded stopped-or-fau
 
 [[reviewed_frames]]
 function_contains = "::roles::access_point::Esp32s31AccessPointControl<"
-source_ends_with = ["driver/adapters/embassy/esp32s31/ieee80211/src/roles/access_point/service_epoch.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/access_point/service_epoch.rs"]
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/service_epoch.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/access_point/service_epoch.rs"]
 max_bytes = 26624
 reason = "standalone AP service future owns the complete bounded power-save lease queues, protocol action quantum, aggregate state and exact stop return on the PSRAM task stack"
 
@@ -208,19 +208,19 @@ reason = "station engine connected edge retains the exact connected owner or pai
 
 [[reviewed_frames]]
 function_contains = "::connected::transaction::run_and_quiesce_esp32s31_connected_epoch"
-source_ends_with = ["driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/transaction.rs"]
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/transaction.rs"]
 max_bytes = 9472
 reason = "connected transaction retains the classified runner exit, split pairwise/group replay and every affine service owner until IRQ and task quiescence completes"
 
 [[reviewed_frames]]
 function_contains = "::retry_quiesce::{closure#0}"
-source_ends_with = ["driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/transaction.rs"]
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/transaction.rs"]
 max_bytes = 9472
 reason = "retryable quiescence failure preserves the exact classified exit, split pairwise/group replay, interrupt epoch, runner and task owners without replaying DATAPATH"
 
 [[reviewed_frames]]
 function_contains = "::connected::shutdown::quiesce_esp32s31_connected_epoch"
-source_ends_with = ["driver/adapters/embassy/esp32s31/ieee80211/src/roles/station/connected/shutdown.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/shutdown.rs"]
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/shutdown.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/shutdown.rs"]
 max_bytes = 9216
 reason = "shutdown future retains the unique interrupt, connected runner and task-group owners until all three cross the stopped boundary"
 

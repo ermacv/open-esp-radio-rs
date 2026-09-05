@@ -22,7 +22,8 @@ use open_esp_radio_ieee80211::station_power_save::{
     StaAssociationId, StaNullDataFrame, StaPowerManagement, StaPsPollFrame,
 };
 use open_esp_radio_ieee80211::{
-    channel::WifiChannel, esp_now::EspNowRandomValue, security::WifiSecurityMode,
+    channel::WifiChannel, extensions::espressif::esp_now::EspNowRandomValue,
+    security::WifiSecurityMode,
 };
 use open_esp_radio_wifi_softmac::{
     EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan, MacTxQueueState,
@@ -528,7 +529,7 @@ where
         frame_length: usize,
         hardware_mic_length: usize,
         rate: TxPhyRate,
-        access_category: open_esp_radio_ieee80211::wmm::WmmAccessCategory,
+        access_category: open_esp_radio_ieee80211::qos::WmmAccessCategory,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.security_mode() == WifiSecurityMode::Open || hardware_mic_length == 0 {
             return Err(SingleMpduTxError::SecurityModeMismatch);

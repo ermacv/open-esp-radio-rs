@@ -20,7 +20,7 @@ use open_esp_radio_ieee80211::{
         CcmpRxReplayState,
     },
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
-    esp_now::{
+    extensions::espressif::esp_now::{
         ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER, EspNowVersionError,
         EspNowWireVersion, esp_now_wire_version,
     },

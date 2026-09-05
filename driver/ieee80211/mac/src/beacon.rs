@@ -6,8 +6,9 @@
 //! timestamp and the beacon's advertised interval.
 
 use crate::{
+    ap::profile::Advertisement,
     channel::WifiChannel,
-    ht::{HtLocalCapabilities, ht_capability_ie, ht_operation_ie},
+    ht::{ht_capability_ie, ht_operation_ie},
     security::WifiSecurityMode,
     ssid::WifiSsid,
 };
@@ -26,13 +27,6 @@ const BEACON_FIXED_BODY_LEN: usize = 12;
 pub const WPA2_PERSONAL_CCMP_PSK_RSN_IE: [u8; 22] = [
     0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
 ];
-const SUPPORTED_RATES: [u8; 8] = [0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60];
-const EXTENDED_RATES: [u8; 4] = [0x6c, 0x12, 0x24, 0x48];
-const WMM_PARAMETER_IE: [u8; 26] = [
-    0xdd, 24, 0x00, 0x50, 0xf2, 0x02, 0x01, 0x01, 0x04, 0x00, 0x03, 0xa4, 0x00, 0x00, 0x27, 0xa4,
-    0x00, 0x00, 0x42, 0x43, 0x5e, 0x00, 0x62, 0x32, 0x2f, 0x00,
-];
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApBeaconBuildError {
     InvalidPrimaryChannel,
@@ -167,7 +161,7 @@ impl<'bitmap> TimPartialVirtualBitmap<'bitmap> {
     reason = "the frame writer keeps the caller-owned local profile and independent 802.11 fields explicit"
 )]
 pub fn write_wpa2_ht_beacon(
-    local_ht: HtLocalCapabilities,
+    profile: &Advertisement,
     output: &mut [u8],
     access_point: [u8; 6],
     ssid: &WifiSsid,
@@ -177,7 +171,7 @@ pub fn write_wpa2_ht_beacon(
     management_sequence: u16,
 ) -> Result<usize, ApBeaconBuildError> {
     write_ht_beacon(
-        local_ht,
+        profile,
         output,
         access_point,
         ssid,
@@ -194,7 +188,7 @@ pub fn write_wpa2_ht_beacon(
 /// byte-for-byte profile.
 #[allow(clippy::too_many_arguments)]
 pub fn write_ht_beacon(
-    local_ht: HtLocalCapabilities,
+    profile: &Advertisement,
     output: &mut [u8],
     access_point: [u8; 6],
     ssid: &WifiSsid,
@@ -214,7 +208,8 @@ pub fn write_ht_beacon(
         return Err(ApBeaconBuildError::InvalidSequenceNumber);
     }
 
-    let ht_capability = ht_capability_ie(local_ht, channel);
+    let wmm_parameter_ie = profile.wmm.element();
+    let ht_capability = ht_capability_ie(profile.ht, channel);
     let ht_operation = ht_operation_ie(channel);
     let rsn = match security {
         WifiSecurityMode::Open => &[][..],
@@ -225,13 +220,13 @@ pub fn write_ht_beacon(
         + 2
         + ssid.as_bytes().len()
         + 2
-        + SUPPORTED_RATES.len()
+        + profile.legacy_rates.supported().len()
         + 3
         + 7
         + rsn.len()
         + 2
-        + EXTENDED_RATES.len()
-        + WMM_PARAMETER_IE.len()
+        + profile.legacy_rates.extended().len()
+        + wmm_parameter_ie.len()
         + ht_capability.len()
         + ht_operation.len();
     if output.len() < required {
@@ -246,18 +241,12 @@ pub fn write_ht_beacon(
     frame[16..22].copy_from_slice(&access_point);
     frame[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
     frame[32..34].copy_from_slice(&beacon_interval_tu.to_le_bytes());
-    // ESS | Short Preamble | Short Slot Time, plus Privacy only for WPA2.
-    let capabilities = 0x0421_u16
-        | if security == WifiSecurityMode::Wpa2Personal {
-            0x0010
-        } else {
-            0
-        };
+    let capabilities = profile.capabilities(security);
     frame[34..36].copy_from_slice(&capabilities.to_le_bytes());
 
     let mut offset = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
     write_element(frame, &mut offset, 0, ssid.as_bytes());
-    write_element(frame, &mut offset, 1, &SUPPORTED_RATES);
+    write_element(frame, &mut offset, 1, profile.legacy_rates.supported());
     write_element(frame, &mut offset, 3, &[channel.primary()]);
     // Bitmap offset zero plus two octets covers AID 1..=15 without aliasing
     // AID 8..=15 onto the first byte. Bit zero of bitmap control remains the
@@ -271,8 +260,8 @@ pub fn write_ht_beacon(
     if !rsn.is_empty() {
         copy_record(frame, &mut offset, rsn);
     }
-    write_element(frame, &mut offset, 50, &EXTENDED_RATES);
-    copy_record(frame, &mut offset, &WMM_PARAMETER_IE);
+    write_element(frame, &mut offset, 50, profile.legacy_rates.extended());
+    copy_record(frame, &mut offset, &wmm_parameter_ie);
     copy_record(frame, &mut offset, &ht_capability);
     copy_record(frame, &mut offset, &ht_operation);
     debug_assert_eq!(offset, required);

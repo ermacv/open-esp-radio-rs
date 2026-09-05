@@ -1187,6 +1187,7 @@ version = "0.1.0"
 name = "open-esp-radio-esp32s31-embassy-wifi"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "embassy-executor",
  "embassy-futures",
  "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",

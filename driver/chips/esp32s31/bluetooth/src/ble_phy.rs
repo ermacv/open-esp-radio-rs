@@ -121,7 +121,7 @@ impl BluetoothBlePhyTimingAuthority {
         &mut self,
         epoch: crate::BluetoothControllerSchedulerEpoch,
         captured: BluetoothPeripheralConnectionCapturedAnchorTime,
-    ) -> crate::peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming {
+    ) -> crate::le::peripheral::connection::BluetoothPeripheralConnectionPacketStartTiming {
         let captured_micros = epoch.project_peripheral_connection_capture(captured);
         normalize_le_1m_peripheral_connection_packet_start(
             self.le_1m_packet_start_calibration,
@@ -134,8 +134,8 @@ impl BluetoothBlePhyTimingAuthority {
 fn normalize_le_1m_peripheral_connection_packet_start(
     calibration: BluetoothBlePhyLe1MPacketStartCalibration,
     captured_micros: u32,
-) -> crate::peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming {
-    crate::peripheral_connection::BluetoothPeripheralConnectionPacketStartTiming::from_scheduler_micros(
+) -> crate::le::peripheral::connection::BluetoothPeripheralConnectionPacketStartTiming {
+    crate::le::peripheral::connection::BluetoothPeripheralConnectionPacketStartTiming::from_scheduler_micros(
         calibration.normalize_controller_micros(captured_micros),
     )
 }

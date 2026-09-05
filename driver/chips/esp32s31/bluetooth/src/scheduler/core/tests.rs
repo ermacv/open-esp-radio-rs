@@ -90,7 +90,7 @@ fn passive_scan_candidate() -> super::BluetoothPassiveScanFirstEventCandidate {
 
 fn peripheral_connection_candidate() -> (
     crate::BluetoothPeripheralConnectionRuntimeResources,
-    crate::peripheral_connection::BluetoothPeripheralConnectionFirstEventCandidate,
+    crate::le::peripheral::connection::BluetoothPeripheralConnectionFirstEventCandidate,
     BluetoothDirectionFindingWorkspaceLink,
 ) {
     let graph_storage = std::boxed::Box::leak(std::boxed::Box::new(

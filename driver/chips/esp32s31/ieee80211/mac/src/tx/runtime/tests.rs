@@ -3,7 +3,7 @@ use crate::{
     tx::ampdu::{HtAmpduTxCompletion, HtBlockAckObservation},
     tx::{HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion, TxCookie},
 };
-use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
+use open_esp_radio_ieee80211::extensions::wmm::parse_wmm_parameter_element;
 
 const STANDARD_WMM: [u8; 26] = [
     221, 24, 0x00, 0x50, 0xf2, 0x02, 1, 1, 0x85, 0, 0x03, 0xa4, 0, 0, 0x27, 0xa4, 0, 0, 0x42, 0x43,

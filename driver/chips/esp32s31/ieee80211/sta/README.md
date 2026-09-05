@@ -20,6 +20,6 @@ Module map:
 - `wpa2`: chip handshake and atomic hardware-key publication ports.
 
 `driver/ieee80211/sta` remains the owner of portable MLME and reconnect policy.
-`driver/adapters/embassy/esp32s31/ieee80211` supplies concrete timers, DMA/TX
+`driver/runtime/embassy/esp32s31/ieee80211` supplies concrete timers, DMA/TX
 owners, IRQ wakeups and task/network composition. HIL may observe those public
 boundaries but must not implement a second driver path.

@@ -37,7 +37,7 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
         management_sequence: u16,
     ) -> Result<Self, ApBeaconBuildError> {
         let len = write_wpa2_ht_beacon(
-            crate::profile::HT_CAPABILITIES,
+            &crate::profile::ADVERTISEMENT,
             storage,
             access_point,
             ssid,

@@ -6,325 +6,13 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     ├── UNSAFE.md
     ├── adapters/
     │   ├── embassy/
+    │   │   ├── README.md
     │   │   ├── esp32s31/
-    │   │   │   ├── bluetooth/
-    │   │   │   │   ├── Cargo.toml
-    │   │   │   │   └── src/
-    │   │   │   │       ├── controller/
-    │   │   │   │       │   ├── dispatch.rs
-    │   │   │   │       │   ├── mod.rs
-    │   │   │   │       │   ├── modem_timer/
-    │   │   │   │       │   │   └── tests.rs
-    │   │   │   │       │   ├── modem_timer.rs
-    │   │   │   │       │   ├── owner.rs
-    │   │   │   │       │   ├── recurring.rs
-    │   │   │   │       │   ├── reset.rs
-    │   │   │   │       │   ├── response.rs
-    │   │   │   │       │   ├── tests.rs
-    │   │   │   │       │   ├── time_recheck/
-    │   │   │   │       │   │   └── tests.rs
-    │   │   │   │       │   └── time_recheck.rs
-    │   │   │   │       ├── lib.rs
-    │   │   │   │       ├── session/
-    │   │   │   │       │   ├── advertising/
-    │   │   │   │       │   │   ├── active.rs
-    │   │   │   │       │   │   ├── connectable/
-    │   │   │   │       │   │   │   ├── active.rs
-    │   │   │   │       │   │   │   ├── first.rs
-    │   │   │   │       │   │   │   ├── mod.rs
-    │   │   │   │       │   │   │   └── recurring.rs
-    │   │   │   │       │   │   ├── first.rs
-    │   │   │   │       │   │   └── mod.rs
-    │   │   │   │       │   ├── dtm/
-    │   │   │   │       │   │   ├── active/
-    │   │   │   │       │   │   │   └── tests.rs
-    │   │   │   │       │   │   ├── active.rs
-    │   │   │   │       │   │   ├── first.rs
-    │   │   │   │       │   │   ├── mod.rs
-    │   │   │   │       │   │   ├── stopping/
-    │   │   │   │       │   │   │   └── tests.rs
-    │   │   │   │       │   │   ├── stopping.rs
-    │   │   │   │       │   │   ├── task/
-    │   │   │   │       │   │   │   └── tests.rs
-    │   │   │   │       │   │   └── task.rs
-    │   │   │   │       │   ├── mod.rs
-    │   │   │   │       │   ├── peripheral/
-    │   │   │   │       │   │   ├── first.rs
-    │   │   │   │       │   │   └── mod.rs
-    │   │   │   │       │   └── scan/
-    │   │   │   │       │       ├── active.rs
-    │   │   │   │       │       ├── first.rs
-    │   │   │   │       │       └── mod.rs
-    │   │   │   │       └── tests.rs
     │   │   │   ├── coex/
     │   │   │   │   ├── Cargo.toml
     │   │   │   │   └── src/
     │   │   │   │       ├── lib.rs
     │   │   │   │       └── tests.rs
-    │   │   │   ├── ieee80211/
-    │   │   │   │   ├── Cargo.toml
-    │   │   │   │   ├── examples/
-    │   │   │   │   │   └── station_service.rs
-    │   │   │   │   ├── src/
-    │   │   │   │   │   ├── composition/
-    │   │   │   │   │   │   ├── phy.rs
-    │   │   │   │   │   │   ├── resources/
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   └── resources.rs
-    │   │   │   │   │   ├── composition.rs
-    │   │   │   │   │   ├── datapath/
-    │   │   │   │   │   │   ├── irq/
-    │   │   │   │   │   │   │   ├── epoch.rs
-    │   │   │   │   │   │   │   ├── mac_runtime.rs
-    │   │   │   │   │   │   │   ├── power_runtime.rs
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   ├── irq.rs
-    │   │   │   │   │   │   ├── mod.rs
-    │   │   │   │   │   │   ├── network.rs
-    │   │   │   │   │   │   ├── owned_tests.rs
-    │   │   │   │   │   │   ├── owner/
-    │   │   │   │   │   │   │   └── fairness_tests.rs
-    │   │   │   │   │   │   ├── owner.rs
-    │   │   │   │   │   │   ├── paired/
-    │   │   │   │   │   │   │   └── physical_tx_tests.rs
-    │   │   │   │   │   │   ├── paired.rs
-    │   │   │   │   │   │   ├── rx/
-    │   │   │   │   │   │   │   ├── README.md
-    │   │   │   │   │   │   │   ├── dma/
-    │   │   │   │   │   │   │   │   ├── epoch.rs
-    │   │   │   │   │   │   │   │   ├── lifecycle.rs
-    │   │   │   │   │   │   │   │   ├── service/
-    │   │   │   │   │   │   │   │   │   └── observation.rs
-    │   │   │   │   │   │   │   │   ├── service.rs
-    │   │   │   │   │   │   │   │   ├── tests/
-    │   │   │   │   │   │   │   │   │   └── transaction.rs
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── dma.rs
-    │   │   │   │   │   │   │   ├── ethernet/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── ethernet.rs
-    │   │   │   │   │   │   │   ├── frontier/
-    │   │   │   │   │   │   │   │   └── time.rs
-    │   │   │   │   │   │   │   ├── frontier.rs
-    │   │   │   │   │   │   │   ├── hardware/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── hardware.rs
-    │   │   │   │   │   │   │   ├── mod.rs
-    │   │   │   │   │   │   │   ├── reorder/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── reorder.rs
-    │   │   │   │   │   │   │   ├── staging.rs
-    │   │   │   │   │   │   │   ├── turn/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   └── turn.rs
-    │   │   │   │   │   │   ├── scheduler.rs
-    │   │   │   │   │   │   ├── service.rs
-    │   │   │   │   │   │   ├── services.rs
-    │   │   │   │   │   │   ├── software_tx_queue/
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   ├── software_tx_queue.rs
-    │   │   │   │   │   │   ├── sram_tx.rs
-    │   │   │   │   │   │   ├── tx/
-    │   │   │   │   │   │   │   ├── aggregate/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── aggregate.rs
-    │   │   │   │   │   │   │   ├── mod.rs
-    │   │   │   │   │   │   │   ├── resources/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── resources.rs
-    │   │   │   │   │   │   │   └── time.rs
-    │   │   │   │   │   │   ├── tx_performance/
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   └── tx_performance.rs
-    │   │   │   │   │   ├── diagnostics/
-    │   │   │   │   │   │   ├── access_point.rs
-    │   │   │   │   │   │   ├── aggregate_tx.rs
-    │   │   │   │   │   │   ├── core0_ap_rx_cycles.rs
-    │   │   │   │   │   │   ├── core0_rx_cycles/
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   ├── core0_rx_cycles.rs
-    │   │   │   │   │   │   ├── core0_rx_performance/
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   ├── core0_rx_performance.rs
-    │   │   │   │   │   │   ├── core0_rx_reorder_cycles/
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   ├── core0_rx_reorder_cycles.rs
-    │   │   │   │   │   │   ├── core0_rx_service_histogram/
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   ├── core0_rx_service_histogram.rs
-    │   │   │   │   │   │   ├── network.rs
-    │   │   │   │   │   │   └── rx_pipeline.rs
-    │   │   │   │   │   ├── diagnostics.rs
-    │   │   │   │   │   ├── lib.rs
-    │   │   │   │   │   ├── roles/
-    │   │   │   │   │   │   ├── access_point/
-    │   │   │   │   │   │   │   ├── ampdu/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── ampdu.rs
-    │   │   │   │   │   │   │   ├── concurrent.rs
-    │   │   │   │   │   │   │   ├── control_owner.rs
-    │   │   │   │   │   │   │   ├── control_readiness.rs
-    │   │   │   │   │   │   │   ├── control_types.rs
-    │   │   │   │   │   │   │   ├── datapath/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── datapath.rs
-    │   │   │   │   │   │   │   ├── ethernet_diagnostics.rs
-    │   │   │   │   │   │   │   ├── lifecycle_tests.rs
-    │   │   │   │   │   │   │   ├── network_tx/
-    │   │   │   │   │   │   │   │   ├── service_phase/
-    │   │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   │   ├── service_phase.rs
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── network_tx.rs
-    │   │   │   │   │   │   │   ├── protocol_mailbox/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── protocol_mailbox.rs
-    │   │   │   │   │   │   │   ├── protocol_owner.rs
-    │   │   │   │   │   │   │   ├── protocol_service/
-    │   │   │   │   │   │   │   │   └── ht_rx_observation_tests.rs
-    │   │   │   │   │   │   │   ├── protocol_service.rs
-    │   │   │   │   │   │   │   ├── protocol_shutdown.rs
-    │   │   │   │   │   │   │   ├── rx_dispatch/
-    │   │   │   │   │   │   │   │   └── in_place_rx_sink_tests.rs
-    │   │   │   │   │   │   │   ├── rx_dispatch.rs
-    │   │   │   │   │   │   │   ├── rx_pipeline/
-    │   │   │   │   │   │   │   │   └── classification_tests.rs
-    │   │   │   │   │   │   │   ├── rx_pipeline.rs
-    │   │   │   │   │   │   │   ├── rx_reorder/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── rx_reorder.rs
-    │   │   │   │   │   │   │   └── service_epoch.rs
-    │   │   │   │   │   │   ├── access_point.rs
-    │   │   │   │   │   │   ├── concurrent/
-    │   │   │   │   │   │   │   ├── control/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── control.rs
-    │   │   │   │   │   │   │   ├── rx_service.rs
-    │   │   │   │   │   │   │   ├── station_rx_role/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── station_rx_role.rs
-    │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   ├── concurrent.rs
-    │   │   │   │   │   │   ├── esp_now/
-    │   │   │   │   │   │   │   ├── channel.rs
-    │   │   │   │   │   │   │   ├── rx.rs
-    │   │   │   │   │   │   │   └── service.rs
-    │   │   │   │   │   │   ├── esp_now.rs
-    │   │   │   │   │   │   ├── monitor/
-    │   │   │   │   │   │   │   ├── builder.rs
-    │   │   │   │   │   │   │   ├── control/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── control.rs
-    │   │   │   │   │   │   │   ├── rx.rs
-    │   │   │   │   │   │   │   ├── service/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   └── service.rs
-    │   │   │   │   │   │   ├── monitor.rs
-    │   │   │   │   │   │   ├── scan/
-    │   │   │   │   │   │   │   ├── port/
-    │   │   │   │   │   │   │   │   ├── bindings.rs
-    │   │   │   │   │   │   │   │   ├── owner.rs
-    │   │   │   │   │   │   │   │   ├── service.rs
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── port.rs
-    │   │   │   │   │   │   │   ├── rx/
-    │   │   │   │   │   │   │   │   ├── running.rs
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── rx.rs
-    │   │   │   │   │   │   │   └── target.rs
-    │   │   │   │   │   │   ├── scan.rs
-    │   │   │   │   │   │   ├── station/
-    │   │   │   │   │   │   │   ├── attempt/
-    │   │   │   │   │   │   │   │   ├── channel.rs
-    │   │   │   │   │   │   │   │   ├── owner.rs
-    │   │   │   │   │   │   │   │   ├── port.rs
-    │   │   │   │   │   │   │   │   ├── resources.rs
-    │   │   │   │   │   │   │   │   └── service.rs
-    │   │   │   │   │   │   │   ├── attempt.rs
-    │   │   │   │   │   │   │   ├── backend.rs
-    │   │   │   │   │   │   │   ├── command.rs
-    │   │   │   │   │   │   │   ├── composer/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── composer.rs
-    │   │   │   │   │   │   │   ├── connected/
-    │   │   │   │   │   │   │   │   ├── assembly.rs
-    │   │   │   │   │   │   │   │   ├── epoch.rs
-    │   │   │   │   │   │   │   │   ├── mod.rs
-    │   │   │   │   │   │   │   │   ├── port/
-    │   │   │   │   │   │   │   │   │   ├── composition.rs
-    │   │   │   │   │   │   │   │   │   ├── plan.rs
-    │   │   │   │   │   │   │   │   │   ├── resources.rs
-    │   │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   │   ├── port.rs
-    │   │   │   │   │   │   │   │   ├── preparation.rs
-    │   │   │   │   │   │   │   │   ├── rx_service.rs
-    │   │   │   │   │   │   │   │   ├── shutdown/
-    │   │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   │   ├── shutdown.rs
-    │   │   │   │   │   │   │   │   ├── start/
-    │   │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   │   ├── start.rs
-    │   │   │   │   │   │   │   │   ├── transaction/
-    │   │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   │   └── transaction.rs
-    │   │   │   │   │   │   │   ├── control.rs
-    │   │   │   │   │   │   │   ├── control_mailbox/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── control_mailbox.rs
-    │   │   │   │   │   │   │   ├── control_tests.rs
-    │   │   │   │   │   │   │   ├── epoch/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── epoch.rs
-    │   │   │   │   │   │   │   ├── esp_now_mailbox.rs
-    │   │   │   │   │   │   │   ├── esp_now_tx.rs
-    │   │   │   │   │   │   │   ├── join.rs
-    │   │   │   │   │   │   │   ├── join_port/
-    │   │   │   │   │   │   │   │   ├── owner.rs
-    │   │   │   │   │   │   │   │   ├── resources.rs
-    │   │   │   │   │   │   │   │   ├── rx.rs
-    │   │   │   │   │   │   │   │   ├── service.rs
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── join_port.rs
-    │   │   │   │   │   │   │   ├── join_time.rs
-    │   │   │   │   │   │   │   ├── lifecycle.rs
-    │   │   │   │   │   │   │   ├── network/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── network.rs
-    │   │   │   │   │   │   │   ├── reclaim.rs
-    │   │   │   │   │   │   │   ├── resources/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── resources.rs
-    │   │   │   │   │   │   │   ├── runtime.rs
-    │   │   │   │   │   │   │   ├── rx_protocol/
-    │   │   │   │   │   │   │   │   ├── dispatch.rs
-    │   │   │   │   │   │   │   │   ├── owner.rs
-    │   │   │   │   │   │   │   │   ├── reorder.rs
-    │   │   │   │   │   │   │   │   ├── scheduler.rs
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── rx_protocol.rs
-    │   │   │   │   │   │   │   ├── scan/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── scan.rs
-    │   │   │   │   │   │   │   ├── teardown/
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── teardown.rs
-    │   │   │   │   │   │   │   ├── tests.rs
-    │   │   │   │   │   │   │   ├── tx/
-    │   │   │   │   │   │   │   │   ├── adapters.rs
-    │   │   │   │   │   │   │   │   ├── completion.rs
-    │   │   │   │   │   │   │   │   ├── owner.rs
-    │   │   │   │   │   │   │   │   ├── publication.rs
-    │   │   │   │   │   │   │   │   ├── resources.rs
-    │   │   │   │   │   │   │   │   └── tests.rs
-    │   │   │   │   │   │   │   ├── tx.rs
-    │   │   │   │   │   │   │   ├── tx_epoch.rs
-    │   │   │   │   │   │   │   ├── tx_service.rs
-    │   │   │   │   │   │   │   ├── wpa2_port.rs
-    │   │   │   │   │   │   │   └── wpa2_time.rs
-    │   │   │   │   │   │   └── station.rs
-    │   │   │   │   │   └── roles.rs
-    │   │   │   │   └── tests/
-    │   │   │   │       └── owned_datapath_network.rs
     │   │   │   ├── ieee80211-compat/
     │   │   │   │   ├── Cargo.toml
     │   │   │   │   ├── src/
@@ -361,136 +49,107 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │           ├── station_network/
     │   │           │   └── tests.rs
     │   │           └── station_network.rs
-    │   ├── esp-hal/
-    │   │   └── esp32s31/
-    │   │       ├── ieee80211/
-    │   │       │   ├── Cargo.toml
-    │   │       │   └── src/
-    │   │       │       ├── lib.rs
-    │   │       │       └── mac_interrupt_epoch.rs
-    │   │       ├── ieee802154/
-    │   │       │   ├── Cargo.toml
-    │   │       │   └── src/
-    │   │       │       └── lib.rs
-    │   │       ├── radio/
-    │   │       │   ├── Cargo.toml
-    │   │       │   ├── README.md
-    │   │       │   └── src/
-    │   │       │       ├── bluetooth_address/
-    │   │       │       │   └── tests.rs
-    │   │       │       ├── bluetooth_address.rs
-    │   │       │       ├── bluetooth_interrupt.rs
-    │   │       │       ├── bluetooth_route_policy/
-    │   │       │       │   └── tests.rs
-    │   │       │       ├── bluetooth_route_policy.rs
-    │   │       │       ├── coordinator/
-    │   │       │       │   └── tests.rs
-    │   │       │       ├── coordinator.rs
-    │   │       │       ├── esp32s31.rs
-    │   │       │       └── lib.rs
-    │   │       └── soc/
-    │   │           ├── Cargo.toml
-    │   │           ├── README.md
-    │   │           └── src/
-    │   │               ├── cache/
-    │   │               │   ├── maintenance/
-    │   │               │   │   └── tests.rs
-    │   │               │   ├── maintenance.rs
-    │   │               │   ├── performance/
-    │   │               │   │   └── tests.rs
-    │   │               │   └── performance.rs
-    │   │               ├── cache.rs
-    │   │               ├── dma/
-    │   │               │   ├── mem2mem/
-    │   │               │   │   ├── completion.rs
-    │   │               │   │   ├── descriptor/
-    │   │               │   │   │   └── tests.rs
-    │   │               │   │   ├── descriptor.rs
-    │   │               │   │   ├── registers.rs
-    │   │               │   │   └── transfer.rs
-    │   │               │   └── mem2mem.rs
-    │   │               ├── dma.rs
-    │   │               ├── flash/
-    │   │               │   └── mmu.rs
-    │   │               ├── flash.rs
-    │   │               └── lib.rs
-    │   └── network/
-    │       ├── embassy/
-    │       │   ├── compat/
-    │       │   │   ├── Cargo.toml
-    │       │   │   ├── src/
-    │       │   │   │   └── lib.rs
-    │       │   │   └── tests/
-    │       │   │       └── compat_device.rs
-    │       │   └── owned/
-    │       │       ├── Cargo.toml
-    │       │       └── src/
-    │       │           ├── lib.rs
-    │       │           ├── owned/
-    │       │           │   └── tests.rs
-    │       │           └── owned.rs
-    │       └── research/
-    │           ├── Cargo.toml
+    │   └── esp-hal/
+    │       └── esp32s31/
     │           ├── README.md
-    │           └── src/
-    │               ├── address.rs
-    │               ├── checksum/
-    │               │   └── tests.rs
-    │               ├── checksum.rs
-    │               ├── engine/
-    │               │   └── tests.rs
-    │               ├── engine.rs
-    │               ├── lib.rs
-    │               ├── physical/
-    │               │   └── tests.rs
-    │               ├── physical.rs
-    │               └── work.rs
+    │           ├── ieee80211/
+    │           │   ├── Cargo.toml
+    │           │   └── src/
+    │           │       ├── lib.rs
+    │           │       └── mac_interrupt_epoch.rs
+    │           ├── ieee802154/
+    │           │   ├── Cargo.toml
+    │           │   └── src/
+    │           │       └── lib.rs
+    │           ├── radio/
+    │           │   ├── Cargo.toml
+    │           │   ├── README.md
+    │           │   └── src/
+    │           │       ├── bluetooth_address/
+    │           │       │   └── tests.rs
+    │           │       ├── bluetooth_address.rs
+    │           │       ├── bluetooth_interrupt.rs
+    │           │       ├── bluetooth_route_policy/
+    │           │       │   └── tests.rs
+    │           │       ├── bluetooth_route_policy.rs
+    │           │       ├── coordinator/
+    │           │       │   └── tests.rs
+    │           │       ├── coordinator.rs
+    │           │       ├── esp32s31.rs
+    │           │       └── lib.rs
+    │           └── soc/
+    │               ├── Cargo.toml
+    │               ├── README.md
+    │               └── src/
+    │                   ├── cache/
+    │                   │   ├── maintenance/
+    │                   │   │   └── tests.rs
+    │                   │   ├── maintenance.rs
+    │                   │   ├── performance/
+    │                   │   │   └── tests.rs
+    │                   │   └── performance.rs
+    │                   ├── cache.rs
+    │                   ├── dma/
+    │                   │   ├── mem2mem/
+    │                   │   │   ├── completion.rs
+    │                   │   │   ├── descriptor/
+    │                   │   │   │   └── tests.rs
+    │                   │   │   ├── descriptor.rs
+    │                   │   │   ├── registers.rs
+    │                   │   │   └── transfer.rs
+    │                   │   └── mem2mem.rs
+    │                   ├── dma.rs
+    │                   ├── flash/
+    │                   │   └── mmu.rs
+    │                   ├── flash.rs
+    │                   └── lib.rs
     ├── bluetooth/
     │   ├── hci/
     │   │   ├── Cargo.toml
     │   │   └── src/
-    │   │       ├── bootstrap/
-    │   │       │   ├── command.rs
-    │   │       │   ├── config.rs
-    │   │       │   ├── response.rs
-    │   │       │   ├── state.rs
-    │   │       │   └── tests.rs
-    │   │       ├── bootstrap.rs
-    │   │       ├── command/
-    │   │       │   ├── advertising/
+    │   │       ├── controller/
+    │   │       │   ├── bootstrap/
+    │   │       │   │   ├── command.rs
+    │   │       │   │   ├── config.rs
+    │   │       │   │   ├── response.rs
+    │   │       │   │   ├── state.rs
     │   │       │   │   └── tests.rs
-    │   │       │   ├── advertising.rs
+    │   │       │   ├── bootstrap.rs
     │   │       │   ├── classification/
     │   │       │   │   └── tests.rs
     │   │       │   ├── classification.rs
-    │   │       │   ├── dtm/
-    │   │       │   │   └── tests.rs
-    │   │       │   ├── dtm.rs
+    │   │       │   ├── endpoint.rs
+    │   │       │   ├── le/
+    │   │       │   │   ├── advertising/
+    │   │       │   │   │   └── tests.rs
+    │   │       │   │   ├── advertising.rs
+    │   │       │   │   ├── dtm/
+    │   │       │   │   │   └── tests.rs
+    │   │       │   │   ├── dtm.rs
+    │   │       │   │   ├── scanning/
+    │   │       │   │   │   └── tests.rs
+    │   │       │   │   └── scanning.rs
+    │   │       │   ├── le.rs
     │   │       │   ├── order/
     │   │       │   │   └── tests.rs
     │   │       │   ├── order.rs
     │   │       │   ├── response/
     │   │       │   │   └── tests.rs
     │   │       │   ├── response.rs
-    │   │       │   ├── scanning/
-    │   │       │   │   └── tests.rs
-    │   │       │   └── scanning.rs
-    │   │       ├── command.rs
-    │   │       ├── controller/
-    │   │       │   ├── endpoint.rs
     │   │       │   └── tests.rs
     │   │       ├── controller.rs
     │   │       ├── lib.rs
     │   │       ├── transport/
-    │   │       │   ├── channel/
+    │   │       │   ├── in_process/
     │   │       │   │   ├── codec.rs
     │   │       │   │   ├── queue.rs
     │   │       │   │   └── tests.rs
-    │   │       │   ├── channel.rs
+    │   │       │   ├── in_process.rs
     │   │       │   ├── packet.rs
     │   │       │   ├── queue.rs
     │   │       │   └── tests.rs
-    │   │       └── transport.rs
+    │   │       ├── transport.rs
+    │   │       └── wire.rs
     │   └── le/
     │       └── ll/
     │           ├── Cargo.toml
@@ -518,6 +177,7 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       ├── bluetooth/
     │       │   ├── Cargo.toml
     │       │   ├── FEATURES.md
+    │       │   ├── README.md
     │       │   ├── memory/
     │       │   │   ├── Cargo.toml
     │       │   │   └── src/
@@ -579,9 +239,6 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │       │   └── tests.rs
     │       │       ├── clock.rs
     │       │       ├── common_phy_state.rs
-    │       │       ├── connectable_advertising/
-    │       │       │   └── tests.rs
-    │       │       ├── connectable_advertising.rs
     │       │       ├── controller/
     │       │       │   ├── boot/
     │       │       │   │   ├── connectable_advertising.rs
@@ -602,55 +259,6 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │       │   ├── time/
     │       │       │   │   └── tests.rs
     │       │       │   └── time.rs
-    │       │       ├── dtm_active.rs
-    │       │       ├── dtm_active_session.rs
-    │       │       ├── dtm_command/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_command.rs
-    │       │       ├── dtm_event_prepare/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_event_prepare.rs
-    │       │       ├── dtm_event_timing/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_event_timing.rs
-    │       │       ├── dtm_link_state.rs
-    │       │       ├── dtm_parameters/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_parameters.rs
-    │       │       ├── dtm_payload/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_payload.rs
-    │       │       ├── dtm_post_unlink/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_post_unlink.rs
-    │       │       ├── dtm_quiescence.rs
-    │       │       ├── dtm_quiescence_policy/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_quiescence_policy.rs
-    │       │       ├── dtm_reset.rs
-    │       │       ├── dtm_reset_order/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_reset_order.rs
-    │       │       ├── dtm_runner.rs
-    │       │       ├── dtm_rx_completion/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_rx_completion.rs
-    │       │       ├── dtm_scheduler_item/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_scheduler_item.rs
-    │       │       ├── dtm_scheduler_reservation/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_scheduler_reservation.rs
-    │       │       ├── dtm_session/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_session.rs
-    │       │       ├── dtm_stopping.rs
-    │       │       ├── dtm_timing/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_timing.rs
-    │       │       ├── dtm_tx_packet/
-    │       │       │   └── tests.rs
-    │       │       ├── dtm_tx_packet.rs
     │       │       ├── hci/
     │       │       │   └── tests.rs
     │       │       ├── hci.rs
@@ -671,30 +279,120 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │       │   ├── wake/
     │       │       │   │   └── tests.rs
     │       │       │   └── wake.rs
-    │       │       ├── legacy_advertising/
-    │       │       │   └── tests.rs
-    │       │       ├── legacy_advertising.rs
-    │       │       ├── legacy_advertising_active.rs
-    │       │       ├── legacy_advertising_completion.rs
-    │       │       ├── legacy_advertising_recurring.rs
-    │       │       ├── legacy_advertising_runner.rs
-    │       │       ├── legacy_advertising_timing/
-    │       │       │   └── tests.rs
-    │       │       ├── legacy_advertising_timing.rs
-    │       │       ├── legacy_connectable_advertising_active.rs
-    │       │       ├── legacy_connectable_advertising_completion.rs
-    │       │       ├── legacy_connectable_advertising_hci.rs
-    │       │       ├── legacy_connectable_advertising_recurring/
-    │       │       │   ├── cancellation.rs
-    │       │       │   └── phases.rs
-    │       │       ├── legacy_connectable_advertising_recurring.rs
-    │       │       ├── legacy_connectable_advertising_recurring_hci.rs
-    │       │       ├── legacy_connectable_advertising_recurring_hci_state/
-    │       │       │   └── tests.rs
-    │       │       ├── legacy_connectable_advertising_recurring_hci_state.rs
-    │       │       ├── legacy_connectable_advertising_runner.rs
-    │       │       ├── legacy_connectable_peripheral_first_hci.rs
-    │       │       ├── legacy_connectable_peripheral_start_runner.rs
+    │       │       ├── le/
+    │       │       │   ├── advertising/
+    │       │       │   │   ├── connectable/
+    │       │       │   │   │   ├── active.rs
+    │       │       │   │   │   ├── completion.rs
+    │       │       │   │   │   ├── hci.rs
+    │       │       │   │   │   ├── recurring/
+    │       │       │   │   │   │   ├── hci.rs
+    │       │       │   │   │   │   ├── sequence/
+    │       │       │   │   │   │   │   ├── cancellation.rs
+    │       │       │   │   │   │   │   └── phases.rs
+    │       │       │   │   │   │   ├── sequence.rs
+    │       │       │   │   │   │   ├── state/
+    │       │       │   │   │   │   │   └── tests.rs
+    │       │       │   │   │   │   └── state.rs
+    │       │       │   │   │   ├── recurring.rs
+    │       │       │   │   │   ├── runner.rs
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── connectable.rs
+    │       │       │   │   ├── legacy/
+    │       │       │   │   │   ├── active.rs
+    │       │       │   │   │   ├── completion.rs
+    │       │       │   │   │   ├── recurring.rs
+    │       │       │   │   │   ├── runner.rs
+    │       │       │   │   │   ├── tests.rs
+    │       │       │   │   │   ├── timing/
+    │       │       │   │   │   │   └── tests.rs
+    │       │       │   │   │   └── timing.rs
+    │       │       │   │   └── legacy.rs
+    │       │       │   ├── advertising.rs
+    │       │       │   ├── dtm/
+    │       │       │   │   ├── active/
+    │       │       │   │   │   └── session.rs
+    │       │       │   │   ├── active.rs
+    │       │       │   │   ├── command/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── command.rs
+    │       │       │   │   ├── event/
+    │       │       │   │   │   ├── prepare/
+    │       │       │   │   │   │   └── tests.rs
+    │       │       │   │   │   ├── prepare.rs
+    │       │       │   │   │   ├── timing/
+    │       │       │   │   │   │   └── tests.rs
+    │       │       │   │   │   └── timing.rs
+    │       │       │   │   ├── event.rs
+    │       │       │   │   ├── link_state.rs
+    │       │       │   │   ├── parameters/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── parameters.rs
+    │       │       │   │   ├── payload/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── payload.rs
+    │       │       │   │   ├── post_unlink/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── post_unlink.rs
+    │       │       │   │   ├── quiescence.rs
+    │       │       │   │   ├── quiescence_policy/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── quiescence_policy.rs
+    │       │       │   │   ├── reset.rs
+    │       │       │   │   ├── reset_order/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── reset_order.rs
+    │       │       │   │   ├── runner.rs
+    │       │       │   │   ├── rx/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── rx.rs
+    │       │       │   │   ├── scheduler/
+    │       │       │   │   │   ├── item/
+    │       │       │   │   │   │   └── tests.rs
+    │       │       │   │   │   ├── item.rs
+    │       │       │   │   │   ├── reservation/
+    │       │       │   │   │   │   └── tests.rs
+    │       │       │   │   │   └── reservation.rs
+    │       │       │   │   ├── scheduler.rs
+    │       │       │   │   ├── session/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── session.rs
+    │       │       │   │   ├── stopping.rs
+    │       │       │   │   ├── timing/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── timing.rs
+    │       │       │   │   ├── tx/
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   └── tx.rs
+    │       │       │   ├── dtm.rs
+    │       │       │   ├── peripheral/
+    │       │       │   │   ├── completion.rs
+    │       │       │   │   ├── connection/
+    │       │       │   │   │   ├── completion/
+    │       │       │   │   │   │   └── tests.rs
+    │       │       │   │   │   ├── completion.rs
+    │       │       │   │   │   ├── recurring/
+    │       │       │   │   │   │   ├── timing/
+    │       │       │   │   │   │   │   └── tests.rs
+    │       │       │   │   │   │   └── timing.rs
+    │       │       │   │   │   ├── recurring.rs
+    │       │       │   │   │   └── tests.rs
+    │       │       │   │   ├── connection.rs
+    │       │       │   │   ├── first_hci.rs
+    │       │       │   │   └── start.rs
+    │       │       │   ├── peripheral.rs
+    │       │       │   ├── scanning/
+    │       │       │   │   ├── passive/
+    │       │       │   │   │   ├── active.rs
+    │       │       │   │   │   ├── hci.rs
+    │       │       │   │   │   ├── runner.rs
+    │       │       │   │   │   ├── tests.rs
+    │       │       │   │   │   ├── timing/
+    │       │       │   │   │   │   └── tests.rs
+    │       │       │   │   │   └── timing.rs
+    │       │       │   │   └── passive.rs
+    │       │       │   └── scanning.rs
+    │       │       ├── le.rs
     │       │       ├── lib.rs
     │       │       ├── low_power/
     │       │       │   └── tests.rs
@@ -702,27 +400,6 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │       ├── modem_lp_timer_queue/
     │       │       │   └── tests.rs
     │       │       ├── modem_lp_timer_queue.rs
-    │       │       ├── passive_scanning/
-    │       │       │   └── tests.rs
-    │       │       ├── passive_scanning.rs
-    │       │       ├── passive_scanning_active.rs
-    │       │       ├── passive_scanning_hci.rs
-    │       │       ├── passive_scanning_runner.rs
-    │       │       ├── passive_scanning_timing/
-    │       │       │   └── tests.rs
-    │       │       ├── passive_scanning_timing.rs
-    │       │       ├── peripheral_connection/
-    │       │       │   ├── completion/
-    │       │       │   │   └── tests.rs
-    │       │       │   ├── completion.rs
-    │       │       │   ├── recurring/
-    │       │       │   │   ├── timing/
-    │       │       │   │   │   └── tests.rs
-    │       │       │   │   └── timing.rs
-    │       │       │   ├── recurring.rs
-    │       │       │   └── tests.rs
-    │       │       ├── peripheral_connection.rs
-    │       │       ├── peripheral_connection_completion.rs
     │       │       ├── phy.rs
     │       │       ├── resources/
     │       │       │   └── tests.rs
@@ -731,6 +408,9 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │       │   └── tests.rs
     │       │       ├── runtime_resources.rs
     │       │       ├── scheduler/
+    │       │       │   ├── completion/
+    │       │       │   │   └── tests.rs
+    │       │       │   ├── completion.rs
     │       │       │   ├── config.rs
     │       │       │   ├── core/
     │       │       │   │   ├── connectable_advertising/
@@ -763,9 +443,6 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │       │   ├── timeline/
     │       │       │   │   └── tests.rs
     │       │       │   └── timeline.rs
-    │       │       ├── single_item_completion/
-    │       │       │   └── tests.rs
-    │       │       ├── single_item_completion.rs
     │       │       └── validation.rs
     │       ├── coex/
     │       │   ├── Cargo.toml
@@ -870,7 +547,11 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │   │       │   └── tests.rs
     │       │   │       ├── beacon.rs
     │       │   │       ├── engine/
-    │       │   │       │   └── tests.rs
+    │       │   │       │   ├── management.rs
+    │       │   │       │   ├── power_save.rs
+    │       │   │       │   ├── rx.rs
+    │       │   │       │   ├── tests.rs
+    │       │   │       │   └── tx.rs
     │       │   │       ├── engine.rs
     │       │   │       ├── lib.rs
     │       │   │       ├── mac/
@@ -1174,6 +855,7 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │       │           └── tests.rs
     │       ├── pac/
     │       │   ├── Cargo.toml
+    │       │   ├── README.md
     │       │   ├── raw/
     │       │   │   ├── Cargo.toml
     │       │   │   ├── README.md
@@ -1469,28 +1151,8 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │               │   └── power_detector.rs
     │               ├── tx.rs
     │               └── validation.rs
-    ├── common/
-    │   ├── dma/
-    │   │   ├── Cargo.toml
-    │   │   └── src/
-    │   │       ├── affine_spsc/
-    │   │       │   └── tests.rs
-    │   │       ├── affine_spsc.rs
-    │   │       ├── lib.rs
-    │   │       ├── pinned_tx/
-    │   │       │   └── tests.rs
-    │   │       ├── pinned_tx.rs
-    │   │       ├── rx_external_handoff/
-    │   │       │   └── tests.rs
-    │   │       ├── rx_external_handoff.rs
-    │   │       ├── rx_handoff/
-    │   │       │   └── tests.rs
-    │   │       └── rx_handoff.rs
-    │   └── network/
-    │       ├── Cargo.toml
-    │       └── src/
-    │           └── lib.rs
     ├── ieee80211/
+    │   ├── README.md
     │   ├── ap/
     │   │   ├── Cargo.toml
     │   │   └── src/
@@ -1499,6 +1161,10 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │       │   └── tests.rs
     │   │       ├── limits.rs
     │   │       ├── service/
+    │   │       │   ├── block_ack.rs
+    │   │       │   ├── peer.rs
+    │   │       │   ├── power_save.rs
+    │   │       │   ├── security.rs
     │   │       │   └── tests.rs
     │   │       └── service.rs
     │   ├── datapath/
@@ -1512,13 +1178,21 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │   ├── Cargo.toml
     │   │   └── src/
     │   │       ├── ap/
+    │   │       │   ├── profile/
+    │   │       │   │   └── tests.rs
+    │   │       │   ├── profile.rs
     │   │       │   └── tests.rs
     │   │       ├── ap.rs
     │   │       ├── beacon/
     │   │       │   └── tests.rs
     │   │       ├── beacon.rs
     │   │       ├── block_ack/
-    │   │       │   └── tests.rs
+    │   │       │   ├── frame/
+    │   │       │   │   └── tests.rs
+    │   │       │   ├── frame.rs
+    │   │       │   ├── session/
+    │   │       │   │   └── tests.rs
+    │   │       │   └── session.rs
     │   │       ├── block_ack.rs
     │   │       ├── ccmp/
     │   │       │   └── tests.rs
@@ -1530,12 +1204,24 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │       │   └── tests.rs
     │   │       ├── classification.rs
     │   │       ├── data/
+    │   │       │   ├── duplicate.rs
     │   │       │   └── tests.rs
     │   │       ├── data.rs
-    │   │       ├── esp_now/
-    │   │       │   └── v2.rs
-    │   │       ├── esp_now.rs
+    │   │       ├── extensions/
+    │   │       │   ├── espressif/
+    │   │       │   │   ├── esp_now/
+    │   │       │   │   │   ├── v2/
+    │   │       │   │   │   │   └── reassembly.rs
+    │   │       │   │   │   └── v2.rs
+    │   │       │   │   └── esp_now.rs
+    │   │       │   ├── espressif.rs
+    │   │       │   ├── wmm/
+    │   │       │   │   └── tests.rs
+    │   │       │   └── wmm.rs
+    │   │       ├── extensions.rs
     │   │       ├── fragmentation/
+    │   │       │   ├── parsing.rs
+    │   │       │   ├── reassembly.rs
     │   │       │   └── tests.rs
     │   │       ├── fragmentation.rs
     │   │       ├── ftm/
@@ -1554,6 +1240,9 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │       ├── ndpa/
     │   │       │   └── tests.rs
     │   │       ├── ndpa.rs
+    │   │       ├── qos/
+    │   │       │   └── tests.rs
+    │   │       ├── qos.rs
     │   │       ├── scan/
     │   │       │   └── tests.rs
     │   │       ├── scan.rs
@@ -1562,6 +1251,15 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │       │   └── tests.rs
     │   │       ├── ssid.rs
     │   │       ├── station/
+    │   │       │   ├── association.rs
+    │   │       │   ├── data/
+    │   │       │   │   └── amsdu.rs
+    │   │       │   ├── data.rs
+    │   │       │   ├── management.rs
+    │   │       │   ├── security.rs
+    │   │       │   ├── sequence/
+    │   │       │   │   └── tests.rs
+    │   │       │   ├── sequence.rs
     │   │       │   └── tests.rs
     │   │       ├── station.rs
     │   │       ├── station_beacon/
@@ -1580,8 +1278,6 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │       ├── vif/
     │   │       │   └── tests.rs
     │   │       ├── vif.rs
-    │   │       ├── wmm/
-    │   │       │   └── tests.rs
     │   │       └── wmm.rs
     │   ├── security/
     │   │   └── wpa2/
@@ -1593,8 +1289,19 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │           ├── ap/
     │   │           │   └── tests.rs
     │   │           ├── ap.rs
-    │   │           ├── frames/
+    │   │           ├── crypto/
     │   │           │   └── tests.rs
+    │   │           ├── crypto.rs
+    │   │           ├── eapol/
+    │   │           │   └── tests.rs
+    │   │           ├── eapol.rs
+    │   │           ├── frames/
+    │   │           │   ├── key_data.rs
+    │   │           │   ├── security_ies.rs
+    │   │           │   ├── tests.rs
+    │   │           │   ├── transmit/
+    │   │           │   │   └── tests.rs
+    │   │           │   └── transmit.rs
     │   │           ├── frames.rs
     │   │           ├── keys/
     │   │           │   └── tests.rs
@@ -1607,28 +1314,37 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │   │           │   └── tests.rs
     │   │           ├── runner.rs
     │   │           ├── state/
+    │   │           │   ├── authenticator.rs
+    │   │           │   ├── supplicant.rs
     │   │           │   └── tests.rs
     │   │           ├── state.rs
     │   │           ├── supplicant/
     │   │           │   └── tests.rs
-    │   │           ├── supplicant.rs
-    │   │           └── tests.rs
+    │   │           └── supplicant.rs
     │   ├── softmac/
     │   │   ├── Cargo.toml
     │   │   └── src/
     │   │       ├── configuration/
     │   │       │   └── tests.rs
     │   │       ├── configuration.rs
-    │   │       ├── esp_now.rs
-    │   │       ├── esp_now_security.rs
+    │   │       ├── contract/
+    │   │       │   └── tests.rs
+    │   │       ├── contract.rs
+    │   │       ├── extensions/
+    │   │       │   ├── espressif/
+    │   │       │   │   ├── esp_now/
+    │   │       │   │   │   ├── protocol.rs
+    │   │       │   │   │   └── security.rs
+    │   │       │   │   └── esp_now.rs
+    │   │       │   └── espressif.rs
+    │   │       ├── extensions.rs
     │   │       ├── interface/
     │   │       │   └── tests.rs
     │   │       ├── interface.rs
     │   │       ├── lib.rs
     │   │       ├── monitor/
     │   │       │   └── tests.rs
-    │   │       ├── monitor.rs
-    │   │       └── tests.rs
+    │   │       └── monitor.rs
     │   └── sta/
     │       ├── Cargo.toml
     │       ├── README.md
@@ -1669,20 +1385,24 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     ├── ieee802154/
     │   ├── Cargo.toml
     │   └── src/
-    │       ├── capabilities/
-    │       │   └── tests.rs
-    │       ├── capabilities.rs
-    │       ├── channel/
-    │       │   └── tests.rs
-    │       ├── channel.rs
-    │       ├── contract/
-    │       │   └── tests.rs
-    │       ├── contract.rs
-    │       ├── frame/
-    │       │   └── tests.rs
-    │       ├── frame.rs
     │       ├── lib.rs
-    │       └── types.rs
+    │       ├── mac/
+    │       │   ├── frame/
+    │       │   │   └── tests.rs
+    │       │   └── frame.rs
+    │       ├── radio/
+    │       │   ├── capabilities/
+    │       │   │   └── tests.rs
+    │       │   ├── capabilities.rs
+    │       │   ├── channel/
+    │       │   │   └── tests.rs
+    │       │   ├── channel.rs
+    │       │   ├── command.rs
+    │       │   ├── event.rs
+    │       │   ├── state/
+    │       │   │   └── tests.rs
+    │       │   └── state.rs
+    │       └── radio.rs
     ├── integration/
     │   └── esp32s31/
     │       └── embassy/
@@ -1695,12 +1415,14 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │           │       ├── interrupt_fault.rs
     │           │       ├── interrupt_runtime.rs
     │           │       ├── lib.rs
-    │           │       ├── phy_time/
-    │           │       │   └── tests.rs
     │           │       ├── phy_time.rs
     │           │       ├── runner_policy/
     │           │       │   └── tests.rs
     │           │       ├── runner_policy.rs
+    │           │       ├── system/
+    │           │       │   ├── construction.rs
+    │           │       │   ├── quarantine.rs
+    │           │       │   └── runner.rs
     │           │       ├── system.rs
     │           │       ├── system_storage.rs
     │           │       └── tests.rs
@@ -1721,6 +1443,11 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │                   ├── lib.rs
     │                   ├── monitor.rs
     │                   ├── radio_resources.rs
+    │                   ├── resources/
+    │                   │   ├── profile/
+    │                   │   │   └── tests.rs
+    │                   │   └── profile.rs
+    │                   ├── resources.rs
     │                   ├── status/
     │                   │   ├── access_point.rs
     │                   │   ├── mod.rs
@@ -1740,21 +1467,399 @@ Includes source files, child test modules and crate manifests; ignored target/ a
     │                   │   ├── station.rs
     │                   │   └── station_epoch.rs
     │                   └── wifi_network.rs
-    └── radio/
-        ├── Cargo.toml
+    ├── memory/
+    │   ├── Cargo.toml
+    │   └── src/
+    │       ├── affine_spsc/
+    │       │   └── tests.rs
+    │       ├── affine_spsc.rs
+    │       ├── lib.rs
+    │       ├── pinned_tx/
+    │       │   └── tests.rs
+    │       ├── pinned_tx.rs
+    │       ├── rx_external_handoff/
+    │       │   └── tests.rs
+    │       ├── rx_external_handoff.rs
+    │       ├── rx_handoff/
+    │       │   └── tests.rs
+    │       └── rx_handoff.rs
+    ├── network/
+    │   ├── adapters/
+    │   │   └── embassy/
+    │   │       ├── compat/
+    │   │       │   ├── Cargo.toml
+    │   │       │   ├── src/
+    │   │       │   │   └── lib.rs
+    │   │       │   └── tests/
+    │   │       │       └── compat_device.rs
+    │   │       └── owned/
+    │   │           ├── Cargo.toml
+    │   │           └── src/
+    │   │               ├── lib.rs
+    │   │               ├── owned/
+    │   │               │   └── tests.rs
+    │   │               └── owned.rs
+    │   ├── interface/
+    │   │   ├── Cargo.toml
+    │   │   └── src/
+    │   │       └── lib.rs
+    │   └── research/
+    │       ├── Cargo.toml
+    │       ├── README.md
+    │       └── src/
+    │           ├── address.rs
+    │           ├── checksum/
+    │           │   └── tests.rs
+    │           ├── checksum.rs
+    │           ├── engine/
+    │           │   └── tests.rs
+    │           ├── engine.rs
+    │           ├── lib.rs
+    │           ├── physical/
+    │           │   └── tests.rs
+    │           ├── physical.rs
+    │           └── work.rs
+    ├── radio/
+    │   ├── Cargo.toml
+    │   ├── README.md
+    │   └── src/
+    │       ├── lib.rs
+    │       ├── runtime/
+    │       │   ├── embassy/
+    │       │   │   └── tests.rs
+    │       │   └── embassy.rs
+    │       ├── runtime.rs
+    │       ├── wifi/
+    │       │   ├── config.rs
+    │       │   ├── requests/
+    │       │   │   └── tests.rs
+    │       │   ├── requests.rs
+    │       │   ├── supervisor.rs
+    │       │   └── test_support.rs
+    │       └── wifi.rs
+    └── runtime/
         ├── README.md
-        └── src/
-            ├── lib.rs
-            ├── runtime/
-            │   ├── embassy/
-            │   │   └── tests.rs
-            │   └── embassy.rs
-            ├── runtime.rs
-            ├── wifi/
-            │   ├── config.rs
-            │   ├── requests/
-            │   │   └── tests.rs
-            │   ├── requests.rs
-            │   ├── supervisor.rs
-            │   └── test_support.rs
-            └── wifi.rs
+        └── embassy/
+            └── esp32s31/
+                ├── bluetooth/
+                │   ├── Cargo.toml
+                │   └── src/
+                │       ├── controller/
+                │       │   ├── dispatch.rs
+                │       │   ├── mod.rs
+                │       │   ├── modem_timer/
+                │       │   │   └── tests.rs
+                │       │   ├── modem_timer.rs
+                │       │   ├── owner.rs
+                │       │   ├── recurring.rs
+                │       │   ├── reset.rs
+                │       │   ├── response.rs
+                │       │   ├── tests.rs
+                │       │   ├── time_recheck/
+                │       │   │   └── tests.rs
+                │       │   └── time_recheck.rs
+                │       ├── lib.rs
+                │       ├── session/
+                │       │   ├── advertising/
+                │       │   │   ├── active.rs
+                │       │   │   ├── connectable/
+                │       │   │   │   ├── active.rs
+                │       │   │   │   ├── first.rs
+                │       │   │   │   ├── mod.rs
+                │       │   │   │   └── recurring.rs
+                │       │   │   ├── first.rs
+                │       │   │   └── mod.rs
+                │       │   ├── dtm/
+                │       │   │   ├── active/
+                │       │   │   │   └── tests.rs
+                │       │   │   ├── active.rs
+                │       │   │   ├── first.rs
+                │       │   │   ├── mod.rs
+                │       │   │   ├── stopping/
+                │       │   │   │   └── tests.rs
+                │       │   │   ├── stopping.rs
+                │       │   │   ├── task/
+                │       │   │   │   └── tests.rs
+                │       │   │   └── task.rs
+                │       │   ├── mod.rs
+                │       │   ├── peripheral/
+                │       │   │   ├── first.rs
+                │       │   │   └── mod.rs
+                │       │   └── scan/
+                │       │       ├── active.rs
+                │       │       ├── first.rs
+                │       │       └── mod.rs
+                │       ├── tests.rs
+                │       ├── time/
+                │       │   ├── phy/
+                │       │   │   └── tests.rs
+                │       │   └── phy.rs
+                │       └── time.rs
+                └── ieee80211/
+                    ├── Cargo.toml
+                    ├── examples/
+                    │   └── station_service.rs
+                    ├── src/
+                    │   ├── composition/
+                    │   │   └── phy.rs
+                    │   ├── composition.rs
+                    │   ├── datapath/
+                    │   │   ├── irq/
+                    │   │   │   ├── epoch.rs
+                    │   │   │   ├── mac_runtime.rs
+                    │   │   │   ├── power_runtime.rs
+                    │   │   │   └── tests.rs
+                    │   │   ├── irq.rs
+                    │   │   ├── mod.rs
+                    │   │   ├── network.rs
+                    │   │   ├── owned_tests.rs
+                    │   │   ├── owner/
+                    │   │   │   └── fairness_tests.rs
+                    │   │   ├── owner.rs
+                    │   │   ├── paired/
+                    │   │   │   └── physical_tx_tests.rs
+                    │   │   ├── paired.rs
+                    │   │   ├── rx/
+                    │   │   │   ├── README.md
+                    │   │   │   ├── dma/
+                    │   │   │   │   ├── epoch.rs
+                    │   │   │   │   ├── lifecycle.rs
+                    │   │   │   │   ├── service/
+                    │   │   │   │   │   └── observation.rs
+                    │   │   │   │   ├── service.rs
+                    │   │   │   │   ├── tests/
+                    │   │   │   │   │   └── transaction.rs
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── dma.rs
+                    │   │   │   ├── ethernet/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── ethernet.rs
+                    │   │   │   ├── frontier/
+                    │   │   │   │   └── time.rs
+                    │   │   │   ├── frontier.rs
+                    │   │   │   ├── hardware/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── hardware.rs
+                    │   │   │   ├── mod.rs
+                    │   │   │   ├── reorder/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── reorder.rs
+                    │   │   │   ├── staging.rs
+                    │   │   │   ├── turn/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   └── turn.rs
+                    │   │   ├── scheduler.rs
+                    │   │   ├── service.rs
+                    │   │   ├── services.rs
+                    │   │   ├── software_tx_queue/
+                    │   │   │   └── tests.rs
+                    │   │   ├── software_tx_queue.rs
+                    │   │   ├── sram_tx.rs
+                    │   │   ├── tx/
+                    │   │   │   ├── aggregate/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── aggregate.rs
+                    │   │   │   ├── mod.rs
+                    │   │   │   ├── resources/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── resources.rs
+                    │   │   │   └── time.rs
+                    │   │   ├── tx_performance/
+                    │   │   │   └── tests.rs
+                    │   │   └── tx_performance.rs
+                    │   ├── diagnostics/
+                    │   │   ├── access_point.rs
+                    │   │   ├── aggregate_tx.rs
+                    │   │   ├── core0_ap_rx_cycles.rs
+                    │   │   ├── core0_rx_cycles/
+                    │   │   │   └── tests.rs
+                    │   │   ├── core0_rx_cycles.rs
+                    │   │   ├── core0_rx_performance/
+                    │   │   │   └── tests.rs
+                    │   │   ├── core0_rx_performance.rs
+                    │   │   ├── core0_rx_reorder_cycles/
+                    │   │   │   └── tests.rs
+                    │   │   ├── core0_rx_reorder_cycles.rs
+                    │   │   ├── core0_rx_service_histogram/
+                    │   │   │   └── tests.rs
+                    │   │   ├── core0_rx_service_histogram.rs
+                    │   │   ├── network.rs
+                    │   │   └── rx_pipeline.rs
+                    │   ├── diagnostics.rs
+                    │   ├── lib.rs
+                    │   ├── roles/
+                    │   │   ├── access_point/
+                    │   │   │   ├── ampdu/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── ampdu.rs
+                    │   │   │   ├── concurrent.rs
+                    │   │   │   ├── control_owner.rs
+                    │   │   │   ├── control_readiness.rs
+                    │   │   │   ├── control_types.rs
+                    │   │   │   ├── datapath/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── datapath.rs
+                    │   │   │   ├── ethernet_diagnostics.rs
+                    │   │   │   ├── lifecycle_tests.rs
+                    │   │   │   ├── network_tx/
+                    │   │   │   │   ├── aggregate.rs
+                    │   │   │   │   ├── completion.rs
+                    │   │   │   │   ├── power_save.rs
+                    │   │   │   │   ├── queue.rs
+                    │   │   │   │   ├── service_phase/
+                    │   │   │   │   │   └── tests.rs
+                    │   │   │   │   ├── service_phase.rs
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── network_tx.rs
+                    │   │   │   ├── protocol_mailbox/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── protocol_mailbox.rs
+                    │   │   │   ├── protocol_owner.rs
+                    │   │   │   ├── protocol_service/
+                    │   │   │   │   └── ht_rx_observation_tests.rs
+                    │   │   │   ├── protocol_service.rs
+                    │   │   │   ├── protocol_shutdown.rs
+                    │   │   │   ├── rx_dispatch/
+                    │   │   │   │   └── in_place_rx_sink_tests.rs
+                    │   │   │   ├── rx_dispatch.rs
+                    │   │   │   ├── rx_pipeline/
+                    │   │   │   │   └── classification_tests.rs
+                    │   │   │   ├── rx_pipeline.rs
+                    │   │   │   ├── rx_reorder/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── rx_reorder.rs
+                    │   │   │   └── service_epoch.rs
+                    │   │   ├── access_point.rs
+                    │   │   ├── concurrent/
+                    │   │   │   ├── control/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── control.rs
+                    │   │   │   ├── rx_service.rs
+                    │   │   │   ├── station_rx_role/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── station_rx_role.rs
+                    │   │   │   └── tests.rs
+                    │   │   ├── concurrent.rs
+                    │   │   ├── esp_now/
+                    │   │   │   ├── channel.rs
+                    │   │   │   ├── rx.rs
+                    │   │   │   └── service.rs
+                    │   │   ├── esp_now.rs
+                    │   │   ├── monitor/
+                    │   │   │   ├── builder.rs
+                    │   │   │   ├── control/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── control.rs
+                    │   │   │   ├── rx.rs
+                    │   │   │   ├── service/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   └── service.rs
+                    │   │   ├── monitor.rs
+                    │   │   ├── scan/
+                    │   │   │   ├── port/
+                    │   │   │   │   ├── bindings.rs
+                    │   │   │   │   ├── owner.rs
+                    │   │   │   │   ├── service.rs
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── port.rs
+                    │   │   │   ├── rx/
+                    │   │   │   │   ├── running.rs
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── rx.rs
+                    │   │   │   └── target.rs
+                    │   │   ├── scan.rs
+                    │   │   ├── station/
+                    │   │   │   ├── attempt/
+                    │   │   │   │   ├── channel.rs
+                    │   │   │   │   ├── owner.rs
+                    │   │   │   │   ├── port.rs
+                    │   │   │   │   ├── resources.rs
+                    │   │   │   │   └── service.rs
+                    │   │   │   ├── attempt.rs
+                    │   │   │   ├── backend.rs
+                    │   │   │   ├── command.rs
+                    │   │   │   ├── composer/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── composer.rs
+                    │   │   │   ├── connected/
+                    │   │   │   │   ├── assembly.rs
+                    │   │   │   │   ├── epoch.rs
+                    │   │   │   │   ├── mod.rs
+                    │   │   │   │   ├── port/
+                    │   │   │   │   │   ├── composition.rs
+                    │   │   │   │   │   ├── plan.rs
+                    │   │   │   │   │   ├── resources.rs
+                    │   │   │   │   │   └── tests.rs
+                    │   │   │   │   ├── port.rs
+                    │   │   │   │   ├── preparation.rs
+                    │   │   │   │   ├── rx_service.rs
+                    │   │   │   │   ├── shutdown/
+                    │   │   │   │   │   └── tests.rs
+                    │   │   │   │   ├── shutdown.rs
+                    │   │   │   │   ├── start/
+                    │   │   │   │   │   └── tests.rs
+                    │   │   │   │   ├── start.rs
+                    │   │   │   │   ├── transaction/
+                    │   │   │   │   │   └── tests.rs
+                    │   │   │   │   └── transaction.rs
+                    │   │   │   ├── control.rs
+                    │   │   │   ├── control_mailbox/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── control_mailbox.rs
+                    │   │   │   ├── control_tests.rs
+                    │   │   │   ├── epoch/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── epoch.rs
+                    │   │   │   ├── esp_now_mailbox.rs
+                    │   │   │   ├── esp_now_tx.rs
+                    │   │   │   ├── join.rs
+                    │   │   │   ├── join_port/
+                    │   │   │   │   ├── owner.rs
+                    │   │   │   │   ├── resources.rs
+                    │   │   │   │   ├── rx.rs
+                    │   │   │   │   ├── service.rs
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── join_port.rs
+                    │   │   │   ├── join_time.rs
+                    │   │   │   ├── lifecycle.rs
+                    │   │   │   ├── network/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── network.rs
+                    │   │   │   ├── reclaim.rs
+                    │   │   │   ├── resources/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── resources.rs
+                    │   │   │   ├── runtime.rs
+                    │   │   │   ├── rx_protocol/
+                    │   │   │   │   ├── dispatch.rs
+                    │   │   │   │   ├── owner.rs
+                    │   │   │   │   ├── reorder.rs
+                    │   │   │   │   ├── scheduler.rs
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── rx_protocol.rs
+                    │   │   │   ├── scan/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── scan.rs
+                    │   │   │   ├── teardown/
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── teardown.rs
+                    │   │   │   ├── tests.rs
+                    │   │   │   ├── tx/
+                    │   │   │   │   ├── adapters.rs
+                    │   │   │   │   ├── completion.rs
+                    │   │   │   │   ├── owner.rs
+                    │   │   │   │   ├── publication.rs
+                    │   │   │   │   ├── resources.rs
+                    │   │   │   │   └── tests.rs
+                    │   │   │   ├── tx.rs
+                    │   │   │   ├── tx_epoch.rs
+                    │   │   │   ├── tx_service.rs
+                    │   │   │   ├── wpa2_port.rs
+                    │   │   │   └── wpa2_time.rs
+                    │   │   └── station.rs
+                    │   ├── roles.rs
+                    │   ├── time/
+                    │   │   └── phy.rs
+                    │   └── time.rs
+                    └── tests/
+                        └── owned_datapath_network.rs

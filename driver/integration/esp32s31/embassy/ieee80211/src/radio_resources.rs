@@ -7,6 +7,19 @@
 #[cfg(feature = "tx-psram-dma-probe")]
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use crate::resources::profile::{
+    ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
+    ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH as NETWORK_TX_QUEUE_DEPTH,
+    ESP32S31_DEFAULT_NETWORK_TX_TRAILER as NETWORK_TX_TRAILER,
+    ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
+};
+#[cfg(feature = "owned-network")]
+use crate::resources::profile::{
+    ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH as NETWORK_OWNER_TX_QUEUE_DEPTH,
+    ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY as NETWORK_PACKET_POOL_CAPACITY,
+    ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY as NETWORK_RX_PACKET_POOL_CAPACITY,
+    ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH as NETWORK_RX_QUEUE_DEPTH,
+};
 #[cfg(feature = "compat-network")]
 use embassy_net_compat as embassy_net;
 #[cfg(feature = "owned-network")]
@@ -23,21 +36,8 @@ use open_esp_radio_embassy_net_compat::{
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
 #[cfg(feature = "owned-network")]
-use open_esp_radio_esp32s31_wifi_embassy::composition::resources::{
-    ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH as NETWORK_OWNER_TX_QUEUE_DEPTH,
-    ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY as NETWORK_PACKET_POOL_CAPACITY,
-    ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY as NETWORK_RX_PACKET_POOL_CAPACITY,
-    ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH as NETWORK_RX_QUEUE_DEPTH,
-};
-#[cfg(feature = "owned-network")]
 use open_esp_radio_esp32s31_wifi_embassy::datapath::network::DualOwnedDatapathNetwork;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    composition::resources::{
-        ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
-        ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH as NETWORK_TX_QUEUE_DEPTH,
-        ESP32S31_DEFAULT_NETWORK_TX_TRAILER as NETWORK_TX_TRAILER,
-        ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
-    },
     datapath::tx::resources::AggregateTxResources,
     datapath::{PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources},
 };

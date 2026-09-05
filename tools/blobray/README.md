@@ -18,6 +18,11 @@ link one reviewed compiled-analysis descriptor in a thin host. In this repositor
 package directly installs no chip knowledge. Production comparison remains in
 the generic engine and is configured by data, not target-owned verdict code.
 
+Run `tools/blobray/scripts/check-standalone` from this repository to validate
+the extraction boundary. It copies the generic tool into a temporary workspace,
+checks that local dependencies remain inside that copy, and compiles all its
+targets. This manual portability check is separate from target-host validation.
+
 For an existing project:
 
 ```console

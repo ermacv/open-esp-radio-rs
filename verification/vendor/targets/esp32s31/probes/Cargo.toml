@@ -20,9 +20,9 @@ publish = false
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81cd5c341f71f9d070b5d2b115d3ab2c7595a4df", default-features = false, features = ["esp32s31", "unstable"] }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/adapters/embassy/esp32s31/ieee80211" }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/runtime/embassy/esp32s31/ieee80211" }
 open-esp-radio-esp32s31-radio-platform-esp-hal = { path = "../../../../../driver/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
-open-esp-radio-dma = { path = "../../../../../driver/common/dma" }
+open-esp-radio-dma = { path = "../../../../../driver/memory" }
 open-esp-radio-esp32s31-hal = { path = "../../../../../driver/chips/esp32s31/hal", features = ["validation-probes"] }
 open-esp-radio-esp32s31-bluetooth = { path = "../../../../../driver/chips/esp32s31/bluetooth", features = ["validation-probes"] }
 open-esp-radio-esp32s31-coex = { path = "../../../../../driver/chips/esp32s31/coex" }

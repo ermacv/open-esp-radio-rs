@@ -3,26 +3,34 @@
 
 //! Concrete ESP32-S31 Embassy radio composition.
 //!
-//! [`new`] returns one application radio root and the sole owner-holding
+//! On ESP32-S31, `new` returns one application radio root and the sole owner-holding
 //! runner. Board firmware owns credentials, IP policy and sockets; it does not
-//! assemble PAC, DMA, ISR or role transactions.
+//! assemble PAC, DMA, ISR or role transactions. The [`resources`] profile is also
+//! available on the host for product resource and ownership validation.
+
+pub mod resources;
 
 #[cfg(all(feature = "owned-network", feature = "compat-network"))]
+#[cfg(target_arch = "riscv32")]
 compile_error!("select exactly one network integration: owned-network or compat-network");
 #[cfg(not(any(feature = "owned-network", feature = "compat-network")))]
+#[cfg(target_arch = "riscv32")]
 compile_error!("select exactly one network integration: owned-network or compat-network");
 
 #[cfg(feature = "diagnostics")]
+#[cfg(target_arch = "riscv32")]
 macro_rules! diagnostics_event {
     ($($argument:tt)*) => { log::info!($($argument)*) };
 }
 
 #[cfg(feature = "diagnostics")]
+#[cfg(target_arch = "riscv32")]
 macro_rules! diagnostics_debug {
     ($($argument:tt)*) => { log::debug!($($argument)*) };
 }
 
 #[cfg(not(feature = "diagnostics"))]
+#[cfg(target_arch = "riscv32")]
 macro_rules! diagnostics_event {
     ($($argument:tt)*) => {{
         if false {
@@ -32,6 +40,7 @@ macro_rules! diagnostics_event {
 }
 
 #[cfg(not(feature = "diagnostics"))]
+#[cfg(target_arch = "riscv32")]
 macro_rules! diagnostics_debug {
     ($($argument:tt)*) => {{
         if false {
@@ -40,25 +49,37 @@ macro_rules! diagnostics_debug {
     }};
 }
 
+#[cfg(target_arch = "riscv32")]
 mod composition;
 #[cfg(feature = "diagnostics")]
+#[cfg(target_arch = "riscv32")]
 mod diagnostics;
+#[cfg(target_arch = "riscv32")]
 mod esp_now;
+#[cfg(target_arch = "riscv32")]
 mod facade;
+#[cfg(target_arch = "riscv32")]
 mod interrupts;
+#[cfg(target_arch = "riscv32")]
 mod monitor;
+#[cfg(target_arch = "riscv32")]
 mod radio_resources;
+#[cfg(target_arch = "riscv32")]
 mod status;
+#[cfg(target_arch = "riscv32")]
 mod supervisor;
+#[cfg(target_arch = "riscv32")]
 mod wifi_network;
 
 #[cfg(feature = "diagnostics")]
+#[cfg(target_arch = "riscv32")]
 pub use diagnostics::{
     Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver, Esp32s31DecodedRxPhyObservation,
     Esp32s31HeSuRxObservation, Esp32s31HtRxObservation, Esp32s31RxEvidence,
 };
 #[cfg(target_arch = "riscv32")]
 pub use esp_now::Esp32s31StandaloneEspNowPhyChannelControl;
+#[cfg(target_arch = "riscv32")]
 pub use esp_now::{
     ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY,
     ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_KEY_LEN, ESP_NOW_RX_REPLAY_WINDOW_BITS,
@@ -109,12 +130,15 @@ pub use esp_now::{
     esp32s31_esp_now_phy_support, normalize_esp_now_rx_metadata,
     prepare_esp32s31_standalone_esp_now,
 };
+#[cfg(target_arch = "riscv32")]
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
 };
 #[cfg(feature = "mac-irq-diagnostics")]
+#[cfg(target_arch = "riscv32")]
 pub use interrupts::Esp32s31MacIrqObservation;
+#[cfg(target_arch = "riscv32")]
 pub use monitor::{
     ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorBasebandFormat,
     Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame, Esp32s31MonitorFrames,
@@ -122,58 +146,77 @@ pub use monitor::{
     MonitorChannelPolicy, MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_adaptive_recycled_rx_probe_for_diagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_recycled_rx_probe_delay_for_diagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::rx::dma::configure_interrupt_driven_recycled_append_for_diagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::datapath::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(feature = "task-poll-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_ap_rx_cycles::{
     CORE0_AP_RX_CYCLES, Core0ApRxCycleSnapshot,
 };
 #[cfg(feature = "task-poll-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::{
     CORE0_RX_CYCLES, Core0RxCycleSnapshot, cycle_count,
 };
 #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
 #[cfg(feature = "task-poll-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_reorder_cycles::{
     CORE0_REORDER_CYCLES, Core0ReorderSnapshot,
 };
 #[cfg(feature = "task-poll-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_service_histogram::{
     CORE0_RX_SERVICE_HISTOGRAM, CORE0_RX_SERVICE_HISTOGRAM_BINS, Core0RxServiceBinSnapshot,
     Core0RxServiceHistogramSnapshot,
 };
 #[cfg(feature = "diagnostics")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
     RxNetworkDeliveryEvent, RxNetworkDeliveryObserver, RxObservedEthernetFrame,
     RxQosSequenceObservation,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_direct_immediate_rx_dispatch_for_diagnostics;
+#[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 #[cfg(feature = "tx-psram-dma-probe")]
+#[cfg(target_arch = "riscv32")]
 pub use radio_resources::configure_direct_psram_tx_dma_probe;
 #[cfg(feature = "tx-psram-dma-probe")]
+#[cfg(target_arch = "riscv32")]
 pub use radio_resources::{
     DirectPsramTxDmaProbeObservation, direct_psram_tx_dma_probe_observation,
 };
+#[cfg(target_arch = "riscv32")]
 pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices, Esp32s31WifiStackResources};
+#[cfg(target_arch = "riscv32")]
 pub use status::{
     Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot, Esp32s31StationLinkState,
     Esp32s31StationStatus, Esp32s31StationStatusSnapshot,
 };
 #[cfg(feature = "diagnostics")]
+#[cfg(target_arch = "riscv32")]
 pub use supervisor::station::{
     Esp32s31DiagnosticRxStatistics, Esp32s31DiagnosticSnapshot, Esp32s31DiagnosticTxVector,
 };
+#[cfg(target_arch = "riscv32")]
 pub use supervisor::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
+#[cfg(target_arch = "riscv32")]
 pub use wifi_network::Esp32s31WifiNetworkRunner;
 
 /// One low-overhead batch of Core0 connected-DATAPATH poll residence.
@@ -182,6 +225,7 @@ pub use wifi_network::Esp32s31WifiNetworkRunner;
 /// deltas. Batching keeps atomic/reporting work out of the per-poll hot path.
 #[cfg(feature = "connected-datapath-cycle-telemetry")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
 pub struct Esp32s31ConnectedDatapathPollBatch {
     pub polls: u32,
     pub poll_micros: u32,
@@ -198,12 +242,14 @@ pub struct Esp32s31ConnectedDatapathPollBatch {
 /// the runner or alter wake/ownership semantics.
 #[cfg(feature = "connected-datapath-cycle-telemetry")]
 #[derive(Clone, Copy)]
+#[cfg(target_arch = "riscv32")]
 pub struct Esp32s31ConnectedDatapathPollObserver {
     cycles_per_micro: u32,
     record: fn(Esp32s31ConnectedDatapathPollBatch),
 }
 
 #[cfg(feature = "connected-datapath-cycle-telemetry")]
+#[cfg(target_arch = "riscv32")]
 impl Esp32s31ConnectedDatapathPollObserver {
     pub const fn new(
         cycles_per_micro: u32,
@@ -227,6 +273,7 @@ impl Esp32s31ConnectedDatapathPollObserver {
 
 /// Board-derived radio identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.
+#[cfg(target_arch = "riscv32")]
 pub struct Esp32s31RadioConfig {
     pub(crate) station_mac: open_esp_radio::WifiMacAddress,
     pub(crate) access_point_mac: open_esp_radio::WifiMacAddress,
@@ -240,6 +287,7 @@ pub struct Esp32s31RadioConfig {
     pub(crate) diagnostics: Option<Esp32s31DiagnosticObservers>,
 }
 
+#[cfg(target_arch = "riscv32")]
 impl Esp32s31RadioConfig {
     pub const fn new(
         station_mac: open_esp_radio::WifiMacAddress,
@@ -299,6 +347,7 @@ impl Esp32s31RadioConfig {
 /// Optional value-only observers compiled only into diagnostics firmware.
 #[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
 pub enum Esp32s31DiagnosticRxAdmission {
     /// Publish an ordinary shared staging owner without an async capacity edge.
     #[default]
@@ -310,6 +359,7 @@ pub enum Esp32s31DiagnosticRxAdmission {
 /// Optional value-only observers compiled only into diagnostics firmware.
 #[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy)]
+#[cfg(target_arch = "riscv32")]
 pub struct Esp32s31DiagnosticObservers {
     /// Same-image selector for the ordinary shared RX admission experiment.
     pub rx_admission: Esp32s31DiagnosticRxAdmission,
@@ -339,6 +389,7 @@ pub struct Esp32s31DiagnosticObservers {
 /// quiesced but before their typed owners return to role-neutral Wi-Fi.
 #[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
 pub struct Esp32s31AccessPointObservation {
     pub channel: u8,
     pub bandwidth_mhz: u16,
@@ -454,6 +505,7 @@ pub struct Esp32s31AccessPointObservation {
 /// Value-only failed-attempt detail emitted to diagnostics firmware.
 #[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
 pub enum Esp32s31StationAttemptObservation {
     AttemptFailed {
         attempt: u16,

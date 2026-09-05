@@ -1,4 +1,4 @@
-//! ESP32-S31 access-point HT advertisement.
+//! ESP32-S31 access-point advertisement selected by the chip AP owner.
 
 use open_esp_radio_ieee80211::ht::HtLocalCapabilities;
 
@@ -31,3 +31,57 @@ const _: () = assert!(
     open_esp_radio_wifi_ap::limits::AP_MAX_CLIENTS
         <= open_esp_radio_esp32s31_wifi_mac::crypto::AP_PAIRWISE_SLOT_COUNT as usize
 );
+
+/// Reviewed legacy rates, capability flags and WMM response parameters.
+/// Beacon and association encoders consume this same local advertisement.
+pub const ADVERTISEMENT: open_esp_radio_ieee80211::ap::profile::Advertisement = {
+    use open_esp_radio_ieee80211::{
+        ap::profile::{Advertisement, LegacyRates, WmmParameters},
+        extensions::wmm::WmmAcParameters,
+    };
+    Advertisement::new(
+        LegacyRates::new(
+            [0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60],
+            [0x6c, 0x12, 0x24, 0x48],
+        ),
+        HT_CAPABILITIES,
+        WmmParameters::new(
+            4,
+            false,
+            [
+                WmmAcParameters {
+                    admission_control_mandatory: false,
+                    aifsn: 3,
+                    ecw_min: 4,
+                    ecw_max: 10,
+                    txop_limit_units_32_us: 0,
+                },
+                WmmAcParameters {
+                    admission_control_mandatory: false,
+                    aifsn: 7,
+                    ecw_min: 4,
+                    ecw_max: 10,
+                    txop_limit_units_32_us: 0,
+                },
+                WmmAcParameters {
+                    admission_control_mandatory: false,
+                    aifsn: 2,
+                    ecw_min: 3,
+                    ecw_max: 4,
+                    txop_limit_units_32_us: 94,
+                },
+                WmmAcParameters {
+                    admission_control_mandatory: false,
+                    aifsn: 2,
+                    ecw_min: 2,
+                    ecw_max: 3,
+                    txop_limit_units_32_us: 47,
+                },
+            ],
+        ),
+        // ESS, Short Preamble and Short Slot Time. Privacy follows AP security.
+        0x0421,
+        // No non-ERP peer/protection/Barker-preamble requirement at creation.
+        0,
+    )
+};

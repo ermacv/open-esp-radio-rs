@@ -29,6 +29,15 @@ use crate::composition::supervisor::{
     Esp32s31WifiSupervisorStopped, drive_esp32s31_monitor_role, prepare_esp32s31_radio_supervisor,
     run_esp32s31_station_supervisor_epoch,
 };
+pub(super) use crate::resources::profile::{
+    ESP32S31_DEFAULT_RX_BUFFER_SIZE as RX_BUFFER_SIZE,
+    ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT as RX_DESCRIPTOR_COUNT,
+};
+use crate::resources::profile::{
+    ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE as RX_BUFFER_STORAGE_SIZE,
+    ESP32S31_DEFAULT_RX_STAGE_CAPACITY as RX_STAGE_CAPACITY,
+    ESP32S31_DEFAULT_TX_BUFFER_SIZE as TX_BUFFER_SIZE, Esp32s31DefaultWifiMemory,
+};
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use esp_hal::rng::{Rng, Trng};
@@ -59,10 +68,6 @@ use open_esp_radio_esp32s31_wifi::{
 use open_esp_radio_esp32s31_wifi_ap::{
     engine::Esp32s31ApEngine, mac::Esp32s31ApMac, tx::Esp32s31ApTxConfig,
 };
-pub(super) use open_esp_radio_esp32s31_wifi_embassy::composition::resources::{
-    ESP32S31_DEFAULT_RX_BUFFER_SIZE as RX_BUFFER_SIZE,
-    ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT as RX_DESCRIPTOR_COUNT,
-};
 use open_esp_radio_esp32s31_wifi_embassy::roles::monitor::{
     Esp32s31MonitorChannelSwitchError, Esp32s31MonitorRadio, Esp32s31MonitorTaskExit,
     prepare_esp32s31_monitor_task,
@@ -70,12 +75,6 @@ use open_esp_radio_esp32s31_wifi_embassy::roles::monitor::{
 #[cfg(feature = "diagnostics")]
 use open_esp_radio_esp32s31_wifi_embassy::roles::station::Esp32s31StationEngineObserver;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    composition::phy::EmbassyEsp32s31PhyDelay,
-    composition::resources::{
-        ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE as RX_BUFFER_STORAGE_SIZE,
-        ESP32S31_DEFAULT_RX_STAGE_CAPACITY as RX_STAGE_CAPACITY,
-        ESP32S31_DEFAULT_TX_BUFFER_SIZE as TX_BUFFER_SIZE, Esp32s31DefaultWifiMemory,
-    },
     datapath::rx::dma::Esp32s31RxDmaStorage,
     datapath::rx::frontier::{EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier},
     roles::access_point::{
@@ -107,6 +106,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         run_esp32s31_station_join, run_esp32s31_station_scan, try_rebind_esp32s31_station_phase,
         try_reclaim_esp32s31_station_runtime, try_restore_esp32s31_station_phase,
     },
+    time::phy::EmbassyEsp32s31PhyDelay,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -247,7 +247,7 @@ static AP_RX_DISPATCHER: StaticCell<open_esp_radio_esp32s31_wifi_ap::rx::Esp32s3
 pub(super) static PRODUCTION_RX_BLOCK_ACK:
     open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::Esp32s31StaApRxBlockAck =
     match open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::Esp32s31StaApRxBlockAck::with_maximum_window(
-        open_esp_radio_esp32s31_wifi_embassy::composition::resources::ESP32S31_DEFAULT_RX_REORDER_WINDOW
+        crate::resources::profile::ESP32S31_DEFAULT_RX_REORDER_WINDOW
             as u16,
     ) {
         Ok(sessions) => sessions,

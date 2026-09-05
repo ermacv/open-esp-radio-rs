@@ -50,8 +50,8 @@ pub(crate) struct Ieee802154BtbbPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
-    pub(crate) shared_clock: modem_shared_clock::SharedModemClockState,
-    pub(crate) platform_clock_power: platform_clock_power::PlatformClockPowerState,
+    pub(crate) shared_clock: crate::modem::shared_clock::SharedModemClockState,
+    pub(crate) platform_clock_power: crate::modem::platform::PlatformClockPowerState,
     pub(crate) restore_slot: baseband::RadioPhyRestoreSlot,
 }
 
@@ -172,8 +172,8 @@ impl RadioHardware {
             wifi_interrupts,
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
-                shared_clock: modem_shared_clock::SharedModemClockState::new(),
-                platform_clock_power: platform_clock_power::PlatformClockPowerState::new(),
+                shared_clock: crate::modem::shared_clock::SharedModemClockState::new(),
+                platform_clock_power: crate::modem::platform::PlatformClockPowerState::new(),
                 restore_slot: baseband::RadioPhyRestoreSlot::new(),
             },
             coexistence,
@@ -222,7 +222,7 @@ impl RadioHardware {
                 phy_i2c_clock: None,
                 coexistence_clock: None,
                 station_tbtt_wake_prepared: false,
-                station_modem_wakeup: mac_modem_wakeup::StaModemWakeOwnership::new(),
+                station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership::new(),
             },
             interrupts: wifi_interrupts,
         }
@@ -265,7 +265,7 @@ impl RadioHardware {
                 modem_syscon_controller_clocks_retained: false,
                 modem_syscon_apb_clocks_retained: false,
                 controller_time_latch:
-                    bluetooth_controller_time::BluetoothControllerTimeLatchOwnership::new(),
+                    crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership::new(),
             },
             interrupts: BluetoothInterruptSetup {
                 peripherals: bluetooth_interrupts,
@@ -632,7 +632,7 @@ pub struct WifiRadioRegisters {
     pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
     pub(crate) coexistence_clock: Option<SharedModemClockLease>,
     pub(crate) station_tbtt_wake_prepared: bool,
-    pub(crate) station_modem_wakeup: mac_modem_wakeup::StaModemWakeOwnership,
+    pub(crate) station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership,
 }
 
 impl WifiRadioRegisters {
@@ -1003,13 +1003,15 @@ impl WifiColdRegisters {
 
     /// Read the cold initializer's currently published interrupt mask.
     pub fn mac_interrupt_enable(&self) -> MacInterruptEnableState {
-        mac_interrupt::observe_mac_interrupt_enable(&self.interrupts.wifi_mac_interrupt)
+        crate::wifi::mac::interrupt::observe_mac_interrupt_enable(
+            &self.interrupts.wifi_mac_interrupt,
+        )
     }
 
     /// Mask every MAC event and acknowledge every stale cold event.
     pub fn mask_and_clear_all_mac_interrupts(&mut self) {
         let interrupt = &self.interrupts.wifi_mac_interrupt;
-        mac_interrupt::publish_mac_interrupt_mask(interrupt, MacInterruptMask::NONE);
+        crate::wifi::mac::interrupt::publish_mac_interrupt_mask(interrupt, MacInterruptMask::NONE);
         generated::mac_interrupt_clear(interrupt, generated::MacInterruptClearImage::new(u32::MAX));
         device_fence();
     }
@@ -1541,12 +1543,12 @@ pub struct BluetoothTaskRegisters {
     pub(crate) retained_wifi: RetainedWifiPeripheralOwners,
     pub(crate) coexistence_clock: Option<SharedModemClockLease>,
     pub(crate) low_power_timer_clock: Option<BluetoothLowPowerTimerLease>,
-    pub(crate) platform_pll_source: Option<platform_clock_power::PlatformPllSourceLease>,
+    pub(crate) platform_pll_source: Option<crate::modem::platform::PlatformPllSourceLease>,
     pub(crate) modem_syscon_clocks: BluetoothModemSysconClockState,
     pub(crate) modem_syscon_controller_clocks_retained: bool,
     pub(crate) modem_syscon_apb_clocks_retained: bool,
     pub(crate) controller_time_latch:
-        bluetooth_controller_time::BluetoothControllerTimeLatchOwnership,
+        crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership,
 }
 
 /// Why a task owner cannot be reunited with its inactive interrupt bank.

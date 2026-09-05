@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 use std::{fs, path::Path};
 
+#[cfg(unix)]
+mod analysis_input_builder;
+
 fn repository_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -102,7 +105,7 @@ fn target_ownership_partitions_exactly_cover_the_register_model() {
 }
 
 #[test]
-fn analysis_input_builder_owns_every_generated_project_role() {
+fn analysis_input_builder_declares_the_roles_consumed_by_project_verification() {
     let builder =
         repository_root().join("verification/vendor/targets/esp32s31/build-analysis-inputs");
     let output = Command::new(&builder)
@@ -119,14 +122,27 @@ fn analysis_input_builder_owns_every_generated_project_role() {
         .lines()
         .map(str::to_owned)
         .collect::<std::collections::BTreeSet<_>>();
-    let expected = [
-        "rust-artifact",
-        "rust-artifact:wifi-registers",
-        "rust-artifact:bluetooth",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<std::collections::BTreeSet<_>>();
+    let target = builder.parent().expect("analysis-input target directory");
+    let project = toml_document(&target.join("vendor-project.toml"));
+    let addon = project["verification-addon"]
+        .as_str()
+        .expect("project verification add-on reference");
+    let verification = toml_document(&target.join(addon));
+    let expected = verification["suites"]
+        .as_array_of_tables()
+        .expect("project verification suites")
+        .iter()
+        .map(|suite| {
+            suite["rust-artifact-role"]
+                .as_str()
+                .expect("suite Rust artifact role")
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+    assert!(
+        !expected.is_empty(),
+        "project must consume generated Rust roles"
+    );
     assert_eq!(actual, expected);
 }
 

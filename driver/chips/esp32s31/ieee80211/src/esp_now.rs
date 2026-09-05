@@ -19,7 +19,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxHardware, TxPhyRate},
     tx_runtime::{OrdinaryRetryRatePolicy, P2pRetryRateSchedule},
 };
-use open_esp_radio_ieee80211::{channel::WifiChannel, wmm::WmmAccessCategory};
+use open_esp_radio_ieee80211::{channel::WifiChannel, qos::WmmAccessCategory};
 use open_esp_radio_wifi_softmac::{
     EspNowEncryptedPeerId, EspNowHtGuardInterval, EspNowHtMcs, EspNowLmk, EspNowOfdmRate,
     EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, EspNowPreparedV2Tx,
@@ -716,8 +716,8 @@ pub enum Esp32s31EspNowTxError {
         required: usize,
         available: usize,
     },
-    Wire(open_esp_radio_ieee80211::esp_now::EspNowV1WireError),
-    V2Wire(open_esp_radio_ieee80211::esp_now::EspNowV2WireError),
+    Wire(open_esp_radio_ieee80211::extensions::espressif::esp_now::EspNowV1WireError),
+    V2Wire(open_esp_radio_ieee80211::extensions::espressif::esp_now::EspNowV2WireError),
     Tx(OrdinaryTxError),
 }
 

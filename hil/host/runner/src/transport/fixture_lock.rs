@@ -10,9 +10,9 @@ use fs2::FileExt;
 
 use crate::Result;
 
-/// Keeps the process-wide file lock alive until the hardware command returns.
+/// Holds exclusive fixture ownership until the hardware command returns.
 pub(crate) struct FixtureLock {
-    _file: File,
+    file: File,
 }
 
 impl FixtureLock {
@@ -44,6 +44,10 @@ impl FixtureLock {
             .into());
         }
 
+        // Establish the guard before fallible owner metadata writes so every
+        // path after successful acquisition explicitly releases its authority.
+        let mut owner = Self { file };
+        let file = &mut owner.file;
         file.set_len(0)?;
         file.seek(SeekFrom::Start(0))?;
         writeln!(
@@ -53,7 +57,17 @@ impl FixtureLock {
             command_line()
         )?;
         file.flush()?;
-        Ok(Self { _file: file })
+        Ok(owner)
+    }
+}
+
+impl Drop for FixtureLock {
+    fn drop(&mut self) {
+        // A concurrent fork inherits this open file description until exec,
+        // even with close-on-exec set. Closing only our descriptor can leave
+        // flock held by that child after the hardware owner has returned.
+        // Release at the logical owner boundary; File still closes afterward.
+        let _ = FileExt::unlock(&self.file);
     }
 }
 
@@ -62,27 +76,4 @@ fn command_line() -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::*;
-
-    #[test]
-    fn fixture_has_exactly_one_live_host_owner() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "open-radio-fixture-lock-{}-{nonce}",
-            std::process::id()
-        ));
-
-        let owner = FixtureLock::acquire(&root).unwrap();
-        assert!(FixtureLock::acquire(&root).is_err());
-        drop(owner);
-        FixtureLock::acquire(&root).unwrap();
-
-        fs::remove_dir_all(root).unwrap();
-    }
-}
+mod tests;

@@ -14,6 +14,16 @@
 #[cfg(feature = "diagnostics")]
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use crate::resources::profile::{
+    ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH as CONTROL_QUEUE_DEPTH,
+    ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
+    ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH as NETWORK_TX_QUEUE_DEPTH,
+    ESP32S31_DEFAULT_NETWORK_TX_TRAILER as NETWORK_TX_TRAILER,
+    ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
+    ESP32S31_DEFAULT_RX_STAGE_CAPACITY as RX_STAGE_CAPACITY,
+    ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
+    ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
+};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::Timer;
 use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
@@ -24,16 +34,6 @@ use open_esp_radio_esp32s31_wifi_dma::descriptor::{rx_done, rx_rearm_word};
 #[cfg(feature = "diagnostics")]
 use open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::ConnectedRxProtocolSink;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    composition::resources::{
-        ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH as CONTROL_QUEUE_DEPTH,
-        ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
-        ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH as NETWORK_TX_QUEUE_DEPTH,
-        ESP32S31_DEFAULT_NETWORK_TX_TRAILER as NETWORK_TX_TRAILER,
-        ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
-        ESP32S31_DEFAULT_RX_STAGE_CAPACITY as RX_STAGE_CAPACITY,
-        ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
-        ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
-    },
     datapath::network::DatapathNetwork,
     datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer},
     datapath::rx::frontier::{
@@ -367,9 +367,7 @@ type ConnectedLiveTx = Esp32s31ConnectedTx<
     open_esp_radio_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
     TX_AMPDU_FRAME_COUNT,
     TX_AMPDU_BUFFER_SIZE,
-    {
-        open_esp_radio_esp32s31_wifi_embassy::composition::resources::ESP32S31_DEFAULT_TX_BUFFER_SIZE
-    },
+    { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
 >;
 type ConnectedDriverServices = Esp32s31ConnectedDriverServices<
     'static,
@@ -418,9 +416,7 @@ type ConnectedTxAssemblyFailure = Esp32s31ConnectedStaTxHandoffFailure<
     open_esp_radio_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
     TX_AMPDU_FRAME_COUNT,
     TX_AMPDU_BUFFER_SIZE,
-    {
-        open_esp_radio_esp32s31_wifi_embassy::composition::resources::ESP32S31_DEFAULT_TX_BUFFER_SIZE
-    },
+    { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
 >;
 type ConnectedAssemblyComposition = Esp32s31ConnectedStaCompositionFailure<
     ConnectedHardware,
@@ -446,9 +442,7 @@ type ReturnedConnectedTxResources = open_esp_radio_esp32s31_wifi_sta::control_tx
     open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile,
     fn() -> u32,
     open_esp_radio_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
-    {
-        open_esp_radio_esp32s31_wifi_embassy::composition::resources::ESP32S31_DEFAULT_TX_BUFFER_SIZE
-    },
+    { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
 >;
 type ConnectedDriverTeardownFailure = Esp32s31ConnectedDriverTeardownFailure<
     'static,

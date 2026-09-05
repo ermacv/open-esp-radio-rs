@@ -2,6 +2,11 @@
 
 Date: 2026-09-04
 
+This is the historical baseline. Counts, paths and recommendations below
+describe that snapshot. See the [current chip module map](../driver/chips/esp32s31/bluetooth/README.md)
+and [completed driver migration](DRIVER_STRUCTURE_PLAN.md) for the resulting
+structure and validation.
+
 ## Outcome
 
 The Bluetooth implementation has sound crate-level ownership direction, but

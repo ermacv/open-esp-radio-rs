@@ -8,8 +8,8 @@ repository.workspace = true
 description = "Radio-native packet ownership and materialization contracts"
 
 [dependencies]
-open-esp-radio-dma = { path = "../../common/dma" }
-open-esp-radio-network = { path = "../../common/network" }
+open-esp-radio-dma = { path = "../../memory" }
+open-esp-radio-network = { path = "../../network/interface" }
 
 [features]
 default = []

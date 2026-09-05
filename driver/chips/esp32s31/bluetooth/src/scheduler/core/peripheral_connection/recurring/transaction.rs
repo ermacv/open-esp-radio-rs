@@ -22,12 +22,12 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 
 #[cfg(target_arch = "riscv32")]
-use crate::peripheral_connection::{
+use crate::le::peripheral::connection::{
     BluetoothPeripheralConnectionCompletedEvent,
     BluetoothPeripheralConnectionCompletedEventRecurringParts,
     BluetoothPeripheralConnectionCompletedEventRecurringRemainder,
 };
-use crate::peripheral_connection::{
+use crate::le::peripheral::connection::{
     BluetoothPeripheralConnectionPacketStartTiming, BluetoothPeripheralConnectionRecurringPhase,
     BluetoothPeripheralConnectionRecurringTimingError,
     BluetoothPeripheralConnectionRecurringTimingPolicy,

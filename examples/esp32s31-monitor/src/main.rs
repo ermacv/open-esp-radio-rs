@@ -10,9 +10,14 @@ use esp_hal::{
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
-use open_esp_radio::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
-use open_esp_radio_esp32s31_embassy_runtime::Executor;
-use open_esp_radio_esp32s31_embassy_wifi::{Esp32s31RadioConfig, new};
+use oer::wifi::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
+use open_esp_radio as oer;
+use open_esp_radio_esp32s31_embassy_runtime::{self as platform_executor, Executor};
+use open_esp_radio_esp32s31_embassy_wifi::{
+    self as integration, Esp32s31RadioConfig as RadioConfig, Esp32s31RadioParts as RadioParts,
+    Esp32s31RadioRunners as RadioRunners, Esp32s31RadioSystem as RadioSystem,
+    Esp32s31WifiParts as WifiParts,
+};
 use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
@@ -30,7 +35,7 @@ fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
+    platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
     let radio = EspHalRadioPeripheral::new(
@@ -66,7 +71,7 @@ async fn monitor_task(
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
     let mut calibration_base_mac_address = [0; 6];
     calibration_base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
-    let config = Esp32s31RadioConfig::new(
+    let config = RadioConfig::new(
         WifiMacAddress::new(station).expect("station MAC must be unicast"),
         WifiMacAddress::new(access_point).expect("AP MAC must be unicast"),
         PhyCalibrationIdentity {
@@ -76,18 +81,17 @@ async fn monitor_task(
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioSystem { radio, runners } =
-        new(platform, trng, config)
-            .await
-            .expect("radio initialization must succeed once");
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
+    let RadioSystem { radio, runners } = integration::new(platform, trng, config)
+        .await
+        .expect("radio initialization must succeed once");
+    let RadioRunners {
         hardware: radio_runner,
     } = runners;
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
+    let RadioParts {
         wifi,
         initialization: _,
     } = radio.into_parts();
-    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiParts {
+    let WifiParts {
         control: wifi,
         station_device: _,
         access_point_device: _,

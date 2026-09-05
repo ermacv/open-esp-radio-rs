@@ -54,19 +54,21 @@
 #[cfg(test)]
 extern crate std;
 
-mod bootstrap;
-mod command;
 mod controller;
 mod transport;
+mod wire;
 
-pub use bootstrap::{
+pub use bt_hci;
+pub use controller::bootstrap::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BluetoothPublicDeviceAddress, BootstrapCommand,
     BootstrapCommandCompleteEvent, BootstrapConfigError, BootstrapHostBuffers, BootstrapPhase,
     LeControllerBootstrap, LeControllerBootstrapConfig, OwnedBootstrapCommand,
 };
-pub use bt_hci;
-pub(crate) use command::advertising::LeLegacyAdvertisingIdleEnableDisposition;
-pub use command::advertising::{
+pub use controller::classification::{
+    LeControllerCommandClassification, classify_le_controller_command,
+};
+pub(crate) use controller::le::advertising::LeLegacyAdvertisingIdleEnableDisposition;
+pub use controller::le::advertising::{
     LE_LEGACY_ADVERTISING_COMMAND_COMPLETE_EVENT_CAPACITY, LE_LEGACY_ADVERTISING_DATA_CAPACITY,
     LeLegacyAdvertisingAddress, LeLegacyAdvertisingCommand,
     LeLegacyAdvertisingCommandCompleteEvent, LeLegacyAdvertisingCommandKind,
@@ -77,10 +79,7 @@ pub use command::advertising::{
     LeLegacyConnectableAdvertisingEnableRequest, LeLegacyNonconnectableAdvertisingEnableRequest,
     LeLegacyScanResponseData,
 };
-pub use command::classification::{
-    LeControllerCommandClassification, classify_le_controller_command,
-};
-pub use command::dtm::{
+pub use controller::le::dtm::{
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE,
     LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE, LE_TRANSMITTER_TEST_V2_OPCODE,
     LeDtmActiveSessionDisposition, LeDtmChannel, LeDtmCommand, LeDtmCommandCompleteEvent,
@@ -88,7 +87,15 @@ pub use command::dtm::{
     LeDtmPayloadPattern, LeDtmPhy, LeReceiverTestCommand, LeTestEndCommand,
     LeTransmitterTestCommand,
 };
-pub use command::order::{
+pub use controller::le::scanning::{
+    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
+    LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyAdvertisingReportEvent,
+    LeLegacyAdvertisingReportEventError, LeLegacyPassiveScanParameters, LeLegacyScanningCommand,
+    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
+    LeLegacyScanningConfigurationCommand, LeLegacyScanningDecodeError,
+    LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
+};
+pub use controller::order::{
     LeControllerActiveDtmCommandRoute, LeControllerActiveLegacyAdvertisingCommandRoute,
     LeControllerActiveLegacyScanningCommandRoute, LeControllerClassifiedCommand,
     LeControllerClassifiedCommandRoute, LeControllerCommandIntake, LeControllerCommandReady,
@@ -101,25 +108,14 @@ pub use command::order::{
     LeControllerIdleClassifiedCommandRoute, LeControllerResetBarrier, LeControllerResetCompletion,
     LeControllerResponsePending, LeControllerResponsePublication,
 };
-pub use command::response::{
+pub use controller::response::{
     HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,
-};
-pub use command::scanning::{
-    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
-    LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyAdvertisingReportEvent,
-    LeLegacyAdvertisingReportEventError, LeLegacyPassiveScanParameters, LeLegacyScanningCommand,
-    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
-    LeLegacyScanningConfigurationCommand, LeLegacyScanningDecodeError,
-    LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand, LeLegacyScanningEnableRequest,
 };
 pub use controller::{
     LeControllerCommandEndpoint, LeControllerCommandReadyClaim, LeControllerHciEndpoints,
     LeControllerHciResources, LeControllerHciResourcesError, LeLegacyAdvertisingReportPublication,
 };
-pub use transport::{
-    HciChannelError, HciCommandPacket, HciEpochBound, HciEpochIdentity, HostToControllerFrame,
-    InProcessHciHostTransport,
-};
+pub use transport::{HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport};
 pub(crate) use transport::{
     HciClassifiedCommandIntake, InProcessHciChannel, InProcessHciControllerEndpoint,
 };
@@ -127,3 +123,5 @@ pub(crate) use transport::{
 pub use transport::{
     ControllerToHostQueue, ControllerToHostQueueError, INITIAL_CONTROLLER_TO_HOST_PACKET_CAPACITY,
 };
+
+pub use wire::{HciCommandPacket, HostToControllerFrame};

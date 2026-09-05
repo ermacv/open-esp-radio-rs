@@ -1,3 +1,5 @@
+use crate::ap::profile::tests::TEST_ADVERTISEMENT;
+
 const TEST_HT_CAPABILITIES: crate::ht::HtLocalCapabilities =
     crate::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
@@ -256,7 +258,7 @@ fn ap_action_frame_and_parser_preserve_per_peer_addba_identity() {
     frame[4..10].copy_from_slice(&access_point);
     frame[10..16].copy_from_slice(&peer);
     assert!(matches!(
-        parse_ap_management_request(&frame[..length], access_point),
+        parse_ap_management_request(&TEST_ADVERTISEMENT, &frame[..length], access_point),
         Some(ApManagementRequest::BlockAck {
             peer: parsed_peer,
             action: BlockAckAction::AddbaResponse {
@@ -273,10 +275,10 @@ fn ap_action_frame_and_parser_preserve_per_peer_addba_identity() {
 fn association_response_owns_status_aid_and_ht_channel_capability() {
     let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
     let ht20 = WifiChannel::mhz20(6).unwrap();
-    write_ht_association_response(TEST_HT_CAPABILITIES, &mut body, 17, 0x0123, ht20, None).unwrap();
+    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 17, 0x0123, ht20, None).unwrap();
     assert_eq!(&body[2..4], &17_u16.to_le_bytes());
     assert_eq!(&body[4..6], &[0, 0]);
-    write_ht_association_response(TEST_HT_CAPABILITIES, &mut body, 0, 1, ht20, None).unwrap();
+    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 1, ht20, None).unwrap();
     assert_eq!(&body[4..6], &0xc001_u16.to_le_bytes());
     assert!(body.windows(2).any(|window| window == [45, 26]));
     assert!(body.windows(3).any(|window| window == [61, 22, 6]));
@@ -284,7 +286,7 @@ fn association_response_owns_status_aid_and_ht_channel_capability() {
     let mut peer_ht_record = crate::ht::ht_capability_ie(TEST_HT_CAPABILITIES, ht20);
     peer_ht_record[4] = 0x17;
     let peer_ht = ht_peer_capabilities(&peer_ht_record).unwrap();
-    write_ht_association_response(TEST_HT_CAPABILITIES, &mut body, 0, 1, ht20, Some(peer_ht))
+    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 1, ht20, Some(peer_ht))
         .unwrap();
     assert_eq!(
         body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + 4],
@@ -293,12 +295,12 @@ fn association_response_owns_status_aid_and_ht_channel_capability() {
     );
 
     assert_eq!(
-        write_ht_association_response(TEST_HT_CAPABILITIES, &mut body, 0, 0, ht20, None),
+        write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 0, ht20, None),
         Err(ApAssociationResponseError::MissingAssociationId)
     );
 
     let ht40 = WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Below).unwrap();
-    write_ht_association_response(TEST_HT_CAPABILITIES, &mut body, 0, 1, ht40, None).unwrap();
+    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 1, ht40, None).unwrap();
     assert!(body.windows(4).any(|window| window == [45, 26, 0x6e, 0x10]));
     assert!(body.windows(4).any(|window| window == [61, 22, 6, 0x07]));
     let ht_capability = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN;
@@ -410,12 +412,12 @@ fn parses_only_requests_for_the_owned_bssid() {
     authentication[16..22].copy_from_slice(&access_point);
     authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
     assert_eq!(
-        parse_ap_management_request(&authentication, access_point),
+        parse_ap_management_request(&TEST_ADVERTISEMENT, &authentication, access_point),
         Some(ApManagementRequest::OpenAuthentication { peer })
     );
     authentication[4] ^= 1;
     assert_eq!(
-        parse_ap_management_request(&authentication, access_point),
+        parse_ap_management_request(&TEST_ADVERTISEMENT, &authentication, access_point),
         None
     );
 }
@@ -432,7 +434,7 @@ fn association_retains_the_highest_common_advertised_legacy_rate() {
     association[34..39].copy_from_slice(&[50, 3, 0x48, 0x6c, 0x7f]);
     association[39..42].copy_from_slice(&[48, 1, 0]);
     assert_eq!(
-        parse_ap_management_request(&association, access_point),
+        parse_ap_management_request(&TEST_ADVERTISEMENT, &association, access_point),
         Some(ApManagementRequest::Association {
             peer,
             security: ApAssociationSecurityObservation {
@@ -465,7 +467,7 @@ fn association_retains_exact_rsnxe_and_duplicate_count() {
     association[34..38].copy_from_slice(&[244, 2, 0x40, 0x00]);
 
     let Some(ApManagementRequest::Association { security, .. }) =
-        parse_ap_management_request(&association, access_point)
+        parse_ap_management_request(&TEST_ADVERTISEMENT, &association, access_point)
     else {
         panic!("association request must parse");
     };
@@ -494,7 +496,7 @@ fn association_retains_the_peers_complete_ht40_receive_facts() {
         ht_capabilities: Some(ht),
         qos_supported,
         ..
-    }) = parse_ap_management_request(&association, access_point)
+    }) = parse_ap_management_request(&TEST_ADVERTISEMENT, &association, access_point)
     else {
         panic!("complete HT40 association request must parse");
     };
@@ -518,7 +520,7 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
 
     let mut association = [0; AP_ASSOCIATION_RESPONSE_LEN];
     write_ht_association_response_frame(
-        TEST_HT_CAPABILITIES,
+        &TEST_ADVERTISEMENT,
         &mut association,
         access_point,
         peer,

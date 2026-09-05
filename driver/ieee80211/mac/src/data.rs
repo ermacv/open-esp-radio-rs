@@ -1,10 +1,11 @@
-//! Stateless ordinary STA/AP data encapsulation.
+//! Ordinary STA/AP data framing and explicit receive retry history.
 //!
+//! Encoders are stateless; `duplicate` retains per-peer receive history.
 //! This is the live, chip-independent owner of the finite encapsulation
 //! policy. Raw ESF, descriptor,
 //! node, key, and interface accesses deliberately remain outside this module.
 
-use crate::wmm::{WmmAccessCategory, WmmUserPriority};
+use crate::qos::{WmmAccessCategory, WmmUserPriority};
 
 pub const ETHERNET_HEADER_LEN: usize = 14;
 pub const IEEE80211_LEGACY_DATA_HEADER_LEN: usize = 24;
@@ -28,63 +29,8 @@ pub enum DataInterfaceRole {
     AccessPoint,
 }
 
-/// Per-traffic-class IEEE 802.11 receive history.
-///
-/// A retransmission is a duplicate only when Retry is set and the complete
-/// Sequence Control value matches the last accepted MPDU in the same legacy
-/// or QoS/TID sequence space. The owner is role-neutral and is reset at every
-/// STA association or AP peer epoch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RxDuplicateFilter {
-    last_sequence_control: [u16; 17],
-    valid: u32,
-}
-
-impl RxDuplicateFilter {
-    pub const fn new() -> Self {
-        Self {
-            last_sequence_control: [0; 17],
-            valid: 0,
-        }
-    }
-
-    /// Query whether an MPDU is already present without accepting it.
-    ///
-    /// Fragment reassembly uses this read-only edge for fragment zero: an
-    /// ordinary MPDU already accepted with the same Sequence Control must
-    /// fence a Retry that toggles More Fragments, while fragmented MPDUs keep
-    /// their acceptance and retry history entirely inside the reassembler.
-    #[inline(always)]
-    pub fn is_known_duplicate(&self, retry: bool, sequence_control: u16, tid: Option<u8>) -> bool {
-        let index = match tid {
-            Some(tid @ 0..=15) => usize::from(tid) + 1,
-            _ => 0,
-        };
-        let mask = 1_u32 << index;
-        retry && self.valid & mask != 0 && self.last_sequence_control[index] == sequence_control
-    }
-
-    #[inline(always)]
-    pub fn is_duplicate(&mut self, retry: bool, sequence_control: u16, tid: Option<u8>) -> bool {
-        let index = match tid {
-            Some(tid @ 0..=15) => usize::from(tid) + 1,
-            _ => 0,
-        };
-        let mask = 1_u32 << index;
-        if self.is_known_duplicate(retry, sequence_control, tid) {
-            return true;
-        }
-        self.last_sequence_control[index] = sequence_control;
-        self.valid |= mask;
-        false
-    }
-}
-
-impl Default for RxDuplicateFilter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub mod duplicate;
+pub use duplicate::RxDuplicateFilter;
 
 /// HE-Control policy for an ordinary QoS data MPDU.
 ///

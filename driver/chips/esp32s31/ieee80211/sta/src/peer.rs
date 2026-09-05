@@ -20,11 +20,11 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_protection::WifiTxProtectionPolicy,
 };
 use open_esp_radio_ieee80211::{
+    extensions::wmm::WmmParameterSet,
     he::{He20Capabilities, He20PeerState, HeDcmConstellation},
     ht::HtPeerCapabilities,
     scan::ScanRecord,
     station::{AssociationResponse, StaAssociationPhy},
-    wmm::WmmParameterSet,
 };
 
 /// TX-policy capability consumed by the associated-peer transition.

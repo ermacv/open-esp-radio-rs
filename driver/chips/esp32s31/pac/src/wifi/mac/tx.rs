@@ -8,7 +8,6 @@ use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 
 use crate::{
     MacInterface, MacPti, MacTxPtiCount, MacTxQueueIndex, WifiRadioRegisters, device_fence,
-    mac_tx_queue,
 };
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
@@ -768,9 +767,9 @@ impl WifiRadioRegisters {
             cca_aux_force: cca.phy_aux_force().bits(),
             valid: control.valid().bit_is_set(),
             enabled: control.enable().bit_is_set(),
-            completion_pending: mac_tx_queue::completion_pending(common, queue),
-            timeout_pending: mac_tx_queue::timeout_pending(common, queue),
-            collision_pending: mac_tx_queue::collision_pending(common, queue),
+            completion_pending: queue::completion_pending(common, queue),
+            timeout_pending: queue::timeout_pending(common, queue),
+            collision_pending: queue::collision_pending(common, queue),
         }
     }
 
@@ -938,7 +937,7 @@ impl WifiRadioRegisters {
         pti.modify(|_, w| w.pti_3().set(parameters.packet_priority));
         pti.modify(|_, w| w.count().set(parameters.priority_count));
 
-        mac_tx_queue::configure_edca(
+        queue::configure_edca(
             control_bank,
             u32::from(queue),
             parameters.aifsn,
@@ -978,7 +977,7 @@ impl WifiRadioRegisters {
 
         self.program_ht_mac_tx_ppdu(queue, program);
 
-        mac_tx_queue::configure_edca(
+        queue::configure_edca(
             &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
             u32::from(queue),
             parameters.aifsn,
@@ -1274,7 +1273,7 @@ impl WifiRadioRegisters {
         pti.modify(|_, w| w.pti_3().set(parameters.packet_priority));
         pti.modify(|_, w| w.count().set(parameters.priority_count));
 
-        mac_tx_queue::configure_edca(
+        queue::configure_edca(
             control_bank,
             u32::from(queue),
             parameters.aifsn,
@@ -1294,7 +1293,7 @@ impl WifiRadioRegisters {
         // the caller's earlier software image: formatter leaves may have
         // changed control fields after the initial PLCP0 publication.
         //
-        mac_tx_queue::publish_queue(
+        queue::publish_queue(
             &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
             u32::from(queue),
         );
@@ -1304,7 +1303,7 @@ impl WifiRadioRegisters {
     pub fn take_mac_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
-        if !mac_tx_queue::completion_pending(common, queue) {
+        if !queue::completion_pending(common, queue) {
             return None;
         }
 
@@ -1354,8 +1353,8 @@ impl WifiRadioRegisters {
         } else {
             (primary.status().bits(), primary.detail().bits())
         };
-        let trigger_flow = mac_tx_queue::queue_in_trigger_flow(common, queue);
-        mac_tx_queue::acknowledge_completion(common, queue);
+        let trigger_flow = queue::queue_in_trigger_flow(common, queue);
+        queue::acknowledge_completion(common, queue);
         device_fence();
         Some(MacTxCompletionObservation {
             status,
@@ -1379,7 +1378,7 @@ impl WifiRadioRegisters {
         queue: u8,
     ) -> Option<MacHtAmpduCompletionObservation> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        if !mac_tx_queue::completion_pending(&self.peripherals.wifi_mac.wifi_mac_tx_common, queue) {
+        if !queue::completion_pending(&self.peripherals.wifi_mac.wifi_mac_tx_common, queue) {
             return None;
         }
         let block_ack = self.read_tx_block_ack_observation(queue)?;
@@ -1396,10 +1395,10 @@ impl WifiRadioRegisters {
     pub fn begin_mac_tx_timeout_abort(&mut self, queue: u8) -> bool {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
-        if !mac_tx_queue::timeout_pending(common, queue) {
+        if !queue::timeout_pending(common, queue) {
             return false;
         }
-        let _ = mac_tx_queue::set_cca_force(common, 3);
+        let _ = queue::set_cca_force(common, 3);
         device_fence();
         true
     }
@@ -1424,37 +1423,37 @@ impl WifiRadioRegisters {
         let queue_index = u32::from(queue);
         match reason {
             MacTxDetachReason::Collision => {
-                if !mac_tx_queue::collision_pending(common, queue) {
+                if !queue::collision_pending(common, queue) {
                     return MacTxDetachOutcome::NoEvent;
                 }
                 // SOURCE: complete `libpp.a[lmac.o]::lmacProcessCollisions`
                 // reaches disable before clearing the collision edge.
-                let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
+                let _ = queue::disable_queue(queue_control, queue_index);
                 device_fence();
-                mac_tx_queue::acknowledge_collision(common, queue);
+                queue::acknowledge_collision(common, queue);
             }
             MacTxDetachReason::Timeout => {
-                if !mac_tx_queue::timeout_pending(common, queue) {
+                if !queue::timeout_pending(common, queue) {
                     return MacTxDetachOutcome::NoEvent;
                 }
-                let was_valid = mac_tx_queue::queue_valid(queue_control, queue_index);
-                let _ = mac_tx_queue::invalidate_queue(queue_control, queue_index);
-                let _ = mac_tx_queue::set_cca_force(common, 0);
+                let was_valid = queue::queue_valid(queue_control, queue_index);
+                let _ = queue::invalidate_queue(queue_control, queue_index);
+                let _ = queue::set_cca_force(common, 0);
                 if was_valid {
-                    let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
+                    let _ = queue::disable_queue(queue_control, queue_index);
                 }
-                mac_tx_queue::acknowledge_timeout(common, queue);
+                queue::acknowledge_timeout(common, queue);
             }
             MacTxDetachReason::Completed => {
                 // A completion edge was consumed separately before this
                 // transaction. Disable is still required even if hardware
                 // already cleared ENABLE|VALID while completing the PPDU.
-                let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
+                let _ = queue::disable_queue(queue_control, queue_index);
             }
         }
         device_fence();
-        if mac_tx_queue::queue_enabled(queue_control, queue_index)
-            || mac_tx_queue::queue_valid(queue_control, queue_index)
+        if queue::queue_enabled(queue_control, queue_index)
+            || queue::queue_valid(queue_control, queue_index)
         {
             return MacTxDetachOutcome::Failed;
         }

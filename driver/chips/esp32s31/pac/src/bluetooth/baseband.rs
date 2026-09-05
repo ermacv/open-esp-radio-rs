@@ -42,7 +42,7 @@ impl Ieee802154TaskRegisters {
     /// This crate-private edge is the same recovered
     /// `bt_bb_v2_init_cmplx(1)` MMIO body used by the standalone Bluetooth
     /// owner, without the standalone lifecycle fence. The public IEEE 802.15.4
-    /// transition is deliberately defined in `ieee802154_timing`: it appends
+    /// transition is deliberately defined in `crate::ieee802154::timing`: it appends
     /// both protocol-specific timing overrides and the sole final fence before
     /// returning, so downstream code cannot stop at this internal boundary.
     ///

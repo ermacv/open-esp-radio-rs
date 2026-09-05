@@ -10,12 +10,15 @@ use crate::{
     channel::WifiChannel,
     data::{DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN, plan_data_encapsulation},
     ht::{
-        HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtLocalCapabilities, HtPeerCapabilities,
-        ht_capability_ie_for_peer, ht_operation_ie, ht_peer_capabilities,
+        HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
+        ht_operation_ie, ht_peer_capabilities,
     },
     security::WifiSecurityMode,
     station_power_save::STA_NULL_DATA_FRAME_LEN,
 };
+
+pub mod profile;
+use profile::Advertisement;
 
 const AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
 pub const AP_ASSOCIATION_RESPONSE_BODY_LEN: usize =
@@ -25,13 +28,6 @@ pub const AP_PEER_DISCONNECT_LEN: usize = MANAGEMENT_HEADER_LEN + 2;
 pub const AP_ASSOCIATION_RESPONSE_LEN: usize = 24 + AP_ASSOCIATION_RESPONSE_BODY_LEN;
 
 const MANAGEMENT_HEADER_LEN: usize = 24;
-
-const AP_LEGACY_ASSOCIATION_RESPONSE: [u8; AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN] = [
-    0x31, 0x04, 0x00, 0x00, 0x01, 0xc0, 0x01, 0x08, 0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60,
-    0x32, 0x04, 0x6c, 0x12, 0x24, 0x48, 0x2a, 0x01, 0x00, 0xdd, 0x18, 0x00, 0x50, 0xf2, 0x02, 0x01,
-    0x01, 0x04, 0x00, 0x03, 0xa4, 0x00, 0x00, 0x27, 0xa4, 0x00, 0x00, 0x42, 0x43, 0x5e, 0x00, 0x62,
-    0x32, 0x2f, 0x00,
-];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApAssociationResponseError {
@@ -580,6 +576,7 @@ pub struct ApAssociationSecurityObservation<'a> {
 /// algorithms are intentionally ignored rather than being promoted into AP
 /// state transitions.
 pub fn parse_ap_management_request<'a>(
+    profile: &Advertisement,
     frame: &'a [u8],
     access_point: [u8; 6],
 ) -> Option<ApManagementRequest<'a>> {
@@ -615,7 +612,7 @@ pub fn parse_ap_management_request<'a>(
                     information_elements,
                     capabilities & 0x0010 != 0,
                 ),
-                maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(information_elements),
+                maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(profile, information_elements),
                 ht_capabilities,
                 qos_supported: ht_capabilities.is_some() || supports_wmm(information_elements),
             })
@@ -728,9 +725,7 @@ fn association_security_observation(
     observation
 }
 
-const AP_BG_LEGACY_RATES_500KBPS: [u8; 12] = [2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108];
-
-fn maximum_ap_legacy_rate(bytes: &[u8]) -> u8 {
+fn maximum_ap_legacy_rate(profile: &Advertisement, bytes: &[u8]) -> u8 {
     let mut maximum = 0;
     let mut remaining = bytes;
     while let Some((&id, tail)) = remaining.split_first() {
@@ -744,7 +739,7 @@ fn maximum_ap_legacy_rate(bytes: &[u8]) -> u8 {
         if id == 1 || id == 50 {
             for encoded in value {
                 let rate = encoded & 0x7f;
-                if AP_BG_LEGACY_RATES_500KBPS.contains(&rate) {
+                if profile.legacy_rates.supports(rate) {
                     maximum = maximum.max(rate);
                 }
             }
@@ -784,7 +779,7 @@ pub fn write_open_authentication_response(
     reason = "the frame writer keeps each independently reviewed 802.11 field explicit at its boundary"
 )]
 pub fn write_ht_association_response_frame(
-    local_ht: HtLocalCapabilities,
+    profile: &Advertisement,
     output: &mut [u8],
     access_point: [u8; 6],
     peer: [u8; 6],
@@ -795,7 +790,7 @@ pub fn write_ht_association_response_frame(
     peer_ht: Option<HtPeerCapabilities>,
 ) -> Result<usize, ApAssociationResponseError> {
     write_ht_association_response_frame_for_security(
-        local_ht,
+        profile,
         output,
         access_point,
         peer,
@@ -815,7 +810,7 @@ pub fn write_ht_association_response_frame(
     reason = "the frame writer keeps each independently reviewed 802.11 field explicit at its boundary"
 )]
 pub fn write_ht_association_response_frame_for_security(
-    local_ht: HtLocalCapabilities,
+    profile: &Advertisement,
     output: &mut [u8],
     access_point: [u8; 6],
     peer: [u8; 6],
@@ -840,9 +835,9 @@ pub fn write_ht_association_response_frame_for_security(
     let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
         .try_into()
         .expect("checked association response body length");
-    write_ht_association_response(local_ht, body, status, association_id, channel, peer_ht)?;
+    write_ht_association_response(profile, body, status, association_id, channel, peer_ht)?;
     if security == WifiSecurityMode::Open {
-        body[..2].copy_from_slice(&0x0421_u16.to_le_bytes());
+        body[..2].copy_from_slice(&profile.capabilities(security).to_le_bytes());
     }
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
@@ -897,7 +892,7 @@ fn write_management_header(
 
 /// Build the finite AP HT association response body.
 pub fn write_ht_association_response(
-    local_ht: HtLocalCapabilities,
+    profile: &Advertisement,
     body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN],
     status: u16,
     association_id: u16,
@@ -907,9 +902,19 @@ pub fn write_ht_association_response(
     if status == 0 && association_id & 0x3fff == 0 {
         return Err(ApAssociationResponseError::MissingAssociationId);
     }
-    body[..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN]
-        .copy_from_slice(&AP_LEGACY_ASSOCIATION_RESPONSE);
-    let ht_capability = ht_capability_ie_for_peer(local_ht, channel, peer_ht);
+    body[..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN].fill(0);
+    body[..2].copy_from_slice(
+        &profile
+            .capabilities(WifiSecurityMode::Wpa2Personal)
+            .to_le_bytes(),
+    );
+    body[6..8].copy_from_slice(&[1, 8]);
+    body[8..16].copy_from_slice(profile.legacy_rates.supported());
+    body[16..18].copy_from_slice(&[50, 4]);
+    body[18..22].copy_from_slice(profile.legacy_rates.extended());
+    body[22..25].copy_from_slice(&[42, 1, profile.erp_information()]);
+    body[25..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN].copy_from_slice(&profile.wmm.element());
+    let ht_capability = ht_capability_ie_for_peer(profile.ht, channel, peer_ht);
     let ht_operation = ht_operation_ie(channel);
     let ht_capability_end = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + ht_capability.len();
     body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN..ht_capability_end]

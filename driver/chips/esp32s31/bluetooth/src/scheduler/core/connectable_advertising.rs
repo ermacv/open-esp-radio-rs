@@ -7,22 +7,23 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothLegacyConnectableAdvertisingMemoryGraphEventFieldsPrepareError;
-use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerRandomAddress, BluetoothControllerSramAddress,
-};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::BluetoothControllerRandomAddress;
+use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress;
 
 use super::BluetoothSchedulerEmptyListMergeError;
+#[cfg(target_arch = "riscv32")]
+use crate::le::advertising::connectable::BluetoothLegacyConnectableAdvertisingPublicationPrepared;
 use crate::{
     BluetoothControllerPoweredTaskRuntime, BluetoothControllerTimeSample,
     BluetoothSchedulerReservationError, BluetoothSchedulerSequenceAuthorizationError,
     BluetoothSchedulerTimingPolicy,
-    connectable_advertising::{
+    le::advertising::connectable::{
         BluetoothLegacyConnectableAdvertisingCancellationInvariant,
         BluetoothLegacyConnectableAdvertisingCancelled,
         BluetoothLegacyConnectableAdvertisingEmptyListLinkPrepared,
         BluetoothLegacyConnectableAdvertisingEventCandidate,
         BluetoothLegacyConnectableAdvertisingEventImagePrepared,
-        BluetoothLegacyConnectableAdvertisingPublicationPrepared,
     },
     scheduler::timeline::{
         BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
@@ -112,11 +113,13 @@ pub(crate) struct BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepar
 
 /// Complete pre-MMIO owner after freezing the response-capable memory graph.
 #[must_use = "the publication owner must enter the atomic MMIO suffix or be cancelled"]
+#[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothLegacyConnectableAdvertisingSchedulerPublicationPrepared {
     item: BluetoothLegacyConnectableAdvertisingPublicationPrepared,
     reservation: BluetoothSchedulerWindowReservation<BluetoothSchedulerSequenceReady>,
 }
 
+#[cfg(target_arch = "riscv32")]
 impl BluetoothLegacyConnectableAdvertisingSchedulerPublicationPrepared {
     pub(crate) const fn random_address(&self) -> Option<BluetoothControllerRandomAddress> {
         self.item.random_address()
@@ -149,6 +152,7 @@ impl BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared {
     }
 
     /// Freeze the complete graph immediately before the atomic publication suffix.
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn prepare_publication(
         self,
     ) -> BluetoothLegacyConnectableAdvertisingSchedulerPublicationPrepared {
@@ -159,17 +163,14 @@ impl BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared {
     }
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "connectable admission and rollback retain the exact event graph and scheduler reservation without allocation"
+)]
 impl<const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
 {
     /// Admit the complete response-capable first window into the common timeline.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc rejection returns the exact affine candidate"
-        )
-    )]
     pub(crate) fn admit_legacy_connectable_advertising_first_event(
         &mut self,
         candidate: BluetoothLegacyConnectableAdvertisingEventCandidate,
@@ -246,13 +247,6 @@ impl<const SCHEDULER_CAPACITY: usize>
     }
 
     /// Authorize the fresh sequence sample and encode accepted start/end fields.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc rejection returns the exact affine candidate"
-        )
-    )]
     pub(crate) fn prepare_legacy_connectable_advertising_event(
         &mut self,
         admitted: BluetoothLegacyConnectableAdvertisingPreSequence,
@@ -322,13 +316,6 @@ impl<const SCHEDULER_CAPACITY: usize>
     }
 
     /// Release an admitted event before its fresh sequence sample arrives.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc cancellation invariant retains every affine owner"
-        )
-    )]
     pub(crate) fn cancel_legacy_connectable_advertising_pre_sequence(
         &mut self,
         admitted: BluetoothLegacyConnectableAdvertisingPreSequence,
@@ -352,13 +339,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     }
 
     /// Release complete event fields and their sequence-ready reservation.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc cancellation invariant retains every affine owner"
-        )
-    )]
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn cancel_legacy_connectable_advertising_event(
         &mut self,
         prepared: BluetoothLegacyConnectableAdvertisingEventPrepared,
@@ -372,13 +353,6 @@ impl<const SCHEDULER_CAPACITY: usize>
     }
 
     /// Join one response-capable item to this epoch's exact empty list.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "the no-alloc rejection retains the complete affine event"
-        )
-    )]
     pub(crate) fn prepare_legacy_connectable_advertising_empty_list_merge(
         &mut self,
         prepared: BluetoothLegacyConnectableAdvertisingEventPrepared,
@@ -409,13 +383,6 @@ impl<const SCHEDULER_CAPACITY: usize>
     }
 
     /// Cancel only through the same exclusive list and timeline owners.
-    #[cfg_attr(
-        target_pointer_width = "64",
-        expect(
-            clippy::result_large_err,
-            reason = "an identity mismatch retains the complete affine merge"
-        )
-    )]
     pub(crate) fn cancel_legacy_connectable_advertising_empty_list_merge(
         &mut self,
         merged: BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared,

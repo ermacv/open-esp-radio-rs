@@ -2297,6 +2297,7 @@ dependencies = [
  "open-esp-radio-bluetooth-hci",
  "open-esp-radio-bluetooth-ll",
  "open-esp-radio-esp32s31-bluetooth",
+ "open-esp-radio-esp32s31-phy",
 ]
 
 [[package]]

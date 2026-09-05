@@ -11,7 +11,10 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -21,6 +24,11 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 
+mod access_lock;
+use access_lock::AccessLock;
+
+#[cfg(test)]
+mod lock_tests;
 mod retention;
 pub(crate) use retention::RetentionScope;
 
@@ -523,7 +531,8 @@ pub(crate) struct QueryStore {
     stage_function_queries: BTreeMap<String, StageFunctionQueries>,
     active_function_query_stage: Option<String>,
     _root_pin: PinnedCacheRoot,
-    _access_lock: File,
+    // Declared after the connection: SQLite closes before the final unlock.
+    _access_lock: Arc<AccessLock>,
 }
 
 struct StageFunctionQueries {
@@ -547,7 +556,7 @@ pub(crate) struct PlanReadGuard {
     root_identity: CacheRootIdentity,
     pinned_root: PinnedCacheRoot,
     database_path: PathBuf,
-    access_lock: File,
+    access_lock: Arc<AccessLock>,
 }
 
 #[derive(Debug)]
@@ -657,6 +666,7 @@ impl QueryStore {
         access_lock
             .try_lock_shared()
             .map_err(|error| cache_lock_error("read", &database_path, error))?;
+        let access_lock = Arc::new(AccessLock::new(access_lock));
         root_identity.validate(&cache_root)?;
         Ok(Some(PlanReadGuard {
             root: cache_root,
@@ -734,7 +744,7 @@ impl QueryStore {
             stage_function_queries: BTreeMap::new(),
             active_function_query_stage: None,
             _root_pin: root_pin,
-            _access_lock: guard.access_lock.try_clone()?,
+            _access_lock: Arc::clone(&guard.access_lock),
         };
         let result = store.stage_output_digests(query_key)?;
         if validate_payloads && let Some(digests) = result.as_ref() {
@@ -1437,9 +1447,14 @@ impl QueryStore {
         access_lock
             .try_lock()
             .map_err(|error| cache_lock_error("write", &database_path, error))?;
+        let access_lock = Arc::new(AccessLock::new(access_lock));
         let connection = Connection::open(&storage_database_path)
             .map_err(|error| store_error("open query database", error))?;
-        verify_open_file_path(&access_lock, &storage_database_path, "query cache database")?;
+        verify_open_file_path(
+            access_lock.file(),
+            &storage_database_path,
+            "query cache database",
+        )?;
         root_identity.validate(&root)?;
         validate_sqlite_sidecars(&storage_database_path)?;
         let connection = PinnedConnection::writer(
@@ -1447,7 +1462,7 @@ impl QueryStore {
             root.clone(),
             root_identity.clone(),
             storage_database_path,
-            access_lock.try_clone()?,
+            access_lock.file().try_clone()?,
         )?;
         connection
             .busy_timeout(Duration::from_secs(30))
@@ -1881,7 +1896,7 @@ impl QueryStore {
     fn validate_root_identity(&self) -> Result<()> {
         self.root_identity.validate(&self.root)?;
         verify_open_file_path(
-            &self._access_lock,
+            self._access_lock.file(),
             &self.storage_root.join("queries.sqlite3"),
             "query cache database",
         )?;
@@ -4058,7 +4073,7 @@ impl PlanReadGuard {
     fn validate_lexical_root(&self) -> Result<()> {
         self.root_identity.validate(&self.root)?;
         verify_open_file_path(
-            &self.access_lock,
+            self.access_lock.file(),
             &self.pinned_root.storage_root.join("queries.sqlite3"),
             "query cache database",
         )?;

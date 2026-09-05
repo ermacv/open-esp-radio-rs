@@ -7,11 +7,11 @@ use super::{
 #[cfg(target_arch = "riscv32")]
 use super::{BluetoothSchedulerFinishedListDrainPending, BluetoothSchedulerFinishedListDrainState};
 #[cfg(target_arch = "riscv32")]
-use crate::dtm_event_prepare::{
+use crate::le::dtm::event::prepare::{
     BluetoothDtmCompletionObservedEvent, BluetoothDtmReviewedEventWordsPlan,
     BluetoothDtmRunningEventCompletionObservation, BluetoothDtmSchedulerBookkeepingPrepared,
 };
-use crate::dtm_event_prepare::{
+use crate::le::dtm::event::prepare::{
     BluetoothDtmEmptyListLinkPrepared, BluetoothDtmHeadPublishedEvent, BluetoothDtmRunningEvent,
     BluetoothDtmSchedulerItemPhase,
 };
@@ -2322,16 +2322,16 @@ impl<const SCHEDULER_CAPACITY: usize>
                     _removal: removal,
                 };
                 match error {
-                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::MemoryIdentity(
+                    crate::le::dtm::event::prepare::BluetoothDtmCompletionRecycleError::MemoryIdentity(
                         error,
                     ) => BluetoothDtmSchedulerRecycleStep::MemoryIdentityMismatch {
                         ready,
                         error,
                     },
-                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch => {
+                    crate::le::dtm::event::prepare::BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch => {
                         BluetoothDtmSchedulerRecycleStep::ReservationIdentityMismatch(ready)
                     }
-                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::ReceiverSuccessMemory(_) => {
+                    crate::le::dtm::event::prepare::BluetoothDtmCompletionRecycleError::ReceiverSuccessMemory(_) => {
                         unreachable!("generic recycle cannot enter the RX-success preflight")
                     }
                 }
@@ -2375,19 +2375,19 @@ impl<const SCHEDULER_CAPACITY: usize>
                     _removal: removal,
                 };
                 match error {
-                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::MemoryIdentity(
+                    crate::le::dtm::event::prepare::BluetoothDtmCompletionRecycleError::MemoryIdentity(
                         error,
                     ) => BluetoothDtmSchedulerRxSuccessRecycleStep::MemoryIdentityMismatch {
                         ready,
                         error,
                     },
-                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::ReceiverSuccessMemory(
+                    crate::le::dtm::event::prepare::BluetoothDtmCompletionRecycleError::ReceiverSuccessMemory(
                         error,
                     ) => BluetoothDtmSchedulerRxSuccessRecycleStep::ReturnedTopologyRejected {
                         ready,
                         error,
                     },
-                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch => {
+                    crate::le::dtm::event::prepare::BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch => {
                         BluetoothDtmSchedulerRxSuccessRecycleStep::ReservationIdentityMismatch(ready)
                     }
                 }

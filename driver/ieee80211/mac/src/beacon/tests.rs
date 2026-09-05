@@ -1,5 +1,4 @@
-const TEST_HT_CAPABILITIES: crate::ht::HtLocalCapabilities =
-    crate::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
+use crate::ap::profile::tests::TEST_ADVERTISEMENT;
 
 use super::{
     ApBeaconBuildError, WPA2_BEACON_CAPACITY, WPA2_PERSONAL_CCMP_PSK_RSN_IE, dtim, stamp,
@@ -47,7 +46,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
     let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
     let mut bytes = [0; WPA2_BEACON_CAPACITY];
     let len = write_wpa2_ht_beacon(
-        TEST_HT_CAPABILITIES,
+        &TEST_ADVERTISEMENT,
         &mut bytes,
         ap,
         &ssid,
@@ -80,7 +79,7 @@ fn ht40_beacon_advertises_the_validated_secondary_channel() {
     let mut bytes = [0; WPA2_BEACON_CAPACITY];
     let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
     let len = write_wpa2_ht_beacon(
-        TEST_HT_CAPABILITIES,
+        &TEST_ADVERTISEMENT,
         &mut bytes,
         [2; 6],
         &ssid,
@@ -123,7 +122,7 @@ fn rejects_unrepresentable_beacon_policy_before_mutation() {
     let mut bytes = [0xaa; WPA2_BEACON_CAPACITY];
     assert_eq!(
         write_wpa2_ht_beacon(
-            TEST_HT_CAPABILITIES,
+            &TEST_ADVERTISEMENT,
             &mut bytes,
             [0; 6],
             &ssid,

@@ -37,13 +37,15 @@ only opt-in exception.
 | [`driver/`](driver/README.md) | All shipping driver code and its architecture map |
 | `driver/radio` | Public requests and typed radio/Wi-Fi lifecycle |
 | `driver/bluetooth/hci` | Portable allocation-free async `bt-hci` transport, fail-closed Host bootstrap and affine Controller endpoints |
-| `driver/common/dma` | Shared audited DMA ownership primitives |
+| `driver/memory` | Stable-memory proofs and affine buffer handoff |
+| `driver/network/interface` | Stack-neutral interface, link and error values |
 | `driver/ieee80211/` | Chip-independent Wi-Fi protocols and policy |
 | `driver/ieee80211/softmac` | Executor-independent SoftMAC service, VIF and status contract |
 | `driver/ieee80211/sta` | Chip/executor-independent STA MLME, scan/reconnect, beacon-loss and power-save policy |
-| `driver/adapters/network/embassy/owned` | Internal persistent `embassy-net-driver` frame ownership |
+| `driver/network/adapters/embassy/owned` | Internal persistent `embassy-net-driver` frame ownership |
 | `driver/adapters/embassy/esp32s31/runtime` | ESP32-S31 Embassy executor/time platform binding |
-| `driver/adapters/embassy/esp32s31/ieee80211` | Internal ESP32-S31 Wi-Fi Embassy implementation |
+| `driver/runtime/embassy/esp32s31/ieee80211` | Internal ESP32-S31 Wi-Fi Embassy implementation |
+| `driver/runtime/embassy/esp32s31/bluetooth` | ESP32-S31 Bluetooth controller and session execution under Embassy |
 | `driver/adapters/esp-hal/esp32s31/ieee80211` | ESP32-S31 `esp-hal` peripheral binding |
 | `driver/integration/esp32s31/embassy/ieee80211` | Production station/AP/monitor composition and explicit ESP-NOW hooks |
 | `driver/chips/esp32s31/pac/raw` | Internal generated svd2rust backend |

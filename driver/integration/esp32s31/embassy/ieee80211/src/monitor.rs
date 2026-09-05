@@ -32,12 +32,12 @@ use open_esp_radio_wifi_softmac::{
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
-use crate::supervisor::ProductionRxRing;
-use open_esp_radio_esp32s31_wifi_embassy::composition::resources::{
+use crate::resources::profile::{
     ESP32S31_DEFAULT_RX_BUFFER_SIZE as RX_BUFFER_SIZE,
     ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE as RX_STORAGE_SIZE,
     ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT as RX_DESCRIPTOR_COUNT,
 };
+use crate::supervisor::ProductionRxRing;
 
 const CAPTURE_DEPTH: usize = 8;
 const CAPTURE_SLOTS: usize = 8;

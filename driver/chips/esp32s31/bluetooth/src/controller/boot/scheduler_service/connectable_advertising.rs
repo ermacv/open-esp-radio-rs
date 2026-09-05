@@ -22,8 +22,8 @@ use super::super::{
 };
 use crate::{
     BluetoothSchedulerHeadPublicationError,
-    connectable_advertising::BluetoothLegacyConnectableAdvertisingPublicationRemainder,
-    legacy_connectable_advertising_completion::BluetoothLegacyConnectableAdvertisingCompletionRole,
+    le::advertising::connectable::BluetoothLegacyConnectableAdvertisingPublicationRemainder,
+    le::advertising::connectable::completion::BluetoothLegacyConnectableAdvertisingCompletionRole,
     scheduler::core::{
         BluetoothLegacyConnectableAdvertisingEmptySchedulerMergePrepared,
         BluetoothSingleItemSchedulerRunning,

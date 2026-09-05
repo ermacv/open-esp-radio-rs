@@ -21,7 +21,7 @@ use super::{
 use crate::{
     BluetoothControllerTimeAcquisitionError, BluetoothLegacyAdvertisingTimingObservation,
     BluetoothPeripheralConnectionRuntimeBeginError, BluetoothSchedulerInstant,
-    connectable_advertising::{
+    le::advertising::connectable::{
         BluetoothLegacyConnectableAdvertisingCancellationInvariant,
         BluetoothLegacyConnectableAdvertisingCancelled,
         BluetoothLegacyConnectableAdvertisingEventCandidate,

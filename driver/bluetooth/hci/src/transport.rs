@@ -1,14 +1,11 @@
 //! Bounded HCI packet transport and retained packet ownership.
 
-mod channel;
+mod in_process;
 mod packet;
 mod queue;
 
-pub use channel::{
-    HciChannelError, HciCommandPacket, HciEpochBound, HciEpochIdentity, HostToControllerFrame,
-    InProcessHciHostTransport,
-};
-pub(crate) use channel::{
+pub use in_process::{HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport};
+pub(crate) use in_process::{
     HciClassifiedCommandIntake, InProcessHciChannel, InProcessHciControllerEndpoint,
 };
 pub use queue::{ControllerToHostQueue, ControllerToHostQueueError};

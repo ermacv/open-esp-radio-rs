@@ -18,13 +18,13 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{
     channel::WifiChannel,
-    esp_now::EspNowRandomValue,
+    extensions::espressif::esp_now::EspNowRandomValue,
+    extensions::wmm::WmmParameterSet,
     management::{ProbeRequest, ProbeRequestError},
     station::{
         AssociationRequest, AssociationRequestError, OpenAuthenticationRequest, StaDataFrame,
         StaProtectedDataFrame, StaSequenceCounter, StationFrameError,
     },
-    wmm::WmmParameterSet,
 };
 use open_esp_radio_wifi_softmac::{
     EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan,

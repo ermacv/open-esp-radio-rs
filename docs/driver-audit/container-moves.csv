@@ -12,3 +12,10 @@ wave,old_path,new_path
 5,driver/adapters/esp-hal/esp32s31/wifi,driver/adapters/esp-hal/esp32s31/ieee80211
 5,driver/integration/esp32s31/embassy/wifi,driver/integration/esp32s31/embassy/ieee80211
 5,driver/bluetooth/ll,driver/bluetooth/le/ll
+8,driver/common/dma,driver/memory
+8,driver/common/network,driver/network/interface
+8,driver/adapters/network/embassy/owned,driver/network/adapters/embassy/owned
+8,driver/adapters/network/embassy/compat,driver/network/adapters/embassy/compat
+8,driver/adapters/network/research,driver/network/research
+10,driver/adapters/embassy/esp32s31/ieee80211,driver/runtime/embassy/esp32s31/ieee80211
+10,driver/adapters/embassy/esp32s31/bluetooth,driver/runtime/embassy/esp32s31/bluetooth

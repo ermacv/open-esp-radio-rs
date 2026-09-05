@@ -3,6 +3,9 @@
 //! Portable policies remain available on hosts; hardware transactions and
 //! timeline admission retain their target-or-test availability.
 
+#[cfg(any(test, target_arch = "riscv32"))]
+pub(crate) mod completion;
+
 pub(crate) mod config;
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) mod core;

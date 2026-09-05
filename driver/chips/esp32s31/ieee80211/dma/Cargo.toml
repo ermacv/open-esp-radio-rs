@@ -13,7 +13,7 @@ validation-raw-dma = []
 tx-psram-dma-probe = ["open-esp-radio-dma/tx-psram-dma-probe"]
 
 [dependencies]
-open-esp-radio-dma = { path = "../../../../common/dma" }
+open-esp-radio-dma = { path = "../../../../memory" }
 open-esp-radio-esp32s31-hal = { path = "../../hal" }
 pin-project = "1.1.13"
 vcell = "0.1.3"

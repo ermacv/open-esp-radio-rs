@@ -4,13 +4,13 @@ use std::{error::Error, fmt};
 
 #[derive(Debug)]
 struct Context {
-    operation: String,
+    message: String,
     source: Box<dyn Error + Send + Sync>,
 }
 
 impl fmt::Display for Context {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}: {}", self.operation, self.source)
+        formatter.write_str(&self.message)
     }
 }
 
@@ -24,8 +24,13 @@ pub(crate) fn context(
     operation: impl Into<String>,
     source: Box<dyn Error + Send + Sync>,
 ) -> Box<dyn Error + Send + Sync> {
-    Box::new(Context {
-        operation: operation.into(),
-        source,
-    })
+    with_message(format!("{}: {source}", operation.into()), source)
+}
+
+/// Attach a complete diagnostic without discarding the original typed cause.
+pub(crate) fn with_message(
+    message: String,
+    source: Box<dyn Error + Send + Sync>,
+) -> Box<dyn Error + Send + Sync> {
+    Box::new(Context { message, source })
 }

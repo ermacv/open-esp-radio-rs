@@ -96,11 +96,11 @@ impl OpenWrtRateMask {
         };
         let output = openwrt_command(config, &script)?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "cannot apply OpenWrt HT {} guard-interval policy: {}",
                 forced_guard_interval.id(),
                 String::from_utf8_lossy(&output.stderr).trim(),
-            )
+            ))
             .into());
         }
         Ok(Some(owner))
@@ -116,10 +116,10 @@ impl OpenWrtRateMask {
         );
         let output = openwrt_command(&self.config, &script)?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "cannot restore the OpenWrt automatic rate mask: {}",
                 String::from_utf8_lossy(&output.stderr).trim(),
-            )
+            ))
             .into());
         }
         self.active = false;
@@ -159,20 +159,21 @@ impl OpenWrtRxCapture {
         if forced_guard_interval != HtGuardIntervalExpectation::Any
             && expected_phy != PhyExpectation::Ht40
         {
-            return Err(
-                "OpenWrt guard-interval control currently owns only the HT40 MCS7 diagnostic"
-                    .into(),
-            );
+            return Err(crate::fixture::Error::new(
+                "OpenWrt guard-interval control currently owns only the HT40 MCS7 diagnostic",
+            )
+            .into());
         }
         let rate_mask = OpenWrtRateMask::apply(config, forced_guard_interval)?;
         let pre_workload_channel_utilization = maximum_idle_channel_utilization_255
             .map(|maximum| -> Result<_> {
-                let utilization = measure_channel_utilization(config)?;
+                let utilization =
+                    measure_channel_utilization(config).map_err(crate::fixture::Error::context)?;
                 require_pre_workload_channel_utilization(Some(maximum), utilization.scaled_255)?;
                 Ok(utilization)
             })
             .transpose()?;
-        let before = snapshot(config, target, None)?;
+        let before = snapshot(config, target, None).map_err(crate::fixture::Error::context)?;
         require_width(expected_phy, before.channel_width_mhz)?;
         let timeout = traffic_duration.saturating_add(Duration::from_secs(3));
         let mut ingress = spawn_capture(
@@ -209,7 +210,7 @@ impl OpenWrtRxCapture {
             let _ = ingress.child.wait();
             let _ = wireless.child.kill();
             let _ = wireless.child.wait();
-            return Err(error.into());
+            return Err(crate::fixture::Error::context(error.into()));
         }
         Ok(Self {
             config: config.clone(),
@@ -224,9 +225,12 @@ impl OpenWrtRxCapture {
     }
 
     pub(crate) fn finish(mut self) -> Result<OpenWrtRxEvidence> {
-        let ingress = finish_capture(self.ingress.take().expect("capture owns ingress"))?;
-        let wireless = finish_capture(self.wireless.take().expect("capture owns wireless"))?;
-        let after = snapshot(&self.config, self.target, Some(self.before.station_mac))?;
+        let ingress = finish_capture(self.ingress.take().expect("capture owns ingress"))
+            .map_err(crate::fixture::Error::context)?;
+        let wireless = finish_capture(self.wireless.take().expect("capture owns wireless"))
+            .map_err(crate::fixture::Error::context)?;
+        let after = snapshot(&self.config, self.target, Some(self.before.station_mac))
+            .map_err(crate::fixture::Error::context)?;
         require_width(self.expected_phy, after.channel_width_mhz)?;
         if let Some(rate_mask) = self.rate_mask.as_mut() {
             rate_mask.clear()?;
@@ -301,6 +305,7 @@ fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process:
         .arg(&config.ssh_target)
         .arg(script)
         .supervised_output()
+        .and_then(crate::fixture::Error::ssh_output)
 }
 
 /// Snapshot the final AP/STA link vector after one measured workload.
@@ -308,7 +313,7 @@ pub(crate) fn station_link(
     config: &OpenWrtConfig,
     target: Ipv4Addr,
 ) -> Result<OpenWrtStationLinkEvidence> {
-    let snapshot = snapshot(config, target, None)?;
+    let snapshot = snapshot(config, target, None).map_err(crate::fixture::Error::context)?;
     Ok(OpenWrtStationLinkEvidence {
         channel_width_mhz: snapshot.channel_width_mhz,
         tx_bitrate: snapshot.tx_bitrate,
@@ -365,10 +370,10 @@ fn snapshot(
         .arg(script)
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot snapshot OpenWrt station counters: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let stdout = String::from_utf8(output.stdout)?;
@@ -416,7 +421,9 @@ fn parse_mac(value: &str) -> Result<[u8; 6]> {
             .map_err(|_| format!("invalid OpenWrt station MAC `{value}`"))?;
     }
     if octets.next().is_some() {
-        return Err(format!("invalid OpenWrt station MAC `{value}`").into());
+        return Err(
+            crate::fixture::Error::new(format!("invalid OpenWrt station MAC `{value}`")).into(),
+        );
     }
     Ok(bytes)
 }
@@ -438,10 +445,10 @@ pub(crate) fn resolve_station_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> R
         .arg(script)
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot resolve the sole associated OpenWrt station: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let mac = String::from_utf8(output.stdout)?
@@ -457,21 +464,19 @@ fn require_width(phy: PhyExpectation, observed: u8) -> Result<()> {
         PhyExpectation::Ht40 => 40,
     };
     if observed != expected {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "OpenWrt AP link width changed during the HIL session: expected={expected} observed={observed} MHz"
-        )
-        .into());
+        )).into());
     }
     Ok(())
 }
 
 fn require_pre_workload_channel_utilization(maximum: Option<u8>, observed: u8) -> Result<()> {
     if maximum.is_some_and(|maximum| observed > maximum) {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "OpenWrt pre-workload channel utilization is too high for a ceiling run: observed={observed}/255 maximum={}/255",
             maximum.expect("checked above"),
-        )
-        .into());
+        )).into());
     }
     Ok(())
 }
@@ -480,7 +485,8 @@ pub(crate) fn require_idle_channel_utilization(
     config: &OpenWrtConfig,
     maximum: u8,
 ) -> Result<ChannelUtilization> {
-    let utilization = measure_channel_utilization(config)?;
+    let utilization =
+        measure_channel_utilization(config).map_err(crate::fixture::Error::context)?;
     require_pre_workload_channel_utilization(Some(maximum), utilization.scaled_255)?;
     Ok(utilization)
 }
@@ -506,10 +512,10 @@ fn measure_channel_utilization(config: &OpenWrtConfig) -> Result<ChannelUtilizat
         .arg(script)
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot measure OpenWrt pre-workload channel utilization: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let stdout = String::from_utf8(output.stdout)?;
@@ -533,9 +539,9 @@ fn measure_channel_utilization(config: &OpenWrtConfig) -> Result<ChannelUtilizat
 
 fn scale_channel_utilization(active_millis: u64, busy_millis: u64) -> Result<u8> {
     if active_millis == 0 || busy_millis > active_millis {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "invalid OpenWrt channel survey delta: active={active_millis} ms busy={busy_millis} ms"
-        )
+        ))
         .into());
     }
     let scaled = (u128::from(busy_millis) * 255).div_ceil(u128::from(active_millis));
@@ -589,10 +595,10 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
         .arg(script)
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "OpenWrt fixture doctor failed over noninteractive SSH: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     Ok(())
@@ -646,13 +652,21 @@ fn finish_capture(capture: Capture) -> Result<u64> {
         .ok_or_else(|| format!("{} did not report a packet count: {stderr}", capture.name))?;
     let dropped = parse_summary_value(&stderr, "packets dropped by kernel").unwrap_or(0);
     if dropped != 0 {
-        return Err(format!("{} dropped {dropped} captured packets", capture.name).into());
+        return Err(crate::fixture::Error::new(format!(
+            "{} dropped {dropped} captured packets",
+            capture.name
+        ))
+        .into());
     }
     // BusyBox timeout returns 124 after delivering SIGINT. tcpdump may also
     // translate SIGINT to a normal exit. Any other terminal status is a lost
     // fixture, not valid qualification evidence.
     if !output.status.success() && output.status.code() != Some(124) {
-        return Err(format!("{} exited with {}: {stderr}", capture.name, output.status).into());
+        return Err(crate::fixture::Error::new(format!(
+            "{} exited with {}: {stderr}",
+            capture.name, output.status
+        ))
+        .into());
     }
     Ok(captured)
 }

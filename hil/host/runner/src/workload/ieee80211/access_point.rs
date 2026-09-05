@@ -271,9 +271,9 @@ fn qualify(
                 .transpose()
         });
         let secondary_probe_result = secondary_probe.map(|probe| {
-            probe
-                .join()
-                .map_err(|_| "secondary AP client probe thread panicked".to_owned())?
+            probe.join().map_err(|_| {
+                crate::fixture::Error::new("secondary AP client probe thread panicked")
+            })?
         });
         // Keep every admitted peer alive until the target has completed its
         // AP stop transaction. Otherwise the clients deauthenticate first and
@@ -364,7 +364,7 @@ fn qualify(
             };
             if let Some(Err(probe_error)) = secondary_probe_result.as_ref() {
                 data_error.push_str("; secondary AP client: ");
-                data_error.push_str(probe_error);
+                data_error.push_str(&probe_error.to_string());
             }
             match &primary_link_result {
                 Ok(Some(evidence)) => data_error.push_str(&format!(
@@ -412,24 +412,26 @@ fn qualify(
                 ));
             }
             return Err(with_cleanup_errors(
-                data_error,
+                crate::error::with_message(data_error, data_result.err().expect("failed traffic")),
                 client_restore.err(),
                 stop_result.as_ref().err().map(|error| error.as_ref()),
                 stop_stack_result.err(),
                 restart_result.err(),
             ));
         }
-        if let Some(Err(error)) = secondary_probe_result.as_ref() {
-            return Err(with_cleanup_errors(
-                error,
-                client_restore.err(),
-                stop_result.as_ref().err().map(|error| error.as_ref()),
-                stop_stack_result.err(),
-                restart_result.err(),
-            ));
-        }
+        let secondary_client = match secondary_probe_result.transpose() {
+            Ok(evidence) => evidence,
+            Err(error) => {
+                return Err(with_cleanup_errors(
+                    error,
+                    client_restore.err(),
+                    stop_result.as_ref().err().map(|error| error.as_ref()),
+                    stop_stack_result.err(),
+                    restart_result.err(),
+                ));
+            }
+        };
         let traffic = data_result?;
-        let secondary_client = secondary_probe_result.transpose()?;
         let primary_client_link = primary_link_result?;
         let secondary_client_link = secondary_link_result?;
         let independent_air = independent_air_result?;
@@ -809,7 +811,7 @@ fn restore_connected_station(
 }
 
 fn with_cleanup_errors(
-    primary: impl std::fmt::Display,
+    primary: Box<dyn std::error::Error + Send + Sync>,
     client: Option<Box<dyn std::error::Error + Send + Sync>>,
     stop: Option<&(dyn std::error::Error + Send + Sync)>,
     stop_stack: Option<Box<dyn std::error::Error + Send + Sync>>,
@@ -828,7 +830,7 @@ fn with_cleanup_errors(
     if let Some(error) = restart {
         message.push_str(&format!("; station restore failed: {error}"));
     }
-    message.into()
+    crate::error::with_message(message, primary)
 }
 
 fn stop_access_point(

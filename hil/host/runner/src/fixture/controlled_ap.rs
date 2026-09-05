@@ -36,14 +36,21 @@ impl ControlledAp {
         match fixture {
             StationFixtureConfig::LocalLinux(config) => {
                 if config.interface != "wlan0" {
-                    return Err("the local fixture helper owns only `wlan0`".into());
+                    return Err(crate::fixture::Error::new(
+                        "the local fixture helper owns only `wlan0`",
+                    )
+                    .into());
                 }
-                require_local_ap_credentials(station, phy)?;
+                require_local_ap_credentials(station, phy)
+                    .map_err(crate::fixture::Error::context)?;
                 let action = match phy {
                     PhyExpectation::He20 => "start-he20",
                     PhyExpectation::Ht40 => "start-ht40",
                     PhyExpectation::Ht20 => {
-                        return Err("the local fixture has no qualified HT20 profile".into());
+                        return Err(crate::fixture::Error::new(
+                            "the local fixture has no qualified HT20 profile",
+                        )
+                        .into());
                     }
                 };
                 let owner = Self::Local(phy);
@@ -51,7 +58,8 @@ impl ControlledAp {
                 Ok(owner)
             }
             StationFixtureConfig::OpenWrt(openwrt) => {
-                let radio = require_openwrt_ap_credentials(station, openwrt)?;
+                let radio = require_openwrt_ap_credentials(station, openwrt)
+                    .map_err(crate::fixture::Error::context)?;
                 // `wifi up` may asynchronously replace an already-present
                 // hostapd netdev. Treating that stale netdev as ready lets the
                 // target begin association inside the reload window. A ready
@@ -85,7 +93,10 @@ impl ControlledAp {
                 wait_for_openwrt_interface_down(&ap.config)?;
                 Ok(())
             }
-            Self::External => Err("an external station fixture cannot be stopped by HIL".into()),
+            Self::External => Err(crate::fixture::Error::new(
+                "an external station fixture cannot be stopped by HIL",
+            )
+            .into()),
         }
     }
 
@@ -95,7 +106,10 @@ impl ControlledAp {
                 PhyExpectation::He20 => "start-he20",
                 PhyExpectation::Ht40 => "start-ht40",
                 PhyExpectation::Ht20 => {
-                    return Err("the local fixture has no qualified HT20 profile".into());
+                    return Err(crate::fixture::Error::new(
+                        "the local fixture has no qualified HT20 profile",
+                    )
+                    .into());
                 }
             }),
             Self::OpenWrt(ap) => {
@@ -104,7 +118,10 @@ impl ControlledAp {
                 ap.stopped = false;
                 Ok(())
             }
-            Self::External => Err("an external station fixture cannot be restarted by HIL".into()),
+            Self::External => Err(crate::fixture::Error::new(
+                "an external station fixture cannot be restarted by HIL",
+            )
+            .into()),
         }
     }
 }
@@ -142,7 +159,9 @@ fn require_local_ap_credentials(station: &StationConfig, phy: PhyExpectation) ->
     let profile = match phy {
         PhyExpectation::He20 => INSTALLED_HE20_CONFIG,
         PhyExpectation::Ht40 => "/etc/open-radio/hostapd-ht40.conf",
-        PhyExpectation::Ht20 => return Err("the local fixture has no HT20 profile".into()),
+        PhyExpectation::Ht20 => {
+            return Err(crate::fixture::Error::new("the local fixture has no HT20 profile").into());
+        }
     };
     let installed = fs::read_to_string(profile).map_err(|error| {
         format!(
@@ -153,11 +172,11 @@ fn require_local_ap_credentials(station: &StationConfig, phy: PhyExpectation) ->
     let profile_ssid = required_profile_value(&installed, "ssid")?;
     let profile_passphrase = required_profile_value(&installed, "wpa_passphrase")?;
     if ssid != profile_ssid || passphrase != profile_passphrase {
-        return Err(
+        return Err(crate::fixture::Error::new(
             "HIL network credentials do not match the installed controlled-AP profile; \
-             provision the target with that profile or reinstall the HIL host fixture"
-                .into(),
-        );
+             provision the target with that profile or reinstall the HIL host fixture",
+        )
+        .into());
     }
     Ok(())
 }
@@ -172,10 +191,10 @@ fn require_openwrt_ap_credentials(
     let script = r#"set -eu; for section in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do radio=$(uci -q get wireless.$section.device || true); ssid=$(uci -q get wireless.$section.ssid || true); key=$(uci -q get wireless.$section.key || true); printf '%s\t%s\t%s\n' "$radio" "$ssid" "$key"; done"#;
     let mut output = openwrt_command(openwrt, script)?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot read the controlled OpenWrt AP profile: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let profile = Zeroizing::new(String::from_utf8(core::mem::take(&mut output.stdout))?);
@@ -187,11 +206,16 @@ fn require_openwrt_ap_credentials(
         let profile_ssid = fields.next().unwrap_or_default();
         let profile_passphrase = fields.next().unwrap_or_default();
         if fields.next().is_some() {
-            return Err("OpenWrt AP profile returned malformed data".into());
+            return Err(
+                crate::fixture::Error::new("OpenWrt AP profile returned malformed data").into(),
+            );
         }
         if ssid == profile_ssid && passphrase == profile_passphrase {
             if matched.is_some() || !matches!(radio, "radio0" | "radio1") {
-                return Err("OpenWrt AP profile does not identify one safe radio owner".into());
+                return Err(crate::fixture::Error::new(
+                    "OpenWrt AP profile does not identify one safe radio owner",
+                )
+                .into());
             }
             matched = Some(radio.to_owned());
         }
@@ -203,20 +227,24 @@ fn require_openwrt_ap_credentials(
 
 fn openwrt_action(config: &OpenWrtConfig, radio: &str, action: &str) -> Result<()> {
     if !matches!(radio, "radio0" | "radio1") {
-        return Err("controlled OpenWrt AP has an invalid radio owner".into());
+        return Err(
+            crate::fixture::Error::new("controlled OpenWrt AP has an invalid radio owner").into(),
+        );
     }
     let action = match action {
         "up" => "up",
         "down" => "down",
-        _ => return Err("unsupported OpenWrt AP action".into()),
+        _ => {
+            return Err(crate::fixture::Error::new("unsupported OpenWrt AP action").into());
+        }
     };
     let script = format!("set -eu; wifi {action} {radio}");
     let output = openwrt_command(config, &script)?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "controlled OpenWrt AP action failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     Ok(())
@@ -230,9 +258,9 @@ fn wait_for_openwrt_interface(config: &OpenWrtConfig, phy: PhyExpectation) -> Re
         oer_process::sleep(Duration::from_millis(100))?;
     }
     let expected_width = expected_width(phy);
-    Err(format!(
+    Err(crate::fixture::Error::new(format!(
         "controlled OpenWrt AP did not restore an enabled {expected_width} MHz hostapd interface"
-    )
+    ))
     .into())
 }
 
@@ -270,7 +298,10 @@ fn wait_for_openwrt_interface_down(config: &OpenWrtConfig) -> Result<()> {
         }
         oer_process::sleep(Duration::from_millis(100))?;
     }
-    Err("controlled OpenWrt AP interface remained present after radio shutdown".into())
+    Err(crate::fixture::Error::new(
+        "controlled OpenWrt AP interface remained present after radio shutdown",
+    )
+    .into())
 }
 
 fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
@@ -279,6 +310,7 @@ fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process:
         .arg(&config.ssh_target)
         .arg(script)
         .supervised_output()
+        .and_then(crate::fixture::Error::ssh_output)
 }
 
 fn required_profile_value<'a>(profile: &'a str, key: &str) -> Result<&'a str> {
@@ -295,10 +327,16 @@ fn required_profile_value<'a>(profile: &'a str, key: &str) -> Result<&'a str> {
         .next()
         .ok_or_else(|| format!("controlled-AP profile is missing `{key}`"))?;
     if values.next().is_some() {
-        return Err(format!("controlled-AP profile defines `{key}` more than once").into());
+        return Err(crate::fixture::Error::new(format!(
+            "controlled-AP profile defines `{key}` more than once"
+        ))
+        .into());
     }
     if value.is_empty() {
-        return Err(format!("controlled-AP profile defines an empty `{key}`").into());
+        return Err(crate::fixture::Error::new(format!(
+            "controlled-AP profile defines an empty `{key}`"
+        ))
+        .into());
     }
     Ok(value)
 }
@@ -308,7 +346,10 @@ fn helper_action(action: &str) -> Result<()> {
         .args(["-n", crate::fixture::network_helper::PATH, action])
         .supervised_status()?;
     if !status.success() {
-        return Err(format!("controlled AP helper `{action}` failed with {status}").into());
+        return Err(crate::fixture::Error::new(format!(
+            "controlled AP helper `{action}` failed with {status}"
+        ))
+        .into());
     }
     Ok(())
 }

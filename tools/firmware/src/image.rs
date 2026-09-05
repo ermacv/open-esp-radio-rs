@@ -1,4 +1,5 @@
 use crate::Result;
+use oer_process::CommandExt;
 use std::{collections::BTreeMap, env, ffi::OsString, fs, path::Path, process::Command};
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
 pub const BOOTSTRAP_BIN: &str = "oer-esp32s31-bootstrap";
@@ -9,7 +10,7 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
     let output = Command::new(program_from_env("LLVM_NM", "llvm-nm"))
         .args(["--defined-only", "--numeric-sort"])
         .arg(elf)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err("llvm-nm failed while auditing runtime placement".into());
     }
@@ -127,7 +128,7 @@ fn audit_psram_stack_entry_instructions(elf: &Path) -> Result<()> {
         .arg("-d")
         .arg(format!("--disassemble-symbols={}", names.join(",")))
         .arg(elf)
-        .output()?;
+        .supervised_output()?;
     if !output.status.success() {
         return Err("llvm-objdump failed while auditing PSRAM stack entries".into());
     }
@@ -213,3 +214,6 @@ fn encode_image(command: &mut Command, root: &Path, bootstrap: &Path, output: &P
     }
     command.arg(bootstrap).arg(output);
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests;

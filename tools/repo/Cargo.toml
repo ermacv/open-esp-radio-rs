@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 oer-process = { path = "../process" }
+fs2 = "0.4"
 serialport = { version = "4.8.1", default-features = false }
 oer-firmware = { path = "../firmware" }
 open-esp-radio-memory-report = { path = "../memory-report" }

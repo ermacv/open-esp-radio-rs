@@ -5,6 +5,8 @@ It configures linker arguments for application build scripts, packs runtime
 checksums, validates ELF placement and interrupt entry instructions, checks
 compiler stack metadata, validates the ROM image checksum/digest, prepares the
 OTA selector, and configures bootstrap/image/flash commands.
+ELF inspection tools run under the shared process supervisor, with cancellation,
+owned descendants and a two-minute deadline per invocation.
 
 The optional `device` feature provides serial-device selection and a lease shared
 by xtask and HIL. The lease spans all writes and optional monitoring, uses USB

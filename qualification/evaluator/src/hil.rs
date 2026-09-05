@@ -1,5 +1,7 @@
 //! Independent consumption of immutable HIL run bundles.
 
+mod provenance;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -295,7 +297,8 @@ impl HilEvidenceIndex {
             let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
             let current_clean_producer = !replays_firmware
                 && !manifest.repository.dirty
-                && manifest.repository.commit == repository.commit;
+                && manifest.repository.commit == repository.commit
+                && provenance::current_sources(root, &run_directory, &manifest)?;
             if current_clean_producer {
                 summary.current_clean_producer += 1;
             }
@@ -387,6 +390,8 @@ struct RunManifest {
 struct FirmwareArtifactProvenance {
     #[serde(default)]
     replayed_from: Option<serde::de::IgnoredAny>,
+    build_id: Option<String>,
+    build_provenance_path: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -745,3 +750,6 @@ mod tests;
 
 #[cfg(test)]
 mod catalog_tests;
+
+#[cfg(test)]
+mod provenance_tests;

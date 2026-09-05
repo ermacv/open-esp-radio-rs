@@ -85,17 +85,14 @@ impl LocalAirMonitorCapture {
         output: &Path,
     ) -> Result<Self> {
         if !config.independent_laptop_monitor {
-            return Err(
-                "scenario requires the independent laptop monitor, but the fixture does not enable it"
-                    .into(),
-            );
+            return Err(crate::fixture::Error::new("scenario requires the independent laptop monitor, but the fixture does not enable it").into());
         }
         let target_mac = resolve_station_mac(config, target)?;
         Self::start_for_target(
             target_mac,
             duration,
             output,
-            resolve_observer_action(config)?,
+            resolve_observer_action(config).map_err(crate::fixture::Error::context)?,
             true,
         )
     }
@@ -149,9 +146,9 @@ impl LocalAirMonitorCapture {
             .expect("capture owns its child")
             .try_wait()?
         {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "independent laptop capture exited before the session started: {status}"
-            )
+            ))
             .into());
         }
         Ok(owner)
@@ -167,30 +164,31 @@ impl LocalAirMonitorCapture {
         let output = output?;
         restore?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "independent laptop capture failed with {}: {}",
                 output.status,
                 String::from_utf8_lossy(&output.stderr).trim()
-            )
+            ))
             .into());
         }
         let summary = String::from_utf8(output.stderr)?;
-        let captured_frames = dumpcap_captured(&summary)?;
-        let kernel_dropped = dumpcap_dropped(&summary)?;
+        let captured_frames = dumpcap_captured(&summary).map_err(crate::fixture::Error::context)?;
+        let kernel_dropped = dumpcap_dropped(&summary).map_err(crate::fixture::Error::context)?;
         if kernel_dropped != 0 {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "independent laptop capture dropped {kernel_dropped} packets in its capture socket"
-            )
+            ))
             .into());
         }
         let size = fs::metadata(&self.output)?.len();
         if size == 0 || size > MAX_CAPTURE_BYTES {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "independent laptop capture size is outside 1..={MAX_CAPTURE_BYTES} bytes: {size}"
-            )
+            ))
             .into());
         }
-        let mut evidence = parse_capture(&self.output, &self.target_mac)?;
+        let mut evidence = parse_capture(&self.output, &self.target_mac)
+            .map_err(crate::fixture::Error::context)?;
         evidence.captured_frames = captured_frames;
         evidence.kernel_dropped = kernel_dropped;
         Ok(evidence)
@@ -212,10 +210,10 @@ fn resolve_observer_action(config: &OpenWrtConfig) -> Result<&'static str> {
         .arg(format!("iw dev {} info", config.wireless_interface))
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot query OpenWrt channel for independent monitor: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     resolve_observer_action_from_iw(&String::from_utf8(output.stdout)?)
@@ -235,11 +233,13 @@ fn resolve_observer_action_from_iw(info: &str) -> Result<&'static str> {
         Some(6) => Ok("observer-ht40-6"),
         Some(11) => Ok("observer-ht40-11"),
         Some(13) => Ok("observer-ht40-13"),
-        Some(channel) => Err(format!(
+        Some(channel) => Err(crate::fixture::Error::new(format!(
             "independent HT40 monitor does not support OpenWrt primary channel {channel}"
-        )
+        ))
         .into()),
-        None => Err("OpenWrt interface did not report its channel".into()),
+        None => {
+            Err(crate::fixture::Error::new("OpenWrt interface did not report its channel").into())
+        }
     }
 }
 
@@ -264,7 +264,10 @@ pub(crate) fn doctor() -> Result<()> {
             .stderr(Stdio::null())
             .supervised_status()?;
         if !status.success() {
-            return Err(format!("`{tool}` is required for independent air evidence").into());
+            return Err(crate::fixture::Error::new(format!(
+                "`{tool}` is required for independent air evidence"
+            ))
+            .into());
         }
     }
     Ok(())
@@ -294,10 +297,10 @@ fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidenc
         ])
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot decode independent laptop capture: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let mut evidence = LocalAirMonitorEvidence::default();
@@ -367,10 +370,10 @@ fn parse_target_egress_capture(
         ])
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot decode target-egress air timing: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     Ok(target_egress_timing_from_fields(&String::from_utf8(
@@ -517,10 +520,10 @@ fn parse_block_ack_capture(
         ])
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot decode independent BlockAck capture: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let mut tracker = BlockAckTracker::default();
@@ -633,7 +636,10 @@ fn helper_action(action: &str) -> Result<()> {
         .args(["-n", crate::fixture::network_helper::PATH, action])
         .supervised_status()?;
     if !status.success() {
-        return Err(format!("laptop radio helper `{action}` failed with {status}").into());
+        return Err(crate::fixture::Error::new(format!(
+            "laptop radio helper `{action}` failed with {status}"
+        ))
+        .into());
     }
     Ok(())
 }

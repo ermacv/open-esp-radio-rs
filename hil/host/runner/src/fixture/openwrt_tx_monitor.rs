@@ -193,20 +193,21 @@ impl OpenWrtTxMonitorCapture {
             .ok_or("OpenWrt TX-monitor capture omitted its packet count")?;
         let kernel_dropped = summary_value(&summary, "packets dropped by kernel").unwrap_or(0);
         if kernel_dropped != 0 {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "OpenWrt TX-monitor capture dropped {kernel_dropped} packets in its capture socket"
-            )
+            ))
             .into());
         }
         copy_remote(&self.config, &self.remote.capture(), &self.output)?;
         let size = fs::metadata(&self.output)?.len();
         if size == 0 || size > MAX_CAPTURE_BYTES {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "OpenWrt TX-monitor capture size is outside 1..={MAX_CAPTURE_BYTES} bytes: {size}"
-            )
+            ))
             .into());
         }
-        let mut evidence = parse_capture(&self.output, self.target, self.port, expected_units)?;
+        let mut evidence = parse_capture(&self.output, self.target, self.port, expected_units)
+            .map_err(crate::fixture::Error::context)?;
         evidence.captured_frames = captured_frames;
         evidence.kernel_dropped = kernel_dropped;
         Ok(evidence)
@@ -244,10 +245,10 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
     )
     .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "OpenWrt monitor evidence is unavailable or `{monitor}` already exists: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let status = Command::new("tshark")
@@ -256,7 +257,10 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
         .stderr(Stdio::null())
         .supervised_status()?;
     if !status.success() {
-        return Err("local tshark is required for OpenWrt TX-monitor evidence".into());
+        return Err(crate::fixture::Error::new(
+            "local tshark is required for OpenWrt TX-monitor evidence",
+        )
+        .into());
     }
     Ok(())
 }
@@ -292,10 +296,10 @@ fn parse_capture(
         ])
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot decode OpenWrt TX-monitor capture: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let expected_units = u32::try_from(expected_units)?;
@@ -434,7 +438,10 @@ fn copy_remote(config: &OpenWrtConfig, remote: &str, local: &Path) -> Result<()>
         .stdout(Stdio::from(file))
         .supervised_status()?;
     if !status.success() {
-        return Err("cannot copy OpenWrt TX-monitor capture to the run directory".into());
+        return Err(crate::fixture::Error::new(
+            "cannot copy OpenWrt TX-monitor capture to the run directory",
+        )
+        .into());
     }
     Ok(())
 }

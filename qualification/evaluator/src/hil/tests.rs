@@ -74,10 +74,12 @@ fn scenario_catalog_rejects_non_current_schema() {
     fs::remove_dir_all(root).unwrap();
 }
 
-fn seal(run: &Path) {
+pub(super) fn seal(run: &Path) {
     let mut names = vec!["manifest.json", "suite.json"];
-    if run.join("plan.json").is_file() {
-        names.push("plan.json");
+    for name in ["plan.json", "build-provenance.json"] {
+        if run.join(name).is_file() {
+            names.push(name);
+        }
     }
     let files = names
         .into_iter()
@@ -181,6 +183,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         serde_json::to_vec_pretty(&suite).unwrap(),
     )
     .unwrap();
+    add_current_build(&root, &run);
     seal(&run);
 
     let repository = RepositoryState {
@@ -387,4 +390,44 @@ fn unsealed_completed_run_still_fails_closed() {
         HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap_err();
     assert!(error.to_string().contains("integrity.json"));
     fs::remove_dir_all(root).unwrap();
+}
+
+pub(super) fn add_current_build(root: &Path, run: &Path) {
+    fs::write(root.join("Cargo.lock"), "version = 4\npackage = []\n").unwrap();
+    let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
+    manifest["firmware"] = json!([{
+        "build_id": "ab".repeat(32),
+        "build_provenance_path": "build-provenance.json",
+    }]);
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    let provenance = json!({
+        "schema": 1,
+        "build_type": "open-esp-radio-hil-firmware/v1",
+        "build_id": "ab".repeat(32),
+        "source_reconstructable": true,
+        "sources": [{
+            "name": "repository",
+            "commit": manifest["repository"]["commit"],
+            "workspace_sha256": manifest["repository"]["workspace_sha256"],
+            "dirty": false,
+            "rebuild_status": "clean-commit",
+            "limitations": [],
+            "untracked_files": [],
+            "tracked_patch_path": null,
+        }],
+        "files": [{
+            "name": "workspace-lock",
+            "path": "Cargo.lock",
+            "sha256": sha256_file(&root.join("Cargo.lock")).unwrap(),
+        }],
+    });
+    fs::write(
+        run.join("build-provenance.json"),
+        serde_json::to_vec(&provenance).unwrap(),
+    )
+    .unwrap();
 }

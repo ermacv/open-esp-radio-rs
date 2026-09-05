@@ -186,6 +186,33 @@ start_monitor() {
     /usr/bin/iw dev mon0 set freq "$frequency" "$width"
 }
 
+# Status 10 means the prepared client exhausted its radio association wait.
+# Control/setup errors keep a different nonzero status for the host classifier.
+wait_client_association() {
+    attempts=0
+    maximum_attempts=200
+    while test "$attempts" -lt "$maximum_attempts"; do
+        status=$(/usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status)
+        if ! /usr/bin/printf '%s\n' "$status" | /usr/bin/grep -q '^wpa_state='; then
+            echo "open-radio-net: client status omitted wpa_state" >&2
+            return 1
+        fi
+        if /usr/bin/printf '%s\n' "$status" | /usr/bin/grep -Fxq 'wpa_state=COMPLETED'
+        then
+            break
+        fi
+        attempts=$((attempts + 1))
+        /bin/sleep 0.1
+    done
+    if test "$attempts" -eq "$maximum_attempts"; then
+        echo "open-radio-net: client did not associate within 20 seconds" >&2
+        /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status >&2 2>/dev/null || true
+        /usr/bin/iw dev wlan0 link >&2 2>/dev/null || true
+        stop_radio_services
+        return 10
+    fi
+}
+
 start_client() {
     IFS= read -r ssid
     IFS= read -r passphrase
@@ -247,24 +274,7 @@ start_client() {
     # behavior and cannot make an AP pass without emitting discoverable frames.
     /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 scan >/dev/null
 
-    attempts=0
-    maximum_attempts=200
-    while test "$attempts" -lt "$maximum_attempts"; do
-        if /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status 2>/dev/null \
-            | /usr/bin/grep -Fq 'wpa_state=COMPLETED'
-        then
-            break
-        fi
-        attempts=$((attempts + 1))
-        /bin/sleep 0.1
-    done
-    if test "$attempts" -eq "$maximum_attempts"; then
-        echo "open-radio-net: client did not associate within 20 seconds" >&2
-        /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status >&2 2>/dev/null || true
-        /usr/bin/iw dev wlan0 link >&2 2>/dev/null || true
-        stop_radio_services
-        exit 1
-    fi
+    wait_client_association
     /usr/bin/iw dev wlan0 set power_save off
     /usr/bin/ip address add "$address" dev wlan0
 }
@@ -279,7 +289,7 @@ restore_managed() {
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=5 station_ap=he20,ht40 client=1 observer=ht40 managed=1\n'
+        /usr/bin/printf 'schema=6 station_ap=he20,ht40 client=1 observer=ht40 managed=1\n'
         ;;
     start-ht40)
         start_ap /etc/open-radio/hostapd-ht40.conf 40 1

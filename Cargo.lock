@@ -2235,6 +2235,7 @@ name = "oer-firmware"
 version = "0.1.0"
 dependencies = [
  "fs2",
+ "oer-process",
  "open-esp-radio-memory-report",
  "serialport",
  "sha2",
@@ -2256,6 +2257,7 @@ version = "0.1.0"
 dependencies = [
  "cargo_metadata",
  "clap",
+ "fs2",
  "libc",
  "object 0.39.1",
  "oer-firmware",

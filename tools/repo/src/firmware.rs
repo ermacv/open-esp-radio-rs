@@ -1,19 +1,19 @@
 //! Complete application images using the platform boot contract.
 mod monitor;
+mod workspace;
+
+pub use workspace::FirmwareBuild;
 
 use crate::{Context, Result, process};
 use oer_firmware::{BOOTSTRAP_BIN, TARGET};
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::{env, fs, path::Path};
 
 pub fn build(
     ctx: &Context,
     example: &str,
     features: &[String],
     no_default_features: bool,
-) -> Result<PathBuf> {
+) -> Result<FirmwareBuild> {
     let directory = ctx
         .root
         .join("examples")
@@ -26,15 +26,16 @@ pub fn build(
         .and_then(|p| p.get("name"))
         .and_then(toml::Value::as_str)
         .ok_or("example has no package name")?;
-    let output = ctx
+    let directory_output = ctx
         .root
         .join("target/firmware")
         .join(format!("esp32s31-{example}"));
-    fs::create_dir_all(&output)?;
+    let workspace = workspace::Workspace::acquire(&directory_output)?;
+    let output = workspace.output();
     let budget = open_esp_radio_memory_report::StackBudget::load(
         &ctx.root.join("platform/esp32s31/stack.toml"),
     )?;
-    let runtime_target = output.join("cargo/runtime");
+    let runtime_target = workspace.cache().join("runtime");
     let mut command = ctx.cargo();
     command
         .args([
@@ -57,7 +58,10 @@ pub fn build(
     }
     oer_firmware::stack::enable_stack_checks(&mut command, &budget);
     process::run(&mut command)?;
-    let runtime = runtime_target.join(TARGET).join("release").join(binary);
+    let runtime = workspace.snapshot(
+        &runtime_target.join(TARGET).join("release").join(binary),
+        "runtime.elf",
+    )?;
     audit_stack(&runtime, &output.join("runtime-stack.txt"), &budget)?;
     let packed = output.join("runtime.bin");
     process::run(
@@ -71,16 +75,19 @@ pub fn build(
         output.join("placement.txt"),
         oer_firmware::audit_runtime(&runtime, &packed, true)?,
     )?;
-    let bootstrap_target = output.join("cargo/bootstrap");
+    let bootstrap_target = workspace.cache().join("bootstrap");
     let mut command = ctx.cargo();
     oer_firmware::bootstrap_command(&mut command, &ctx.root, &packed, &bootstrap_target);
     command.arg("--locked");
     oer_firmware::stack::enable_stack_checks(&mut command, &budget);
     process::run(&mut command)?;
-    let bootstrap = bootstrap_target
-        .join(TARGET)
-        .join("release")
-        .join(BOOTSTRAP_BIN);
+    let bootstrap = workspace.snapshot(
+        &bootstrap_target
+            .join(TARGET)
+            .join("release")
+            .join(BOOTSTRAP_BIN),
+        "bootstrap.elf",
+    )?;
     audit_stack(&bootstrap, &output.join("bootstrap-stack.txt"), &budget)?;
     let image = output.join("application.bin");
     let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
@@ -120,7 +127,7 @@ pub fn build(
     )?;
     println!("application image: {}", image.display());
     println!("bootstrap ELF: {}", bootstrap.display());
-    Ok(output)
+    Ok(workspace.finish())
 }
 
 fn audit_stack(
@@ -138,10 +145,16 @@ fn audit_stack(
 }
 
 /// Flash the exact audited images and select ota_0 without erasing other partitions.
-pub fn flash(ctx: &Context, output: &Path, port: Option<&Path>, monitor: bool) -> Result<()> {
+pub fn flash(
+    ctx: &Context,
+    build: &FirmwareBuild,
+    port: Option<&Path>,
+    monitor: bool,
+) -> Result<()> {
     use oer_firmware::flash::{
         BOOTLOADER_OFFSET, OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET,
     };
+    let output = build.directory();
     let lease = oer_firmware::device::DeviceLease::select(port)?;
     let port = Some(lease.port());
     for (address, filename, reset) in [

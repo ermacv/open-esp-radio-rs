@@ -55,13 +55,17 @@ impl<M: RawMutex, const DEPTH: usize> CoexResources<M, DEPTH> {
     /// Bind the sole request/reply control endpoint to the sole hardware owner.
     ///
     /// The mutable borrow prevents a second split while either endpoint from
-    /// this epoch is alive. `CoexControl::execute` also keeps at most one
-    /// request in flight, so a result can never be consumed by another caller.
+    /// this epoch is alive. Ending both endpoints abandons any queued work;
+    /// a new epoch starts with empty command and response channels. Hardware
+    /// state remains owned by the caller's `CoexCore` across this boundary.
     pub fn split(&mut self) -> (CoexControl<'_, M, DEPTH>, CoexOwner<'_, M, DEPTH>) {
+        self.commands.clear();
+        self.outcomes.clear();
         (
             CoexControl {
                 commands: self.commands.sender(),
                 outcomes: self.outcomes.receiver(),
+                state: ControlState::Ready,
             },
             CoexOwner {
                 commands: self.commands.receiver(),
@@ -80,12 +84,55 @@ impl<M: RawMutex, const DEPTH: usize> Default for CoexResources<M, DEPTH> {
 pub struct CoexControl<'resources, M: RawMutex, const DEPTH: usize> {
     commands: Sender<'resources, M, CoexCommand, DEPTH>,
     outcomes: Receiver<'resources, M, Result<CoexOutcome, CoexError>, 1>,
+    // Lives outside the borrowed execute future, including cancellation.
+    state: ControlState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CoexControlError {
+    /// Shutdown completed; a new owner/resource epoch is required.
+    Stopped,
+    Operation(CoexError),
+}
+
+#[derive(Clone, Copy)]
+enum ControlState {
+    Ready,
+    Pending,
+    Stopped,
 }
 
 impl<M: RawMutex, const DEPTH: usize> CoexControl<'_, M, DEPTH> {
-    pub async fn execute(&mut self, command: CoexCommand) -> Result<CoexOutcome, CoexError> {
+    /// Execute one command. Cancellation retains its transaction until the
+    /// next call settles it. Successful Shutdown, including a cancelled call,
+    /// ends this endpoint epoch and subsequent calls return `Stopped`.
+    pub async fn execute(&mut self, command: CoexCommand) -> Result<CoexOutcome, CoexControlError> {
+        // Settle the preceding cancelled call before publishing another
+        // command. Strictly one outstanding transaction makes its response
+        // unambiguous without a second request-id namespace.
+        if matches!(self.state, ControlState::Pending) {
+            let outcome = self.outcomes.receive().await;
+            let _ = self.settle(outcome);
+        }
+        if matches!(self.state, ControlState::Stopped) {
+            return Err(CoexControlError::Stopped);
+        }
         self.commands.send(command).await;
-        self.outcomes.receive().await
+        self.state = ControlState::Pending;
+        let outcome = self.outcomes.receive().await;
+        self.settle(outcome)
+    }
+
+    fn settle(
+        &mut self,
+        outcome: Result<CoexOutcome, CoexError>,
+    ) -> Result<CoexOutcome, CoexControlError> {
+        self.state = if matches!(outcome, Ok(CoexOutcome::Stopped)) {
+            ControlState::Stopped
+        } else {
+            ControlState::Ready
+        };
+        outcome.map_err(CoexControlError::Operation)
     }
 }
 

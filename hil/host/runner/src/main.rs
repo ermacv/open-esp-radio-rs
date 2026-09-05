@@ -224,10 +224,9 @@ fn run() -> Result<()> {
                 None => RunFirmware::BuildCurrent,
             };
             let lab = crate::lab::config::LabConfig::load(&lab_path)?;
-            let _fixture = crate::lab::lock::FixtureLock::acquire_for(
-                &lab,
-                crate::lab::requirements::Requirements::for_scenario(&selected),
-            )?;
+            let required = crate::lab::requirements::Requirements::for_scenario(&selected);
+            crate::fixture::network_helper::require_for(&lab, required)?;
+            let _fixture = crate::lab::lock::FixtureLock::acquire_for(&lab, required)?;
             run_one(&root, &lab, &catalog, &selected, firmware, invocation)
         }
         CliCommand::RunAll { tag } => {
@@ -238,10 +237,9 @@ fn run() -> Result<()> {
                 tag: tag.clone(),
             }
             .resolve(&catalog)?;
-            let _fixture = crate::lab::lock::FixtureLock::acquire_for(
-                &lab,
-                crate::lab::requirements::Requirements::union(&selected),
-            )?;
+            let required = crate::lab::requirements::Requirements::union(&selected);
+            crate::fixture::network_helper::require_for(&lab, required)?;
+            let _fixture = crate::lab::lock::FixtureLock::acquire_for(&lab, required)?;
             run_all(&root, &lab, &catalog, &tag, invocation)
         }
     }

@@ -50,9 +50,10 @@ cargo xtask build firmware bluetooth-controller --flash --monitor --port /dev/tt
 
 Select `station`, `access-point`, `monitor` or `bluetooth-controller`. Application
 credentials remain environment configuration of the example; HIL credentials
-remain lab configuration. Outputs are under `target/firmware/esp32s31-<example>`:
+remain lab configuration. Each successful invocation retains a separate bundle
+under `target/firmware/esp32s31-<example>/build-<id>/`:
 `application.bin`, ROM `bootloader.bin`, partition/OTA images, packed runtime,
-both ELF files, both resolved lockfiles and
+`runtime.elf`, `bootstrap.elf`, both resolved lockfiles and
 placement/stack reports. The build rejects invalid placement and oversized
 frames before flash. Frame budgets and boundary watchpoints do not prove the
 maximum aggregate depth of every possible call chain.

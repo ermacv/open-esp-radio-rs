@@ -350,6 +350,11 @@ fn report_bytes(
     );
 }
 
+// The sole consumed channel grants this invocation exclusive access to the
+// dedicated static probe buffers/descriptors. Every started transfer is either
+// completed or dropped before another iteration reuses those allocations.
+// Cancelling this future drops its transfer first; forgetting the whole future
+// retains the channel and static storage indefinitely without another caller.
 pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     mark(0x0001, 0);
     let source = unsafe { &mut *ptr::addr_of_mut!(SOURCE) };
@@ -407,7 +412,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
             return;
         }
     };
-    let sram_report = match transfer.start().wait_blocking(100_000_000) {
+    // SAFETY: this run retains the exclusive static probe storage until cleanup.
+    let sram_report = match unsafe { transfer.start() }.wait_blocking(100_000_000) {
         Ok(report) => report,
         Err(error) => {
             mark(0xe020, CACHE_LINE as u32);
@@ -464,7 +470,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
             }
         };
         mark(0x0200 + case as u32, size as u32);
-        let report = match transfer.start().wait_blocking(100_000_000) {
+        // SAFETY: this run retains the exclusive static probe storage until cleanup.
+        let report = match unsafe { transfer.start() }.wait_blocking(100_000_000) {
             Ok(report) => report,
             Err(error) => {
                 mark(0xe200 + case as u32, size as u32);
@@ -523,7 +530,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
             return;
         }
     };
-    let ethernet_report = match transfer.start().wait_blocking(100_000_000) {
+    // SAFETY: this run retains the exclusive static probe storage until cleanup.
+    let ethernet_report = match unsafe { transfer.start() }.wait_blocking(100_000_000) {
         Ok(report) => report,
         Err(error) => {
             mark(0xe381, ETHERNET_FRAME_SIZE as u32);
@@ -596,7 +604,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
                     return;
                 }
             };
-            let report = match transfer.start().wait_blocking(100_000_000) {
+            // SAFETY: this run retains the exclusive static probe storage until cleanup.
+            let report = match unsafe { transfer.start() }.wait_blocking(100_000_000) {
                 Ok(report) => report,
                 Err(error) => {
                     mark(0xe410 + case as u32, active as u32);
@@ -661,7 +670,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
             &mut tx_descriptors.0,
             BurstSize::Bytes32,
         ) {
-            Ok(transfer) => transfer.start(),
+            // SAFETY: this run retains the exclusive static probe storage until cleanup.
+            Ok(transfer) => unsafe { transfer.start() },
             Err(error) => {
                 mark(0xe440, FRAMES_PER_BATCH as u32);
                 log::error!(
@@ -697,7 +707,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
             &mut tx_descriptors.0,
             BurstSize::Bytes32,
         ) {
-            Ok(transfer) => match transfer.start().await {
+            // SAFETY: this run retains the exclusive static probe storage until cleanup.
+            Ok(transfer) => match unsafe { transfer.start() }.await {
                 Ok(report) => report,
                 Err(error) => {
                     mark(0xe510, FRAMES_PER_BATCH as u32);
@@ -802,7 +813,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
                 BurstSize::Bytes32,
             )
             .unwrap();
-        let mut transfer = prepared.start();
+        // SAFETY: this run retains the exclusive static probe storage until cleanup.
+        let mut transfer = unsafe { prepared.start() };
         active_cycles = active_cycles.wrapping_add(cycles().wrapping_sub(started_cycles));
         active_instructions =
             active_instructions.wrapping_add(instructions().wrapping_sub(started_instructions));
@@ -842,17 +854,19 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
         dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
-        gdma.prepare(
-            &mut destination.0[..BATCH_SIZE],
-            &mut source.0[..BATCH_SIZE],
-            &mut rx_descriptors.0,
-            &mut tx_descriptors.0,
-            BurstSize::Bytes32,
-        )
-        .unwrap()
-        .start()
-        .wait_blocking(100_000_000)
-        .unwrap();
+        let prepared = gdma
+            .prepare(
+                &mut destination.0[..BATCH_SIZE],
+                &mut source.0[..BATCH_SIZE],
+                &mut rx_descriptors.0,
+                &mut tx_descriptors.0,
+                BurstSize::Bytes32,
+            )
+            .unwrap();
+        // SAFETY: this run retains the exclusive static probe storage until cleanup.
+        unsafe { prepared.start() }
+            .wait_blocking(100_000_000)
+            .unwrap();
         core::hint::black_box(destination.0[iteration % BATCH_SIZE]);
     }
     report(
@@ -882,17 +896,19 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
         dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
-        gdma.prepare(
-            &mut destination.0[..BATCH_SIZE],
-            &mut source.0[..BATCH_SIZE],
-            &mut rx_descriptors.0,
-            &mut tx_descriptors.0,
-            BurstSize::Bytes32,
-        )
-        .unwrap()
-        .start()
-        .wait_blocking(100_000_000)
-        .unwrap();
+        let prepared = gdma
+            .prepare(
+                &mut destination.0[..BATCH_SIZE],
+                &mut source.0[..BATCH_SIZE],
+                &mut rx_descriptors.0,
+                &mut tx_descriptors.0,
+                BurstSize::Bytes32,
+            )
+            .unwrap();
+        // SAFETY: this run retains the exclusive static probe storage until cleanup.
+        unsafe { prepared.start() }
+            .wait_blocking(100_000_000)
+            .unwrap();
         checksum ^= prepare_next_batch(&mut next_source.0[..BATCH_SIZE], iteration as u8);
         core::hint::black_box(destination.0[iteration % BATCH_SIZE]);
     }
@@ -907,7 +923,7 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
         dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
-        let transfer = gdma
+        let prepared = gdma
             .prepare(
                 &mut destination.0[..BATCH_SIZE],
                 &mut source.0[..BATCH_SIZE],
@@ -915,8 +931,9 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
                 &mut tx_descriptors.0,
                 BurstSize::Bytes32,
             )
-            .unwrap()
-            .start();
+            .unwrap();
+        // SAFETY: this run retains the exclusive static probe storage until cleanup.
+        let transfer = unsafe { prepared.start() };
         checksum ^= prepare_next_batch(&mut next_source.0[..BATCH_SIZE], iteration as u8);
         transfer.wait_blocking(100_000_000).unwrap();
         core::hint::black_box(destination.0[iteration % BATCH_SIZE]);
@@ -932,17 +949,17 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
     let started_instructions = instructions();
     for iteration in 0..ITERATIONS {
         dirty_batch(&mut source.0[..BATCH_SIZE], iteration as u8);
-        gdma.prepare(
-            &mut destination.0[..BATCH_SIZE],
-            &mut source.0[..BATCH_SIZE],
-            &mut rx_descriptors.0,
-            &mut tx_descriptors.0,
-            BurstSize::Bytes32,
-        )
-        .unwrap()
-        .start()
-        .await
-        .unwrap();
+        let prepared = gdma
+            .prepare(
+                &mut destination.0[..BATCH_SIZE],
+                &mut source.0[..BATCH_SIZE],
+                &mut rx_descriptors.0,
+                &mut tx_descriptors.0,
+                BurstSize::Bytes32,
+            )
+            .unwrap();
+        // SAFETY: this run retains the exclusive static probe storage until cleanup.
+        unsafe { prepared.start() }.await.unwrap();
         core::hint::black_box(destination.0[iteration % BATCH_SIZE]);
     }
     report(

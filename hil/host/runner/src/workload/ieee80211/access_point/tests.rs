@@ -1,4 +1,31 @@
 use super::*;
+
+#[test]
+fn cleanup_annotation_preserves_fixture_cancellation_and_scenario_causes() {
+    for (primary, expected, cancelled) in [
+        (
+            Box::new(crate::fixture::Error::new("SSH transport failed"))
+                as Box<dyn std::error::Error + Send + Sync>,
+            crate::evidence::run::FailureKind::Infrastructure,
+            false,
+        ),
+        (
+            crate::fixture::Error::context(Box::new(oer_process::Cancelled)),
+            crate::evidence::run::FailureKind::Infrastructure,
+            true,
+        ),
+        (
+            "secondary AP client lost traffic".into(),
+            crate::evidence::run::FailureKind::Scenario,
+            false,
+        ),
+    ] {
+        let error = with_cleanup_errors(primary, Some("restore failed".into()), None, None, None);
+        assert_eq!(crate::execution::classify(&*error).kind, expected);
+        assert_eq!(oer_process::is_cancelled(&*error), cancelled);
+        assert!(error.to_string().contains("client restore failed"));
+    }
+}
 use open_esp_radio_hil_protocol::{
     Finished, RadioEvidence, ResultSummary, RxConsumerLedgerEvidence, RxDeliveryEvidence,
     RxRadioEvidence, RxSequenceStageEvidence, StackUsage, StackWatermark, TransportEvidence,

@@ -1,5 +1,27 @@
 use super::*;
 
+#[cfg(unix)]
+#[test]
+fn failed_or_malformed_capture_is_infrastructure() {
+    for script in [
+        "echo 'injected dumpcap failure' >&2; exit 7",
+        "echo 'Packets captured: 4' >&2",
+    ] {
+        let child = Command::new("sh")
+            .args(["-c", script])
+            .stderr(Stdio::piped())
+            .spawn_owned()
+            .unwrap();
+        let error = LocalPacketCapture { child: Some(child) }
+            .finish()
+            .unwrap_err();
+        assert_eq!(
+            crate::execution::classify(&*error).kind,
+            crate::evidence::run::FailureKind::Infrastructure
+        );
+    }
+}
+
 #[test]
 fn parses_iw_station_fields_without_depending_on_column_alignment() {
     let input = "\ttx packets:\t25013\n\ttx retries:\t4\n\ttx failed:\t0\n\ttx duration:\t2567438 us\n\ttx bitrate:\t150.0 MBit/s MCS 7 40MHz short GI\n\trx bitrate:\t135.0 MBit/s MCS 7 40MHz\n";

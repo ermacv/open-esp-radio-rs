@@ -47,6 +47,15 @@ there are no source-spelling or regex checks for required Rust identifiers.
 Builds retain normal Cargo parallelism. `OPEN_RADIO_ANALYSIS_BUILD_JOBS` is an
 optional explicit local limit for vendor probe builds.
 
+Standalone firmware builds keep a Cargo cache per example and hold that example's
+artifact lease until its ELFs and images are copied into a unique
+`target/firmware/esp32s31-<example>/build-<id>/` bundle. Different examples can build
+concurrently; repeated builds of one example wait cancellably for its cache.
+Successful bundles remain available for inspection, while failed partial bundles
+are removed. Flashing uses the completed bundle after releasing the build lease,
+so a later build cannot replace the selected image. The serial-device lease
+independently protects the complete hardware write transaction.
+
 Standalone extraction copies only nonignored Blobray source, excluding private
 inputs and build outputs. It owns its temporary target directory, preserves a
 caller-selected Rust toolchain, and otherwise uses the repository's pinned

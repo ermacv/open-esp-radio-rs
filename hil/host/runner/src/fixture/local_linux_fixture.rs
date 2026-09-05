@@ -70,7 +70,7 @@ impl LocalLinuxRxCapture {
         traffic_duration: Duration,
         expected_phy: PhyExpectation,
     ) -> Result<Self> {
-        let before = snapshot(config, target)?;
+        let before = snapshot(config, target).map_err(crate::fixture::Error::context)?;
         require_width(expected_phy, before.channel_width_mhz)?;
         let filter = format!("udp and dst host {target} and dst port {port}");
         let capture = LocalPacketCapture::start(&config.interface, &filter, traffic_duration)?;
@@ -85,7 +85,7 @@ impl LocalLinuxRxCapture {
 
     pub(crate) fn finish(self) -> Result<LocalLinuxRxEvidence> {
         let udp_packets = self.capture.finish()?;
-        let after = snapshot(&self.config, self.target)?;
+        let after = snapshot(&self.config, self.target).map_err(crate::fixture::Error::context)?;
         require_width(self.expected_phy, after.channel_width_mhz)?;
         Ok(LocalLinuxRxEvidence {
             udp_packets,
@@ -130,7 +130,7 @@ impl LocalLinuxTxCapture {
         traffic_duration: Duration,
         expected_phy: PhyExpectation,
     ) -> Result<Self> {
-        let before = snapshot(config, target)?;
+        let before = snapshot(config, target).map_err(crate::fixture::Error::context)?;
         require_width(expected_phy, before.channel_width_mhz)?;
         let filter = format!(
             "udp and src host {target} and src port {source_port} and dst port {destination_port}"
@@ -145,7 +145,7 @@ impl LocalLinuxTxCapture {
 
     pub(crate) fn finish(self) -> Result<LocalLinuxTxEvidence> {
         let udp_packets = self.capture.finish()?;
-        let after = snapshot(&self.config, self.target)?;
+        let after = snapshot(&self.config, self.target).map_err(crate::fixture::Error::context)?;
         require_width(self.expected_phy, after.channel_width_mhz)?;
         Ok(LocalLinuxTxEvidence {
             udp_packets,
@@ -179,7 +179,10 @@ impl LocalPacketCapture {
             .with_timeout(timeout.saturating_add(Duration::from_secs(10)));
         oer_process::sleep(Duration::from_millis(500))?;
         if child.try_wait()?.is_some() {
-            return Err("local AP packet capture exited before the HIL session started".into());
+            return Err(crate::fixture::Error::new(
+                "local AP packet capture exited before the HIL session started",
+            )
+            .into());
         }
         Ok(Self { child: Some(child) })
     }
@@ -191,18 +194,21 @@ impl LocalPacketCapture {
             .expect("local fixture owns packet capture")
             .wait_with_output()?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "local AP packet capture exited with {}: {}",
                 output.status,
                 String::from_utf8_lossy(&output.stderr).trim()
-            )
+            ))
             .into());
         }
         let summary = String::from_utf8(output.stderr)?;
-        let udp_packets = dumpcap_captured(&summary)?;
-        let dropped = dumpcap_dropped(&summary)?;
+        let udp_packets = dumpcap_captured(&summary).map_err(crate::fixture::Error::context)?;
+        let dropped = dumpcap_dropped(&summary).map_err(crate::fixture::Error::context)?;
         if dropped != 0 {
-            return Err(format!("local AP packet capture dropped {dropped} packets").into());
+            return Err(crate::fixture::Error::new(format!(
+                "local AP packet capture dropped {dropped} packets"
+            ))
+            .into());
         }
         Ok(udp_packets)
     }
@@ -258,7 +264,9 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
         ])
         .supervised_output()?;
     if !neighbor.status.success() {
-        return Err("cannot resolve the local-AP station neighbor".into());
+        return Err(
+            crate::fixture::Error::new("cannot resolve the local-AP station neighbor").into(),
+        );
     }
     let neighbor = String::from_utf8(neighbor.stdout)?;
     let mac = neighbor
@@ -271,10 +279,10 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
         .args(["dev", &config.interface, "station", "get", mac])
         .supervised_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot snapshot local AP station counters: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
+        ))
         .into());
     }
     let station = String::from_utf8(output.stdout)?;
@@ -282,7 +290,7 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
         .args(["dev", &config.interface, "info"])
         .supervised_output()?;
     if !interface.status.success() {
-        return Err("cannot read the local AP channel width".into());
+        return Err(crate::fixture::Error::new("cannot read the local AP channel width").into());
     }
     let interface = String::from_utf8(interface.stdout)?;
     let interface_tx_packets = std::fs::read_to_string(format!(
@@ -319,10 +327,9 @@ fn require_width(phy: PhyExpectation, observed: u8) -> Result<()> {
         PhyExpectation::Ht40 => 40,
     };
     if observed != expected {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "local AP link width changed during the HIL session: expected={expected} observed={observed} MHz"
-        )
-        .into());
+        )).into());
     }
     Ok(())
 }

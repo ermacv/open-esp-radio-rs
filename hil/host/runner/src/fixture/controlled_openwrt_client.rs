@@ -32,6 +32,9 @@ const PID_FILE: &str = "/var/run/open-radio-client.pid";
 const CONFIG_FILE: &str = "/var/run/open-radio-client.conf";
 const FORWARD_TABLE: &str = "open_radio_hil";
 const FORWARD_CHAIN: &str = "open_radio_hil_forward";
+// Only the completed association/liveness wait uses this status. Remote setup
+// errors retain their exit status and belong to the laboratory boundary.
+const ASSOCIATION_TIMEOUT: i32 = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub(crate) struct SecondaryClientProbeEvidence {
@@ -230,7 +233,7 @@ impl ControlledOpenWrtClient {
         let security_config = match security {
             WifiAccessPointSecurity::Open => Zeroizing::new(String::from("key_mgmt=NONE")),
             WifiAccessPointSecurity::Wpa2Personal => {
-                let psk = derive_psk(ssid, passphrase)?;
+                let psk = derive_psk(ssid, passphrase).map_err(crate::fixture::Error::context)?;
                 Zeroizing::new(format!(
                     "psk={}\\n  key_mgmt=WPA-PSK\\n  proto=RSN\\n  pairwise=CCMP\\n  group=CCMP",
                     psk.as_str(),
@@ -263,7 +266,7 @@ impl ControlledOpenWrtClient {
              done; \
              iw dev {INTERFACE} link >&2 || true; \
              if command -v wpa_cli >/dev/null; then wpa_cli -i {INTERFACE} status >&2 || true; fi; \
-             exit 1",
+             exit {ASSOCIATION_TIMEOUT}",
             security_config = security_config.as_str(),
         ));
         // Own rollback before the first remote mutation, including partial setup.
@@ -273,15 +276,7 @@ impl ControlledOpenWrtClient {
             restored: false,
         };
         let output = ssh(fixture, script.as_str())?;
-        if !output.status.success() {
-            return Err(format!(
-                "OpenWrt AP client did not associate: status={} stdout={} stderr={}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout).trim(),
-                String::from_utf8_lossy(&output.stderr).trim(),
-            )
-            .into());
-        }
+        require_association(output)?;
         if fixed_ht_mcs.is_some() || fixed_guard_interval != HtGuardIntervalExpectation::Any {
             let mut rate_mask = format!("iw dev {INTERFACE} set bitrates");
             if let Some(mcs) = fixed_ht_mcs {
@@ -294,10 +289,10 @@ impl ControlledOpenWrtClient {
             }
             let output = ssh(fixture, &rate_mask)?;
             if !output.status.success() {
-                return Err(format!(
+                return Err(crate::fixture::Error::new(format!(
                     "cannot apply the controlled OpenWrt AP-client HT rate mask `{rate_mask}`: {}",
                     String::from_utf8_lossy(&output.stderr).trim(),
-                )
+                ))
                 .into());
             }
         }
@@ -305,11 +300,10 @@ impl ControlledOpenWrtClient {
         // Keep this outside the measured workload and give the target time to
         // publish its controlled-port state.
         oer_process::sleep(Duration::from_millis(250))?;
-        owner.forward_address = Some(install_forwarding(
-            fixture,
-            access_point.target_address(),
-            client_address,
-        )?);
+        owner.forward_address = Some(
+            install_forwarding(fixture, access_point.target_address(), client_address)
+                .map_err(crate::fixture::Error::context)?,
+        );
         Ok(owner)
     }
 
@@ -325,7 +319,7 @@ impl ControlledOpenWrtClient {
     pub(crate) fn begin_link_observation(&self) -> Result<OpenWrtClientLinkObservation> {
         Ok(OpenWrtClientLinkObservation {
             fixture: self.fixture.clone(),
-            before: snapshot_link(&self.fixture)?,
+            before: snapshot_link(&self.fixture).map_err(crate::fixture::Error::context)?,
         })
     }
 
@@ -344,9 +338,26 @@ impl ControlledOpenWrtClient {
         &self,
         target: Ipv4Addr,
         duration: Duration,
-    ) -> thread::JoinHandle<std::result::Result<SecondaryClientProbeEvidence, String>> {
+    ) -> thread::JoinHandle<Result<SecondaryClientProbeEvidence>> {
         let fixture = self.fixture.clone();
         thread::spawn(move || probe(&fixture, target, duration))
+    }
+}
+
+fn require_association(output: std::process::Output) -> Result<()> {
+    if output.status.success() {
+        return Ok(());
+    }
+    let message = format!(
+        "OpenWrt AP client connection failed: status={} stdout={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout).trim(),
+        String::from_utf8_lossy(&output.stderr).trim(),
+    );
+    if output.status.code() == Some(ASSOCIATION_TIMEOUT) {
+        Err(message.into())
+    } else {
+        Err(crate::fixture::Error::new(message).into())
     }
 }
 
@@ -387,7 +398,7 @@ fn prepare_fixture_script(access_point: &AccessPointConfig, fixture: &OpenWrtCon
 
 impl OpenWrtClientLinkObservation {
     pub(crate) fn finish(self) -> Result<OpenWrtClientLinkEvidence> {
-        let after = snapshot_link(&self.fixture)?;
+        let after = snapshot_link(&self.fixture).map_err(crate::fixture::Error::context)?;
         Ok(OpenWrtClientLinkEvidence {
             rx_bytes: counter_delta("RX bytes", self.before.rx_bytes, after.rx_bytes)?,
             rx_packets: counter_delta("RX packets", self.before.rx_packets, after.rx_packets)?,
@@ -547,9 +558,9 @@ fn tagged_optional_string(output: &str, key: &str) -> Option<String> {
 
 fn counter_delta(name: &str, before: u64, after: u64) -> Result<u64> {
     after.checked_sub(before).ok_or_else(|| {
-        format!(
+        crate::fixture::Error::new(format!(
             "controlled OpenWrt AP-client `{name}` counter reset during the workload: {before} -> {after}"
-        )
+        ))
         .into()
     })
 }
@@ -562,21 +573,41 @@ fn optional_counter_delta(
     match (before, after) {
         (Some(before), Some(after)) => counter_delta(name, before, after).map(Some),
         (None, None) => Ok(None),
-        _ => Err(format!(
+        _ => Err(crate::fixture::Error::new(format!(
             "controlled OpenWrt AP-client `{name}` counter availability changed during the workload"
-        )
+        ))
         .into()),
     }
 }
 
 fn cleanup_forwarding_script() -> String {
     format!(
-        "nft delete table inet {FORWARD_TABLE} 2>/dev/null || true; \
-         for handle in $(nft -a list chain inet fw4 forward 2>/dev/null | awk '/jump {FORWARD_CHAIN}/ {{print $NF}}'); do \
-             nft delete rule inet fw4 forward handle \"$handle\" 2>/dev/null || true; \
-         done; \
-         nft flush chain inet fw4 {FORWARD_CHAIN} 2>/dev/null || true; \
-         nft delete chain inet fw4 {FORWARD_CHAIN} 2>/dev/null || true"
+        r#"cleanup_forwarding_resources() {{
+            tables=$(nft list tables) || return 1
+            if printf '%s\n' "$tables" | grep -Fxq 'table inet {FORWARD_TABLE}'; then
+                nft delete table inet {FORWARD_TABLE} || return 1
+                tables=$(nft list tables) || return 1
+                if printf '%s\n' "$tables" | grep -Fxq 'table inet {FORWARD_TABLE}'; then
+                    echo 'OpenWrt client NAT table remained after cleanup' >&2; return 1
+                fi
+            fi
+            if printf '%s\n' "$tables" | grep -Fxq 'table inet fw4'; then
+                rules=$(nft -a list table inet fw4) || return 1
+                if printf '%s\n' "$rules" | awk '$1 == "chain" && $2 == "{FORWARD_CHAIN}" {{found=1}} END {{exit !found}}'; then
+                    forward=$(nft -a list chain inet fw4 forward) || return 1
+                    handles=$(printf '%s\n' "$forward" | awk '{{for (i=1; i<NF; i++) if ($i == "jump" && $(i+1) == "{FORWARD_CHAIN}") {{for (j=i+2; j<NF; j++) if ($j == "handle") print $(j+1)}}}}')
+                    for handle in $handles; do
+                        nft delete rule inet fw4 forward handle "$handle" || return 1
+                    done
+                    nft flush chain inet fw4 {FORWARD_CHAIN} || return 1
+                    nft delete chain inet fw4 {FORWARD_CHAIN} || return 1
+                    rules=$(nft -a list table inet fw4) || return 1
+                    if printf '%s\n' "$rules" | awk '$1 == "chain" && $2 == "{FORWARD_CHAIN}" {{found=1}} END {{exit !found}}'; then
+                        echo 'OpenWrt client forwarding chain remained after cleanup' >&2; return 1
+                    fi
+                fi
+            fi
+        }}; cleanup_forwarding_resources"#,
     )
 }
 
@@ -618,21 +649,56 @@ fn derive_psk(ssid: &str, passphrase: &str) -> Result<Zeroizing<String>> {
     Ok(Zeroizing::new(psk.to_owned()))
 }
 
-fn restore(fixture: &OpenWrtConfig) -> Result<()> {
+pub(super) fn restore(fixture: &OpenWrtConfig) -> Result<()> {
     let cleanup = cleanup_forwarding_script();
     let script = format!(
-        "set -eu; \
-         {cleanup}; \
-         if test -f {PID_FILE}; then kill $(cat {PID_FILE}) 2>/dev/null || true; fi; \
-         iw dev {INTERFACE} del 2>/dev/null || true; \
-         rm -f {PID_FILE} {CONFIG_FILE}",
+        r#"set -u
+        failed=0
+        {cleanup} || failed=1
+        cleanup_client_interface() {{
+            if test -f {PID_FILE}; then
+                pid=$(cat {PID_FILE}) || return 1
+                case "$pid" in ''|*[!0-9]*) echo 'invalid OpenWrt client PID' >&2; return 1;; esac
+                test "$pid" -gt 1 || return 1
+                if test -d /proc/"$pid"; then
+                    arguments=$(cat /proc/"$pid"/cmdline | tr '\000' '\n') || return 1
+                    if ! printf '%s\n' "$arguments" | awk '
+                        NR == 1 {{count=split($0, path, "/"); executable=(path[count] == "wpa_supplicant")}}
+                        previous == "-i" && $0 == "{INTERFACE}" {{interface=1}}
+                        previous == "-c" && $0 == "{CONFIG_FILE}" {{config=1}}
+                        {{previous=$0}}
+                        END {{exit !(executable && interface && config)}}'; then
+                        echo 'OpenWrt client PID belongs to another command; leaving it intact' >&2; return 1
+                    fi
+                    kill "$pid" || return 1
+                    for attempt in $(seq 1 5); do
+                        test -d /proc/"$pid" || break
+                        sleep 1 || return 1
+                    done
+                    if test -d /proc/"$pid"; then
+                        echo 'OpenWrt client process remained after cleanup' >&2; return 1
+                    fi
+                fi
+            fi
+            interfaces=$(iw dev) || return 1
+            if printf '%s\n' "$interfaces" | awk '$1 == "Interface" && $2 == "{INTERFACE}" {{found=1}} END {{exit !found}}'; then
+                iw dev {INTERFACE} del || return 1
+                interfaces=$(iw dev) || return 1
+                if printf '%s\n' "$interfaces" | awk '$1 == "Interface" && $2 == "{INTERFACE}" {{found=1}} END {{exit !found}}'; then
+                    echo 'OpenWrt client interface remained after cleanup' >&2; return 1
+                fi
+            fi
+            rm -f {PID_FILE} {CONFIG_FILE} || return 1
+        }}
+        cleanup_client_interface || failed=1
+        test "$failed" -eq 0"#,
     );
     let output = ssh(fixture, &script)?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::fixture::Error::new(format!(
             "cannot restore OpenWrt secondary AP client: {}",
             String::from_utf8_lossy(&output.stderr).trim(),
-        )
+        ))
         .into());
     }
     Ok(())
@@ -642,7 +708,7 @@ fn probe(
     fixture: &OpenWrtConfig,
     target: Ipv4Addr,
     duration: Duration,
-) -> std::result::Result<SecondaryClientProbeEvidence, String> {
+) -> Result<SecondaryClientProbeEvidence> {
     // OpenWrt's compact BusyBox ping accepts integer-second intervals only.
     // One packet per second is sufficient for this liveness stream and keeps
     // it active for the complete primary saturation interval.
@@ -654,22 +720,22 @@ fn probe(
         fixture,
         &script,
         Duration::from_secs(deadline.saturating_add(5)),
-    )
-    .map_err(|error| error.to_string())?;
+    )?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let evidence = parse_ping_summary(&stdout).ok_or_else(|| {
-        format!(
+        crate::fixture::Error::new(format!(
             "cannot parse secondary-client ping evidence: stdout={} stderr={} status={}",
             stdout.trim(),
             String::from_utf8_lossy(&output.stderr).trim(),
             output.status,
-        )
+        ))
     })?;
     if !output.status.success() || evidence.transmitted != evidence.received {
         return Err(format!(
             "secondary AP client lost traffic: transmitted={} received={} status={}",
             evidence.transmitted, evidence.received, output.status,
-        ));
+        )
+        .into());
     }
     Ok(evidence)
 }
@@ -703,6 +769,7 @@ fn ssh_with_timeout(
             .arg(script),
         Some(timeout),
     )
+    .and_then(crate::fixture::Error::ssh_output)
 }
 
 fn encode_hex(bytes: &[u8]) -> String {

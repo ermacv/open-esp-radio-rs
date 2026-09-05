@@ -18,6 +18,19 @@ fn preparation_and_monitor_recover_from_partial_setup() {
         "monitor-error",
         "monitor-cancel",
         "monitor-drop",
+        "ap-ssh-error",
+        "ap-command-error",
+        "cleanup-success",
+        "cleanup-absent",
+        "cleanup-nft-error",
+        "cleanup-nft-noop",
+        "cleanup-iw-error",
+        "cleanup-iw-noop",
+        "cleanup-inspection-error",
+        "cleanup-process-success",
+        "cleanup-process-mismatch",
+        "cleanup-process-error",
+        "cleanup-process-noop",
     ] {
         let root = std::env::temp_dir().join(format!("oer-fixture-{}-{case}", std::process::id()));
         fs::create_dir_all(root.join("bin")).unwrap();
@@ -29,7 +42,7 @@ fn preparation_and_monitor_recover_from_partial_setup() {
         let ssh = root.join("bin/ssh");
         fs::write(
             &ssh,
-            "#!/bin/sh\nfor script do :; done\n. \"$OER_TEST_STATE/remote.sh\"\neval \"$script\"\n",
+            "#!/bin/sh\nif test \"$OER_TEST_CASE\" = ap-ssh-error; then echo 'injected SSH transport failure' >&2; exit 255; fi\nfor script do :; done\n. \"$OER_TEST_STATE/remote.sh\"\neval \"$script\"\n",
         )
         .unwrap();
         fs::set_permissions(&ssh, fs::Permissions::from_mode(0o700)).unwrap();
@@ -66,6 +79,63 @@ fn fixture_lifecycle_harness() {
     let crate::lab::config::StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
         panic!("OpenWrt test lab required");
     };
+    if case.starts_with("ap-") {
+        let error = super::controlled_ap::ControlledAp::start(
+            &lab.station,
+            &lab.station_fixture,
+            crate::scenario::PhyExpectation::Ht40,
+        )
+        .err()
+        .expect("injected fixture failure");
+        assert_eq!(
+            crate::execution::classify(&*error).kind,
+            crate::evidence::run::FailureKind::Infrastructure
+        );
+        scope.finish().unwrap();
+        return;
+    }
+    if case.starts_with("cleanup-") {
+        if case != "cleanup-absent" {
+            for resource in ["client", "nat", "chain"] {
+                fs::write(root.join(resource), "owned").unwrap();
+            }
+        }
+        fs::write(root.join("foreign"), "external").unwrap();
+        if case.starts_with("cleanup-process-") {
+            fs::write(root.join("process"), "running").unwrap();
+        }
+        super::cleanup::record("restore OpenWrt client", || {
+            super::controlled_openwrt_client::restore(config)
+        });
+        let records = scope.finish().unwrap();
+        let success = matches!(
+            case.as_str(),
+            "cleanup-success" | "cleanup-absent" | "cleanup-process-success"
+        );
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].failure.is_none(), success);
+        if success {
+            for resource in ["client", "nat", "chain", "process"] {
+                assert!(!root.join(resource).exists(), "owned {resource} leaked");
+            }
+            // Recovery is idempotent after successful deletion.
+            super::controlled_openwrt_client::restore(config).unwrap();
+        } else {
+            assert!(super::controlled_openwrt_client::restore(config).is_err());
+        }
+        if case == "cleanup-process-mismatch" {
+            assert!(root.join("process").exists());
+            assert!(
+                !root.join("kill-attempted").exists(),
+                "foreign process was signalled"
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(root.join("foreign")).unwrap(),
+            "external"
+        );
+        return;
+    }
     let canceller = case.ends_with("cancel").then(|| {
         let ready = root.join("ready");
         std::thread::spawn(move || {

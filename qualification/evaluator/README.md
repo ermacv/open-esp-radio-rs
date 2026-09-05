@@ -23,3 +23,10 @@ interoperability; readers retain separate validation logic.
 
 Unit tests live beside their private modules. No source-name regex is used to
 turn Rust symbol spelling into an ownership or execution proof.
+
+HIL qualification requires build provenance for every firmware artifact. The
+primary source must match the current clean repository, and the recorded
+workspace lockfile must match its pinned composition. Local source overrides
+qualify only when clean, reconstructable and at the locked revisions of every
+package they replace. Missing provenance, dirty or unpinned overrides, and
+firmware replay remain diagnostic evidence without establishing qualification.

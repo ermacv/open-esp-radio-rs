@@ -51,9 +51,10 @@ pub struct AxiGdmaMem2MemReport {
 
 /// One discontiguous source/destination pair retained by an M2M transfer.
 ///
-/// The mutable borrows are the ownership proof: neither allocation can be
-/// observed, recycled or mutated until the prepared/active transfer is
-/// dropped. A PSRAM source must own every cache line touched by its range,
+/// Mutable borrows retain exclusive access during ordinary preparation and
+/// completion. Publishing borrowed memory is unsafe: forgetting an active
+/// transfer bypasses its cleanup and releases those Rust borrows. A PSRAM
+/// source must own every cache line touched by its range,
 /// because preparation writes those complete lines back for the DMA
 /// reader.
 pub struct AxiGdmaMem2MemSegment<'buffer> {
@@ -281,7 +282,30 @@ impl<'transfer, 'buffer, 'd> AxiGdmaMem2MemPreparedOwner<'transfer, 'buffer, 'd>
     ///
     /// The returned owner can remain alive while the CPU prepares work
     /// that does not alias either payload or either descriptor list.
-    pub fn start(self) -> AxiGdmaMem2MemTransferOwner<'transfer, 'buffer, 'd> {
+    ///
+    /// # Safety
+    ///
+    /// All payload and descriptor allocations must remain valid, at their
+    /// current addresses, and inaccessible to other CPU or hardware owners
+    /// until this transfer completes or its cleanup stops the channel. This
+    /// includes cancellation and forgotten futures: Rust borrows alone do
+    /// not establish that guarantee, because `mem::forget` skips cleanup.
+    /// The caller must not forget this transfer and then reuse its buffers.
+    /// A surrounding owner may instead retain uniquely claimed static storage
+    /// independently of the transfer's lifetime.
+    ///
+    /// ```compile_fail,E0133
+    /// use open_esp_radio_esp32s31_platform_pac::AxiGdmaMem2MemPreparedOwner;
+    /// fn publish(prepared: AxiGdmaMem2MemPreparedOwner<'_, '_, '_>) {
+    ///     // Borrowed DMA publication requires an explicit lifetime proof.
+    ///     core::mem::forget(prepared.start());
+    /// }
+    /// ```
+    #[allow(
+        unsafe_code,
+        reason = "publishing borrowed DMA memory requires a caller lifetime proof"
+    )]
+    pub unsafe fn start(self) -> AxiGdmaMem2MemTransferOwner<'transfer, 'buffer, 'd> {
         self.driver.start();
         AxiGdmaMem2MemTransferOwner {
             driver: self.driver,

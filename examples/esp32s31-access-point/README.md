@@ -8,7 +8,13 @@ The application requests WPA2-Personal on channel 6 with 20 MHz bandwidth and
 uses `192.168.4.1/24`. DHCP leases are drawn from `192.168.4.100..=114`; both
 echo services use port 7. `AP_CLIENT_LIMIT` in `src/main.rs` selects the admitted
 peer count, currently four, within the request type's 1..=15 resource boundary.
-That capacity is not a hardware qualification result.
+That capacity is not a hardware qualification result. TCP echo preserves the
+peer's half-close: pending replies and FIN are drained before socket reuse.
+Transport errors or a two-second close deadline trigger abort and another
+bounded reset drain; if reset cannot drain, the old socket is retired.
+
+The application service lifecycle has host regression tests, included in
+`cargo xtask check examples`.
 
 Run Cargo from this workspace so its embedded target configuration is used:
 

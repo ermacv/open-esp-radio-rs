@@ -491,6 +491,7 @@ dependencies = [
  "critical-section",
  "document-features",
  "embassy-time-driver",
+ "embassy-time-queue-utils",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -1261,6 +1262,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-access-point"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "edge-dhcp",
  "embassy-executor",
  "embassy-futures",

@@ -22,8 +22,13 @@ The private source modules follow the resources and operations they own:
 
 The transfer owner binds both channel interrupts when constructed. Register
 operations and completion share only the private mem2mem module boundary;
-callers use the public root types. Prepared and active owners retain the
-payload and descriptor borrows until completion or cleanup.
+callers use the public root types. Preparation is safe; `PreparedOwner::start`
+is unsafe because asynchronous publication borrows its payloads and descriptors.
+The caller must keep them stable and exclusively retained until completion or
+cleanup, including cancellation and forgotten futures. `Drop` alone cannot
+prove that contract. The current HIL diagnostic uses dedicated static storage
+and consumes the sole channel; it completes or drops each transfer before reuse.
+This borrowed diagnostic API is not the safe owned-buffer Wi-Fi materializer.
 
 `axi-gdma-mem2mem` enables the hardware transfer path and implies `esp32s31`.
 `psram-dma-diagnostic` additionally enables the existing blocking comparison

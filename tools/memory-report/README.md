@@ -25,7 +25,9 @@ cargo memory diff \
 Every command supports `--format human|json`. `stdout` contains only the
 selected report; errors are written to `stderr`.
 
-`stack` requires compiler-emitted `.stack_sizes` metadata. Target policy owns a
+`stack` requires nonempty compiler-emitted `.stack_sizes` metadata. A missing or
+empty section fails instead of claiming a successful audit without measured frames.
+Target policy owns a
 review threshold, a hard per-frame limit, the compiler move limit and runtime
 headroom. Generated async `poll` functions are included. Local frames do not
 prove indirect call chains, so HIL stack painting remains independently

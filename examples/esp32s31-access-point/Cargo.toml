@@ -8,13 +8,13 @@ publish = false
 
 [dependencies]
 open-esp-radio-wifi-embassy = { path = "../../driver/adapters/embassy/ieee80211" }
-oer-esp32s31-runtime = { path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
 edge-dhcp = { version = "0.8.0", default-features = false }
 embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "317fb69357779a844a502fc171518395529c6394", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
 embassy-time = "0.5.1"
 static_cell = "2.1.1"
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
+oer-esp32s31-runtime = { path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
@@ -47,3 +47,7 @@ resolver = "3"
 
 [build-dependencies]
 oer-firmware = { path = "../../tools/firmware", default-features = false }
+
+[dev-dependencies]
+embassy-time = { version = "0.5.1", features = ["std"] }
+critical-section = { version = "1.2.0", features = ["std"] }

@@ -1,5 +1,27 @@
 use super::*;
 
+#[cfg(unix)]
+#[test]
+fn association_timeout_is_distinct_from_remote_setup_failure() {
+    use std::os::unix::process::ExitStatusExt;
+    for (code, kind) in [
+        (1, crate::evidence::run::FailureKind::Infrastructure),
+        (255, crate::evidence::run::FailureKind::Infrastructure),
+        (
+            ASSOCIATION_TIMEOUT,
+            crate::evidence::run::FailureKind::Scenario,
+        ),
+    ] {
+        let error = require_association(std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: Vec::new(),
+            stderr: b"injected failure".to_vec(),
+        })
+        .unwrap_err();
+        assert_eq!(crate::execution::classify(&*error).kind, kind);
+    }
+}
+
 #[test]
 fn ssid_is_encoded_without_shell_or_wpa_quoting() {
     assert_eq!(encode_hex(b"lab \\\" ap"), "6c6162205c22206170");

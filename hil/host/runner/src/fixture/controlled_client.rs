@@ -45,8 +45,14 @@ impl ControlledClient {
             .ok_or("controlled-client helper has no stdin")?
             .write_all(&input)?;
         let status = child.wait_timeout(Some(std::time::Duration::from_secs(120)))?;
+        if status.code() == Some(crate::fixture::network_helper::ASSOCIATION_TIMEOUT) {
+            return Err("controlled client did not associate within 20 seconds".into());
+        }
         if !status.success() {
-            return Err(format!("controlled-client helper failed with {status}").into());
+            return Err(crate::fixture::Error::new(format!(
+                "controlled-client helper failed with {status}"
+            ))
+            .into());
         }
         Ok(owner)
     }
@@ -58,10 +64,10 @@ impl ControlledClient {
             .args(["dev", "wlan0", "link"])
             .supervised_output()?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(crate::fixture::Error::new(format!(
                 "cannot query controlled-client BSSID: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
-            )
+            ))
             .into());
         }
         parse_bssid(&String::from_utf8(output.stdout)?)
@@ -88,7 +94,10 @@ fn parse_bssid(link: &str) -> Result<String> {
             index % 3 == 2 && byte == b':' || index % 3 != 2 && byte.is_ascii_hexdigit()
         });
     if !valid {
-        return Err(format!("controlled client reported invalid BSSID `{bssid}`").into());
+        return Err(crate::fixture::Error::new(format!(
+            "controlled client reported invalid BSSID `{bssid}`"
+        ))
+        .into());
     }
     Ok(bssid.to_ascii_lowercase())
 }
@@ -108,7 +117,10 @@ fn restore_managed() -> Result<()> {
         .args(["-n", crate::fixture::network_helper::PATH, "managed"])
         .supervised_status()?;
     if !status.success() {
-        return Err(format!("controlled-client restore failed with {status}").into());
+        return Err(crate::fixture::Error::new(format!(
+            "controlled-client restore failed with {status}"
+        ))
+        .into());
     }
     Ok(())
 }

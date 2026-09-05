@@ -175,10 +175,24 @@ pre-existing monitor is left intact. Remote traps remove the owned interface;
 host cleanup retries removal and deletes the capture directory, with failures
 recorded in `cleanup.json`. Loss of SSH connectivity can prevent restoration;
 the runner reports that failure rather than claiming the fixture was restored.
-Wireless preparation and TX-monitor process failures carry a typed fixture
-error and produce `broken/infrastructure`. A radio configuration mismatch
+OpenWrt client cleanup checks the remaining NAT/forwarding rules and managed
+interface. An already absent resource is safe to retry; an inspection or
+deletion failure is recorded. Before signalling a stored PID, cleanup checks
+that its command is `wpa_supplicant` with the owned interface and configuration;
+a different command is left intact and reported as a recovery failure.
+AP management, packet capture and fixture snapshot failures carry a typed
+fixture error and produce `broken/infrastructure`, including errors returned
+by the secondary-client probe thread. Actual peer packet loss remains a
+scenario failure. A radio configuration mismatch
 reports the required channel/width and the observed channel line without
 including network credentials. These failures do not change scenario criteria.
+
+The laptop helper contract is schema 6. Its `client` action returns status 10
+only when a prepared client exhausts the association wait; command failures
+and malformed supplicant status are infrastructure errors. `doctor` and the
+selected run preflight reject older helpers before flashing or resetting the DUT.
+Provision it with `sudo hil/host/linux-net/install.sh`
+from the repository root before using laptop client scenarios.
 
 `oer-process` owns local child process groups, drains captured stdout/stderr
 concurrently and stops descendants on cancellation, deadlines or owner drop.

@@ -3,11 +3,11 @@
 
 esp_bootloader_esp_idf::esp_app_desc!(
     "0.1.0",
-    "open-radio-hil-bootstrap",
+    "oer-esp32s31-bootstrap",
     "00:00:00",
     "2026-07-31",
     "6.1",
-    open_esp_radio_hil_esp32s31_board::FLASH_MMU_PAGE_SIZE_BYTES,
+    oer_esp32s31_board::FLASH_MMU_PAGE_SIZE_BYTES,
     0,
     u16::MAX,
     0
@@ -15,8 +15,8 @@ esp_bootloader_esp_idf::esp_app_desc!(
 
 use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
 
+use oer_esp32s31_board as board;
 use open_esp_radio_esp32s31_platform_pac::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
-use open_esp_radio_hil_esp32s31_board as board;
 use static_cell::ConstStaticCell;
 
 const RUNTIME_MAGIC: u32 = 0x3247_5453;
@@ -57,11 +57,9 @@ static RUNTIME_PAYLOAD: [u8; include_bytes!(env!("PSRAM_RUNTIME_BIN")).len()] =
 //
 // SOURCE: pinned esp-hal fork, `esp-hal/src/flash.rs::Flash::tune_120mhz`,
 // which requires at least fifteen distinct 4-KiB XIP pages.
-const FLASH_TUNING_REFERENCE_DATA: [u32; FLASH_TUNING_REFERENCE_WORDS] = flash_tuning_reference();
-
 #[used]
 #[unsafe(link_section = ".flash.tuning.reference")]
-static FLASH_TUNING_REFERENCE: [u32; FLASH_TUNING_REFERENCE_WORDS] = FLASH_TUNING_REFERENCE_DATA;
+static FLASH_TUNING_REFERENCE: [u32; FLASH_TUNING_REFERENCE_WORDS] = flash_tuning_reference();
 
 // Flash tuning compares complete XIP pages while the flash cache is disabled,
 // so its 124-KiB scratch area must live in internal SRAM. Keeping this unique
@@ -78,38 +76,38 @@ unsafe extern "C" {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
-    print(c"OPEN_RADIO_HIL bootstrap=PANIC\r\n");
+    print(c"OER_BOOT bootstrap=PANIC\r\n");
     halt()
 }
 
 #[esp_hal::main]
 fn main() -> ! {
     unsafe { ets_install_usb_printf() };
-    print(c"OPEN_RADIO_HIL bootstrap=START\r\n");
+    print(c"OER_BOOT bootstrap=START\r\n");
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
-    print(c"OPEN_RADIO_HIL bootstrap=INIT\r\n");
+    print(c"OER_BOOT bootstrap=INIT\r\n");
     let mut flash_mmu = FlashMmu::new(peripherals.SPI0);
     let mut flash = match esp_hal::flash::Flash::from_bootloader(peripherals.FLASH) {
         Ok(flash) => flash,
-        Err(_) => fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=flash-init\r\n"),
+        Err(_) => fail(c"OER_BOOT bootstrap=FAIL reason=flash-init\r\n"),
     };
 
     let psram = board::initialize_psram(peripherals.PSRAM);
     let (psram_base, psram_size) = psram.raw_parts();
     if psram_base as usize != 0x5000_0000 || !board::has_expected_psram_capacity(&psram) {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=psram-init\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=psram-init\r\n");
     }
     verify_psram_probe(psram_base);
-    print(c"OPEN_RADIO_HIL bootstrap=PSRAM\r\n");
+    print(c"OER_BOOT bootstrap=PSRAM\r\n");
 
     let source = RUNTIME_PAYLOAD.as_ptr();
     let source_address = source as usize;
     let source_end = source_address
         .checked_add(RUNTIME_PAYLOAD.len())
-        .unwrap_or_else(|| fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=source-overflow\r\n"));
+        .unwrap_or_else(|| fail(c"OER_BOOT bootstrap=FAIL reason=source-overflow\r\n"));
     if !(FLASH_XIP_START..FLASH_XIP_END).contains(&source_address) || source_end > FLASH_XIP_END {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=source-not-xip\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=source-not-xip\r\n");
     }
 
     let layout = validate_header(
@@ -119,13 +117,13 @@ fn main() -> ! {
         psram_size,
     );
     if layout.payload_len != RUNTIME_PAYLOAD.len() {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=payload-length\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=payload-length\r\n");
     }
     let source_crc = payload_crc32(source, layout.payload_len);
     if source_crc != layout.expected_crc32 {
         print_crc_failure(c"source-crc-80mhz", layout.expected_crc32, source_crc);
     }
-    print(c"OPEN_RADIO_HIL bootstrap=SOURCE_CRC\r\n");
+    print(c"OER_BOOT bootstrap=SOURCE_CRC\r\n");
 
     if layout.code_in_psram {
         unsafe {
@@ -141,14 +139,14 @@ fn main() -> ! {
     };
     if payload_crc32(layout.load_address as *const u8, layout.payload_len) != layout.expected_crc32
     {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=destination-crc\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=destination-crc\r\n");
     }
-    print(c"OPEN_RADIO_HIL bootstrap=DESTINATION_CRC\r\n");
+    print(c"OER_BOOT bootstrap=DESTINATION_CRC\r\n");
 
     let tuning_address = FLASH_TUNING_REFERENCE.as_ptr() as usize;
     let tuning_physical_start = flash_mmu
         .physical_address(tuning_address)
-        .unwrap_or_else(|| fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=tuning-physical\r\n"));
+        .unwrap_or_else(|| fail(c"OER_BOOT bootstrap=FAIL reason=tuning-physical\r\n"));
     if unsafe {
         flash.tune_120mhz(
             esp_hal::flash::FlashXipRegion {
@@ -161,9 +159,9 @@ fn main() -> ! {
     }
     .is_err()
     {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=flash-tune\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=flash-tune\r\n");
     }
-    print(c"OPEN_RADIO_HIL bootstrap=FLASH_TUNED\r\n");
+    print(c"OER_BOOT bootstrap=FLASH_TUNED\r\n");
     // Do not read the tuning span again. Every candidate deliberately fetches
     // a distinct page, and rejected timings can leave corrupted cache lines
     // behind until a future S31 cache-invalidate primitive is available. The
@@ -184,10 +182,10 @@ fn main() -> ! {
         }
         .is_err()
     {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=psram-code\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=psram-code\r\n");
     }
 
-    print(c"OPEN_RADIO_HIL bootstrap=PASS handoff=stage2\r\n");
+    print(c"OER_BOOT bootstrap=PASS handoff=stage2\r\n");
     unsafe { release_bootstrap_stack_watchpoint() };
     unsafe { jump_to_runtime(layout.entry) }
 }
@@ -205,7 +203,7 @@ struct ValidatedLayout {
 
 fn read_header(source: *const u8) -> RuntimeHeader {
     if RUNTIME_PAYLOAD.len() < size_of::<RuntimeHeader>() {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=short-header\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=short-header\r\n");
     }
     unsafe { source.cast::<RuntimeHeader>().read_unaligned() }
 }
@@ -225,7 +223,7 @@ fn validate_header(
     let text_end = header.text_end as usize;
     let psram_end = psram_base
         .checked_add(psram_size)
-        .unwrap_or_else(|| fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=psram-range\r\n"));
+        .unwrap_or_else(|| fail(c"OER_BOOT bootstrap=FAIL reason=psram-range\r\n"));
     let code_in_psram = load_address == RUNTIME_PSRAM_ADDRESS;
     let code_in_flash = load_address == RUNTIME_FLASH_ADDRESS && load_address == source_address;
     let code_end_valid = if code_in_psram {
@@ -250,7 +248,7 @@ fn validate_header(
         || !code_end_valid
         || bss_end > psram_end
     {
-        fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=header\r\n");
+        fail(c"OER_BOOT bootstrap=FAIL reason=header\r\n");
     }
 
     ValidatedLayout {
@@ -269,7 +267,7 @@ fn verify_psram_probe(base: *mut u8) {
     for (index, expected) in [0x31a5_c33c, 0xc35a_3cc3].into_iter().enumerate() {
         unsafe { probe.add(index).write_volatile(expected) };
         if unsafe { probe.add(index).read_volatile() } != expected {
-            fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=psram-probe\r\n");
+            fail(c"OER_BOOT bootstrap=FAIL reason=psram-probe\r\n");
         }
     }
 }
@@ -345,7 +343,7 @@ fn print(message: &'static CStr) {
 fn print_crc_failure(reason: &'static CStr, expected: u32, observed: u32) -> ! {
     unsafe {
         ets_printf(
-            c"OPEN_RADIO_HIL bootstrap=FAIL reason=%s expected=%08x observed=%08x\r\n".as_ptr(),
+            c"OER_BOOT bootstrap=FAIL reason=%s expected=%08x observed=%08x\r\n".as_ptr(),
             reason.as_ptr(),
             expected,
             observed,

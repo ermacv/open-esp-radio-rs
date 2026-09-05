@@ -6,7 +6,7 @@ fn main() {
     );
     let linker_dir = manifest_dir
         .parent()
-        .expect("bootstrap must live below the ESP32-S31 HIL workspace")
+        .expect("bootstrap must live below the ESP32-S31 platform workspace")
         .join("linker");
 
     for file in [
@@ -27,6 +27,6 @@ fn main() {
 
     println!("cargo:rustc-link-search={}", linker_dir.display());
     for argument in ["-Trom/esp32s31-eco0.x", "-Tbootstrap/link.x", "--nmagic"] {
-        println!("cargo:rustc-link-arg-bin=open-esp-radio-hil-esp32s31-bootstrap={argument}");
+        println!("cargo:rustc-link-arg-bin=oer-esp32s31-bootstrap={argument}");
     }
 }

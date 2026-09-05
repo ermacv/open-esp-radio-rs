@@ -1,4 +1,4 @@
-//! Experimental PSRAM thread stacks with per-hart SRAM interrupt stacks.
+//! PSRAM thread stacks with per-hart SRAM interrupt stacks.
 //!
 //! ESP32-S31 uses CLIC hardware vectoring, so interrupts do not pass through
 //! the ordinary exception entry.  The runtime therefore replaces every slot
@@ -13,12 +13,10 @@ use core::{arch::asm, mem::MaybeUninit, ptr};
 
 use esp_hal::system::Stack;
 
-// The qualification AP path has an observed CPU0 high-water mark of roughly
-// 136 KiB with the inherited SRAM stack. Keep that measured requirement plus
-// margin in external RAM; a 64-KiB experimental stack silently overwrote the
-// preceding PSRAM runtime payload during role setup.
-pub(crate) const CPU0_TASK_STACK_BYTES: usize = 192 * 1024;
-pub(crate) const IRQ_STACK_BYTES: usize = 32 * 1024;
+// Board application stack capacities. IRQ stacks remain in internal SRAM.
+pub const CPU1_TASK_STACK_BYTES: usize = 16 * 1024;
+pub const CPU0_TASK_STACK_BYTES: usize = 192 * 1024;
+pub const IRQ_STACK_BYTES: usize = 32 * 1024;
 
 #[repr(C, align(16))]
 struct AlignedStack<const BYTES: usize>(MaybeUninit<[u8; BYTES]>);
@@ -34,11 +32,11 @@ impl<const BYTES: usize> AlignedStack<BYTES> {
 #[unsafe(link_section = ".psram.task_stack.cpu0")]
 static mut __open_radio_cpu0_task_stack: Stack<CPU0_TASK_STACK_BYTES> = Stack::new();
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(feature = "multicore")]
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".psram.task_stack.cpu1")]
-static mut __open_radio_cpu1_task_stack: Stack<{ crate::APP_CORE_TASK_STACK_BYTES }> = Stack::new();
+static mut __open_radio_cpu1_task_stack: Stack<{ CPU1_TASK_STACK_BYTES }> = Stack::new();
 
 #[used]
 #[unsafe(no_mangle)]
@@ -60,13 +58,13 @@ unsafe extern "C" {
 ///
 /// Global interrupts must be disabled. The caller must execute on hart 0 or 1
 /// and must not enable interrupts until this function returns.
-pub(crate) unsafe fn install_current_hart_interrupt_stack() {
+pub unsafe fn install_current_hart_interrupt_stack() {
     let hart: usize;
     unsafe { asm!("csrr {hart}, mhartid", hart = out(reg) hart, options(nomem, nostack)) };
     let bottom = match hart {
         0 => ptr::addr_of_mut!(__open_radio_cpu0_irq_stack).cast::<u8>(),
         1 => ptr::addr_of_mut!(__open_radio_cpu1_irq_stack).cast::<u8>(),
-        _ => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=irq-stack-hart\r\n"),
+        _ => panic!("invalid hart for interrupt stack"),
     };
     let top = unsafe { bottom.add(IRQ_STACK_BYTES) } as usize;
     let table: *mut u32;
@@ -96,12 +94,12 @@ pub(crate) unsafe fn install_current_hart_interrupt_stack() {
     };
 }
 
-#[cfg(feature = "open-radio-hil")]
-pub(crate) fn cpu1_task_stack_bottom() -> u32 {
+#[cfg(feature = "multicore")]
+pub fn cpu1_task_stack_bottom() -> u32 {
     ptr::addr_of!(__open_radio_cpu1_task_stack) as usize as u32
 }
 
-#[cfg(feature = "open-radio-hil")]
+#[cfg(feature = "multicore")]
 unsafe extern "C" {
     fn _runtime_enter_cpu1_psram() -> !;
 }
@@ -113,8 +111,8 @@ unsafe extern "C" {
 ///
 /// Must be called exactly once by CPU1 with global interrupts disabled, after
 /// ESP-HAL has initialized that hart and consumed the bootstrap closure.
-#[cfg(feature = "open-radio-hil")]
-pub(crate) unsafe fn enter_cpu1_task_context() -> ! {
+#[cfg(feature = "multicore")]
+pub unsafe fn enter_cpu1_task_context() -> ! {
     unsafe { _runtime_enter_cpu1_psram() }
 }
 
@@ -376,10 +374,8 @@ _runtime_psram_mtvt_source:
 "#
 );
 
-// The boot-smoke image never starts CPU1. Keep the second-hart stack switch
-// out of that minimal link graph instead of satisfying it with an unreachable
-// alternate entry point.
-#[cfg(feature = "open-radio-hil")]
+// Single-core applications do not require a secondary application entry.
+#[cfg(feature = "multicore")]
 core::arch::global_asm!(
     r#"
     .section .trap.psram_task_stack, "ax", @progbits

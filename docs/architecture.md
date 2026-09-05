@@ -78,9 +78,12 @@ catalog. Producer and evaluator independently validate the format and reject
 ambiguous entries. Firmware and host share a typed wire contract and must be
 updated together when that contract changes.
 
-The HIL bootstrap owns stage-two packing, PSRAM adoption, relocation and IRQ
-stack setup. Public examples use ordinary ESP-HAL application entry. HIL-only
-startup behavior is not a shared production support library.
+The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board profile,
+Flash bootstrap, stage-two relocation, linker scripts and per-core SRAM IRQ
+stacks. HIL and standalone examples use that same boot contract. The host
+`oer-firmware` library owns payload packing and structural image audits;
+`cargo xtask` builds applications and HIL adds its image classes, observers
+and evidence. Neither the platform nor standalone examples depend on HIL.
 
 Linux network helpers and remote OpenWrt operations belong to HIL. Repository
 checks do not install fixtures, flash devices or change network state.

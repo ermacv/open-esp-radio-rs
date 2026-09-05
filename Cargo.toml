@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "tools/repo",
+    "tools/firmware",
     "hil/protocol",
     "driver/memory",
     "driver/network/interface",
@@ -67,6 +68,7 @@ members = [
     "verification/vendor/projects/esp32s31/blobray-host",
 ]
 exclude = [
+    "platform/esp32s31",
     "driver/integration/esp32s31/embassy/ieee80211",
     "examples/esp32s31-station",
     "hil/targets/esp32s31",

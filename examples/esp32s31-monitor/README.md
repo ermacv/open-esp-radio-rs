@@ -16,10 +16,16 @@ cd examples/esp32s31-monitor
 cargo check --release
 ```
 
-The integration uses the same product memory profile as the
-[station application](../esp32s31-station/README.md). Its persistent general-memory resources
-require initialized PSRAM, while DMA-visible storage remains in SRAM. The
-single-stage example linker does not provide the complete product placement
-contract; the [HIL target](../../hil/targets/esp32s31/README.md) owns that board
-and bootstrap composition. A source check is not a flashable-image or hardware
-qualification claim.
+Build the complete application from the repository root:
+
+```console
+cargo xtask build firmware monitor
+cargo xtask build firmware monitor --flash --monitor --port /dev/ttyACM0
+```
+
+The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
+relocates the separately linked application and keeps DMA and interrupt storage
+in SRAM. The command checks ELF placement and stack frames before packaging
+or flashing. `cargo build` in this example produces only the stage-two ELF;
+flash the complete image through `xtask`. Hardware readiness still requires
+appropriate scenario evidence.

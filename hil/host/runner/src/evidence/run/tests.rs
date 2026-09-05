@@ -144,7 +144,7 @@ fn write_test_build_materials(root: &Path) {
         "hil/targets/esp32s31/Cargo.lock",
         "hil/targets/esp32s31/Cargo.toml",
         "hil/targets/esp32s31/stack.toml",
-        "hil/targets/esp32s31/partitions/hil.csv",
+        "platform/esp32s31/partitions/applications.csv",
     ] {
         let path = root.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -338,7 +338,7 @@ fn firmware_record_archives_the_exact_application() {
             &runtime_elf,
             &runtime_bin,
             &bootstrap_elf,
-            &effective_embedded_lock,
+            (&effective_embedded_lock, &effective_embedded_lock),
         )
         .unwrap();
     let artifact = &first_session.manifest.firmware[0];
@@ -397,6 +397,9 @@ fn firmware_record_archives_the_exact_application() {
         serde_json::from_slice(&fs::read(run_directory.join(provenance_path)).unwrap()).unwrap();
     assert_eq!(provenance.build_id, artifact.build_id.clone().unwrap());
     assert_eq!(provenance.subjects.len(), 4);
+    for name in ["embedded-lock", "bootstrap-lock"] {
+        assert!(provenance.files.iter().any(|file| file.name == name));
+    }
     assert!(!provenance.source_reconstructable);
     let object_root = root.join("objects/sha256");
     let first_objects = collect_integrity_files(&object_root).unwrap();
@@ -414,7 +417,7 @@ fn firmware_record_archives_the_exact_application() {
             &runtime_elf,
             &runtime_bin,
             &bootstrap_elf,
-            &effective_embedded_lock,
+            (&effective_embedded_lock, &effective_embedded_lock),
         )
         .unwrap();
     assert_eq!(
@@ -458,7 +461,7 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
             &runtime_elf,
             &runtime_bin,
             &bootstrap_elf,
-            &effective_embedded_lock,
+            (&effective_embedded_lock, &effective_embedded_lock),
         )
         .unwrap();
     source.finish(Vec::new()).unwrap();

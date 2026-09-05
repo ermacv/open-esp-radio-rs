@@ -2231,6 +2231,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-firmware"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-memory-report",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "oer-xtask"
 version = "0.1.0"
 dependencies = [
@@ -2238,8 +2247,11 @@ dependencies = [
  "clap",
  "libc",
  "object 0.39.1",
+ "oer-firmware",
+ "open-esp-radio-memory-report",
  "rustc-demangle",
  "serde_json",
+ "serialport",
  "signal-hook",
  "tempfile",
  "toml",
@@ -2652,6 +2664,8 @@ dependencies = [
  "clap",
  "fs2",
  "libc",
+ "object 0.39.1",
+ "oer-firmware",
  "open-esp-radio-hil-protocol",
  "open-esp-radio-ieee80211",
  "open-esp-radio-memory-report",

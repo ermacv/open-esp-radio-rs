@@ -29,8 +29,6 @@ use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
 
-esp_bootloader_esp_idf::esp_app_desc!();
-
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 // Network socket state is application-owned and static so it never inflates
@@ -48,10 +46,14 @@ const AP_PASSPHRASE: &str = match option_env!("ESP32S31_AP_PASSPHRASE") {
 const AP_CHANNEL: u8 = 6;
 const AP_CLIENT_LIMIT: u8 = 4;
 
-#[esp_hal::main]
-fn main() -> ! {
+#[unsafe(no_mangle)]
+extern "C" fn runtime_main() -> ! {
     esp_println::logger::init_logger_from_env();
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
+    // SAFETY: the common stage-two entry runs after the board bootstrap,
+    // with global interrupts disabled and the PSRAM mapping intact.
+    let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
+
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
@@ -70,6 +72,8 @@ fn main() -> ! {
     let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
         peripherals.FROM_CPU_INTR0,
     )));
+    // Timer and executor handlers are now bound; the staged handoff kept MIE clear.
+    unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };
     executor.run(|spawner| {
         spawner.spawn(
             access_point_task(spawner, radio, trng)
@@ -111,12 +115,13 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         },
         WifiChannel::mhz20(AP_CHANNEL).expect("initial channel must be valid"),
     );
-    let RadioSystem { radio, runners } = integration::new(radio, trng, config)
-        .await
-        .expect("radio initialization must succeed once");
+    let RadioSystem { radio, runners } =
+        open_esp_radio_wifi_embassy::await_stack_boundary!(integration::new(radio, trng, config))
+            .expect("radio initialization must succeed once");
     let RadioRunners {
         hardware: radio_runner,
     } = runners;
+    spawner.spawn(radio_task(spawner, radio_runner).expect("radio task storage is available once"));
     let RadioParts {
         wifi,
         initialization: _,
@@ -182,8 +187,14 @@ async fn access_point_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng:
         let (_ap, _status, _dhcp, _echoes) =
             embassy_futures::join::join4(access_point, status, dhcp::run(stack), echoes).await;
     };
-    let (_application, hardware_never, _network_never) =
-        embassy_futures::join::join3(application, radio_runner.run(spawner), network_runner.run())
-            .await;
-    match hardware_never {}
+    embassy_futures::join::join(application, network_runner.run()).await;
+}
+
+#[embassy_executor::task]
+#[allow(
+    large_assignments,
+    reason = "the sole radio runner enters its static task arena once; the final ELF frame audit bounds CPU stack use"
+)]
+async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::Esp32s31RadioRunner) {
+    runner.run(spawner).await;
 }

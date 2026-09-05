@@ -12,6 +12,9 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   research engine live under `driver/network/`. Concrete Wi-Fi and Bluetooth
   radio execution lives in `driver/runtime/embassy/esp32s31/`; the Embassy
   executor/time platform backend remains in `driver/adapters/`.
+- `platform/esp32s31/` owns shared board boot, staged runtime entry and linker
+  placement for HIL and standalone examples. `tools/firmware/` owns host image
+  packing and structural checks.
 - `hil/` contains the typed HIL protocol, host runner, targets, and scenarios.
 - `verification/vendor/` holds reviewed vendor-comparison inputs; `_oracles/`
   is private input and must never be committed.

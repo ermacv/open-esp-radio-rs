@@ -26,11 +26,7 @@ compile_error!("IEEE 802.15.4 reset-isolated probe images are mutually exclusive
 
 #[cfg(feature = "open-radio-hil")]
 use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
-use core::{
-    arch::{asm, global_asm},
-    ffi::CStr,
-    ptr,
-};
+use core::{arch::asm, ffi::CStr, ptr};
 
 #[cfg(feature = "open-radio-hil")]
 use embassy_executor::SendSpawner;
@@ -58,7 +54,7 @@ mod phy_calibration_artifact;
 #[cfg(feature = "open-radio-hil")]
 mod product_hil;
 #[cfg(feature = "psram-task-stack")]
-mod psram_task_stack;
+use oer_esp32s31_runtime::stacks as psram_task_stack;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
@@ -158,10 +154,6 @@ static mut DMA_DATA_PROBE: u32 = 0x444d_4131;
 #[unsafe(link_section = ".dma.bss.profile_probe")]
 static mut DMA_BSS_PROBE: u32 = 0;
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".critical.data.stack_guard")]
-static mut __stack_chk_guard: u32 = 0xDEED_BAAD;
-
 unsafe extern "C" {
     fn ets_install_usb_printf();
     fn ets_printf(format: *const core::ffi::c_char, ...) -> i32;
@@ -193,133 +185,7 @@ unsafe extern "C" {
     static _stack_start: u8;
 }
 
-// Stage two does not return through the bootloader reset entry. It owns data,
-// BSS, the SRAM interrupt closure and vector registers, and initializes each
-// one before entering Rust or enabling interrupts.
-global_asm!(
-    r#"
-    .section .text._start, "ax", @progbits
-    .balign 4
-    .global _runtime_start
-    .type _runtime_start, @function
-_runtime_start:
-    .option push
-    .option norelax
-    la gp, __global_pointer$
-    la a0, __runtime_data_load_start
-    la a1, __runtime_data_start
-    la a2, __runtime_data_end
-1:
-    beq a1, a2, 2f
-    lw a3, 0(a0)
-    sw a3, 0(a1)
-    addi a0, a0, 4
-    addi a1, a1, 4
-    j 1b
-2:
-    la a0, __runtime_data_bss_start
-    la a1, __runtime_data_bss_end
-3:
-    beq a0, a1, 4f
-    sw zero, 0(a0)
-    addi a0, a0, 4
-    j 3b
-4:
-    la a0, __runtime_isr_load_start
-    la a1, __runtime_isr_start
-    la a2, __runtime_isr_end
-5:
-    beq a1, a2, 6f
-    lw a3, 0(a0)
-    sw a3, 0(a1)
-    addi a0, a0, 4
-    addi a1, a1, 4
-    j 5b
-6:
-    la a0, __runtime_critical_data_load_start
-    la a1, __runtime_critical_data_start
-    la a2, __runtime_critical_data_end
-7:
-    beq a1, a2, 8f
-    lw a3, 0(a0)
-    sw a3, 0(a1)
-    addi a0, a0, 4
-    addi a1, a1, 4
-    j 7b
-8:
-    la a0, __runtime_critical_bss_start
-    la a1, __runtime_critical_bss_end
-9:
-    beq a0, a1, 10f
-    sw zero, 0(a0)
-    addi a0, a0, 4
-    j 9b
-10:
-    la a0, __runtime_dma_data_load_start
-    la a1, __runtime_dma_data_start
-    la a2, __runtime_dma_data_end
-11:
-    beq a1, a2, 12f
-    lw a3, 0(a0)
-    sw a3, 0(a1)
-    addi a0, a0, 4
-    addi a1, a1, 4
-    j 11b
-12:
-    la a0, __runtime_dma_bss_start
-    la a1, __runtime_dma_bss_end
-13:
-    beq a0, a1, 14f
-    sw zero, 0(a0)
-    addi a0, a0, 4
-    j 13b
-14:
-    la a0, __runtime_hot_text_load_start
-    la a1, __runtime_hot_text_start
-    la a2, __runtime_hot_text_end
-15:
-    beq a1, a2, 16f
-    lw a3, 0(a0)
-    sw a3, 0(a1)
-    addi a0, a0, 4
-    addi a1, a1, 4
-    j 15b
-16:
-    call _runtime_stack_bootstrap
-    fence.i
-    la t0, _vector_table
-    ori t0, t0, 3
-    csrw mtvec, t0
-    la t0, _runtime_mtvt_table
-    csrw 0x307, t0
-    .option pop
-    li t0, 0x6000
-    csrrs zero, mstatus, t0
-    fscsr zero
-    tail runtime_main
-    .size _runtime_start, . - _runtime_start
-
-    # Control profile: paint the inherited SRAM stack. The PSRAM stack module
-    # supplies a strong `_runtime_stack_bootstrap` implementation.
-    .balign 4
-    .global _runtime_default_stack_bootstrap
-    .type _runtime_default_stack_bootstrap, @function
-_runtime_default_stack_bootstrap:
-    la t0, _stack_end
-    addi t0, t0, 256
-    mv t1, sp
-    addi t1, t1, -256
-    li t2, 0xa55aa55a
-17:
-    bgeu t0, t1, 18f
-    sw t2, 0(t0)
-    addi t0, t0, 4
-    j 17b
-18:
-    ret
-    .size _runtime_default_stack_bootstrap, . - _runtime_default_stack_bootstrap
-"#
-);
+use oer_esp32s31_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
@@ -371,18 +237,12 @@ extern "C" fn runtime_main() -> ! {
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
     // across that ELF boundary, so stage two explicitly adopts the live
     // hardware mapping without reinitializing the PSRAM device or MMU.
-    let _psram =
-        unsafe { open_esp_radio_hil_esp32s31_board::adopt_initialized_psram(peripherals.PSRAM) };
+    let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(feature = "open-radio-hil")]
     let l1_cache = L1_CACHE_PERFORMANCE.init(
         open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters::new(peripherals.CACHE),
     );
-    unsafe { esp_hal::interrupt::reinitialize_vectoring_after_handoff() };
-    #[cfg(feature = "psram-task-stack")]
-    unsafe {
-        psram_task_stack::install_current_hart_interrupt_stack();
-    }
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));

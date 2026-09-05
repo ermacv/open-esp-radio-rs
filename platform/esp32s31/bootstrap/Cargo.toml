@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-esp32s31-bootstrap"
+name = "oer-esp32s31-bootstrap"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ build = "build.rs"
 [dependencies]
 esp-bootloader-esp-idf = { workspace = true, features = ["embedded-storage", "esp32s31"] }
 esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
-open-esp-radio-hil-esp32s31-board = { path = "../board" }
+oer-esp32s31-board = { path = "../board" }
 open-esp-radio-esp32s31-platform-pac.workspace = true
 static_cell.workspace = true
 

@@ -39,8 +39,6 @@ use open_esp_radio_esp32s31_radio_platform_esp_hal::{
 };
 use static_cell::StaticCell;
 
-esp_bootloader_esp_idf::esp_app_desc!();
-
 const MODEM_TIMER_CAPACITY: usize = 4;
 const SCHEDULER_CAPACITY: usize = 1;
 const HOST_TO_CONTROLLER_DEPTH: usize = 4;
@@ -67,11 +65,15 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static RADIO_PLATFORM: StaticCell<EspHalRadioPlatform> = StaticCell::new();
 static BLUETOOTH_STORAGE: BluetoothStorage = BluetoothStorage::new();
 
-#[esp_hal::main]
-fn main() -> ! {
+#[unsafe(no_mangle)]
+extern "C" fn runtime_main() -> ! {
     esp_println::logger::init_logger_from_env();
     esp_println::println!("open-radio: application entered");
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
+    // SAFETY: the common stage-two entry runs after the board bootstrap,
+    // with global interrupts disabled and the PSRAM mapping intact.
+    let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
+
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
     let platform = RADIO_PLATFORM.init(EspHalRadioPlatform::new(
@@ -90,6 +92,8 @@ fn main() -> ! {
         peripherals.FROM_CPU_INTR0,
     )));
     esp_println::println!("open-radio: executor starting");
+    // Timer and executor handlers are now bound; the staged handoff kept MIE clear.
+    unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };
     executor.run(|spawner| {
         spawner.spawn(
             bluetooth_controller_task(platform, hardware)
@@ -117,11 +121,16 @@ async fn bluetooth_controller_task(
     let config =
         Esp32s31BluetoothColdStartConfig::new(251, 4, None, dtm, passive_scan, recheck_period);
     esp_println::println!("open-radio: Bluetooth Controller cold start submitted");
-    let output =
-        match start_esp32s31_bluetooth(platform, hardware, &BLUETOOTH_STORAGE, config).await {
-            Ok(output) => output,
-            Err(_) => panic!("Bluetooth Controller cold start failed"),
-        };
+    let mut startup = core::pin::pin!(start_esp32s31_bluetooth(
+        platform,
+        hardware,
+        &BLUETOOTH_STORAGE,
+        config
+    ));
+    let output = match startup.as_mut().await {
+        Ok(output) => output,
+        Err(_) => panic!("Bluetooth Controller cold start failed"),
+    };
     let Esp32s31BluetoothSystem { hci, runners } = output.system;
     let hardware_runner = runners.hardware;
     esp_println::println!("open-radio: Bluetooth Controller ready");
@@ -202,9 +211,9 @@ async fn bluetooth_controller_task(
 
         core::future::pending::<()>().await;
     };
+    let mut hardware = core::pin::pin!(hardware_runner.run());
     let (_commands, _events, hardware_never) =
-        embassy_futures::join::join3(commands, pump_unsolicited_hci(&hci), hardware_runner.run())
-            .await;
+        embassy_futures::join::join3(commands, pump_unsolicited_hci(&hci), hardware.as_mut()).await;
     match hardware_never {}
 }
 

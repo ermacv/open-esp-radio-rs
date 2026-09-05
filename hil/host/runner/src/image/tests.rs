@@ -172,16 +172,6 @@ fn image_capability_classifier_rejects_mixed_or_non_psram_images() {
 }
 
 #[test]
-fn runtime_crc_treats_the_checksum_field_as_zero() {
-    let mut image = vec![0x5a; 128];
-    image[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].fill(0);
-    let expected = crc32(&image);
-    image[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].copy_from_slice(&expected.to_le_bytes());
-    image[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].fill(0);
-    assert_eq!(crc32(&image), expected);
-}
-
-#[test]
 fn tracked_file_snapshot_restores_exact_contents() {
     let directory = scratch_directory("restore");
     let lockfile = directory.join("Cargo.lock");

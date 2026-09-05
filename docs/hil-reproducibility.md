@@ -16,6 +16,10 @@ A run archives four firmware subjects with sizes and SHA-256 digests:
 | `runtime.bin` | Packed stage-two payload |
 | `bootstrap.elf` | First-stage image composition |
 
+The bundle also archives `effective-Cargo.lock` for the runtime workspace and
+`bootstrap-Cargo.lock` for the shared platform workspace. Both resolved graphs
+are build materials and survive replay.
+
 `integrity.json` seals the run's complete file inventory. Replay validates the
 bundle and selected application before touching hardware. These commands run
 from the repository root and require a configured, attached HIL device:
@@ -97,6 +101,7 @@ target/hil/esp32s31/
     │   ├── runtime.elf
     │   ├── runtime.bin
     │   ├── bootstrap.elf
+    │   ├── bootstrap-Cargo.lock
     │   └── effective-Cargo.lock
     └── integrity.json
 ```

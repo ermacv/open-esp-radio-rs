@@ -3,10 +3,9 @@
 use crate::image::{Artifacts, program_from_env, run_command};
 use crate::*;
 
-const PARTITION_TABLE_OFFSET: u32 = 0x8000;
-const OTA_SELECTOR_OFFSET: u32 = 0xd000;
-const OTA_0_OFFSET: u32 = 0x1_0000;
-const OTA_DATA_SIZE: usize = 0x2000;
+use oer_firmware::flash::{
+    OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET, ota0_selector_image,
+};
 
 pub(crate) fn status(root: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
     device_status_at(&root.join("target/hil/esp32s31/device-status"), lab)
@@ -67,7 +66,7 @@ pub(crate) fn flash_replayed(
 
 fn flash_application(root: &Path, application: &Path, output: &Path, port: &Path) -> Result<()> {
     fs::create_dir_all(output)?;
-    let partition_csv = root.join("hil/targets/esp32s31/partitions/hil.csv");
+    let partition_csv = root.join("platform/esp32s31/partitions/applications.csv");
     let partition_bin = output.join("partitions.bin");
     let selector_bin = output.join("otadata-ota0-valid.bin");
 
@@ -110,40 +109,6 @@ fn write_flash_binary(
     description: &str,
 ) -> Result<()> {
     let mut command = Command::new(program_from_env("ESPFLASH", "espflash"));
-    command
-        .args([
-            "write-bin",
-            "--chip",
-            "esp32s31",
-            "--non-interactive",
-            "--port",
-        ])
-        .arg(port)
-        .args(["--after", after])
-        .arg(format!("{address:#x}"))
-        .arg(image);
+    oer_firmware::flash::write_bin_command(&mut command, Some(port), address, image, after);
     run_command(&mut command, description)
 }
-
-fn ota0_selector_image() -> [u8; OTA_DATA_SIZE] {
-    let sequence = 1_u32;
-    let mut image = [0xff; OTA_DATA_SIZE];
-    image[0..4].copy_from_slice(&sequence.to_le_bytes());
-    image[24..28].copy_from_slice(&2_u32.to_le_bytes());
-    image[28..32].copy_from_slice(&crc32_idf(&sequence.to_le_bytes()).to_le_bytes());
-    image
-}
-
-fn crc32_idf(bytes: &[u8]) -> u32 {
-    let mut crc = 0_u32;
-    for byte in bytes {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(crc & 1));
-        }
-    }
-    crc ^ u32::MAX
-}
-
-#[cfg(test)]
-mod tests;

@@ -42,6 +42,21 @@ enum Check {
 
 #[derive(Subcommand)]
 enum Build {
+    /// Build and audit a bootable example with the shared ESP32-S31 bootstrap.
+    Firmware {
+        #[arg(value_parser = ["station", "access-point", "monitor", "bluetooth-controller"])]
+        example: String,
+        #[arg(long)]
+        flash: bool,
+        #[arg(long, requires = "flash")]
+        port: Option<PathBuf>,
+        #[arg(long, requires_all = ["flash", "port"])]
+        monitor: bool,
+        #[arg(long, value_delimiter = ',')]
+        features: Vec<String>,
+        #[arg(long)]
+        no_default_features: bool,
+    },
     VendorProbes {
         #[arg(long, default_value = "esp32s31")]
         chip: String,
@@ -75,6 +90,24 @@ fn run() -> Result<()> {
             Check::SourceOnly => checks::source_only::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
         },
+        Task::Build {
+            build:
+                Build::Firmware {
+                    example,
+                    flash,
+                    port,
+                    monitor,
+                    features,
+                    no_default_features,
+                },
+        } => {
+            let output =
+                oer_xtask::firmware::build(&ctx, &example, &features, no_default_features)?;
+            if flash {
+                oer_xtask::firmware::flash(&ctx, &output, port.as_deref(), monitor)?;
+            }
+            Ok(())
+        }
         Task::Build {
             build: Build::VendorProbes { chip, list_roles },
         } => checks::vendor::run(&ctx, &chip, list_roles),

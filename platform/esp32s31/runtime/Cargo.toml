@@ -1,0 +1,15 @@
+[package]
+name = "oer-esp32s31-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+psram-task-stack = []
+multicore = []
+
+[dependencies]
+esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
+oer-esp32s31-board = { path = "../board" }

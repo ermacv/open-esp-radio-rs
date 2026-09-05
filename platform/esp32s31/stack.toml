@@ -1,0 +1,236 @@
+schema = 3
+
+# Primary thread stack bounds. Dedicated SRAM interrupt stacks have separate
+# placement checks.
+stack_start_symbol = "_stack_start"
+stack_end_symbol = "_stack_end"
+
+# Ordinary functions should remain below 8 KiB. Owner-bearing async state
+# machines above this line are reported for review, not silently accepted.
+warn_frame_bytes = 8192
+
+# CPU0 may transiently materialize a large async owner transaction. Functions
+# assigned a smaller execution stack also obey that linked stack's capacity
+# minus its call-chain reserve. Runtime painting checks aggregate headroom;
+# the separate move limit rejects hidden by-value owner copies.
+max_frame_bytes = 51200
+
+# Reject implicit copies/moves large enough to hide owner graphs or buffers in
+# compiler temporaries. The lint is enforced while building the final fat-LTO
+# selected runtime image.
+max_move_bytes = 4096
+
+# Runtime stack painting must retain these absolute headrooms in every required
+# workload. Absolute call-depth reserves remain meaningful when static SRAM
+# allocations change the CPU0 capacity or CPU1 is deliberately resized.
+runtime_cpu0_minimum_free_bytes = 16384
+runtime_cpu1_minimum_free_bytes = 4096
+
+reported_frame_count = 30
+
+# These are async owner graphs, not local packet arrays. Their executor and
+# call-chain use is independently bounded by the runtime high-water check.
+# Selectors omit crate hashes so the policy survives ordinary rebuilds.
+[[reviewed_frames]]
+function_contains = "::station::StaLifecycleService<"
+source_ends_with = ["driver/ieee80211/sta/src/station.rs", "open-esp-radio-wifi-sta-0.1.0/src/station.rs"]
+max_bytes = 19456
+reason = "station lifecycle future retains the unique disconnected/connected owner union, including bounded power-save, TWT and ESP-NOW control state"
+
+[[reviewed_frames]]
+function_contains = "::startup::start_esp32s31_radio"
+source_ends_with = ["driver/chips/esp32s31/ieee80211/src/startup.rs", "open-esp-radio-esp32s31-wifi-0.1.0/src/startup.rs"]
+max_bytes = 18432
+reason = "one-time radio start future returns the complete initialized radio owner graph"
+
+[[reviewed_frames]]
+function_contains = "::cold_start::start_esp32s31_wifi::<"
+source_ends_with = ["driver/chips/esp32s31/ieee80211/src/cold_start.rs", "open-esp-radio-esp32s31-wifi-0.1.0/src/cold_start.rs"]
+max_bytes = 21504
+reason = "one-time source-only PHY cold-start future retains the unique powered radio, expanded PAC-owned registration transition and recoverable channel-selection frontier when diagnostic fat LTO materializes it out of line; the 4-KiB move limit rejects hidden copies and runtime painting bounds the complete allocation-free call chain"
+
+[[reviewed_frames]]
+function_contains = "::target_port::run_target_phy_register::<"
+source_ends_with = ["driver/chips/esp32s31/phy/src/target_port.rs", "open-esp-radio-esp32s31-phy-0.1.0/src/target_port.rs"]
+max_bytes = 15360
+reason = "one-time target PHY registration retains the unique powered radio, complete opaque recoverable transition and concrete completion future across bounded hardware awaits; the outer cold-start poll boundary and runtime painting independently bound the complete PSRAM-stack call chain"
+
+[[reviewed_frames]]
+function_contains = "::station::composer::Esp32s31StationEngine<"
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/composer.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/composer.rs"]
+max_bytes = 22528
+reason = "station attempt future retains every recoverable phase owner, including typed RX overload disposition, low-power and ESP-NOW state, until disposition on the PSRAM task stack"
+
+[[reviewed_frames]]
+function_contains = "::roles::station::connected::port::Esp32s31ConnectedStaPort>::compose::<"
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/port/composition.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/port/composition.rs"]
+max_bytes = 8448
+reason = "atomic connected composition retains the validated plan and complete success-or-failure graph while transferring the affine pairwise replay endpoint; the separate 4-KiB move limit still rejects hidden owner copies"
+
+[[reviewed_frames]]
+function_contains = "::supervisor::new::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/mod.rs"]
+max_bytes = 17920
+reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack"
+
+[[reviewed_frames]]
+function_contains = "::radio_resources::initialize_network"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/radio_resources.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/radio_resources.rs"]
+max_bytes = 10240
+reason = "one-time ownership split constructs the two logical network devices and transfers their shared radio-side runner into static storage; packet payload arenas and physical SRAM execution storage are already static and the runtime stack high-water gate remains authoritative"
+
+[[reviewed_frames]]
+function_contains = "ProductionWifiEpochRunner as"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/role_dispatch.rs"]
+max_bytes = 18176
+reason = "role epoch future retains separate physical, station, AP and monitor return owners, including interface-scoped BlockAck state, the Rust rate-control owner and typed AP retry counters"
+
+[[reviewed_frames]]
+function_contains = "run_access_point_service::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/access_point.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/access_point.rs"]
+max_bytes = 15360
+reason = "AP epoch future retains the distinct DMA producer and ordered protocol-consumer owners, one optional deferred frame, one complete four-frame typed protocol-action quantum, the exact STA resume frontier and both affine A-MPDU arenas until teardown; it runs on the PSRAM task stack while runtime painting still enforces 16-KiB CPU-stack headroom"
+
+[[reviewed_frames]]
+function_contains = "ProductionStationEnginePort<"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/mod.rs"]
+max_bytes = 13312
+reason = "connected transition future preserves the exact join and teardown owners"
+
+[[reviewed_frames]]
+function_contains = "::supervisor::station::run_connected::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/station.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/station.rs"]
+max_bytes = 35584
+reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck including the immediate in-order dispatch branch, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
+
+[[reviewed_frames]]
+function_contains = "::advance_station_to_paired_frontier::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/concurrent.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/concurrent.rs"]
+max_bytes = 17408
+reason = "finite paired cutover reuses the complete production STA lifecycle and returns either the exact connected owner graph or the reusable stopped frontier while retaining the installed physical IRQ epoch across the logical role boundary; the 50-KiB hard ceiling, 4-KiB move limit and 192-KiB runtime stack painting remain independent bounds"
+
+[[reviewed_frames]]
+function_contains = "::run_station_access_point_service::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/concurrent.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/concurrent.rs"]
+max_bytes = 15360
+reason = "paired service validates association and channel policy while retaining the independent AP, monitor and expanded connected station owners before active composition"
+
+[[reviewed_frames]]
+function_contains = "::run_station_access_point_active::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/concurrent.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/concurrent.rs"]
+max_bytes = 51200
+reason = "the complete same-channel transaction retains the sole RX producer, TX owner, IRQ epoch, owned network endpoints, both expanded role graphs and their exact inverse on the PSRAM task stack; external RX and fault arenas plus the 50-KiB hard ceiling prevent packet payloads and the former 52,864-byte owner move from returning"
+
+[[reviewed_frames]]
+function_contains = "::attempt::Esp32s31StaAttempt<"
+source_ends_with = ["driver/chips/esp32s31/ieee80211/sta/src/attempt.rs", "open-esp-radio-esp32s31-wifi-sta-0.1.0/src/attempt.rs"]
+max_bytes = 11264
+reason = "shared initial/reconnect attempt future retains the exact phase owner and one active WPA2 operation"
+
+[[reviewed_frames]]
+function_contains = "run_esp32s31_station_supervisor_epoch"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/composition/supervisor.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/composition/supervisor.rs"]
+max_bytes = 15616
+reason = "chip station supervisor retains the typed dual-VIF role return, shared RX BlockAck capability reference, RX overload disposition, Rust rate-control and bounded low-power/ESP-NOW owners plus the AP retry report across one epoch on the PSRAM task stack"
+
+[[reviewed_frames]]
+function_contains = "::run_standalone_scan::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/role_dispatch.rs"]
+max_bytes = 11264
+reason = "standalone scan retains the role-neutral owner, continuous live RX ring and installed physical IRQ epoch across its asynchronous channel dwell while the shared RX BlockAck allocator remains statically rooted; the 50-KiB hard ceiling, 4-KiB move limit and runtime PSRAM-stack painting independently bound the complete call chain"
+
+[[reviewed_frames]]
+function_contains = "::station::lifecycle::Esp32s31StationTask<"
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/lifecycle.rs"]
+max_bytes = 13312
+reason = "station task future retains lifecycle command and returned owner state, including connected rate control, low-power/ESP-NOW and interface-scoped BlockAck state"
+
+[[reviewed_frames]]
+function_contains = "EmbassyWifiSupervisorTask<"
+source_ends_with = ["driver/radio/src/runtime/embassy.rs", "open-esp-radio-0.1.0/src/runtime/embassy.rs"]
+max_bytes = 12288
+reason = "radio supervisor retains the affine Wi-Fi role owner plus bounded dual-VIF network, service-epoch, rate-control and AP retry-report state"
+
+[[reviewed_frames]]
+function_contains = "::runtime::embassy::finish_embassy_wifi_active_role"
+source_ends_with = ["driver/radio/src/runtime/embassy.rs", "open-esp-radio-0.1.0/src/runtime/embassy.rs"]
+max_bytes = 10752
+reason = "generic terminal transaction retains the exact expanded stopped-or-faulted role frontier until the application response is acknowledged; it runs on the PSRAM task stack and cannot expose a partial owner graph"
+
+[[reviewed_frames]]
+function_contains = "::roles::access_point::Esp32s31AccessPointControl<"
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/access_point/service_epoch.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/access_point/service_epoch.rs"]
+max_bytes = 26624
+reason = "standalone AP service future owns the complete bounded power-save lease queues, protocol action quantum, aggregate state and exact stop return on the PSRAM task stack"
+
+[[reviewed_frames]]
+function_contains = "::run_initial_join_epoch::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/station_epoch.rs"]
+max_bytes = 14080
+reason = "initial join future retains the recoverable scan, authentication, split pairwise/group replay, security and radio-owner frontier until the typed join disposition is returned"
+
+[[reviewed_frames]]
+function_contains = "::run_reconnected_epoch::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/station_epoch.rs"]
+max_bytes = 13568
+reason = "reconnect future retains the recoverable connected owner, split pairwise/group replay and expanded protocol policy until the typed join disposition is returned"
+
+[[reviewed_frames]]
+function_contains = "::run_connected_epoch::{closure#0}"
+source_ends_with = ["driver/integration/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs", "open-esp-radio-esp32s31-embassy-wifi-0.1.0/src/supervisor/station_epoch.rs"]
+max_bytes = 10752
+reason = "station engine connected edge retains the exact connected owner or paired-cutover return while preserving every protocol frontier; the MAC-IRQ diagnostic image adds its value-only observer edge to the same static PSRAM-owned future"
+
+[[reviewed_frames]]
+function_contains = "::connected::transaction::run_and_quiesce_esp32s31_connected_epoch"
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/transaction.rs"]
+max_bytes = 9472
+reason = "connected transaction retains the classified runner exit, split pairwise/group replay and every affine service owner until IRQ and task quiescence completes"
+
+[[reviewed_frames]]
+function_contains = "::retry_quiesce::{closure#0}"
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/transaction.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/transaction.rs"]
+max_bytes = 9472
+reason = "retryable quiescence failure preserves the exact classified exit, split pairwise/group replay, interrupt epoch, runner and task owners without replaying DATAPATH"
+
+[[reviewed_frames]]
+function_contains = "::connected::shutdown::quiesce_esp32s31_connected_epoch"
+source_ends_with = ["driver/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/shutdown.rs", "open-esp-radio-esp32s31-wifi-embassy-0.1.0/src/roles/station/connected/shutdown.rs"]
+max_bytes = 9216
+reason = "shutdown future retains the unique interrupt, connected runner and task-group owners until all three cross the stopped boundary"
+
+
+[[reviewed_frames]]
+function_contains = "TaskStorage<open_esp_radio_esp32s31_station"
+source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
+max_bytes = 14336
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the station application composes initialization, role control and the network endpoint on CPU0; the radio hardware runner has a separate static task"
+
+[[reviewed_frames]]
+function_contains = "::controller::owner::EmbassyBluetoothControllerCommandTask<"
+source_ends_with = ["driver/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs"]
+max_bytes = 43008
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "Bluetooth command dispatch retains typed mutually exclusive controller transitions on CPU0; the fixed 192-KiB application stack also accommodates its caller and interrupt handling uses SRAM"
+
+[[reviewed_frames]]
+function_contains = "::cold_start::start_esp32s31_bluetooth"
+source_ends_with = ["driver/integration/esp32s31/embassy/bluetooth/src/cold_start.rs"]
+max_bytes = 33792
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "one-time Bluetooth cold start transfers the configured controller ownership graph to its statically stored application future on CPU0"
+
+[[reviewed_frames]]
+function_contains = "Join3<open_esp_radio_esp32s31_bluetooth_controller_example"
+source_ends_with = ["embassy-futures-0.1.2/src/join.rs"]
+max_bytes = 14336
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the Bluetooth application concurrently polls typed HCI commands, events and a pinned hardware runner on CPU0"
+
+[[reviewed_frames]]
+function_contains = "TaskStorage<open_esp_radio_esp32s31_bluetooth_controller_example"
+source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
+max_bytes = 18432
+execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
+reason = "the statically stored Bluetooth application future retains typed advertising commands and a pinned hardware runner across await points on CPU0"

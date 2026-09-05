@@ -33,6 +33,7 @@ for implementation coverage and limitations.
 | Path | Owner |
 | --- | --- |
 | `driver/` | Shipping protocol, chip, adapter, runtime and integration code |
+| `platform/` | Shared board boot, staged entry and memory placement |
 | `examples/` | Application/board composition and API examples |
 | `hil/` | Hardware protocol, runner, fixtures, scenarios and test images |
 | `qualification/` | Capability programs and independent readiness evaluation |

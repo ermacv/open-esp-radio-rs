@@ -31,8 +31,8 @@ on the same CPU.
 
 The HAL fork extends upstream ESP32-S31 support with radio ownership tokens,
 TRNG, TIMG clock selection, external-memory startup and interrupt handoff
-mechanisms. The HIL board
-chooses memory sizes and timings; its bootstrap owns relocation and the
+mechanisms. The shared board profile in `platform/esp32s31`
+chooses memory sizes and timings; the platform bootstrap owns relocation and the
 transition to the separately linked runtime. HAL PSRAM adoption records an
 existing mapping without resetting the device or remapping live memory.
 S31 Ethernet is enabled explicitly through HAL's `__ethernet` feature, so a

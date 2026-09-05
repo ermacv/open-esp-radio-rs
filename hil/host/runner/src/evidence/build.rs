@@ -477,18 +477,21 @@ pub(super) fn create_provenance(
     build_id: String,
     sources: Vec<SourceMaterial>,
     subjects: Vec<BuildSubject>,
-    effective_embedded_lock: BuildFileMaterial,
+    effective_locks: Vec<BuildFileMaterial>,
 ) -> Result<BuildProvenance> {
     let mut files = [
         ("workspace-lock", "Cargo.lock"),
         ("embedded-workspace", "hil/targets/esp32s31/Cargo.toml"),
         ("stack-policy", "hil/targets/esp32s31/stack.toml"),
-        ("partition-table", "hil/targets/esp32s31/partitions/hil.csv"),
+        (
+            "partition-table",
+            "platform/esp32s31/partitions/applications.csv",
+        ),
     ]
     .into_iter()
     .map(|(name, path)| build_file_material(root, name, Path::new(path)))
     .collect::<Result<Vec<_>>>()?;
-    files.push(effective_embedded_lock);
+    files.extend(effective_locks);
     files.sort_by(|left, right| left.name.cmp(&right.name));
     let environment = BuildEnvironment {
         tools: [

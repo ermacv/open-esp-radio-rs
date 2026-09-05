@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-esp32s31-board"
+name = "oer-esp32s31-board"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -42,13 +42,19 @@ If no matching AP is present, each complete 13-channel cold scan returns its
 halted RX ring, waits 500 ms and prepares that same owner for the next scan.
 It does not recreate descriptors or panic after the first `NoCandidate` pass.
 
-The reusable product integration selects its fixed product ownership graph
-and explicitly separates general-memory network payloads from the fixed
-DMA-visible SRAM horizon. The HIL target owns the reference linker
-and bootstrap contract which initializes PSRAM and maps those sections. This
-standalone example's ordinary ESP-HAL linker configuration does not yet provide
-that complete placement contract, so a successful source `cargo check` is not
-by itself a flashable-image or hardware-qualification claim.
+Build the complete application from the repository root:
+
+```console
+cargo xtask build firmware station
+cargo xtask build firmware station --flash --monitor --port /dev/ttyACM0
+```
+
+The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
+relocates the separately linked application and keeps DMA and interrupt storage
+in SRAM. The command checks ELF placement and stack frames before packaging
+or flashing. `cargo build` in this example produces only the stage-two ELF;
+flash the complete image through `xtask`. Hardware readiness still requires
+appropriate scenario evidence.
 
 The connected radio is a finite lifecycle epoch rather than a terminal task.
 Peer loss or an application controller request returns the IRQ, staged-RX,

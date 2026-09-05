@@ -13,10 +13,7 @@ pub(crate) use reproducibility::verify_rebuild;
 pub(crate) const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 pub(crate) const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
-const BOOTSTRAP_BIN: &str = "open-esp-radio-hil-esp32s31-bootstrap";
-const RUNTIME_MAGIC: u32 = 0x3247_5453;
-const RUNTIME_CRC_OFFSET: usize = 40;
-const RUNTIME_HEADER_BYTES: usize = 44;
+use oer_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ImageCapabilitySignature {
@@ -191,6 +188,7 @@ struct ArtifactReport<'a> {
     runtime_bin: String,
     bootstrap_elf: String,
     effective_embedded_lock: String,
+    effective_bootstrap_lock: String,
     application_image: String,
     application_sha256: String,
     flashed: bool,
@@ -209,6 +207,7 @@ pub(crate) fn print_artifacts(
         runtime_bin: artifacts.runtime_bin.display().to_string(),
         bootstrap_elf: artifacts.bootstrap_elf.display().to_string(),
         effective_embedded_lock: artifacts.effective_embedded_lock.display().to_string(),
+        effective_bootstrap_lock: artifacts.effective_bootstrap_lock.display().to_string(),
         application_image: artifacts.application_image.display().to_string(),
         application_sha256: sha256_file(&artifacts.application_image)?,
         flashed,
@@ -228,6 +227,7 @@ pub(crate) struct Artifacts {
     pub(crate) runtime_bin: PathBuf,
     pub(crate) bootstrap_elf: PathBuf,
     pub(crate) effective_embedded_lock: PathBuf,
+    pub(crate) effective_bootstrap_lock: PathBuf,
     pub(crate) application_image: PathBuf,
 }
 
@@ -241,6 +241,8 @@ pub(crate) fn build(root: &Path, class: crate::image::ImageClass) -> Result<Arti
 
     let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
     let mut snapshot = TrackedFileSnapshot::capture(lockfile)?;
+    let mut platform_snapshot =
+        TrackedFileSnapshot::capture(root.join("platform/esp32s31/Cargo.lock"))?;
     let result = build_resolved(
         root,
         class,
@@ -250,7 +252,9 @@ pub(crate) fn build(root: &Path, class: crate::image::ImageClass) -> Result<Arti
         None,
         false,
     );
-    let restore = snapshot.restore();
+    let restore = snapshot
+        .restore()
+        .and_then(|()| platform_snapshot.restore());
     match (result, restore) {
         (Ok(artifacts), Ok(())) => Ok(artifacts),
         (Err(error), Ok(())) => Err(error),
@@ -298,6 +302,7 @@ fn build_resolved(
         .join("release")
         .join(BOOTSTRAP_BIN);
     let effective_embedded_lock = output.join("effective-Cargo.lock");
+    let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
     let runtime_features = class.runtime_features();
@@ -338,19 +343,17 @@ fn build_resolved(
         .arg(&runtime_elf)
         .arg(&runtime_bin);
     run_command(&mut objcopy, "flatten stage-two runtime")?;
-    let crc = pack_runtime(&runtime_bin)?;
+    let crc = pack_runtime(&runtime_bin).map_err(|error| -> Box<dyn Error> { error })?;
     let placement = audit_runtime(&runtime_elf, &runtime_bin, class)?;
     fs::write(output.join("placement.txt"), placement)?;
 
     let mut bootstrap = cargo_command();
-    bootstrap
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(&manifest)
-        .args(["-p", BOOTSTRAP_BIN, "--release", "--target", TARGET])
-        .env("CARGO_TARGET_DIR", &bootstrap_target)
-        .env("CARGO_INCREMENTAL", "0")
-        .env("PSRAM_RUNTIME_BIN", absolute(&runtime_bin)?);
+    oer_firmware::bootstrap_command(
+        &mut bootstrap,
+        root,
+        &absolute(&runtime_bin)?,
+        &bootstrap_target,
+    );
     if local_esp_hal.is_none() {
         bootstrap.arg("--locked");
     }
@@ -374,32 +377,18 @@ fn build_resolved(
     );
     open_esp_radio_memory_report::audit_stack(&bootstrap_stack_report)?;
 
-    let partition_table = root.join("hil/targets/esp32s31/partitions/hil.csv");
     let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
-    save_image
-        .args([
-            "save-image",
-            "--chip",
-            "esp32s31",
-            "--flash-mode",
-            "qio",
-            "--flash-freq",
-            "80mhz",
-            "--flash-size",
-            "16mb",
-            "--mmu-page-size",
-            "65536",
-            "--partition-table",
-        ])
-        .arg(&partition_table)
-        .args(["--target-app-partition", "ota_0"])
-        .arg(&bootstrap_elf)
-        .arg(&application_image);
+    oer_firmware::save_image_command(&mut save_image, root, &bootstrap_elf, &application_image);
     run_command(&mut save_image, "encode ESP application image")?;
-    audit_application_image(&application_image)?;
+    audit_application_image(&application_image).map_err(|error| -> Box<dyn Error> { error })?;
     fs::copy(
         root.join("hil/targets/esp32s31/Cargo.lock"),
         &effective_embedded_lock,
+    )?;
+
+    fs::copy(
+        root.join("platform/esp32s31/Cargo.lock"),
+        &effective_bootstrap_lock,
     )?;
 
     eprintln!("runtime_crc32={crc:08x}");
@@ -412,6 +401,7 @@ fn build_resolved(
         runtime_bin,
         bootstrap_elf,
         effective_embedded_lock,
+        effective_bootstrap_lock,
         application_image,
     })
 }
@@ -642,9 +632,9 @@ pub(crate) fn require_program(program: &str) -> Result<()> {
 pub(crate) fn ensure_no_old_application_dependency(root: &Path) -> Result<()> {
     for relative in [
         "hil/targets/esp32s31/Cargo.toml",
-        "hil/targets/esp32s31/bootstrap/Cargo.toml",
+        "platform/esp32s31/bootstrap/Cargo.toml",
         "hil/targets/esp32s31/runtime/Cargo.toml",
-        "hil/targets/esp32s31/board/Cargo.toml",
+        "platform/esp32s31/board/Cargo.toml",
     ] {
         let path = root.join(relative);
         let contents = fs::read_to_string(&path)?;
@@ -680,214 +670,27 @@ pub(crate) fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn pack_runtime(path: &Path) -> Result<u32> {
-    let mut bytes = fs::read(path)?;
-    if bytes.len() < RUNTIME_HEADER_BYTES {
-        return Err("runtime image is shorter than its header".into());
-    }
-    if u32::from_le_bytes(bytes[0..4].try_into()?) != RUNTIME_MAGIC {
-        return Err("runtime image has the wrong stage-two magic".into());
-    }
-    if u32::from_le_bytes(bytes[28..32].try_into()?) as usize != RUNTIME_HEADER_BYTES {
-        return Err("runtime image has an incompatible header size".into());
-    }
-    bytes[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].fill(0);
-    let crc = crc32(&bytes);
-    bytes[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].copy_from_slice(&crc.to_le_bytes());
-    fs::write(path, bytes)?;
-    let packed = fs::read(path)?;
-    let stored = u32::from_le_bytes(packed[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].try_into()?);
-    let mut verified = packed;
-    verified[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].fill(0);
-    if stored != crc || crc32(&verified) != crc {
-        return Err("runtime CRC did not survive packing".into());
-    }
-    Ok(crc)
-}
-
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xffff_ffffu32;
-    for byte in bytes {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xedb8_8320 & 0u32.wrapping_sub(crc & 1));
-        }
-    }
-    !crc
-}
-
 fn audit_runtime(elf: &Path, binary: &Path, class: crate::image::ImageClass) -> Result<String> {
-    let output = Command::new(program_from_env("LLVM_NM", "llvm-nm"))
-        .args(["--defined-only", "--numeric-sort"])
-        .arg(elf)
-        .output()?;
-    if !output.status.success() {
-        return Err("llvm-nm failed while auditing runtime placement".into());
-    }
-    let text = String::from_utf8(output.stdout)?;
-    let mut symbols = BTreeMap::new();
-    for line in text.lines() {
-        let mut words = line.split_whitespace();
-        let Some(address) = words.next() else {
-            continue;
-        };
-        let Some(_kind) = words.next() else { continue };
-        let Some(name) = words.next() else { continue };
-        if let Ok(address) = u64::from_str_radix(address, 16) {
-            symbols.insert(name.to_owned(), address);
+    let report = oer_firmware::audit_runtime(elf, binary, class.uses_psram_task_stack())
+        .map_err(|error| -> Box<dyn Error> { error })?;
+    if class != crate::image::ImageClass::BootSmoke {
+        use object::{Object, ObjectSection, ObjectSymbol};
+        let bytes = fs::read(elf)?;
+        let object = object::File::parse(bytes.as_slice())?;
+        let section = object
+            .section_by_name(".critical.data")
+            .ok_or("missing critical data")?;
+        let range = section.address()..section.address() + section.size();
+        for expected in ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"] {
+            if !object.symbols().any(|symbol| {
+                symbol.name().is_ok_and(|name| name.contains(expected))
+                    && range.contains(&symbol.address())
+            }) {
+                return Err(format!("HIL observer {expected} is outside critical data").into());
+            }
         }
     }
-    let symbol = |name: &str| -> Result<u64> {
-        symbols
-            .get(name)
-            .copied()
-            .ok_or_else(|| format!("runtime ELF lacks `{name}`").into())
-    };
-
-    let image_start = symbol("__runtime_image_start")?;
-    let payload_end = symbol("__runtime_payload_end")?;
-    let text_start = symbol("__runtime_text_start")?;
-    let text_end = symbol("__runtime_text_end")?;
-    let entry = symbol("_runtime_start")?;
-    let data_start = symbol("__runtime_data_start")?;
-    let bss_end = symbol("__runtime_data_bss_end")?;
-    let isr_start = symbol("__runtime_isr_start")?;
-    let isr_end = symbol("__runtime_isr_end")?;
-    let critical_start = symbol("__runtime_critical_data_start")?;
-    let critical_data_end = symbol("__runtime_critical_data_end")?;
-    let critical_bss_end = symbol("__runtime_critical_bss_end")?;
-    let dma_start = symbol("__runtime_dma_data_start")?;
-    let dma_end = symbol("__runtime_dma_bss_end")?;
-    let stack_bottom = symbol("_stack_end")?;
-    let stack_top = symbol("_stack_start")?;
-    let binary_bytes = fs::metadata(binary)?.len();
-    let initialized_observers_valid = if class == crate::image::ImageClass::BootSmoke {
-        true
-    } else {
-        ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"]
-            .into_iter()
-            .all(|expected| {
-                symbols.iter().any(|(name, address)| {
-                    name.contains(expected)
-                        && *address >= critical_start
-                        && *address < critical_data_end
-                })
-            })
-    };
-
-    let in_sram = |start: u64, end: u64| start >= 0x2f00_0000 && end >= start && end <= 0x2f07_afc0;
-    let stack_placement_valid = if class.uses_psram_task_stack() {
-        let cpu0_irq_bottom = symbol("__runtime_cpu0_irq_stack_bottom")?;
-        let cpu0_irq_top = symbol("__runtime_cpu0_irq_stack_top")?;
-        let cpu1_irq_bottom = symbol("__runtime_cpu1_irq_stack_bottom")?;
-        let cpu1_irq_top = symbol("__runtime_cpu1_irq_stack_top")?;
-        let trap_entry = symbol("_start_trap")?;
-        let irq_entry_first = symbol("_runtime_psram_irq_entry_1")?;
-        let irq_entry_last = symbol("_runtime_psram_irq_entry_47")?;
-        let mtvt_source = symbol("_runtime_psram_mtvt_source")?;
-        let cpu0_mtvt = symbol("_mtvt_table")?;
-        let cpu1_mtvt = symbol("_mtvt_table2")?;
-        let all_irq_entries_in_sram = (1..=47).all(|number| {
-            symbols
-                .get(&format!("_runtime_psram_irq_entry_{number}"))
-                .is_some_and(|entry| in_sram(*entry, *entry + 4))
-        });
-        stack_bottom >= 0x5000_0000
-            && stack_top <= 0x5100_0000
-            && stack_top.saturating_sub(stack_bottom) == 0x3_0000
-            && in_sram(cpu0_irq_bottom, cpu0_irq_top)
-            && in_sram(cpu1_irq_bottom, cpu1_irq_top)
-            && cpu0_irq_top.saturating_sub(cpu0_irq_bottom) == 0x8000
-            && cpu1_irq_top.saturating_sub(cpu1_irq_bottom) == 0x8000
-            && in_sram(trap_entry, trap_entry + 4)
-            && in_sram(irq_entry_first, irq_entry_first + 4)
-            && in_sram(irq_entry_last, irq_entry_last + 4)
-            && in_sram(mtvt_source, mtvt_source + 48 * 4)
-            && in_sram(cpu0_mtvt, cpu0_mtvt + 48 * 4)
-            && in_sram(cpu1_mtvt, cpu1_mtvt + 48 * 4)
-            && all_irq_entries_in_sram
-    } else {
-        stack_top == 0x2f07_afc0 && stack_top.saturating_sub(stack_bottom) >= 0x1_0000
-    };
-    if image_start != 0x5001_0000
-        || payload_end <= image_start
-        || payload_end - image_start != binary_bytes
-        || entry < text_start
-        || entry >= text_end
-        || data_start < 0x5000_0000
-        || bss_end > 0x5100_0000
-        || !in_sram(isr_start, isr_end)
-        || !in_sram(critical_start, critical_bss_end)
-        || !in_sram(dma_start, dma_end)
-        || !initialized_observers_valid
-        || !stack_placement_valid
-    {
-        return Err("runtime ELF violates the PSRAM/PSRAM placement contract".into());
-    }
-    if class.uses_psram_task_stack() {
-        audit_psram_stack_entry_instructions(elf)?;
-    }
-
-    Ok(format!(
-        "profile={}\n\
-         image={image_start:#010x}..{payload_end:#010x}\n\
-         text={text_start:#010x}..{text_end:#010x}\n\
-         data_start={data_start:#010x}\n\
-         bss_end={bss_end:#010x}\n\
-         isr={isr_start:#010x}..{isr_end:#010x}\n\
-         critical={critical_start:#010x}..{critical_bss_end:#010x}\n\
-         dma={dma_start:#010x}..{dma_end:#010x}\n\
-         stack={stack_bottom:#010x}..{stack_top:#010x}\n\
-         result=PASS\n",
-        class.runtime_profile()
-    ))
-}
-
-fn audit_psram_stack_entry_instructions(elf: &Path) -> Result<()> {
-    let mut names = vec!["_start_trap".to_owned()];
-    names.extend((1..=47).map(|number| format!("_runtime_psram_irq_entry_{number}")));
-    let output = Command::new(program_from_env("LLVM_OBJDUMP", "llvm-objdump"))
-        .arg("-d")
-        .arg(format!("--disassemble-symbols={}", names.join(",")))
-        .arg(elf)
-        .output()?;
-    if !output.status.success() {
-        return Err("llvm-objdump failed while auditing PSRAM stack entries".into());
-    }
-    let text = String::from_utf8(output.stdout)?;
-    for name in names {
-        let marker = format!("<{name}>:");
-        let tail = text
-            .split_once(&marker)
-            .map(|(_, tail)| tail)
-            .ok_or_else(|| format!("runtime disassembly lacks `{name}`"))?;
-        let instruction = tail
-            .lines()
-            .find_map(|line| line.trim().split_once(':').map(|(_, body)| body.trim()))
-            .filter(|body| !body.is_empty())
-            .ok_or_else(|| format!("runtime disassembly has no instruction for `{name}`"))?;
-        if !instruction.contains("csrrw") || !instruction.contains("sp, mscratch, sp") {
-            return Err(format!(
-                "`{name}` touches the interrupted stack before swapping to SRAM: `{instruction}`"
-            )
-            .into());
-        }
-    }
-    Ok(())
-}
-
-fn audit_application_image(path: &Path) -> Result<()> {
-    const APP_DESC_OFFSET: usize = 0x20;
-    const APP_DESC_MMU_PAGE_LOG2_OFFSET: usize = 180;
-    let bytes = fs::read(path)?;
-    let end = APP_DESC_OFFSET + APP_DESC_MMU_PAGE_LOG2_OFFSET + 1;
-    if bytes.len() < end
-        || bytes[APP_DESC_OFFSET..APP_DESC_OFFSET + 4] != 0xabcd_5432_u32.to_le_bytes()
-        || bytes[APP_DESC_OFFSET + APP_DESC_MMU_PAGE_LOG2_OFFSET] != 16
-    {
-        return Err("ESP application image has an invalid app descriptor or MMU page size".into());
-    }
-    Ok(())
+    Ok(report)
 }
 
 #[cfg(test)]

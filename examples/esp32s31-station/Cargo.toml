@@ -7,12 +7,13 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
+open-esp-radio-wifi-embassy = { path = "../../driver/adapters/embassy/ieee80211" }
+oer-esp32s31-runtime = { path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "317fb69357779a844a502fc171518395529c6394", features = ["dhcpv4", "medium-ethernet"], optional = true }
 embassy-net-compat = { package = "embassy-net", version = "0.9.1", features = ["dhcpv4", "medium-ethernet"], optional = true }
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "bee3369c35dfc10048b1d524150d99869f8a4352", default-features = false, features = ["auto", "esp32s31", "log-04"] }
 open-esp-radio = { path = "../../driver/radio", default-features = false, features = ["wifi"] }
@@ -51,3 +52,6 @@ embassy-time = { version = "0.5.1", registry = "crates-io" }
 
 [workspace]
 resolver = "3"
+
+[build-dependencies]
+oer-firmware = { path = "../../tools/firmware", default-features = false }

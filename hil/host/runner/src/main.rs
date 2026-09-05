@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     env,
     error::Error,
     ffi::OsString,
@@ -644,7 +643,10 @@ fn prepare_image(
         &artifacts.runtime_elf,
         &artifacts.runtime_bin,
         &artifacts.bootstrap_elf,
-        &artifacts.effective_embedded_lock,
+        (
+            &artifacts.effective_embedded_lock,
+            &artifacts.effective_bootstrap_lock,
+        ),
     )?;
     session.record_event(
         "image-build-finished",

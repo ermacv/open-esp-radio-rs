@@ -26,6 +26,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check examples` | Target type checks of the four examples and station compatibility-network variant |
 | `cargo xtask check source-only` | Compose repository suites, Cargo/Clippy, publication and final-image analysis |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
+| `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the selected project's three Rust comparison artifacts |
 | `cargo xtask build vendor-probes --chip esp32s31 --list-roles` | List declared artifact roles without building or authenticating an artifact |
 

@@ -40,21 +40,18 @@ This is a board smoke sequence, not recorded HIL evidence. Meaningful RF
 validation still requires a suitable peer or tester, controlled RF conditions
 and the repository's HIL evidence process.
 
-Run Cargo from this workspace so its target and linker configuration are used:
+Build and flash the complete application from the repository root:
 
 ```console
-cd examples/esp32s31-bluetooth-controller
-cargo build --release
+cargo xtask build firmware bluetooth-controller
+cargo xtask build firmware bluetooth-controller --flash --monitor --port /dev/ttyACM0
+cargo xtask build firmware bluetooth-controller --features advertising-smoke
 ```
 
-With an ESP32-S31 connected, `cargo run --release` flashes it and opens the
-serial monitor.
-
-Build the separate advertising smoke sequence with:
-
-```console
-cargo build --release --features advertising-smoke
-```
+The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
+relocates the application and supplies SRAM interrupt stacks. Image and stack
+audits run before packaging or flashing. A plain `cargo build` inside this
+workspace produces the stage-two ELF, which requires the shared bootstrap.
 
 This feature replaces the DTM commands. After initial Reset, it exercises
 nonconnectable `ADV_NONCONN_IND`, then connectable `ADV_IND`, each with a static
@@ -69,5 +66,5 @@ the command name in failures and two-second timeouts. Case and dwell markers
 identify the last reached step. These observations establish HCI lifecycle
 progress only: a successful Enable response or elapsed dwell does not prove
 scheduler RUN, repeated events or RF transmission. Use scheduler evidence and a
-BLE observer for those claims. `cargo run --release --features advertising-smoke`
-flashes this variant and opens the monitor.
+BLE observer for those claims. Add `--flash --monitor --port /dev/ttyACM0` to the `xtask` advertising command
+to flash this variant and open the monitor.

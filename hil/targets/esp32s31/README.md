@@ -1,13 +1,14 @@
 # ESP32-S31 HIL target
 
-This workspace owns board boot, PSRAM/link placement, Embassy executors,
+This workspace selects the shared board boot and memory profile and owns Embassy executors,
 `embassy-net`, UART transport and HIL workloads. Radio behaviour
 belongs in `driver/`; HIL uses the public production constructor and runner.
 
-- `bootstrap`: flash entry and PSRAM handoff;
 - `runtime`: role-neutral control plane and runtime-dispatched workloads;
 - `telemetry`: HIL-only diagnostic observers;
-- `board`: board boot resources.
+
+[Shared platform](../../../platform/esp32s31/README.md) owns the board profile,
+bootstrap, linker scripts and stage-two entry used by HIL and examples.
 
 `performance` contains no driver observer or scheduler instrumentation.
 `correctness` adds value-only driver observations, while the `diagnostic-*`
@@ -61,8 +62,8 @@ and never authorize traffic or change role behaviour.
 
 ## Application boundaries
 
-The stage-two `runtime` name and binary identity are part of the
-bootstrap/relocation contract. `product_hil` owns the radio/network composition
+The `runtime` binary is the HIL application of the shared stage-two boot
+contract. `product_hil` owns the radio/network composition
 and its persistent observation resources; its `traffic`, `ieee802154` and
 `rx_qualification` children own workload and observation duties. The value-only
 `rx_statistics` child owns RX counter deltas and wire-evidence conversion.
@@ -70,7 +71,7 @@ and its persistent observation resources; its `traffic`, `ieee802154` and
 and emergency writer lifecycle. Separating these owners requires an explicit
 state handoff, not a folder or type-name rewrite.
 
-Board/linker/bootstrap/stack policy stays with this concrete HIL composition.
-The standalone examples use a different boot/linker contract; see the station
-example's documented placement limitation before treating source checks as a
-flashable production image.
+HIL retains its workload-specific `stack.toml` and diagnostic observers.
+Board initialization, relocation and interrupt-stack mechanics belong to the
+shared platform; application images use the same mechanism through `cargo xtask
+build firmware`. A hardware scenario verdict remains a separate HIL responsibility.

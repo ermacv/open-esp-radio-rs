@@ -19,10 +19,16 @@ ESP32S31_AP_PASSPHRASE=replace-this-password \
 cargo check --release
 ```
 
-The example uses the same product memory profile as the station application.
-Its single-stage ESP-HAL linker does not provide the complete PSRAM placement
-and initialization contract required by that profile. See the
-[station application](../esp32s31-station/README.md) for that boundary; a source
-check does not establish that this image can be flashed and run. The
-[HIL composition](../../hil/targets/esp32s31/README.md) owns the complete board,
-bootstrap and placement contract used for measured workloads.
+Build the complete application from the repository root:
+
+```console
+cargo xtask build firmware access-point
+cargo xtask build firmware access-point --flash --monitor --port /dev/ttyACM0
+```
+
+The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
+relocates the separately linked application and keeps DMA and interrupt storage
+in SRAM. The command checks ELF placement and stack frames before packaging
+or flashing. `cargo build` in this example produces only the stage-two ELF;
+flash the complete image through `xtask`. Hardware readiness still requires
+appropriate scenario evidence.

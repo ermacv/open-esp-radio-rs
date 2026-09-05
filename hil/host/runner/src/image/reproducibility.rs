@@ -40,6 +40,7 @@ enum SubjectRole {
     Application,
     BootstrapElf,
     EffectiveEmbeddedLock,
+    EffectiveBootstrapLock,
     RuntimeBin,
     RuntimeElf,
 }
@@ -316,6 +317,12 @@ fn compare_artifacts(
             &left.bootstrap_elf,
             &right.bootstrap_elf,
             true,
+        ),
+        (
+            SubjectRole::EffectiveBootstrapLock,
+            &left.effective_bootstrap_lock,
+            &right.effective_bootstrap_lock,
+            false,
         ),
         (
             SubjectRole::EffectiveEmbeddedLock,

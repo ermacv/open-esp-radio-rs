@@ -1,9 +1,9 @@
 #![no_std]
 
-//! Qualified electrical and memory facts for the ESP32-S31 HIL board.
+//! Electrical and memory configuration for ESP32-S31-Function-CoreBoard-1.
 //!
-//! These constants are intentionally private test-platform policy. They are
-//! not ESP32-S31 capabilities and must not leak into a public driver crate.
+//! This board profile is shared by application and HIL boot compositions;
+//! it does not describe every ESP32-S31 board.
 
 use esp_hal::{
     peripherals::PSRAM,
@@ -31,7 +31,7 @@ pub fn initialize_psram(peripheral: PSRAM<'static>) -> Psram {
     Psram::new(peripheral, psram_config())
 }
 
-/// Adopts the board's PSRAM mapping after the HIL bootstrap transfers control
+/// Adopts the board's PSRAM mapping after the bootstrap transfers control
 /// to the separately linked stage-two runtime.
 ///
 /// # Safety

@@ -17,7 +17,7 @@ impl RunSession {
         runtime_elf: &Path,
         runtime_bin: &Path,
         bootstrap_elf: &Path,
-        effective_embedded_lock: &Path,
+        effective_locks: (&Path, &Path),
     ) -> Result<PathBuf> {
         build::verify_sources_unchanged(&self.repository_root, &self.source_materials)?;
         let firmware_directory = PathBuf::from("firmware").join(image.id());
@@ -26,7 +26,7 @@ impl RunSession {
         let runtime_elf_path = firmware_directory.join("runtime.elf");
         let runtime_bin_path = firmware_directory.join("runtime.bin");
         let bootstrap_elf_path = firmware_directory.join("bootstrap.elf");
-        let effective_embedded_lock_path = firmware_directory.join("effective-Cargo.lock");
+
         let application = build::archive_content_addressed(
             application,
             &archived_application,
@@ -47,11 +47,34 @@ impl RunSession {
             &self.directory.join(&bootstrap_elf_path),
             &self.target_directory,
         )?;
-        let effective_embedded_lock = build::archive_content_addressed(
-            effective_embedded_lock,
-            &self.directory.join(&effective_embedded_lock_path),
-            &self.target_directory,
-        )?;
+        let mut locks = Vec::new();
+        for (name, original, filename, source) in [
+            (
+                "embedded-lock",
+                "hil/targets/esp32s31/Cargo.lock",
+                "effective-Cargo.lock",
+                effective_locks.0,
+            ),
+            (
+                "bootstrap-lock",
+                "platform/esp32s31/Cargo.lock",
+                "bootstrap-Cargo.lock",
+                effective_locks.1,
+            ),
+        ] {
+            let path = firmware_directory.join(filename);
+            let archived = build::archive_content_addressed(
+                source,
+                &self.directory.join(&path),
+                &self.target_directory,
+            )?;
+            locks.push(build::archived_file_material(
+                name,
+                Path::new(original),
+                path,
+                &archived,
+            ));
+        }
         let subjects = vec![
             BuildSubject {
                 role: BuildSubjectRole::Application,
@@ -86,12 +109,7 @@ impl RunSession {
             build_id.clone(),
             self.source_materials.clone(),
             subjects,
-            build::archived_file_material(
-                "embedded-lock",
-                Path::new("hil/targets/esp32s31/Cargo.lock"),
-                effective_embedded_lock_path,
-                &effective_embedded_lock,
-            ),
+            locks,
         )?;
         atomic_json(&self.directory.join(&build_provenance_path), &provenance)?;
         let artifact = FirmwareArtifact {

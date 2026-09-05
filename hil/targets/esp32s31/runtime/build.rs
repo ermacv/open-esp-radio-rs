@@ -1,70 +1,21 @@
-use std::{env, path::PathBuf};
-
-const BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
-
 fn main() {
-    let manifest_dir = PathBuf::from(
-        env::var_os("CARGO_MANIFEST_DIR").expect("Cargo provides CARGO_MANIFEST_DIR"),
-    );
-    let linker_dir = manifest_dir
-        .parent()
-        .expect("runtime must live below the ESP32-S31 HIL workspace")
-        .join("linker");
-
-    for file in [
-        "../linker/rom/esp32s31-eco0.x",
-        "../linker/runtime/link.x",
-        "../linker/runtime/memory.x",
-        "../linker/runtime/sections.x",
-    ] {
-        println!("cargo:rerun-if-changed={file}");
-    }
-    println!("cargo:rustc-link-search={}", linker_dir.display());
-    for argument in ["-Trom/esp32s31-eco0.x", "-Truntime/link.x", "--nmagic"] {
-        println!("cargo:rustc-link-arg-bin={BIN}={argument}");
-    }
-
-    let psram_data = env::var_os("CARGO_FEATURE_PROFILE_PSRAM_DATA").is_some();
-    let sram_data = env::var_os("CARGO_FEATURE_PROFILE_SRAM_DATA").is_some();
-    let flash_code = env::var_os("CARGO_FEATURE_CODE_FLASH").is_some();
-    let psram_code = env::var_os("CARGO_FEATURE_CODE_PSRAM").is_some();
-    let psram_task_stack = env::var_os("CARGO_FEATURE_PSRAM_TASK_STACK").is_some();
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let enabled = |name| std::env::var_os(name).is_some();
+    let data = enabled("CARGO_FEATURE_PROFILE_PSRAM_DATA");
+    let code = enabled("CARGO_FEATURE_CODE_PSRAM");
     assert!(
-        psram_data ^ sram_data,
-        "select exactly one data profile: profile-psram-data or profile-sram-data"
+        data ^ enabled("CARGO_FEATURE_PROFILE_SRAM_DATA"),
+        "select one data profile"
     );
     assert!(
-        flash_code ^ psram_code,
-        "select exactly one code profile: code-flash or code-psram"
+        code ^ enabled("CARGO_FEATURE_CODE_FLASH"),
+        "select one code profile"
     );
-    assert!(
-        !flash_code || psram_data,
-        "the Flash-code profile requires profile-psram-data"
+    oer_firmware::linker::configure_runtime(
+        "open-esp-radio-hil-esp32s31-runtime",
+        &manifest.join("../../../../platform/esp32s31/linker"),
+        data,
+        code,
+        enabled("CARGO_FEATURE_PSRAM_TASK_STACK"),
     );
-    assert!(
-        !psram_task_stack || (psram_code && psram_data),
-        "the PSRAM task-stack experiment requires PSRAM code and data"
-    );
-
-    let (code_origin, code_length): (u32, u32) = if psram_code {
-        (0x5001_0000, 0x00ff_0000)
-    } else {
-        (0x4000_0140, 0x03ff_fec0)
-    };
-    let (data_origin, data_length): (u32, u32) = if psram_data {
-        (0x5001_0000, 0x00ff_0000)
-    } else {
-        (0x2f00_0000, 0x0006_afc0)
-    };
-    for (symbol, value) in [
-        ("RUNTIME_CODE_IN_PSRAM", u32::from(psram_code)),
-        ("RUNTIME_CODE_ORIGIN", code_origin),
-        ("RUNTIME_CODE_LENGTH", code_length),
-        ("RUNTIME_DATA_IN_PSRAM", u32::from(psram_data)),
-        ("RUNTIME_DATA_ORIGIN", data_origin),
-        ("RUNTIME_DATA_LENGTH", data_length),
-        ("PSRAM_TASK_STACKS", u32::from(psram_task_stack)),
-    ] {
-        println!("cargo:rustc-link-arg-bin={BIN}=--defsym={symbol}={value}");
-    }
 }
